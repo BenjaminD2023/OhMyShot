@@ -1,12 +1,14 @@
 import AppKit
 import CoreServices
 import Foundation
+import OMSCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var root: CompositionRoot?
     private var pendingURLs: [(url: URL, senderPID: pid_t?)] = []
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = MainMenu.make(settingsTarget: self)
         // Registered before launch finishes, so a URL that launched the app is not lost.
         NSAppleEventManager.shared().setEventHandler(
             self,
@@ -32,6 +34,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             root.handle(url: pending.url, senderPID: pending.senderPID)
         }
         pendingURLs.removeAll()
+    }
+
+    /// ⌘, while one of the app's windows is in front.
+    @objc func showSettings(_ sender: Any?) {
+        root?.showSettings()
     }
 
     /// Opening the app again (from Finder, Spotlight, or the Dock) shows Settings. The menu bar icon

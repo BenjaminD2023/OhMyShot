@@ -1,0 +1,179 @@
+import AppKit
+import Foundation
+import OMSCapture
+import OMSCore
+import OSLog
+import UniformTypeIdentifiers
+
+/// Turns a capture request into a history item: shows the overlay, captures the chosen region or window,
+/// encodes it off the main actor, keeps it in the history, copies it, and hands it to Quick Access.
+/// Nothing is written to the Desktop unless the user saves or turns on saving after capture.
+final class CaptureCoordinator {
+    private let settings: SettingsStore
+    private let displays: DisplayTopology
+    private let capturer: ScreenCapturer
+    private let overlay: OverlayController
+    private let history: HistoryStore
+    /// Receives every finished capture, already in the history; the composition root decides whether
+    /// it gets a Quick Access card.
+    var onCaptured: ((QuickAccessItem) -> Void)?
+    private lazy var shutter = NSSound(
+        contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif",
+        byReference: true
+    )
+
+    init(settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, history: HistoryStore) {
+        self.settings = settings
+        self.displays = displays
+        self.capturer = capturer
+        self.overlay = overlay
+        self.history = history
+    }
+
+    func captureArea() {
+        begin(mode: .area)
+    }
+
+    /// Hover a window and click it: captured on its own, with its rounded corners and shadow.
+    func captureWindow() {
+        begin(mode: .window)
+    }
+
+    /// Captures the whole display under the pointer.
+    func captureFullscreen() {
+        let layout = displays.layout
+        guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
+        let app = NSWorkspace.shared.frontmostApplication?.localizedName
+        Task {
+            let probe = LatencyProbe("capture.fullscreen")
+            do {
+                let frame = try await capturer.captureDisplay(display)
+                probe.end()
+                await deliver(frame, appName: app)
+            } catch {
+                Log.capture.error("Fullscreen capture failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// Captures a region and delivers it, as the overlay does after a drag. Also used by scripted checks.
+    /// - Parameter copiesToClipboard: false leaves the clipboard alone whatever the settings say, so
+    ///   scripted test captures never replace what the user copied.
+    func captureRegion(_ rect: CGRect, on display: DisplayInfo, appName: String?, copiesToClipboard: Bool = true) async {
+        let probe = LatencyProbe("capture.region")
+        do {
+            let frame = try await capturer.captureRegion(rect, on: display)
+            probe.end()
+            await deliver(frame, appName: appName, copiesToClipboard: copiesToClipboard)
+        } catch {
+            Log.capture.error("Region capture failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    // MARK: Saving
+
+    /// Saves a copy of a capture to the export location under the file-name template.
+    func save(_ item: QuickAccessItem) -> URL? {
+        do {
+            let directory = settings.exportDirectory
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let name = item.fileURL.deletingPathExtension().lastPathComponent
+            let destination = ImageExporter.availableURL(in: directory, name: name, format: .png)
+            try FileManager.default.copyItem(at: item.fileURL, to: destination)
+            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
+            return destination
+        } catch {
+            Log.capture.error("Saving failed: \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
+            return nil
+        }
+    }
+
+    /// Asks where to save a copy.
+    func saveAs(_ item: QuickAccessItem) -> URL? {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = item.fileURL.lastPathComponent
+        panel.directoryURL = settings.exportDirectory
+        panel.allowedContentTypes = [.png]
+        NSApp.activate()
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        do {
+            if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+                try FileManager.default.removeItem(at: url)
+            }
+            try FileManager.default.copyItem(at: item.fileURL, to: url)
+            return url
+        } catch {
+            Log.capture.error("Save As failed: \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
+            return nil
+        }
+    }
+
+    // MARK: Private
+
+    private func begin(mode: OverlayController.Mode) {
+        guard !overlay.isActive else { return }
+        let app = NSWorkspace.shared.frontmostApplication?.localizedName
+        overlay.freezesScreen = settings.freezeScreen
+        overlay.begin(mode: mode) { [weak self] outcome in
+            switch outcome {
+            case .region(let rect, let display):
+                Task { await self?.captureRegion(rect, on: display, appName: app) }
+            case .window(let target):
+                Task { await self?.captureWindow(target) }
+            case .cancelled:
+                break
+            }
+        }
+    }
+
+    private func captureWindow(_ target: WindowTarget) async {
+        let probe = LatencyProbe("capture.window")
+        do {
+            let frame = try await capturer.captureWindow(target, shadow: true, layout: displays.layout)
+            probe.end()
+            await deliver(frame, appName: target.ownerName)
+        } catch {
+            Log.capture.error("Window capture failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func deliver(_ frame: CapturedFrame, appName: String?, copiesToClipboard: Bool = true) async {
+        if settings.playSounds { shutter?.play() }
+        let probe = LatencyProbe("capture.deliver")
+        do {
+            let png = try await ImageExporter.encode(frame.image, as: .png)
+            let name = FilenameTemplate.standard.name(date: .now, appName: appName)
+            let entry = try history.add(
+                data: png,
+                name: name,
+                fileExtension: ImageExporter.Format.png.fileExtension,
+                kind: .screenshot,
+                pixelWidth: frame.image.width,
+                pixelHeight: frame.image.height,
+                appName: appName
+            )
+            if copiesToClipboard, settings.copyAfterCapture {
+                PasteboardWriter.write(png: png, image: frame.image)
+            }
+            var item = QuickAccessItem(
+                id: entry.id,
+                fileURL: history.fileURL(for: entry),
+                thumbnail: await HistoryStore.thumbnail(of: png, maxPixels: 560) ?? frame.image,
+                pixelWidth: frame.image.width,
+                pixelHeight: frame.image.height,
+                displayID: frame.displayID,
+                createdAt: entry.createdAt
+            )
+            if settings.saveAfterCapture {
+                item.savedURL = save(item)
+            }
+            probe.end()
+            Log.capture.notice("Captured \(frame.image.width, privacy: .public)x\(frame.image.height, privacy: .public) into history as \(entry.fileName, privacy: .public)")
+            onCaptured?(item)
+        } catch {
+            Log.capture.error("Keeping the capture failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+}

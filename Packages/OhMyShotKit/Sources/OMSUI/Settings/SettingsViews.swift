@@ -8,8 +8,11 @@ private let formWidth: CGFloat = 520
 
 struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
+    let openHistory: () -> Void
+    let expiredCount: (HistoryRetention) -> Int
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginItemError: String?
+    @State private var retentionRequest: RetentionChangeRequest?
 
     var body: some View {
         Form {
@@ -40,6 +43,67 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                Toggle(isOn: $settings.copyAfterCapture) {
+                    Text("Copy to the clipboard", bundle: .module)
+                }
+                Toggle(isOn: $settings.showQuickAccess) {
+                    Text("Show Quick Access", bundle: .module)
+                    Text("A card in the corner of the screen to copy, save, or drag the capture into another app.", bundle: .module)
+                }
+                Toggle(isOn: $settings.saveAfterCapture) {
+                    Text("Save automatically", bundle: .module)
+                }
+                LabeledContent {
+                    Button {
+                        chooseExportDirectory()
+                    } label: {
+                        Text("Choose…", bundle: .module)
+                    }
+                } label: {
+                    Text("Save to", bundle: .module)
+                    Text(exportPath)
+                }
+            } header: {
+                Text("After capturing", bundle: .module)
+            } footer: {
+                if !settings.copyAfterCapture, !settings.showQuickAccess, !settings.saveAfterCapture {
+                    Label {
+                        if settings.historyRetention == .never {
+                            Text("With all three off and history set to Never, captures are not kept anywhere.", bundle: .module)
+                        } else {
+                            Text("With all three off, captures go only to Capture History.", bundle: .module)
+                        }
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                Picker(selection: retentionSelection(settings: settings, expiredCount: expiredCount, request: $retentionRequest)) {
+                    ForEach(HistoryRetention.allCases, id: \.self) { retention in
+                        Text(retention.title).tag(retention)
+                    }
+                } label: {
+                    Text("Keep captures for", bundle: .module)
+                    Text(retentionDescription)
+                }
+                LabeledContent {
+                    Button(action: openHistory) {
+                        Text("Open Capture History…", bundle: .module)
+                    }
+                } label: {
+                    EmptyView()
+                }
+            } header: {
+                Text("Capture History", bundle: .module)
+            }
+            Section {
+                Toggle(isOn: $settings.freezeScreen) {
+                    Text("Freeze the screen while selecting", bundle: .module)
+                    Text("Keeps hover states and open menus in place until the capture is taken.", bundle: .module)
+                }
                 Toggle(isOn: $settings.playSounds) {
                     Text("Play sounds", bundle: .module)
                 }
@@ -49,6 +113,37 @@ struct GeneralSettingsView: View {
         .scrollDisabled(true)
         .frame(width: formWidth)
         .fixedSize(horizontal: false, vertical: true)
+        .confirmingRetentionChange($retentionRequest) { retention in
+            settings.historyRetention = retention
+        }
+    }
+}
+
+extension GeneralSettingsView {
+    fileprivate var retentionDescription: String {
+        settings.historyRetention == .never
+            ? String(localized: "Captures are deleted when their Quick Access card closes, unless you saved them.", bundle: .module)
+            : String(localized: "Captures stay on this Mac until then, ready to restore to Quick Access. Choosing a shorter time, or Never, deletes older captures right away.", bundle: .module)
+    }
+
+    fileprivate var exportPath: String {
+        var path = settings.exportDirectory.path(percentEncoded: false)
+        if path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        let home = NSHomeDirectory()
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+    }
+
+    fileprivate func chooseExportDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = settings.exportDirectory
+        panel.prompt = String(localized: "Choose", bundle: .module)
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.exportDirectory = url
+        }
     }
 }
 

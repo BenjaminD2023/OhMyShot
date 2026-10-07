@@ -10,6 +10,7 @@ public enum Log {
 
     public static let app = Logger(subsystem: subsystem, category: "app")
     public static let automation = Logger(subsystem: subsystem, category: "automation")
+    public static let capture = Logger(subsystem: subsystem, category: "capture")
     public static let display = Logger(subsystem: subsystem, category: "display")
     public static let hotkeys = Logger(subsystem: subsystem, category: "hotkeys")
     public static let performance = Logger(subsystem: subsystem, category: "performance")

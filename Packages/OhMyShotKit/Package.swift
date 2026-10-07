@@ -14,6 +14,7 @@ let package = Package(
     platforms: [.macOS(.v26)],
     products: [
         .library(name: "OMSCore", targets: ["OMSCore"]),
+        .library(name: "OMSCapture", targets: ["OMSCapture"]),
         .library(name: "OMSUI", targets: ["OMSUI"]),
     ],
     dependencies: [
@@ -26,6 +27,12 @@ let package = Package(
             name: "OMSCore",
             swiftSettings: swiftSettings
         ),
+        // ScreenCaptureKit, the selection overlay, window catalog, selection model. Main-actor by default.
+        .target(
+            name: "OMSCapture",
+            dependencies: ["OMSCore"],
+            swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
+        ),
         // Menu bar, settings, onboarding, shortcuts. Main-actor by default.
         .target(
             name: "OMSUI",
@@ -37,6 +44,11 @@ let package = Package(
             name: "OMSCoreTests",
             dependencies: ["OMSCore"],
             swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "OMSCaptureTests",
+            dependencies: ["OMSCapture"],
+            swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
     ]
 )

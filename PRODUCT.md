@@ -26,7 +26,7 @@ CleanShot X's completeness, plus a document-grade on-device OCR pipeline (layout
 
 ## Operating Context
 
-Lives in the menu bar and is summoned by global shortcuts dozens of times a day. Two capture flows: CleanShot-style by default (a floating thumbnail after each capture, the editor on demand) and in-place annotation (a toolbar beside the selection) on its own shortcut. Output goes to the clipboard, Finder, chat apps, documents, and issue trackers. OCR targets code, documents, papers, chat screenshots, and Chinese, Japanese, and Korean interfaces.
+Lives in the menu bar and is summoned by global shortcuts dozens of times a day. Two capture flows: CleanShot-style by default and in-place annotation (a toolbar beside the selection) on its own shortcut. In the default flow a capture is copied to the clipboard and shown as a Quick Access card in the corner of the screen; nothing is written to the Desktop or any folder until the user saves it (or turns on saving after capture), and the card leads on to the editor. Every capture and recording is also kept in Capture History for a retention the user picks (never, 1 day, 3 days, 1 week by default, 1 month), from where it can be restored to Quick Access. Output goes to the clipboard, Finder, chat apps, documents, and issue trackers. OCR targets code, documents, papers, chat screenshots, and Chinese, Japanese, and Korean interfaces.
 
 ## Capabilities and Constraints
 
@@ -43,9 +43,11 @@ Lives in the menu bar and is summoned by global shortcuts dozens of times a day.
 
 Name: OhMyShot. It collides with an existing product (ohmyshot.app); the user accepted that risk.
 
+Look and feel: native macOS at CleanShot X's level of craft: bright, soft, and rounded. System colors and materials, continuous-corner cards with soft shadows, white capsules for readings and actions, Liquid Glass only on small HUDs. The user set this direction on 2026-10-07 after rejecting the first visual world ("Contact Sheet": dark film-edge strip, numbered frames joined into one strip, darkroom accents) as hard, heavy, and Linux-like. Frame numbers, joined strips, and darkroom motifs stay out.
+
 ## Evidence on Hand
 
-None yet: no logo, screenshots, copy, or measurements. Do not invent user counts, benchmark numbers, or competitive comparisons; publish only numbers that were measured.
+No logo or marketing copy yet. Measured latency and idle-power numbers are recorded in `Docs/perf.md`; publish only those, and do not invent user counts, benchmark numbers, or competitive comparisons.
 
 ## Product Principles
 

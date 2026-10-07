@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import KeyboardShortcuts
 
 /// The menu bar icon and its menu.
 ///
@@ -10,22 +11,44 @@ public final class StatusItemController {
     public struct Entry {
         public let title: String
         public let keyEquivalent: String
+        /// A global shortcut to show beside the title.
+        public let shortcut: CaptureShortcut?
+        /// Checked each time the menu opens; the entry is dimmed when it returns false.
+        public let isEnabled: (() -> Bool)?
         public let perform: () -> Void
 
-        public init(title: String, keyEquivalent: String = "", perform: @escaping () -> Void) {
+        public init(
+            title: String,
+            keyEquivalent: String = "",
+            shortcut: CaptureShortcut? = nil,
+            isEnabled: (() -> Bool)? = nil,
+            perform: @escaping () -> Void
+        ) {
             self.title = title
             self.keyEquivalent = keyEquivalent
+            self.shortcut = shortcut
+            self.isEnabled = isEnabled
             self.perform = perform
         }
     }
 
     private var statusItem: NSStatusItem?
     private let menuTarget = MenuTarget()
+    private let captureEntries: [Entry]
+    private let historyEntries: [Entry]
     private let openSettings: () -> Void
     private let quit: () -> Void
     private let debugEntries: [Entry]
 
-    public init(openSettings: @escaping () -> Void, quit: @escaping () -> Void, debugEntries: [Entry] = []) {
+    public init(
+        captureEntries: [Entry],
+        historyEntries: [Entry] = [],
+        openSettings: @escaping () -> Void,
+        quit: @escaping () -> Void,
+        debugEntries: [Entry] = []
+    ) {
+        self.captureEntries = captureEntries
+        self.historyEntries = historyEntries
         self.openSettings = openSettings
         self.quit = quit
         self.debugEntries = debugEntries
@@ -50,6 +73,16 @@ public final class StatusItemController {
     private func makeMenu() -> NSMenu {
         menuTarget.removeAll()
         let menu = NSMenu()
+        for group in [captureEntries, historyEntries] where !group.isEmpty {
+            for entry in group {
+                let item = menuTarget.item(for: entry)
+                if let shortcut = entry.shortcut {
+                    item.setShortcut(for: shortcut.name)
+                }
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+        }
         menu.addItem(menuTarget.item(for: Entry(
             title: String(localized: "Settings…", bundle: .module),
             keyEquivalent: ",",
@@ -78,23 +111,28 @@ public final class StatusItemController {
 }
 
 /// Runs the closure behind each menu item, found by the item's tag.
-private final class MenuTarget: NSObject {
-    private var actions: [() -> Void] = []
+private final class MenuTarget: NSObject, NSMenuItemValidation {
+    private var entries: [StatusItemController.Entry] = []
 
     func item(for entry: StatusItemController.Entry) -> NSMenuItem {
         let item = NSMenuItem(title: entry.title, action: #selector(run(_:)), keyEquivalent: entry.keyEquivalent)
         item.target = self
-        item.tag = actions.count
-        actions.append(entry.perform)
+        item.tag = entries.count
+        entries.append(entry)
         return item
     }
 
     func removeAll() {
-        actions.removeAll()
+        entries.removeAll()
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard entries.indices.contains(menuItem.tag) else { return true }
+        return entries[menuItem.tag].isEnabled?() ?? true
     }
 
     @objc private func run(_ sender: NSMenuItem) {
-        guard actions.indices.contains(sender.tag) else { return }
-        actions[sender.tag]()
+        guard entries.indices.contains(sender.tag) else { return }
+        entries[sender.tag].perform()
     }
 }

@@ -3,7 +3,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-APP=$(Scripts/build.sh Debug | tail -1)
+# Capture the build output first: a pipe would hide a failed build and relaunch the old binary.
+OUTPUT=$(Scripts/build.sh Debug) || { echo "Build failed." >&2; exit 1; }
+APP=$(printf '%s\n' "$OUTPUT" | tail -1)
 NAME=$(basename "$APP" .app)
 
 if pgrep -x "$NAME" >/dev/null; then

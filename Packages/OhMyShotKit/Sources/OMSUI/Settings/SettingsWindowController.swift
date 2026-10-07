@@ -37,12 +37,24 @@ public struct SettingsDependencies {
     public let permissions: PermissionCenter
     public let urlScheme: String
     public let relaunch: () -> Void
+    public let openHistory: () -> Void
+    /// How many captures a retention would delete now, so Settings can ask before shortening it.
+    public let expiredCount: (HistoryRetention) -> Int
 
-    public init(settings: SettingsStore, permissions: PermissionCenter, urlScheme: String, relaunch: @escaping () -> Void) {
+    public init(
+        settings: SettingsStore,
+        permissions: PermissionCenter,
+        urlScheme: String,
+        relaunch: @escaping () -> Void,
+        openHistory: @escaping () -> Void,
+        expiredCount: @escaping (HistoryRetention) -> Int
+    ) {
         self.settings = settings
         self.permissions = permissions
         self.urlScheme = urlScheme
         self.relaunch = relaunch
+        self.openHistory = openHistory
+        self.expiredCount = expiredCount
     }
 }
 
@@ -103,7 +115,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private static func makeContent(for tab: SettingsTab, dependencies: SettingsDependencies) -> NSViewController {
         switch tab {
         case .general:
-            host(GeneralSettingsView(settings: dependencies.settings))
+            host(GeneralSettingsView(settings: dependencies.settings, openHistory: dependencies.openHistory, expiredCount: dependencies.expiredCount))
         case .shortcuts:
             host(ShortcutsSettingsView())
         case .permissions:

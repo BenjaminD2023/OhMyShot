@@ -33,3 +33,34 @@ primary, built-in XDR in a scaled mode). The app sat in the menu bar with no win
   This is within the after-use budget; surfaces that are always on (status item, overlay) stay AppKit.
 - **Signposts are not persisted** unless a tool records them, so latency is logged by `LatencyProbe` as
   persisted `latency <name> <ms> ms` notices, which `Scripts/latency.sh` reads.
+
+## M1 — capture core, Quick Access, Capture History (2026-10-07)
+
+Same machine and build type as M0. Latencies come from `LatencyProbe` notices; the overlay numbers are
+50 scripted runs (`ohmyshot-dev://debug/bench-overlay?n=50`, then `Scripts/latency.sh overlay.visible 2m
+io.github.fzlzjerry.ohmyshot.dev`).
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Hotkey → overlay visible (`overlay.visible`) | p50 6.9 ms, p95 9.8 ms, max 13.2 ms | p95 < 50 ms |
+| Hotkey → frozen frame under the pointer (`overlay.frozen`) | p50 43.3 ms, p95 47.7 ms, max 61.9 ms | p95 < 150 ms |
+| Full-display capture, 6880×2880 | p50 26.8 ms, p95 41.8 ms | — |
+| Full-display capture, XDR 4112×2658 | p50 24.2 ms, p95 26.3 ms | — |
+| Region capture, 400×300 pt → 800×600 px (`capture.region`) | 31–43 ms | — |
+| Encode PNG, write to history, make the card thumbnail (`capture.deliver`) | 23–25 ms | — |
+| Idle after captures, Quick Access cards, and Capture History opened and closed | 0.00% CPU, 0 wakeups in 60 s, 40 MB | 0.0%, < 60, < 60 MB |
+| Live resources while a card and the history window are open / after closing them | `window=2` / none | none when idle |
+
+### Findings
+
+- **Commit the overlay's reset before ordering its panels in.** The panels are reused between sessions;
+  ordering them in before the reset layers were committed could show a frame of the previous selection.
+  With that flush and the native redesign together, `overlay.visible` went from p50 4.6 / p95 7.4 ms to
+  p50 6.9 / p95 9.8 ms. The two changes were not measured apart; the flush is the likelier cost, since it
+  commits every display's layers before the first panel appears.
+- **ScreenCaptureKit leaks about 290 bytes per screenshot** (176 + 112 bytes allocated by
+  `CGRectCreateDictionaryRepresentation` inside `SCScreenshotManager`). The allocations are in the
+  framework, not in OhMyShot; at dozens of captures a day this is negligible, and it is tracked here in
+  case a later macOS fixes or worsens it.
+- **Quick Access motion leaves nothing running.** Card fades and stack reflows use Core Animation plus one
+  one-shot sleep per change to finish the motion; no timer repeats, and idle wakeups stay at zero.

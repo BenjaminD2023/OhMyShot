@@ -7,6 +7,13 @@ CONFIGURATION=${1:-Debug}
 
 [ -d OhMyShot.xcodeproj ] || Scripts/bootstrap.sh
 
+# The repository can live in a file-provider folder (iCloud Desktop & Documents), which tags existing
+# bundles with Finder info that codesign then rejects ("resource fork, Finder information, or similar
+# detritus not allowed"); clear it from earlier builds first.
+for app in "build/Build/Products/$CONFIGURATION"/*.app; do
+  if [ -d "$app" ]; then xattr -cr "$app"; fi
+done
+
 xcodebuild \
   -project OhMyShot.xcodeproj \
   -scheme OhMyShot \

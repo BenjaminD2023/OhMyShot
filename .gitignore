@@ -15,8 +15,10 @@ Config/Signing.local.xcconfig
 xcuserdata/
 *.xcuserstate
 
-# Impeccable machine-local settings
+# Impeccable machine-local settings, and review captures (they show whatever was on screen)
 .impeccable/config.local.json
+.impeccable/review/
+.impeccable/questions/
 
 # macOS
 .DS_Store

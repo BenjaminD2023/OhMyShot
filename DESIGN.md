@@ -1,0 +1,312 @@
+---
+name: OhMyShot
+description: Native macOS capture, bright and soft, with the capture as the hero and the chrome receding.
+colors:
+  system-accent: "AccentColor"
+  white: "#FFFFFF"
+  selection-outline: "rgba(0,0,0,0.32)"
+  selection-outline-contrast: "rgba(0,0,0,0.7)"
+  room-dim: "rgba(0,0,0,0.26)"
+  room-dim-contrast: "rgba(0,0,0,0.45)"
+  loupe-grid: "rgba(0,0,0,0.08)"
+  reading-capsule-light: "rgba(255,255,255,0.96)"
+  reading-capsule-dark: "rgba(43,43,46,0.94)"
+  reading-ink-light: "rgba(0,0,0,0.85)"
+  reading-ink-dark: "rgba(255,255,255,0.92)"
+  reading-border-light: "rgba(0,0,0,0.08)"
+  reading-border-dark: "rgba(255,255,255,0.12)"
+  swatch-border-light: "rgba(0,0,0,0.3)"
+  swatch-border-dark: "rgba(255,255,255,0.38)"
+  chip-selected-light: "rgba(0,0,0,0.08)"
+  chip-selected-dark: "rgba(255,255,255,0.16)"
+  chip-hover-light: "rgba(0,0,0,0.045)"
+  chip-hover-dark: "rgba(255,255,255,0.09)"
+  action-white: "#F7F7F7"
+  action-white-hover: "#FFFFFF"
+  action-white-pressed: "#D6D6D6"
+  action-ink: "#1A1A1A"
+  corner-button: "rgba(0,0,0,0.5)"
+  corner-button-hover: "rgba(0,0,0,0.62)"
+  corner-button-pressed: "rgba(0,0,0,0.72)"
+  scrim-floating: "rgba(0,0,0,0.22)"
+  scrim-window: "rgba(0,0,0,0.28)"
+  picture-border-light: "rgba(0,0,0,0.10)"
+  picture-border-dark: "rgba(255,255,255,0.16)"
+  media-badge: "rgba(0,0,0,0.55)"
+typography:
+  reading:
+    fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
+    fontSize: "12px"
+    fontWeight: 600
+    fontFeature: "\"tnum\" 1"
+  control-label:
+    fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
+    fontSize: "12px"
+    fontWeight: 500
+  control-label-selected:
+    fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
+    fontSize: "12px"
+    fontWeight: 600
+  action-label:
+    fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
+    fontSize: "13px"
+    fontWeight: 600
+  title:
+    fontFamily: "SF Pro, system-ui"
+    fontSize: "15px"
+    fontWeight: 600
+  body:
+    fontFamily: "SF Pro, system-ui"
+    fontSize: "13px"
+    fontWeight: 400
+  callout:
+    fontFamily: "SF Pro, system-ui"
+    fontSize: "12px"
+    fontWeight: 400
+  caption:
+    fontFamily: "SF Pro, system-ui"
+    fontSize: "10px"
+    fontWeight: 400
+rounded:
+  card: "12px"
+  capsule: "9999px"
+spacing:
+  chip-gap: "2px"
+  edge: "6px"
+  inset: "8px"
+  offset: "10px"
+  card-gap: "12px"
+  stack-margin: "18px"
+  grid-gap: "20px"
+  window-inset: "24px"
+  panel-padding: "28px"
+components:
+  reading-capsule-light:
+    backgroundColor: "{colors.reading-capsule-light}"
+    textColor: "{colors.reading-ink-light}"
+    typography: "{typography.reading}"
+    rounded: "{rounded.capsule}"
+    padding: "0 11px"
+  reading-capsule-dark:
+    backgroundColor: "{colors.reading-capsule-dark}"
+    textColor: "{colors.reading-ink-dark}"
+    typography: "{typography.reading}"
+    rounded: "{rounded.capsule}"
+    padding: "0 11px"
+  bar-chip:
+    typography: "{typography.control-label}"
+    rounded: "{rounded.capsule}"
+    height: "30px"
+    width: "84px"
+  bar-chip-selected-light:
+    backgroundColor: "{colors.chip-selected-light}"
+    typography: "{typography.control-label-selected}"
+    rounded: "{rounded.capsule}"
+    height: "30px"
+  bar-chip-selected-dark:
+    backgroundColor: "{colors.chip-selected-dark}"
+    typography: "{typography.control-label-selected}"
+    rounded: "{rounded.capsule}"
+    height: "30px"
+  card-action-button:
+    backgroundColor: "{colors.action-white}"
+    textColor: "{colors.action-ink}"
+    typography: "{typography.action-label}"
+    rounded: "{rounded.capsule}"
+    width: "112px"
+    height: "30px"
+  card-action-button-hover:
+    backgroundColor: "{colors.action-white-hover}"
+  card-action-button-pressed:
+    backgroundColor: "{colors.action-white-pressed}"
+  card-corner-button:
+    backgroundColor: "{colors.corner-button}"
+    textColor: "{colors.white}"
+    rounded: "{rounded.capsule}"
+    size: "24px"
+  card-corner-button-hover:
+    backgroundColor: "{colors.corner-button-hover}"
+  card-corner-button-pressed:
+    backgroundColor: "{colors.corner-button-pressed}"
+  capture-card:
+    rounded: "{rounded.card}"
+    width: "220px"
+  history-card:
+    rounded: "{rounded.card}"
+    height: "150px"
+  media-badge:
+    backgroundColor: "{colors.media-badge}"
+    textColor: "{colors.white}"
+    typography: "{typography.caption}"
+    rounded: "{rounded.capsule}"
+    padding: "3px 7px"
+---
+
+# Design System: OhMyShot
+
+## Overview
+
+**Creative North Star: "The Part of macOS Apple Forgot to Ship"**
+
+OhMyShot looks like a system feature, not an app with a brand. Light and dark follow the system, the accent is the user's own macOS accent, and every window is a standard window with standard controls. What the app adds is a thin, consistent layer of softness for the things that float over other people's screens: continuous-corner cards, fully round capsules, gentle downward shadows, opaque white action capsules, and the rounded system face with fixed-width digits for every live reading. The capture is the hero; the chrome recedes.
+
+Density is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, Quick Access cards, Capture History, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.
+
+The confirmed rejection is the first world, "Contact Sheet" (rejected by the user on 2026-10-07): no frame numbers, no captures joined into one strip, no film-edge or darkroom motifs, no dark heavy panels, nothing that reads as a Linux utility.
+
+Units: every dimension in this file is in points. The frontmatter writes points as `px` for tool compatibility; 1 pt renders as 2 device pixels on Retina displays.
+
+**Key Characteristics:**
+- System semantic colors and the user's accent carry all appearance; literal values are only black or white at fixed opacities.
+- Continuous corners everywhere: 12 pt cards, fully round capsules for every control and reading.
+- Soft, downward, widely blurred shadows; never a hard edge or a halo.
+- SF Pro Rounded with monospaced digits for readings; plain system text styles inside windows.
+- Liquid Glass only on small controls (the All-In-One bar, History hover buttons, the History toolbar), never over a full-screen frame.
+- Motion is a single short ease-out or nothing; under Reduce Motion it is nothing.
+
+## Colors
+
+A system-colored world: macOS semantic colors and the user's accent do the work, and the app's own values are neutral black and white at stated opacities.
+
+### Primary
+- **The User's Accent** (`AccentColor`, AppKit `controlAccentColor`): the only hue the app ever uses for state. It marks the selected mode's symbol in the All-In-One bar, the center cell outline in the loupe, and the 3 pt selection ring around a selected Capture History card. It is never a fill behind text and never a brand color; OhMyShot has no brand hue.
+
+### Neutral
+- **System surfaces** (`windowBackgroundColor`, `controlBackgroundColor`, SwiftUI `.background.secondary`): the opaque backing inside the All-In-One glass, the Reduce Transparency capsule, the letterbox behind a Quick Access picture, and the placeholder behind a History thumbnail. These follow light and dark automatically; no hex is recorded because none exists.
+- **System ink** (`labelColor`, `.secondary`, `.tertiary`, `separatorColor`): all window text, bar labels, the empty-state symbol (tertiary), the bar's hairline edge, and History card borders.
+- **White** (#FFFFFF): the 1.5 pt selection border, the crosshair, and the loupe rim and fill. White reads on the dimmed screen; the dark outline underneath makes it read on white pages.
+- **Selection Outline** (black at 0.32, 0.7 with Increase Contrast): a 3.5 pt stroke under the white edge and the crosshair, so the white line holds on light content.
+- **Room Dimming** (black at 0.26, 0.45 with Increase Contrast): the flat fill over the screen outside the selection. Light enough that the screen stays readable.
+- **Reading Capsule** (white at 0.96 in Light; a near-neutral 0.17 gray at 0.94 in Dark): the fill of every on-screen reading, with ink at 0.85 black or 0.92 white and a 0.5 pt border at 0.08 black or 0.12 white.
+- **Action White** (#F7F7F7, #FFFFFF on hover, #D6D6D6 pressed, ink #1A1A1A): the opaque Copy and Save capsules over a hovered Quick Access card. They stay white in both appearances because they sit on a picture, not on chrome.
+- **Corner Button** (black at 0.5, 0.62 on hover, 0.72 pressed, white symbol): the small round Close and More buttons on a hovered card.
+- **Scrims** (black at 0.22 over floating Quick Access cards; black at 0.28 over in-window History cards): the hover dimming that lets white or glass controls read on any picture.
+- **Picture Border** (black at 0.10 in Light, white at 0.16 in Dark, 0.5 pt): the edge of a Quick Access picture.
+- **Saved green** (`systemGreen` with a white glyph): the saved badge on a card, the one non-accent hue, used only as a status mark.
+
+### Named Rules
+**The No Brand Hue Rule.** The accent is whatever the user chose in System Settings. Never hard-code a blue, never tint a surface toward a house color.
+
+**The Black-and-White Opacity Rule.** Every literal color the app introduces is pure black or white at a stated opacity (or the single 0.17 gray of the Dark reading capsule). New surfaces reuse these steps before inventing a tint.
+
+**The Resolve-Per-Appearance Rule.** Layer colors do not follow appearance changes on their own; every layer-drawn color is resolved for the view's effective appearance and re-resolved when it changes.
+
+## Typography
+
+**Display Font:** none; OhMyShot has no display tier.
+**Body Font:** SF Pro (the system face) via SwiftUI and AppKit text styles.
+**Label/Mono Font:** SF Pro Rounded (system font with the rounded design), with monospaced digits for readings.
+
+**Character:** The rounded face softens the few words that float over someone else's screen; the plain system face keeps windows indistinguishable from Apple's own.
+
+### Hierarchy
+- **Reading** (SF Pro Rounded semibold 600, 12 pt, monospaced digits): live numbers on screen, such as "1200 × 720", "App · W × H", and "x, y  #HEX". Fixed-width figures keep the capsule from jittering as values change.
+- **Control Label** (SF Pro Rounded medium 500, 12 pt; semibold 600 when selected): All-In-One bar labels. Symbols beside them are 13 pt medium.
+- **Action Label** (SF Pro Rounded semibold 600, 13 pt; symbol 12 pt bold): the Copy and Save capsules on a card.
+- **Title** (system `title3` semibold, 15 pt): empty-state titles in Capture History; `title2` semibold for the About and onboarding headings.
+- **Body** (system body, 13 pt): Settings rows and window text, via the grouped Form defaults.
+- **Callout** (system `callout`, 12 pt; medium for a History card's relative time): secondary explanations and empty-state messages, max width 360 pt.
+- **Caption** (system `caption`, 10 pt, secondary): a History card's "W × H · App" line; semibold with monospaced digits in the recording badge.
+
+### Named Rules
+**The Rounded-Off-Window Rule.** The rounded face is for floating controls and readings over the screen. Inside a standard window, use system text styles and never the rounded face.
+
+**The Steady Digits Rule.** Any number that changes while the user watches uses monospaced digits.
+
+## Layout
+
+There is no page grid; layout is anchored to screens, selections, and windows.
+
+- **Overlay:** the size capsule centers under the selection 10 pt below it; with no room below it tucks 10 pt inside the selection; if it would meet the All-In-One bar it lifts 10 pt above the bar. All floating readings clamp 6 pt from the display edges. The loupe sits 22 pt below-right of the pointer and flips away from the display edges; its info capsule sits 8 pt below the lens. The All-In-One bar centers horizontally 40 pt above the bottom of the display and fades out while a region is dragged.
+- **Quick Access:** a single column of separate cards, 220 pt wide, each 100 to 172 pt tall by the capture's aspect (extreme shapes letterbox). Cards are 12 pt apart inside an 18 pt margin that leaves room for their shadows; the column sits at the bottom-left of the screen's visible frame, inset 8 pt. Newest is at the bottom; the oldest card drops when the column would exceed the visible height.
+- **Card hover layout:** Copy and Save capsules stacked 8 pt apart, centered; Close and More round buttons 8 pt from the top corners; the saved badge 8 pt from the bottom-right.
+- **Capture History:** a standard 920 × 640 pt window (minimum 560 × 420) with an adaptive grid of cards 200 to 280 pt wide, 20 pt between columns, 22 pt between rows, 24 pt side insets, 20 pt top and bottom.
+- **Settings:** a preference-style window with toolbar tabs; each pane is a grouped Form 520 pt wide. Non-form panes (About) use 28 pt padding.
+- **Spacing rhythm:** 2 (bar chip gap), 6 (edge clamp, bar inset), 8 (insets), 10 (offsets from a selection), 12 (card gap), 18 (stack margin), 20 to 24 (window grid), 28 (panel padding).
+
+## Elevation & Depth
+
+Depth is soft shadow plus system materials. Floating elements over arbitrary screen content carry a diffuse downward shadow and a 0.5 pt hairline so they hold their edge on white pages; in-window elements carry a lighter shadow. Shadows always follow the element's exact rounded shape. Liquid Glass gives the All-In-One bar its rim, but its fill is opaque, so screen text never shows through a control.
+
+### Shadow Vocabulary
+- **Floating card** (black 0.22, blur radius 14, offset 6 pt downward): Quick Access cards.
+- **Floating lens** (black 0.28, blur radius 12, offset 4 pt downward): the loupe.
+- **Floating bar** (black 0.16, blur radius 10, offset 3 pt downward): the All-In-One capsule.
+- **Floating reading** (black 0.18, blur radius 8, offset 2 pt downward): reading capsules.
+- **Action lift** (black 0.18, blur radius 4, offset 1 pt downward): the white Copy and Save capsules, so they hold on bright pictures.
+- **In-window card** (black 0.12, blur radius 10, offset 4 pt downward): Capture History cards.
+
+`Theme.Shadow` also declares a 5 pt offset that no shipped surface uses; the card applies 6 pt.
+
+### Named Rules
+**The Soft Lift Rule.** Shadows are downward, widely blurred, and low opacity. No hard offset shadows, no glows, no halos.
+
+**The Small Glass Rule.** Liquid Glass appears only on small controls: the All-In-One bar, the History toolbar, and History hover buttons. The full-screen overlay is a flat dimming fill and never carries glass.
+
+**The Opaque Behind Text Rule.** Any control with text that floats over a capture or a screen has an opaque (or at least 0.94) fill. Glass supplies the rim, not the backing.
+
+## Shapes
+
+Continuous (squircle) corners throughout. Pictures and cards are 12 pt; every control, reading, and badge is a full capsule whose radius is half its height; nested controls are capsules concentric with their capsule container (the bar insets its chips by 6 pt). The History selection ring is 16 pt (card radius plus 4), drawn 5 pt outside the card so the corner stays concentric. The loupe is a circle with a 3 pt white rim; its center pixel cell has a 1.5 pt corner. The color swatch in a reading is a 10 pt square with a 5 pt radius.
+
+Hairlines are 0.5 pt (card borders, bar edge, reading capsule edge); the selection edge is 1.5 pt; Increase Contrast adds a 1 pt outline to card buttons.
+
+## Components
+
+### Buttons
+- **Card action capsule** (Copy, Save): hand-drawn opaque white capsule, 112 × 30 pt, symbol and label centered 6 pt apart, action lift shadow. Brightens to pure white on hover and drops to #D6D6D6 while pressed; fires only on release inside, like a standard button. "Copied" (1.2 s) and "Saved" swap the label and symbol to a checkmark. With Increase Contrast, a 1 pt black 0.5 outline.
+- **Card corner button** (Close, More): 24 pt dark circle, 10.5 pt bold white symbol, tooltip as label. More opens the card's menu. With Increase Contrast, a 1 pt white 0.7 outline.
+- Card buttons are drawn by hand because AppKit draws standard controls dimmed in non-key windows and the Quick Access panel never becomes key. Clicking them never brings OhMyShot forward.
+- **In windows:** standard controls only. History hover actions use `.glassProminent` (Restore, large, callout semibold) and `.glass` icon buttons (16 pt symbols); Settings uses standard toggles, pickers, and push buttons.
+
+### Chips (All-In-One bar)
+- **Style:** borderless capsule chips, 30 pt tall, at least 84 pt wide (Cancel is a 30 pt icon-only chip after a 20 pt separator), SF Symbol plus label.
+- **State:** selected = light highlight (black 0.08 / white 0.16) + accent-tinted symbol + semibold label in the label color; hover = half-strength highlight (black 0.045 / white 0.09); rest = clear.
+
+### Cards / Containers
+- **Quick Access card:** separate rounded picture, 12 pt continuous corners, 0.5 pt picture border, floating card shadow, no number or caption. Hover fades in the 0.22 scrim and the controls over 0.12 s ease-out; the saved badge hides while hovered. Click-through without activating the app, double-click to open, drag out to another app, two-finger swipe to close, right-click for the full menu.
+- **Capture History card:** cropped (aspect-fill) thumbnail 150 pt tall, 12 pt corners, 0.5 pt separator border, in-window shadow; relative time and "W × H · App" below. Hover shows the 0.28 scrim with Restore and four glass icon buttons. Selected = 3 pt accent ring 5 pt outside. Recordings carry a bottom-left play badge with the duration.
+
+### Reading Capsule (Signature)
+The rounded capsule for every on-screen number: the selection size, the window name and size, and the loupe's coordinates with color swatch and hex. Height is text height plus 9 pt, 11 pt side padding, 0.5 pt border, floating reading shadow. The swatch border is strong enough (black 0.3 / white 0.38) that a white sample still reads.
+
+### Capture Overlay (Signature)
+Softly dimmed screen; selection with a white 1.5 pt edge over a dark outline; a crosshair with a 4 pt center gap and 13 pt arms, white over the same outline; a 120 pt loupe showing 15 captured pixels across (8 pt per pixel, aligned to device pixels) with a faint 0.08 grid, an accent center cell, a white rim, and the lens shadow. Window mode drops the crosshair and loupe and highlights the hovered window.
+
+### All-In-One Bar (Signature)
+A Liquid Glass capsule with an opaque window-colored backing inside, a 0.5 pt separator hairline, and the floating bar shadow. With Reduce Transparency it is a solid window-colored capsule with the same hairline.
+
+### Navigation
+- **Capture History toolbar:** a SwiftUI toolbar bridged into a unified window toolbar: segmented Show filter (All, Screenshots, Recordings), a "Keep for …" menu, and Move All to Trash. Empty states are filter-aware (a 40 pt light tertiary symbol, title3 title, callout message).
+- **Keyboard:** arrows select, Return restores, Space opens Quick Look; ⌘C, ⌘S, and ⌘⌫ arrive as commands through an invisible main menu and are disabled with nothing selected.
+- **Settings:** preference toolbar tabs; grouped sections such as "After capturing" and "Capture History".
+- **Status menu:** grouped capture commands, then Capture History and Restore Recently Closed.
+- **Destructive confirmations** state the count and consequence and name the action ("Delete 3 Captures"; "This can't be undone.").
+
+### Motion
+- Cards slide in 36 pt from the screen edge with a fade over 0.22 s ease-out; the stack reflows over 0.22 s ease-out; a dismissed card slides 40 pt left and fades. Hover fades take 0.12 s ease-out. History scrolls to a new selection over 0.15 s ease-out.
+- Under Reduce Motion all of these are instant. Nothing trails the pointer: overlay layers update without animation. The two durations live in `Theme.Motion` (`slide` 0.22 s, `fade` 0.12 s).
+
+### Future Surfaces
+The annotation editor, OCR HUD, recording controls, and pins are not built. They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.
+
+## Do's and Don'ts
+
+### Do:
+- **Do** use system semantic colors and `controlAccentColor` for every surface and state; add only black or white at the stated opacities.
+- **Do** make every floating control a full capsule (radius = height / 2) with concentric inner chips, and every picture a 12 pt continuous-corner card.
+- **Do** give floating elements a soft downward shadow plus a 0.5 pt hairline so they hold on white pages.
+- **Do** put live numbers in a reading capsule: SF Pro Rounded 12 pt semibold with monospaced digits.
+- **Do** keep text-bearing controls opaque over captures; use glass for the rim, not the fill.
+- **Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt button outlines.
+- **Do** use standard windows, toolbars, grouped Forms, and SwiftUI glass button styles inside windows.
+- **Do** hand-draw controls only where AppKit would render them dimmed (non-key floating panels), and make them track presses like standard buttons.
+
+### Don't:
+- **Don't** bring back Contact Sheet: no frame numbers, no captures joined into a strip, no film-edge or darkroom motifs.
+- **Don't** build dark heavy panels, bars, or strips; small dark round corner buttons over a hovered picture are the only dark chrome.
+- **Don't** put glass, blur, or a material over the full-screen overlay; the room is a flat 26% fill.
+- **Don't** use hard offset shadows, glows, or halos.
+- **Don't** use the rounded face inside standard windows, or proportional digits in a changing number.
+- **Don't** invent a brand hue or tint chrome toward one.
+- **Don't** animate anything that follows the pointer, or run any motion under Reduce Motion.
