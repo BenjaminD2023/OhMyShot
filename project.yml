@@ -1,0 +1,44 @@
+# XcodeGen spec. Generate the project with Scripts/bootstrap.sh; never edit the .xcodeproj by hand.
+# Target build settings live in Config/*.xcconfig, so the generated project carries none of its own.
+
+name: OhMyShot
+options:
+  deploymentTarget:
+    macOS: "26.0"
+  developmentLanguage: en
+  settingPresets: project
+  groupSortPosition: top
+
+packages:
+  OhMyShotKit:
+    path: Packages/OhMyShotKit
+
+targets:
+  OhMyShot:
+    type: application
+    platform: macOS
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    sources:
+      - path: App
+        type: syncedFolder
+      - path: Config
+        buildPhase: none
+    dependencies:
+      - package: OhMyShotKit
+        product: OMSCore
+      - package: OhMyShotKit
+        product: OMSUI
+
+schemes:
+  OhMyShot:
+    build:
+      targets:
+        OhMyShot: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    archive:
+      config: Release

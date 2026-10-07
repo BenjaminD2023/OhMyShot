@@ -1,0 +1,37 @@
+// Settings shared by every configuration of the OhMyShot app target.
+
+PRODUCT_NAME = OhMyShot
+PRODUCT_MODULE_NAME = OhMyShot
+OMS_BUNDLE_ID_PREFIX = io.github.fzlzjerry
+PRODUCT_BUNDLE_IDENTIFIER = $(OMS_BUNDLE_ID_PREFIX).ohmyshot
+OMS_URL_SCHEME = ohmyshot
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 26.0
+ARCHS = arm64
+
+INFOPLIST_FILE = Config/Info.plist
+GENERATE_INFOPLIST_FILE = NO
+CODE_SIGN_ENTITLEMENTS = Config/OhMyShot.entitlements
+ENABLE_HARDENED_RUNTIME = YES
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+DEAD_CODE_STRIPPING = YES
+COMBINE_HIDPI_IMAGES = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+
+SWIFT_VERSION = 6.0
+SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor
+SWIFT_APPROACHABLE_CONCURRENCY = YES
+SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES
+SWIFT_EMIT_LOC_STRINGS = YES
+LOCALIZATION_PREFERS_STRING_CATALOGS = YES
+
+// Ad-hoc signing unless Signing.local.xcconfig names a team. Ad-hoc builds lose the
+// Screen Recording permission on every rebuild; see Signing.local.xcconfig.example.
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+#include? "Signing.local.xcconfig"

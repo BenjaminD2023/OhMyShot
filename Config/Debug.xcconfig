@@ -1,0 +1,15 @@
+// Debug builds are a separate app ("OhMyShot Dev") with their own bundle identifier,
+// URL scheme, permissions, and default shortcuts, so they can run beside a release build.
+
+#include "Base.xcconfig"
+
+PRODUCT_NAME = OhMyShot Dev
+PRODUCT_BUNDLE_IDENTIFIER = $(OMS_BUNDLE_ID_PREFIX).ohmyshot.dev
+OMS_URL_SCHEME = ohmyshot-dev
+
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+GCC_OPTIMIZATION_LEVEL = 0
+ONLY_ACTIVE_ARCH = YES
+ENABLE_TESTABILITY = YES
+DEBUG_INFORMATION_FORMAT = dwarf

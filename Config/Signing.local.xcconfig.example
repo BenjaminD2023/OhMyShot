@@ -1,0 +1,11 @@
+// Copy this file to Signing.local.xcconfig (ignored by git) to sign with your own certificate.
+//
+// macOS ties the Screen Recording permission to the code signature. A stable Apple Development
+// identity keeps the permission across rebuilds; ad-hoc signing loses it every time.
+// A free personal team is enough. Find your team ID in Xcode › Settings › Accounts.
+
+DEVELOPMENT_TEAM = YOURTEAMID
+CODE_SIGN_IDENTITY = Apple Development
+
+// Optional: build under your own bundle identifier prefix.
+// OMS_BUNDLE_ID_PREFIX = io.github.yourname
