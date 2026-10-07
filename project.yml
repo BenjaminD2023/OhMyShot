@@ -32,6 +32,8 @@ targets:
         product: OMSCapture
       - package: OhMyShotKit
         product: OMSUI
+      - package: OhMyShotKit
+        product: OMSOCR
 
 schemes:
   OhMyShot:

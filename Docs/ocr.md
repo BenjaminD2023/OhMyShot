@@ -117,5 +117,8 @@ Still open:
   structure when a table is wanted.
 - **Recognition errors no rule can fix**: `->` read as `>`, a dropped `的`, shortcut glyphs such as
   `⌘⇧4`, emoji. These are for the model packs (L2/L3).
-- **Cold start**: measure the first call inside the app, and decide whether to warm the model when the
-  Capture Text overlay opens.
+- **Cold start, measured in the app**: the first recognition after a relaunch took 315 ms against
+  290 ms warm, so a process pays only about 25 ms. The very first recognition ever made by the app took
+  more than 10 s (two attempts timed out at 10 s); the system prepares the model once for a new client.
+  Capture Text therefore warms the model while the person is selecting and allows 30 s per request,
+  keeping the selection highlighted meanwhile.

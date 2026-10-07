@@ -16,6 +16,13 @@ public final class OverlayController {
         case cancelled
     }
 
+    /// What the capture is for: a screenshot, or text to copy. Text gets a lighter overlay: no All-In-One
+    /// bar (its modes are screenshot modes), no dimming, no magnifier or readings, the system crosshair.
+    public enum Purpose: Sendable {
+        case screenshot
+        case text
+    }
+
     public enum Mode: Sendable {
         case area
         case window
@@ -23,6 +30,7 @@ public final class OverlayController {
 
     /// Hold the screen still while selecting, so hover states and menus can be captured.
     public var freezesScreen = false
+    private var hidesCursor = false
 
     public private(set) var isActive = false
 
@@ -63,7 +71,7 @@ public final class OverlayController {
         }
     }
 
-    public func begin(mode: Mode = .area, completion: @escaping (Outcome) -> Void) {
+    public func begin(mode: Mode = .area, purpose: Purpose = .screenshot, completion: @escaping (Outcome) -> Void) {
         guard !isActive else { return }
         let visible = LatencyProbe("overlay.visible")
         let frozen = LatencyProbe("overlay.frozen")
@@ -85,7 +93,11 @@ public final class OverlayController {
         windows = mode == .window ? WindowCatalog.snapshot(layout: layout) : []
         let viewMode: OverlayView.Mode = mode == .window ? .window : .area
         for (id, entry) in entries {
-            entry.view.reset(pointer: pointer, mode: viewMode, windows: windows, showsToolbar: id == pointerDisplay?.id)
+            entry.view.reset(
+                pointer: pointer, mode: viewMode, windows: windows,
+                showsToolbar: id == pointerDisplay?.id && purpose == .screenshot,
+                purpose: purpose
+            )
         }
         // The panels are reused: the reset layers are committed before any panel is ordered in, so none
         // shows a frame of its previous session.
@@ -95,7 +107,9 @@ public final class OverlayController {
         }
         if let id = pointerDisplay?.id, let view = entries[id]?.view {
             NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
-                .announcement: String(localized: "Drag to capture an area, or press Space to capture a window."),
+                .announcement: purpose == .text
+                    ? String(localized: "Drag over text to copy it, or press Space to choose a window.")
+                    : String(localized: "Drag to capture an area, or press Space to capture a window."),
                 .priority: NSAccessibilityPriorityLevel.high.rawValue,
             ])
         }
@@ -103,13 +117,18 @@ public final class OverlayController {
             entry.panel.makeKey()
             entry.panel.makeFirstResponder(entry.view)
         }
-        NSCursor.hide()
+        // A screenshot draws its own crosshair and magnifier; copying text keeps the system crosshair.
+        hidesCursor = purpose == .screenshot
+        if hidesCursor { NSCursor.hide() }
         CATransaction.flush()
         visible.end()
         windowLease = ActiveResources.shared.acquire(.window)
 
         let session = self.session
-        let ordered = [pointerDisplay].compactMap(\.self) + layout.displays.filter { $0.id != pointerDisplay?.id }
+        // Text without freezing shows no frame, but the pointer display's still arrives first: it tells
+        // the watchdog that capturing works.
+        let others = purpose == .text && !freezesScreen ? [] : layout.displays.filter { $0.id != pointerDisplay?.id }
+        let ordered = [pointerDisplay].compactMap(\.self) + others
         Task { [weak self] in
             await self?.loadFrames(for: ordered, session: session, probe: frozen)
         }
@@ -173,7 +192,8 @@ public final class OverlayController {
             entry.panel.orderOut(nil)
             entry.view.clear()
         }
-        NSCursor.unhide()
+        if hidesCursor { NSCursor.unhide() }
+        hidesCursor = false
         frameLeases.removeAll()
         windowLease = nil
         windows = []

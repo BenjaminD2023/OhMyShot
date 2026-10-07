@@ -238,6 +238,9 @@ Depth is soft shadow plus system materials. Floating elements over arbitrary scr
 
 `Theme.Shadow` also declares a 5 pt offset that no shipped surface uses; the card applies 6 pt.
 
+
+A floating panel leaves room around its card for the whole shadow to fade out: twice the blur plus the drop (34 pt for the floating card shadow). A shadow cut off at the panel's edge reads as a hard rectangle.
+
 ### Named Rules
 **The Soft Lift Rule.** Shadows are downward, widely blurred, and low opacity. No hard offset shadows, no glows, no halos.
 
@@ -270,6 +273,17 @@ Hairlines are 0.5 pt (card borders, bar edge, reading capsule edge); the selecti
 ### Reading Capsule (Signature)
 The rounded capsule for every on-screen number: the selection size, the window name and size, and the loupe's coordinates with color swatch and hex. Height is text height plus 9 pt, 11 pt side padding, 0.5 pt border, floating reading shadow. The swatch border is strong enough (black 0.3 / white 0.38) that a white sample still reads.
 
+### Text Selection (Capture Text)
+Copying text gets a lighter overlay than a screenshot: no dimming, no magnifier, no readings, no All-In-One bar, and the system crosshair instead of a drawn one. The selection (or the hovered window, after Space) is drawn like selected text: the system's text-selection color for the current appearance, filled at 0.35 (0.45 in Dark), edged with a 1 pt line in the accent (2 pt under Increase Contrast), on whole points. When the mouse is released, the same highlight takes over in place, at the overlay's level, click-through and without taking focus, while the text is read; if reading takes over a second it breathes slowly (opacity 1 to 0.5, 0.9 s each way; not under Reduce Motion). It fades over 0.35 s once the text is on the clipboard; with nothing to read it fades in 0.15 s with the system beep. VoiceOver hears the count or "No text found". That is the whole feedback by default.
+
+### Text Result Card
+An optional card after Capture Text (off by default; Settings › General › Capture Text), floating by the selection without taking focus: 10 pt below it, or above it when there is no room, and 8 pt from the screen's edges. It uses the reading capsule's materials at card size: a 12 pt continuous-corner card filled white 0.97 (Dark: 0.17 gray at 0.96), a 0.5 pt hairline (1 pt at black 0.35 / white 0.5 under Increase Contrast), and the floating card shadow. Width follows the selection between 300 and 420 pt.
+
+- **Layout:** one column for everything but the symbol, which hangs to its left (a white check in a green disc for copied, a quiet magnifier for nothing found). The header row holds the title, the character count in the rounded reading face at the right in secondary ink, and a 24 pt close button. Below it, up to three lines of the copied text in label ink, truncated, then the line-break chip.
+- **Chips:** buttons on a card are hand-drawn tinted capsules, 26 pt tall, black 0.06 (Dark: white 0.10), stronger on hover (×1.7) and press (×2.6), with label-colored symbol and text; the close button is the same tint in a 24 pt circle. AppKit would draw standard controls dimmed, since the card's panel never becomes key.
+- **States:** *copied* stays 4 s; *nothing found* stays 2.5 s with a one-line hint. Hovering holds the card; with VoiceOver on, it stays 20 s so its buttons can be reached. VoiceOver announces the count or the empty result (also when the card is off).
+- **Count:** every character a paste contains, with singular and plural forms.
+
 ### Capture Overlay (Signature)
 Softly dimmed screen; selection with a white 1.5 pt edge over a dark outline; a crosshair with a 4 pt center gap and 13 pt arms, white over the same outline; a 120 pt loupe showing 15 captured pixels across (8 pt per pixel, aligned to device pixels) with a faint 0.08 grid, an accent center cell, a white rim, and the lens shadow. Window mode drops the crosshair and loupe and highlights the hovered window.
 
@@ -285,10 +299,12 @@ A Liquid Glass capsule with an opaque window-colored backing inside, a 0.5 pt se
 
 ### Motion
 - Cards slide in 36 pt from the screen edge with a fade over 0.22 s ease-out; the stack reflows over 0.22 s ease-out; a dismissed card slides 40 pt left and fades. Hover fades take 0.12 s ease-out. History scrolls to a new selection over 0.15 s ease-out.
+- The text selection highlight fades out over 0.35 s once the text is copied (0.15 s when there was none).
+- The optional text result card fades in over 0.22 s with a 6 pt rise of its layer (never of its window, whose size can change mid-animation), and fades out over 0.12 s.
 - Under Reduce Motion all of these are instant. Nothing trails the pointer: overlay layers update without animation. The two durations live in `Theme.Motion` (`slide` 0.22 s, `fade` 0.12 s).
 
 ### Future Surfaces
-The annotation editor, OCR HUD, recording controls, and pins are not built. They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.
+The annotation editor, the OCR panel, recording controls, and pins are not built. They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.
 
 ## Do's and Don'ts
 

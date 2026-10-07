@@ -100,6 +100,17 @@ struct GeneralSettingsView: View {
                 Text("Capture History", bundle: .module)
             }
             Section {
+                Toggle(isOn: $settings.showTextResult) {
+                    Text("Show a preview after copying", bundle: .module)
+                    Text("A card by the selection with the copied text and a switch for its line breaks.", bundle: .module)
+                }
+            } header: {
+                Text("Capture Text", bundle: .module)
+            } footer: {
+                Text("Languages follow your preferred languages in System Settings.", bundle: .module)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle(isOn: $settings.freezeScreen) {
                     Text("Freeze the screen while selecting", bundle: .module)
                     Text("Keeps hover states and open menus in place until the capture is taken.", bundle: .module)

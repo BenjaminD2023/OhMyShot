@@ -64,3 +64,25 @@ io.github.fzlzjerry.ohmyshot.dev`).
   case a later macOS fixes or worsens it.
 - **Quick Access motion leaves nothing running.** Card fades and stack reflows use Core Animation plus one
   one-shot sleep per change to finish the motion; no timer repeats, and idle wakeups stay at zero.
+
+## M2 — Capture Text (2026-10-08)
+
+Same machine, one display (the built-in XDR) attached. A 400×300 pt region of text recognized by the L1
+pipeline inside the app, read with `Scripts/latency.sh ocr.recognize` and `Scripts/power-sample.sh`.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Recognition (`ocr.recognize`), warm | 290–365 ms | < 300 ms for a region of about 1000×600 px |
+| First recognition after a relaunch | 315 ms | — |
+| First recognition the app ever made | over 10 s (the system prepares the model once) | — |
+| Memory during recognition / one second after | 223 MB / 61–70 MB | < 60 MB after use |
+| Idle after Capture Text, its highlight faded | 0.00% CPU, 0 wakeups in 30 s, no live resources | 0.0%, < 30 |
+
+### Findings
+
+- **Recognition leaves the footprint at 61–70 MB**, against 40–43 MB after screenshots alone (M1), just
+  over the 60 MB target: Vision keeps its models loaded and has no public way to unload them.
+- **The first recognition after launch was followed by a burst of CPU** (2.7 s over the next 30 s,
+  footprint 126 MB) that settled to 0% and 70 MB; later recognitions add none. It looks like one-time
+  model preparation and is worth measuring again with Instruments.
+

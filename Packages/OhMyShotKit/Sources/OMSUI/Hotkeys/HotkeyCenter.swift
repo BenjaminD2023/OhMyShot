@@ -11,6 +11,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case allInOne
     case selfTimer
     case captureText
+    /// Capture Text with the lines of each paragraph joined.
+    case captureTextJoined
     case openHistory
     /// Copies the newest Quick Access card's capture, so it can be reached without the pointer.
     case copyLatestCapture
@@ -28,6 +30,7 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .allInOne: String(localized: "All-In-One", bundle: .module)
         case .selfTimer: String(localized: "Self-Timer", bundle: .module)
         case .captureText: String(localized: "Capture Text", bundle: .module)
+        case .captureTextJoined: String(localized: "Capture Text, Joining Lines", bundle: .module)
         case .openHistory: String(localized: "Open Capture History", bundle: .module)
         case .copyLatestCapture: String(localized: "Copy Latest Capture", bundle: .module)
         }
@@ -84,7 +87,7 @@ public final class HotkeyCenter {
         case .captureFullscreen: KeyboardShortcuts.Shortcut(.three, modifiers: modifiers)
         case .captureArea: KeyboardShortcuts.Shortcut(.four, modifiers: modifiers)
         case .allInOne: KeyboardShortcuts.Shortcut(.five, modifiers: modifiers)
-        case .captureWindow, .capturePreviousArea, .selfTimer, .openHistory, .copyLatestCapture: nil
+        case .captureWindow, .capturePreviousArea, .selfTimer, .captureTextJoined, .openHistory, .copyLatestCapture: nil
         }
     }
 }

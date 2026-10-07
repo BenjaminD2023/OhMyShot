@@ -53,6 +53,9 @@ final class OverlayView: NSView {
     private let loupeRim = CAShapeLayer()
     private let loupePill = Pill(showsSwatch: true)
     private let toolbar = AllInOneBar()
+    /// Copying text gets a lighter overlay than a screenshot: no dimming, no magnifier or readings, the
+    /// system crosshair, and a selection drawn like selected text.
+    private var purpose: OverlayController.Purpose = .screenshot
 
     init(display: DisplayInfo) {
         self.display = display
@@ -81,7 +84,7 @@ final class OverlayView: NSView {
 
     /// Starts a fresh session with the pointer at `globalPointer`. The All-In-One bar shows only on the
     /// display where the session started.
-    func reset(pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool) {
+    func reset(pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, purpose: OverlayController.Purpose = .screenshot) {
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
@@ -91,11 +94,16 @@ final class OverlayView: NSView {
         isSimulated = false
         capturedFrame = nil
         increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        self.purpose = purpose
         // The bar first: the size reading below steers clear of it.
         toolbar.isHidden = !showsToolbar
         toolbar.alphaValue = 1
         toolbar.select(mode == .area ? .area : .window)
         layoutToolbar()
+        window?.invalidateCursorRects(for: self)
+        setAccessibilityHelp(purpose == .text
+            ? String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.")
+            : String(localized: "Drag to capture an area. Press Space to capture a window instead. Press Escape to cancel."))
         withoutAnimation {
             applyAppearance()
             backdrop.contents = nil
@@ -154,6 +162,12 @@ final class OverlayView: NSView {
         layoutToolbar()
     }
 
+    /// Copying text keeps the system crosshair; a screenshot draws its own crosshair and magnifier.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if purpose == .text { addCursorRect(bounds, cursor: .crosshair) }
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         withoutAnimation { applyAppearance() }
@@ -175,13 +189,21 @@ final class OverlayView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        if purpose == .text { NSCursor.crosshair.set() }
         guard !isSimulated else { return }
         withoutAnimation { updatePointer(convert(event.locationInWindow, from: nil)) }
     }
 
     override func mouseEntered(with event: NSEvent) {
+        // Cursor rects only work in the key panel; on other displays the crosshair is set here.
+        if purpose == .text { NSCursor.crosshair.set() }
         guard !isSimulated else { return }
         withoutAnimation { updatePointer(convert(event.locationInWindow, from: nil)) }
+    }
+
+    /// The text selection's edge: 1 pt, or 2 pt with Increase Contrast so it holds over blue content.
+    static func textSelectionEdge(increasedContrast: Bool) -> CGFloat {
+        increasedContrast ? 2 : 1
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -345,7 +367,6 @@ final class OverlayView: NSView {
 
         sizePill.setScale(display.backingScale)
         loupePill.setScale(display.backingScale)
-
         for sublayer in [backdrop, room, outline, border, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer] {
             root.addSublayer(sublayer)
         }
@@ -367,6 +388,18 @@ final class OverlayView: NSView {
         let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         sizePill.applyAppearance(dark: isDark)
         loupePill.applyAppearance(dark: isDark)
+        // Text: the selection reads as selected text (the system's selection color, lightly filled,
+        // edged in the accent), over an undimmed screen. Screenshot: a white edge over a soft outline.
+        let text = purpose == .text
+        room.isHidden = text
+        outline.isHidden = text
+        border.lineWidth = text ? Self.textSelectionEdge(increasedContrast: increasedContrast) : Theme.Overlay.borderWidth
+        border.strokeColor = text ? Theme.cgColor(.controlAccentColor, for: effectiveAppearance) : .white
+        // Resolved for this appearance before the alpha is applied: applying it first fixes the
+        // dynamic color to its light value.
+        border.fillColor = text
+            ? Theme.cgColor(.selectedTextBackgroundColor, for: effectiveAppearance).copy(alpha: isDark ? 0.45 : 0.35)
+            : nil
     }
 
     private func updateSelectionLayers() {
@@ -385,7 +418,8 @@ final class OverlayView: NSView {
         roomPath.addRect(rect)
         room.path = roomPath
         let edge = CGPath(rect: rect, transform: nil)
-        border.path = edge
+        let inset = Self.textSelectionEdge(increasedContrast: increasedContrast) / 2
+        border.path = purpose == .text ? CGPath(rect: rect.integral.insetBy(dx: inset, dy: inset), transform: nil) : edge
         outline.path = edge
 
         let text: String
@@ -399,8 +433,9 @@ final class OverlayView: NSView {
             text = "\(size.width) × \(size.height)"
         }
         sizePill.text = text
-        sizePill.layer.isHidden = false
-        setAccessibilityValue(text)
+        sizePill.layer.isHidden = purpose == .text
+        // Text mode has no readings; a hovered window is named, without its size.
+        setAccessibilityValue(purpose == .text ? (mode == .window ? hoveredWindow?.ownerName : nil) : text)
         // Centered under the selection; tucked inside when there is no room below, and lifted above the
         // All-In-One bar rather than covered by it (a window that fills the screen puts it right there).
         let pillSize = sizePill.layer.bounds.size
@@ -426,7 +461,7 @@ final class OverlayView: NSView {
             pointerLayers.forEach { $0.isHidden = true }
             return
         }
-        guard let point else {
+        guard let point, purpose == .screenshot else {
             pointerLayers.forEach { $0.isHidden = true }
             return
         }

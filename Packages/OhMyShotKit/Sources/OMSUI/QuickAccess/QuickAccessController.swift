@@ -148,15 +148,17 @@ public final class QuickAccessController {
     private func present(entering: UUID?, on displayID: CGDirectDisplayID) {
         let screen = NSScreen.screens.first { $0.cgDirectDisplayID == displayID } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        let inset: CGFloat = 8
-        while CardStackView.height(for: items) > visible.height - inset * 2, items.count > 1 {
+        // Cards sit 26 pt from the screen's edges; the panel reaches past them by the shadow's margin.
+        let edge: CGFloat = 26
+        let margin = CardStackView.margin
+        while CardStackView.height(for: items) - margin * 2 > visible.height - edge * 2, items.count > 1 {
             close(items.removeFirst())
         }
         let stack = self.stack ?? makeStack()
         guard let panel else { return }
         let frame = CGRect(
-            x: visible.minX + inset,
-            y: visible.minY + inset,
+            x: visible.minX + edge - margin,
+            y: visible.minY + edge - margin,
             width: CardStackView.width,
             height: CardStackView.height(for: items)
         )

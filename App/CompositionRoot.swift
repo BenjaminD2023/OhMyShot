@@ -19,6 +19,7 @@ final class CompositionRoot {
     private lazy var overlay = OverlayController(topology: displays, capturer: capturer)
     private lazy var captures = CaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history)
     private lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions())
+    private lazy var textCapture = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
     private let hotkeys: HotkeyCenter
     private let urlScheme: String
     private var statusItem: StatusItemController?
@@ -43,6 +44,7 @@ final class CompositionRoot {
                 .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
                 .init(title: String(localized: "Capture Window"), shortcut: .captureWindow) { [weak self] in self?.handle(.captureWindow) },
                 .init(title: String(localized: "Capture Fullscreen"), shortcut: .captureFullscreen) { [weak self] in self?.handle(.captureFullscreen) },
+                .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
             ],
             historyEntries: [
                 .init(title: String(localized: "Capture History…"), shortcut: .openHistory) { [weak self] in self?.showHistory() },
@@ -159,6 +161,10 @@ final class CompositionRoot {
             captures.captureFullscreen()
         case .captureWindow:
             captures.captureWindow()
+        case .captureText:
+            textCapture.captureText(joinLines: false)
+        case .captureTextJoined:
+            textCapture.captureText(joinLines: true)
         default:
             Log.hotkeys.notice("Not available yet: \(shortcut.rawValue, privacy: .public)")
         }
@@ -176,6 +182,12 @@ final class CompositionRoot {
             captures.captureFullscreen()
         case .captureWindow:
             captures.captureWindow()
+        case .captureText(nil, let region, let lineBreaks) where region.rect == nil:
+            guard permissions.status(of: .screenRecording) == .granted else {
+                showOnboarding()
+                return
+            }
+            textCapture.captureText(joinLines: lineBreaks == false)
         case .openHistory:
             showHistory()
         case .restoreRecentlyClosed:
@@ -367,7 +379,8 @@ final class CompositionRoot {
             setRetention: { [weak self] retention in self?.settings.historyRetention = retention },
             historyWindow: { [weak self] in self?.historyWindow?.window },
             historyCount: { [weak self] in self?.history.items().count ?? 0 },
-            previewRetentionChange: { [weak self] retention in self?.historyWindow?.previewRetentionChange(to: retention) }
+            previewRetentionChange: { [weak self] retention in self?.historyWindow?.previewRetentionChange(to: retention) },
+            textCapture: textCapture
         )
     }
     #endif

@@ -68,6 +68,33 @@ struct TextAssemblerTests {
         #expect(text == "func run() {\n    return nil\n}")
     }
 
+    private func boxed(_ text: String, x: CGFloat = 0, y: CGFloat, width: CGFloat) -> OCRLine {
+        OCRLine(text: text, box: CGRect(x: x, y: y, width: width, height: 20), confidence: 1)
+    }
+
+    @Test func aFullLineThatDoesNotEndASentenceWraps() {
+        let lines = [
+            boxed("截图完成后，卡片会出现在屏幕的左下", y: 0, width: 400),
+            boxed("角，可以直接拖到其他应用里。", y: 26, width: 260),
+            boxed("下一段从这里开始。", y: 52, width: 180),
+        ]
+        #expect(TextAssembler.inferredWraps(lines) == [true, false, false])
+        #expect(TextAssembler.assemble(lines, options: .init(joinsWrappedLines: true))
+            == "截图完成后，卡片会出现在屏幕的左下角，可以直接拖到其他应用里。\n下一段从这里开始。")
+    }
+
+    @Test func shortLinesIndentsAndParagraphGapsDoNotWrap() {
+        let lines = [
+            boxed("Title", y: 0, width: 80),
+            boxed("A body line that reaches the right edge of the", y: 26, width: 400),
+            boxed("paragraph and goes on here.", y: 52, width: 230),
+            boxed("Indented next paragraph starts", x: 40, y: 78, width: 360),
+            boxed("Far below after a gap of a blank line and more", y: 140, width: 400),
+            boxed("text", y: 166, width: 40),
+        ]
+        #expect(TextAssembler.inferredWraps(lines) == [false, true, false, false, true, false])
+    }
+
     @Test func wrappedLinesJoinWithoutSpacesInChineseAndWithSpacesInEnglish() {
         #expect(TextAssembler.joinWrapped(["截图完成后，卡片会", "出现在屏幕左下角。"], wraps: [true, false]) == "截图完成后，卡片会出现在屏幕左下角。")
         #expect(TextAssembler.joinWrapped(["Press Copy to put the", "capture on the clip-", "board."], wraps: [true, true, false]) == "Press Copy to put the capture on the clipboard.")

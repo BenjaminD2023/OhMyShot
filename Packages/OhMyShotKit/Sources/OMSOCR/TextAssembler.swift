@@ -22,7 +22,8 @@ public enum TextAssembler {
             return String(repeating: " ", count: indent) + text
         }
         guard options.joinsWrappedLines, !isCode else { return texts.joined(separator: "\n") }
-        return joinWrapped(texts, wraps: lines.map { $0.wrapsToNextLine ?? false })
+        let inferred = inferredWraps(lines)
+        return joinWrapped(texts, wraps: zip(lines, inferred).map { line, guess in line.wrapsToNextLine ?? guess })
     }
 
     // MARK: Code
@@ -139,6 +140,36 @@ public enum TextAssembler {
     }
 
     // MARK: Paragraphs
+
+    /// Whether each line runs on into the next, judged from the layout, for engines that do not say
+    /// (Vision's line recognizer never does). A line wraps when it reaches across nearly its whole
+    /// paragraph, does not end a sentence, and the next line starts at the same left edge without extra
+    /// space between them; an indented next line starts a new paragraph.
+    static func inferredWraps(_ lines: [OCRLine]) -> [Bool] {
+        guard lines.count > 1 else { return lines.map { _ in false } }
+        let heights = lines.map(\.box.height).sorted()
+        let lineHeight = heights[heights.count / 2]
+        let enders: Set<Character> = ["。", "！", "？", ".", "!", "?", "：", ":", "；", ";", "…"]
+        let closers: Set<Character> = ["”", "」", "』", "\"", "'", ")", "）"]
+        return lines.indices.map { index in
+            guard index + 1 < lines.count else { return false }
+            let line = lines[index]
+            let next = lines[index + 1]
+            let sameLeft = abs(next.box.minX - line.box.minX) < lineHeight * 0.8
+            let gap = next.box.minY - line.box.maxY
+            guard sameLeft, gap >= -lineHeight * 0.3, gap < lineHeight * 0.9 else { return false }
+            // The paragraph's right edge: the widest of the neighboring lines that share this left edge.
+            let neighbors = lines.indices
+                .filter { abs($0 - index) <= 3 && abs(lines[$0].box.minX - line.box.minX) < lineHeight * 0.8 }
+            let rightEdge = neighbors.map { lines[$0].box.maxX }.max() ?? line.box.maxX
+            let width = rightEdge - line.box.minX
+            guard width > 0, line.box.maxX - line.box.minX >= width * 0.85 else { return false }
+            let trimmed = line.text.trimmingCharacters(in: .whitespaces)
+            var last = trimmed.last
+            if let character = last, closers.contains(character) { last = trimmed.dropLast().last }
+            return !(last.map(enders.contains) ?? true)
+        }
+    }
 
     /// Joins each line that wraps onto the next: nothing between CJK, a space between words, and a word
     /// broken with a hyphen put back together.

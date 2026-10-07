@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import Testing
 @testable import OMSOCR
 
@@ -33,5 +34,21 @@ struct ReadingOrderTests {
             line("right", 100, 0, width: 20, height: 200, direction: .topToBottom),
         ]
         #expect(ReadingOrder.sorted(lines).map(\.text) == ["right", "left"])
+    }
+
+    @Test func preferredLanguagesPickThePrimaryModel() {
+        func primary(_ identifiers: [String]) -> String? {
+            VisionPipeline.Options.preferred(identifiers).primaryLanguages.first?.minimalIdentifier
+        }
+        #expect(primary(["zh-Hans-CN", "en-US"]) == "zh")
+        #expect(primary(["en-US", "zh-Hant-TW"]) == "zh-TW")
+        #expect(primary(["zh-HK"]) == "zh-TW")
+        #expect(primary(["ja-JP"]) == "ja")
+        #expect(primary(["en-US"]) == "zh")
+    }
+
+    @Test func koreanGetsAFallbackPassOnlyWhenPreferred() {
+        #expect(VisionPipeline.Options.preferred(["zh-Hans-CN"]).fallbackLanguages.map { $0.map(\.minimalIdentifier) } == [["en"]])
+        #expect(VisionPipeline.Options.preferred(["ko-KR", "en-US"]).fallbackLanguages.map { $0.map(\.minimalIdentifier) } == [["ko", "en"], ["en"]])
     }
 }

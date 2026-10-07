@@ -50,6 +50,12 @@ public final class SettingsStore {
         didSet { defaults.set(exportDirectory.path(percentEncoded: false), forKey: Key.exportDirectory) }
     }
 
+    /// After Capture Text: also show a card with what was copied. Off by default: the selection's
+    /// highlight fading out says the text is on the clipboard.
+    public var showTextResult: Bool {
+        didSet { defaults.set(showTextResult, forKey: Key.showTextResult) }
+    }
+
     /// Hold the screen still while selecting, so hover states and open menus can be captured.
     public var freezeScreen: Bool {
         didSet { defaults.set(freezeScreen, forKey: Key.freezeScreen) }
@@ -67,6 +73,7 @@ public final class SettingsStore {
             Key.saveAfterCapture: false,
             Key.showQuickAccess: true,
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
+            Key.showTextResult: false,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
@@ -79,6 +86,7 @@ public final class SettingsStore {
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
+        showTextResult = defaults.bool(forKey: Key.showTextResult)
     }
 
     private enum Key {
@@ -92,5 +100,6 @@ public final class SettingsStore {
         static let saveAfterCapture = "saveAfterCapture"
         static let showQuickAccess = "showQuickAccess"
         static let historyRetention = "historyRetention"
+        static let showTextResult = "showTextResult"
     }
 }

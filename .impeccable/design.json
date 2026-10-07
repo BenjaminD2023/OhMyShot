@@ -301,6 +301,16 @@
         "name": "copied-feedback",
         "value": "1.2s hold",
         "purpose": "Copy capsule shows Copied before reverting."
+      },
+      {
+        "name": "text-card-rise",
+        "value": "0.22s ease-out, translateY(6pt) and opacity 0 to 1; fade out 0.12s",
+        "purpose": "The text result card arriving by the selection; the layer moves, never the window. Instant under Reduce Motion."
+      },
+      {
+        "name": "text-selection-fade",
+        "value": "0.35s ease-in to opacity 0 (0.15s when nothing was found)",
+        "purpose": "The selection highlight after Capture Text, once the text is on the clipboard. Instant under Reduce Motion."
       }
     ]
   },
@@ -360,6 +370,22 @@
       "description": "Selection over the 26% dimmed room: white 1.5 pt edge over a 0.32 black outline, size reading centered 10 pt below.",
       "html": "<div class=\"ds-room\"><div class=\"ds-sel\"></div><div class=\"ds-sel-size\">1200 × 720</div></div>",
       "css": ".ds-room{position:relative;width:320px;height:200px;background:linear-gradient(135deg,#F4F6F8,#DDE3EA);overflow:hidden;} .ds-sel{position:absolute;left:60px;top:40px;width:200px;height:110px;border:1.5px solid #FFFFFF;box-shadow:0 0 0 1px rgba(0,0,0,0.32),inset 0 0 0 1px rgba(0,0,0,0.32),0 0 0 9999px rgba(0,0,0,0.26);} .ds-sel-size{position:absolute;left:50%;top:162px;transform:translateX(-50%);height:24px;line-height:24px;padding:0 11px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family: 'SF Pro Rounded', ui-rounded, system-ui, sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;}"
+    },
+    {
+      "name": "Text Result Card",
+      "kind": "custom",
+      "refersTo": "reading-capsule-light",
+      "description": "Optional (off by default) card after Capture Text by the selection: symbol hanging left of one column with the title, the count in the rounded reading face, up to three lines of the copied text in label ink, and a tinted line-break chip; a 24 pt tinted close circle. Light shown; Dark uses rgba(43,43,46,0.96) fill and white ink.",
+      "html": "<div class=\"ds-text-card\"><div class=\"ds-text-card-head\"><span class=\"ds-text-card-check\">✓</span><b>Copied</b><span class=\"ds-text-card-count\">121 characters</span><span class=\"ds-chip-icon\">×</span></div><div class=\"ds-text-card-body\">截图完成后，卡片会出现在屏幕左下角。<br>Press Copy to put the capture on the clipboard.</div><span class=\"ds-chip\">⇥ Join Lines</span></div>",
+      "css": ".ds-text-card{width:380px;padding:14px 14px 14px 39px;position:relative;border-radius:12px;background:rgba(255,255,255,0.97);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 6px 14px rgba(0,0,0,0.22);font-family:system-ui,sans-serif;color:rgba(0,0,0,0.85);} .ds-text-card-head{display:flex;align-items:center;gap:8px;height:24px;font-size:13px;} .ds-text-card-check{position:absolute;left:14px;width:18px;height:18px;border-radius:9px;background:#34C759;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;} .ds-text-card-count{margin-left:auto;color:rgba(0,0,0,0.5);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;font-size:12px;font-variant-numeric:tabular-nums;} .ds-text-card-body{margin-top:4px;font-size:12px;line-height:15px;} .ds-chip{display:inline-flex;align-items:center;margin-top:10px;height:26px;padding:0 11px;border-radius:9999px;background:rgba(0,0,0,0.06);font-size:12px;font-weight:500;} .ds-chip-icon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:12px;background:rgba(0,0,0,0.06);font-size:12px;}"
+    },
+    {
+      "name": "Text Selection",
+      "kind": "custom",
+      "refersTo": "accent",
+      "description": "Capture Text's selection and its after-release highlight: the system text-selection color filled at 0.35 (0.45 Dark) with a 1 pt accent edge, over an undimmed screen with the system crosshair.",
+      "html": "<div class=\"ds-text-selection\"></div>",
+      "css": ".ds-text-selection{width:240px;height:80px;background:rgba(179,215,255,0.35);border:1px solid #007AFF;}"
     }
   ],
   "narrative": {

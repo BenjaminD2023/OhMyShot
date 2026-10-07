@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import Vision
 
@@ -414,5 +415,57 @@ enum Spacing {
         if Script.isCJK(a) && Script.isLatinOrDigit(b) || Script.isLatinOrDigit(a) && Script.isCJK(b) { return true }
         guard Script.isLatinOrDigit(a), Script.isLatinOrDigit(b) else { return false }
         return a.isNumber != b.isNumber
+    }
+}
+
+extension VisionPipeline.Options {
+    /// Options for a person's preferred languages, most preferred first (`Locale.preferredLanguages`
+    /// gives identifiers such as `zh-Hans-CN`): the first Chinese or Japanese language leads the primary
+    /// pass (Simplified Chinese when none is preferred), Korean gets a fallback pass when it is
+    /// preferred, and English is always the last resort.
+    public static func preferred(_ identifiers: [String] = Locale.preferredLanguages) -> Self {
+        let english = Locale.Language(identifier: "en-US")
+        let languages = identifiers.map { Locale.Language(identifier: Locale.Language(identifier: $0).maximalIdentifier) }
+        let cjk = languages.first { $0.languageCode == .chinese || $0.languageCode == .japanese }
+        let primary: Locale.Language = switch (cjk?.languageCode, cjk?.script) {
+        case (.japanese?, _): Locale.Language(identifier: "ja-JP")
+        case (.chinese?, .hanTraditional?): Locale.Language(identifier: "zh-Hant")
+        default: Locale.Language(identifier: "zh-Hans")
+        }
+        var fallbacks: [[Locale.Language]] = []
+        if languages.contains(where: { $0.languageCode == .korean }) {
+            fallbacks.append([Locale.Language(identifier: "ko-KR"), english])
+        }
+        fallbacks.append([english])
+        return Self(primaryLanguages: [primary, english], fallbackLanguages: fallbacks)
+    }
+}
+
+extension VisionPipeline {
+    /// Loads the primary model before the first real request by reading a few rendered characters (a
+    /// blank image might never reach the recognizer). Run it while the person is still selecting.
+    @concurrent
+    public func prewarm() async {
+        guard let image = Self.warmupImage() else { return }
+        _ = try? await readLines(in: image, languages: options.primaryLanguages)
+    }
+
+    private static func warmupImage() -> CGImage? {
+        let width = 240
+        let height = 64
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return nil }
+        context.setFillColor(gray: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let font = CTFontCreateUIFontForLanguage(.system, 28, "zh-Hans" as CFString) ?? CTFontCreateWithName("Helvetica" as CFString, 28, nil)
+        let text = NSAttributedString(string: "文字 Text", attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1),
+        ])
+        context.textPosition = CGPoint(x: 16, y: 20)
+        CTLineDraw(CTLineCreateWithAttributedString(text), context)
+        return context.makeImage()
     }
 }
