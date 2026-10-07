@@ -16,6 +16,7 @@ let package = Package(
         .library(name: "OMSCore", targets: ["OMSCore"]),
         .library(name: "OMSCapture", targets: ["OMSCapture"]),
         .library(name: "OMSUI", targets: ["OMSUI"]),
+        .library(name: "OMSOCR", targets: ["OMSOCR"]),
     ],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", .upToNextMinor(from: "3.1.0")),
@@ -40,9 +41,20 @@ let package = Package(
             resources: [.process("Resources")],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
+        // Text recognition engines and what turns their output into text. Pure computation: not tied to
+        // the main actor, so recognition and post-processing never block the UI.
+        .target(
+            name: "OMSOCR",
+            swiftSettings: swiftSettings
+        ),
         .testTarget(
             name: "OMSCoreTests",
             dependencies: ["OMSCore"],
+            swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "OMSOCRTests",
+            dependencies: ["OMSOCR"],
             swiftSettings: swiftSettings
         ),
         .testTarget(

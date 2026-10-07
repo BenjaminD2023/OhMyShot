@@ -1,0 +1,133 @@
+{
+  "cases" : {
+    "chat-bubbles" : {
+      "cerContent" : 0.5,
+      "cerRaw" : 0.5,
+      "lineOrder" : 0.75
+    },
+    "code-swift" : {
+      "cerContent" : 0.8391608391608392,
+      "cerRaw" : 0.8457300275482094,
+      "indentation" : 0.1,
+      "lineOrder" : 0.3
+    },
+    "code-swift-plain" : {
+      "cerContent" : 0.01824817518248175,
+      "cerRaw" : 0.12893982808022922,
+      "indentation" : 0.1111111111111111,
+      "lineOrder" : 0.6666666666666666
+    },
+    "code-yaml" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.1895424836601307,
+      "indentation" : 0.3,
+      "lineOrder" : 0.9
+    },
+    "dark-ui" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.10526315789473684,
+      "lineOrder" : 0.6666666666666666
+    },
+    "en-ui" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.0072992700729927005,
+      "lineOrder" : 0.6
+    },
+    "en-zh-word" : {
+      "cerContent" : 0.06153846153846154,
+      "cerRaw" : 0.06493506493506493,
+      "lineOrder" : 1
+    },
+    "ja" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.02912621359223301,
+      "lineOrder" : 1
+    },
+    "ko" : {
+      "cerContent" : 0,
+      "cerRaw" : 0,
+      "lineOrder" : 1
+    },
+    "multilingual" : {
+      "cerContent" : 0.13636363636363635,
+      "cerRaw" : 0.152,
+      "lineOrder" : 0.8
+    },
+    "small-11px" : {
+      "cerContent" : 0,
+      "cerRaw" : 0,
+      "lineOrder" : 1
+    },
+    "small-13px" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.019230769230769232,
+      "lineOrder" : 1
+    },
+    "small-16px" : {
+      "cerContent" : 0,
+      "cerRaw" : 0,
+      "lineOrder" : 1
+    },
+    "small-20px" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.019230769230769232,
+      "lineOrder" : 1
+    },
+    "small-24px" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.038461538461538464,
+      "lineOrder" : 1
+    },
+    "small-30px" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.038461538461538464,
+      "lineOrder" : 1
+    },
+    "small-9px" : {
+      "cerContent" : 0.023809523809523808,
+      "cerRaw" : 0.04,
+      "lineOrder" : 1
+    },
+    "table-en" : {
+      "cerContent" : 0,
+      "cerRaw" : 0,
+      "lineOrder" : 1,
+      "tableCells" : 1,
+      "tableShape" : true
+    },
+    "table-zh" : {
+      "cerContent" : 0.041666666666666664,
+      "cerRaw" : 0.03225806451612903,
+      "lineOrder" : 0.9333333333333333,
+      "tableCells" : 0.8666666666666667,
+      "tableShape" : true
+    },
+    "vertical-zh" : {
+      "cerContent" : 0,
+      "cerRaw" : 0,
+      "lineOrder" : 1
+    },
+    "zh-doc" : {
+      "cerContent" : 0.034782608695652174,
+      "cerRaw" : 0.03305785123966942,
+      "lineOrder" : 1
+    },
+    "zh-en-chat" : {
+      "cerContent" : 0.05232558139534884,
+      "cerRaw" : 0.07692307692307693,
+      "lineOrder" : 1
+    },
+    "zh-hant" : {
+      "cerContent" : 0.013157894736842105,
+      "cerRaw" : 0.012658227848101266,
+      "lineOrder" : 1
+    },
+    "zh-nospace" : {
+      "cerContent" : 0.0967741935483871,
+      "cerRaw" : 0.15384615384615385,
+      "lineOrder" : 1
+    }
+  },
+  "engine" : "documents",
+  "macOS" : "27.2.0"
+}

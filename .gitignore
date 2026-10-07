@@ -2,6 +2,7 @@
 /build/
 DerivedData/
 Packages/*/.build/
+Tools/*/.build/
 Packages/*/.swiftpm/
 .swiftpm/
 

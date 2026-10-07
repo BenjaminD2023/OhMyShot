@@ -1,0 +1,163 @@
+import CoreGraphics
+import Foundation
+
+/// Turns recognized lines into the text a person would have typed: code with ASCII punctuation and its
+/// indentation, punctuation in the width its language uses, no stray spaces inside Chinese or Japanese.
+public enum TextAssembler {
+    public struct Options: Sendable {
+        /// Joins lines that wrap inside a paragraph, instead of keeping every line break.
+        public var joinsWrappedLines: Bool
+
+        public init(joinsWrappedLines: Bool = false) {
+            self.joinsWrappedLines = joinsWrappedLines
+        }
+    }
+
+    public static func assemble(_ lines: [OCRLine], options: Options = .init()) -> String {
+        guard !lines.isEmpty else { return "" }
+        let isCode = isCodeListing(lines)
+        let indents = isCode ? indentation(lines) : Array(repeating: 0, count: lines.count)
+        let texts = zip(lines, indents).map { line, indent in
+            let text = isCode || isCodeLike(line.text) ? asCode(line.text) : asProse(line.text)
+            return String(repeating: " ", count: indent) + text
+        }
+        guard options.joinsWrappedLines, !isCode else { return texts.joined(separator: "\n") }
+        return joinWrapped(texts, wraps: lines.map { $0.wrapsToNextLine ?? false })
+    }
+
+    // MARK: Code
+
+    /// A screenshot of code: most of its lines read as code.
+    static func isCodeListing(_ lines: [OCRLine]) -> Bool {
+        let codeLines = lines.filter { isCodeLike($0.text) }.count
+        return lines.count >= 2 && Double(codeLines) >= Double(lines.count) * 0.4
+    }
+
+    static func isCodeLike(_ text: String) -> Bool {
+        let trimmed = String(text.trimmingCharacters(in: .whitespaces).map { Punctuation.halfWidth[$0] ?? $0 })
+        guard !trimmed.isEmpty else { return false }
+        // A lone bracket is a line of code; comment lines belong to their code, even in Chinese.
+        if trimmed.count <= 2, trimmed.allSatisfy({ "{}[]()".contains($0) }) { return true }
+        if trimmed.hasPrefix("//") || trimmed.hasPrefix("/*") { return true }
+        let ascii = Double(trimmed.filter(\.isASCII).count) / Double(trimmed.count)
+        guard ascii > 0.8 else { return false }
+        var score = ["{", "}", "[", "]", ";", "=", "->", "=>", "::", "()", "&&", "||", "</", "/>"].filter { trimmed.contains($0) }.count
+        let patterns: [(String, Int)] = [
+            (#"^(func|let|var|const|if|else|for|while|return|guard|def|class|struct|enum|import|from|public|private|static|switch|case|try|catch|fn|pub|package|#include)\b"#, 2),
+            (#"\w\("#, 1),
+            (#"^[A-Za-z_][\w.-]*:(\s|$)"#, 2), // key: value, as in YAML
+            (#"^-\s+[A-Za-z_][\w.-]*:"#, 2), // - key: value
+        ]
+        for (pattern, weight) in patterns where trimmed.range(of: pattern, options: .regularExpression) != nil {
+            score += weight
+        }
+        return score >= 2
+    }
+
+    /// Code punctuation back to ASCII, except next to CJK, as in a Chinese comment.
+    static func asCode(_ text: String) -> String {
+        let characters = Array(text)
+        return String(characters.indices.map { index -> Character in
+            let character = characters[index]
+            guard let ascii = Punctuation.halfWidth[character] else { return character }
+            let previous = index > 0 ? characters[index - 1] : nil
+            let next = index + 1 < characters.count ? characters[index + 1] : nil
+            if previous.map(Script.isCJK) == true || next.map(Script.isCJK) == true { return character }
+            return ascii
+        })
+    }
+
+    /// Leading spaces for each line of a code listing, rebuilt from where each line starts and the width
+    /// of a character, then snapped to steps of 4 or 2 when every line allows it.
+    static func indentation(_ lines: [OCRLine]) -> [Int] {
+        let widths = lines
+            .filter { !Script.containsCJK($0.text) && $0.text.count >= 4 }
+            .map { $0.box.width / CGFloat($0.text.count) }
+            .sorted()
+        guard !widths.isEmpty else { return Array(repeating: 0, count: lines.count) }
+        let characterWidth = widths[widths.count / 2]
+        let left = lines.map(\.box.minX).min() ?? 0
+        let raw = lines.map { max(0, Int((($0.box.minX - left) / characterWidth).rounded())) }
+        for step in [4, 2] where raw.allSatisfy({ abs($0 - Int((Double($0) / Double(step)).rounded()) * step) <= 1 }) {
+            return raw.map { Int((Double($0) / Double(step)).rounded()) * step }
+        }
+        return raw
+    }
+
+    // MARK: Prose
+
+    /// Punctuation in the width its language uses, and no spaces between Chinese or Japanese characters.
+    ///
+    /// A line that is mostly Latin (each CJK character counted as two letters, about a word) is written
+    /// with half-width punctuation, except between two CJK characters: "Last file: 设计稿.png". In a
+    /// mostly CJK line, half-width marks between two CJK characters become full-width, and full-width
+    /// ones stay. "。" is never changed in a line with CJK: unlike a colon or a bracket, it looks nothing
+    /// like its half-width twin, so Vision reports what the image shows. Korean keeps its spaces: it
+    /// separates words with them.
+    static func asProse(_ text: String) -> String {
+        var characters = Array(text)
+        let hasCJK = characters.contains(where: Script.isCJK)
+        let mostlyLatin = characters.filter(Script.isLatinOrDigit).count > characters.filter(Script.isCJK).count * 2
+        for index in characters.indices {
+            let character = characters[index]
+            let previous = neighbor(of: index, in: characters, step: -1)
+            let next = neighbor(of: index, in: characters, step: 1)
+            let betweenCJK = previous.map(isSquare) == true && next.map(isSquare) == true
+            if mostlyLatin {
+                if let half = Punctuation.halfWidth[character], !betweenCJK, !(character == "。" && hasCJK) {
+                    characters[index] = half
+                }
+            } else if let full = Punctuation.fullWidth[character], betweenCJK {
+                characters[index] = full
+            }
+        }
+        var result: [Character] = []
+        for (index, character) in characters.enumerated() {
+            if character == " ", let last = result.last, isSquare(last), index + 1 < characters.count, isSquare(characters[index + 1]) {
+                continue
+            }
+            result.append(character)
+        }
+        return String(result)
+    }
+
+    /// The nearest letter, digit, or CJK character before or after `index`, skipping spaces and other
+    /// punctuation.
+    private static func neighbor(of index: Int, in characters: [Character], step: Int) -> Character? {
+        var cursor = index + step
+        while characters.indices.contains(cursor) {
+            let character = characters[cursor]
+            if character.isLetter || character.isNumber { return character }
+            cursor += step
+        }
+        return nil
+    }
+
+    /// Han or kana: the scripts written without spaces.
+    private static func isSquare(_ character: Character) -> Bool {
+        Script.isCJK(character) && !Script.isHangul(character)
+    }
+
+    // MARK: Paragraphs
+
+    /// Joins each line that wraps onto the next: nothing between CJK, a space between words, and a word
+    /// broken with a hyphen put back together.
+    static func joinWrapped(_ texts: [String], wraps: [Bool]) -> String {
+        var output = ""
+        for (index, text) in texts.enumerated() {
+            output += text
+            guard index + 1 < texts.count else { break }
+            guard wraps[index] else {
+                output += "\n"
+                continue
+            }
+            let next = texts[index + 1]
+            if output.hasSuffix("-"), let first = next.first, first.isLowercase {
+                output.removeLast()
+            } else if let last = output.last, let first = next.first, !(Script.isCJK(last) || Script.isCJK(first)) {
+                output += " "
+            }
+        }
+        return output
+    }
+}
