@@ -30,9 +30,47 @@ public struct OCRLine: Sendable, Equatable {
 /// column.
 public struct OCRTable: Sendable, Equatable {
     public var rows: [[String]]
+    /// Each cell's box in image pixels (top-left origin), row by row like `rows`; empty when unknown.
+    public var cellBoxes: [[CGRect]]
 
-    public init(rows: [[String]]) {
+    public init(rows: [[String]], cellBoxes: [[CGRect]] = []) {
         self.rows = rows
+        self.cellBoxes = cellBoxes
+    }
+
+    /// The table with each cell's text taken from `lines` wherever whole lines sit inside the cell. The
+    /// document request reads tables with a weaker model than the lines get ("价格" came back as "fitz"),
+    /// and the panel's text and table should agree. Lines that straddle cells are left out; a cell
+    /// without lines of its own keeps what the document request read.
+    public func filled(from lines: [OCRLine]) -> OCRTable {
+        guard cellBoxes.count == rows.count else { return self }
+        var filled = self
+        for (row, cells) in rows.enumerated() where cellBoxes[row].count == cells.count {
+            for column in cells.indices {
+                let cell = cellBoxes[row][column]
+                let inside = lines.filter { line in
+                    let shared = line.box.intersection(cell)
+                    guard !shared.isNull, line.box.width > 0, line.box.height > 0 else { return false }
+                    return shared.width * shared.height >= line.box.width * line.box.height * 0.75
+                }
+                guard !inside.isEmpty else { continue }
+                let ordered = inside.sorted { abs($0.box.minY - $1.box.minY) < $0.box.height / 2 ? $0.box.minX < $1.box.minX : $0.box.minY < $1.box.minY }
+                let text = ordered.map(\.text).reduce("") { text, next in
+                    guard let last = text.last, let first = next.first else { return text + next }
+                    return text + (Script.isCJK(last) || Script.isCJK(first) ? "" : " ") + next
+                }
+                // The same characters with a space the lines lost ("1 TB" read as "1TB"): Vision drops
+                // spaces far more often than it invents them. Not in Japanese, where it does invent them.
+                let read = cells[column]
+                let spaces = { (string: String) in string.filter(\.isWhitespace).count }
+                if read.filter({ !$0.isWhitespace }) == text.filter({ !$0.isWhitespace }), spaces(read) > spaces(text),
+                   !text.contains(where: Script.isKana) {
+                    continue
+                }
+                filled.rows[row][column] = text
+            }
+        }
+        return filled
     }
 }
 

@@ -4,8 +4,8 @@ import OMSCore
 import QuartzCore
 
 protocol OverlayViewDelegate: AnyObject {
-    func overlayView(_ view: OverlayView, didSelect rect: CGRect)
-    func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget)
+    func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags)
+    func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode)
     func overlayViewDidCancel(_ view: OverlayView)
 }
@@ -226,7 +226,7 @@ final class OverlayView: NSView {
         if spaceHeld, let last = lastDragPoint {
             selection.move(by: CGVector(dx: point.x - last.x, dy: point.y - last.y))
         } else {
-            selection.drag(to: point, modifiers: Self.modifiers(event.modifierFlags))
+            selection.drag(to: point, modifiers: modifiers(event.modifierFlags))
         }
         lastDragPoint = point
         // The bar steps out of the way while a region is being dragged.
@@ -239,7 +239,7 @@ final class OverlayView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         if mode == .window {
-            if let hoveredWindow { delegate?.overlayView(self, didSelectWindow: hoveredWindow) }
+            if let hoveredWindow { delegate?.overlayView(self, didSelectWindow: hoveredWindow, modifiers: event.modifierFlags) }
             return
         }
         lastDragPoint = nil
@@ -249,12 +249,12 @@ final class OverlayView: NSView {
             withoutAnimation { updateSelectionLayers() }
             return
         }
-        delegate?.overlayView(self, didSelect: rect)
+        delegate?.overlayView(self, didSelect: rect, modifiers: event.modifierFlags)
     }
 
     override func flagsChanged(with event: NSEvent) {
         guard let last = lastDragPoint, !spaceHeld else { return }
-        selection.drag(to: last, modifiers: Self.modifiers(event.modifierFlags))
+        selection.drag(to: last, modifiers: modifiers(event.modifierFlags))
         withoutAnimation { updateSelectionLayers() }
     }
 
@@ -286,7 +286,7 @@ final class OverlayView: NSView {
         case .window where mode != .window:
             delegate?.overlayView(self, didSwitchTo: .window)
         case .fullscreen:
-            delegate?.overlayView(self, didSelect: display.frame)
+            delegate?.overlayView(self, didSelect: display.frame, modifiers: [])
         case .cancel:
             delegate?.overlayViewDidCancel(self)
         default:
@@ -294,10 +294,12 @@ final class OverlayView: NSView {
         }
     }
 
-    private static func modifiers(_ flags: NSEvent.ModifierFlags) -> SelectionModel.Modifiers {
+    /// Shift keeps the selection square; Option grows it from the center, except when copying text,
+    /// where Option means "open the OCR panel" when the mouse is released.
+    private func modifiers(_ flags: NSEvent.ModifierFlags) -> SelectionModel.Modifiers {
         var modifiers: SelectionModel.Modifiers = []
         if flags.contains(.shift) { modifiers.insert(.square) }
-        if flags.contains(.option) { modifiers.insert(.fromCenter) }
+        if flags.contains(.option), purpose == .screenshot { modifiers.insert(.fromCenter) }
         return modifiers
     }
 

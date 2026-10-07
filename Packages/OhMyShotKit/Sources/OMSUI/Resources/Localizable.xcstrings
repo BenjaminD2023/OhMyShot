@@ -44,6 +44,28 @@
           }
         }
       }
+    },
+    "%lld lines of text": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld line of text"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld lines of text"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "version": "1.0"

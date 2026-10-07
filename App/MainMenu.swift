@@ -34,6 +34,18 @@ enum MainMenu {
         edit.addItem(withTitle: String(localized: "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         edit.addItem(withTitle: String(localized: "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: String(localized: "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(.separator())
+        let findActions: [(String, String, NSEvent.ModifierFlags, NSFindPanelAction)] = [
+            (String(localized: "Find…"), "f", .command, .showFindPanel),
+            (String(localized: "Find Next"), "g", .command, .next),
+            (String(localized: "Find Previous"), "g", [.command, .shift], .previous),
+            (String(localized: "Use Selection for Find"), "e", .command, .setFindString),
+        ]
+        for (title, key, modifiers, action) in findActions {
+            let item = edit.addItem(withTitle: title, action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            item.tag = Int(action.rawValue)
+        }
 
         let window = submenu(String(localized: "Window"), in: menu)
         window.addItem(withTitle: String(localized: "Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")

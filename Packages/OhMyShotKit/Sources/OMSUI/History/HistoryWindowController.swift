@@ -13,6 +13,8 @@ public struct HistoryActions {
     public var save: (HistoryItem) -> Void
     public var open: (HistoryItem) -> Void
     public var reveal: (HistoryItem) -> Void
+    /// Opens the capture in the OCR panel.
+    public var recognizeText: (HistoryItem) -> Void
     /// Moves the capture to the Trash, where it can be put back from.
     public var moveToTrash: (HistoryItem) -> Void
 
@@ -22,6 +24,7 @@ public struct HistoryActions {
         save: @escaping (HistoryItem) -> Void,
         open: @escaping (HistoryItem) -> Void,
         reveal: @escaping (HistoryItem) -> Void,
+        recognizeText: @escaping (HistoryItem) -> Void,
         moveToTrash: @escaping (HistoryItem) -> Void
     ) {
         self.restore = restore
@@ -29,6 +32,7 @@ public struct HistoryActions {
         self.save = save
         self.open = open
         self.reveal = reveal
+        self.recognizeText = recognizeText
         self.moveToTrash = moveToTrash
     }
 }
@@ -458,6 +462,11 @@ struct HistoryCard: View {
         .accessibilityAction(named: Text("Copy", bundle: .module)) { model.actions.copy(item) }
         .accessibilityAction(named: Text("Save", bundle: .module)) { model.actions.save(item) }
         .accessibilityAction(named: Text("Quick Look", bundle: .module)) { model.quickLook(item) }
+        .accessibilityActions {
+            if item.kind == .screenshot {
+                Button { model.actions.recognizeText(item) } label: { Text("Recognize Text", bundle: .module) }
+            }
+        }
         .accessibilityAction(named: Text("Move to Trash", bundle: .module)) { model.moveToTrash(item) }
     }
 
@@ -530,6 +539,9 @@ struct HistoryCard: View {
         Button { model.quickLook(item) } label: { Text("Quick Look", bundle: .module) }
             .keyboardShortcut(.space, modifiers: [])
         Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
+        if item.kind == .screenshot {
+            Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }
+        }
         Button { model.actions.reveal(item) } label: { Text("Show in Finder", bundle: .module) }
         Divider()
         Button(role: .destructive) { model.moveToTrash(item) } label: { Text("Move to Trash", bundle: .module) }

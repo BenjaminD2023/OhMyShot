@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import KeyboardShortcuts
+import OMSCore
 
 /// The menu bar icon and its menu.
 ///
@@ -32,9 +33,13 @@ public final class StatusItemController {
         }
     }
 
+    /// An image dropped on the icon: return whether it was taken. Set before the icon is shown.
+    public var onDrop: ((NSPasteboard) -> Bool)?
+
     private var statusItem: NSStatusItem?
     private let menuTarget = MenuTarget()
     private let captureEntries: [Entry]
+    private let textEntries: [Entry]
     private let historyEntries: [Entry]
     private let openSettings: () -> Void
     private let quit: () -> Void
@@ -42,12 +47,14 @@ public final class StatusItemController {
 
     public init(
         captureEntries: [Entry],
+        textEntries: [Entry] = [],
         historyEntries: [Entry] = [],
         openSettings: @escaping () -> Void,
         quit: @escaping () -> Void,
         debugEntries: [Entry] = []
     ) {
         self.captureEntries = captureEntries
+        self.textEntries = textEntries
         self.historyEntries = historyEntries
         self.openSettings = openSettings
         self.quit = quit
@@ -61,6 +68,11 @@ public final class StatusItemController {
             if let button = item.button {
                 button.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: appName)
                 button.image?.isTemplate = true
+                if let onDrop {
+                    let dropView = StatusItemDropView(frame: button.bounds, button: button, onDrop: onDrop)
+                    dropView.autoresizingMask = [.width, .height]
+                    button.addSubview(dropView)
+                }
             }
             item.menu = makeMenu()
             statusItem = item
@@ -73,7 +85,7 @@ public final class StatusItemController {
     private func makeMenu() -> NSMenu {
         menuTarget.removeAll()
         let menu = NSMenu()
-        for group in [captureEntries, historyEntries] where !group.isEmpty {
+        for group in [captureEntries, textEntries, historyEntries] where !group.isEmpty {
             for entry in group {
                 let item = menuTarget.item(for: entry)
                 if let shortcut = entry.shortcut {
@@ -107,6 +119,47 @@ public final class StatusItemController {
 
     private var appName: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OhMyShot"
+    }
+}
+
+/// Takes images dropped on the menu bar icon. Invisible to clicks and to VoiceOver: the hit test skips it,
+/// so the icon's button gets every click as before; dragging finds views by their registered types.
+private final class StatusItemDropView: NSView {
+    private weak var button: NSStatusBarButton?
+    private let onDrop: (NSPasteboard) -> Bool
+
+    init(frame: CGRect, button: NSStatusBarButton, onDrop: @escaping (NSPasteboard) -> Bool) {
+        self.button = button
+        self.onDrop = onDrop
+        super.init(frame: frame)
+        registerForDraggedTypes(PasteboardImage.draggedTypes)
+        setAccessibilityElement(false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard PasteboardImage.holdsImage(sender.draggingPasteboard) else { return [] }
+        button?.highlight(true)
+        return .copy
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        button?.highlight(false)
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        button?.highlight(false)
+        return onDrop(sender.draggingPasteboard)
+    }
+
+    override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        button?.highlight(false)
     }
 }
 

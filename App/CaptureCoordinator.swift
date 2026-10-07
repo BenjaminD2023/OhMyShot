@@ -118,9 +118,9 @@ final class CaptureCoordinator {
         overlay.freezesScreen = settings.freezeScreen
         overlay.begin(mode: mode) { [weak self] outcome in
             switch outcome {
-            case .region(let rect, let display):
+            case .region(let rect, let display, _):
                 Task { await self?.captureRegion(rect, on: display, appName: app) }
-            case .window(let target):
+            case .window(let target, _):
                 Task { await self?.captureWindow(target) }
             case .cancelled:
                 break

@@ -284,6 +284,17 @@ An optional card after Capture Text (off by default; Settings › General › Ca
 - **States:** *copied* stays 4 s; *nothing found* stays 2.5 s with a one-line hint. Hovering holds the card; with VoiceOver on, it stays 20 s so its buttons can be reached. VoiceOver announces the count or the empty result (also when the card is off).
 - **Count:** every character a paste contains, with singular and plural forms.
 
+### OCR Panel
+A standard titled window, "Recognized Text", with the source as its subtitle (Screen Area, a window's app and title, a file name, Clipboard): 1040 × 660 pt by default, at least 760 × 460, its frame remembered. The picture is on the left on `.background.secondary`; the text is on the right (320 to 560 pt) on the window background. Opened by Option held as a Capture Text drag ends, Recognize Text… on a Quick Access card or in Capture History, the two Recognize Text items in the status menu, or an image dropped on the menu bar icon.
+
+- **Picture:** the image as a 12 pt continuous-corner card with the picture border (0.5 pt; 1 pt under Increase Contrast) and the in-window card shadow, fitted with 24 pt around it and never drawn larger than it appeared on screen, sized and placed on whole points.
+- **Line boxes:** every recognized line answers the pointer the way Text Selection is drawn. Hovered, it is outlined in the accent (1 pt, 2 pt under Increase Contrast); with its text selected, it is filled with the selection color at 0.35 (0.45 in Dark) and edged in the accent; while the text is not active it takes the inactive selection color and a secondary edge, as the text does. Clicking a line selects its text and focuses the editor. Codes outline the same way while hovered on the picture or in the Found list. In the Table pane the line boxes are hidden.
+- **Editor:** the system body style (13 pt; monospaced at the same size for code) at a 1.15 line height, 12 × 14 pt insets, links and contacts underlined in the link color, the Find bar, and no automatic substitutions or spelling correction. Once the text is edited, lines stop reacting and a notice under the editor reads "Edited, no longer linked to the image" with Revert.
+- **Toolbar:** the text side's controls sit together at the trailing edge: Text / Table (segmented, only when a table was found), the line-break menu (Keep Line Breaks / Join Lines; Text pane only, disabled for code), and one `.glassProminent` Copy with title and symbol (⇧⌘C). Copy reads "Copied" with a checkmark for 1.5 s, and VoiceOver hears "Copied" or "Table copied". While loading or after a failure, only the disabled Copy shows.
+- **Table pane:** a grid in a 12 pt continuous card with one-pixel separator hairlines; the header row is semibold on black 0.045 / white 0.09; body text uses monospaced digits; columns of figures are right-aligned; cells are 56 to 260 pt wide. Copy as Markdown and Copy as CSV are small buttons under the table. The toolbar's Copy writes TSV, HTML, and Markdown at once, so spreadsheets paste cells.
+- **Found in Image:** a semibold secondary caption header, then 28 pt rows: the kind's symbol in secondary ink, the value on one line (middle truncation), and borderless symbol buttons for the item's verb (Open Link, New Email, Call, Show in Maps, Add to Calendar) and Copy (a checkmark for 1.2 s). Rows take the chip hover fill (black 0.045 / white 0.09) at a 6 pt radius. VoiceOver reads a row as one element, kind and value, with its verbs as actions. The list is at most 176 pt tall and scrolls beyond that. Only web links open from a code.
+- **States:** loading is a small spinner over "Recognizing text…" (callout, secondary). Empty and failed follow the Capture History empty state (40 pt light tertiary symbol, title3 semibold title, callout message at most 360 pt wide); a failed read offers Try Again. A file that is no image, or an empty clipboard, shows only the message, across the whole window.
+
 ### Capture Overlay (Signature)
 Softly dimmed screen; selection with a white 1.5 pt edge over a dark outline; a crosshair with a 4 pt center gap and 13 pt arms, white over the same outline; a 120 pt loupe showing 15 captured pixels across (8 pt per pixel, aligned to device pixels) with a faint 0.08 grid, an accent center cell, a white rim, and the lens shadow. Window mode drops the crosshair and loupe and highlights the hovered window.
 
@@ -294,17 +305,19 @@ A Liquid Glass capsule with an opaque window-colored backing inside, a 0.5 pt se
 - **Capture History toolbar:** a SwiftUI toolbar bridged into a unified window toolbar: segmented Show filter (All, Screenshots, Recordings), a "Keep for …" menu, and Move All to Trash. Empty states are filter-aware (a 40 pt light tertiary symbol, title3 title, callout message).
 - **Keyboard:** arrows select, Return restores, Space opens Quick Look; ⌘C, ⌘S, and ⌘⌫ arrive as commands through an invisible main menu and are disabled with nothing selected.
 - **Settings:** preference toolbar tabs; grouped sections such as "After capturing" and "Capture History".
-- **Status menu:** grouped capture commands, then Capture History and Restore Recently Closed.
+- **Status menu:** grouped capture commands, then Recognize Text in Clipboard Image (enabled when the clipboard offers an image or a file) and Recognize Text in Image…, then Capture History and Restore Recently Closed. An image dropped on the menu bar icon opens in the OCR panel; the icon highlights while it is over it.
+- **Find:** the Edit menu carries Find…, Find Next, Find Previous, and Use Selection for Find for the OCR panel's text.
 - **Destructive confirmations** state the count and consequence and name the action ("Delete 3 Captures"; "This can't be undone.").
 
 ### Motion
 - Cards slide in 36 pt from the screen edge with a fade over 0.22 s ease-out; the stack reflows over 0.22 s ease-out; a dismissed card slides 40 pt left and fades. Hover fades take 0.12 s ease-out. History scrolls to a new selection over 0.15 s ease-out.
 - The text selection highlight fades out over 0.35 s once the text is copied (0.15 s when there was none).
 - The optional text result card fades in over 0.22 s with a 6 pt rise of its layer (never of its window, whose size can change mid-animation), and fades out over 0.12 s.
+- In the OCR panel, Copy buttons swap their symbol for a checkmark with the system's symbol replace transition and back after 1.5 s (toolbar) or 1.2 s (rows).
 - Under Reduce Motion all of these are instant. Nothing trails the pointer: overlay layers update without animation. The two durations live in `Theme.Motion` (`slide` 0.22 s, `fade` 0.12 s).
 
 ### Future Surfaces
-The annotation editor, the OCR panel, recording controls, and pins are not built. They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.
+The annotation editor, recording controls, and pins are not built. They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.
 
 ## Do's and Don'ts
 

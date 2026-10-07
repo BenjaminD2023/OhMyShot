@@ -46,6 +46,15 @@ final class CompositionRoot {
                 .init(title: String(localized: "Capture Fullscreen"), shortcut: .captureFullscreen) { [weak self] in self?.handle(.captureFullscreen) },
                 .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
             ],
+            textEntries: [
+                .init(
+                    title: String(localized: "Recognize Text in Clipboard Image"),
+                    isEnabled: { PasteboardImage.mayHoldImage(.general) }
+                ) { [weak self] in
+                    self?.textCapture.openClipboardImage()
+                },
+                .init(title: String(localized: "Recognize Text in Image…")) { [weak self] in self?.textCapture.openImageFile() },
+            ],
             historyEntries: [
                 .init(title: String(localized: "Capture History…"), shortcut: .openHistory) { [weak self] in self?.showHistory() },
                 .init(
@@ -59,6 +68,9 @@ final class CompositionRoot {
             quit: { NSApp.terminate(nil) },
             debugEntries: debugMenuEntries()
         )
+        statusItem.onDrop = { [weak self] pasteboard in
+            self?.textCapture.openPanel(from: pasteboard, source: String(localized: "Dropped Image")) ?? false
+        }
         self.statusItem = statusItem
         automation = makeAutomationController()
 
@@ -224,6 +236,12 @@ final class CompositionRoot {
             saveAs: { [weak self] item in self?.captures.saveAs(item) },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
             reveal: { item in NSWorkspace.shared.activateFileViewerSelecting([item.savedURL ?? item.fileURL]) },
+            recognizeText: { [weak self] item in
+                guard let self else { return }
+                // Captures are saved without a resolution, so the scale is their display's.
+                let scale = displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 1
+                Task { await self.textCapture.openPanel(forFileAt: item.fileURL, fallbackScale: scale) }
+            },
             moveToTrash: { [weak self] item in
                 guard let self else { return }
                 // As in CleanShot, the capture goes as a whole: the copy this card saved goes to the Trash
@@ -272,6 +290,12 @@ final class CompositionRoot {
             reveal: { [weak self] entry in
                 guard let self else { return }
                 NSWorkspace.shared.activateFileViewerSelecting([history.fileURL(for: entry)])
+            },
+            recognizeText: { [weak self] entry in
+                guard let self else { return }
+                // The display a capture came from is not recorded; most captures come from the sharpest.
+                let scale = displays.layout.displays.map(\.pixelsPerPoint).max() ?? 1
+                Task { await self.textCapture.openPanel(forFileAt: self.history.fileURL(for: entry), fallbackScale: scale) }
             },
             moveToTrash: { [weak self] entry in
                 self?.quickAccess.remove(entry.id)

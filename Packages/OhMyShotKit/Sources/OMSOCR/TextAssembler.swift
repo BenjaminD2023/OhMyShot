@@ -13,17 +13,44 @@ public enum TextAssembler {
         }
     }
 
+    /// Assembled text, with where each line ended up in it.
+    public struct Assembly: Sendable, Equatable {
+        public var text: String
+        /// Each line's range in `text`, in UTF-16 units, in the order the lines were given.
+        public var lineRanges: [NSRange]
+        /// The lines read as a code listing: kept line for line, never joined.
+        public var isCode: Bool
+
+        public init(text: String = "", lineRanges: [NSRange] = [], isCode: Bool = false) {
+            self.text = text
+            self.lineRanges = lineRanges
+            self.isCode = isCode
+        }
+    }
+
     public static func assemble(_ lines: [OCRLine], options: Options = .init()) -> String {
-        guard !lines.isEmpty else { return "" }
+        assembly(lines, options: options).text
+    }
+
+    /// The text, and each line's range in it, worked out while the text is built: the post-processing
+    /// removes characters (spaces between CJK, a hyphen at a line break), so ranges cannot be found
+    /// afterwards.
+    public static func assembly(_ lines: [OCRLine], options: Options = .init()) -> Assembly {
+        guard !lines.isEmpty else { return Assembly() }
         let isCode = isCodeListing(lines)
         let indents = isCode ? indentation(lines) : Array(repeating: 0, count: lines.count)
         let texts = zip(lines, indents).map { line, indent in
             let text = isCode || isCodeLike(line.text) ? asCode(line.text) : asProse(line.text)
             return String(repeating: " ", count: indent) + text
         }
-        guard options.joinsWrappedLines, !isCode else { return texts.joined(separator: "\n") }
-        let inferred = inferredWraps(lines)
-        return joinWrapped(texts, wraps: zip(lines, inferred).map { line, guess in line.wrapsToNextLine ?? guess })
+        let wraps: [Bool] = if options.joinsWrappedLines, !isCode {
+            zip(lines, inferredWraps(lines)).map { line, guess in line.wrapsToNextLine ?? guess }
+        } else {
+            texts.map { _ in false }
+        }
+        var assembly = build(texts, wraps: wraps)
+        assembly.isCode = isCode
+        return assembly
     }
 
     // MARK: Code
@@ -174,21 +201,28 @@ public enum TextAssembler {
     /// Joins each line that wraps onto the next: nothing between CJK, a space between words, and a word
     /// broken with a hyphen put back together.
     static func joinWrapped(_ texts: [String], wraps: [Bool]) -> String {
-        var output = ""
+        build(texts, wraps: wraps).text
+    }
+
+    private static func build(_ texts: [String], wraps: [Bool]) -> Assembly {
+        let output = NSMutableString()
+        var ranges: [NSRange] = []
         for (index, text) in texts.enumerated() {
-            output += text
+            ranges.append(NSRange(location: output.length, length: (text as NSString).length))
+            output.append(text)
             guard index + 1 < texts.count else { break }
             guard wraps[index] else {
-                output += "\n"
+                output.append("\n")
                 continue
             }
             let next = texts[index + 1]
             if output.hasSuffix("-"), let first = next.first, first.isLowercase {
-                output.removeLast()
-            } else if let last = output.last, let first = next.first, !(Script.isCJK(last) || Script.isCJK(first)) {
-                output += " "
+                output.deleteCharacters(in: NSRange(location: output.length - 1, length: 1))
+                ranges[index].length = max(0, ranges[index].length - 1)
+            } else if let last = (output as String).last, let first = next.first, !(Script.isCJK(last) || Script.isCJK(first)) {
+                output.append(" ")
             }
         }
-        return output
+        return Assembly(text: output as String, lineRanges: ranges)
     }
 }

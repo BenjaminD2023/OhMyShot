@@ -86,3 +86,25 @@ pipeline inside the app, read with `Scripts/latency.sh ocr.recognize` and `Scrip
   footprint 126 MB) that settled to 0% and 70 MB; later recognitions add none. It looks like one-time
   model preparation and is worth measuring again with Instruments.
 
+## M2 — OCR panel (2026-10-08)
+
+Same machine and display. The panel opened on its drawn demo page (`ohmyshot-dev://debug/panel-demo`;
+1520×1120 px with a table and a QR code), read with `Scripts/latency.sh ocr.analyze`, `footprint`, and
+`Scripts/power-sample.sh`.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Full analysis (`ocr.analyze`: L1, barcodes, document request), warm | 618–675 ms | — |
+| The same for a 800×600 px screen region (Option at the end of a Capture Text drag) | 500 ms | — |
+| Footprint with the panel open / 27 s after closing it | 145–163 MB / 109–126 MB | < 60 MB after use |
+| Live heap 27 s after closing (`heap`) | 28 MB | — |
+| Idle after closing the panel | 0.00% CPU, 0 wakeups in 30 s, no live resources | 0.0%, < 30 |
+
+### Findings
+
+- **Most of what stays after the panel closes is freed memory the allocator keeps.** The live heap is
+  28 MB; the footprint is about 110–125 MB, almost all dirty "Malloc Small" pages. Recognition peaks at
+  about 410 MB and leaves its small allocations scattered, and `malloc_zone_pressure_relief` returns
+  next to nothing (139 → 119 MB over 25 s, mostly Vision freeing late). The table request accounts for
+  only about 15 MB of it. Running recognition in a helper process that exits when idle, as planned for
+  the model packs (M6), would return all of it; until then the panel misses the after-use target.

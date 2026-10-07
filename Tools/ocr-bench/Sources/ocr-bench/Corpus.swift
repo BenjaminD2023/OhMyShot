@@ -65,7 +65,7 @@ enum Corpus {
     }
 
     static var all: [BenchCase] {
-        [zhEnChat, zhNoSpace, zhDoc, zhHant, ja, ko, multilingual, enUI, enWithChinese, codeSwift, codeSwiftPlain, codeYAML, tableZh, tableEn, verticalZh, chat, darkUI]
+        [zhEnChat, zhNoSpace, zhDoc, zhEnLines, zhHant, ja, ko, multilingual, enUI, enWithChinese, codeSwift, codeSwiftPlain, codeYAML, tableZh, tableEn, verticalZh, chat, darkUI]
             + smallText
     }
 
@@ -95,6 +95,28 @@ enum Corpus {
         "常见问题：为什么中文里会出现多余的空格？",
         "答：识别结果会按语言规则自动整理标点与间距。",
     ])
+
+    /// A Chinese page with whole lines of English prose. The Chinese model reads such lines without
+    /// language correction and confuses letter case ("QuICK", "copiea"). Kept free of `Word:` lines, which
+    /// would make the page read as code and send it down the code path instead.
+    static let zhEnLines = BenchCase(
+        id: "zh-en-lines",
+        category: .zhHansEn,
+        truth: Truth(lines: zhEnLinesText.map(\.text))
+    ) {
+        textBlock(zhEnLinesText, size: 15)
+    }
+
+    private static let zhEnLinesText: [(text: String, language: String)] = [
+        ("截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。", "zh-Hans"),
+        ("Quick Access keeps every capture one click away.", "en"),
+        ("The text in a capture can be copied, edited, and searched.", "en"),
+        ("按住 Option 再松开鼠标，就能在面板里查看识别出的文字。", "zh-Hans"),
+        ("Read the docs at https://example.com/docs", "en"),
+        ("Write to hello@example.com or call +1 (555) 010-0199.", "en"),
+        ("Version 2.4 ships on October 15, 2026 at 2:30 PM.", "en"),
+        ("Free, Pro, and Team plans; Team adds shared folders.", "en"),
+    ]
 
     static let zhHant = textCase("zh-hant", .zhHant, language: "zh-Hant", [
         "請在週五之前完成設計稿的最後修改。",

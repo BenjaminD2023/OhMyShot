@@ -13,6 +13,8 @@ public final class QuickAccessController {
         public var saveAs: (QuickAccessItem) -> URL?
         public var open: (QuickAccessItem) -> Void
         public var reveal: (QuickAccessItem) -> Void
+        /// Opens the capture in the OCR panel.
+        public var recognizeText: (QuickAccessItem) -> Void
         public var moveToTrash: (QuickAccessItem) -> Void
         /// A card was dismissed without being trashed.
         public var closed: (QuickAccessItem) -> Void
@@ -23,6 +25,7 @@ public final class QuickAccessController {
             saveAs: @escaping (QuickAccessItem) -> URL?,
             open: @escaping (QuickAccessItem) -> Void,
             reveal: @escaping (QuickAccessItem) -> Void,
+            recognizeText: @escaping (QuickAccessItem) -> Void,
             moveToTrash: @escaping (QuickAccessItem) -> Void,
             closed: @escaping (QuickAccessItem) -> Void
         ) {
@@ -31,6 +34,7 @@ public final class QuickAccessController {
             self.saveAs = saveAs
             self.open = open
             self.reveal = reveal
+            self.recognizeText = recognizeText
             self.moveToTrash = moveToTrash
             self.closed = closed
         }
@@ -190,6 +194,7 @@ public final class QuickAccessController {
         stack.onSaveAs = { [weak self] item in self?.recordSave(of: item, at: self?.actions.saveAs(item)) }
         stack.onOpen = { [weak self] item in self?.actions.open(item) }
         stack.onReveal = { [weak self] item in self?.actions.reveal(item) }
+        stack.onRecognizeText = { [weak self] item in self?.actions.recognizeText(item) }
         stack.onMoveToTrash = { [weak self] item in
             guard let self else { return }
             items.removeAll { $0.id == item.id }

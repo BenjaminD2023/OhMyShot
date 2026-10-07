@@ -11,8 +11,10 @@ import QuartzCore
 /// loupe, or as the backdrop when the screen is frozen.
 public final class OverlayController {
     public enum Outcome: Sendable {
-        case region(CGRect, display: DisplayInfo)
-        case window(WindowTarget)
+        /// `modifiers` are the keys held when the mouse was released (Capture Text opens the OCR panel
+        /// with Option), read from that event: a later global read would race the keys' release.
+        case region(CGRect, display: DisplayInfo, modifiers: NSEvent.ModifierFlags)
+        case window(WindowTarget, modifiers: NSEvent.ModifierFlags)
         case cancelled
     }
 
@@ -210,12 +212,12 @@ public final class OverlayController {
 }
 
 extension OverlayController: OverlayViewDelegate {
-    func overlayView(_ view: OverlayView, didSelect rect: CGRect) {
-        end(.region(rect, display: view.display))
+    func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) {
+        end(.region(rect, display: view.display, modifiers: modifiers))
     }
 
-    func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget) {
-        end(.window(target))
+    func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {
+        end(.window(target, modifiers: modifiers))
     }
 
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) {

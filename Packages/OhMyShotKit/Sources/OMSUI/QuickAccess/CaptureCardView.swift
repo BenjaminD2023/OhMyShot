@@ -14,6 +14,7 @@ final class CardStackView: NSView {
     var onSaveAs: ((QuickAccessItem) -> Void)?
     var onOpen: ((QuickAccessItem) -> Void)?
     var onReveal: ((QuickAccessItem) -> Void)?
+    var onRecognizeText: ((QuickAccessItem) -> Void)?
     var onMoveToTrash: ((QuickAccessItem) -> Void)?
     var onClose: ((QuickAccessItem) -> Void)?
 
@@ -110,6 +111,7 @@ final class CardStackView: NSView {
         card.onSaveAs = { [weak self, weak card] in card.map { self?.onSaveAs?($0.item) } }
         card.onOpen = { [weak self, weak card] in card.map { self?.onOpen?($0.item) } }
         card.onReveal = { [weak self, weak card] in card.map { self?.onReveal?($0.item) } }
+        card.onRecognizeText = { [weak self, weak card] in card.map { self?.onRecognizeText?($0.item) } }
         card.onMoveToTrash = { [weak self, weak card] in card.map { self?.onMoveToTrash?($0.item) } }
         card.onClose = { [weak self, weak card] in card.map { self?.onClose?($0.item) } }
         addSubview(card)
@@ -128,6 +130,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
     var onSaveAs: (() -> Void)?
     var onOpen: (() -> Void)?
     var onReveal: (() -> Void)?
+    var onRecognizeText: (() -> Void)?
     var onMoveToTrash: (() -> Void)?
     var onClose: (() -> Void)?
 
@@ -201,6 +204,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
             NSAccessibilityCustomAction(name: String(localized: "Copy", bundle: .module)) { [weak self] in self?.onCopy?(); return true },
             NSAccessibilityCustomAction(name: String(localized: "Save", bundle: .module)) { [weak self] in self?.onSave?(); return true },
             NSAccessibilityCustomAction(name: String(localized: "Open", bundle: .module)) { [weak self] in self?.onOpen?(); return true },
+            NSAccessibilityCustomAction(name: String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onRecognizeText?(); return true },
             NSAccessibilityCustomAction(name: String(localized: "Move to Trash", bundle: .module)) { [weak self] in self?.onMoveToTrash?(); return true },
             NSAccessibilityCustomAction(name: String(localized: "Close", bundle: .module)) { [weak self] in self?.onClose?(); return true },
         ])
@@ -399,6 +403,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
         add(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", #selector(saveAsClicked))
         menu.addItem(.separator())
         add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked))
+        add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked))
         add(String(localized: "Show in Finder", bundle: .module), "folder", #selector(revealClicked))
         menu.addItem(.separator())
         add(String(localized: "Move to Trash", bundle: .module), "trash", #selector(trashClicked))
@@ -411,6 +416,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
     @objc private func saveAsClicked() { onSaveAs?() }
     @objc private func openClicked() { onOpen?() }
     @objc private func revealClicked() { onReveal?() }
+    @objc private func recognizeTextClicked() { onRecognizeText?() }
     @objc private func trashClicked() { onMoveToTrash?() }
     @objc private func closeClicked() { onClose?() }
 

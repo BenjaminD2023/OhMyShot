@@ -5,6 +5,7 @@ import Foundation
 import ImageIO
 import OMSCapture
 import OMSCore
+import OMSOCR
 import OMSUI
 import OSLog
 import ScreenCaptureKit
@@ -128,6 +129,34 @@ struct DebugHooks {
                 let rect = CGRect(x: display.frame.midX - 210, y: display.frame.midY - 60, width: 420, height: 120)
                 textCapture.previewCard(state, near: rect)
             }
+        case "panel-demo":
+            // The OCR panel on a drawn page (never the screen). via=file|pasteboard|finder opens it the
+            // way a file, pasted image data, or a file copied in Finder would; state=loading|empty|failed|
+            // unreadable|no-clipboard-image, or prose for a page without a table.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in items.first { $0.name == name }?.value }
+            Task { await openPanelDemo(via: value("via"), state: value("state")) }
+        case "panel-state":
+            // pane=text|table, join=0|1, select=<line>, hover=<line>, edited=1
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in items.first { $0.name == name }?.value }
+            textCapture.previewPanelState(
+                pane: value("pane"), joinLines: value("join").map { $0 == "1" },
+                selectLine: value("select").flatMap(Int.init), hoverLine: value("hover").flatMap(Int.init),
+                edited: value("edited") == "1"
+            )
+        case "panel-test":
+            // The centered region, as Option at the end of a Capture Text drag. Reads the screen: for
+            // timing and logs only, never for snapshots.
+            if let display = displays.layout.primary {
+                let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
+                Task { await textCapture.openPanel(region: rect, on: display) }
+            }
+        case "drop-check":
+            // Whether AppKit finds drop targets by registered type rather than by the public hit test,
+            // which the menu bar icon's drop target relies on.
+            let selector = NSSelectorFromString("_hitTest:dragTypes:")
+            Log.app.notice("debug.drop-check typed hit test available: \(NSView.instancesRespond(to: selector), privacy: .public)")
         case "capture-window-test":
             // The frontmost window of the app named `owner` (default Finder), with and without shadow.
             let owner = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "owner" }?.value ?? "Finder"
@@ -143,6 +172,10 @@ struct DebugHooks {
                     probe.end()
                 }
             }
+        case "relief":
+            // Hands freed heap pages back now, to tell freed-but-kept memory from memory still in use.
+            MemoryRelief.returnFreedPages()
+            Log.app.notice("debug.relief done")
         case "relaunch":
             Relauncher.relaunch()
         case "close-windows":
@@ -151,6 +184,53 @@ struct DebugHooks {
             }
         default:
             Log.app.error("debug.unknown \(hook, privacy: .public)")
+        }
+    }
+
+    func openPanelDemo(via: String?, state: String?) async {
+        guard let image = DebugPanelDemo.image(blank: state == "empty", prose: state == "prose") else { return }
+        switch (via, state) {
+        case (_, "loading"):
+            textCapture.previewPanel(image: image, scale: 2, source: "Demo") { _ in
+                try await Task.sleep(for: .seconds(600))
+                throw CancellationError()
+            }
+        case (_, "failed"):
+            textCapture.previewPanel(image: image, scale: 2, source: "Demo") { _ in throw OCRError.timedOut }
+        case (_, "unreadable"):
+            textCapture.previewPanelFailure(.unreadableFile)
+        case (_, "no-clipboard-image"):
+            textCapture.previewPanelFailure(.noImageOnClipboard)
+        case ("file", _), ("finder", _), ("pasteboard", _):
+            guard let png = DebugPanelDemo.png() else { return }
+            let file = Self.snapshotDirectory.appending(path: "ocr-panel-demo.png")
+            do {
+                try FileManager.default.createDirectory(at: Self.snapshotDirectory, withIntermediateDirectories: true)
+                try png.write(to: file)
+            } catch {
+                Log.app.error("debug.panel-demo could not write the demo: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            if via == "file" {
+                await textCapture.openPanel(forFileAt: file)
+                return
+            }
+            // A private pasteboard, so the clipboard is never touched. "finder" adds an icon as TIFF
+            // beside the file, as Finder does when a file is copied.
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name("\(Log.subsystem).debug"))
+            pasteboard.clearContents()
+            if via == "finder" {
+                pasteboard.writeObjects([file as NSURL])
+                pasteboard.addTypes([.tiff], owner: nil)
+                pasteboard.setData(NSWorkspace.shared.icon(forFile: file.path(percentEncoded: false)).tiffRepresentation, forType: .tiff)
+            } else {
+                pasteboard.setData(png, forType: .png)
+            }
+            let opened = textCapture.openPanel(from: pasteboard, source: "Debug Pasteboard")
+            Log.app.notice("debug.panel-demo via \(via ?? "", privacy: .public) opened: \(opened, privacy: .public)")
+            pasteboard.releaseGlobally()
+        default:
+            textCapture.openPanel(image: image, scale: 2, source: "Demo")
         }
     }
 

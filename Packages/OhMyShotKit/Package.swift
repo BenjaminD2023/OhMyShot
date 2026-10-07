@@ -34,10 +34,10 @@ let package = Package(
             dependencies: ["OMSCore"],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
-        // Menu bar, settings, onboarding, shortcuts. Main-actor by default.
+        // Menu bar, settings, onboarding, shortcuts, the OCR panel. Main-actor by default.
         .target(
             name: "OMSUI",
-            dependencies: ["OMSCore", "KeyboardShortcuts"],
+            dependencies: ["OMSCore", "OMSOCR", "KeyboardShortcuts"],
             resources: [.process("Resources")],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
