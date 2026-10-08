@@ -17,6 +17,7 @@ import UniformTypeIdentifiers
 ///   --json PATH        write every run, outputs included, as JSON
 ///   --write-baseline   record this run as the baseline for this major macOS version
 ///   --list             list engines and cases, then exit
+///   --trace            print how long each step and Vision request of L1 took, on standard error
 ///
 /// Engines run one request at a time: Vision can stall when several accurate requests overlap. (The
 /// `text-zh-en+en` probe runs two on purpose, to measure how Vision runs two models side by side.)
@@ -64,7 +65,15 @@ struct OCRBench {
         let options = Options(CommandLine.arguments.dropFirst())
         let real = try options.realDirectory.map(Corpus.real(in:)) ?? []
         let corpus = (Corpus.all + real).filter { item in options.cases.isEmpty || options.cases.contains { item.id.hasPrefix($0) } }
-        let selected = options.engines.isEmpty ? engines : (engines + probes).filter { options.engines.contains($0.name) }
+        var selected = options.engines.isEmpty ? engines : (engines + probes).filter { options.engines.contains($0.name) }
+        if options.trace {
+            // Each step and Vision request of L1, on standard error.
+            selected = selected.map { engine in
+                guard var pipeline = engine as? VisionPipeline else { return engine }
+                pipeline.options.trace = { FileHandle.standardError.write(Data("\($0)\n".utf8)) }
+                return pipeline
+            }
+        }
 
         if options.list {
             print("Engines: " + engines.map(\.name).joined(separator: ", "))
@@ -99,6 +108,7 @@ struct OCRBench {
             for item in corpus {
                 var run = CaseRun(id: item.id, category: item.category)
                 var lineDetails: [String] = []
+                if options.trace { FileHandle.standardError.write(Data("— \(item.id)\n".utf8)) }
                 do {
                     let result = try await engine.recognize(images[item.id]!)
                     lineDetails = result.lines.map { line in
@@ -174,6 +184,8 @@ struct Options {
     var realDirectory: URL?
     var writeBaseline = false
     var list = false
+    /// Each step and Vision request of L1, on standard error.
+    var trace = false
 
     init(_ arguments: ArraySlice<String>) {
         var iterator = arguments.makeIterator()
@@ -186,6 +198,7 @@ struct Options {
             case "--real": realDirectory = iterator.next().map { URL(filePath: $0, directoryHint: .isDirectory) }
             case "--write-baseline": writeBaseline = true
             case "--list": list = true
+            case "--trace": trace = true
             default: FileHandle.standardError.write(Data("Ignoring unknown option \(argument)\n".utf8))
             }
         }

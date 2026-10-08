@@ -18,6 +18,8 @@ public struct VisionPipeline: OCREngine {
         public var assembly: TextAssembler.Options
         /// Per Vision request.
         public var timeout: Duration
+        /// Told how long each step and each Vision request took, for the benchmark's `--trace`.
+        public var trace: (@Sendable (String) -> Void)?
 
         public init(
             primaryLanguages: [Locale.Language] = [Locale.Language(identifier: "zh-Hans"), Locale.Language(identifier: "en-US")],
@@ -46,6 +48,13 @@ public struct VisionPipeline: OCREngine {
     @concurrent
     public func recognize(_ image: CGImage) async throws -> OCRResult {
         let started = ContinuousClock.now
+        var mark = started
+        func lap(_ step: String) {
+            guard let trace = options.trace else { return }
+            let now = ContinuousClock.now
+            trace("\(step): \(Self.milliseconds(now - mark)) ms")
+            mark = now
+        }
         // The first pass, the Latin model over the whole page, and text detection run side by side.
         // Vision runs the two models at once for about 17 ms more than the first pass alone (measured),
         // and the Latin reading serves both an English page and the English lines of a Chinese one.
@@ -55,6 +64,7 @@ public struct VisionPipeline: OCREngine {
         var lines = try await primary
         let latin = (try? await latinPage) ?? []
         let rectangles = try await detected
+        lap("first pass")
 
         // Text that is all but free of CJK (a stray misread glyph aside) reads better with the Latin
         // model: English UI, code. It cannot be the first pass: next to CJK its text detection misses
@@ -63,6 +73,7 @@ public struct VisionPipeline: OCREngine {
         let cjk = all.filter(Script.isCJK).count
         var fallbacks = options.fallbackLanguages
         var readByLatinModel = false
+        options.trace?("  decision: \(cjk) CJK of \(all.count) characters; Latin page read \(characterCount(latin)) against \(characterCount(lines))")
         if !all.isEmpty, cjk <= 2, Double(cjk) < Double(all.count) * 0.05,
            characterCount(latin) >= characterCount(lines) * 4 / 5 {
             lines = latin
@@ -72,20 +83,22 @@ public struct VisionPipeline: OCREngine {
             fallbacks.insert(options.primaryLanguages, at: 0)
         }
 
-        lines = try await fillGaps(in: image, lines: lines, rectangles: rectangles, fallbacks: fallbacks)
+        lines = try await fillGaps(in: image, lines: lines, rectangles: rectangles, fallbacks: fallbacks, page: latin)
+        lap("gaps")
         lines = LineNumbers.removed(from: lines)
         lines = try await rereadCodeWithLatinModel(in: image, lines: lines)
+        lap("code")
         if !readByLatinModel {
             lines = try await readLatinLines(lines, page: latin, in: image)
         }
+        lap("latin lines")
         lines = inferLoneBrackets(in: lines, image: image)
+        lap("lone brackets")
 
         let ordered = ReadingOrder.sorted(lines)
-        return OCRResult(
-            lines: ordered,
-            text: TextAssembler.assemble(ordered, options: options.assembly),
-            duration: ContinuousClock.now - started
-        )
+        let text = TextAssembler.assemble(ordered, options: options.assembly)
+        lap("assembly")
+        return OCRResult(lines: ordered, text: text, duration: ContinuousClock.now - started)
     }
 
     // MARK: Reading
@@ -104,8 +117,16 @@ public struct VisionPipeline: OCREngine {
         }
         let configured = request
         let timeout = options.timeout
+        let requested = ContinuousClock.now
         let observations = try await RecognitionSlots.shared.run {
             try await withTimeout(timeout) { try await configured.perform(on: image) }
+        }
+        let read = ContinuousClock.now
+        defer {
+            if let trace = options.trace {
+                let area = region.map { "\(Int($0.width))×\(Int($0.height))" } ?? "\(image.width)×\(image.height)"
+                trace("  request \(languages.map(\.minimalIdentifier).joined(separator: "+")) \(area): \(Self.milliseconds(read - requested)) ms, lines \(Self.milliseconds(ContinuousClock.now - read)) ms")
+            }
         }
         let place: (NormalizedRect) -> CGRect = { rect in
             if let regionOfInterest {
@@ -143,16 +164,26 @@ public struct VisionPipeline: OCREngine {
 
     // MARK: Gaps
 
-    /// Reads again, with each fallback model, the text regions the lines leave empty.
-    private func fillGaps(in image: CGImage, lines: [OCRLine], rectangles: [CGRect], fallbacks: [[Locale.Language]]) async throws -> [OCRLine] {
+    /// Reads again, with each fallback model, the text regions the lines leave empty. The regions of one
+    /// model are read side by side (two at a time, as `RecognitionSlots` allows): a request costs about
+    /// the same whatever its size, 60–170 ms, so read one after another they added up. The Latin model
+    /// has read the whole page already (`page`), so its fallback takes that reading of each region
+    /// instead of asking again: on the benchmark and the real screenshots, no region it read again was
+    /// ever kept, and each such request cost 20–120 ms.
+    private func fillGaps(
+        in image: CGImage, lines: [OCRLine], rectangles: [CGRect], fallbacks: [[Locale.Language]], page: [OCRLine]
+    ) async throws -> [OCRLine] {
         var lines = lines
         let size = CGSize(width: image.width, height: image.height)
         var gaps = padded(merged(rectangles.filter { isMissing($0, given: lines) }), in: size)
         for languages in fallbacks where !gaps.isEmpty {
             var remaining: [CGRect] = []
-            for region in gaps {
-                let found = try await readLines(in: image, languages: languages, region: region)
+            let reads = languages == Self.english
+                ? gaps.map { region in page.filter { overlapFraction(of: $0.box, in: region) > 0.5 } }
+                : try await readLines(in: image, languages: languages, regions: gaps)
+            for (region, found) in zip(gaps, reads) {
                 let earlier = lines.filter { overlapFraction(of: $0.box, in: region) > 0.5 }
+                options.trace?("  gap \(languages.map(\.minimalIdentifier).joined(separator: "+")) \(Int(region.width))×\(Int(region.height)): read \(characterCount(found)) against \(characterCount(earlier))\(characterCount(found) > characterCount(earlier) ? ", kept" : "")")
                 // Keep whichever pass read more of the region.
                 if characterCount(found) > characterCount(earlier) {
                     lines.removeAll { overlapFraction(of: $0.box, in: region) > 0.5 }
@@ -164,6 +195,23 @@ public struct VisionPipeline: OCREngine {
             gaps = remaining
         }
         return lines
+    }
+
+    /// Each region read with `languages`, side by side, in the regions' order.
+    private func readLines(in image: CGImage, languages: [Locale.Language], regions: [CGRect]) async throws -> [[OCRLine]] {
+        guard regions.count > 1 else {
+            var reads: [[OCRLine]] = []
+            for region in regions { reads.append(try await readLines(in: image, languages: languages, region: region)) }
+            return reads
+        }
+        return try await withThrowingTaskGroup(of: (Int, [OCRLine]).self) { group in
+            for (index, region) in regions.enumerated() {
+                group.addTask { (index, try await readLines(in: image, languages: languages, region: region)) }
+            }
+            var reads = [[OCRLine]](repeating: [], count: regions.count)
+            for try await (index, found) in group { reads[index] = found }
+            return reads
+        }
     }
 
     /// Where text is in the image, whatever its script, in pixels with a top-left origin.
@@ -305,7 +353,7 @@ public struct VisionPipeline: OCREngine {
 
     /// In code with CJK comments, the CJK model reads the code itself poorly (`url` as `ur1`, full-width
     /// brackets, braces as 子) and the Latin model cannot see past the comments. So each run of code lines
-    /// between CJK lines is read again on its own with the Latin model.
+    /// between CJK lines is read again on its own with the Latin model, the runs side by side.
     private func rereadCodeWithLatinModel(in image: CGImage, lines: [OCRLine]) async throws -> [OCRLine] {
         let ordered = ReadingOrder.sorted(lines)
         guard TextAssembler.isCodeListing(ordered), ordered.contains(where: { Script.containsCJK($0.text) }) else { return lines }
@@ -321,6 +369,7 @@ public struct VisionPipeline: OCREngine {
         }
         let cjkLines = ordered.filter { Script.containsCJK($0.text) }
         var kept = ordered.filter { Script.containsCJK($0.text) }
+        var runs: [(block: [OCRLine], region: CGRect)] = []
         for block in blocks where !block.isEmpty {
             // The block's rows with some margin, but never reaching the CJK lines above or below.
             let union = block.dropFirst().reduce(block[0].box) { $0.union($1.box) }
@@ -331,16 +380,23 @@ public struct VisionPipeline: OCREngine {
             let bottom = min(floor, union.maxY + rowHeight * 0.4)
             let region = CGRect(x: union.minX - rowHeight, y: top, width: union.width + rowHeight * 2, height: bottom - top)
                 .intersection(CGRect(origin: .zero, size: size))
-            var replacement = block
-            if !region.isNull, region.height > 0 {
-                let found = try await readLines(in: image, languages: Self.english, region: region)
-                if !found.contains(where: { Script.containsCJK($0.text) }), characterCount(found) >= characterCount(block) * 9 / 10 {
-                    replacement = found
-                }
+            if region.isNull || region.height <= 0 {
+                kept += block
+            } else {
+                runs.append((block, region))
             }
-            kept += replacement
+        }
+        let reads = try await readLines(in: image, languages: Self.english, regions: runs.map(\.region))
+        for ((block, _), found) in zip(runs, reads) {
+            kept += Self.isLatinReading(found, of: block) ? found : block
         }
         return kept
+    }
+
+    /// Whether `found` is a Latin reading of `block`: no CJK, and about as much text.
+    private static func isLatinReading(_ found: [OCRLine], of block: [OCRLine]) -> Bool {
+        func count(_ lines: [OCRLine]) -> Int { lines.reduce(0) { $0 + $1.text.filter { !$0.isWhitespace }.count } }
+        return !found.contains(where: { Script.containsCJK($0.text) }) && count(found) >= count(block) * 9 / 10
     }
 
     // MARK: Geometry
@@ -377,6 +433,11 @@ public struct VisionPipeline: OCREngine {
         let shared = box.intersection(region)
         guard !shared.isNull, box.width > 0, box.height > 0 else { return 0 }
         return (shared.width * shared.height) / (box.width * box.height)
+    }
+
+    static func milliseconds(_ duration: Duration) -> Int {
+        let (seconds, attoseconds) = duration.components
+        return Int(Double(seconds) * 1000 + Double(attoseconds) / 1e15)
     }
 
     /// A pixel rect with a top-left origin as Vision's normalized rect (bottom-left origin).

@@ -84,15 +84,22 @@ What the pipeline does, in order, and why:
    5%), the Latin page reading replaces it if it has at least 80% of the characters. A single misread
    glyph (a closing brace read as 子) must not keep code on the CJK model.
 3. **Gap filling**: text regions the lines leave empty, or cover with less than half the characters
-   their width holds, are merged, padded, and read again, region by region, with each fallback model
-   (Korean, then English, in the benchmark). A region's new lines replace the old ones only if they
-   hold more characters.
+   their width holds, are merged, padded, and read again with each fallback model (Korean, then
+   English, in the benchmark), the regions of one model side by side. The English fallback takes the
+   Latin page reading of each region instead of a new request: that model has read the whole page
+   already, and of the three regions it read again across the benchmark and the real screenshots (all
+   three icons on the forum thread), none was kept. What this gives up: text that neither model read on
+   the whole page but the English model would read cropped, and any English gap fill at all when the
+   Latin page pass itself fails. A region's new lines replace the old ones only if they hold more
+   characters.
 4. **Line numbers**: a column of at least three lines of digits alone, aligned, left of every other line
    and counting up (a misread number allowed, and short readings inside the column, which are misread
    numbers too), is an editor's gutter and goes, but only when what remains is code: a numbered list or
    `cat -n` output keeps its numbers.
 5. **Code with CJK comments**: each run of code lines between CJK lines is read again on its own with
-   the Latin model, the region kept clear of the CJK lines so its detector does not fail.
+   the Latin model, the runs side by side, the region kept clear of the CJK lines so its detector does
+   not fail. (Taking a run from the page reading when it read every line was tried: it never applied on
+   the benchmark or the real screenshots, so it was not kept.)
 6. **English lines on a CJK page** (not code): every line in Latin script alone takes the Latin page
    reading of its box, if that reading is between 80% and 125% as long. A line the page reading missed
    is cut out with the others like it and stacked in a strip that holds nothing else (`LineStrip`),
@@ -133,6 +140,40 @@ Results on the corpus (macOS 27.2, release build):
 
 These numbers are a fit: every rule was tuned on the corpus it is scored on, and every image was drawn
 by Core Text at 2× in Apple's system fonts. Real screenshots tell more (below).
+
+## Speed (2026-10-08)
+
+`--trace` prints how long each step and each Vision request took. Where the time goes:
+
+- **The primary pass is about three quarters of every recognition**: 170–280 ms on the synthetic cases,
+  400–700 ms on the real regions. The Latin page pass beside it finishes first and costs the primary
+  about 17 ms. The primary's time grows with the amount of text, not the pixels: a 1066×1024 terminal
+  region with 35 dense lines takes 690 ms, against 300 ms for the Latin model.
+- **Every further request costs 60–170 ms whatever its size** (a 67×45 region took 118 ms). The p95
+  came from those run one after another: two Korean gaps (+238 ms), two runs of code (+343 ms on a real
+  editor region, where one misread glyph splits the code in two), three icons taken for gaps (+402 ms).
+
+Now the regions of one step are read side by side and the English gap fallback reuses the page
+reading. Two runs each, before and after, back to back; accuracy unchanged on every case:
+
+| | p50 | p95 |
+| --- | --- | --- |
+| Synthetic (27 cases) | 198–203 → 187–188 ms | 415–428 → 366–373 ms |
+| Real regions (12) | 269–289 → 268–281 ms | 854–865 → 697–716 ms |
+
+The cases that changed: the forum thread 765–815 → 530–555 ms, the two editor regions 854–957 →
+663–846 ms, `multilingual` 437–448 → 334–342 ms. The dense terminal (about 700 ms, all primary pass),
+`code-swift` (one run of code, read after the primary pass) and `ko` (one Korean region) are as before.
+
+**Ruled out: deciding early that a page has no CJK.** A request stops within 2 ms of being cancelled
+and text rectangles with character boxes take 12 ms, so the primary pass could be dropped on English
+and code pages if their Latin reading showed they hold no CJK, which would take a dense terminal from
+690 to about 300 ms. But nothing in that reading shows it. Of 281 lines with CJK across the benchmark
+and the real screenshots, the Latin model dropped 143, read 75 with non-ASCII junk ("¼‡ Option ¾Лñ"),
+and read 63 (22%) as plain ASCII ("显示更多" as "RTES"), 20 of those with confidence 1.0. Square
+character boxes miss a short CJK word on an English page (`en-zh-word`) and find squares in a
+terminal's monospaced text. A Chinese comment in code or one Chinese label on an English page would
+be lost, so the primary pass always runs.
 
 ## Real screenshots (2026-10-08)
 

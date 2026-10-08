@@ -150,3 +150,26 @@ Same machine and display. The OCR panel translating its drawn demo page (`ohmysh
 
 - **Translation adds little that stays.** The models load in the system's translation service, not in OhMyShot: releasing the sessions when the panel closes changes the footprint by no more than the noise between runs, and the next panel's first translation is no slower. They are released anyway. What stays after the panel closes is the recognition's freed memory (M2 — OCR panel).
 - **Batching labels is faster as well as better**: on the real screenshots translating took 0.1–0.7 s once code, figures, and names were left out and short labels went in batches, against 1.2–2.4 s before.
+
+## M2 — OCR p95 (2026-10-08)
+
+Same machine. `swift run -c release --package-path Tools/ocr-bench ocr-bench --engine l1 [--real …]`,
+with `--trace` for the steps (Docs/ocr.md › Speed).
+
+Two runs each, before and after, back to back:
+
+| Measurement | Before | After | Target |
+| --- | --- | --- | --- |
+| Synthetic cases (27), p50 / p95 | 198–203 / 415–428 ms | 187–188 / 366–373 ms | < 300 ms for about 1000×600 px |
+| Real regions (12), p50 / p95 | 269–289 / 854–865 ms | 268–281 / 697–716 ms | — |
+| Content CER, synthetic / real | 0.78% / 5.22% | 0.78% / 5.22% | no regression |
+
+### Findings
+
+- **The p95 that is left is the primary pass on dense text** (a terminal region: 690 ms of its 696) and
+  the steps that must follow it: code with CJK comments read again (about 130 ms), and Korean gaps
+  when Korean is a preferred language. The primary pass cannot be skipped safely (Docs/ocr.md › Speed).
+- **Requests side by side cost no more energy**: the same requests run, only together; the English gap
+  fallback now runs none.
+- **The target is met at p50, not at p95**: the synthetic p95 is the three cases above, each a primary
+  pass followed by one request that cannot start sooner.
