@@ -208,8 +208,10 @@ final class TextCaptureCoordinator {
         }
     }
 
-    /// Reads `image`, translates it, and lays the translation over `frame`. A language still to download
-    /// opens the panel, which offers the download; nothing to translate is said with a beep.
+    /// Reads `image`, translates it, and lays the translation over `frame`. When nothing could be
+    /// translated (a language still to download, text already in the target, code), the area opens in
+    /// the OCR panel, translated, which says why and offers a download or another language: a beep alone
+    /// said nothing anyone could act on.
     func translate(_ image: CGImage, scale: CGFloat, over frame: CGRect, source: String, inPanel: Bool) async {
         if inPanel {
             highlight.hide()
@@ -223,16 +225,10 @@ final class TextCaptureCoordinator {
             let units = TranslationUnits.group(lines)
             let outcome = try await translator.translate(units, to: choice.isEmpty ? nil : Locale.Language(identifier: choice))
             guard !outcome.translations.isEmpty else {
-                if !outcome.needsDownload.isEmpty {
-                    highlight.hide()
-                    openPanel(image: image, scale: scale, source: source, translating: true)
-                } else {
-                    Log.capture.notice("Translate Area found nothing to translate into \(outcome.target.minimalIdentifier, privacy: .public): \(units.count, privacy: .public) units, \(outcome.inTarget.count, privacy: .public) already in it")
-                    highlight.finish(copied: nil, announces: false)
-                    announce(outcome.inTarget.isEmpty
-                        ? String(localized: "Nothing to translate")
-                        : String(localized: "Already in \(Translator.name(of: outcome.target))"))
-                }
+                let skipped = Dictionary(grouping: units.compactMap(\.skip), by: { "\($0)" }).map { "\($1.count) \($0)" }.sorted().joined(separator: ", ")
+                Log.capture.notice("Translate Area translated nothing into \(outcome.target.minimalIdentifier, privacy: .public): \(units.count, privacy: .public) units, skipped \(skipped, privacy: .public), \(outcome.inTarget.count, privacy: .public) already in it, to download \(outcome.needsDownload.map(\.minimalIdentifier), privacy: .public); opening the panel")
+                highlight.hide()
+                openPanel(image: image, scale: scale, source: source, translating: true)
                 return
             }
             guard let rendering = await TranslationOverlay.render(

@@ -86,9 +86,38 @@ struct TranslatorTests {
     }
 
     @Test func languagesAreDetectedPerUnit() {
-        #expect(Translator.language(of: "Quick Access keeps every capture one click away.", hint: nil)?.languageCode == .english)
-        let chinese = Translator.language(of: "截图完成后，卡片会出现在屏幕左下角。", hint: nil)
-        #expect(chinese.map { Translator.isSame($0, hans) } == true)
+        let readings = Translator.languages(of: ["Quick Access keeps every capture one click away.", "截图完成后，卡片会出现在屏幕左下角。"])
+        #expect(readings[0].language?.languageCode == .english)
+        #expect(readings[1].language.map { Translator.isSame($0, hans) } == true)
+    }
+
+    /// A small selection of short Latin text: Natural Language reads it as Polish or Vietnamese, which
+    /// left the whole selection untranslated. It is the page's, or the preferred, Latin language.
+    @Test func shortLatinTextIsThePreferredLatinLanguage() {
+        let preferred = [Locale.Language(identifier: "en"), hans]
+        let terminal = Translator.languages(of: ["moraxcheng", "Oct", "drwxr-xr-x", "Grok", "Premium+", "Ts tsconfig.json", "- Ts vite.config.ts"], preferred: preferred)
+        #expect(terminal.allSatisfy { $0.language?.languageCode == .english })
+        // A file name read as confident Indonesian no longer makes the page Indonesian.
+        #expect(terminal.allSatisfy { !$0.confident })
+        // A confident French sentence makes the short words beside it French.
+        let french = Translator.languages(of: ["Les captures restent sur ce Mac jusqu’à ce que vous les supprimiez.", "Réglages"], preferred: preferred)
+        #expect(french.allSatisfy { $0.language?.languageCode == .french })
+    }
+
+    @Test func chineseJapaneseAndKoreanAreToldByTheirCharacters() {
+        let preferred = [Locale.Language(identifier: "en"), hans]
+        func language(_ text: String) -> String? { Translator.writtenLanguage(of: text, preferred: preferred).map { Translator.identifier(of: $0.language) } }
+        #expect(language("设置") == "zh-Hans")
+        #expect(language("關注") == "zh-Hant")
+        // Characters both write alike: the preferred Chinese.
+        #expect(language("中文") == "zh-Hans")
+        #expect(language("設定を開く") == "ja")
+        #expect(language("설정") == "ko")
+        // Mostly Latin with a Chinese word: not told by its characters.
+        #expect(language("Last file: 设计稿.png") == nil)
+        #expect(language("按住 Option 再松开鼠标") == "zh-Hans")
+        // An icon read as kana among stray letters is Japanese only in part.
+        #expect(Translator.writtenLanguage(of: "2っaくコiくつlく", preferred: preferred)?.pure == false)
     }
 
     @Test func theTargetIsTheFirstPreferredLanguageThePageIsNotIn() {
@@ -153,9 +182,9 @@ struct TranslatorTests {
         #expect(languages[2].map { Translator.isSame($0, english) } == true)
         #expect(languages[3].map { Translator.isSame($0, english) } == true)
         #expect(languages[5].map { Translator.isSame($0, hans) } == true)
-        // An icon read as kana among stray letters is not Japanese; nor a status bar Italian.
-        let misread = Translator.languages(of: texts + ["2っaくコiくつlく"]).map(\.language)
-        #expect(misread.last.map { $0.map { Translator.isSame($0, Locale.Language(identifier: "ja")) } } != true)
+        // An icon read as kana among stray letters is no confident Japanese; nor a status bar Italian.
+        let misread = Translator.languages(of: texts + ["2っaくコiくつlく"])
+        #expect(misread.last?.confident == false)
         #expect(TranslationUnits.isCommandLike("品Agent Stats: 0/o (0%6) •- 7fa5b71 100.00%A 1 0)", technical: true))
     }
 

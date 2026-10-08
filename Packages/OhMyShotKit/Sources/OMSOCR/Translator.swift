@@ -58,7 +58,7 @@ public actor Translator {
         _ units: [TranslationUnit], to target: Locale.Language?, preferred: [Locale.Language] = Translator.preferredLanguages()
     ) async throws -> Outcome {
         let candidates = units.indices.filter { units[$0].skip == nil }
-        let readings = Self.languages(of: candidates.map { units[$0].text })
+        let readings = Self.languages(of: candidates.map { units[$0].text }, preferred: preferred)
         let detected = readings.enumerated().map { (index: candidates[$0], language: $1.language) }
         let confident = Set(readings.indices.filter { readings[$0].confident }.map { candidates[$0] })
         let target = target ?? Self.automaticTarget(for: detected.map { (units[$0.index].text, $0.language) }, preferred: preferred)
@@ -78,12 +78,16 @@ public actor Translator {
             }
         }
         let availability = LanguageAvailability()
+        var scraps: [Locale.Language] = []
         for source in order {
             guard let indices = groups[source] else { continue }
             let status = await availability.status(from: source, to: target)
             // A scrap in a language not downloaded (a misread icon, a status bar) is left as read rather
             // than worth a download: only a line's worth of text read with confidence asks for one.
-            if status == .supported, indices.filter(confident.contains).reduce(0, { $0 + Self.weight(units[$1].text) }) < 16 { continue }
+            if status == .supported, indices.filter(confident.contains).reduce(0, { $0 + Self.weight(units[$1].text) }) < 16 {
+                scraps.append(source)
+                continue
+            }
             switch status {
             case .installed:
                 let session = session(from: source, to: target)
@@ -125,6 +129,8 @@ public actor Translator {
                 outcome.unsupported.append(source)
             }
         }
+        // Scraps were all there was: say what they need rather than nothing at all.
+        if outcome.translations.isEmpty, outcome.needsDownload.isEmpty { outcome.needsDownload = scraps }
         return outcome
     }
 
@@ -302,22 +308,40 @@ public actor Translator {
         return preferred.first ?? Locale.Language(languageCode: .english)
     }
 
-    /// The language of each text, as the page has it. A short text says little about its language
-    /// ("dfanxu" reads as Polish, "Codex" as Spanish), so only a confident reading of a text long enough
-    /// counts on its own; the others take the page's language in their script. A confident Japanese
-    /// line on a Chinese page stays Japanese.
-    static func languages(of texts: [String]) -> [(language: Locale.Language?, confident: Bool)] {
+    /// The language of each text, as the page has it, and whether it was read with confidence.
+    ///
+    /// Text mostly in Chinese, Japanese, or Korean characters is told by them (`writtenLanguage`). Other
+    /// text is read by Natural Language, but a short text says little about its language: in a small
+    /// selection "moraxcheng" and "Oct" read as Polish and "Grok" as Vietnamese, and a language not
+    /// downloaded then left the whole selection untranslated. So only a confident reading of a text long
+    /// enough counts on its own; the others take the page's confident language that writes their letters,
+    /// or else the first preferred language that does (English, for Latin letters, on most Macs), or else
+    /// their own reading. An icon read as kana among stray letters ("2っaくコiく") is not confident.
+    static func languages(of texts: [String], preferred: [Locale.Language] = preferredLanguages()) -> [(language: Locale.Language?, confident: Bool)] {
+        var hints: [NLLanguage: Double] = [:]
+        for language in constraints {
+            let rank = preferred.firstIndex { isSame($0, Locale.Language(identifier: language.rawValue)) }
+            hints[language] = rank.map { $0 == 0 ? 0.6 : 0.3 } ?? 0.02
+        }
         let readings = texts.map { text -> (language: Locale.Language?, confident: Bool) in
+            if let (language, pure) = writtenLanguage(of: text, preferred: preferred) {
+                return (language, pure && weight(text) >= 8)
+            }
             let recognizer = NLLanguageRecognizer()
             recognizer.languageConstraints = constraints
-            recognizer.processString(text)
+            // The preferred languages are likelier to begin with: names and listings that read a little
+            // like Indonesian or Polish lean back to them, while a sentence in another language still wins.
+            recognizer.languageHints = hints
+            // Names of files and handles say nothing about a language ("tsconfig.json" reads as
+            // Indonesian): only the words are read, and only enough of them make a confident reading.
+            let words = text.split(whereSeparator: \.isWhitespace).filter { !TranslationUnits.isIdentifier($0) && $0.contains(where: \.isLetter) }.joined(separator: " ")
+            recognizer.processString(words.isEmpty ? text : words)
             guard let (best, probability) = recognizer.languageHypotheses(withMaximum: 1).first else { return (nil, false) }
             let language = Locale.Language(identifier: best.rawValue)
-            // Mostly in the language's own script: an icon read as kana among stray letters and figures
-            // ("2っaくコiく") reads as Japanese with confidence, but it is not.
+            // Mostly in the language's own script.
             let characters = text.filter { !$0.isWhitespace }
             let pure = Double(characters.filter { isWritten($0, in: language) }.count) >= Double(characters.count) * 0.7
-            return (language, probability >= 0.75 && weight(text) >= 8 && pure)
+            return (language, probability >= 0.75 && weight(words) >= 8 && pure)
         }
         // The page's languages: those of the confident readings, each with a fair share of the text.
         var shares: [(language: Locale.Language, weight: Int)] = []
@@ -330,36 +354,59 @@ public actor Translator {
             }
         }
         let total = shares.reduce(0) { $0 + $1.weight }
-        var page = shares.filter { Double($0.weight) >= Double(total) * 0.15 }.sorted { $0.weight > $1.weight }.map(\.language)
-        if page.isEmpty, let whole = language(of: texts.joined(separator: "\n"), hint: nil) { page = [whole] }
+        let page = shares.filter { Double($0.weight) >= Double(total) * 0.15 }.sorted { $0.weight > $1.weight }.map(\.language)
         return zip(texts, readings).map { text, reading in
-            if reading.confident { return reading }
-            if let language = reading.language, page.contains(where: { isSame($0, language) }) { return (language, false) }
-            // The page's language that writes the most of this text's letters.
+            // Confident, or told by its characters (only short): it stands.
+            if reading.confident || writtenLanguage(of: text, preferred: preferred) != nil { return reading }
             let letters = text.filter(\.isLetter)
-            let best = page.max { a, b in
-                letters.filter { isWritten($0, in: a) }.count < letters.filter { isWritten($0, in: b) }.count
+            guard !letters.isEmpty else { return reading }
+            let writer = (page + preferred).first { language in
+                Double(letters.filter { isWritten($0, in: language) }.count) >= Double(letters.count) * 0.5
             }
-            return (best.flatMap { language in letters.contains { isWritten($0, in: language) } ? language : nil }, false)
+            return (writer ?? reading.language, false)
         }
+    }
+
+    /// The language of text mostly in Chinese, Japanese, or Korean characters (each counted as two
+    /// letters), told by them: kana is Japanese, Hangul Korean, Han alone Chinese, Traditional when it
+    /// has characters only Traditional writes, Simplified when it has characters only Simplified writes,
+    /// else the preferred Chinese. `pure`: those characters are most of its letters, as in real text and
+    /// not in an icon read as kana beside stray Latin letters. Nil for text mostly in other scripts.
+    static func writtenLanguage(of text: String, preferred: [Locale.Language]) -> (language: Locale.Language, pure: Bool)? {
+        var square = 0
+        var squareLetters = 0
+        var otherLetters = 0
+        var kana = false
+        var hangul = false
+        for character in text where character.isLetter {
+            let value = character.unicodeScalars.first?.value ?? 0
+            if (0x3041...0x3096).contains(value) || (0x30A1...0x30FA).contains(value) {
+                kana = true
+            } else if Script.isHangul(character) {
+                hangul = true
+            } else if !Script.isCJK(character) {
+                otherLetters += 1
+                continue
+            }
+            square += 2
+            squareLetters += 1
+        }
+        guard square > 0, square >= otherLetters else { return nil }
+        let pure = Double(squareLetters) >= Double(squareLetters + otherLetters) * 0.7
+        if kana { return (Locale.Language(identifier: "ja"), pure) }
+        if hangul { return (Locale.Language(identifier: "ko"), pure) }
+        if text.applyingTransform(StringTransform("Hant-Hans"), reverse: false) != text {
+            return (Locale.Language(identifier: "zh-Hant"), pure)
+        }
+        if text.applyingTransform(StringTransform("Hans-Hant"), reverse: false) != text {
+            return (Locale.Language(identifier: "zh-Hans"), pure)
+        }
+        return (preferred.first { $0.languageCode == .chinese } ?? Locale.Language(identifier: "zh-Hans"), pure)
     }
 
     /// Letters, a Han or kana character counted as two.
     private static func weight(_ text: String) -> Int {
         text.reduce(0) { $0 + (Script.isCJK($1) ? 2 : ($1.isLetter ? 1 : 0)) }
-    }
-
-    /// The dominant language of `text`, among the ones the system translates. `hint` tips short text
-    /// toward the page's language.
-    static func language(of text: String, hint: Locale.Language?) -> Locale.Language? {
-        let recognizer = NLLanguageRecognizer()
-        recognizer.languageConstraints = constraints
-        if let hint, let language = constraints.first(where: { isSame(Locale.Language(identifier: $0.rawValue), hint) }),
-           text.filter(\.isLetter).count < 12 {
-            recognizer.languageHints = [language: 0.6]
-        }
-        recognizer.processString(text)
-        return recognizer.dominantLanguage.map { Locale.Language(identifier: $0.rawValue) }
     }
 
     /// What Natural Language may answer: languages the Translation framework works with.

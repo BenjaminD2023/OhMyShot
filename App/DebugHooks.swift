@@ -148,12 +148,14 @@ struct DebugHooks {
             )
         case "translate-demo":
             // Translate Area on a drawn page (never the screen): its lens lies centered on the main
-            // display. prose=0 for the page with the table; controls=1 shows its buttons.
+            // display. prose=0 for the page with the table; blank=1 for a page with nothing to
+            // translate (it opens the panel); controls=1 shows its buttons.
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let prose = items.first { $0.name == "prose" }?.value != "0"
+            let blank = items.first { $0.name == "blank" }?.value == "1"
             let controls = items.first { $0.name == "controls" }?.value == "1"
             Task {
-                await translateDemo(prose: prose)
+                await translateDemo(prose: prose, blank: blank)
                 if controls { textCapture.revealLensControls() }
             }
         case "panel-test":
@@ -199,8 +201,8 @@ struct DebugHooks {
         }
     }
 
-    func translateDemo(prose: Bool) async {
-        guard let image = DebugPanelDemo.image(prose: prose), let display = displays.layout.primary else { return }
+    func translateDemo(prose: Bool, blank: Bool = false) async {
+        guard let image = DebugPanelDemo.image(blank: blank, prose: prose), let display = displays.layout.primary else { return }
         let size = DebugPanelDemo.size
         let frame = CGRect(x: display.frame.midX - size.width / 2, y: display.frame.midY - size.height / 2, width: size.width, height: size.height)
         await textCapture.translate(image, scale: 2, over: frame.integral, source: "Demo", inPanel: false)
