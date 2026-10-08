@@ -163,4 +163,25 @@ struct AnnotationSessionTests {
         session.undoManager.undo()
         #expect(session.document.items[0].style.color == .red)
     }
+
+    @Test func undoStateIsAnnouncedWithEveryChange() {
+        // The toolbar's Undo and Redo follow these events; the undo manager's own group notifications
+        // arrive only when a group closes, which may be long after the change.
+        let session = makeSession()
+        var histories = 0
+        session.observe { event in if event == .history { histories += 1 } }
+        step(session) {
+            var document = session.document
+            document.items.append(rectangle(at: 10))
+            session.commit(document, actionName: "Add Rectangle")
+        }
+        #expect(histories == 1)
+        #expect(session.undoManager.canUndo)
+        session.undo()
+        #expect(histories >= 2)
+        #expect(session.document.items.isEmpty)
+        #expect(session.undoManager.canRedo)
+        session.redo()
+        #expect(session.document.items.count == 1)
+    }
 }

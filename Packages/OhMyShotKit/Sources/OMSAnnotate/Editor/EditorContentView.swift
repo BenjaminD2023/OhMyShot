@@ -79,6 +79,8 @@ final class EditorContentView: NSView {
         case .document:
             // The selected mark may have changed kind of settings (undo, a restyle elsewhere).
             if !session.selection.isEmpty { refreshCapsule() }
+        case .history:
+            break
         }
     }
 

@@ -428,7 +428,7 @@ Every mark is drawn by one renderer, on screen and in exports, so what is copied
 - **Lines and shapes:** round-capped lines, dashed at 1.5 × the stroke on, 2.5 × off; rectangles with 4 pt corners by default; rectangles and ellipses outlined or filled.
 - **Pen and highlighter:** smooth curves through the pointer's samples; the highlighter multiplies into the picture, so text stays dark and white turns yellow.
 - **Text looks:** plain; outlined (an edge of 16% of the size, at least 2 pt, in the opposite ink); label (a rounded fill in the color, corners 32% of the size, padding 40% across and 16% down, ink black 0.88 or white).
-- **Counters:** a disc (16 + 3 × the stroke pt across) in the color with the label in the opposite ink, numbered 1, 2, 3; A, B, C; or I, II, III.
+- **Counters:** a disc (16 + 3 × the stroke pt across) in the color with the label in the opposite ink, numbered 1, 2, 3; A, B, C; or I, II, III. Each numbering counts on its own (after 1, 2 the first letter is A), and a counter is placed by a click and not selected, so a change of numbering applies to the next counters.
 - **Redaction:** solid (the color, black by default), blur (strong enough that text cannot be read), or pixelate (blocks at least 12 px, larger for larger areas, each nudged by noise seeded from the mark so it redraws the same and cannot be worked back).
 - **Spotlight:** everything outside the spots dimmed by the spotlight dimming; rectangle or oval spots.
 

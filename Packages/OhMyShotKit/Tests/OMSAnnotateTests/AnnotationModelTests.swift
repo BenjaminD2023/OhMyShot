@@ -37,11 +37,17 @@ struct AnnotationModelTests {
         #expect(label(1994, .roman) == "MCMXCIV")
     }
 
-    @Test func theNextCounterFollowsTheHighest() {
+    @Test func theNextCounterFollowsTheHighestOfItsNumbering() {
         var document = AnnotationDocument(pixelSize: CGSize(width: 10, height: 10), scale: 1)
-        #expect(document.nextCounterValue == 1)
+        #expect(document.nextCounterValue(for: .numbers) == 1)
         document.items = [3, 1].map { Annotation(shape: .counter(Counter(center: .zero, value: $0)), style: Style()) }
-        #expect(document.nextCounterValue == 4)
+        #expect(document.nextCounterValue(for: .numbers) == 4)
+        // Each numbering counts on its own: after 1 and 3, letters start at A.
+        #expect(document.nextCounterValue(for: .letters) == 1)
+        document.items.append(Annotation(shape: .counter(Counter(center: .zero, value: 1, numbering: .letters)), style: Style()))
+        #expect(document.nextCounterValue(for: .letters) == 2)
+        #expect(document.nextCounterValue(for: .numbers) == 4)
+        #expect(document.nextCounterValue(for: .roman) == 1)
     }
 
     @Test func arrowsAreHitAlongTheirLengthOnly() {

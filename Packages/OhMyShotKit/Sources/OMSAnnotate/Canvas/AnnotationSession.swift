@@ -15,6 +15,8 @@ public final class AnnotationSession {
         case tool
         /// A tool's settings, or the selected marks' style, changed.
         case settings
+        /// What Undo and Redo would do changed.
+        case history
     }
 
     /// The capture, as it was taken.
@@ -232,6 +234,22 @@ public final class AnnotationSession {
             session.registerUndo(restoring: current.0, selection: current.1, actionName: actionName)
         }
         undoManager.setActionName(actionName)
+        // Told here rather than through the undo manager's group notifications, which close only at
+        // the end of an event and are not posted for every change.
+        notify(.history)
+    }
+
+    /// Undoes the last change to the marks.
+    public func undo() {
+        guard undoManager.canUndo else { return }
+        undoManager.undo()
+        notify(.history)
+    }
+
+    public func redo() {
+        guard undoManager.canRedo else { return }
+        undoManager.redo()
+        notify(.history)
     }
 
     // MARK: Editing commands
@@ -254,7 +272,7 @@ public final class AnnotationSession {
             var copy = original.translated(by: CGSize(width: offset, height: offset))
             copy.id = UUID()
             if case .counter(var counter) = copy.shape {
-                counter.value = document.nextCounterValue
+                counter.value = document.nextCounterValue(for: counter.numbering)
                 copy.shape = .counter(counter)
             }
             document.items.append(copy)

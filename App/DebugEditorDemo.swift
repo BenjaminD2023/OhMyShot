@@ -72,6 +72,10 @@ enum DebugEditorDemo {
             if value("shift") == "1", value("drag") == nil { modifiers.insert(.shift) }
             editor.simulateKey(key, keyCode: value("code").flatMap(UInt16.init) ?? 0, modifiers: modifiers)
         }
+        if let numbering = value("numbering").flatMap(Counter.Numbering.init(rawValue:)) {
+            // As the capsule's numbering chips do.
+            editor.session.changeSettings("Numbering") { $0.numbering = numbering }
+        }
         if let steps = value("zoomin").flatMap(Int.init) {
             editor.simulateZoomIn(steps)
         }
@@ -85,6 +89,9 @@ enum DebugEditorDemo {
             (editor.window?.firstResponder as? NSTextView)?.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
         }
         Log.app.notice("debug.editor-act \(editor.debugSummary, privacy: .public)")
+        if value("chain") == "1" {
+            Log.app.notice("debug.editor-chain \(editor.debugUndoChain, privacy: .public)")
+        }
     }
 
     /// A mark of every kind, placed on the demo page's parts (in its pixels, at 2×).

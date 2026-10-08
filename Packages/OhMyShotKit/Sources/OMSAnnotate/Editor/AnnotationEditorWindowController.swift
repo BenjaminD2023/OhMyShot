@@ -68,8 +68,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.onCopy = { [weak self] in self?.copy() }
         content.canvas.onSave = { [weak self] in self?.save() }
         content.onViewportChange = { [weak self] in self?.updateZoomLabel() }
-        for name in [Notification.Name.NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
-            NotificationCenter.default.addObserver(self, selector: #selector(undoChanged), name: name, object: session.undoManager)
+        session.observe { [weak self] event in
+            if event == .history || event == .document { self?.undoChanged() }
         }
     }
 
@@ -142,10 +142,41 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
             isARepeat: false, keyCode: keyCode
         ) else { return }
         if modifiers.contains(.command) {
-            if !window.performKeyEquivalent(with: event) { NSApp.mainMenu?.performKeyEquivalent(with: event) }
+            if !window.performKeyEquivalent(with: event) {
+                // The main menu answers only for the key window, which a scripted run seldom has: send its
+                // action down the responder chain the way the menu would.
+                let item = NSApp.mainMenu.flatMap { Self.item(in: $0, key: characters.lowercased(), modifiers: modifiers) }
+                if let item, let action = item.action, let responder = window.firstResponder {
+                    let target = NSApp.target(forAction: action, to: nil, from: item) as? NSResponder ?? Self.responder(for: action, from: responder)
+                    if let validator = target as? NSMenuItemValidation, !validator.validateMenuItem(item) {
+                        NSSound.beep()
+                    } else {
+                        target?.tryToPerform(action, with: item)
+                    }
+                }
+            }
         } else {
             window.firstResponder?.keyDown(with: event)
         }
+    }
+
+    private static func item(in menu: NSMenu, key: String, modifiers: NSEvent.ModifierFlags) -> NSMenuItem? {
+        for item in menu.items {
+            if let submenu = item.submenu, let found = self.item(in: submenu, key: key, modifiers: modifiers) { return found }
+            if item.keyEquivalent.lowercased() == key, item.keyEquivalentModifierMask == modifiers.intersection([.command, .shift, .option, .control]) {
+                return item
+            }
+        }
+        return nil
+    }
+
+    private static func responder(for action: Selector, from start: NSResponder) -> NSResponder? {
+        var responder: NSResponder? = start
+        while let current = responder {
+            if current.responds(to: action) { return current }
+            responder = current.nextResponder
+        }
+        return nil
     }
 
     public func simulateZoomIn(_ steps: Int) {
@@ -156,23 +187,37 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         redo ? self.redo() : undo()
     }
 
+    /// Who would receive ⌘Z: each responder from the first responder up, whether it answers undo:,
+    /// and the undo manager it would use.
+    public var debugUndoChain: String {
+        var parts: [String] = []
+        var responder = window?.firstResponder
+        let undo = Selector(("undo:"))
+        while let current = responder {
+            let answers = current.responds(to: undo)
+            let manager = current.undoManager
+            let mark = manager === session.undoManager ? "session" : manager == nil ? "nil" : "other"
+            parts.append("\(type(of: current))\(answers ? "*" : "")[\(mark)]")
+            responder = current.nextResponder
+        }
+        return parts.joined(separator: " > ") + " windowUndo=\(window?.undoManager === session.undoManager) modelCanUndo=\(model.canUndo)"
+    }
+
     /// A summary for scripted checks: the marks by kind, the selection, the tool, undo state.
     public var debugSummary: String {
-        let kinds = session.document.items.map { "\(AnnotationSession.tool(for: $0).rawValue)" }.joined(separator: ",")
+        let kinds = session.document.items.map { item -> String in
+            if case .counter(let counter) = item.shape { return "counter(\(counter.label))" }
+            return AnnotationSession.tool(for: item).rawValue
+        }.joined(separator: ",")
         return "marks=[\(kinds)] selected=\(session.selection.count) tool=\(session.tool.rawValue) canvas=\(NSStringFromRect(session.document.canvas)) undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") redo=\(session.undoManager.canRedo ? session.undoManager.redoActionName : "-") unkept=\(session.hasUnkeptChanges) editing=\(content.canvas.isEditingText)"
     }
     #endif
 
     // MARK: Window
 
-    public func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
-        session.undoManager
-    }
-
     public func windowWillClose(_ notification: Notification) {
         content.canvas.endEditing()
         content.releaseColorPanel()
-        NotificationCenter.default.removeObserver(self)
         if session.hasUnkeptChanges {
             // Kept after the window has gone; this task holds the controller until then.
             Task {
@@ -227,21 +272,15 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         }
     }
 
-    /// Undoes typing while a text mark is edited, else the last change to the marks.
+    /// Undoes typing while a text mark is edited, else the last change to the marks, as ⌘Z does.
     func undo() {
-        if let field = window?.firstResponder as? NSTextView, content.canvas.isEditingText {
-            field.undoManager?.undo()
-        } else if session.undoManager.canUndo {
-            session.undoManager.undo()
-        }
+        content.canvas.undo(nil)
+        undoChanged()
     }
 
     func redo() {
-        if let field = window?.firstResponder as? NSTextView, content.canvas.isEditingText {
-            field.undoManager?.redo()
-        } else if session.undoManager.canRedo {
-            session.undoManager.redo()
-        }
+        content.canvas.redo(nil)
+        undoChanged()
     }
 
     func zoomToFit() { content.canvas.zoomToFit() }
@@ -256,7 +295,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         return fileURL
     }
 
-    @objc private func undoChanged() {
+    private func undoChanged() {
         model.canUndo = session.undoManager.canUndo
         model.canRedo = session.undoManager.canRedo
     }

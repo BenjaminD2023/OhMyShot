@@ -378,7 +378,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             onViewportChange?()
         case .tool:
             toolChanged()
-        case .settings:
+        case .settings, .history:
             break
         }
     }
@@ -621,10 +621,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.updateLive(document, selecting: [item.id])
             beginEditing(item.id, isNew: true)
         case .counter:
-            let item = Annotation(shape: .counter(Counter(center: point, value: session.document.nextCounterValue, numbering: settings.numbering)), style: settings.style)
+            let numbering = settings.numbering
+            let item = Annotation(shape: .counter(Counter(center: point, value: session.document.nextCounterValue(for: numbering), numbering: numbering)), style: settings.style)
             var document = session.document
             document.items.append(item)
-            session.commit(document, selecting: [item.id], actionName: String(localized: "Add Counter", bundle: .module))
+            // Not selected: counters go down one click after another, and the capsule stays with the
+            // tool, so a change of numbering applies to the next counters rather than the last one.
+            session.commit(document, selecting: [], actionName: String(localized: "Add Counter", bundle: .module))
         }
     }
 
@@ -895,6 +898,30 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     // MARK: Menu actions
 
+    /// ⌘Z. Answered here, ahead of the window: the window's own undo manager belongs to the SwiftUI
+    /// hosting it, not to the marks. While text is typed, Undo undoes typing.
+    @objc public func undo(_ sender: Any?) {
+        if let editing {
+            if editing.undo.canUndo { editing.undo.undo() }
+        } else {
+            session.undo()
+        }
+    }
+
+    /// ⇧⌘Z.
+    @objc public func redo(_ sender: Any?) {
+        if let editing {
+            if editing.undo.canRedo { editing.undo.redo() }
+        } else {
+            session.redo()
+        }
+    }
+
+    /// The undo manager Undo and Redo use now: the typing's while text is edited, else the marks'.
+    var activeUndoManager: UndoManager {
+        editing?.undo ?? session.undoManager
+    }
+
     @objc public func copy(_ sender: Any?) {
         onCopy?()
     }
@@ -925,12 +952,18 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(undo(_:)):
+            menuItem.title = activeUndoManager.undoMenuItemTitle
+            return activeUndoManager.canUndo
+        case #selector(redo(_:)):
+            menuItem.title = activeUndoManager.redoMenuItemTitle
+            return activeUndoManager.canRedo
         case #selector(delete(_:)), #selector(duplicateSelection(_:)), #selector(bringToFront(_:)), #selector(sendToBack(_:)):
-            !session.selection.isEmpty
+            return !session.selection.isEmpty
         case #selector(selectAll(_:)):
-            !session.document.items.isEmpty
+            return !session.document.items.isEmpty
         default:
-            true
+            return true
         }
     }
 

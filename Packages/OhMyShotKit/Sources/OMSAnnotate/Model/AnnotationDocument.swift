@@ -39,10 +39,11 @@ nonisolated public struct AnnotationDocument: Codable, Sendable, Equatable {
         items.first { $0.id == id }
     }
 
-    /// The next number a new counter should show: one past the highest so far.
-    public var nextCounterValue: Int {
+    /// The next value a new counter in `numbering` should show: one past the highest of that numbering
+    /// so far. Each numbering counts on its own: after 1, 2, the first letter is A, not C.
+    public func nextCounterValue(for numbering: Counter.Numbering) -> Int {
         let values = items.compactMap { item -> Int? in
-            if case .counter(let counter) = item.shape { return counter.value }
+            if case .counter(let counter) = item.shape, counter.numbering == numbering { return counter.value }
             return nil
         }
         return (values.max() ?? 0) + 1
