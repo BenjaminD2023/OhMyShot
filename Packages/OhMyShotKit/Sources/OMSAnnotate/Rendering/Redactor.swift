@@ -5,19 +5,23 @@ import Foundation
 /// Blurs or pixelates part of a capture for a redaction. Only the capture is processed, never other
 /// marks, and the result is the same every time for the same mark, so the screen and the export agree.
 nonisolated enum Redactor {
-    /// The redacted pixels for `rect` (in the capture's pixels), the size of `rect` clipped to the
-    /// capture, or nil when the rect misses it or the method draws no picture (solid).
-    static func image(for redaction: Redaction, id: UUID, base: CGImage, scale: CGFloat) -> (image: CGImage, rect: CGRect)? {
-        let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
+    /// The redacted pixels for `rect` (in the document's pixels), the size of `rect` clipped to the
+    /// picture under it, or nil when the rect misses it or the method draws no picture (solid).
+    /// `base` is what lies under redactions: the capture, or the capture with images combined into it
+    /// (`AnnotationRenderer.redactionSource`), whose top-left corner is at `origin` in the document.
+    static func image(for redaction: Redaction, id: UUID, base: CGImage, origin: CGPoint = .zero, scale: CGFloat) -> (image: CGImage, rect: CGRect)? {
+        let bounds = CGRect(x: origin.x, y: origin.y, width: CGFloat(base.width), height: CGFloat(base.height))
         let rect = redaction.rect.standardized.integral.intersection(bounds)
         guard !rect.isNull, rect.width >= 1, rect.height >= 1 else { return nil }
+        // In the source's own pixels.
+        let local = rect.offsetBy(dx: -origin.x, dy: -origin.y)
         switch redaction.method {
         case .solid:
             return nil
         case .blur:
-            return blurred(rect, of: base, scale: scale).map { ($0, rect) }
+            return blurred(local, of: base, scale: scale).map { ($0, rect) }
         case .pixelate:
-            return pixelated(rect, of: base, scale: scale, seed: id).map { ($0, rect) }
+            return pixelated(local, of: base, scale: scale, seed: id).map { ($0, rect) }
         }
     }
 

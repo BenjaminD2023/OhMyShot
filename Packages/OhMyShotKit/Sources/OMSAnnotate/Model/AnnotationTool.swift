@@ -15,6 +15,8 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
     case redact
     case spotlight
     case crop
+    /// Sets the capture on a background for sharing.
+    case background
 
     /// The key that picks the tool, as in CleanShot where they agree.
     public var key: Character {
@@ -31,7 +33,14 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
         case .redact: "b"
         case .spotlight: "s"
         case .crop: "c"
+        case .background: "g"
         }
+    }
+
+    /// Tools that change the picture as a whole rather than draw marks on it: passing modes the canvas
+    /// returns from, never the tool a new capture opens with.
+    public var isPictureMode: Bool {
+        self == .crop || self == .background
     }
 
     /// Tools that draw a mark by dragging from one corner or end to the other.
@@ -114,7 +123,7 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         case .counter(let counter): numbering = counter.numbering
         case .redaction(let redaction): self.redaction = redaction.method
         case .spotlight(let spot): oval = spot.oval
-        case .pen, .highlighter: break
+        case .pen, .highlighter, .image: break
         }
     }
 
@@ -149,7 +158,7 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         case .spotlight(var spot):
             spot.oval = oval
             item.shape = .spotlight(spot)
-        case .pen, .highlighter:
+        case .pen, .highlighter, .image:
             break
         }
         return item

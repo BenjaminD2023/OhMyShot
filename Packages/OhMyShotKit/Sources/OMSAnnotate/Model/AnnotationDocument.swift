@@ -18,18 +18,22 @@ nonisolated public struct AnnotationDocument: Codable, Sendable, Equatable {
     public var canvas: CGRect
     /// Back to front.
     public var items: [Annotation]
+    /// The background the capture sits on, if any. Marks may reach onto it.
+    public var backdrop: Backdrop?
 
-    public init(pixelSize: CGSize, scale: CGFloat, items: [Annotation] = []) {
+    public init(pixelSize: CGSize, scale: CGFloat, items: [Annotation] = [], backdrop: Backdrop? = nil) {
         self.pixelSize = pixelSize
         self.scale = scale > 0 ? scale : 1
         canvas = CGRect(origin: .zero, size: pixelSize)
         self.items = items
+        self.backdrop = backdrop
     }
 
     /// The capture itself, in its own pixels.
     public var imageBounds: CGRect { CGRect(origin: .zero, size: pixelSize) }
 
-    public var isEmpty: Bool { items.isEmpty && canvas == imageBounds }
+    /// Nothing drawn, cropped, or set behind the capture: it is what was taken.
+    public var isEmpty: Bool { items.isEmpty && canvas == imageBounds && backdrop == nil }
 
     public func index(of id: Annotation.ID) -> Int? {
         items.firstIndex { $0.id == id }
@@ -78,6 +82,9 @@ nonisolated public enum Shape: Codable, Sendable, Equatable {
     case redaction(Redaction)
     /// Dims everything but the spot. All spots share one dimming.
     case spotlight(Spot)
+    /// Another picture combined into the capture. Images are part of the picture: they lie under the
+    /// spotlight and every other mark.
+    case image(PlacedImage)
 }
 
 nonisolated public struct Arrow: Codable, Sendable, Equatable {
@@ -239,6 +246,19 @@ nonisolated public struct Redaction: Codable, Sendable, Equatable {
     }
 }
 
+/// A picture combined into the capture, kept in the picture store.
+nonisolated public struct PlacedImage: Codable, Sendable, Equatable {
+    /// Where it lies, in pixels.
+    public var rect: CGRect
+    /// Its name in the picture store.
+    public var name: String
+
+    public init(rect: CGRect, name: String) {
+        self.rect = rect
+        self.name = name
+    }
+}
+
 nonisolated public struct Spot: Codable, Sendable, Equatable {
     public var rect: CGRect
     public var oval: Bool
@@ -293,6 +313,11 @@ nonisolated public struct RGBA: Codable, Sendable, Hashable {
 
     public var cgColor: CGColor {
         CGColor(srgbRed: red, green: green, blue: blue, alpha: alpha)
+    }
+
+    /// These components read in `space` rather than sRGB: a color taken from a capture's own pixels.
+    public func cgColor(in space: CGColorSpace) -> CGColor {
+        CGColor(colorSpace: space, components: [red, green, blue, alpha].map { CGFloat($0) }) ?? cgColor
     }
 
     /// Relative luminance (WCAG), 0 for black to 1 for white.

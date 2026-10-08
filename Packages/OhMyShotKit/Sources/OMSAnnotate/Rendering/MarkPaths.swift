@@ -5,8 +5,8 @@ import Foundation
 /// filled path, so a translucent color never doubles where parts overlap, and hit testing tests the
 /// same path that is drawn.
 nonisolated enum MarkPaths {
-    /// The filled outline of a vector mark; nil for text, counters, redactions, and spots, which are
-    /// laid out rather than outlined.
+    /// The filled outline of a vector mark; nil for text, counters, redactions, spots, and images, which
+    /// are laid out rather than outlined.
     static func outline(of item: Annotation, scale: CGFloat) -> CGPath? {
         let width = max(item.style.lineWidth * scale, 0.5)
         switch item.shape {
@@ -34,7 +34,7 @@ nonisolated enum MarkPaths {
                 return CGPath(ellipseIn: CGRect(x: first.x - width / 2, y: first.y - width / 2, width: width, height: width), transform: nil)
             }
             return smoothPath(through: stroke.points).copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10)
-        case .text, .counter, .redaction, .spotlight:
+        case .text, .counter, .redaction, .spotlight, .image:
             return nil
         }
     }

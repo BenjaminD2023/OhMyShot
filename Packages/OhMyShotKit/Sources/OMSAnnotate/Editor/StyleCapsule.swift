@@ -10,6 +10,14 @@ final class StyleCapsule: NSView {
     var onDelete: (() -> Void)?
     var onCropReset: (() -> Void)?
     var onCropDone: (() -> Void)?
+    /// A background fill was picked; nil takes the background away.
+    var onBackdropFill: ((Backdrop.Fill?) -> Void)?
+    /// Choose a picture for the background, from the chip.
+    var onBackdropChoosePicture: (() -> Void)?
+    /// Show the background's adjustments, beside the chip.
+    var onBackdropAdjust: ((NSView) -> Void)?
+    /// Show the background presets, from the chip.
+    var onBackdropPresets: ((NSView) -> Void)?
 
     static let height: CGFloat = 38
     private static let inset: CGFloat = 4
@@ -21,6 +29,23 @@ final class StyleCapsule: NSView {
     private var settings = ToolSettings()
     private var hasSelection = false
     private var chips: [CapsuleChip] = []
+    /// What the background controls show, when the background is in hand.
+    private var background: BackgroundState?
+    /// The chip that opens the background's adjustments, while it is shown.
+    private(set) weak var adjustChip: NSView?
+
+    struct BackgroundState: Equatable {
+        var backdrop: Backdrop?
+        /// The picture chosen last, offered again.
+        var lastPicture: String?
+        /// The blurred capture a blur background would show.
+        var blur: CGImage?
+
+        static func == (lhs: BackgroundState, rhs: BackgroundState) -> Bool {
+            lhs.backdrop?.fill == rhs.backdrop?.fill && (lhs.backdrop == nil) == (rhs.backdrop == nil)
+                && lhs.lastPicture == rhs.lastPicture && lhs.blur === rhs.blur
+        }
+    }
 
     static let palette: [RGBA] = [.red, .orange, .yellow, .green, .blue, .purple, .black, .white]
 
@@ -102,7 +127,11 @@ final class StyleCapsule: NSView {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         layer?.borderWidth = contrast ? 1 : 0.5
         layer?.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
-        chips.forEach { $0.applyAppearance() }
+        chips.forEach {
+            $0.applyAppearance()
+            // Swatches draw their edge for the appearance and contrast in effect.
+            $0.needsDisplay = true
+        }
     }
 
     /// Shows the controls for `kind` with `settings`; `hasSelection` adds Delete.
@@ -110,6 +139,17 @@ final class StyleCapsule: NSView {
         self.kind = kind
         self.settings = settings
         self.hasSelection = hasSelection
+        background = nil
+        rebuild()
+    }
+
+    /// Shows the background's fills, its adjustments, and its presets. Rebuilt only when what the chips
+    /// show changes, so the adjustments' popover keeps its chip while a slider moves.
+    func showBackground(_ state: BackgroundState) {
+        guard kind != .background || background != state else { return }
+        kind = .background
+        hasSelection = false
+        background = state
         rebuild()
     }
 
@@ -125,6 +165,10 @@ final class StyleCapsule: NSView {
             return
         }
         stack.edgeInsets.left = Self.inset + 4
+        if kind == .background, let background {
+            buildBackground(background)
+            return
+        }
 
         var sections: [[NSView]] = []
         if usesColor {
@@ -156,7 +200,7 @@ final class StyleCapsule: NSView {
 
     private var usesColor: Bool {
         switch kind {
-        case .spotlight, .crop, .select: false
+        case .spotlight, .crop, .select, .background: false
         case .redact: settings.redaction == .solid
         default: true
         }
@@ -165,6 +209,8 @@ final class StyleCapsule: NSView {
     private var castsShadow: Bool {
         switch kind {
         case .arrow, .line, .rectangle, .ellipse, .pen, .text, .counter: true
+        // Selected marks show the select kind only when they belong to no tool: combined images.
+        case .select: hasSelection
         default: false
         }
     }
@@ -243,7 +289,7 @@ final class StyleCapsule: NSView {
                 chip.setAccessibilityLabel(String(localized: "\(Int(size)) points", bundle: .module))
                 return chip
             }
-        case .redact, .spotlight, .crop, .select:
+        case .redact, .spotlight, .crop, .select, .background:
             return []
         default:
             let widths: [CGFloat] = switch kind {
@@ -337,6 +383,206 @@ final class StyleCapsule: NSView {
         }
     }
 
+    // MARK: Background
+
+    private func buildBackground(_ state: BackgroundState) {
+        setAccessibilityLabel(String(localized: "Background", bundle: .module))
+        let fill = state.backdrop?.fill
+        var fills: [NSView] = []
+        fills.append(fillChip(Self.noneDot(), name: String(localized: "No Background", bundle: .module), selected: state.backdrop == nil) { [weak self] in
+            self?.onBackdropFill?(nil)
+        })
+        fills.append(fillChip(Self.clearDot(), name: String(localized: "Transparent", bundle: .module), selected: fill == .clear) { [weak self] in
+            self?.onBackdropFill?(.clear)
+        })
+        for gradient in BackdropGradient.allCases {
+            fills.append(fillChip(Self.gradientDot(gradient), name: Self.name(of: gradient), selected: fill == .gradient(gradient)) { [weak self] in
+                self?.onBackdropFill?(.gradient(gradient))
+            })
+        }
+        // Always in its place, so the chips after it never shift; a plain disc until the blur exists.
+        fills.append(fillChip(state.blur.map(Self.imageDot) ?? Self.dotImage(RGBA(red: 0.85, green: 0.85, blue: 0.85)), name: String(localized: "Blurred Capture", bundle: .module), selected: fill == .blur) { [weak self] in
+            self?.onBackdropFill?(.blur)
+        })
+        // A color of one's own: the color ringed while in use, else a hue wheel that opens the panel.
+        if case .color(let color) = fill {
+            fills.append(fillChip(Self.dotImage(color), name: String(localized: "Background Color…", bundle: .module), selected: true) { [weak self] in
+                self?.pickBackdropColor(color)
+            })
+        } else {
+            fills.append(fillChip(Self.wheel(), name: String(localized: "Background Color…", bundle: .module), selected: false) { [weak self] in
+                self?.pickBackdropColor(nil)
+            })
+        }
+        // A picture: the one in use (choosing again opens the panel), the last one used, or a new one.
+        if case .picture(let name) = fill {
+            let image = PictureStore.shared.image(named: name, fitting: 64, limit: PictureStore.backgroundLimit)
+            fills.append(fillChip(image.map(Self.imageDot) ?? Self.pictureSymbol(), name: String(localized: "Choose Another Picture…", bundle: .module), selected: true) { [weak self] in
+                self?.onBackdropChoosePicture?()
+            })
+        } else if let last = state.lastPicture, let image = PictureStore.shared.image(named: last, fitting: 64, limit: PictureStore.backgroundLimit) {
+            fills.append(fillChip(Self.imageDot(image), name: String(localized: "Picture", bundle: .module), selected: false) { [weak self] in
+                self?.onBackdropFill?(.picture(last))
+            })
+        } else {
+            fills.append(fillChip(Self.pictureSymbol(), name: String(localized: "Choose Picture…", bundle: .module), selected: false) { [weak self] in
+                self?.onBackdropChoosePicture?()
+            })
+        }
+        fills.forEach(add)
+        addDivider()
+        let adjust = symbolChip("slider.horizontal.3", name: String(localized: "Adjust Background", bundle: .module), selected: false) {}
+        adjust.handlerOverride = { [weak self, weak adjust] in
+            guard let adjust else { return }
+            self?.onBackdropAdjust?(adjust)
+        }
+        add(adjust)
+        adjustChip = adjust
+        let presets = symbolChip("square.stack", name: String(localized: "Background Presets", bundle: .module), selected: false) {}
+        presets.handlerOverride = { [weak self, weak presets] in
+            guard let presets else { return }
+            self?.onBackdropPresets?(presets)
+        }
+        add(presets)
+    }
+
+    private func fillChip(_ image: NSImage, name: String, selected: Bool, action: @escaping () -> Void) -> CapsuleChip {
+        let chip = CapsuleChip(image: Self.ringed(image, selected: selected), width: 24, action: action)
+        chip.highlightsSelection = false
+        chip.isSelected = selected
+        chip.setAccessibilityLabel(name)
+        chip.toolTip = name
+        return chip
+    }
+
+    private func pickBackdropColor(_ current: RGBA?) {
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = false
+        panel.isContinuous = false
+        panel.color = current.flatMap { NSColor(cgColor: $0.cgColor) } ?? .white
+        panel.setTarget(self)
+        panel.setAction(#selector(backdropColorPicked(_:)))
+        Self.colorPanelOwner = self
+        panel.orderFront(nil)
+    }
+
+    @objc private func backdropColorPicked(_ sender: NSColorPanel) {
+        guard let color = RGBA(sender.color.cgColor) else { return }
+        onBackdropFill?(.color(color.withAlpha(1)))
+    }
+
+    static func name(of gradient: BackdropGradient) -> String {
+        switch gradient {
+        case .sky: String(localized: "Sky", bundle: .module)
+        case .lilac: String(localized: "Lilac", bundle: .module)
+        case .rose: String(localized: "Rose", bundle: .module)
+        case .peach: String(localized: "Peach", bundle: .module)
+        case .citrus: String(localized: "Citrus", bundle: .module)
+        case .mint: String(localized: "Mint", bundle: .module)
+        case .ocean: String(localized: "Ocean", bundle: .module)
+        case .dusk: String(localized: "Dusk", bundle: .module)
+        case .graphite: String(localized: "Graphite", bundle: .module)
+        case .paper: String(localized: "Paper", bundle: .module)
+        }
+    }
+
+    /// The disc a fill chip shows, 14 pt across, with the edge every swatch has.
+    private static let swatch = CGRect(x: 4, y: 4, width: 14, height: 14)
+
+    private static func swatchImage(_ draw: @escaping (CGContext, CGRect) -> Void) -> NSImage {
+        let image = NSImage(size: CGSize(width: 22, height: 22), flipped: true) { _ in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.saveGState()
+            context.addEllipse(in: swatch)
+            context.clip()
+            draw(context, swatch)
+            context.restoreGState()
+            strokeSwatchEdge(context, around: swatch)
+            return true
+        }
+        // Drawn each time, so the edge follows the appearance and Increase Contrast.
+        image.cacheMode = .never
+        return image
+    }
+
+    /// The edge every swatch and color dot has, so light ones hold on the light capsule and dark ones
+    /// on the dark: black 0.18 in light, white 0.38 in dark, 1 pt and stronger under Increase Contrast.
+    /// Read from the appearance the chip draws in.
+    private static func strokeSwatchEdge(_ context: CGContext, around disc: CGRect) {
+        let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        let width: CGFloat = contrast ? 1 : 0.5
+        context.setStrokeColor(dark ? CGColor(gray: 1, alpha: contrast ? 0.6 : 0.38) : CGColor(gray: 0, alpha: contrast ? 0.4 : 0.18))
+        context.setLineWidth(width)
+        context.strokeEllipse(in: disc.insetBy(dx: width / 2, dy: width / 2))
+    }
+
+    /// `image` with the accent ring of a chosen swatch around it.
+    private static func ringed(_ image: NSImage, selected: Bool) -> NSImage {
+        guard selected else { return image }
+        let ringed = NSImage(size: CGSize(width: 22, height: 22), flipped: true) { rect in
+            image.draw(in: rect)
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.setStrokeColor(NSColor.controlAccentColor.cgColor)
+            context.setLineWidth(2)
+            context.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
+            return true
+        }
+        ringed.cacheMode = .never
+        return ringed
+    }
+
+    /// White with a red stroke across: no background, as "None" swatches read in design apps.
+    private static func noneDot() -> NSImage {
+        swatchImage { context, rect in
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(rect)
+            context.setStrokeColor(RGBA.red.cgColor)
+            context.setLineWidth(1.5)
+            context.strokeLineSegments(between: [CGPoint(x: rect.maxX, y: rect.minY), CGPoint(x: rect.minX, y: rect.maxY)])
+        }
+    }
+
+    /// A checkerboard: transparent room.
+    private static func clearDot() -> NSImage {
+        swatchImage { context, rect in
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(rect)
+            context.setFillColor(CGColor(gray: 0.78, alpha: 1))
+            let cell: CGFloat = 3.5
+            for row in 0..<4 {
+                for column in 0..<4 where (row + column).isMultiple(of: 2) {
+                    context.fill(CGRect(x: rect.minX + CGFloat(column) * cell, y: rect.minY + CGFloat(row) * cell, width: cell, height: cell))
+                }
+            }
+        }
+    }
+
+    private static func gradientDot(_ gradient: BackdropGradient) -> NSImage {
+        swatchImage { context, rect in gradient.recipe.draw(in: rect, context: context) }
+    }
+
+    private static func dotImage(_ color: RGBA) -> NSImage {
+        swatchImage { context, rect in
+            context.setFillColor(color.withAlpha(1).cgColor)
+            context.fill(rect)
+        }
+    }
+
+    private static func imageDot(_ image: CGImage) -> NSImage {
+        swatchImage { context, rect in
+            context.interpolationQuality = .high
+            AnnotationRenderer.drawImage(image, in: BackdropPainter.aspectFill(CGSize(width: image.width, height: image.height), in: rect), context: context)
+        }
+    }
+
+    private static func pictureSymbol() -> NSImage {
+        let image = NSImage(systemSymbolName: "photo.badge.plus", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .medium)) ?? NSImage()
+        image.isTemplate = true
+        return image
+    }
+
     private func symbolChip(_ symbol: String, name: String, selected: Bool, action: @escaping () -> Void) -> CapsuleChip {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: name)?.withSymbolConfiguration(.init(pointSize: 13, weight: .medium)) ?? NSImage()
         let chip = CapsuleChip(image: image, width: 30, action: action)
@@ -359,15 +605,13 @@ final class StyleCapsule: NSView {
     // MARK: Icons
 
     private static func dot(_ color: RGBA, selected: Bool) -> NSImage {
-        NSImage(size: CGSize(width: 22, height: 22), flipped: true) { rect in
+        let image = NSImage(size: CGSize(width: 22, height: 22), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             let disc = rect.insetBy(dx: 5, dy: 5)
             context.setFillColor(color.withAlpha(1).cgColor)
             context.fillEllipse(in: disc)
-            // An edge so white and yellow hold on the white capsule.
-            context.setStrokeColor(CGColor(gray: 0, alpha: 0.18))
-            context.setLineWidth(0.5)
-            context.strokeEllipse(in: disc.insetBy(dx: 0.25, dy: 0.25))
+            // An edge so white and yellow hold on the light capsule, black on the dark.
+            strokeSwatchEdge(context, around: disc)
             if selected {
                 context.setStrokeColor(NSColor.controlAccentColor.cgColor)
                 context.setLineWidth(2)
@@ -375,6 +619,8 @@ final class StyleCapsule: NSView {
             }
             return true
         }
+        image.cacheMode = .never
+        return image
     }
 
     private static func wheel() -> NSImage {
@@ -557,6 +803,8 @@ final class CapsuleChip: NSButton {
     }
     /// Color dots draw their own ring instead of a fill.
     var highlightsSelection = true
+    /// Replaces the action given at creation, for chips that hand themselves to it.
+    var handlerOverride: (() -> Void)?
     private let handler: () -> Void
     private var isHovered = false
     private let prominent: Bool
@@ -601,7 +849,7 @@ final class CapsuleChip: NSButton {
     }
 
     @objc private func clicked() {
-        handler()
+        if let handlerOverride { handlerOverride() } else { handler() }
     }
 
     override func updateTrackingAreas() {

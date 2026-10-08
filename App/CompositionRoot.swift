@@ -7,6 +7,7 @@ import OMSCapture
 import OMSCore
 import OMSUI
 import OSLog
+import UniformTypeIdentifiers
 
 /// Builds the app's services once and wires them together. Feature modules never import each other;
 /// they meet here, through closures.
@@ -59,6 +60,7 @@ final class CompositionRoot {
                 .init(title: String(localized: "Recognize Text in Image…")) { [weak self] in self?.textCapture.openImageFile() },
             ],
             historyEntries: [
+                .init(title: String(localized: "Annotate Image…")) { [weak self] in self?.chooseFilesToAnnotate() },
                 .init(title: String(localized: "Capture History…"), shortcut: .openHistory) { [weak self] in self?.showHistory() },
                 .init(
                     title: String(localized: "Restore Recently Closed"),
@@ -98,6 +100,12 @@ final class CompositionRoot {
         captures.onCaptured = { [weak self] item in
             self?.didCapture(item)
         }
+        captures.compose = { image, scale in
+            guard let backdrop = BackdropPresets.shared.automatic?.backdrop else { return nil }
+            let document = AnnotationDocument(pixelSize: CGSize(width: image.width, height: image.height), scale: scale, backdrop: backdrop)
+            guard let composed = await AnnotationRenderer.render(document, base: image), let data = try? JSONEncoder().encode(document) else { return nil }
+            return (composed, data)
+        }
         annotations.onChange = { [weak self] entry, data in
             self?.pictureChanged(entry, data: data)
         }
@@ -105,6 +113,9 @@ final class CompositionRoot {
             guard let self, let saved = captures.save(fileAt: file) else { return nil }
             quickAccess.markSaved(entry.id, at: saved)
             return saved
+        }
+        annotations.saveFile = { [weak self] file in
+            self?.captures.save(fileAt: file)
         }
 
         displays.onChange = { [weak self] _ in
@@ -259,6 +270,58 @@ final class CompositionRoot {
         }
     }
 
+    // MARK: Opening files
+
+    /// Opens files in the editor: projects as they are; pictures are added to the history first, so
+    /// their marks are kept and stay editable like a capture's.
+    func open(_ urls: [URL]) {
+        for url in urls where url.isFileURL {
+            if url.pathExtension.lowercased() == AnnotationProject.fileExtension {
+                annotations.openProject(at: url)
+            } else if ImageLoader.canLoad(url) {
+                Task { await annotateImage(at: url) }
+            }
+        }
+    }
+
+    /// Chooses pictures or projects to open in the editor.
+    private func chooseFilesToAnnotate() {
+        let chooser = NSOpenPanel()
+        chooser.allowedContentTypes = [.image, AnnotationProject.contentType]
+        chooser.allowsMultipleSelection = true
+        chooser.message = String(localized: "Choose a picture to mark up, or a project to go on with.")
+        chooser.prompt = String(localized: "Annotate")
+        NSApp.activate()
+        chooser.begin { [weak self] response in
+            guard response == .OK else { return }
+            self?.open(chooser.urls)
+        }
+    }
+
+    private func annotateImage(at url: URL) async {
+        guard let loaded = await Self.loadImage(url), let png = try? await ImageExporter.encode(loaded.image, as: .png) else {
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to annotate it")
+            NSSound.beep()
+            return
+        }
+        do {
+            let entry = try history.add(
+                data: png, name: url.deletingPathExtension().lastPathComponent, fileExtension: ImageExporter.Format.png.fileExtension,
+                kind: .screenshot, pixelWidth: loaded.image.width, pixelHeight: loaded.image.height, appName: nil
+            )
+            historyWindow?.reload()
+            annotations.annotate(entry, scale: loaded.scale)
+        } catch {
+            Log.capture.error("Adding \(url.lastPathComponent, privacy: .public) to the history failed: \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
+        }
+    }
+
+    /// Decodes off the main actor: a large photo takes a while.
+    @concurrent private nonisolated static func loadImage(_ url: URL) async -> ImageLoader.Loaded? {
+        ImageLoader.load(contentsOf: url, fallbackScale: 1)
+    }
+
     /// Opens a capture in the annotation editor; `displayID` is the screen it came from, for its scale.
     private func annotate(_ entry: HistoryItem, displayID: CGDirectDisplayID?) {
         let layout = displays.layout
@@ -399,7 +462,12 @@ final class CompositionRoot {
             urlScheme: urlScheme,
             relaunch: { Relauncher.relaunch() },
             openHistory: { [weak self] in self?.showHistory() },
-            expiredCount: { [weak self] retention in self?.expiredCount(for: retention) ?? 0 }
+            expiredCount: { [weak self] retention in self?.expiredCount(for: retention) ?? 0 },
+            backgrounds: SettingsDependencies.Backgrounds(
+                presets: { BackdropPresets.shared.all.map { SettingsDependencies.Backgrounds.Choice(id: $0.id, name: $0.name) } },
+                automatic: { BackdropPresets.shared.automatic?.id },
+                setAutomatic: { BackdropPresets.shared.setAutomatic($0) }
+            )
         ))
         controller.onClose = { [weak self] in
             Task { @MainActor in

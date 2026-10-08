@@ -206,3 +206,28 @@ Same machine, Debug build, one display. The editor opened on the drawn demo page
   or the zoom does, through the same renderer exports use, so the screen and the export agree.
 - **Edits are written when the capture leaves the editor** (closed, copied, saved, dragged out), never
   per change: a 6880×2880 PNG takes about 100 ms to encode.
+
+### Background, combine, and project files (2026-10-09)
+
+Same machine. Exports were timed in a Release build of the package (`swift test -c release`) on a
+synthetic 6880×2880 capture with a background (inset, Auto Balance, deepest shadow); the editor in the
+Debug app on a capture read back from the history (1520×1120 px).
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Reading the capture's edge (edge color, content bounds) on 6880×2880 | 65 ms | once per canvas |
+| 6880×2880 export on a background (7940×3940 out): gradient / blurred capture | 0.44 / 0.28 s | off the main actor |
+| Footprint with a background on / 30 s after closing (no background: 46 MB after) | 64–66 / 50 MB | back to where it was |
+| Footprint growth over repeated open–edit–close rounds | none | none |
+
+- **The card shadow is the card's shape blurred small and drawn back up.** Core Graphics' own shadow
+  blurred the whole 7940×3940 picture; a mask a few hundred pixels across, box-blurred three times,
+  looks the same at that blur width and took the export from 0.56 to 0.44 s.
+- **The background layer draws at one pixel per point.** It is the size of the whole view, so at two
+  pixels per point its backing store alone was about 12 MB; gradients, blurs, and shadows are soft, and
+  exports still draw them at full size.
+- **The edge is read in bands from each side inward**, never the whole capture at once, and stops at the
+  first line that is not the edge color.
+- **The drawn demo page is not a fair test of memory here.** It is made with Core Image, so the
+  background's reads of its pixels (edge, blur) render it again on the CPU; the editor then closed at
+  80–86 MB instead of about 50. Captures read from files do not do this.

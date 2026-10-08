@@ -25,11 +25,14 @@ public final class AnnotationSession {
     public var tool: AnnotationTool {
         didSet {
             guard tool != oldValue else { return }
-            // Cropping is a passing mode; the next capture opens with a drawing tool.
-            if tool != .crop { UserDefaults.standard.set(tool.rawValue, forKey: Self.toolKey) }
+            // Cropping and the background are passing modes; the next capture opens with a drawing tool.
+            if !tool.isPictureMode { UserDefaults.standard.set(tool.rawValue, forKey: Self.toolKey) }
+            if tool.isPictureMode, !oldValue.isPictureMode { toolBeforeMode = oldValue }
             notify(.tool)
         }
     }
+    /// The tool in hand before cropping or the background, to go back to when done.
+    public private(set) var toolBeforeMode: AnnotationTool = .arrow
     /// The selected marks, in the order they were selected.
     public private(set) var selection: [Annotation.ID] = []
     /// Whether the document changed since it was last kept.
@@ -39,9 +42,15 @@ public final class AnnotationSession {
     @ObservationIgnored private var settings: [AnnotationTool: ToolSettings]
     @ObservationIgnored private var listeners: [(Event) -> Void] = []
     @ObservationIgnored private var liveChangeStart: (document: AnnotationDocument, selection: [Annotation.ID])?
+    /// The background last set, which the next one starts from.
+    @ObservationIgnored public private(set) var lastBackdrop: Backdrop
+    @ObservationIgnored private var edgeCache: (canvas: CGRect, edges: EdgeAnalysis)?
+    @ObservationIgnored private var blurCache: (canvas: CGRect, image: CGImage?)?
+    @ObservationIgnored private var redactionCache: (images: [Annotation], source: (image: CGImage, origin: CGPoint)?)?
 
     private static let toolKey = "annotation.tool"
     private static let settingsKey = "annotation.toolSettings"
+    private static let backdropKey = "annotation.backdrop"
 
     /// - Parameters:
     ///   - image: the capture.
@@ -56,8 +65,9 @@ public final class AnnotationSession {
             self.document = AnnotationDocument(pixelSize: size, scale: scale)
         }
         let stored = UserDefaults.standard.string(forKey: Self.toolKey).flatMap(AnnotationTool.init(rawValue:))
-        tool = stored == nil || stored == .crop ? .arrow : stored!
+        tool = stored.flatMap { $0.isPictureMode ? nil : $0 } ?? .arrow
         settings = Self.loadSettings()
+        lastBackdrop = UserDefaults.standard.data(forKey: Self.backdropKey).flatMap { try? JSONDecoder().decode(Backdrop.self, from: $0) } ?? Backdrop()
         undoManager.levelsOfUndo = 100
     }
 
@@ -137,6 +147,8 @@ public final class AnnotationSession {
         case .counter: .counter
         case .redaction: .redact
         case .spotlight: .spotlight
+        // No tool draws images: they are dropped or pasted in, and selected like anything else.
+        case .image: .select
         }
     }
 
@@ -153,6 +165,120 @@ public final class AnnotationSession {
         if let data = try? JSONEncoder().encode(stored) {
             UserDefaults.standard.set(data, forKey: Self.settingsKey)
         }
+    }
+
+    /// Leaves cropping or the background for the tool in hand before.
+    public func leavePictureMode() {
+        if tool.isPictureMode { tool = toolBeforeMode }
+    }
+
+    // MARK: Background
+
+    /// Sets the background, or takes it away with nil, as one undoable step (or as part of the live
+    /// change in progress, such as a slider's drag).
+    public func setBackdrop(_ backdrop: Backdrop?, actionName: String) {
+        var document = self.document
+        document.backdrop = backdrop
+        if isInLiveChange {
+            // Remembered once the drag ends, not at every step of it.
+            updateLive(document)
+        } else {
+            if let backdrop { rememberBackdrop(backdrop) }
+            commit(document, actionName: actionName)
+        }
+    }
+
+    /// Changes the background, starting from the last one set when there is none.
+    public func changeBackdrop(_ actionName: String, _ change: (inout Backdrop) -> Void) {
+        var backdrop = document.backdrop ?? lastBackdrop
+        change(&backdrop)
+        setBackdrop(backdrop, actionName: actionName)
+    }
+
+    private func rememberBackdrop(_ backdrop: Backdrop) {
+        guard backdrop != lastBackdrop else { return }
+        lastBackdrop = backdrop
+        if let data = try? JSONEncoder().encode(backdrop) {
+            UserDefaults.standard.set(data, forKey: Self.backdropKey)
+        }
+    }
+
+    /// The capture's edge as the canvas keeps it, read once per canvas.
+    public var edges: EdgeAnalysis {
+        let canvas = document.canvas.standardized
+        if let edgeCache, edgeCache.canvas == canvas { return edgeCache.edges }
+        let edges = EdgeAnalysis.of(base, canvas: canvas)
+        edgeCache = (canvas, edges)
+        return edges
+    }
+
+    /// Where the background, the capture, and its card go; nil without a background.
+    public var backdropLayout: BackdropLayout? {
+        document.backdrop == nil ? nil : document.backdropLayout(edges: edges)
+    }
+
+    /// The blurred capture a blur background shows, made once per canvas.
+    public var blurredCapture: CGImage? {
+        let canvas = document.canvas.standardized
+        if let blurCache, blurCache.canvas == canvas { return blurCache.image }
+        let image = BackdropPainter.blurredCapture(base, canvas: canvas)
+        blurCache = (canvas, image)
+        return image
+    }
+
+    // MARK: Images
+
+    /// Combines pictures into the capture, each centered on `point` (pixels) and each later one a
+    /// little down and to the right, the canvas grown to hold them, as one undoable step. `size` is in
+    /// the document's pixels. The new images are selected.
+    public func addImages(_ pictures: [(name: String, size: CGSize)], at point: CGPoint) {
+        guard !pictures.isEmpty else { return }
+        var document = self.document
+        var added: [Annotation.ID] = []
+        for (index, picture) in pictures.enumerated() {
+            let offset = CGFloat(index) * 24 * document.scale
+            let rect = CGRect(
+                x: point.x - picture.size.width / 2 + offset, y: point.y - picture.size.height / 2 + offset,
+                width: picture.size.width, height: picture.size.height
+            ).integral
+            let item = Annotation(shape: .image(PlacedImage(rect: rect, name: picture.name)), style: Style(color: .black, lineWidth: 0, shadow: false))
+            document.items.append(item)
+            added.append(item.id)
+        }
+        document.canvas = Self.canvas(holdingImagesOf: document)
+        let name = pictures.count == 1 ? String(localized: "Add Image", bundle: .module) : String(localized: "Add Images", bundle: .module)
+        commit(document, selecting: added, actionName: name)
+    }
+
+    /// Grows the canvas to hold every image after one was moved or resized past its edge; part of the
+    /// live change in progress, if any. Never shrinks it: a crop does that.
+    public func growCanvasToHoldImages() {
+        let canvas = Self.canvas(holdingImagesOf: document)
+        guard canvas != document.canvas.standardized else { return }
+        var document = self.document
+        document.canvas = canvas
+        if isInLiveChange {
+            updateLive(document)
+        } else {
+            commit(document, actionName: String(localized: "Resize Canvas", bundle: .module))
+        }
+    }
+
+    private static func canvas(holdingImagesOf document: AnnotationDocument) -> CGRect {
+        document.items.reduce(document.canvas.standardized) { canvas, item in
+            if case .image(let image) = item.shape { return canvas.union(image.rect.standardized) }
+            return canvas
+        }.integral
+    }
+
+    /// What blurs and pixelations show: the capture with the images combined into it, and where its
+    /// corner is in the document; nil while nothing is combined. Made again only when an image changes.
+    public var redactionSource: (image: CGImage, origin: CGPoint)? {
+        let images = document.items.filter { if case .image = $0.shape { true } else { false } }
+        if let redactionCache, redactionCache.images == images { return redactionCache.source }
+        let source = AnnotationRenderer.redactionSource(document, base: base)
+        redactionCache = (images, source)
+        return source
     }
 
     // MARK: Selection
@@ -198,6 +324,7 @@ public final class AnnotationSession {
         guard let start = liveChangeStart else { return }
         liveChangeStart = nil
         guard start.document != document else { return }
+        if let backdrop = document.backdrop, backdrop != start.document.backdrop { rememberBackdrop(backdrop) }
         registerUndo(restoring: start.document, selection: start.selection, actionName: actionName)
     }
 

@@ -6,6 +6,7 @@ import OMSCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var root: CompositionRoot?
     private var pendingURLs: [(url: URL, senderPID: pid_t?)] = []
+    private var pendingFiles: [URL] = []
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.make(settingsTarget: self)
@@ -34,6 +35,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             root.handle(url: pending.url, senderPID: pending.senderPID)
         }
         pendingURLs.removeAll()
+        root.open(pendingFiles)
+        pendingFiles.removeAll()
+    }
+
+    /// Files opened with the app from Finder: projects, and pictures to mark up.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let files = urls.filter(\.isFileURL)
+        if let root {
+            root.open(files)
+        } else {
+            pendingFiles.append(contentsOf: files)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

@@ -11,6 +11,9 @@ struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
     let openHistory: () -> Void
     let expiredCount: (HistoryRetention) -> Int
+    let backgrounds: SettingsDependencies.Backgrounds
+    @State private var backgroundPresets: [SettingsDependencies.Backgrounds.Choice] = []
+    @State private var automaticBackground: UUID?
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
@@ -64,6 +67,31 @@ struct GeneralSettingsView: View {
                 } label: {
                     Text("Save to", bundle: .module)
                     Text(exportPath)
+                }
+                Picker(selection: Binding(
+                    get: { automaticBackground },
+                    set: { choice in
+                        automaticBackground = choice
+                        backgrounds.setAutomatic(choice)
+                    }
+                )) {
+                    Text("None", bundle: .module).tag(UUID?.none)
+                    if !backgroundPresets.isEmpty { Divider() }
+                    ForEach(backgroundPresets) { preset in
+                        Text(preset.name).tag(Optional(preset.id))
+                    }
+                } label: {
+                    Text("Background", bundle: .module)
+                    if backgroundPresets.isEmpty {
+                        Text("Puts each new screenshot on a background. Save one as a preset in the editor’s Background tool first.", bundle: .module)
+                    } else {
+                        Text("Puts each new screenshot on a background preset saved in the editor.", bundle: .module)
+                    }
+                }
+                .disabled(backgroundPresets.isEmpty)
+                .onAppear {
+                    backgroundPresets = backgrounds.presets()
+                    automaticBackground = backgrounds.automatic()
                 }
             } header: {
                 Text("After capturing", bundle: .module)

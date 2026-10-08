@@ -76,6 +76,69 @@ enum DebugEditorDemo {
             // As the capsule's numbering chips do.
             editor.session.changeSettings("Numbering") { $0.numbering = numbering }
         }
+        // The background: backdrop=none|clear|blur|<gradient>|color:RRGGBB|picture:<path>, then
+        // padding=, inset=, corners=, shadow= (numbers), balanced=0|1, ratio=auto|W:H, align=<alignment>.
+        if let fill = value("backdrop") {
+            if fill == "none" {
+                editor.session.setBackdrop(nil, actionName: "Remove Background")
+            } else if let parsed = backdropFill(fill) {
+                editor.session.changeBackdrop("Background") { $0.fill = parsed }
+            }
+        }
+        func number(_ name: String) -> CGFloat? { value(name).flatMap(Double.init).map { CGFloat($0) } }
+        if let padding = number("padding") { editor.session.changeBackdrop("Padding") { $0.padding = padding } }
+        if let inset = number("inset") { editor.session.changeBackdrop("Inset") { $0.inset = inset } }
+        if let corners = number("corners") { editor.session.changeBackdrop("Corners") { $0.cornerRadius = corners } }
+        if let shadow = number("shadow") { editor.session.changeBackdrop("Shadow") { $0.shadow = shadow } }
+        if let balanced = value("balanced") { editor.session.changeBackdrop("Auto Balance") { $0.balanced = balanced == "1" } }
+        if let ratio = value("ratio") {
+            let parts = ratio.split(separator: ":").compactMap { Int($0) }
+            editor.session.changeBackdrop("Picture Shape") { $0.ratio = parts.count == 2 ? Backdrop.Ratio(parts[0], parts[1]) : nil }
+        }
+        if let align = value("align").flatMap(Backdrop.Alignment.init(rawValue:)) {
+            editor.session.changeBackdrop("Position") { $0.alignment = align }
+        }
+        if value("adjust") == "1" {
+            editor.showBackdropAdjustments()
+        }
+        // preset=<name> saves the background as a preset; automatic=<name>|none sets the one every new
+        // screenshot gets (put it back to none afterwards).
+        if let name = value("preset"), let backdrop = editor.session.document.backdrop {
+            BackdropPresets.shared.add(name: name, backdrop: backdrop)
+        }
+        if let automatic = value("automatic") {
+            BackdropPresets.shared.setAutomatic(BackdropPresets.shared.all.last { $0.name == automatic }?.id)
+            Log.app.notice("debug.editor-act automatic=\(BackdropPresets.shared.automatic?.name ?? "none", privacy: .public) presets=\(BackdropPresets.shared.all.count, privacy: .public)")
+        }
+        if let name = value("deletepreset") {
+            BackdropPresets.shared.all.filter { $0.name == name }.forEach { BackdropPresets.shared.remove($0.id) }
+        }
+        // addimage=<path>[&at=x,y] combines a picture file as a drop does; pasteimage=<path> pastes it as
+        // PNG data from a private pasteboard, never the clipboard.
+        if let path = value("addimage") {
+            let at = value("at")?.split(separator: ",").compactMap { Double($0) } ?? []
+            let point = at.count == 2 ? CGPoint(x: at[0], y: at[1]) : CGPoint(x: editor.session.document.canvas.maxX, y: editor.session.document.canvas.midY)
+            editor.simulateDrop([URL(filePath: path)], at: point)
+        }
+        if let target = value("droptarget") {
+            editor.simulateDropTarget(target == "1")
+        }
+        if let path = value("pasteimage"), let data = try? Data(contentsOf: URL(filePath: path)) {
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name("io.github.fzlzjerry.ohmyshot.debug.\(UUID().uuidString)"))
+            pasteboard.clearContents()
+            pasteboard.setData(data, forType: .png)
+            editor.simulatePaste(from: pasteboard)
+            pasteboard.releaseGlobally()
+        }
+        // saveproject=<path> writes the capture and its marks as a project, as Save as Project… does.
+        if let path = value("saveproject") {
+            do {
+                try AnnotationProject(capture: editor.session.base, document: editor.session.document).write(to: URL(filePath: path))
+                Log.app.notice("debug.editor-act saved project \(path, privacy: .public)")
+            } catch {
+                Log.app.error("debug.editor-act project failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
         if let steps = value("zoomin").flatMap(Int.init) {
             editor.simulateZoomIn(steps)
         }
@@ -92,6 +155,19 @@ enum DebugEditorDemo {
         if value("chain") == "1" {
             Log.app.notice("debug.editor-chain \(editor.debugUndoChain, privacy: .public)")
         }
+    }
+
+    private static func backdropFill(_ text: String) -> Backdrop.Fill? {
+        if text == "clear" { return .clear }
+        if text == "blur" { return .blur }
+        if let gradient = BackdropGradient(rawValue: text) { return .gradient(gradient) }
+        if text.hasPrefix("color:"), let value = UInt32(text.dropFirst(6), radix: 16) {
+            return .color(RGBA(red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255, blue: Double(value & 0xFF) / 255))
+        }
+        if text.hasPrefix("picture:"), let name = try? PictureStore.shared.add(URL(filePath: String(text.dropFirst(8)))) {
+            return .picture(name)
+        }
+        return nil
     }
 
     /// A mark of every kind, placed on the demo page's parts (in its pixels, at 2×).

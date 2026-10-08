@@ -29,6 +29,8 @@ nonisolated extension Annotation {
             return redaction.rect.standardized
         case .spotlight(let spot):
             return spot.rect.standardized
+        case .image(let image):
+            return image.rect.standardized
         case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter:
             return MarkPaths.outline(of: self, scale: scale)?.boundingBoxOfPath ?? .null
         }
@@ -40,6 +42,15 @@ nonisolated extension Annotation {
         guard !bounds.isNull else { return bounds }
         let shadow = style.shadow && castsShadow ? (AnnotationRenderer.shadowBlur * 2 + AnnotationRenderer.shadowDrop) * scale : 0
         return bounds.insetBy(dx: -(shadow + 2), dy: -(shadow + 2))
+    }
+
+    /// Parts of the picture rather than marks over it: spots, drawn as one dimming, and combined
+    /// images, which lie under every mark.
+    public var isPicturePart: Bool {
+        switch shape {
+        case .spotlight, .image: true
+        default: false
+        }
     }
 
     /// Marks that would hide what they cover if the shadow fell on it never cast one.
@@ -54,7 +65,7 @@ nonisolated extension Annotation {
     /// unless they are already selected.
     public var coversArea: Bool {
         switch shape {
-        case .redaction, .spotlight, .highlighter: true
+        case .redaction, .spotlight, .highlighter, .image: true
         case .rectangle(let box), .ellipse(let box): box.filled
         default: false
         }
@@ -67,7 +78,7 @@ nonisolated extension Annotation {
         switch shape {
         case .text, .counter:
             return bounds(scale: scale).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
-        case .redaction, .spotlight:
+        case .redaction, .spotlight, .image:
             let rect = bounds(scale: scale)
             let outer = rect.insetBy(dx: -tolerance, dy: -tolerance)
             guard outer.contains(point) else { return false }
@@ -96,6 +107,9 @@ nonisolated extension Annotation {
             return Self.handles(of: redaction.rect)
         case .spotlight(let spot):
             return Self.handles(of: spot.rect)
+        case .image(let image):
+            // Corners only: an image stretched along one side is a distorted image.
+            return Self.handles(of: image.rect).filter { [.topLeft, .topRight, .bottomRight, .bottomLeft].contains($0.handle) }
         case .text:
             let frame = bounds(scale: scale)
             return [(.right, CGPoint(x: frame.maxX, y: frame.midY))]
@@ -155,6 +169,10 @@ nonisolated extension Annotation {
         case .spotlight(var spot):
             spot.rect = Geometry.resized(spot.rect, dragging: handle, to: point, keepingAspect: constrained)
             copy.shape = .spotlight(spot)
+        case .image(var image):
+            // An image keeps its proportions unless Shift frees them.
+            image.rect = Geometry.resized(image.rect, dragging: handle, to: point, keepingAspect: !constrained)
+            copy.shape = .image(image)
         case .text(var block):
             guard handle == .right else { break }
             let inset = block.look == .label ? block.fontSize * scale * 0.4 : 0
@@ -204,6 +222,9 @@ nonisolated extension Annotation {
         case .spotlight(var spot):
             spot.rect = move(spot.rect)
             copy.shape = .spotlight(spot)
+        case .image(var image):
+            image.rect = move(image.rect)
+            copy.shape = .image(image)
         }
         return copy
     }

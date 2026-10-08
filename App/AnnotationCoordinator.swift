@@ -11,6 +11,10 @@ import OSLog
 final class AnnotationCoordinator {
     private let history: HistoryStore
     private var editors: [UUID: AnnotationEditorWindowController] = [:]
+    /// Editors of project files, by file.
+    private var projectEditors: [URL: AnnotationEditorWindowController] = [:]
+    /// Saves a copy of a file to the export location; returns where it went.
+    var saveFile: ((URL) -> URL?)?
     /// A capture's picture changed: its record, and the picture's encoded data.
     var onChange: ((HistoryItem, Data) -> Void)?
     /// Saves a copy of a capture's file to the export location; returns where it went.
@@ -74,6 +78,80 @@ final class AnnotationCoordinator {
     /// Keeps every open editor's edits, for quitting.
     func keepAll() {
         editors.values.forEach { $0.keepNow() }
+        projectEditors.values.forEach { $0.keepNow() }
+    }
+
+    /// Opens a project file in the editor, or brings its editor forward. Edits are kept in the project
+    /// when the window closes and whenever the picture leaves it, as a capture's are kept in the history;
+    /// the picture itself is kept beside the app's caches, for dragging out and saving copies.
+    func openProject(at url: URL) {
+        let file = url.standardizedFileURL
+        if let editor = projectEditors[file] {
+            editor.show()
+            return
+        }
+        Task { [weak self] in
+            let opened: (project: AnnotationProject, picture: URL)
+            do {
+                opened = try await Self.loadProject(file)
+            } catch {
+                Log.capture.error("Could not open the project \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                NSApp.activate()
+                NSAlert(error: error).runModal()
+                return
+            }
+            guard let self else { return }
+            if let editor = projectEditors[file] {
+                editor.show()
+                return
+            }
+            let capture = opened.project.capture
+            let capturePNG = opened.project.capturePNG
+            let picture = opened.picture
+            let editor = AnnotationEditorWindowController(
+                image: capture,
+                scale: opened.project.document.scale,
+                document: opened.project.document,
+                title: file.deletingPathExtension().lastPathComponent,
+                fileURL: picture,
+                actions: .init(
+                    keep: { document, png, _ in
+                        do {
+                            try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG).write(to: file)
+                            try png.write(to: picture, options: .atomic)
+                            Log.capture.notice("Kept the marks in the project \(file.lastPathComponent, privacy: .public): \(document.items.count, privacy: .public) mark(s)")
+                            return picture
+                        } catch {
+                            Log.capture.error("Keeping the project failed: \(error.localizedDescription, privacy: .public)")
+                            return nil
+                        }
+                    },
+                    save: { [weak self] picture in self?.saveFile?(picture) }
+                )
+            )
+            editor.onClose = { [weak self] in
+                Task { @MainActor in
+                    self?.projectEditors[file] = nil
+                    MemoryRelief.returnFreedPages()
+                }
+            }
+            projectEditors[file] = editor
+            // The title bar shows the project's icon, to drag or to find in Finder.
+            editor.window?.representedURL = file
+            editor.show()
+        }
+    }
+
+    /// Reads a project and renders its picture into the caches, off the main actor.
+    @concurrent
+    private static func loadProject(_ file: URL) async throws -> (project: AnnotationProject, picture: URL) {
+        let project = try AnnotationProject.read(from: file)
+        let folder = URL.cachesDirectory.appending(path: Log.subsystem, directoryHint: .isDirectory).appending(path: "Projects", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let picture = folder.appending(path: file.deletingPathExtension().lastPathComponent + ".png")
+        guard let image = await AnnotationRenderer.render(project.document, base: project.capture) else { throw CocoaError(.fileReadCorruptFile) }
+        try await ImageExporter.encode(image, as: .png).write(to: picture, options: .atomic)
+        return (project, picture)
     }
 
     #if DEBUG
@@ -82,7 +160,7 @@ final class AnnotationCoordinator {
         editors[id]
     }
 
-    var openEditors: [AnnotationEditorWindowController] { Array(editors.values) }
+    var openEditors: [AnnotationEditorWindowController] { Array(editors.values) + Array(projectEditors.values) }
     #endif
 
     private func keep(_ id: UUID, document: AnnotationDocument, png: Data, image: CGImage) -> URL? {

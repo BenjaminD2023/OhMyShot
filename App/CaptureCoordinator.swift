@@ -17,6 +17,10 @@ final class CaptureCoordinator {
     /// Receives every finished capture, already in the history; the composition root decides whether
     /// it gets a Quick Access card.
     var onCaptured: ((QuickAccessItem) -> Void)?
+    /// Sets a new screenshot on the background chosen for every screenshot, if there is one: the
+    /// picture to show and copy, and the document that recreates it from the capture. Given the capture
+    /// and its pixels per point.
+    var compose: ((CGImage, CGFloat) async -> (image: CGImage, document: Data)?)?
     private lazy var shutter = NSSound(
         contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif",
         byReference: true
@@ -159,7 +163,7 @@ final class CaptureCoordinator {
         do {
             let png = try await ImageExporter.encode(frame.image, as: .png)
             let name = FilenameTemplate.standard.name(date: .now, appName: appName)
-            let entry = try history.add(
+            var entry = try history.add(
                 data: png,
                 name: name,
                 fileExtension: ImageExporter.Format.png.fileExtension,
@@ -168,15 +172,26 @@ final class CaptureCoordinator {
                 pixelHeight: frame.image.height,
                 appName: appName
             )
+            // On a background chosen for every screenshot, the capture's file shows the background while
+            // the capture and the background's settings stay beside it, as edits do, so the editor can
+            // change or remove it.
+            var shown = (image: frame.image, png: png)
+            let scale = frame.frame.width > 0 ? CGFloat(frame.image.width) / frame.frame.width : 1
+            if let composed = await compose?(frame.image, scale), let composedPNG = try? await ImageExporter.encode(composed.image, as: .png) {
+                entry = try history.replaceImage(
+                    of: entry, with: composedPNG, pixelWidth: composed.image.width, pixelHeight: composed.image.height, annotations: composed.document
+                )
+                shown = (composed.image, composedPNG)
+            }
             if copiesToClipboard, settings.copyAfterCapture {
-                PasteboardWriter.write(png: png, image: frame.image)
+                PasteboardWriter.write(png: shown.png, image: shown.image)
             }
             var item = QuickAccessItem(
                 id: entry.id,
                 fileURL: history.fileURL(for: entry),
-                thumbnail: await HistoryStore.thumbnail(of: png, maxPixels: 560) ?? frame.image,
-                pixelWidth: frame.image.width,
-                pixelHeight: frame.image.height,
+                thumbnail: await HistoryStore.thumbnail(of: shown.png, maxPixels: 560) ?? shown.image,
+                pixelWidth: shown.image.width,
+                pixelHeight: shown.image.height,
                 displayID: frame.displayID,
                 createdAt: entry.createdAt
             )

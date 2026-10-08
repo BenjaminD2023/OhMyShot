@@ -19,7 +19,7 @@ final class ToolRail: NSView {
         [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter],
         [.text, .counter],
         [.redact, .spotlight],
-        [.crop],
+        [.crop, .background],
     ]
 
     private var container = NSView()
@@ -211,6 +211,7 @@ final class ToolRail: NSView {
         case .redact: "checkerboard.rectangle"
         case .spotlight: "circle.dashed.inset.filled"
         case .crop: "crop"
+        case .background: "rectangle.center.inset.filled"
         }
     }
 
@@ -228,6 +229,7 @@ final class ToolRail: NSView {
         case .redact: String(localized: "Redact", bundle: .module)
         case .spotlight: String(localized: "Spotlight", bundle: .module)
         case .crop: String(localized: "Crop", bundle: .module)
+        case .background: String(localized: "Background", bundle: .module)
         }
     }
 }

@@ -146,16 +146,29 @@ struct AnnotationRenderingTests {
         #expect(pixels[0, 10].r < 5)
     }
 
-    @Test func canvasBeyondTheCaptureIsTransparent() {
-        let image = AnnotationRenderer.flatten({
-            var document = AnnotationDocument(pixelSize: CGSize(width: 200, height: 100), scale: 1)
-            document.canvas = CGRect(x: -20, y: 0, width: 220, height: 100)
-            return document
-        }(), base: makeBase())!
+    @Test func canvasBeyondTheCaptureTakesItsEdgeColor() {
+        var document = AnnotationDocument(pixelSize: CGSize(width: 200, height: 100), scale: 1)
+        document.canvas = CGRect(x: -20, y: 0, width: 220, height: 100)
+        let image = AnnotationRenderer.flatten(document, base: makeBase())!
         let pixels = Pixels(image)
         #expect(image.width == 220)
-        #expect(pixels[5, 10].a == 0)
+        // The capture's edge is white: the canvas added beside it is too, never a clear sliver.
+        #expect(pixels[5, 10].a == 255 && pixels[5, 10].r == 255)
         #expect(pixels[25, 10].a == 255)
+    }
+
+    @Test func aWindowsCanvasStaysClearBeyondIt() {
+        // A window captured with its shadow: its corners are clear.
+        let context = CGContext(
+            data: nil, width: 200, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        )!
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 10, y: 10, width: 180, height: 80))
+        var document = AnnotationDocument(pixelSize: CGSize(width: 200, height: 100), scale: 1)
+        document.canvas = CGRect(x: -20, y: 0, width: 220, height: 100)
+        let image = AnnotationRenderer.flatten(document, base: context.makeImage()!)!
+        #expect(Pixels(image)[5, 10].a == 0)
     }
 
     @Test func aSpotlightDimsEverythingButTheSpot() {

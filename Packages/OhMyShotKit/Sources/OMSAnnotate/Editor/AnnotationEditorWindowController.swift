@@ -67,6 +67,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
         content.canvas.onCopy = { [weak self] in self?.copy() }
         content.canvas.onSave = { [weak self] in self?.save() }
+        content.canvas.onSaveProject = { [weak self] in self?.saveProject() }
         content.onViewportChange = { [weak self] in self?.updateZoomLabel() }
         session.observe { [weak self] event in
             if event == .history || event == .document { self?.undoChanged() }
@@ -187,6 +188,26 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         redo ? self.redo() : undo()
     }
 
+    /// Opens the background's adjustments, as their chip in the capsule does.
+    public func showBackdropAdjustments() {
+        content.debugShowAdjustments()
+    }
+
+    /// Combines picture files into the capture at `point` (pixels), as a drop does.
+    public func simulateDrop(_ urls: [URL], at point: CGPoint) {
+        content.canvas.place(AnnotationCanvasView.incomingPictures(from: urls), at: point)
+    }
+
+    /// Shows the canvas as pictures dragged over it see it.
+    public func simulateDropTarget(_ shown: Bool) {
+        content.canvas.debugShowDropTarget(shown)
+    }
+
+    /// Pastes pictures from `pasteboard`, as ⌘V does from the clipboard.
+    public func simulatePaste(from pasteboard: NSPasteboard) {
+        content.canvas.pastePictures(from: pasteboard)
+    }
+
     /// Who would receive ⌘Z: each responder from the first responder up, whether it answers undo:,
     /// and the undo manager it would use.
     public var debugUndoChain: String {
@@ -207,9 +228,14 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     public var debugSummary: String {
         let kinds = session.document.items.map { item -> String in
             if case .counter(let counter) = item.shape { return "counter(\(counter.label))" }
+            if case .image(let image) = item.shape { return "image(\(NSStringFromRect(image.rect)))" }
             return AnnotationSession.tool(for: item).rawValue
         }.joined(separator: ",")
-        return "marks=[\(kinds)] selected=\(session.selection.count) tool=\(session.tool.rawValue) canvas=\(NSStringFromRect(session.document.canvas)) undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") redo=\(session.undoManager.canRedo ? session.undoManager.redoActionName : "-") unkept=\(session.hasUnkeptChanges) editing=\(content.canvas.isEditingText)"
+        var backdrop = "none"
+        if let current = session.document.backdrop, let layout = session.backdropLayout {
+            backdrop = "\(current.fill) pad=\(current.padding) inset=\(current.inset) balanced=\(current.balanced) corners=\(current.cornerRadius) shadow=\(current.shadow) ratio=\(current.ratio.map { "\($0.width):\($0.height)" } ?? "auto") align=\(current.alignment.rawValue) output=\(NSStringFromRect(layout.output)) card=\(NSStringFromRect(layout.card)) matte=\(layout.matte != nil) bare=\(layout.isBare)"
+        }
+        return "backdrop=[\(backdrop)] marks=[\(kinds)] selected=\(session.selection.count) tool=\(session.tool.rawValue) canvas=\(NSStringFromRect(session.document.canvas)) undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") redo=\(session.undoManager.canRedo ? session.undoManager.redoActionName : "-") unkept=\(session.hasUnkeptChanges) editing=\(content.canvas.isEditingText)"
     }
     #endif
 
@@ -270,6 +296,42 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
             }
             model.flashSaved()
         }
+    }
+
+    /// Saves a copy of the capture as it was taken and every mark as a project file, which the editor
+    /// opens again with the marks editable. The window goes on editing what it edited before.
+    func saveProject() {
+        guard let window else { return }
+        content.canvas.endEditing()
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [AnnotationProject.contentType]
+        panel.nameFieldStringValue = (window.title as NSString).appendingPathExtension(AnnotationProject.fileExtension) ?? window.title
+        panel.message = String(localized: "A project opens again with every mark still editable.", bundle: .module)
+        let project = AnnotationProject(capture: session.base, document: session.document)
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            Task {
+                do {
+                    try await Self.write(project, to: url)
+                    self?.model.flashSaved()
+                    if let canvas = self?.content.canvas {
+                        NSAccessibility.post(element: canvas, notification: .announcementRequested, userInfo: [
+                            .announcement: String(localized: "Saved", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
+                        ])
+                    }
+                } catch {
+                    NSSound.beep()
+                    let alert = NSAlert(error: error)
+                    alert.beginSheetModal(for: window, completionHandler: nil)
+                }
+            }
+        }
+    }
+
+    /// Writes a project off the main actor: its capture is encoded as PNG.
+    @concurrent
+    private static func write(_ project: AnnotationProject, to url: URL) async throws {
+        try project.write(to: url)
     }
 
     /// Undoes typing while a text mark is edited, else the last change to the marks, as ⌘Z does.
@@ -417,16 +479,23 @@ struct EditorView: View {
                 .accessibilityLabel(Text("Drag Capture", bundle: .module))
         }
         ToolbarItem(placement: .primaryAction) {
-            Button {
-                model.controller?.save()
+            // Save keeps a copy of the picture; its menu keeps the capture and marks as a project.
+            Menu {
+                Button {
+                    model.controller?.saveProject()
+                } label: {
+                    Text("Save a Copy as Project…", bundle: .module)
+                }
             } label: {
                 Label {
                     model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module)
                 } icon: {
                     Image(systemName: model.saved ? "checkmark" : "square.and.arrow.down")
                 }
+            } primaryAction: {
+                model.controller?.save()
             }
-            .help(Text("Save a copy to the export folder (⌘S)", bundle: .module))
+            .help(Text("Save a Copy (⌘S)", bundle: .module))
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {

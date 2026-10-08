@@ -29,5 +29,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 ## Open decisions
 
-- Background tool, combine, and project files arrive after the core editor.
+- Background tool, combine, and project files: built (2026-10-09) inside the locked structure — a rail
+  chip whose capsule holds the fills, an Adjust popover, and a Presets menu; images dropped or pasted
+  in; a split Save button for a project copy.
 - In-place annotation reuses the canvas inside the capture overlay with its own small toolbar.

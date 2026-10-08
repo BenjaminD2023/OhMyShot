@@ -1,6 +1,8 @@
 import AppKit
+import ImageIO
 import OMSCore
 import QuartzCore
+import UniformTypeIdentifiers
 
 /// The canvas: the capture with its marks, drawn and edited with the pointer and keyboard. It knows
 /// nothing of the window around it, so the editor and in-place annotation can both host it.
@@ -25,6 +27,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public var onViewportChange: (() -> Void)?
     public var onCopy: (() -> Void)?
     public var onSave: (() -> Void)?
+    public var onSaveProject: (() -> Void)?
 
     private enum Drag {
         case creating(id: Annotation.ID, tool: AnnotationTool, start: CGPoint)
@@ -52,6 +55,17 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private let canvasLayer = StillLayer()
     private let imageLayer = StillLayer()
     private let spotlightLayer = SpotlightLayer()
+    private let backdropLayer = BackdropLayer()
+    /// The capture as it sits on a background: rounded, with the room its inset adds in its edge color.
+    private let cardLayer = StillLayer()
+    /// The kept part of the capture, inside the card.
+    private let keptLayer = StillLayer()
+    /// False for a window captured with its shadow: no box is drawn around it.
+    private let captureHasOpaqueCorners: Bool
+    /// What the layers were last laid out for.
+    private var laidOut: Frames?
+    /// The images blurs and pixelations were last made over.
+    private var redactionImages: [Annotation] = []
     private var markLayers: [Annotation.ID: MarkLayer] = [:]
     private let selectionLayer = SelectionLayer()
     private let cropLayer = CropLayer()
@@ -68,6 +82,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     public init(session: AnnotationSession) {
         self.session = session
+        captureHasOpaqueCorners = Self.hasOpaqueCorners(session.base)
         super.init(frame: .zero)
         wantsLayer = true
         host.layer = StillLayer()
@@ -76,11 +91,19 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         addSubview(host)
 
         imageLayer.contents = session.base
-        imageLayer.zPosition = -2
-        spotlightLayer.zPosition = -1
+        imageLayer.zPosition = -1
+        keptLayer.masksToBounds = true
+        keptLayer.addSublayer(imageLayer)
+        cardLayer.masksToBounds = true
+        cardLayer.addSublayer(keptLayer)
+        cardLayer.addSublayer(spotlightLayer)
+        cardLayer.zPosition = -2
+        backdropLayer.zPosition = -3
+        backdropLayer.contentsScale = 1
+        backdropLayer.isHidden = true
         canvasLayer.masksToBounds = true
-        canvasLayer.addSublayer(imageLayer)
-        canvasLayer.addSublayer(spotlightLayer)
+        canvasLayer.addSublayer(backdropLayer)
+        canvasLayer.addSublayer(cardLayer)
         pictureLayer.shadowColor = .black
         pictureLayer.shadowOpacity = 0.12
         pictureLayer.shadowRadius = 10
@@ -88,7 +111,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         pictureLayer.borderWidth = 0.5
         // A window captured with its shadow is transparent around the window: a box shadow or edge
         // around it would draw a rectangle that is not in the picture.
-        pictureLayer.isHidden = !Self.hasOpaqueCorners(session.base)
+        pictureLayer.isHidden = !captureHasOpaqueCorners
         host.layer?.addSublayer(pictureLayer)
         host.layer?.addSublayer(canvasLayer)
         host.layer?.addSublayer(selectionLayer)
@@ -97,6 +120,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
         session.observe { [weak self] event in self?.sessionChanged(event) }
         syncMarks()
+        // Pictures dropped on the canvas are combined into the capture.
+        registerForDraggedTypes([.fileURL, .png, .tiff])
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
         updateAccessibility()
@@ -125,12 +150,43 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// The picture's frame in view points.
     public var pictureFrame: CGRect { canvasFrame }
 
-    /// The part of the document on screen: the canvas, or while cropping the whole capture too, so the
-    /// crop can grow back out.
-    private var shownCanvas: CGRect {
-        let document = session.document
-        return session.tool == .crop ? document.imageBounds.union(document.canvas) : document.canvas
+    /// What is on screen, in the document's pixels.
+    private struct Frames: Equatable {
+        /// The part of the document on screen: the canvas; the whole picture with its background; or
+        /// while cropping, the whole capture too, so the crop can grow back out.
+        var shown: CGRect
+        /// The capture's card: the canvas, or on a background the canvas with its inset and balance room.
+        var card: CGRect
+        /// The kept part of the capture.
+        var picture: CGRect
+        /// What the spotlight dims.
+        var dimmed: CGRect
+        /// The card's corners, in pixels.
+        var cornerRadius: CGFloat
+        var matte: RGBA?
+        var backdrop: BackdropLayer.Content?
     }
+
+    private var frames: Frames {
+        let document = session.document
+        let canvas = document.canvas.standardized
+        if session.tool == .crop {
+            let shown = document.imageBounds.union(canvas)
+            return Frames(shown: shown, card: shown, picture: shown, dimmed: canvas, cornerRadius: 0, matte: nil, backdrop: nil)
+        }
+        if let backdrop = document.backdrop, let layout = session.backdropLayout {
+            let card = layout.isBare ? layout.picture : layout.card
+            return Frames(
+                shown: layout.output, card: card, picture: layout.picture, dimmed: card, cornerRadius: layout.cornerRadius, matte: layout.matte,
+                backdrop: BackdropLayer.Content(fill: backdrop.fill, layout: layout, shadow: backdrop.shadow, scale: document.scale)
+            )
+        }
+        // Canvas reaching past the capture (combined images beside it) is filled as exports fill it.
+        let matte = document.canvasReachesPastCapture ? document.canvasMatte(edges: session.edges) : nil
+        return Frames(shown: canvas, card: canvas, picture: canvas, dimmed: canvas, cornerRadius: 0, matte: matte, backdrop: nil)
+    }
+
+    private var shownCanvas: CGRect { frames.shown }
 
     private var freeArea: CGRect {
         CGRect(
@@ -189,9 +245,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         let scale = window?.backingScaleFactor ?? 2
-        for layer in [pictureLayer, canvasLayer, imageLayer, spotlightLayer, selectionLayer, cropLayer] {
+        for layer in [pictureLayer, canvasLayer, cardLayer, keptLayer, imageLayer, spotlightLayer, selectionLayer, cropLayer] {
             layer.contentsScale = scale
         }
+        // The background is soft (gradients, blurs, a shadow): drawn at one pixel per point, its backing
+        // store, the size of the whole view, takes a quarter of the memory; exports draw it at full size.
+        backdropLayer.contentsScale = 1
         markLayers.values.forEach { $0.contentsScale = scale }
         updateViewport()
     }
@@ -216,30 +275,60 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func layoutLayers() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let canvas = shownCanvas
+        let frames = self.frames
+        laidOut = frames
+        let shown = frames.shown
+        /// A document rect in the canvas layer's coordinates.
+        func local(_ rect: CGRect) -> CGRect {
+            CGRect(x: (rect.minX - shown.minX) * zoom, y: (rect.minY - shown.minY) * zoom, width: rect.width * zoom, height: rect.height * zoom)
+        }
         pictureLayer.frame = canvasFrame
         pictureLayer.shadowPath = CGPath(rect: pictureLayer.bounds, transform: nil)
+        // On a clear background only the capture's own shadow marks the picture's edge.
+        pictureLayer.isHidden = frames.backdrop.map { $0.fill == .clear } ?? !captureHasOpaqueCorners
         canvasLayer.frame = canvasFrame
+        // Drawn layers cover only what is on screen: zoomed in on a large capture, a layer the size of a
+        // whole mark would need a backing store of hundreds of megabytes.
+        let visible = visibleCanvasRect
+
+        if let content = frames.backdrop {
+            let part = canvasLayer.bounds.intersection(visible)
+            backdropLayer.isHidden = part.isNull
+            backdropLayer.frame = part.isNull ? .zero : part
+            backdropLayer.mapping = LayerMapping(
+                origin: CGPoint(x: shown.minX + (part.isNull ? 0 : part.minX) / zoom, y: shown.minY + (part.isNull ? 0 : part.minY) / zoom),
+                zoom: zoom
+            )
+            backdropLayer.blur = content.fill == .blur ? session.blurredCapture : nil
+            backdropLayer.content = content
+        } else {
+            backdropLayer.isHidden = true
+            backdropLayer.content = nil
+            backdropLayer.blur = nil
+        }
+
+        let card = local(frames.card)
+        cardLayer.frame = card
+        cardLayer.cornerRadius = frames.cornerRadius * zoom
+        cardLayer.backgroundColor = frames.matte.map { $0.cgColor(in: baseColorSpace) }
+        keptLayer.frame = local(frames.picture).offsetBy(dx: -card.minX, dy: -card.minY)
         imageLayer.frame = CGRect(
-            x: -canvas.minX * zoom, y: -canvas.minY * zoom,
+            x: (session.document.imageBounds.minX - frames.picture.minX) * zoom, y: (session.document.imageBounds.minY - frames.picture.minY) * zoom,
             width: session.document.pixelSize.width * zoom, height: session.document.pixelSize.height * zoom
         )
         // Pixels show as pixels once each covers two or more device pixels; smaller, they blend.
         let devicePerPixel = zoom * (window?.backingScaleFactor ?? 2)
         imageLayer.magnificationFilter = devicePerPixel >= 2 ? .nearest : .linear
         imageLayer.minificationFilter = .trilinear
-        // Drawn layers cover only what is on screen: zoomed in on a large capture, a layer the size of a
-        // whole mark would need a backing store of hundreds of megabytes.
-        let visible = visibleCanvasRect
-        let spot = canvasLayer.bounds.intersection(visible)
+        let spot = cardLayer.bounds.intersection(visible.offsetBy(dx: -card.minX, dy: -card.minY))
         spotlightLayer.frame = spot.isNull ? .zero : spot
-        spotlightLayer.canvas = session.document.canvas
+        spotlightLayer.canvas = frames.dimmed
         spotlightLayer.mapping = LayerMapping(
-            origin: CGPoint(x: canvas.minX + (spot.isNull ? 0 : spot.minX) / zoom, y: canvas.minY + (spot.isNull ? 0 : spot.minY) / zoom),
+            origin: CGPoint(x: frames.card.minX + (spot.isNull ? 0 : spot.minX) / zoom, y: frames.card.minY + (spot.isNull ? 0 : spot.minY) / zoom),
             zoom: zoom
         )
         for layer in markLayers.values {
-            position(layer)
+            position(layer, frames: frames)
         }
         selectionLayer.frame = host.bounds
         cropLayer.frame = host.bounds
@@ -250,6 +339,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         onViewportChange?()
     }
 
+    private var baseColorSpace: CGColorSpace {
+        session.base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+    }
+
     /// The part of the canvas layer on screen, with a margin so small pans need no redraw at the edges,
     /// in the canvas layer's coordinates.
     private var visibleCanvasRect: CGRect {
@@ -257,28 +350,37 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         return bounds.insetBy(dx: -margin, dy: -margin).offsetBy(dx: -canvasFrame.minX, dy: -canvasFrame.minY)
     }
 
-    private func position(_ layer: MarkLayer) {
-        let canvas = shownCanvas
+    /// Places a mark's layer over the part of the mark on screen. Images lie in the kept part of the
+    /// capture, under the spotlight; other marks over everything.
+    private func position(_ layer: MarkLayer, frames: Frames) {
+        // The document point at the parent layer's corner.
+        let parent = layer.superlayer === keptLayer ? frames.picture.origin : frames.shown.origin
         let bounds = layer.mark.drawingBounds(scale: session.document.scale)
         guard !bounds.isNull, bounds.width > 0, bounds.height > 0 else {
             layer.frame = .zero
             return
         }
-        let whole = CGRect(x: (bounds.minX - canvas.minX) * zoom, y: (bounds.minY - canvas.minY) * zoom, width: bounds.width * zoom, height: bounds.height * zoom)
-        let shown = whole.intersection(visibleCanvasRect)
+        let whole = CGRect(x: (bounds.minX - parent.x) * zoom, y: (bounds.minY - parent.y) * zoom, width: bounds.width * zoom, height: bounds.height * zoom)
+        let visible = visibleCanvasRect.offsetBy(dx: -(parent.x - frames.shown.minX) * zoom, dy: -(parent.y - frames.shown.minY) * zoom)
+        let shown = whole.intersection(visible)
         guard !shown.isNull, shown.width > 0, shown.height > 0 else {
             layer.frame = .zero
             return
         }
         layer.frame = shown
         // The document point at the layer's corner, so it draws just its visible part.
-        layer.mapping = LayerMapping(origin: CGPoint(x: canvas.minX + shown.minX / zoom, y: canvas.minY + shown.minY / zoom), zoom: zoom)
+        layer.mapping = LayerMapping(origin: CGPoint(x: parent.x + shown.minX / zoom, y: parent.y + shown.minY / zoom), zoom: zoom)
     }
 
     #if DEBUG
     /// Where a capture point is in the window, for synthesized events.
     func windowPoint(forDocument point: CGPoint) -> CGPoint {
         convert(viewPoint(point), to: nil)
+    }
+
+    /// Shows the drop target as a drag over the canvas does.
+    func debugShowDropTarget(_ shown: Bool) {
+        selectionLayer.dropFrame = shown ? canvasFrame : nil
     }
     #endif
 
@@ -360,14 +462,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case .document:
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            if canvasFrame.size != CGSize(width: shownCanvas.width * zoom, height: shownCanvas.height * zoom) {
-                // What is shown changed size (a crop): fit again.
-                userZoom = nil
-                focus = nil
-                syncMarks()
+            syncMarks()
+            if frames != laidOut {
+                // What is shown changed (a crop, a background): laid out again at the zoom the person
+                // chose, so a slider never makes a zoomed-in picture jump; a fitted picture fits again.
                 updateViewport()
             } else {
-                syncMarks()
                 updateSelectionOutlines()
             }
             CATransaction.commit()
@@ -378,7 +478,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             onViewportChange?()
         case .tool:
             toolChanged()
-        case .settings, .history:
+        case .history:
+            // A drag that moved an image has ended: blurs show what is now under them.
+            refreshRedactionsIfNeeded()
+        case .settings:
             break
         }
     }
@@ -386,6 +489,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func syncMarks() {
         let document = session.document
         let scale = window?.backingScaleFactor ?? 2
+        let frames = self.frames
         var present = Set<Annotation.ID>()
         for (index, item) in document.items.enumerated() {
             if case .spotlight = item.shape { continue }
@@ -403,18 +507,20 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 layer.scale = document.scale
                 layer.contentsScale = scale
                 markLayers[item.id] = layer
-                canvasLayer.addSublayer(layer)
+                // Images are part of the picture: in the kept part of the capture, under the spotlight.
+                if case .image = item.shape { keptLayer.addSublayer(layer) } else { canvasLayer.addSublayer(layer) }
                 updateRedaction(layer)
             }
             layer.zPosition = CGFloat(index)
             layer.isHidden = editing?.id == item.id
-            position(layer)
+            position(layer, frames: frames)
         }
         for (id, layer) in markLayers where !present.contains(id) {
             layer.removeFromSuperlayer()
             markLayers[id] = nil
         }
         spotlightLayer.spots = document.spots
+        refreshRedactionsIfNeeded()
     }
 
     private func updateRedaction(_ layer: MarkLayer) {
@@ -422,7 +528,21 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             layer.redacted = nil
             return
         }
-        layer.redacted = Redactor.image(for: redaction, id: layer.mark.id, base: session.base, scale: session.document.scale)
+        let source = session.redactionSource
+        layer.redacted = Redactor.image(
+            for: redaction, id: layer.mark.id, base: source?.image ?? session.base, origin: source?.origin ?? .zero, scale: session.document.scale
+        )
+    }
+
+    /// Makes blurs and pixelations again over images that moved, once a drag has ended: remaking them
+    /// at every step of a drag would be slow, and they show the result on release.
+    private func refreshRedactionsIfNeeded() {
+        let images = session.document.items.filter { if case .image = $0.shape { true } else { false } }
+        guard images != redactionImages, !session.isInLiveChange else { return }
+        redactionImages = images
+        for layer in markLayers.values {
+            if case .redaction = layer.mark.shape { updateRedaction(layer) }
+        }
     }
 
     private func updateSelectionOutlines() {
@@ -540,6 +660,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             endEditing()
         }
         window?.makeFirstResponder(self)
+        // The background's controls set it; the picture itself takes no clicks meanwhile.
+        if session.tool == .background { return }
         let location = convert(event.locationInWindow, from: nil)
         let point = documentPoint(location)
         let shift = event.modifierFlags.contains(.shift)
@@ -597,7 +719,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let tool = session.tool
         let settings = session.settings(for: tool)
         switch tool {
-        case .select, .crop:
+        case .select, .crop, .background:
             break
         case .arrow, .line, .rectangle, .ellipse, .redact, .spotlight:
             session.beginLiveChange()
@@ -705,9 +827,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.select([id])
         case .drawing:
             session.endLiveChange(actionName: String(localized: "Draw", bundle: .module))
-        case .moving:
+        case .moving(_, let originals):
+            // An image moved past the canvas's edge takes the canvas with it.
+            if originals.contains(where: { if case .image = $0.shape { true } else { false } }) { session.growCanvasToHoldImages() }
             session.endLiveChange(actionName: String(localized: "Move", bundle: .module))
-        case .reshaping(let handle, _):
+        case .reshaping(let handle, let original):
+            if case .image = original.shape { session.growCanvasToHoldImages() }
             session.endLiveChange(actionName: handle == .bend ? String(localized: "Bend Arrow", bundle: .module) : String(localized: "Resize", bundle: .module))
         case .cropping:
             cropLayer.showsThirds = false
@@ -728,7 +853,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     public override func menu(for event: NSEvent) -> NSMenu? {
-        guard !session.selection.isEmpty else { return nil }
+        guard !session.selection.isEmpty else { return pictureMenu(at: documentPoint(convert(event.locationInWindow, from: nil))) }
         let menu = NSMenu()
         func add(_ title: String, _ action: Selector, _ symbol: String) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -742,6 +867,163 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         menu.addItem(.separator())
         add(String(localized: "Delete", bundle: .module), #selector(delete(_:)), "trash")
         return menu
+    }
+
+    // MARK: Combining
+
+    /// A picture coming in to be combined: its name in the picture store, its size in pixels, and its
+    /// pixels per point.
+    struct IncomingPicture {
+        let name: String
+        let pixelSize: CGSize
+        let scale: CGFloat
+    }
+
+    /// Whether a pasteboard offers pictures, without reading them.
+    static func offersPictures(_ pasteboard: NSPasteboard) -> Bool {
+        pasteboard.canReadObject(forClasses: [NSURL.self], options: imageFileOptions)
+            || pasteboard.availableType(from: [.png, .tiff]) != nil
+    }
+
+    private static let imageFileOptions: [NSPasteboard.ReadingOptionKey: Any] = [
+        .urlReadingFileURLsOnly: true,
+        .urlReadingContentsConformToTypes: [UTType.image.identifier],
+    ]
+
+    /// The pictures a pasteboard offers, kept in the picture store: image files, or else image data.
+    static func incomingPictures(from pasteboard: NSPasteboard) -> [IncomingPicture] {
+        var names: [String] = []
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: imageFileOptions) as? [URL] ?? []
+        for url in urls {
+            if let name = try? PictureStore.shared.add(url) { names.append(name) }
+        }
+        if names.isEmpty, let data = pasteboard.data(forType: .png) {
+            if let name = try? PictureStore.shared.add(data, fileExtension: "png") { names.append(name) }
+        } else if names.isEmpty, let data = pasteboard.data(forType: .tiff),
+                  let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+            // Kept as PNG: pasteboard TIFF is uncompressed.
+            if let name = try? PictureStore.shared.add(image) { names.append(name) }
+        }
+        return describe(names)
+    }
+
+    /// Picture files, kept in the picture store.
+    static func incomingPictures(from urls: [URL]) -> [IncomingPicture] {
+        describe(urls.compactMap { try? PictureStore.shared.add($0) })
+    }
+
+    private static func describe(_ names: [String]) -> [IncomingPicture] {
+        names.compactMap { name in
+            guard let size = PictureStore.shared.pixelSize(named: name) else { return nil }
+            return IncomingPicture(name: name, pixelSize: size, scale: resolution(of: name) ?? 0)
+        }
+    }
+
+    /// Pixels per point a picture records, or nil when it records none (72 dpi).
+    private static func resolution(of name: String) -> CGFloat? {
+        guard
+            let source = CGImageSourceCreateWithURL(PictureStore.shared.url(named: name) as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let dpi = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue, dpi > 72.5
+        else { return nil }
+        // PNG keeps resolution per meter, so 144 dpi reads back as 143.99: quarter steps.
+        return CGFloat((dpi / 72 * 4).rounded() / 4)
+    }
+
+    /// Combines pictures into the capture around `point` (pixels). A picture shows at the size it had
+    /// on its own screen (one that records no resolution is taken at the capture's), never larger
+    /// than the canvas.
+    func place(_ pictures: [IncomingPicture], at point: CGPoint) {
+        guard !pictures.isEmpty else { return }
+        endEditing()
+        let document = session.document
+        let room = max(document.canvas.width, document.canvas.height)
+        let sized = pictures.map { picture -> (name: String, size: CGSize) in
+            let scale = picture.scale > 0 ? picture.scale : document.scale
+            var size = CGSize(width: picture.pixelSize.width * document.scale / scale, height: picture.pixelSize.height * document.scale / scale)
+            let longest = max(size.width, size.height)
+            if longest > room, longest > 0 {
+                size = CGSize(width: size.width * room / longest, height: size.height * room / longest)
+            }
+            return (picture.name, size)
+        }
+        if session.tool.isPictureMode { session.leavePictureMode() }
+        session.addImages(sized, at: point)
+        window?.makeFirstResponder(self)
+    }
+
+    /// Pastes pictures from `pasteboard` into the middle of what is on screen; false when it has none.
+    @discardableResult
+    func pastePictures(from pasteboard: NSPasteboard) -> Bool {
+        let pictures = Self.incomingPictures(from: pasteboard)
+        guard !pictures.isEmpty else { return false }
+        place(pictures, at: documentPoint(CGPoint(x: freeArea.midX, y: freeArea.midY)))
+        return true
+    }
+
+    /// ⌘V: pictures on the clipboard are combined into the capture.
+    @objc public func paste(_ sender: Any?) {
+        if !pastePictures(from: .general) { NSSound.beep() }
+    }
+
+    /// Chooses picture files to combine into the capture at `point`.
+    @objc func addImageFromPanel(_ sender: NSMenuItem) {
+        guard let window else { return }
+        let point = (sender.representedObject as? NSValue)?.pointValue ?? documentPoint(CGPoint(x: freeArea.midX, y: freeArea.midY))
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.prompt = String(localized: "Add", bundle: .module)
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .OK else { return }
+            place(Self.incomingPictures(from: panel.urls), at: point)
+        }
+    }
+
+    /// The menu for the empty canvas: combine a picture into the capture.
+    private func pictureMenu(at point: CGPoint) -> NSMenu? {
+        let menu = NSMenu()
+        if Self.offersPictures(.general) {
+            let paste = NSMenuItem(title: String(localized: "Paste", bundle: .module), action: #selector(paste(_:)), keyEquivalent: "")
+            paste.target = self
+            paste.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
+            menu.addItem(paste)
+        }
+        let add = NSMenuItem(title: String(localized: "Add Image…", bundle: .module), action: #selector(addImageFromPanel(_:)), keyEquivalent: "")
+        add.target = self
+        add.representedObject = NSValue(point: point)
+        add.image = NSImage(systemSymbolName: "photo.badge.plus", accessibilityDescription: nil)
+        menu.addItem(add)
+        return menu
+    }
+
+    public override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        // The editor's own capture, dragged out from its toolbar, is not combined into itself.
+        guard !(sender.draggingSource is DragOutView), Self.offersPictures(sender.draggingPasteboard) else { return [] }
+        selectionLayer.dropFrame = canvasFrame
+        return .copy
+    }
+
+    public override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        selectionLayer.dropFrame == nil ? [] : .copy
+    }
+
+    public override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        selectionLayer.dropFrame = nil
+    }
+
+    public override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        selectionLayer.dropFrame = nil
+        let pictures = Self.incomingPictures(from: sender.draggingPasteboard)
+        guard !pictures.isEmpty else { return false }
+        place(pictures, at: documentPoint(convert(sender.draggingLocation, from: nil)))
+        return true
+    }
+
+    public override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        selectionLayer.dropFrame = nil
     }
 
     private static func addName(for tool: AnnotationTool) -> String {
@@ -776,7 +1058,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         guard drag == nil else { return }
         if editing?.view.frame.contains(location) == true { return }
         let cursor: NSCursor
-        if session.tool == .crop {
+        if session.tool == .background {
+            cursor = .arrow
+        } else if session.tool == .crop {
             if let handle = cropHandle(at: location) {
                 cursor = Self.resizeCursor(for: handle)
             } else if let cropRect, viewRect(cropRect).contains(location) {
@@ -846,6 +1130,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             } else if session.tool == .crop {
                 cropRect = session.document.canvas
                 cropLayer.frameRect = viewRect(session.document.canvas)
+            } else if session.tool == .background {
+                session.leavePictureMode()
             } else if !session.selection.isEmpty {
                 session.select([])
             } else {
@@ -855,6 +1141,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case 36, 76:
             if session.tool == .crop {
                 commitCrop()
+                return true
+            }
+            if session.tool == .background {
+                session.leavePictureMode()
                 return true
             }
             if session.selection.count == 1, let item = session.selectedItems.first, case .text = item.shape {
@@ -930,6 +1220,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         onSave?()
     }
 
+    /// ⇧⌘S: a copy of the capture and its marks as a project, to open again with every mark editable.
+    @objc public func saveProject(_ sender: Any?) {
+        onSaveProject?()
+    }
+
     @objc public override func selectAll(_ sender: Any?) {
         session.selectAll()
     }
@@ -962,6 +1257,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return !session.selection.isEmpty
         case #selector(selectAll(_:)):
             return !session.document.items.isEmpty
+        case #selector(paste(_:)):
+            return Self.offersPictures(.general)
         default:
             return true
         }
@@ -1151,6 +1448,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             pictureLayer.borderWidth = contrast ? 1 : 0.5
             pictureLayer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.16) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.10)
             selectionLayer.accent = NSColor.controlAccentColor.cgColor
+            // Quiet in either appearance, a little firmer with Increase Contrast.
+            backdropLayer.checker = dark
+                ? (CGColor(gray: 0.20, alpha: 1), CGColor(gray: contrast ? 0.30 : 0.25, alpha: 1))
+                : (CGColor(gray: 1, alpha: 1), CGColor(gray: contrast ? 0.84 : 0.91, alpha: 1))
         }
         selectionLayer.increasedContrast = contrast
         cropLayer.increasedContrast = contrast

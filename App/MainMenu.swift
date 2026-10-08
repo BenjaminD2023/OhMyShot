@@ -22,6 +22,8 @@ enum MainMenu {
         let file = submenu(String(localized: "File"), in: menu)
         file.addItem(withTitle: String(localized: "Close Window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         file.addItem(withTitle: String(localized: "Save"), action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
+        let project = file.addItem(withTitle: String(localized: "Save a Copy as Project…"), action: Selector(("saveProject:")), keyEquivalent: "s")
+        project.keyEquivalentModifierMask = [.command, .shift]
         let trash = file.addItem(withTitle: String(localized: "Move to Trash"), action: #selector(NSText.delete(_:)), keyEquivalent: "\u{8}")
         trash.keyEquivalentModifierMask = .command
 

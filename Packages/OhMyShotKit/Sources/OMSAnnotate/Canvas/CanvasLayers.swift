@@ -75,6 +75,87 @@ nonisolated final class MarkLayer: StillLayer {
     }
 }
 
+/// The background behind the capture and the capture's shadow on it, drawn by the renderer exports use.
+nonisolated final class BackdropLayer: StillLayer {
+    struct Content: Equatable {
+        var fill: Backdrop.Fill
+        var layout: BackdropLayout
+        var shadow: CGFloat
+        var scale: CGFloat
+    }
+
+    var content: Content? {
+        didSet { if content != oldValue { setNeedsDisplay() } }
+    }
+    /// The blurred capture a blur fill shows.
+    var blur: CGImage? {
+        didSet { if blur !== oldValue { setNeedsDisplay() } }
+    }
+    var mapping = LayerMapping(origin: .zero, zoom: 1) {
+        didSet { if mapping != oldValue { setNeedsDisplay() } }
+    }
+    /// The two squares of the checkerboard a clear background shows on screen, never in an export.
+    var checker: (light: CGColor, dark: CGColor) = (CGColor(gray: 1, alpha: 1), CGColor(gray: 0.91, alpha: 1)) {
+        didSet { setNeedsDisplay() }
+    }
+    /// A checker square, in view points.
+    static let checkerSize: CGFloat = 8
+
+    override init() {
+        super.init()
+        needsDisplayOnBoundsChange = true
+    }
+
+    override init(layer: Any) {
+        let other = layer as! BackdropLayer
+        content = other.content
+        blur = other.blur
+        mapping = other.mapping
+        checker = other.checker
+        super.init(layer: layer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func draw(in context: CGContext) {
+        guard let content else { return }
+        prepareDocumentSpace(context, mapping: mapping)
+        if content.fill == .clear { drawChecker(over: content.layout.output, in: context) }
+        BackdropPainter.paint(content.fill, in: content.layout.output, context: context, blur: blur, resolution: mapping.zoom * contentsScale)
+        BackdropPainter.drawCardShadow(content.layout, strength: content.shadow, scale: content.scale, context: context)
+    }
+
+    /// The quiet checkerboard that shows where a clear background's room is, as image editors show
+    /// transparency: squares a fixed size on screen, anchored at the picture's corner.
+    private func drawChecker(over output: CGRect, in context: CGContext) {
+        let side = Self.checkerSize / max(mapping.zoom, 0.0001)
+        // Only the part of the picture this layer shows.
+        let shown = CGRect(x: mapping.origin.x, y: mapping.origin.y, width: bounds.width / mapping.zoom, height: bounds.height / mapping.zoom).intersection(output)
+        guard !shown.isNull else { return }
+        context.saveGState()
+        context.setFillColor(checker.light)
+        context.fill(shown)
+        let firstColumn = Int(((shown.minX - output.minX) / side).rounded(.down))
+        let firstRow = Int(((shown.minY - output.minY) / side).rounded(.down))
+        let columns = Int((shown.width / side).rounded(.up)) + 1
+        let rows = Int((shown.height / side).rounded(.up)) + 1
+        let squares = CGMutablePath()
+        for row in firstRow..<(firstRow + rows) {
+            for column in firstColumn..<(firstColumn + columns) where (row + column).isMultiple(of: 2) {
+                squares.addRect(CGRect(x: output.minX + CGFloat(column) * side, y: output.minY + CGFloat(row) * side, width: side, height: side))
+            }
+        }
+        context.clip(to: shown)
+        context.setFillColor(checker.dark)
+        context.addPath(squares)
+        context.fillPath()
+        context.restoreGState()
+    }
+}
+
 /// The spotlight dimming, shared by every spot.
 nonisolated final class SpotlightLayer: StillLayer {
     var spots: [Spot] = [] {
@@ -126,6 +207,10 @@ nonisolated final class SelectionLayer: StillLayer {
     var increasedContrast = false {
         didSet { setNeedsDisplay() }
     }
+    /// The picture's frame while pictures are dragged over it, to show they will be combined into it.
+    var dropFrame: CGRect? {
+        didSet { if dropFrame != oldValue { setNeedsDisplay() } }
+    }
 
     static let handleSize: CGFloat = 9
 
@@ -149,6 +234,12 @@ nonisolated final class SelectionLayer: StillLayer {
             context.scaleBy(x: 1, y: -1)
         }
         let line: CGFloat = increasedContrast ? 2 : 1
+        if let dropFrame {
+            // The accent ring Finder puts around a drop target, just outside the picture.
+            context.setStrokeColor(accent)
+            context.setLineWidth(3)
+            context.stroke(dropFrame.insetBy(dx: -2.5, dy: -2.5))
+        }
         for outline in outlines {
             if let box = outline.box {
                 context.setStrokeColor(accent)

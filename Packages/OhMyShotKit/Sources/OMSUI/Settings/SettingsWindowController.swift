@@ -40,6 +40,32 @@ public struct SettingsDependencies {
     public let openHistory: () -> Void
     /// How many captures a retention would delete now, so Settings can ask before shortening it.
     public let expiredCount: (HistoryRetention) -> Int
+    public let backgrounds: Backgrounds
+
+    /// The backgrounds saved in the editor, and the one set on every new screenshot.
+    public struct Backgrounds {
+        public struct Choice: Identifiable, Hashable {
+            public let id: UUID
+            public let name: String
+
+            public init(id: UUID, name: String) {
+                self.id = id
+                self.name = name
+            }
+        }
+
+        public let presets: () -> [Choice]
+        public let automatic: () -> UUID?
+        public let setAutomatic: (UUID?) -> Void
+
+        public init(presets: @escaping () -> [Choice], automatic: @escaping () -> UUID?, setAutomatic: @escaping (UUID?) -> Void) {
+            self.presets = presets
+            self.automatic = automatic
+            self.setAutomatic = setAutomatic
+        }
+
+        public static let none = Backgrounds(presets: { [] }, automatic: { nil }, setAutomatic: { _ in })
+    }
 
     public init(
         settings: SettingsStore,
@@ -47,7 +73,8 @@ public struct SettingsDependencies {
         urlScheme: String,
         relaunch: @escaping () -> Void,
         openHistory: @escaping () -> Void,
-        expiredCount: @escaping (HistoryRetention) -> Int
+        expiredCount: @escaping (HistoryRetention) -> Int,
+        backgrounds: Backgrounds = .none
     ) {
         self.settings = settings
         self.permissions = permissions
@@ -55,6 +82,7 @@ public struct SettingsDependencies {
         self.relaunch = relaunch
         self.openHistory = openHistory
         self.expiredCount = expiredCount
+        self.backgrounds = backgrounds
     }
 }
 
@@ -115,7 +143,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private static func makeContent(for tab: SettingsTab, dependencies: SettingsDependencies) -> NSViewController {
         switch tab {
         case .general:
-            host(GeneralSettingsView(settings: dependencies.settings, openHistory: dependencies.openHistory, expiredCount: dependencies.expiredCount))
+            host(GeneralSettingsView(settings: dependencies.settings, openHistory: dependencies.openHistory, expiredCount: dependencies.expiredCount, backgrounds: dependencies.backgrounds))
         case .shortcuts:
             host(ShortcutsSettingsView())
         case .permissions:

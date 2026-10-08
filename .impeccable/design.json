@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-09T12:00:00Z",
+  "generatedAt": "2026-10-09T18:00:00Z",
   "title": "Design System: OhMyShot",
   "extensions": {
     "colorMeta": {
@@ -388,6 +388,46 @@
           "#FFF3A5",
           "#FFF9D2"
         ]
+      },
+      "capsule-swatch-edge-light": {
+        "role": "neutral",
+        "displayName": "Capsule Swatch Edge, Light",
+        "canonical": "CGColor(gray: 0, alpha: 0.18), 0.5 pt (StyleCapsule.strokeSwatchEdge)"
+      },
+      "capsule-swatch-edge-dark": {
+        "role": "neutral",
+        "displayName": "Capsule Swatch Edge, Dark",
+        "canonical": "CGColor(gray: 1, alpha: 0.38), 0.5 pt (StyleCapsule.strokeSwatchEdge)"
+      },
+      "capsule-swatch-edge-contrast-light": {
+        "role": "neutral",
+        "displayName": "Capsule Swatch Edge (Increase Contrast), Light",
+        "canonical": "CGColor(gray: 0, alpha: 0.4), 1 pt"
+      },
+      "capsule-swatch-edge-contrast-dark": {
+        "role": "neutral",
+        "displayName": "Capsule Swatch Edge (Increase Contrast), Dark",
+        "canonical": "CGColor(gray: 1, alpha: 0.6), 1 pt"
+      },
+      "checker-light": {
+        "role": "neutral",
+        "displayName": "Checkerboard, Light",
+        "canonical": "CGColor(gray: 1, alpha: 1); on screen only"
+      },
+      "checker-light-alt": {
+        "role": "neutral",
+        "displayName": "Checkerboard Alternate, Light",
+        "canonical": "CGColor(gray: 0.91, alpha: 1); 0.84 under Increase Contrast; on screen only"
+      },
+      "checker-dark": {
+        "role": "neutral",
+        "displayName": "Checkerboard, Dark",
+        "canonical": "CGColor(gray: 0.20, alpha: 1); on screen only"
+      },
+      "checker-dark-alt": {
+        "role": "neutral",
+        "displayName": "Checkerboard Alternate, Dark",
+        "canonical": "CGColor(gray: 0.25, alpha: 1); 0.30 under Increase Contrast; on screen only"
       }
     },
     "typographyMeta": {
@@ -470,7 +510,12 @@
       {
         "name": "mark-shadow",
         "value": "0 1pt 3pt rgba(0,0,0,0.3), scaled with the capture",
-        "purpose": "Drawn into the picture under arrows, lines, shapes, pen, text, and counters (on by default); the one exported shadow."
+        "purpose": "Drawn into the picture under arrows, lines, shapes, pen, text, and counters (on by default; off by default for combined images); exported."
+      },
+      {
+        "name": "background-card",
+        "value": "drop (2+10s)pt, blur (8+32s)pt, rgba(0,0,0,0.14+0.30s) for strength s 0-1; default s=0.5: 0 7pt 24pt rgba(0,0,0,0.29); scaled with the capture",
+        "purpose": "Under the capture's card on a background, following its rounded shape, drawn from a small blurred mask; exported. None for a window captured with its shadow."
       }
     ],
     "motion": [
@@ -619,7 +664,7 @@
       "name": "Tool Rail",
       "kind": "nav",
       "refersTo": "tool-rail",
-      "description": "The editor's tools: a 42 pt Liquid Glass capsule (opaque window-colored backing, 0.5 pt separator hairline, floating bar shadow) of 30 pt circular chips in groups split by 18 pt hairlines. Tool in hand: selected chip fill and accent symbol. Approximated with an opaque fill; Reduce Transparency is a solid capsule.",
+      "description": "The editor's tools: a 42 pt Liquid Glass capsule (opaque window-colored backing, 0.5 pt separator hairline, floating bar shadow) of 30 pt circular chips in groups split by 18 pt hairlines; the last group is Crop and Background (G). Tool in hand: selected chip fill and accent symbol. Approximated with an opaque fill; Reduce Transparency is a solid capsule.",
       "html": "<div class=\"ds-rail\" role=\"toolbar\" aria-label=\"Tools\"><button class=\"ds-rail-chip\" aria-label=\"Select\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"currentColor\"><path d=\"M3 1.5v10l2.6-2.4 1.8 3.9 1.6-.7-1.8-3.8H11z\"/></svg></button><span class=\"ds-rail-sep\"></span><button class=\"ds-rail-chip ds-rail-on\" aria-label=\"Arrow\" aria-pressed=\"true\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M3 11L11 3M5.5 3H11v5.5\"/></svg></button><button class=\"ds-rail-chip\" aria-label=\"Rectangle\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><rect x=\"2\" y=\"3\" width=\"10\" height=\"8\" rx=\"1.5\"/></svg></button><span class=\"ds-rail-sep\"></span><button class=\"ds-rail-chip\" aria-label=\"Text\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M3 3h8M7 3v8\"/></svg></button></div>",
       "css": ".ds-rail{display:inline-flex;flex-direction:column;align-items:center;gap:2px;width:42px;padding:6px;box-sizing:border-box;border-radius:9999px;background:#FFFFFF;border:0.5px solid rgba(0,0,0,0.1);box-shadow:0 3px 10px rgba(0,0,0,0.16);} .ds-rail-chip{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:none;border-radius:9999px;background:transparent;color:rgba(0,0,0,0.85);cursor:default;} .ds-rail-chip:hover{background:rgba(0,0,0,0.045);} .ds-rail-chip:focus-visible{outline:2px solid AccentColor;outline-offset:1px;} .ds-rail-on,.ds-rail-on:hover{background:rgba(0,0,0,0.08);color:AccentColor;} .ds-rail-sep{width:18px;height:1px;margin:4px 0;background:rgba(0,0,0,0.1);} @media (prefers-contrast: more){.ds-rail{border:1px solid rgba(0,0,0,0.35);} .ds-rail-on{background:rgba(0,0,0,0.16);} .ds-rail-chip:hover{background:rgba(0,0,0,0.09);}}"
     },
@@ -627,7 +672,7 @@
       "name": "Style Capsule",
       "kind": "chip",
       "refersTo": "style-capsule-light",
-      "description": "A mark's style beside the mark: white 0.97 capsule, 38 pt tall, 0.5 pt hairline, floating reading shadow, no glass. Color dots (chosen one ringed in the accent), size dots, variants, Shadow, Delete, split by hairlines. Light shown; Dark uses a 0.17 gray at 0.96 and white 0.12 hairline.",
+      "description": "A mark's style beside the mark: white 0.97 capsule, 38 pt tall, 0.5 pt hairline, floating reading shadow, no glass. Color dots (chosen one ringed in the accent), size dots, variants, Shadow, Delete, split by hairlines. Light shown; Dark uses a 0.17 gray at 0.96 and white 0.12 hairline. With the Background tool it holds 14 pt fill swatches in 24 pt chips (No Background, Transparent, ten gradients, Blurred Capture, Background Color…, Picture; the one in use ringed in the accent), then Adjust (a 320 pt grouped Form in the system popover) and Presets chips. A combined image shows only Shadow and Delete.",
       "html": "<div class=\"ds-style\" role=\"toolbar\" aria-label=\"Arrow Style\"><button class=\"ds-dot ds-dot-on\" style=\"--c:#FF3B30\" aria-label=\"Red\"></button><button class=\"ds-dot\" style=\"--c:#FFCC00\" aria-label=\"Yellow\"></button><button class=\"ds-dot\" style=\"--c:#007AFF\" aria-label=\"Blue\"></button><button class=\"ds-dot\" style=\"--c:#FFFFFF\" aria-label=\"White\"></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip ds-size\" aria-label=\"Size 1\"><i style=\"width:4px;height:4px\"></i></button><button class=\"ds-cchip ds-size ds-cchip-on\" aria-label=\"Size 2\"><i style=\"width:7px;height:7px\"></i></button><button class=\"ds-cchip ds-size\" aria-label=\"Size 3\"><i style=\"width:10px;height:10px\"></i></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip ds-cchip-on\" aria-label=\"Classic Arrow\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M2.5 11.5L11 3M6 3h5v5\"/></svg></button><button class=\"ds-cchip\" aria-label=\"Open Arrow\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linecap=\"round\"><path d=\"M2.5 11.5L11 3M7 3h4v4\"/></svg></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip\" aria-label=\"Delete\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.4\" stroke-linecap=\"round\"><path d=\"M2.5 4h9M5.5 4V2.5h3V4M4 4l.6 7.5h4.8L10 4\"/></svg></button></div>",
       "css": ".ds-style{display:inline-flex;align-items:center;gap:2px;height:38px;padding:4px 4px 4px 8px;box-sizing:border-box;border-radius:9999px;background:rgba(255,255,255,0.97);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);color:rgba(0,0,0,0.85);} .ds-dot{width:24px;height:30px;padding:0;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:default;} .ds-dot::before{content:'';width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 0.5px rgba(0,0,0,0.18);} .ds-dot-on::before{box-shadow:0 0 0 0.5px rgba(0,0,0,0.18),0 0 0 2.5px #fff,0 0 0 4.5px AccentColor;} .ds-cchip{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:none;border-radius:9999px;background:transparent;color:inherit;cursor:default;} .ds-size{width:26px;} .ds-size i{display:block;border-radius:50%;background:currentColor;} .ds-cchip:hover{background:rgba(0,0,0,0.045);} .ds-cchip-on,.ds-cchip-on:hover{background:rgba(0,0,0,0.08);color:AccentColor;} .ds-cchip:focus-visible,.ds-dot:focus-visible{outline:2px solid AccentColor;outline-offset:1px;border-radius:9999px;} .ds-style-sep{width:1px;height:18px;margin:0 4px;background:rgba(0,0,0,0.1);} @media (prefers-contrast: more){.ds-style{border:1px solid rgba(0,0,0,0.35);} .ds-cchip-on{background:rgba(0,0,0,0.16);}}"
     }
@@ -646,12 +691,12 @@
     "rules": [
       {
         "name": "The No Brand Hue Rule",
-        "body": "The accent is whatever the user chose in System Settings. Never hard-code a blue in chrome, never tint a surface toward a house color. Mark inks are the user's content and the one place fixed hues live.",
+        "body": "The accent is whatever the user chose in System Settings. Never hard-code a blue in chrome, never tint a surface toward a house color. Mark inks and background fills are the user's content and the one place fixed hues live.",
         "section": "colors"
       },
       {
         "name": "The Black-and-White Opacity Rule",
-        "body": "Every literal color the app's chrome introduces is pure black or white at a stated opacity (or the single 0.17 gray of the Dark reading capsule). New surfaces reuse these steps before inventing a tint.",
+        "body": "Every literal color the app's chrome introduces is pure black or white at a stated opacity (or the single 0.17 gray of the Dark reading capsule, and the opaque grays of the on-screen checkerboard). New surfaces reuse these steps before inventing a tint.",
         "section": "colors"
       },
       {
@@ -681,7 +726,12 @@
       },
       {
         "name": "The Opaque Behind Text Rule",
-        "body": "Any control with text that floats over a capture or a screen has an opaque (or at least 0.94) fill. Glass supplies the rim, not the backing.",
+        "body": "Any control with text that floats over a capture or a screen has an opaque (or at least 0.94) fill. Glass supplies the rim, not the backing; the editor's Adjust popover sets its Form on the opaque window color inside the system popover.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Exported-Is-Drawn Rule",
+        "body": "What is drawn into the picture is exported: marks, the mark shadow, the background, its card shadow, and the matte. What helps on screen never is: the checkerboard, selection and handles, the drop ring, the crop frame, the picture border, and the in-window shadow.",
         "section": "elevation"
       }
     ],
