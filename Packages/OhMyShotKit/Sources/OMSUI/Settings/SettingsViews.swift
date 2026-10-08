@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import KeyboardShortcuts
 import OMSCore
+import OMSOCR
 import SwiftUI
 
 private let formWidth: CGFloat = 520
@@ -13,6 +14,7 @@ struct GeneralSettingsView: View {
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
+    @State private var translationTargets: [Locale.Language] = []
 
     var body: some View {
         Form {
@@ -111,6 +113,24 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                Picker(selection: $settings.translationTarget) {
+                    Text("Automatic", bundle: .module).tag("")
+                    Divider()
+                    ForEach(translationOptions, id: \.self) { identifier in
+                        Text(verbatim: Translator.name(of: Locale.Language(identifier: identifier))).tag(identifier)
+                    }
+                } label: {
+                    Text("Translate into", bundle: .module)
+                    Text("Automatic picks the first of your preferred languages that the text isn’t already in.", bundle: .module)
+                }
+                .task { translationTargets = await Translator.targets() }
+            } header: {
+                Text("Translation", bundle: .module)
+            } footer: {
+                Text("Translation runs on this Mac. A language is downloaded the first time it’s needed.", bundle: .module)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle(isOn: $settings.freezeScreen) {
                     Text("Freeze the screen while selecting", bundle: .module)
                     Text("Keeps hover states and open menus in place until the capture is taken.", bundle: .module)
@@ -131,6 +151,14 @@ struct GeneralSettingsView: View {
 }
 
 extension GeneralSettingsView {
+    /// The languages to translate into, by identifier; the chosen one even before the list has loaded.
+    fileprivate var translationOptions: [String] {
+        var options = translationTargets.map(Translator.identifier(of:))
+        let choice = settings.translationTarget
+        if !choice.isEmpty, !options.contains(choice) { options.insert(choice, at: 0) }
+        return options
+    }
+
     fileprivate var retentionDescription: String {
         settings.historyRetention == .never
             ? String(localized: "Captures are deleted when their Quick Access card closes, unless you saved them.", bundle: .module)

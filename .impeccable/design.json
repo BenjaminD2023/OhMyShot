@@ -311,6 +311,11 @@
         "name": "text-selection-fade",
         "value": "0.35s ease-in to opacity 0 (0.15s when nothing was found)",
         "purpose": "The selection highlight after Capture Text, once the text is on the clipboard. Instant under Reduce Motion."
+      },
+      {
+        "name": "lens-fade",
+        "value": "0.18s ease-out in, 0.15s ease-in out; buttons 0.12s",
+        "purpose": "The translation lens appearing over the selection and leaving. Instant under Reduce Motion."
       }
     ]
   },
@@ -391,9 +396,17 @@
       "name": "OCR Panel",
       "kind": "custom",
       "refersTo": "history-card",
-      "description": "The Recognized Text window: the image as a 12 pt picture card with line boxes drawn like selected text (selected line filled with the selection color at 0.35 and edged in the accent; hovered line outlined only), the editable text in the body style at a 1.15 line height, and the Found in Image rows with borderless verb and Copy buttons. Light shown; Dark uses the system dark surfaces, white 0.16 picture border, selection fill at 0.45.",
+      "description": "The Recognized Text window: the image as a 12 pt picture card with line boxes drawn like selected text (selected line filled with the selection color at 0.35 and edged in the accent; hovered line outlined only), the editable text in the body style at a 1.15 line height, and the Found in Image rows with borderless verb and Copy buttons. Light shown; Dark uses the system dark surfaces, white 0.16 picture border, selection fill at 0.45. Translated, the picture shows the Translation Overlay and no line boxes, the text side the translation, read-only, with a status line (\"English → Chinese, Simplified\"), and the toolbar an icon-only Translate toggle and the Translate Into menu before Copy, which stays the one titled, filled control.",
       "html": "<div class=\"ds-ocr\"><div class=\"ds-ocr-image\"><div class=\"ds-ocr-page\"><div class=\"ds-ocr-line\">截图完成后，卡片会出现在屏幕左下角</div><div class=\"ds-ocr-line ds-ocr-selected\">Quick Access keeps every capture one click away.</div><div class=\"ds-ocr-line ds-ocr-hovered\">Docs: https://example.com/docs</div></div></div><div class=\"ds-ocr-text\"><div class=\"ds-ocr-editor\">截图完成后，卡片会出现在屏幕左下角<br><span class=\"ds-ocr-sel\">Quick Access keeps every capture one click away.</span><br>Docs: <u>https://example.com/docs</u></div><div class=\"ds-ocr-found\"><div class=\"ds-ocr-found-head\">Found in Image</div><div class=\"ds-ocr-row\"><span>🔗</span><span class=\"ds-ocr-value\">https://example.com/docs</span><span class=\"ds-ocr-verb\">↗</span><span class=\"ds-ocr-verb\">⧉</span></div><div class=\"ds-ocr-row ds-ocr-row-hover\"><span>📅</span><span class=\"ds-ocr-value\">October 15, 2026 at 2:30 PM</span><span class=\"ds-ocr-verb\">＋</span><span class=\"ds-ocr-verb\">⧉</span></div></div></div></div>",
       "css": ".ds-ocr{display:flex;width:720px;height:300px;border-radius:10px;overflow:hidden;font-family:system-ui,sans-serif;font-size:13px;border:0.5px solid rgba(0,0,0,0.15);} .ds-ocr-image{flex:1;background:#f5f5f5;display:flex;align-items:center;justify-content:center;} .ds-ocr-page{width:300px;padding:18px;background:#fff;border-radius:12px;border:0.5px solid rgba(0,0,0,0.10);box-shadow:0 4px 10px rgba(0,0,0,0.12);font-size:11px;line-height:20px;} .ds-ocr-line{padding:0 2px;border:1px solid transparent;} .ds-ocr-selected{background:rgba(179,215,255,0.35);border-color:#007AFF;} .ds-ocr-hovered{border-color:#007AFF;} .ds-ocr-text{width:320px;background:#fff;display:flex;flex-direction:column;border-left:0.5px solid rgba(0,0,0,0.1);} .ds-ocr-editor{flex:1;padding:14px 12px;line-height:1.15;} .ds-ocr-sel{background:#B3D7FF;} .ds-ocr-editor u{color:#0068DA;} .ds-ocr-found{border-top:0.5px solid rgba(0,0,0,0.1);padding:10px 8px;} .ds-ocr-found-head{font-size:10px;font-weight:600;color:rgba(0,0,0,0.5);padding:0 8px 4px;} .ds-ocr-row{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;} .ds-ocr-row-hover{background:rgba(0,0,0,0.045);} .ds-ocr-value{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .ds-ocr-verb{color:rgba(0,0,0,0.6);}"
+    },
+    {
+      "name": "Translation Lens",
+      "kind": "custom",
+      "refersTo": "card-corner-button",
+      "description": "Translate Area's result: a borderless panel exactly over the selection holding the captured area with its translation drawn in place (each line painted over with its own background, the translation in the original's ink and size, semibold for headings), a 0.5 pt black 0.18 hairline (1 pt black 0.35 under Increase Contrast) and the window shadow; three card corner buttons (Copy Translation, Open in Panel, Close) fade in just outside its top-right corner while hovered, never over the text. Escape, a click, or another window taking the keys closes it; Option held shows the original.",
+      "html": "<div class=\"ds-lens-wrap\"><div class=\"ds-lens-buttons\"><span>⧉</span><span>▢</span><span>✕</span></div><div class=\"ds-lens\"><div class=\"ds-lens-title\">发布说明 Release Notes</div><div class=\"ds-lens-p\">截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。</div><div class=\"ds-lens-p\">快速访问让每次捕获都只需点击一下即可。捕获中的文本可以复制、编辑和搜索。</div><div class=\"ds-lens-p\">文档：https://example.com/docs</div></div></div>",
+      "css": ".ds-lens-wrap{width:420px;font-family:system-ui,'PingFang SC',sans-serif;} .ds-lens-buttons{display:flex;justify-content:flex-end;gap:6px;margin-bottom:6px;} .ds-lens-buttons span{width:24px;height:24px;border-radius:12px;background:rgba(0,0,0,0.5);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;} .ds-lens{padding:18px 20px;background:#fbfbfb;border:0.5px solid rgba(0,0,0,0.18);box-shadow:0 10px 30px rgba(0,0,0,0.25);color:#000;} .ds-lens-title{font-size:16px;font-weight:600;margin-bottom:10px;} .ds-lens-p{font-size:12px;line-height:1.5;margin-bottom:6px;}"
     }
   ],
   "narrative": {

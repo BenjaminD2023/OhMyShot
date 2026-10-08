@@ -45,6 +45,7 @@ final class CompositionRoot {
                 .init(title: String(localized: "Capture Window"), shortcut: .captureWindow) { [weak self] in self?.handle(.captureWindow) },
                 .init(title: String(localized: "Capture Fullscreen"), shortcut: .captureFullscreen) { [weak self] in self?.handle(.captureFullscreen) },
                 .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
+                .init(title: String(localized: "Translate Area"), shortcut: .translateArea) { [weak self] in self?.handle(.translateArea) },
             ],
             textEntries: [
                 .init(
@@ -177,6 +178,8 @@ final class CompositionRoot {
             textCapture.captureText(joinLines: false)
         case .captureTextJoined:
             textCapture.captureText(joinLines: true)
+        case .translateArea:
+            textCapture.translateArea()
         default:
             Log.hotkeys.notice("Not available yet: \(shortcut.rawValue, privacy: .public)")
         }

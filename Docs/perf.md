@@ -134,3 +134,19 @@ and 5). Benchmark per image, L1 alone, before → after: English pages 85–126 
 - **The strip fallback works end to end**: with every line forced through it, `zh-en-lines` and the
   panel's demo page still read without an error. On the corpus the page reading matched every line, so
   the strip is not used there.
+
+## M2 — Translation (2026-10-08)
+
+Same machine and display. The OCR panel translating its drawn demo page (`ohmyshot-dev://debug/panel-demo`, then `panel-state?translate=1`), Translate Area on the same page (`translate-demo`), read with `Scripts/latency.sh`, `footprint`, and `top`.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Panel translation (`ocr.translate`: units, the system's model, drawing), first after launch / again | 455–528 ms / 240–330 ms | — |
+| Translate Area from the image to the lens (`ocr.translate-area`: recognition, translation, drawing) | 659–684 ms | — |
+| Footprint 30 s after closing a translated panel, sessions released / kept | 136–141 MB / 139 MB (131 MB without translating) | < 60 MB after use |
+| Idle after closing the lens and the panel | 0.0% CPU, 0 wakeups in 30 s, no live resources | 0.0%, < 30 |
+
+### Findings
+
+- **Translation adds little that stays.** The models load in the system's translation service, not in OhMyShot: releasing the sessions when the panel closes changes the footprint by no more than the noise between runs, and the next panel's first translation is no slower. They are released anyway. What stays after the panel closes is the recognition's freed memory (M2 — OCR panel).
+- **Batching labels is faster as well as better**: on the real screenshots translating took 0.1–0.7 s once code, figures, and names were left out and short labels went in batches, against 1.2–2.4 s before.

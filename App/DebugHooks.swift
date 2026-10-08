@@ -137,14 +137,25 @@ struct DebugHooks {
             let value = { (name: String) in items.first { $0.name == name }?.value }
             Task { await openPanelDemo(via: value("via"), state: value("state")) }
         case "panel-state":
-            // pane=text|table, join=0|1, select=<line>, hover=<line>, edited=1
+            // pane=text|table, join=0|1, select=<line>, hover=<line>, edited=1, translate=0|1,
+            // target=auto|<language> (the setting itself: put it back to auto afterwards)
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in items.first { $0.name == name }?.value }
             textCapture.previewPanelState(
                 pane: value("pane"), joinLines: value("join").map { $0 == "1" },
                 selectLine: value("select").flatMap(Int.init), hoverLine: value("hover").flatMap(Int.init),
-                edited: value("edited") == "1"
+                edited: value("edited") == "1", translate: value("translate").map { $0 == "1" }, target: value("target")
             )
+        case "translate-demo":
+            // Translate Area on a drawn page (never the screen): its lens lies centered on the main
+            // display. prose=0 for the page with the table; controls=1 shows its buttons.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let prose = items.first { $0.name == "prose" }?.value != "0"
+            let controls = items.first { $0.name == "controls" }?.value == "1"
+            Task {
+                await translateDemo(prose: prose)
+                if controls { textCapture.revealLensControls() }
+            }
         case "panel-test":
             // The centered region, as Option at the end of a Capture Text drag. Reads the screen: for
             // timing and logs only, never for snapshots.
@@ -182,9 +193,17 @@ struct DebugHooks {
             for window in NSApp.windows where window.isVisible && window.styleMask.contains(.titled) {
                 window.performClose(nil)
             }
+            textCapture.closeLens()
         default:
             Log.app.error("debug.unknown \(hook, privacy: .public)")
         }
+    }
+
+    func translateDemo(prose: Bool) async {
+        guard let image = DebugPanelDemo.image(prose: prose), let display = displays.layout.primary else { return }
+        let size = DebugPanelDemo.size
+        let frame = CGRect(x: display.frame.midX - size.width / 2, y: display.frame.midY - size.height / 2, width: size.width, height: size.height)
+        await textCapture.translate(image, scale: 2, over: frame.integral, source: "Demo", inPanel: false)
     }
 
     func openPanelDemo(via: String?, state: String?) async {

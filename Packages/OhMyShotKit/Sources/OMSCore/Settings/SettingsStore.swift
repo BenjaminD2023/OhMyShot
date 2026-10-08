@@ -56,6 +56,12 @@ public final class SettingsStore {
         didSet { defaults.set(showTextResult, forKey: Key.showTextResult) }
     }
 
+    /// The language text is translated into, as "zh-Hans" or "ja"; empty for automatic: the first
+    /// preferred language the text is not already in.
+    public var translationTarget: String {
+        didSet { defaults.set(translationTarget, forKey: Key.translationTarget) }
+    }
+
     /// Hold the screen still while selecting, so hover states and open menus can be captured.
     public var freezeScreen: Bool {
         didSet { defaults.set(freezeScreen, forKey: Key.freezeScreen) }
@@ -74,6 +80,7 @@ public final class SettingsStore {
             Key.showQuickAccess: true,
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
             Key.showTextResult: false,
+            Key.translationTarget: "",
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
@@ -87,6 +94,7 @@ public final class SettingsStore {
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
         showTextResult = defaults.bool(forKey: Key.showTextResult)
+        translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
     }
 
     private enum Key {
@@ -101,5 +109,6 @@ public final class SettingsStore {
         static let showQuickAccess = "showQuickAccess"
         static let historyRetention = "historyRetention"
         static let showTextResult = "showTextResult"
+        static let translationTarget = "translationTarget"
     }
 }

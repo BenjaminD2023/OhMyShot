@@ -24,7 +24,10 @@ final class TextCaptureCoordinator {
         options.timeout = .seconds(30)
         return VisionPipeline(options: options)
     }()
+    /// Shared by the panel and Translate Area: a language pair's first translation loads its model.
+    private let translator = Translator()
     private let highlight = TextSelectionHighlight()
+    private let lens = TranslationLens()
     private let hud = TextResultHUD()
     private var panel: TextRecognitionWindowController?
     /// The last recognition, so the card can switch between kept and joined line breaks.
@@ -161,25 +164,134 @@ final class TextCaptureCoordinator {
         pasteboard.setString(text, forType: .string)
     }
 
+    // MARK: Translate Area
+
+    /// Translate Area: drag over text, or pick a window, and its translation covers it where it is.
+    /// Option held when the drag ends opens the OCR panel, translated, instead.
+    func translateArea() {
+        guard !overlay.isActive else { return }
+        lens.close(animated: false)
+        let pipeline = pipeline
+        Task { await pipeline.prewarm() }
+        overlay.freezesScreen = settings.freezeScreen
+        overlay.begin(mode: .area, purpose: .text) { [weak self] outcome in
+            switch outcome {
+            case .region(let rect, let display, let modifiers):
+                self?.highlight.show(rect)
+                Task { await self?.translate(region: rect, on: display, inPanel: modifiers.contains(.option)) }
+            case .window(let target, let modifiers):
+                self?.highlight.show(target.frame)
+                Task { await self?.translate(window: target, inPanel: modifiers.contains(.option)) }
+            case .cancelled:
+                break
+            }
+        }
+    }
+
+    private func translate(region rect: CGRect, on display: DisplayInfo, inPanel: Bool) async {
+        do {
+            let frame = try await capturer.captureRegion(rect, on: display)
+            await translate(frame.image, scale: Self.scale(of: frame), over: rect, source: String(localized: "Screen Area"), inPanel: inPanel)
+        } catch {
+            Log.capture.error("Translate Area failed to capture: \(error.localizedDescription, privacy: .public)")
+            highlight.finish(copied: nil, announces: true)
+        }
+    }
+
+    private func translate(window target: WindowTarget, inPanel: Bool) async {
+        do {
+            let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
+            await translate(frame.image, scale: Self.scale(of: frame), over: target.frame, source: target.ownerName, inPanel: inPanel)
+        } catch {
+            Log.capture.error("Translate Area failed to capture the window: \(error.localizedDescription, privacy: .public)")
+            highlight.finish(copied: nil, announces: true)
+        }
+    }
+
+    /// Reads `image`, translates it, and lays the translation over `frame`. A language still to download
+    /// opens the panel, which offers the download; nothing to translate is said with a beep.
+    func translate(_ image: CGImage, scale: CGFloat, over frame: CGRect, source: String, inPanel: Bool) async {
+        if inPanel {
+            highlight.hide()
+            openPanel(image: image, scale: scale, source: source, translating: true)
+            return
+        }
+        let probe = LatencyProbe("ocr.translate-area")
+        let choice = settings.translationTarget
+        do {
+            let lines = try await pipeline.recognize(image).lines
+            let units = TranslationUnits.group(lines)
+            let outcome = try await translator.translate(units, to: choice.isEmpty ? nil : Locale.Language(identifier: choice))
+            guard !outcome.translations.isEmpty else {
+                if !outcome.needsDownload.isEmpty {
+                    highlight.hide()
+                    openPanel(image: image, scale: scale, source: source, translating: true)
+                } else {
+                    Log.capture.notice("Translate Area found nothing to translate into \(outcome.target.minimalIdentifier, privacy: .public): \(units.count, privacy: .public) units, \(outcome.inTarget.count, privacy: .public) already in it")
+                    highlight.finish(copied: nil, announces: false)
+                    announce(outcome.inTarget.isEmpty
+                        ? String(localized: "Nothing to translate")
+                        : String(localized: "Already in \(Translator.name(of: outcome.target))"))
+                }
+                return
+            }
+            guard let rendering = await TranslationOverlay.render(
+                image, lines: lines, units: units, translations: outcome.translations, language: outcome.target, scale: scale
+            ) else {
+                highlight.finish(copied: nil, announces: true)
+                return
+            }
+            probe.end()
+            let (text, translated) = Translator.text(of: units, outcome)
+            let sources = ListFormatter.localizedString(byJoining: outcome.sources.map { Translator.name(of: $0) })
+            lens.show(
+                rendering.image, original: image, scale: scale, over: frame, text: text, translated: translated,
+                language: Translator.identifier(of: outcome.target), summary: "\(sources) → \(Translator.name(of: outcome.target))",
+                shortened: !rendering.truncated.isEmpty
+            )
+            lens.onOpenInPanel = { [weak self] in self?.openPanel(image: image, scale: scale, source: source, translating: true) }
+            highlight.hide()
+            Log.capture.notice("Translate Area translated \(outcome.translations.count, privacy: .public) of \(units.count, privacy: .public) units into \(outcome.target.minimalIdentifier, privacy: .public), \(rendering.truncated.count, privacy: .public) shortened")
+        } catch {
+            Log.capture.error("Translate Area failed: \(String(describing: error), privacy: .public)")
+            highlight.finish(copied: nil, announces: true)
+        }
+    }
+
+    #if DEBUG
+    func revealLensControls() { lens.revealControls() }
+
+    func closeLens() { lens.close(animated: false) }
+    #endif
+
+    private func announce(_ message: String) {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+            .announcement: message,
+            .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
+    }
+
     // MARK: OCR panel
 
     /// Opens the OCR panel on `image`, read in full: text, tables, links, and codes. `scale` is the
     /// image's pixels per point; `source` names it under the title.
-    func openPanel(image: CGImage, scale: CGFloat, source: String) {
+    func openPanel(image: CGImage, scale: CGFloat, source: String, translating: Bool = false) {
         let controller = panel ?? makePanel()
         panel = controller
         let pipeline = pipeline
-        controller.show(image: image, scale: scale, source: source) { image in
+        controller.show(image: image, scale: scale, source: source, translating: translating) { image in
             try await pipeline.analyze(image)
         }
     }
 
     private func makePanel() -> TextRecognitionWindowController {
-        let controller = TextRecognitionWindowController()
+        let controller = TextRecognitionWindowController(settings: settings, translator: translator)
         controller.onClose = { [weak self] in
             // Released on the next turn so the window is not deallocated inside its own delegate call.
             Task { @MainActor in
                 self?.panel = nil
+                // Nothing translates until the next panel: the system's models need not stay loaded.
+                await self?.translator.releaseSessions()
                 MemoryRelief.returnFreedPages()
             }
         }
@@ -308,8 +420,8 @@ final class TextCaptureCoordinator {
     }
 
     /// Sets the open panel's pane, line breaks, selected or hovered line, and whether the text was edited.
-    func previewPanelState(pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool) {
-        panel?.preview(pane: pane, joinLines: joinLines, selectLine: selectLine, hoverLine: hoverLine, edited: edited)
+    func previewPanelState(pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool?, target: String?) {
+        panel?.preview(pane: pane, joinLines: joinLines, selectLine: selectLine, hoverLine: hoverLine, edited: edited, translate: translate, target: target)
     }
 
     /// Shows a failure to open, as a broken file or an empty clipboard would.

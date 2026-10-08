@@ -77,6 +77,18 @@ public final class TextSelectionHighlight {
         }
     }
 
+    /// Takes the highlight away at once, without a sound: something else now shows the result, over it.
+    public func hide() {
+        breathing?.cancel()
+        breathing = nil
+        guard let panel else { return }
+        self.panel = nil
+        shape?.removeAnimation(forKey: "breathe")
+        shape = nil
+        panel.orderOut(nil)
+        windowLease = nil
+    }
+
     private func makePanel() -> NSPanel {
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         panel.isOpaque = false

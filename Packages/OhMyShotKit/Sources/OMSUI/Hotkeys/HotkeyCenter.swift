@@ -13,6 +13,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case captureText
     /// Capture Text with the lines of each paragraph joined.
     case captureTextJoined
+    /// Drag over text and its translation covers it, in place.
+    case translateArea
     case openHistory
     /// Copies the newest Quick Access card's capture, so it can be reached without the pointer.
     case copyLatestCapture
@@ -31,6 +33,7 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .selfTimer: String(localized: "Self-Timer", bundle: .module)
         case .captureText: String(localized: "Capture Text", bundle: .module)
         case .captureTextJoined: String(localized: "Capture Text, Joining Lines", bundle: .module)
+        case .translateArea: String(localized: "Translate Area", bundle: .module)
         case .openHistory: String(localized: "Open Capture History", bundle: .module)
         case .copyLatestCapture: String(localized: "Copy Latest Capture", bundle: .module)
         }
@@ -54,17 +57,24 @@ public final class HotkeyCenter {
         self.defaults = defaults
     }
 
-    /// Assigns the default shortcuts on the first launch of this build flavor only, so a shortcut the
-    /// user cleared stays cleared.
+    /// Assigns each shortcut's default once, the first launch that knows the shortcut, so a shortcut the
+    /// user cleared stays cleared and one added later still gets its default. A default already taken
+    /// by another shortcut is left out.
     public func installDefaultShortcutsIfNeeded() {
-        let key = "didInstallDefaultShortcuts"
-        guard !defaults.bool(forKey: key) else { return }
-        for shortcut in CaptureShortcut.allCases {
-            if let defaultShortcut = defaultShortcut(for: shortcut) {
-                KeyboardShortcuts.setShortcut(defaultShortcut, for: shortcut.name)
-            }
+        let key = "installedDefaultShortcuts"
+        var installed = Set(defaults.stringArray(forKey: key) ?? [])
+        if defaults.object(forKey: key) == nil, defaults.bool(forKey: "didInstallDefaultShortcuts") {
+            // Installed before shortcuts were tracked one by one: every one that existed then.
+            installed = Set(CaptureShortcut.allCases.filter { $0 != .translateArea }.map(\.rawValue))
         }
-        defaults.set(true, forKey: key)
+        for shortcut in CaptureShortcut.allCases where !installed.contains(shortcut.rawValue) {
+            let taken = CaptureShortcut.allCases.compactMap { KeyboardShortcuts.getShortcut(for: $0.name) }
+            if let candidate = defaultShortcut(for: shortcut), !taken.contains(candidate) {
+                KeyboardShortcuts.setShortcut(candidate, for: shortcut.name)
+            }
+            installed.insert(shortcut.rawValue)
+        }
+        defaults.set(installed.sorted(), forKey: key)
     }
 
     /// Starts listening. The handler runs on key down, so the overlay can appear before the keys are
@@ -83,6 +93,7 @@ public final class HotkeyCenter {
         case .release: [.shift, .command]
         }
         return switch shortcut {
+        case .translateArea: KeyboardShortcuts.Shortcut(.one, modifiers: modifiers)
         case .captureText: KeyboardShortcuts.Shortcut(.two, modifiers: modifiers)
         case .captureFullscreen: KeyboardShortcuts.Shortcut(.three, modifiers: modifiers)
         case .captureArea: KeyboardShortcuts.Shortcut(.four, modifiers: modifiers)

@@ -9,7 +9,7 @@ struct RecognizedTextEditor: NSViewRepresentable {
     let model: TextRecognitionModel
 
     /// Body text, a little more open than the default: lines that mix Chinese and Latin sit tight.
-    private static let paragraphStyle: NSParagraphStyle = {
+    static let paragraphStyle: NSParagraphStyle = {
         let style = NSMutableParagraphStyle()
         style.lineHeightMultiple = 1.15
         return style
@@ -208,5 +208,58 @@ final class ActivityTrackingTextView: NSTextView {
         // Never from inside a SwiftUI update, where focus can change.
         let callback = onActivityChange
         Task { @MainActor in callback?(active) }
+    }
+}
+
+/// The translation in the OCR panel: selectable but not editable, in the editor's type, with Find, its
+/// links underlined as in the editor and its translated parts marked as in the target language, so
+/// VoiceOver reads them in that language's voice.
+struct TranslatedTextView: NSViewRepresentable {
+    let text: String
+    let translated: [NSRange]
+    let language: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = NSTextView(frame: .zero)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(width: 12, height: 14)
+        textView.font = .preferredFont(forTextStyle: .body)
+        textView.defaultParagraphStyle = RecognizedTextEditor.paragraphStyle
+        textView.linkTextAttributes = [
+            .foregroundColor: NSColor.linkColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .cursor: NSCursor.pointingHand,
+        ]
+        textView.setAccessibilityLabel(String(localized: "Translation", bundle: .module))
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView, let storage = textView.textStorage, textView.string != text else { return }
+        textView.string = text
+        let whole = NSRange(location: 0, length: storage.length)
+        storage.beginEditing()
+        storage.addAttribute(.paragraphStyle, value: RecognizedTextEditor.paragraphStyle, range: whole)
+        for range in translated where NSMaxRange(range) <= storage.length {
+            storage.addAttribute(.accessibilityLanguage, value: language, range: range)
+        }
+        for item in TextDetector.items(in: text) where NSMaxRange(item.range) <= storage.length {
+            if let url = item.url { storage.addAttribute(.link, value: url, range: item.range) }
+        }
+        storage.endEditing()
     }
 }

@@ -4,10 +4,13 @@ import OMSCore
 import OMSOCR
 import OSLog
 import SwiftUI
+// The framework predates strict concurrency; its sessions are handed to the view that asked for them.
+@preconcurrency import Translation
 
 /// The OCR panel: the image on the left with what was read outlined on it, the text on the right,
-/// editable and in the line-break style of choice, with tables, links, contacts, and codes. One window,
-/// reused for each new image, created when opened and released when closed.
+/// editable and in the line-break style of choice, with tables, links, contacts, and codes; translated,
+/// the image shows the translation in place of its text and the right side the translated text. One
+/// window, reused for each new image, created when opened and released when closed.
 public final class TextRecognitionWindowController: NSWindowController, NSWindowDelegate {
     /// Why an image never reached the panel. The panel says so instead of a bare beep.
     public enum OpenFailure: Sendable {
@@ -19,10 +22,12 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
 
     public var onClose: (() -> Void)?
 
-    private let model = TextRecognitionModel()
+    private let model: TextRecognitionModel
     private var windowLease: ActiveResources.Lease?
 
-    public init() {
+    /// `translator` is shared, so a language pair's model, slow to load, stays ready from image to image.
+    public init(settings: SettingsStore, translator: Translator) {
+        model = TextRecognitionModel(settings: settings, translator: translator)
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 1040, height: 660),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -51,9 +56,20 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
 
     /// Shows `image` and reads it with `analyze`. `scale` is pixels per point (2 for a Retina capture),
     /// so the image is never drawn larger than it appeared; `source` names it under the title.
-    public func show(image: CGImage, scale: CGFloat, source: String, analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis) {
+    /// `translating` turns the translation on for it (Translate Area's Open in Panel).
+    public func show(
+        image: CGImage, scale: CGFloat, source: String, translating: Bool = false,
+        analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis
+    ) {
         model.load(image: image, scale: scale, analyze: analyze)
+        if translating { model.translates = true }
         present(source: source)
+    }
+
+    /// Whether the translation is shown; it stays on from image to image until turned off.
+    public var translates: Bool {
+        get { model.translates }
+        set { model.translates = newValue }
     }
 
     /// Shows why there is nothing to read.
@@ -82,7 +98,9 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
     #if DEBUG
     /// For scripted screenshots: `pane` text or table, joined lines, a selected or hovered line, an
     /// edited text.
-    public func preview(pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool) {
+    public func preview(pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool? = nil, target: String? = nil) {
+        if let target { model.translationChoice = target == "auto" ? "" : target }
+        if let translate { model.translates = translate }
         if let pane { model.pane = pane == "table" ? .table : .text }
         if let joinLines { model.joinLines = joinLines }
         if let selectLine { model.selectLine(selectLine) }
@@ -117,6 +135,20 @@ final class TextRecognitionModel {
     enum TableFormat {
         case markdown
         case csv
+    }
+
+    /// A translation of what was read, for one choice of target.
+    struct Translation {
+        /// The setting it was made for: a language, or empty for automatic.
+        let choice: String
+        let outcome: Translator.Outcome
+        let units: [TranslationUnit]
+        /// Unit by unit, one to a line: translated where it was, as read where not.
+        let text: String
+        /// The parts of `text` that were translated (UTF-16), in the target language.
+        let translated: [NSRange]
+        /// The image with the translation drawn over its text; nil when nothing was translated.
+        let image: CGImage?
     }
 
     /// What a found item's button does, named for what the item is.
@@ -157,9 +189,29 @@ final class TextRecognitionModel {
         didSet { if joinLines != oldValue { regenerate() } }
     }
 
+    /// Whether the translation is shown in place of the text as read.
+    var translates = false {
+        didSet { if translates != oldValue { translatesChanged() } }
+    }
+    private(set) var translation: Translation?
+    private(set) var isTranslating = false
+    private(set) var translationFailed = false
+    /// The languages offered as targets, loaded when first needed.
+    private(set) var targets: [Locale.Language] = []
+    /// A language to download: the view hands it to the system, which asks the person first.
+    var download: TranslationSession.Configuration?
+
+    @ObservationIgnored private let settings: SettingsStore
+    @ObservationIgnored private let translator: Translator
+    @ObservationIgnored private var translationTask: Task<Void, Never>?
     @ObservationIgnored private var analyze: (@Sendable (CGImage) async throws -> TextAnalysis)?
     @ObservationIgnored private var analysis: Task<Void, Never>?
     @ObservationIgnored private var copiedReset: Task<Void, Never>?
+
+    init(settings: SettingsStore, translator: Translator) {
+        self.settings = settings
+        self.translator = translator
+    }
 
     func load(image: CGImage, scale: CGFloat, analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis) {
         analysis?.cancel()
@@ -180,6 +232,7 @@ final class TextRecognitionModel {
                 regenerate()
                 let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 phase = hasText || !codes.isEmpty || !tables.isEmpty ? .ready : .empty
+                if translates, phase == .ready { translate() }
                 Log.capture.notice("OCR panel read \(self.lines.count, privacy: .public) lines, \(self.tables.count, privacy: .public) tables, \(self.codes.count, privacy: .public) codes, \(self.items.count, privacy: .public) links and contacts")
             } catch {
                 guard !Task.isCancelled else { return }
@@ -231,6 +284,11 @@ final class TextRecognitionModel {
     }
 
     private func clearResults() {
+        translationTask?.cancel()
+        translation = nil
+        isTranslating = false
+        translationFailed = false
+        download = nil
         lines = []
         tables = []
         codes = []
@@ -282,6 +340,109 @@ final class TextRecognitionModel {
 
     var currentTable: OCRTable? {
         tables.indices.contains(tableIndex) ? tables[tableIndex] : tables.first
+    }
+
+    // MARK: Translation
+
+    /// The target setting: a language as "zh-Hans", or empty for automatic. Changing it translates again.
+    var translationChoice: String {
+        get { settings.translationTarget }
+        set {
+            guard newValue != settings.translationTarget else { return }
+            settings.translationTarget = newValue
+            if translates { translate() }
+        }
+    }
+
+    private func translatesChanged() {
+        if translates {
+            if targets.isEmpty {
+                Task { [weak self] in
+                    let targets = await Translator.targets()
+                    self?.targets = targets
+                }
+            }
+            // Turned off and on again, the same translation is shown again.
+            if translation?.choice != settings.translationTarget || translationFailed { translate() }
+        } else {
+            // A download asked for and not finished is dropped with the view that hands it to the
+            // system, so turning translation on again never brings back the system's sheet unasked.
+            download = nil
+            if isTranslating {
+                translationTask?.cancel()
+                isTranslating = false
+            }
+        }
+    }
+
+    /// Translates what was read, unit by unit, and draws the translation over the image.
+    func translate() {
+        guard let image, phase == .ready else { return }
+        translationTask?.cancel()
+        let lines = lines
+        let scale = scale
+        let choice = settings.translationTarget
+        let target = choice.isEmpty ? nil : Locale.Language(identifier: choice)
+        let translator = translator
+        translation = nil
+        isTranslating = true
+        translationFailed = false
+        translationTask = Task { [weak self] in
+            let probe = LatencyProbe("ocr.translate")
+            do {
+                let units = TranslationUnits.group(lines)
+                let outcome = try await translator.translate(units, to: target)
+                let rendering = outcome.translations.isEmpty ? nil : await TranslationOverlay.render(
+                    image, lines: lines, units: units, translations: outcome.translations, language: outcome.target, scale: scale
+                )
+                probe.end()
+                guard !Task.isCancelled, let self else { return }
+                let (text, translated) = Translator.text(of: units, outcome)
+                translation = Translation(choice: choice, outcome: outcome, units: units, text: text, translated: translated, image: rendering?.image)
+                isTranslating = false
+                Log.capture.notice("OCR panel translated \(outcome.translations.count, privacy: .public) of \(units.count, privacy: .public) units into \(outcome.target.minimalIdentifier, privacy: .public); \(outcome.inTarget.count, privacy: .public) already in it, \(outcome.needsDownload.count, privacy: .public) languages to download, \(rendering?.truncated.count ?? 0, privacy: .public) shortened")
+                if !outcome.translations.isEmpty {
+                    announce(String(localized: "Translated into \(Translator.name(of: outcome.target))", bundle: .module))
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                Log.capture.error("OCR panel translation failed: \(String(describing: error), privacy: .public)")
+                self?.isTranslating = false
+                self?.translationFailed = true
+            }
+        }
+    }
+
+    /// Asks the system to download `language` for the current target. It shows its own sheet first.
+    func requestDownload(_ language: Locale.Language) {
+        download = TranslationSession.Configuration(source: language, target: translation?.outcome.target)
+    }
+
+    /// The session the system made for a download: once the language is in, translates again. Declined
+    /// or failed, the Download button stays.
+    func prepare(_ session: TranslationSession) async {
+        do {
+            try await session.prepareTranslation()
+            download = nil
+            translate()
+        } catch {
+            Log.capture.notice("Language download not completed: \(String(describing: error), privacy: .public)")
+            download = nil
+        }
+    }
+
+    /// "English → Chinese, Simplified".
+    var translationSummary: String? {
+        guard let outcome = translation?.outcome, !outcome.sources.isEmpty else { return nil }
+        let sources = ListFormatter.localizedString(byJoining: outcome.sources.map { Translator.name(of: $0) })
+        return "\(sources) → \(Translator.name(of: outcome.target))"
+    }
+
+    /// The same for VoiceOver, which reads the arrow as "right arrow".
+    var spokenTranslationSummary: String? {
+        guard let outcome = translation?.outcome, !outcome.sources.isEmpty else { return nil }
+        let sources = ListFormatter.localizedString(byJoining: outcome.sources.map { Translator.name(of: $0) })
+        return String(localized: "Translated from \(sources) to \(Translator.name(of: outcome.target))", bundle: .module)
     }
 
     // MARK: Found items
@@ -351,6 +512,29 @@ final class TextRecognitionModel {
     func copyText() {
         write { $0.setString(self.text, forType: .string) }
         flashCopied(String(localized: "Copied", bundle: .module))
+    }
+
+    func copyTranslation() {
+        guard let translation, !translation.outcome.translations.isEmpty else { return }
+        write { $0.setString(translation.text, forType: .string) }
+        flashCopied(String(localized: "Translation copied", bundle: .module))
+    }
+
+    /// What the toolbar's Copy does now: the translation, the table, or the text.
+    var canCopy: Bool {
+        guard phase == .ready else { return false }
+        guard translates else { return true }
+        return translation.map { !$0.outcome.translations.isEmpty } ?? false
+    }
+
+    func copyShown() {
+        if translates {
+            copyTranslation()
+        } else if pane == .table {
+            copyTable()
+        } else {
+            copyText()
+        }
     }
 
     /// The table as spreadsheets paste it (tab-separated and HTML), with Markdown as its plain text.
@@ -424,10 +608,10 @@ struct TextRecognitionView: View {
         .toolbar { toolbar }
     }
 
-    /// The text side's controls, together over it: what to show, how lines break (text only), and one
-    /// Copy that is always last.
+    /// The text side's controls, together over it: what to show, how lines break (text only), Translate
+    /// and the language it goes into, and one Copy that is always last.
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        if model.phase == .ready, !model.tables.isEmpty {
+        if model.phase == .ready, !model.tables.isEmpty, !model.translates {
             ToolbarItem(placement: .primaryAction) {
                 Picker(selection: $model.pane) {
                     Text("Text", bundle: .module).tag(TextRecognitionModel.Pane.text)
@@ -440,7 +624,7 @@ struct TextRecognitionView: View {
                 .help(Text("Show the text, or the table found in the image", bundle: .module))
             }
         }
-        if model.phase == .ready, model.pane == .text {
+        if model.phase == .ready, model.pane == .text, !model.translates {
             ToolbarItem(placement: .primaryAction) {
                 // Code always keeps its line breaks, whatever was chosen for the last image.
                 Picker(selection: Binding(get: { model.joinLines && !model.isCode }, set: { model.joinLines = $0 })) {
@@ -458,11 +642,70 @@ struct TextRecognitionView: View {
                 .disabled(model.isCode)
             }
         }
+        // A mode, not an action: the symbol alone, so Copy stays the one titled, filled control.
+        ToolbarItemGroup(placement: .primaryAction) {
+            Toggle(isOn: $model.translates) {
+                Label {
+                    Text("Translate", bundle: .module)
+                } icon: {
+                    Image(systemName: "translate")
+                }
+                .labelStyle(.iconOnly)
+            }
+            .toggleStyle(.button)
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(model.phase != .ready && model.phase != .loading)
+            .help(model.translates
+                ? Text("Show the text as read (⇧⌘T)", bundle: .module)
+                : Text("Translate the text, and show the translation in the image (⇧⌘T)", bundle: .module))
+            if model.translates, model.phase == .ready {
+                // A short label that never changes under the pointer; the menu names what Automatic chose.
+                Menu {
+                    Picker(selection: $model.translationChoice) {
+                        automaticTarget.tag("")
+                        Divider()
+                        ForEach(targetOptions, id: \.self) { identifier in
+                            Text(verbatim: Translator.name(of: Locale.Language(identifier: identifier))).tag(identifier)
+                        }
+                    } label: {
+                        EmptyView()
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } label: {
+                    model.translationChoice.isEmpty
+                        ? Text("Automatic", bundle: .module)
+                        : Text(verbatim: Translator.name(of: Locale.Language(identifier: model.translationChoice)))
+                }
+                .fixedSize()
+                .help(Text("The language to translate into", bundle: .module))
+                .accessibilityLabel(Text("Translate Into", bundle: .module))
+            }
+        }
+        ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {
             copyControl
                 .keyboardShortcut("c", modifiers: [.command, .shift])
-                .disabled(model.phase != .ready)
+                .disabled(!model.canCopy)
         }
+    }
+
+    /// Automatic, with the language it chose once there is a translation.
+    private var automaticTarget: Text {
+        if let translation = model.translation, translation.choice.isEmpty {
+            Text("Automatic: \(Translator.name(of: translation.outcome.target))", bundle: .module)
+        } else {
+            Text("Automatic", bundle: .module)
+        }
+    }
+
+    /// The languages to choose from, by identifier; the chosen one even before the list has loaded, so
+    /// the menu never shows a choice it does not have.
+    private var targetOptions: [String] {
+        var options = model.targets.map(Translator.identifier(of:))
+        let choice = model.translationChoice
+        if !choice.isEmpty, !options.contains(choice) { options.insert(choice, at: 0) }
+        return options
     }
 
     private var copyLabel: some View {
@@ -474,31 +717,43 @@ struct TextRecognitionView: View {
         .labelStyle(.titleAndIcon)
     }
 
-    /// One prominent Copy for both panes; the table's other formats sit with the table.
+    /// One prominent Copy for every pane; the table's other formats sit with the table.
     private var copyControl: some View {
         Button {
-            model.pane == .table ? model.copyTable() : model.copyText()
+            model.copyShown()
         } label: {
             copyLabel
         }
         .buttonStyle(.glassProminent)
-        .help(model.pane == .table
-            ? Text("Copy the table; it pastes into Numbers and Excel as cells (⇧⌘C)", bundle: .module)
-            : Text("Copy all the text (⇧⌘C)", bundle: .module))
+        .help(copyHelp)
+    }
+
+    private var copyHelp: Text {
+        if model.translates {
+            Text("Copy the translation (⇧⌘C)", bundle: .module)
+        } else if model.pane == .table {
+            Text("Copy the table; it pastes into Numbers and Excel as cells (⇧⌘C)", bundle: .module)
+        } else {
+            Text("Copy all the text (⇧⌘C)", bundle: .module)
+        }
     }
 }
 
 /// The image as a picture card (12 pt corners, a hairline, the in-window shadow), fitted to the pane
 /// and never drawn larger than it appeared on screen, with each line that was read outlined on hover
-/// and filled like selected text when its text is selected.
+/// and filled like selected text when its text is selected. Translated, it shows the translation drawn
+/// over the text instead, and nothing over it.
 struct RecognizedImagePane: View {
     let model: TextRecognitionModel
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
-            if let image = model.image {
+            if let original = model.image {
+                let translated = model.translates ? model.translation?.image : nil
+                let image = original
                 let size = CGSize(width: image.width, height: image.height)
                 let area = geometry.size
                 let factor = max(min((area.width - 48) / size.width, (area.height - 48) / size.height, 1 / model.scale), 0.01)
@@ -511,10 +766,19 @@ struct RecognizedImagePane: View {
                         .resizable()
                         .interpolation(.high)
                         .frame(width: fitted.width, height: fitted.height)
-                    if model.phase == .ready {
+                    // The page changing language: the translation fades in over the original.
+                    if let translated {
+                        Image(decorative: translated, scale: 1)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: fitted.width, height: fitted.height)
+                            .transition(.opacity)
+                    }
+                    if model.phase == .ready, !model.translates {
                         overlays(toView)
                     }
                 }
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: translated != nil)
                 .frame(width: fitted.width, height: fitted.height)
                 .clipShape(shape)
                 .overlay {
@@ -526,7 +790,9 @@ struct RecognizedImagePane: View {
                 .background { shape.fill(.background).shadow(color: .black.opacity(0.12), radius: 10, y: 4) }
                 .offset(x: ((area.width - fitted.width) / 2).rounded(), y: ((area.height - fitted.height) / 2).rounded())
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text("The image being read", bundle: .module))
+                .accessibilityLabel(translated == nil
+                    ? Text("The image being read", bundle: .module)
+                    : Text("The image, with the translation over its text", bundle: .module))
                 .accessibilityValue(model.phase == .ready ? Text("\(model.lines.count) lines of text", bundle: .module) : Text(verbatim: ""))
             }
         }
@@ -607,20 +873,22 @@ struct TextPane: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .empty:
-                placeholder(symbol: "text.magnifyingglass", title: Text("No text found", bundle: .module)) {
-                    Text("Try an image with larger text or more contrast.", bundle: .module)
-                }
+                PanelPlaceholder(
+                    symbol: "text.magnifyingglass",
+                    title: Text("No text found", bundle: .module),
+                    message: Text("Try an image with larger text or more contrast.", bundle: .module)
+                )
             case .failed(let title, let message, let canRetry):
-                placeholder(symbol: "exclamationmark.triangle", title: Text(verbatim: title)) {
-                    Text(verbatim: message)
-                } actions: {
+                PanelPlaceholder(symbol: "exclamationmark.triangle", title: Text(verbatim: title), message: Text(verbatim: message)) {
                     if canRetry {
                         Button { model.retry() } label: { Text("Try Again", bundle: .module) }
                             .padding(.top, 6)
                     }
                 }
             case .ready:
-                if model.pane == .table, let table = model.currentTable {
+                if model.translates {
+                    TranslationPane(model: model)
+                } else if model.pane == .table, let table = model.currentTable {
                     TablePreview(model: model, table: table)
                 } else {
                     RecognizedTextEditor(model: model)
@@ -636,30 +904,154 @@ struct TextPane: View {
         }
         .background(.background)
     }
+}
 
-    /// The empty and failed states, as in Capture History: a 40 pt light tertiary symbol, a title3
-    /// title, a callout message at most 360 pt wide.
-    private func placeholder(
-        symbol: String,
-        title: Text,
-        @ViewBuilder message: () -> Text,
-        @ViewBuilder actions: () -> some View = { EmptyView() }
-    ) -> some View {
+/// The panel's empty, failed, and translation states, as in Capture History: a 40 pt light tertiary
+/// symbol, a title3 title, a callout message at most 360 pt wide, then any actions.
+struct PanelPlaceholder<Actions: View>: View {
+    let symbol: String
+    let title: Text
+    let message: Text
+    @ViewBuilder var actions: Actions
+
+    var body: some View {
         VStack(spacing: 10) {
             Image(systemName: symbol)
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
-            title.font(.title3.weight(.semibold))
-            message()
+            title
+                .font(.title3.weight(.semibold))
+                .multilineTextAlignment(.center)
+            message
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
-            actions()
+            actions
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+extension PanelPlaceholder where Actions == EmptyView {
+    init(symbol: String, title: Text, message: Text) {
+        self.init(symbol: symbol, title: title, message: message) { EmptyView() }
+    }
+}
+
+/// The translated text and where it came from, or why there is none: translating, nothing to
+/// translate, a language still to download, or a failure.
+struct TranslationPane: View {
+    @Bindable var model: TextRecognitionModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if model.translationFailed {
+                PanelPlaceholder(
+                    symbol: "exclamationmark.triangle",
+                    title: Text("Couldn’t translate", bundle: .module),
+                    message: Text("Translation isn’t available right now.", bundle: .module)
+                ) {
+                    Button { model.translate() } label: { Text("Try Again", bundle: .module) }
+                        .padding(.top, 6)
+                }
+            } else if let translation = model.translation {
+                if !translation.outcome.translations.isEmpty {
+                    TranslatedTextView(
+                        text: translation.text, translated: translation.translated,
+                        language: Translator.identifier(of: translation.outcome.target)
+                    )
+                    TranslationStatus(model: model)
+                } else if let language = translation.outcome.needsDownload.first {
+                    // The pair is what is missing; the system's sheet names the languages it downloads.
+                    PanelPlaceholder(
+                        symbol: "arrow.down.circle",
+                        title: Text("Translating into \(Translator.name(of: translation.outcome.target)) needs a download", bundle: .module),
+                        message: Text("Languages are downloaded once. After that, translation runs on this Mac without a connection.", bundle: .module)
+                    ) {
+                        Button { model.requestDownload(language) } label: { Text("Download…", bundle: .module) }
+                            .padding(.top, 6)
+                    }
+                } else {
+                    nothing(translation)
+                }
+            } else {
+                VStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Translating…", bundle: .module)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        // The system's sheet for a download, asked for by a Download button in this window.
+        .translationTask(model.download) { session in
+            await model.prepare(session)
+        }
+    }
+
+    @ViewBuilder private func nothing(_ translation: TextRecognitionModel.Translation) -> some View {
+        let outcome = translation.outcome
+        let target = Translator.name(of: outcome.target)
+        if let language = outcome.unsupported.first {
+            PanelPlaceholder(
+                symbol: "character.bubble",
+                title: Text("\(Translator.name(of: language)) can’t be translated into \(target)", bundle: .module),
+                message: Text("Choose another language in the toolbar.", bundle: .module)
+            )
+        } else if !outcome.inTarget.isEmpty {
+            PanelPlaceholder(
+                symbol: "checkmark.circle",
+                title: Text("Already in \(target)", bundle: .module),
+                message: Text("Choose another language in the toolbar to translate into.", bundle: .module)
+            )
+        } else if !translation.units.isEmpty, translation.units.allSatisfy({ $0.skip == .code }) {
+            PanelPlaceholder(
+                symbol: "chevron.left.forwardslash.chevron.right",
+                title: Text("Code isn’t translated", bundle: .module),
+                message: Text("Code stays exactly as it was read.", bundle: .module)
+            )
+        } else {
+            PanelPlaceholder(
+                symbol: "text.magnifyingglass",
+                title: Text("Nothing to translate", bundle: .module),
+                message: Text("Links, numbers, and code stay as they are.", bundle: .module)
+            )
+        }
+    }
+}
+
+/// Under the translation: the languages it went between, and a language still to download.
+struct TranslationStatus: View {
+    let model: TextRecognitionModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 8) {
+                if let summary = model.translationSummary {
+                    Text(verbatim: summary)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .accessibilityLabel(Text(verbatim: model.spokenTranslationSummary ?? summary))
+                }
+                Spacer(minLength: 8)
+                if let language = model.translation?.outcome.needsDownload.first {
+                    Button { model.requestDownload(language) } label: {
+                        Text("Download Languages…", bundle: .module)
+                    }
+                    .controlSize(.small)
+                    .help(Text("Text in \(Translator.name(of: language)) is shown as read until its languages are downloaded", bundle: .module))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
     }
 }
 
