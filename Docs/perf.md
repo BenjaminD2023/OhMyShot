@@ -173,3 +173,18 @@ Two runs each, before and after, back to back:
   fallback now runs none.
 - **The target is met at p50, not at p95**: the synthetic p95 is the three cases above, each a primary
   pass followed by one request that cannot start sooner.
+
+## M2 — L2 runtime spike (2026-10-09)
+
+PP-OCRv6 small, measured with `Tools/l2-spike/` (details in Docs/ocr.md › L2 runtime).
+
+| Measurement | ONNX Runtime (CPU) | Core ML (enumerated sizes, CPU and Neural Engine) |
+| --- | --- | --- |
+| Runtime added to the app | 33.2 MB | 0 |
+| Models | 31.1 MB (fp32) | 15.8 MB (fp16) |
+| 34 cases through the harness, p50 / p95 | 129 / 346 ms | 91 / 238 ms |
+| CPU time for those 34 cases | 47.6 s | 3.3 s |
+| All 39 (the five largest included), p95 / CPU time | 727 ms / 66.4 s | 499 ms / 7.6 s (any size, CPU) |
+| Detection, 736×1280, native | — | 10 ms |
+| Recognition, one line 320 / 1280 px wide, native | — | 2 / 8 ms |
+| First load / later loads | 50 ms / 50 ms | 21 s once (Neural Engine compile) / 40 ms |

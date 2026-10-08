@@ -266,3 +266,77 @@ Translation runs on the system's on-device models (the Translation framework): `
 **Drawing.** Every translated line is painted over with its background (the median of the pixels just outside its box) and the translation is set in its ink (the median of the inkiest half of the pixels that stand out), in the target language's system font. The size comes from the line's width: Vision's box is as wide as the text set in the system font to within 2% (measured on eight lines, Latin, Chinese, capitals, bold), while its height runs from 0.87 to 1.24 times the size and is sometimes half again as tall as the text; the width is measured again at the size the text had on screen, since the system font is about a tenth wider at text sizes than at display sizes. Sizes of neighbors in a column or row within 15% are made one, a unit a third larger than the body is set semibold (weight cannot be read from the pixels: bold Latin is wider, so it reads as larger instead; ink coverage told bold from regular by 1.04–1.26 against 0.92–0.99, too close), and lines are placed with their ink on their column's (the median of where the ink of its lines starts, translated or not, measured in the pixels: Vision's boxes start a little before the ink) and centered where their ink was. A translation that does not fit shrinks to 70% (a line on its own may first run on to the right, up to the first pixel that is not its background), then ends in an ellipsis; units cut short are counted.
 
 On the ten real screenshots (2000–4112 px wide; Chinese pages translated into English, English pages into Chinese, as Automatic chose): 3–53 units translated per page, no spurious download prompt, a terminal and a code editor left alone apart from their prose (3–6 units), 0–15 units shortened per page; translating took 0.1–0.7 s and drawing 0.02–0.6 s. Still open: short labels translated alone keep the wrong sense when a page has no other short text to batch them with; Chinese into English roughly doubles the length, so dense interfaces shrink and shorten; a flat background patch shows on photos and gradients; vertical text is left as it is.
+
+## L2 runtime (spike, 2026-10-09)
+
+The plan's L2 is a model pack for what Vision reads poorly: Chinese-heavy interfaces, vertical text, low
+confidence. The candidate is PP-OCRv6 (PaddleOCR, June 2026, Apache-2.0): tiny (1.5M parameters), small
+(7.7M), and medium (34.5M, server-class, not considered), published on Hugging Face as ONNX and as
+safetensors for the PyTorch implementation in transformers (5.12 and later). Small reads 18,708
+characters (Simplified and Traditional Chinese, Japanese, Latin scripts) but not Korean; tiny reads
+6,904 and no Japanese. The question was the runtime: ONNX Runtime, or Core ML. Harness and setup:
+`Tools/l2-spike/`.
+
+**Size.** ONNX Runtime's library is 33.2 MB (`libonnxruntime.1.30.0.dylib`), more than the app's whole
+30 MB budget; Core ML ships with the system. The models: 9.9 + 21.2 MB as fp32 ONNX, 5.1 + 10.7 MB as fp16
+Core ML ML programs (converted from the PyTorch implementation, which matches the ONNX exports to
+1e-5).
+
+**Speed and CPU time**, the same 34 cases (5 of the 39 did not fit the enumerated sizes tried), through
+the Python harness (its pre- and post-processing included):
+
+| Runtime | p50 | p95 | CPU time | Content CER |
+| --- | --- | --- | --- | --- |
+| ONNX Runtime, CPU | 129 ms | 346 ms | 47.6 s | 8.03% |
+| ONNX Runtime, Core ML provider | 923 ms | 2056 ms | 39.6 s | 8.03% |
+| Core ML, any size (times as on the CPU) | 71 ms | 209 ms | 5.1 s | 8.08% |
+| Core ML, enumerated sizes, CPU and Neural Engine | 91 ms | 238 ms | 3.3 s | 8.25% |
+
+The five left out are the largest real regions (both editor crops, the chat list, the forum category
+list, `ls` output): on all 39, ONNX Runtime's p95 is 727 ms with 66.4 s of CPU time, and Core ML with
+any size 499 ms with 7.6 s; on those five, Core ML took 127–635 ms against 183–975 ms. The enumerated
+run recognized one line per call, each padded to the next enumerated width, where ONNX Runtime ran six
+at once, so batching on the Neural Engine is untried headroom.
+
+ONNX Runtime keeps every core busy (a dense terminal: 1 s of wall time, 7.6 s of CPU time). Its Core ML
+provider splits the graphs (detection into 4 partitions, recognition into 11) and compiles again for
+every new input size, 0.4–0.6 s each. With any size, Core ML's compute plan prefers the Neural Engine
+but the timing matches CPU-only (detection at 736×1280 takes 39 ms natively, against 10 ms with
+enumerated sizes), and with `.all` its GPU path asserts on macOS 27.2 beta; with enumerated sizes and
+`.cpuAndNeuralEngine` every operation of the detector and all but one of the recognizer's (6% of its
+cost) run on the Neural Engine. Natively
+(`probe.swift`): detection of a 736×1280 image 10 ms, recognition of a line 2 ms at 320 px wide and 8
+ms at 1280. The Neural Engine compiles every enumerated size the first time a compiled model is loaded
+(15 s for the detector's 24 sizes, 6 s for the recognizer's 11); the system keeps the result, and a
+second process loads in 40 ms.
+
+**Accuracy against L1** (content CER; L2 raw, with none of L1's post-processing):
+
+| Case | L1 | PP-OCRv6 small | tiny |
+| --- | --- | --- | --- |
+| Forum category list (real) | 13.2% | 6.1% | 25.4% |
+| Forum thread (real) | 6.1% | 2.6% | 10.2% |
+| Forum title (real) | 3.6% | 1.8% | 5.4% |
+| Chat list (real) | 3.8% | 3.1% | 4.6% |
+| Tweet (real) | 1.8% | 1.2% | 1.2% |
+| Editor code (real) | 4.1% | 1.0% | 1.0% |
+| Traditional Chinese | 1.3% | 0.0% | 13.2% |
+| 9 px text | 2.4% | 0.0% | 9.5% |
+| Chat bubbles | 2.9% | 0.0% | 8.8% |
+| Social sidebar (real) | 2.0% | 16.7% | 11.3% |
+| Article cards (real) | 1.1% | 4.5% | 3.4% |
+| Korean | 0.0% | 97.4% | 96.2% |
+| Mean, all 39 | 2.14% | 7.76% | 11.62% |
+
+Vertical Chinese is read right (its columns come out left to right; the harness has no vertical
+reading order). L2 also lacks what L1 learned on real screenshots: editor gutters and icons at line ends
+stay in its text. Detecting at transformers' preprocessing (the shorter side upscaled to 736, where
+PaddleX uses 64) read the weak cases a little better (mean 10.45% → 9.95%; the social sidebar 16.7% →
+8.7%, the forum title 1.8% → 3.6%) at twice the time (p50 140 → 275 ms).
+
+**Decision: Core ML**, PP-OCRv6 small as fp16 ML programs with enumerated sizes on
+`.cpuAndNeuralEngine`, as a second reader of the regions L1 reads poorly rather than a replacement. ONNX
+Runtime is out: its library alone exceeds the app's size budget, it spends ten times the CPU time, and
+its Core ML provider recompiles for every size. For M6: a model pack of about 16 MB; compiled and warmed
+in the background once downloaded, so nobody waits the 21 s; a size grid (or tiles) that holds tall and
+wide regions without compiling too many sizes; never `.all` while the GPU path asserts.
