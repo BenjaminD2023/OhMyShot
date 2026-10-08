@@ -5,6 +5,12 @@
       "cerRaw" : 0.1590909090909091,
       "lineOrder" : 1
     },
+    "code-gutter" : {
+      "cerContent" : 0.09854014598540146,
+      "cerRaw" : 0.20916905444126074,
+      "indentation" : 0.1111111111111111,
+      "lineOrder" : 0.5555555555555556
+    },
     "code-swift" : {
       "cerContent" : 0.038461538461538464,
       "cerRaw" : 0.20110192837465565,
@@ -101,6 +107,11 @@
       "lineOrder" : 1,
       "tableCells" : 0,
       "tableShape" : false
+    },
+    "ui-icons" : {
+      "cerContent" : 0.25925925925925924,
+      "cerRaw" : 0.28125,
+      "lineOrder" : 0.7272727272727273
     },
     "vertical-zh" : {
       "cerContent" : 0,

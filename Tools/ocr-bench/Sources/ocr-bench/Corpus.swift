@@ -18,6 +18,8 @@ enum Category: String, CaseIterable, Codable, Sendable {
     case chat
     case small
     case dark
+    /// Labels beside icons, as an app's sidebar draws them.
+    case ui
     /// A real screenshot from `--real`.
     case real
 }
@@ -65,7 +67,7 @@ enum Corpus {
     }
 
     static var all: [BenchCase] {
-        [zhEnChat, zhNoSpace, zhDoc, zhEnLines, zhHant, ja, ko, multilingual, enUI, enWithChinese, codeSwift, codeSwiftPlain, codeYAML, tableZh, tableEn, verticalZh, chat, darkUI]
+        [zhEnChat, zhNoSpace, zhDoc, zhEnLines, zhHant, ja, ko, multilingual, enUI, enWithChinese, codeSwift, codeSwiftPlain, codeYAML, codeGutter, tableZh, tableEn, verticalZh, chat, darkUI, uiIcons]
             + smallText
     }
 
@@ -171,6 +173,47 @@ enum Corpus {
         "Open the folder in Finder",
     ])
 
+    /// A sidebar: an SF Symbol before each label, some with an unread dot after it, and a muted bell at
+    /// the end of a chat preview, all of which Vision reads as characters.
+    static let uiIcons = BenchCase(id: "ui-icons", category: .ui, truth: Truth(lines: uiIconRows.map(\.label))) {
+        let font = Fonts.ui(13, language: "zh-Hans")
+        let rowHeight: CGFloat = 32
+        let canvas = Canvas(width: 300, height: rowHeight * CGFloat(uiIconRows.count) + 24, background: .hex(0xFFFFFF))
+        for (row, item) in uiIconRows.enumerated() {
+            let top = 12 + CGFloat(row) * rowHeight
+            let label = NSAttributedString(item.label, font: font, color: .hex(0x3C3C43))
+            let size = Canvas.measure(label)
+            let textTop = top + (rowHeight - size.height) / 2
+            canvas.drawSymbol(item.symbol, in: CGRect(x: 16, y: textTop + size.height / 2 - 8, width: 16, height: 16), color: item.color)
+            canvas.draw(label, x: 42, top: textTop)
+            switch item.trailing {
+            case .dot:
+                canvas.fill(CGRect(x: 42 + size.width + 9, y: textTop + size.height / 2 - 3, width: 6, height: 6), radius: 3, color: .hex(0x2F80ED))
+            case .bell:
+                canvas.drawSymbol("bell.slash", in: CGRect(x: 260, y: textTop + size.height / 2 - 7, width: 14, height: 14), color: .hex(0xB0B0B5))
+            case .none:
+                break
+            }
+        }
+        return canvas.image()
+    }
+
+    private enum Trailing { case none, dot, bell }
+
+    private static let uiIconRows: [(symbol: String, label: String, color: CGColor, trailing: Trailing)] = [
+        ("square.stack.3d.up.fill", "话题", .hex(0x3C3C43), .dot),
+        ("person.fill", "我的草稿", .hex(0x3C3C43), .dot),
+        ("tray.fill", "我的消息", .hex(0x3C3C43), .none),
+        ("calendar", "近期活动", .hex(0x3C3C43), .none),
+        ("link", "Connect", .hex(0x3C3C43), .none),
+        ("paperplane.fill", "Channel", .hex(0x3C3C43), .none),
+        ("chevron.left.forwardslash.chevron.right", "开发调优", .hex(0x16A2B8), .dot),
+        ("leaf.fill", "国产替代", .hex(0xE5484D), .dot),
+        ("square.and.arrow.up", "资源荟萃", .hex(0x12A594), .none),
+        ("gift.fill", "福利羊毛", .hex(0xE5484D), .dot),
+        ("ellipsis.bubble.fill", "您好，您的服务已升级", .hex(0x8E8E93), .bell),
+    ]
+
     static let darkUI = BenchCase(
         id: "dark-ui",
         category: .dark,
@@ -221,6 +264,23 @@ enum Corpus {
 
     /// The same code without the Chinese comment, to tell what the comment changes.
     static let codeSwiftPlain = codeCase("code-swift-plain", syntax: .swift, Array(codeSwiftLines.dropFirst()))
+
+    /// An editor's view: right-aligned line numbers in a gutter beside the code, which the text leaves out.
+    static let codeGutter = BenchCase(id: "code-gutter", category: .code, truth: Truth(lines: Array(codeSwiftLines.dropFirst()))) {
+        let lines = Array(codeSwiftLines.dropFirst())
+        let strings = lines.map { highlight($0, syntax: .swift) }
+        let numbers = lines.indices.map { NSAttributedString("\($0 + 32)", font: Fonts.mono(12), color: .hex(0x6C7086)) }
+        let rowHeight = (strings.map { Canvas.measure($0).height }.max() ?? 15) + 5
+        let gutter: CGFloat = 52
+        let width = (strings.map { Canvas.measure($0).width }.max() ?? 0) + gutter + 40
+        let canvas = Canvas(width: ceil(width), height: ceil(rowHeight * CGFloat(lines.count) + 40), background: .hex(0x1F1F24))
+        for (row, (number, code)) in zip(numbers, strings).enumerated() {
+            let top = 20 + CGFloat(row) * rowHeight
+            canvas.draw(number, x: 36 - Canvas.measure(number).width, top: top)
+            canvas.draw(code, x: gutter + 20, top: top)
+        }
+        return canvas.image()
+    }
 
     static let codeYAML = codeCase("code-yaml", syntax: .yaml, [
         "name: ocr-bench",

@@ -38,19 +38,50 @@ public enum TextAssembler {
     public static func assembly(_ lines: [OCRLine], options: Options = .init()) -> Assembly {
         guard !lines.isEmpty else { return Assembly() }
         let isCode = isCodeListing(lines)
-        let indents = isCode ? indentation(lines) : Array(repeating: 0, count: lines.count)
+        // In code, a piece on the same row as the line before continues it: Vision sometimes returns one
+        // line of code as two pieces side by side.
+        let continuations: [Int?] = isCode ? rowContinuations(lines) : lines.map { _ in nil }
+        let starts = lines.indices.filter { continuations[$0] == nil }
+        var indents = Array(repeating: 0, count: lines.count)
+        if isCode {
+            for (index, indent) in zip(starts, indentation(starts.map { lines[$0] })) { indents[index] = indent }
+        }
         let texts = zip(lines, indents).map { line, indent in
             let text = isCode || isCodeLike(line.text) ? asCode(line.text) : asProse(line.text)
             return String(repeating: " ", count: indent) + text
         }
-        let wraps: [Bool] = if options.joinsWrappedLines, !isCode {
-            zip(lines, inferredWraps(lines)).map { line, guess in line.wrapsToNextLine ?? guess }
-        } else {
-            texts.map { _ in false }
+        let guesses = options.joinsWrappedLines && !isCode ? inferredWraps(lines) : []
+        let joins: [Join] = lines.indices.map { index in
+            guard index + 1 < lines.count else { return .newLine }
+            if let spaces = continuations[index + 1] { return .spaces(spaces) }
+            guard !guesses.isEmpty else { return .newLine }
+            return lines[index].wrapsToNextLine ?? guesses[index] ? .wrap : .newLine
         }
-        var assembly = build(texts, wraps: wraps)
+        var assembly = build(texts, joins: joins)
         assembly.isCode = isCode
         return assembly
+    }
+
+    /// For each line, the spaces that join it to the line before when it continues that line's row (its
+    /// middle within half a line of the other's, starting to its right), or nil when it starts a row.
+    static func rowContinuations(_ lines: [OCRLine]) -> [Int?] {
+        let characterWidth = medianCharacterWidth(lines) ?? 1
+        return lines.indices.map { index in
+            guard index > 0 else { return nil }
+            let previous = lines[index - 1].box
+            let box = lines[index].box
+            guard abs(box.midY - previous.midY) < min(box.height, previous.height) / 2,
+                  box.minX >= previous.maxX - characterWidth else { return nil }
+            return max(1, Int(((box.minX - previous.maxX) / characterWidth).rounded()))
+        }
+    }
+
+    private static func medianCharacterWidth(_ lines: [OCRLine]) -> CGFloat? {
+        let widths = lines
+            .filter { !Script.containsCJK($0.text) && $0.text.count >= 4 }
+            .map { $0.box.width / CGFloat($0.text.count) }
+            .sorted()
+        return widths.isEmpty ? nil : widths[widths.count / 2]
     }
 
     // MARK: Code
@@ -103,12 +134,7 @@ public enum TextAssembler {
     /// Leading spaces for each line of a code listing, rebuilt from where each line starts and the width
     /// of a character, then snapped to steps of 4 or 2 when every line allows it.
     static func indentation(_ lines: [OCRLine]) -> [Int] {
-        let widths = lines
-            .filter { !Script.containsCJK($0.text) && $0.text.count >= 4 }
-            .map { $0.box.width / CGFloat($0.text.count) }
-            .sorted()
-        guard !widths.isEmpty else { return Array(repeating: 0, count: lines.count) }
-        let characterWidth = widths[widths.count / 2]
+        guard let characterWidth = medianCharacterWidth(lines) else { return Array(repeating: 0, count: lines.count) }
         let left = lines.map(\.box.minX).min() ?? 0
         let raw = lines.map { max(0, Int((($0.box.minX - left) / characterWidth).rounded())) }
         for step in [4, 2] where raw.allSatisfy({ abs($0 - Int((Double($0) / Double(step)).rounded()) * step) <= 1 }) {
@@ -206,19 +232,34 @@ public enum TextAssembler {
     /// Joins each line that wraps onto the next: nothing between CJK, a space between words, and a word
     /// broken with a hyphen put back together.
     static func joinWrapped(_ texts: [String], wraps: [Bool]) -> String {
-        build(texts, wraps: wraps).text
+        build(texts, joins: wraps.map { $0 ? .wrap : .newLine }).text
     }
 
-    private static func build(_ texts: [String], wraps: [Bool]) -> Assembly {
+    /// What comes between a line and the next.
+    private enum Join {
+        case newLine
+        /// The line wraps onto the next.
+        case wrap
+        /// The next continues this line's row, this many spaces along.
+        case spaces(Int)
+    }
+
+    private static func build(_ texts: [String], joins: [Join]) -> Assembly {
         let output = NSMutableString()
         var ranges: [NSRange] = []
         for (index, text) in texts.enumerated() {
             ranges.append(NSRange(location: output.length, length: (text as NSString).length))
             output.append(text)
             guard index + 1 < texts.count else { break }
-            guard wraps[index] else {
+            switch joins[index] {
+            case .newLine:
                 output.append("\n")
                 continue
+            case .spaces(let count):
+                output.append(String(repeating: " ", count: count))
+                continue
+            case .wrap:
+                break
             }
             let next = texts[index + 1]
             if output.hasSuffix("-"), let first = next.first, first.isLowercase {

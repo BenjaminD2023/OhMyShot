@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import Testing
 @testable import OMSOCR
 
@@ -99,5 +100,20 @@ struct TextAssemblerTests {
         #expect(TextAssembler.joinWrapped(["截图完成后，卡片会", "出现在屏幕左下角。"], wraps: [true, false]) == "截图完成后，卡片会出现在屏幕左下角。")
         #expect(TextAssembler.joinWrapped(["Press Copy to put the", "capture on the clip-", "board."], wraps: [true, true, false]) == "Press Copy to put the capture on the clipboard.")
         #expect(TextAssembler.joinWrapped(["Title", "Body"], wraps: [false, false]) == "Title\nBody")
+    }
+
+    @Test func codeSplitIntoPiecesOnOneRowIsOneLine() {
+        // 10 px per character: "let options:" ends at 220, its continuation starts one space later.
+        let lines = [
+            line("func make() {", x: 100, y: 0),
+            line("let options:", x: 140, y: 30),
+            line("[String: Any] = [:]", x: 270, y: 30),
+            line("return options", x: 140, y: 60),
+            line("}", x: 100, y: 90),
+        ]
+        let assembly = TextAssembler.assembly(lines)
+        #expect(assembly.text == "func make() {\n    let options: [String: Any] = [:]\n    return options\n}")
+        let text = assembly.text as NSString
+        #expect(text.substring(with: assembly.lineRanges[2]) == "[String: Any] = [:]")
     }
 }

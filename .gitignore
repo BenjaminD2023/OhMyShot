@@ -23,3 +23,6 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# Real screenshots for the OCR benchmark (--real): personal, never committed.
+Tools/ocr-bench/real/

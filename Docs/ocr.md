@@ -73,7 +73,13 @@ What the pipeline does, in order, and why:
 1. **Primary pass** with `[zh-Hans, en-US]`, language correction off, while the Latin model `[en-US]`
    reads the whole page and `DetectTextRectanglesRequest` finds text regions, all three side by side.
    Every accurate request holds one of two process-wide slots (`RecognitionSlots`), since a third
-   running at once can stall Vision.
+   running at once can stall Vision. Each line Vision returns loses the icons at its ends (`Icons`): an
+   app's symbol before a label, a status icon, emoji, or unread dot after it, all of which Vision reads
+   as characters. One goes when it is about as wide as the line is tall (a dot: small and read as one),
+   sits at an end, and is set apart by a gap at least 0.4 of the line's height and twice any other gap in
+   the line, the blank half of full-width punctuation not counted as a gap. Only what Vision put on it
+   goes, one character or two or three symbols beyond ASCII, never a word, never before a colon, and
+   only with two characters or more left: a dash, "//", "答：", "#tag", and a letter-spaced "确 定" stay.
 2. **Latin model for Latin text**: when the primary result has at most two CJK characters (and under
    5%), the Latin page reading replaces it if it has at least 80% of the characters. A single misread
    glyph (a closing brace read as 子) must not keep code on the CJK model.
@@ -81,26 +87,31 @@ What the pipeline does, in order, and why:
    their width holds, are merged, padded, and read again, region by region, with each fallback model
    (Korean, then English, in the benchmark). A region's new lines replace the old ones only if they
    hold more characters.
-4. **Code with CJK comments**: each run of code lines between CJK lines is read again on its own with
+4. **Line numbers**: a column of at least three lines of digits alone, aligned, left of every other line
+   and counting up (a misread number allowed, and short readings inside the column, which are misread
+   numbers too), is an editor's gutter and goes, but only when what remains is code: a numbered list or
+   `cat -n` output keeps its numbers.
+5. **Code with CJK comments**: each run of code lines between CJK lines is read again on its own with
    the Latin model, the region kept clear of the CJK lines so its detector does not fail.
-5. **English lines on a CJK page** (not code): every line in Latin script alone takes the Latin page
+6. **English lines on a CJK page** (not code): every line in Latin script alone takes the Latin page
    reading of its box, if that reading is between 80% and 125% as long. A line the page reading missed
    is cut out with the others like it and stacked in a strip that holds nothing else (`LineStrip`),
    read in one request; with no CJK in view the Latin detector finds every line.
-6. **Lone brackets**: neither Vision's recognizer nor its text detector reports a line holding a single
+7. **Lone brackets**: neither Vision's recognizer nor its text detector reports a line holding a single
    glyph, so closing braces vanish. Scanning the listing's pixels finds unread rows one or two
    characters wide; each becomes the closer of the bracket left open on the line above that starts in
    the same column. Nothing is guessed when no open bracket lines up.
-7. **Spaces from pixels**: where Chinese meets Latin letters or digits, the empty pixel columns at that
+8. **Spaces from pixels**: where Chinese meets Latin letters or digits, the empty pixel columns at that
    spot decide. macOS layout itself leaves 0.07–0.25 em there when nobody typed a space (0.25–0.29 em in
    Japanese), and a typed space leaves 0.32–0.50 em, so a space is added above 0.3 em and one of
    Vision's is removed below 0.2 em. Japanese lines get no spaces back. (Vision's per-character boxes
    cannot be used for this: they tile the line, with any space folded into a neighbor.)
-8. **Text assembly** (`TextAssembler`): reading order with vertical columns right to left; a listing
+9. **Text assembly** (`TextAssembler`): reading order with vertical columns right to left; a listing
    where at least 40% of lines look like code (a `key: value` line counts when the key looks like code,
    lowercase or with `_`, `.`, `-`, or stands alone; a capitalized label such as `Phone: …` counts half,
    so a contact card is prose) keeps ASCII punctuation (except beside CJK, as in Chinese
-   comments) and gets its indentation back from x positions, snapped to steps of 4 or 2; elsewhere,
+   comments), joins the pieces Vision returns side by side on one row back into one line, and gets its
+   indentation back from x positions, snapped to steps of 4 or 2; elsewhere,
    lines without CJK use half-width punctuation, CJK lines turn half-width marks between CJK into
    full-width and keep their full-width ones, and stray spaces between Han or kana go (Korean keeps its
    word spaces); optionally, wrapped lines are joined.
@@ -109,25 +120,60 @@ Results on the corpus (macOS 27.2, release build):
 
 | | best plain Vision setup | L1 |
 | --- | --- | --- |
-| Content CER, mean | 5.5% (automatic language) | 0.56% |
-| Raw CER, mean | 8.5% | 1.07% |
-| Line order, mean | 0.95 | 0.99 |
+| Content CER, mean (27 cases) | 6.3% | 0.8% |
+| Raw CER, mean | 9.3% (automatic language) | 1.3% |
+| Line order, mean | 0.93 (automatic language) | 0.98 |
 | Code indentation | 0.20 | 0.93 |
 | Korean, alone / in a mixed image | 0% / Korean line lost | 0% / 0.9% |
 | Code with a Chinese comment (raw) | 20.1% | 0.6% |
 | English lines on a Chinese page (`zh-en-lines`) | 1.9% | 0% |
+| Code beside a line-number gutter (`code-gutter`) | 9.9% | 1.5% |
+| A sidebar of icons and labels (`ui-icons`) | 25.9% | 5.6% |
 | Time per image, p50 / p95 | 164 / 218 ms | 183–189 / 379–399 ms |
 
-These numbers are a fit, not yet a measurement: every rule was tuned on the corpus it is scored on, and
-every image was drawn by Core Text at 2× in Apple's system fonts. The spacing thresholds in particular
-come from macOS's own CJK–Latin spacing; a web page, a terminal, a chat app, or a 1× display may not
-match them. Real screenshots with hand-written truth (`--real`) come next.
+These numbers are a fit: every rule was tuned on the corpus it is scored on, and every image was drawn
+by Core Text at 2× in Apple's system fonts. Real screenshots tell more (below).
+
+## Real screenshots (2026-10-08)
+
+Five captures made with OhMyShot at 2× (a chat app, a social site, a forum, a code editor, a terminal),
+cut into twelve regions someone would select with Capture Text, each with its text written out by hand
+and checked against the image: chat list, article cards, post text, sidebars, forum thread, a category
+list, the code with and without its line numbers, `ls` and `ll` output, a system summary. They are
+personal and stay out of the repository (`Tools/ocr-bench/real/`, git-ignored; its README says how the
+truth is written: icons, avatars, and emoji are not text). Content CER, L1:
+
+| Region kind | Before | After icons and gutters |
+| --- | --- | --- |
+| Category list with an icon before each item and unread dots | 35.1% | 13.2% |
+| Forum thread (avatars, action icons, an emoji) | 7.7% | 6.1% |
+| Terminal `ls` (file-type icons in a grid) | 17.3% | 13.2% |
+| Code beside its line numbers | 10.7% | 4.3% |
+| The same code without them | 4.1% | 4.1% |
+| Chat list (a muted bell on most rows) | 4.6% | 3.8% |
+| Terminal `ll`, a system summary, posts, cards, sidebars without icons | 1.1–7.4% | unchanged |
+| **Mean of the twelve** | **8.1%** | **5.2%** |
+
+The same regions cut from copies a chat app shrank to 2000 px and recompressed: 8.9% before, 6.4% after.
+Plain Vision on the originals: 8.5% (`[zh-Hans, en]`), 14.9% (automatic language), 26.0% (documents).
+
+What the real captures showed that the synthetic corpus did not:
+
+- **Icons read as characters** were most of the error in app interfaces: a calendar as 首, a link as @,
+  a muted bell as 4 or D, an unread dot as ● or 。, file-type icons in a terminal as "us" or "Ts". Icons
+  at the ends of a line now go (L1 step 1); icons in the middle of a line, avatars, and emoji right
+  after text still come through.
+- **Line numbers** came back as lines of their own, and with them a listing no longer read as code, so
+  it lost its indentation; Vision also read some numbers together ("757677") or misread them ("S5").
+- **Fonts decide a lot in code**: in this editor's font the Latin model reads `l` as `L` and `||` as `I1`
+  (the Chinese model reads the same `l` correctly), and cursive italics in comments trip both.
+- **Resolution matters for small monospaced text**: the `ll` listing is 7.4% from the 2× capture and
+  17.1% from the shrunk copy; prose barely changes.
 
 Still open:
 
-- **Real screenshots**: at least one each from a browser, a terminal, a chat app, and an editor.
-- **Line-number gutters**: no case has one, though most editor screenshots do. The gutter digits would
-  read as lines of their own and shift every indent by the gutter's width.
+- **Icons inside a line, avatars, emoji after text**; recognition errors no rule can fix (鼠 read as 蟲,
+  `ω` as `w`, an underscore lost).
 - **Speed**: p95 is above the 300 ms target, from the extra passes on images that need them (Korean
   fallback, code with Chinese comments). Reading the Latin page alongside the first pass made English
   pages 85–126 ms faster (no second pass after the first) and costs Chinese and mixed pages 0–32 ms.

@@ -73,6 +73,25 @@ final class Canvas {
         context.restoreGState()
     }
 
+    /// Draws an SF Symbol in `color`, fitted into `rect`, as an app draws an icon beside a label.
+    func drawSymbol(_ name: String, in rect: CGRect, color: CGColor) {
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: rect.height, weight: .regular)) else { return }
+        var proposed = CGRect(origin: .zero, size: symbol.size)
+        guard let mask = symbol.cgImage(forProposedRect: &proposed, context: nil, hints: nil) else { return }
+        let aspect = symbol.size.width / max(symbol.size.height, 1)
+        let size = aspect >= 1 ? CGSize(width: rect.width, height: rect.width / aspect) : CGSize(width: rect.height * aspect, height: rect.height)
+        let target = CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height)
+        context.saveGState()
+        // Images draw with y up: flip back around the target.
+        context.translateBy(x: 0, y: target.maxY + target.minY)
+        context.scaleBy(x: 1, y: -1)
+        context.clip(to: target, mask: mask)
+        context.setFillColor(color)
+        context.fill(target)
+        context.restoreGState()
+    }
+
     func fill(_ rect: CGRect, radius: CGFloat = 0, color: CGColor) {
         context.setFillColor(color)
         context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))

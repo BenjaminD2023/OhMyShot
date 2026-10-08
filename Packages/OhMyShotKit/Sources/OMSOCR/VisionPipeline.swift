@@ -73,6 +73,7 @@ public struct VisionPipeline: OCREngine {
         }
 
         lines = try await fillGaps(in: image, lines: lines, rectangles: rectangles, fallbacks: fallbacks)
+        lines = LineNumbers.removed(from: lines)
         lines = try await rereadCodeWithLatinModel(in: image, lines: lines)
         if !readByLatinModel {
             lines = try await readLatinLines(lines, page: latin, in: image)
@@ -115,12 +116,19 @@ public struct VisionPipeline: OCREngine {
         }
         return observations.compactMap { observation -> OCRLine? in
             guard let candidate = observation.topCandidates(1).first else { return nil }
-            let box = place(observation.boundingBox)
+            var box = place(observation.boundingBox)
+            // Slices of the candidate's string keep its indices, so Vision's glyph boxes still apply.
+            var kept = candidate.string[...]
             var text = candidate.string
-            if box.width > box.height, Spacing.mayNeedSpaces(text), let ink = InkProfile(image: image, box: box) {
+            if box.width > box.height, let ink = InkProfile(image: image, box: box) {
                 let glyphs = { (range: Range<String.Index>) in candidate.boundingBox(for: range).map { place($0.boundingBox) } }
-                if let em = Spacing.em(of: text, glyphs: glyphs) {
-                    text = Spacing.restored(text, ink: ink, em: em) { glyphs($0)?.maxX }
+                if let trimmed = Icons.trimmed(kept, ink: ink, lineHeight: box.height, glyph: glyphs) {
+                    kept = trimmed.text
+                    text = String(kept)
+                    box = CGRect(x: trimmed.span.lowerBound, y: box.minY, width: trimmed.span.upperBound - trimmed.span.lowerBound, height: box.height)
+                }
+                if Spacing.mayNeedSpaces(kept), let em = Spacing.em(of: kept, glyphs: glyphs) {
+                    text = Spacing.restored(kept, ink: ink, em: em) { glyphs($0)?.maxX }
                 }
             }
             return OCRLine(
@@ -389,6 +397,26 @@ struct InkProfile {
     let originX: Int
     let ink: [Bool]
 
+    init(originX: Int, ink: [Bool]) {
+        self.originX = originX
+        self.ink = ink
+    }
+
+    /// The runs of columns with ink, in image x, left to right.
+    var runs: [Range<Int>] {
+        var runs: [Range<Int>] = []
+        var start: Int?
+        for (column, hasInk) in ink.enumerated() {
+            if hasInk, start == nil { start = column }
+            if !hasInk, let first = start {
+                runs.append((originX + first)..<(originX + column))
+                start = nil
+            }
+        }
+        if let first = start { runs.append((originX + first)..<(originX + ink.count)) }
+        return runs
+    }
+
     init?(image: CGImage, box: CGRect) {
         let rect = box.integral.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
         guard !rect.isNull, rect.width >= 2, rect.height >= 2, let cropped = image.cropping(to: rect) else { return nil }
@@ -437,13 +465,13 @@ struct InkProfile {
 /// rarely puts spaces there anyway.
 enum Spacing {
     /// Whether the text has a boundary Vision drops spaces at.
-    static func mayNeedSpaces(_ text: String) -> Bool {
+    static func mayNeedSpaces(_ text: Substring) -> Bool {
         text.contains(where: Script.isCJK) && text.contains(where: Script.isLatinOrDigit) && !text.contains(where: Script.isKana)
     }
 
     /// The width of a full-width character in this line: the median width Vision gives its CJK
     /// characters.
-    static func em(of text: String, glyphs: (Range<String.Index>) -> CGRect?) -> CGFloat? {
+    static func em(of text: Substring, glyphs: (Range<String.Index>) -> CGRect?) -> CGFloat? {
         let widths = text.indices
             .filter { Script.isCJK(text[$0]) }
             .compactMap { glyphs($0..<text.index(after: $0))?.width }
@@ -455,7 +483,7 @@ enum Spacing {
     /// space (over 0.3 em), and one Vision put in is dropped where the glyphs nearly touch (under 0.2 em).
     ///
     /// - Parameter boundary: the image x where a range of the text ends, if Vision knows it.
-    static func restored(_ text: String, ink: InkProfile, em: CGFloat, boundary: (Range<String.Index>) -> CGFloat?) -> String {
+    static func restored(_ text: Substring, ink: InkProfile, em: CGFloat, boundary: (Range<String.Index>) -> CGFloat?) -> String {
         var output = ""
         var previous: (character: Character, range: Range<String.Index>)?
         var spaceAfterPrevious = false
