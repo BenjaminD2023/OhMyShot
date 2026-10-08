@@ -1,0 +1,645 @@
+import AppKit
+import OMSCore
+
+/// The style capsule: a white capsule holding the controls for one kind of mark (color, size, and the
+/// kind's own variants). It sits beside the selected mark, or at the foot of the tool rail for the next
+/// mark when nothing is selected.
+final class StyleCapsule: NSView {
+    /// A settings change and its undo name.
+    var onChange: ((String, (inout ToolSettings) -> Void) -> Void)?
+    var onDelete: (() -> Void)?
+    var onCropReset: (() -> Void)?
+    var onCropDone: (() -> Void)?
+
+    static let height: CGFloat = 38
+    private static let inset: CGFloat = 4
+    private static let chip: CGFloat = 30
+
+    private let stack = NSStackView()
+    private var displayOptions: NSObjectProtocol?
+    private var kind: AnnotationTool = .arrow
+    private var settings = ToolSettings()
+    private var hasSelection = false
+    private var chips: [CapsuleChip] = []
+
+    static let palette: [RGBA] = [.red, .orange, .yellow, .green, .blue, .purple, .black, .white]
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        layer?.borderWidth = 0.5
+        layer?.shadowColor = .black
+        layer?.shadowOpacity = 0.18
+        layer?.shadowRadius = 8
+        layer?.shadowOffset = CGSize(width: 0, height: -2)
+        stack.orientation = .horizontal
+        stack.spacing = 2
+        stack.alignment = .centerY
+        stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset + 4, bottom: Self.inset, right: Self.inset)
+        addSubview(stack)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.toolbar)
+        applyAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override var fittingSize: NSSize {
+        CGSize(width: stack.fittingSize.width, height: Self.height)
+    }
+
+    override func layout() {
+        super.layout()
+        stack.frame = bounds
+        let radius = bounds.height / 2
+        layer?.cornerRadius = radius
+        layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyAppearance()
+    }
+
+    isolated deinit {
+        if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        releaseColorPanel()
+    }
+
+    /// Lets go of the shared color panel, which does not retain its target: a panel left pointing at a
+    /// freed capsule would send its next color there.
+    func releaseColorPanel() {
+        guard Self.colorPanelOwner === self, NSColorPanel.sharedColorPanelExists else { return }
+        Self.colorPanelOwner = nil
+        NSColorPanel.shared.setTarget(nil)
+        NSColorPanel.shared.setAction(nil)
+        NSColorPanel.shared.orderOut(nil)
+    }
+
+    /// The capsule the shared color panel reports to; it cannot be asked for its target.
+    private static weak var colorPanelOwner: StyleCapsule?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        displayOptions = nil
+        guard window != nil else { return }
+        displayOptions = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyAppearance() }
+        }
+    }
+
+    /// The reading capsule's materials, at control size.
+    private func applyAppearance() {
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        layer?.backgroundColor = dark ? CGColor(gray: 0.17, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
+        let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        layer?.borderWidth = contrast ? 1 : 0.5
+        layer?.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
+        chips.forEach { $0.applyAppearance() }
+    }
+
+    /// Shows the controls for `kind` with `settings`; `hasSelection` adds Delete.
+    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool) {
+        self.kind = kind
+        self.settings = settings
+        self.hasSelection = hasSelection
+        rebuild()
+    }
+
+    private func rebuild() {
+        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        chips.removeAll()
+        setAccessibilityLabel(String(localized: "\(ToolRail.name(of: kind)) Style", bundle: .module))
+
+        if kind == .crop {
+            stack.edgeInsets.left = Self.inset
+            add(textChip(String(localized: "Reset", bundle: .module)) { [weak self] in self?.onCropReset?() })
+            add(textChip(String(localized: "Done", bundle: .module), prominent: true) { [weak self] in self?.onCropDone?() })
+            return
+        }
+        stack.edgeInsets.left = Self.inset + 4
+
+        var sections: [[NSView]] = []
+        if usesColor {
+            sections.append(Self.palette.map(colorChip) + [customColorChip()])
+        }
+        let sizes = sizeChips()
+        if !sizes.isEmpty { sections.append(sizes) }
+        let variants = variantChips()
+        if !variants.isEmpty { sections.append(variants) }
+        if castsShadow {
+            let name = String(localized: "Shadow", bundle: .module)
+            let chip = CapsuleChip(image: Self.shadowIcon(), width: 30) { [weak self] in
+                self?.change(name) { $0.shadow.toggle() }
+            }
+            chip.isSelected = settings.shadow
+            chip.setAccessibilityLabel(name)
+            chip.setAccessibilityValue(settings.shadow ? String(localized: "On", bundle: .module) : String(localized: "Off", bundle: .module))
+            chip.toolTip = name
+            sections.append([chip])
+        }
+        if hasSelection {
+            sections.append([symbolChip("trash", name: String(localized: "Delete", bundle: .module), selected: false) { [weak self] in self?.onDelete?() }])
+        }
+        for (index, section) in sections.enumerated() {
+            if index > 0 { addDivider() }
+            section.forEach(add)
+        }
+    }
+
+    private var usesColor: Bool {
+        switch kind {
+        case .spotlight, .crop, .select: false
+        case .redact: settings.redaction == .solid
+        default: true
+        }
+    }
+
+    private var castsShadow: Bool {
+        switch kind {
+        case .arrow, .line, .rectangle, .ellipse, .pen, .text, .counter: true
+        default: false
+        }
+    }
+
+    private func add(_ view: NSView) {
+        stack.addArrangedSubview(view)
+        if let chip = view as? CapsuleChip { chips.append(chip) }
+    }
+
+    private func addDivider() {
+        let divider = NSBox()
+        divider.boxType = .separator
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        divider.heightAnchor.constraint(equalToConstant: 18).isActive = true
+        if let last = stack.arrangedSubviews.last { stack.setCustomSpacing(6, after: last) }
+        stack.addArrangedSubview(divider)
+        stack.setCustomSpacing(6, after: divider)
+    }
+
+    private func change(_ name: String, _ body: @escaping (inout ToolSettings) -> Void) {
+        onChange?(name, body)
+    }
+
+    // MARK: Chips
+
+    private func colorChip(_ color: RGBA) -> NSView {
+        let selected = settings.color.withAlpha(1) == color
+        let chip = CapsuleChip(image: Self.dot(color, selected: selected), width: 24) { [weak self] in
+            self?.change(String(localized: "Color", bundle: .module)) { $0.color = color }
+        }
+        chip.highlightsSelection = false
+        chip.isSelected = selected
+        chip.setAccessibilityLabel(Self.colorName(color))
+        chip.toolTip = Self.colorName(color)
+        return chip
+    }
+
+    private func customColorChip() -> NSView {
+        let isCustom = !Self.palette.contains(settings.color.withAlpha(1))
+        let image = isCustom ? Self.dot(settings.color, selected: true) : Self.wheel()
+        let chip = CapsuleChip(image: image, width: 24) { [weak self] in self?.pickColor() }
+        chip.highlightsSelection = false
+        chip.setAccessibilityLabel(String(localized: "Other Color…", bundle: .module))
+        chip.toolTip = String(localized: "Other Color…", bundle: .module)
+        return chip
+    }
+
+    private func pickColor() {
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = false
+        panel.isContinuous = false
+        panel.color = NSColor(cgColor: settings.color.cgColor) ?? .systemRed
+        panel.setTarget(self)
+        panel.setAction(#selector(colorPicked(_:)))
+        Self.colorPanelOwner = self
+        panel.orderFront(nil)
+    }
+
+    @objc private func colorPicked(_ sender: NSColorPanel) {
+        guard let color = RGBA(sender.color.cgColor) else { return }
+        change(String(localized: "Color", bundle: .module)) { $0.color = color.withAlpha(1) }
+    }
+
+    private func sizeChips() -> [NSView] {
+        switch kind {
+        case .text:
+            let sizes: [CGFloat] = [14, 20, 28, 40]
+            // A size set some other way shows as the nearest step.
+            let nearest = Self.nearest(settings.fontSize, in: sizes)
+            return sizes.enumerated().map { index, size in
+                let selected = size == nearest
+                let chip = CapsuleChip(image: Self.letter(size: 9 + CGFloat(index) * 3), width: 28) { [weak self] in
+                    self?.change(String(localized: "Text Size", bundle: .module)) { $0.fontSize = size }
+                }
+                chip.isSelected = selected
+                chip.setAccessibilityLabel(String(localized: "\(Int(size)) points", bundle: .module))
+                return chip
+            }
+        case .redact, .spotlight, .crop, .select:
+            return []
+        default:
+            let widths: [CGFloat] = switch kind {
+            case .highlighter: [10, 18, 28]
+            case .counter: [2, 4, 7]
+            default: [2, 4, 6, 10]
+            }
+            let nearest = Self.nearest(settings.lineWidth, in: widths)
+            return widths.enumerated().map { index, width in
+                let selected = width == nearest
+                let chip = CapsuleChip(image: Self.sizeDot(diameter: 4 + CGFloat(index) * 3), width: 26) { [weak self] in
+                    self?.change(String(localized: "Size", bundle: .module)) { $0.lineWidth = width }
+                }
+                chip.isSelected = selected
+                chip.setAccessibilityLabel(String(localized: "Size \(index + 1)", bundle: .module))
+                return chip
+            }
+        }
+    }
+
+    private func variantChips() -> [NSView] {
+        switch kind {
+        case .arrow:
+            return Arrow.Head.allCases.map { head in
+                let chip = CapsuleChip(image: Self.arrowIcon(head), width: 30) { [weak self] in
+                    self?.change(String(localized: "Arrow Style", bundle: .module)) { $0.arrowHead = head }
+                }
+                chip.isSelected = settings.arrowHead == head
+                chip.setAccessibilityLabel(Self.name(of: head))
+                chip.toolTip = Self.name(of: head)
+                return chip
+            }
+        case .line:
+            return [false, true].map { dashed in
+                let chip = CapsuleChip(image: Self.lineIcon(dashed: dashed), width: 30) { [weak self] in
+                    self?.change(String(localized: "Line Style", bundle: .module)) { $0.dashed = dashed }
+                }
+                chip.isSelected = settings.dashed == dashed
+                let name = dashed ? String(localized: "Dashed", bundle: .module) : String(localized: "Solid", bundle: .module)
+                chip.setAccessibilityLabel(name)
+                chip.toolTip = name
+                return chip
+            }
+        case .rectangle, .ellipse:
+            let outline = kind == .rectangle ? "rectangle" : "circle"
+            return [false, true].map { filled in
+                symbolChip(filled ? outline + ".fill" : outline, name: filled ? String(localized: "Filled", bundle: .module) : String(localized: "Outline", bundle: .module), selected: settings.filled == filled) { [weak self] in
+                    self?.change(String(localized: "Fill", bundle: .module)) { $0.filled = filled }
+                }
+            }
+        case .text:
+            return TextBlock.Look.allCases.map { look in
+                let chip = CapsuleChip(image: Self.lookIcon(look), width: 30) { [weak self] in
+                    self?.change(String(localized: "Text Style", bundle: .module)) { $0.textLook = look }
+                }
+                chip.isSelected = settings.textLook == look
+                chip.setAccessibilityLabel(Self.name(of: look))
+                chip.toolTip = Self.name(of: look)
+                return chip
+            }
+        case .counter:
+            return Counter.Numbering.allCases.map { numbering in
+                let label = Counter(center: .zero, value: 1, numbering: numbering).label
+                let chip = CapsuleChip(image: Self.glyph(label), width: 28) { [weak self] in
+                    self?.change(String(localized: "Numbering", bundle: .module)) { $0.numbering = numbering }
+                }
+                chip.isSelected = settings.numbering == numbering
+                chip.setAccessibilityLabel(Self.name(of: numbering))
+                chip.toolTip = Self.name(of: numbering)
+                return chip
+            }
+        case .redact:
+            return Redaction.Method.allCases.map { method in
+                let symbol = switch method {
+                case .solid: "rectangle.fill"
+                case .blur: "aqi.medium"
+                case .pixelate: "checkerboard.rectangle"
+                }
+                return symbolChip(symbol, name: Self.name(of: method), selected: settings.redaction == method) { [weak self] in
+                    self?.change(String(localized: "Redaction", bundle: .module)) { $0.redaction = method }
+                }
+            }
+        case .spotlight:
+            return [false, true].map { oval in
+                symbolChip(oval ? "oval" : "rectangle", name: oval ? String(localized: "Oval", bundle: .module) : String(localized: "Rectangle", bundle: .module), selected: settings.oval == oval) { [weak self] in
+                    self?.change(String(localized: "Spotlight Shape", bundle: .module)) { $0.oval = oval }
+                }
+            }
+        default:
+            return []
+        }
+    }
+
+    private func symbolChip(_ symbol: String, name: String, selected: Bool, action: @escaping () -> Void) -> CapsuleChip {
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: name)?.withSymbolConfiguration(.init(pointSize: 13, weight: .medium)) ?? NSImage()
+        let chip = CapsuleChip(image: image, width: 30, action: action)
+        chip.isSelected = selected
+        chip.setAccessibilityLabel(name)
+        chip.toolTip = name
+        return chip
+    }
+
+    private func textChip(_ title: String, prominent: Bool = false, action: @escaping () -> Void) -> CapsuleChip {
+        let chip = CapsuleChip(title: title, prominent: prominent, action: action)
+        chip.setAccessibilityLabel(title)
+        return chip
+    }
+
+    private static func nearest(_ value: CGFloat, in steps: [CGFloat]) -> CGFloat {
+        steps.min { abs($0 - value) < abs($1 - value) } ?? value
+    }
+
+    // MARK: Icons
+
+    private static func dot(_ color: RGBA, selected: Bool) -> NSImage {
+        NSImage(size: CGSize(width: 22, height: 22), flipped: true) { rect in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            let disc = rect.insetBy(dx: 5, dy: 5)
+            context.setFillColor(color.withAlpha(1).cgColor)
+            context.fillEllipse(in: disc)
+            // An edge so white and yellow hold on the white capsule.
+            context.setStrokeColor(CGColor(gray: 0, alpha: 0.18))
+            context.setLineWidth(0.5)
+            context.strokeEllipse(in: disc.insetBy(dx: 0.25, dy: 0.25))
+            if selected {
+                context.setStrokeColor(NSColor.controlAccentColor.cgColor)
+                context.setLineWidth(2)
+                context.strokeEllipse(in: rect.insetBy(dx: 1.5, dy: 1.5))
+            }
+            return true
+        }
+    }
+
+    private static func wheel() -> NSImage {
+        NSImage(size: CGSize(width: 22, height: 22), flipped: true) { rect in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            let disc = rect.insetBy(dx: 5, dy: 5)
+            let center = CGPoint(x: disc.midX, y: disc.midY)
+            let steps = 36
+            for step in 0..<steps {
+                let start = CGFloat(step) / CGFloat(steps) * 2 * .pi
+                let end = CGFloat(step + 1) / CGFloat(steps) * 2 * .pi + 0.02
+                context.move(to: center)
+                context.addArc(center: center, radius: disc.width / 2, startAngle: start, endAngle: end, clockwise: false)
+                context.closePath()
+                context.setFillColor(NSColor(hue: CGFloat(step) / CGFloat(steps), saturation: 0.85, brightness: 1, alpha: 1).cgColor)
+                context.fillPath()
+            }
+            return true
+        }
+    }
+
+    private static func sizeDot(diameter: CGFloat) -> NSImage {
+        let image = NSImage(size: CGSize(width: 18, height: 18), flipped: true) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: CGRect(x: rect.midX - diameter / 2, y: rect.midY - diameter / 2, width: diameter, height: diameter)).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    private static func letter(size: CGFloat) -> NSImage {
+        glyph("A", size: size)
+    }
+
+    private static func glyph(_ text: String, size: CGFloat = 12) -> NSImage {
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: .semibold), .foregroundColor: NSColor.black]
+        let measured = (text as NSString).size(withAttributes: attributes)
+        let image = NSImage(size: CGSize(width: max(measured.width, 16), height: 18), flipped: false) { rect in
+            (text as NSString).draw(at: CGPoint(x: (rect.width - measured.width) / 2, y: (rect.height - measured.height) / 2), withAttributes: attributes)
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    private static func arrowIcon(_ head: Arrow.Head) -> NSImage {
+        let image = NSImage(size: CGSize(width: 20, height: 20), flipped: true) { _ in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            let arrow = Arrow(start: CGPoint(x: 3.5, y: 16.5), end: CGPoint(x: 16.5, y: 3.5), head: head)
+            guard let path = ArrowPath.outline(arrow, width: head == .tapered ? 2.6 : 1.6, scale: 0.5) else { return false }
+            context.setFillColor(CGColor(gray: 0, alpha: 1))
+            context.addPath(path)
+            context.fillPath()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    /// A rounded square with a soft shadow below it: the mark shadow on or off.
+    private static func shadowIcon() -> NSImage {
+        let image = NSImage(size: CGSize(width: 20, height: 20), flipped: true) { _ in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            let square = CGRect(x: 3.5, y: 3, width: 11, height: 11)
+            context.setFillColor(CGColor(gray: 0, alpha: 0.32))
+            context.addPath(CGPath(roundedRect: square.offsetBy(dx: 2.5, dy: 3), cornerWidth: 3, cornerHeight: 3, transform: nil))
+            context.fillPath()
+            context.setBlendMode(.clear)
+            context.addPath(CGPath(roundedRect: square, cornerWidth: 3, cornerHeight: 3, transform: nil))
+            context.fillPath()
+            context.setBlendMode(.normal)
+            context.setStrokeColor(CGColor(gray: 0, alpha: 1))
+            context.setLineWidth(1.5)
+            context.addPath(CGPath(roundedRect: square, cornerWidth: 3, cornerHeight: 3, transform: nil))
+            context.strokePath()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    private static func lineIcon(dashed: Bool) -> NSImage {
+        let image = NSImage(size: CGSize(width: 20, height: 20), flipped: true) { _ in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            let mark = Annotation(shape: .line(Line(start: CGPoint(x: 3, y: 17), end: CGPoint(x: 17, y: 3), dashed: dashed)), style: Style(lineWidth: 1.6, shadow: false))
+            guard let path = MarkPaths.outline(of: mark, scale: 1) else { return false }
+            context.setFillColor(CGColor(gray: 0, alpha: 1))
+            context.addPath(path)
+            context.fillPath()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    private static func lookIcon(_ look: TextBlock.Look) -> NSImage {
+        let font = NSFont.systemFont(ofSize: 13, weight: .bold)
+        let image = NSImage(size: CGSize(width: 22, height: 20), flipped: false) { rect in
+            let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
+            let size = ("A" as NSString).size(withAttributes: attributes)
+            let point = CGPoint(x: (rect.width - size.width) / 2, y: (rect.height - size.height) / 2)
+            switch look {
+            case .plain:
+                ("A" as NSString).draw(at: point, withAttributes: attributes)
+            case .outlined:
+                let stroked: [NSAttributedString.Key: Any] = [.font: font, .strokeColor: NSColor.black, .strokeWidth: 3.5]
+                ("A" as NSString).draw(at: point, withAttributes: stroked)
+            case .label:
+                // A letter in a box, outlined: a solid block would read as a fill in the accent when
+                // the chip is selected.
+                let box = NSBezierPath(roundedRect: rect.insetBy(dx: 2, dy: 2.5), xRadius: 4, yRadius: 4)
+                box.lineWidth = 1.4
+                NSColor.black.setStroke()
+                box.stroke()
+                let small: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .bold), .foregroundColor: NSColor.black]
+                let size = ("A" as NSString).size(withAttributes: small)
+                ("A" as NSString).draw(at: CGPoint(x: (rect.width - size.width) / 2, y: (rect.height - size.height) / 2), withAttributes: small)
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    // MARK: Names
+
+    static func colorName(_ color: RGBA) -> String {
+        switch color {
+        case .red: String(localized: "Red", bundle: .module)
+        case .orange: String(localized: "Orange", bundle: .module)
+        case .yellow: String(localized: "Yellow", bundle: .module)
+        case .green: String(localized: "Green", bundle: .module)
+        case .blue: String(localized: "Blue", bundle: .module)
+        case .purple: String(localized: "Purple", bundle: .module)
+        case .black: String(localized: "Black", bundle: .module)
+        case .white: String(localized: "White", bundle: .module)
+        default: String(localized: "Custom Color", bundle: .module)
+        }
+    }
+
+    static func name(of head: Arrow.Head) -> String {
+        switch head {
+        case .classic: String(localized: "Classic Arrow", bundle: .module)
+        case .tapered: String(localized: "Tapered Arrow", bundle: .module)
+        case .open: String(localized: "Open Arrow", bundle: .module)
+        case .double: String(localized: "Double Arrow", bundle: .module)
+        }
+    }
+
+    static func name(of look: TextBlock.Look) -> String {
+        switch look {
+        case .plain: String(localized: "Plain Text", bundle: .module)
+        case .outlined: String(localized: "Outlined Text", bundle: .module)
+        case .label: String(localized: "Label", bundle: .module)
+        }
+    }
+
+    static func name(of numbering: Counter.Numbering) -> String {
+        switch numbering {
+        case .numbers: String(localized: "Numbers", bundle: .module)
+        case .letters: String(localized: "Letters", bundle: .module)
+        case .roman: String(localized: "Roman Numerals", bundle: .module)
+        }
+    }
+
+    static func name(of method: Redaction.Method) -> String {
+        switch method {
+        case .solid: String(localized: "Solid", bundle: .module)
+        case .blur: String(localized: "Blur", bundle: .module)
+        case .pixelate: String(localized: "Pixelate", bundle: .module)
+        }
+    }
+}
+
+/// A chip in the style capsule: a borderless button with the capsule's own selected and hover fills.
+final class CapsuleChip: NSButton {
+    var isSelected = false {
+        didSet { applyAppearance() }
+    }
+    /// Color dots draw their own ring instead of a fill.
+    var highlightsSelection = true
+    private let handler: () -> Void
+    private var isHovered = false
+    private let prominent: Bool
+
+    init(image: NSImage, width: CGFloat, action: @escaping () -> Void) {
+        handler = action
+        prominent = false
+        super.init(frame: .zero)
+        self.image = image
+        imagePosition = .imageOnly
+        configure(width: width)
+    }
+
+    init(title: String, prominent: Bool, action: @escaping () -> Void) {
+        handler = action
+        self.prominent = prominent
+        super.init(frame: .zero)
+        self.title = title
+        imagePosition = .noImage
+        font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        let width = (title as NSString).size(withAttributes: [.font: font!]).width + 28
+        configure(width: width)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    private func configure(width: CGFloat) {
+        isBordered = false
+        setButtonType(.momentaryChange)
+        target = self
+        action = #selector(clicked)
+        wantsLayer = true
+        layer?.cornerRadius = 15
+        contentTintColor = .labelColor
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: width).isActive = true
+        heightAnchor.constraint(equalToConstant: 30).isActive = true
+        applyAppearance()
+    }
+
+    @objc private func clicked() {
+        handler()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        applyAppearance()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        applyAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyAppearance()
+    }
+
+    func applyAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            if imagePosition == .noImage {
+                attributedTitle = NSAttributedString(string: title, attributes: [.font: font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor])
+            }
+            // A prominent chip (Done) carries the selected fill: the accent is never a fill behind text.
+            let selected = (isSelected || prominent) && highlightsSelection
+            let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+            let fill: CGColor = selected ? ChipFill.selected(dark: dark, contrast: contrast)
+                : isHovered ? ChipFill.hover(dark: dark, contrast: contrast)
+                : .clear
+            layer?.backgroundColor = fill
+            contentTintColor = selected && !prominent ? .controlAccentColor : .labelColor
+        }
+        setAccessibilityValue(isSelected ? String(localized: "Selected", bundle: .module) : nil)
+    }
+}

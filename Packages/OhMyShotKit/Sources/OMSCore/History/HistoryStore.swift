@@ -86,6 +86,78 @@ public final class HistoryStore: Sendable {
         directory.appending(path: item.fileName)
     }
 
+    /// The capture as it was taken, kept beside it once it has been marked up. No `.json` suffix, so
+    /// listing the history never mistakes it for a record.
+    public func originalURL(for item: HistoryItem) -> URL {
+        directory.appending(path: "\(item.fileName).original")
+    }
+
+    /// The marks on a marked-up capture, so they stay editable.
+    public func annotationsURL(for item: HistoryItem) -> URL {
+        directory.appending(path: "\(item.fileName).annotations")
+    }
+
+    /// Whether the capture has been marked up and its original kept.
+    public func hasOriginal(_ item: HistoryItem) -> Bool {
+        FileManager.default.fileExists(atPath: originalURL(for: item).path(percentEncoded: false))
+    }
+
+    /// Shows a marked-up picture in place of the capture, keeping the original (the first time) and the
+    /// marks beside it. Returns the record with the new size.
+    @discardableResult
+    public func replaceImage(of item: HistoryItem, with data: Data, pixelWidth: Int, pixelHeight: Int, annotations: Data) throws -> HistoryItem {
+        if !hasOriginal(item) {
+            try FileManager.default.copyItem(at: fileURL(for: item), to: originalURL(for: item))
+        }
+        try data.write(to: fileURL(for: item), options: .atomic)
+        try annotations.write(to: annotationsURL(for: item), options: .atomic)
+        return try resized(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
+    }
+
+    /// Puts the capture back as it was taken and forgets its marks. Returns the record with the
+    /// original's size; unchanged when it was never marked up.
+    @discardableResult
+    public func restoreOriginal(of item: HistoryItem) throws -> HistoryItem {
+        guard hasOriginal(item) else { return item }
+        let original = originalURL(for: item)
+        let size = Self.pixelSize(of: original)
+        _ = try FileManager.default.replaceItemAt(fileURL(for: item), withItemAt: original)
+        try? FileManager.default.removeItem(at: annotationsURL(for: item))
+        return try resized(item, pixelWidth: size?.width ?? item.pixelWidth, pixelHeight: size?.height ?? item.pixelHeight)
+    }
+
+    /// Keeps the marked-up picture as the capture and lets the original and the marks go: the marks can
+    /// no longer be changed.
+    public func flatten(_ item: HistoryItem) {
+        removeExtras(of: item)
+    }
+
+    private func resized(_ item: HistoryItem, pixelWidth: Int, pixelHeight: Int) throws -> HistoryItem {
+        let updated = HistoryItem(
+            id: item.id, kind: item.kind, createdAt: item.createdAt, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
+            appName: item.appName, fileName: item.fileName, duration: item.duration
+        )
+        if updated != item {
+            try JSONEncoder.history.encode(updated).write(to: sidecarURL(for: item.id, fileName: item.fileName), options: .atomic)
+        }
+        return updated
+    }
+
+    private func removeExtras(of item: HistoryItem) {
+        try? FileManager.default.removeItem(at: originalURL(for: item))
+        try? FileManager.default.removeItem(at: annotationsURL(for: item))
+    }
+
+    private static func pixelSize(of url: URL) -> (width: Int, height: Int)? {
+        guard
+            let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else { return nil }
+        return (width, height)
+    }
+
     /// Stores encoded image data under `name` (made unique) and returns its record. The file keeps a
     /// readable name, so dragging it out or revealing it shows the same name a saved copy would have.
     public func add(
@@ -142,6 +214,7 @@ public final class HistoryStore: Sendable {
     public func delete(_ item: HistoryItem) {
         try? FileManager.default.removeItem(at: fileURL(for: item))
         try? FileManager.default.removeItem(at: sidecarURL(for: item.id, fileName: item.fileName))
+        removeExtras(of: item)
     }
 
     /// Moves the capture to the Trash, where it can still be recovered, and forgets it.
@@ -152,6 +225,8 @@ public final class HistoryStore: Sendable {
             try? FileManager.default.removeItem(at: fileURL(for: item))
         }
         try? FileManager.default.removeItem(at: sidecarURL(for: item.id, fileName: item.fileName))
+        // The Trash keeps the picture as it was last shown; the original and the marks go with the record.
+        removeExtras(of: item)
     }
 
     public func deleteAll() {

@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import ImageIO
 import Observation
+import OMSAnnotate
 import OMSCapture
 import OMSCore
 import OMSUI
@@ -20,6 +21,7 @@ final class CompositionRoot {
     private lazy var captures = CaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history)
     private lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions())
     private lazy var textCapture = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
+    private lazy var annotations = AnnotationCoordinator(history: history)
     private let hotkeys: HotkeyCenter
     private let urlScheme: String
     private var statusItem: StatusItemController?
@@ -96,6 +98,14 @@ final class CompositionRoot {
         captures.onCaptured = { [weak self] item in
             self?.didCapture(item)
         }
+        annotations.onChange = { [weak self] entry, data in
+            self?.pictureChanged(entry, data: data)
+        }
+        annotations.saveCopy = { [weak self] entry, file in
+            guard let self, let saved = captures.save(fileAt: file) else { return nil }
+            quickAccess.markSaved(entry.id, at: saved)
+            return saved
+        }
 
         displays.onChange = { [weak self] _ in
             guard let self else { return }
@@ -114,6 +124,11 @@ final class CompositionRoot {
         } else {
             showOnboarding()
         }
+    }
+
+    /// Keeps edits still open in the editor before the app quits.
+    func prepareForTermination() {
+        annotations.keepAll()
     }
 
     func handle(url: URL, senderPID: pid_t?) {
@@ -224,8 +239,36 @@ final class CompositionRoot {
         removeExpiredHistory()
     }
 
+    /// A capture's picture changed in the editor: its card and its History thumbnail follow.
+    private func pictureChanged(_ entry: HistoryItem, data: Data) {
+        Task {
+            if let card = quickAccess.item(entry.id), let thumbnail = await HistoryStore.thumbnail(of: data, maxPixels: 560) {
+                quickAccess.update(QuickAccessItem(
+                    id: entry.id,
+                    kind: entry.kind,
+                    fileURL: history.fileURL(for: entry),
+                    thumbnail: thumbnail,
+                    pixelWidth: entry.pixelWidth,
+                    pixelHeight: entry.pixelHeight,
+                    displayID: card.displayID,
+                    createdAt: entry.createdAt,
+                    savedURL: card.savedURL
+                ))
+            }
+            historyWindow?.reload(changed: [entry.id])
+        }
+    }
+
+    /// Opens a capture in the annotation editor; `displayID` is the screen it came from, for its scale.
+    private func annotate(_ entry: HistoryItem, displayID: CGDirectDisplayID?) {
+        let layout = displays.layout
+        // The display a history capture came from is not recorded; most come from the sharpest.
+        let scale = displayID.flatMap { layout.display(id: $0)?.pixelsPerPoint } ?? layout.displays.map(\.pixelsPerPoint).max() ?? 1
+        annotations.annotate(entry, scale: scale)
+    }
+
     private func removeExpiredHistory() {
-        let removed = history.removeExpired(retention: settings.historyRetention, keeping: quickAccess.itemIDs)
+        let removed = history.removeExpired(retention: settings.historyRetention, keeping: quickAccess.itemIDs.union(annotations.openCaptureIDs))
         if removed > 0 {
             Log.capture.notice("Removed \(removed, privacy: .public) expired capture(s) from the history")
         }
@@ -238,6 +281,10 @@ final class CompositionRoot {
             save: { [weak self] item in self?.captures.save(item) },
             saveAs: { [weak self] item in self?.captures.saveAs(item) },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
+            annotate: { [weak self] item in
+                guard let self, let entry = history.item(id: item.id) else { return }
+                annotate(entry, displayID: item.displayID)
+            },
             reveal: { item in NSWorkspace.shared.activateFileViewerSelecting([item.savedURL ?? item.fileURL]) },
             recognizeText: { [weak self] item in
                 guard let self else { return }
@@ -258,8 +305,11 @@ final class CompositionRoot {
                 historyWindow?.reload()
             },
             closed: { [weak self] item in
-                // With history off, a capture lives only as long as its card.
-                guard let self, settings.historyRetention == .never, let entry = history.item(id: item.id) else { return }
+                // With history off, a capture lives only as long as its card, or its editor.
+                guard
+                    let self, settings.historyRetention == .never, !annotations.openCaptureIDs.contains(item.id),
+                    let entry = history.item(id: item.id)
+                else { return }
                 history.delete(entry)
             }
         )
@@ -267,7 +317,7 @@ final class CompositionRoot {
 
     /// How many captures a retention would delete now; captures still on screen as cards are kept.
     private func expiredCount(for retention: HistoryRetention) -> Int {
-        history.expired(retention: retention, keeping: quickAccess.itemIDs).count
+        history.expired(retention: retention, keeping: quickAccess.itemIDs.union(annotations.openCaptureIDs)).count
     }
 
     private func makeHistoryWindow() -> HistoryWindowController {
@@ -289,6 +339,9 @@ final class CompositionRoot {
             open: { [weak self] entry in
                 guard let self else { return }
                 NSWorkspace.shared.open(history.fileURL(for: entry))
+            },
+            annotate: { [weak self] entry in
+                self?.annotate(entry, displayID: self?.quickAccess.item(entry.id)?.displayID)
             },
             reveal: { [weak self] entry in
                 guard let self else { return }
@@ -403,11 +456,22 @@ final class CompositionRoot {
                 guard let self, let entry = history.items().first else { return }
                 Task { await self.restore(entry) }
             },
+            annotateLatestFromHistory: { [weak self] in
+                guard let self, let entry = history.items().first else { return }
+                annotate(entry, displayID: nil)
+            },
+            deleteLatestFromHistory: { [weak self] in
+                guard let self, let entry = history.items().first else { return }
+                quickAccess.remove(entry.id)
+                history.delete(entry)
+                historyWindow?.reload()
+            },
             setRetention: { [weak self] retention in self?.settings.historyRetention = retention },
             historyWindow: { [weak self] in self?.historyWindow?.window },
             historyCount: { [weak self] in self?.history.items().count ?? 0 },
             previewRetentionChange: { [weak self] retention in self?.historyWindow?.previewRetentionChange(to: retention) },
-            textCapture: textCapture
+            textCapture: textCapture,
+            annotations: annotations
         )
     }
     #endif

@@ -36,6 +36,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingURLs.removeAll()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        root?.prepareForTermination()
+    }
+
     /// ⌘, while one of the app's windows is in front.
     @objc func showSettings(_ sender: Any?) {
         root?.showSettings()

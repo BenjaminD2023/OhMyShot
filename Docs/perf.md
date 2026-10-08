@@ -188,3 +188,21 @@ PP-OCRv6 small, measured with `Tools/l2-spike/` (details in Docs/ocr.md › L2 r
 | Detection, 736×1280, native | — | 10 ms |
 | Recognition, one line 320 / 1280 px wide, native | — | 2 / 8 ms |
 | First load / later loads | 50 ms / 50 ms | 21 s once (Neural Engine compile) / 40 ms |
+
+## M3 — annotation editor (2026-10-09)
+
+Same machine, Debug build, one display. The editor opened on the drawn demo page (1520×1120 px) with
+13 marks (`ohmyshot-dev://debug/editor-demo`), then closed.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Footprint before opening / with the editor open / 30 s after closing | 62 / 88 / 63 MB | back to where it was |
+| Live resources after closing | none | none when idle |
+| Keeping the marks on close (render, encode, write to the history) | after the window has gone, off the main actor | never per edit |
+
+### Findings
+
+- **Marks are layers; the capture is one layer the GPU scales.** Each mark redraws only when it changes
+  or the zoom does, through the same renderer exports use, so the screen and the export agree.
+- **Edits are written when the capture leaves the editor** (closed, copied, saved, dragged out), never
+  per change: a 6880×2880 PNG takes about 100 ms to encode.

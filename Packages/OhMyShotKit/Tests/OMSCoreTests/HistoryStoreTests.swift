@@ -71,4 +71,41 @@ struct HistoryStoreTests {
         #expect(store.removeExpired(retention: .oneDay, keeping: [old.id], now: now) == 0)
         #expect(store.item(id: old.id) != nil)
     }
+
+    @Test func markingUpKeepsTheOriginalAndTheMarksBesideTheCapture() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 10, pixelHeight: 20, appName: nil)
+        let marked = try store.replaceImage(of: item, with: Data([2]), pixelWidth: 8, pixelHeight: 6, annotations: Data([9]))
+        #expect(marked.pixelWidth == 8 && marked.pixelHeight == 6)
+        #expect(store.item(id: item.id)?.pixelWidth == 8)
+        #expect(FileManager.default.contents(atPath: store.fileURL(for: item).path(percentEncoded: false)) == Data([2]))
+        #expect(FileManager.default.contents(atPath: store.originalURL(for: item).path(percentEncoded: false)) == Data([1]))
+        // Marking up again keeps the first original.
+        try store.replaceImage(of: marked, with: Data([3]), pixelWidth: 8, pixelHeight: 6, annotations: Data([9]))
+        #expect(FileManager.default.contents(atPath: store.originalURL(for: item).path(percentEncoded: false)) == Data([1]))
+        // The extra files are never listed as captures.
+        #expect(store.items().count == 1)
+    }
+
+    @Test func deletingAMarkedUpCaptureLeavesNothingBehind() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 10, pixelHeight: 20, appName: nil)
+        try store.replaceImage(of: item, with: Data([2]), pixelWidth: 10, pixelHeight: 20, annotations: Data([9]))
+        store.delete(item)
+        let left = try FileManager.default.contentsOfDirectory(atPath: store.directory.path(percentEncoded: false))
+        #expect(left.isEmpty)
+    }
+
+    @Test func restoringTheOriginalForgetsTheMarks() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 10, pixelHeight: 20, appName: nil)
+        let marked = try store.replaceImage(of: item, with: Data([2]), pixelWidth: 10, pixelHeight: 20, annotations: Data([9]))
+        try store.restoreOriginal(of: marked)
+        #expect(FileManager.default.contents(atPath: store.fileURL(for: item).path(percentEncoded: false)) == Data([1]))
+        #expect(!store.hasOriginal(item))
+        #expect(!FileManager.default.fileExists(atPath: store.annotationsURL(for: item).path(percentEncoded: false)))
+    }
 }

@@ -34,6 +34,8 @@ targets:
         product: OMSUI
       - package: OhMyShotKit
         product: OMSOCR
+      - package: OhMyShotKit
+        product: OMSAnnotate
 
 schemes:
   OhMyShot:

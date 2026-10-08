@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-07T20:37:02Z",
+  "generatedAt": "2026-10-09T12:00:00Z",
   "title": "Design System: OhMyShot",
   "extensions": {
     "colorMeta": {
@@ -208,6 +208,186 @@
         "role": "neutral",
         "displayName": "Media Badge",
         "canonical": "Color.black.opacity(0.55)"
+      },
+      "chip-selected-contrast-light": {
+        "role": "neutral",
+        "displayName": "Chip Highlight, Increase Contrast, Light",
+        "canonical": "ChipFill.selected(dark: false, contrast: true) = CGColor(gray: 0, alpha: 0.16)"
+      },
+      "chip-selected-contrast-dark": {
+        "role": "neutral",
+        "displayName": "Chip Highlight, Increase Contrast, Dark",
+        "canonical": "ChipFill.selected(dark: true, contrast: true) = CGColor(gray: 1, alpha: 0.28)"
+      },
+      "chip-hover-contrast-light": {
+        "role": "neutral",
+        "displayName": "Chip Hover, Increase Contrast, Light",
+        "canonical": "ChipFill.hover(dark: false, contrast: true) = CGColor(gray: 0, alpha: 0.09)"
+      },
+      "chip-hover-contrast-dark": {
+        "role": "neutral",
+        "displayName": "Chip Hover, Increase Contrast, Dark",
+        "canonical": "ChipFill.hover(dark: true, contrast: true) = CGColor(gray: 1, alpha: 0.16)"
+      },
+      "capsule-surface-light": {
+        "role": "neutral",
+        "displayName": "Capsule Surface, Light",
+        "canonical": "CGColor(gray: 1, alpha: 0.97)"
+      },
+      "capsule-surface-dark": {
+        "role": "neutral",
+        "displayName": "Capsule Surface, Dark",
+        "canonical": "CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) (text result card); the style capsule draws CGColor(gray: 0.17, alpha: 0.96)"
+      },
+      "hairline-contrast-light": {
+        "role": "neutral",
+        "displayName": "Contrast Hairline, Light",
+        "canonical": "CGColor(gray: 0, alpha: 0.35), 1 pt"
+      },
+      "hairline-contrast-dark": {
+        "role": "neutral",
+        "displayName": "Contrast Hairline, Dark",
+        "canonical": "CGColor(gray: 1, alpha: 0.5), 1 pt"
+      },
+      "spotlight-dim": {
+        "role": "neutral",
+        "displayName": "Spotlight Dimming",
+        "canonical": "CGColor(gray: 0, alpha: AnnotationRenderer.spotlightDimming = 0.5)"
+      },
+      "mark-red": {
+        "role": "tertiary",
+        "displayName": "Mark Ink: Red",
+        "canonical": "RGBA.red (1, 0.231, 0.188)",
+        "tonalRamp": [
+          "#4A0F0C",
+          "#7A1A14",
+          "#AB241D",
+          "#DC2E25",
+          "#FF3B30",
+          "#FF6F67",
+          "#FFA39E",
+          "#FFD7D5"
+        ]
+      },
+      "mark-orange": {
+        "role": "tertiary",
+        "displayName": "Mark Ink: Orange",
+        "canonical": "RGBA.orange (1, 0.584, 0)",
+        "tonalRamp": [
+          "#4A2B00",
+          "#7A4700",
+          "#AB6400",
+          "#DC8000",
+          "#FF9500",
+          "#FFB040",
+          "#FFCA80",
+          "#FFE5BF"
+        ]
+      },
+      "mark-yellow": {
+        "role": "tertiary",
+        "displayName": "Mark Ink: Yellow",
+        "canonical": "RGBA.yellow (1, 0.8, 0)",
+        "tonalRamp": [
+          "#4A3B00",
+          "#7A6100",
+          "#AB8800",
+          "#DCAF00",
+          "#FFCC00",
+          "#FFD940",
+          "#FFE680",
+          "#FFF2BF"
+        ]
+      },
+      "mark-green": {
+        "role": "tertiary",
+        "displayName": "Mark Ink: Green",
+        "canonical": "RGBA.green (0.204, 0.78, 0.349)",
+        "tonalRamp": [
+          "#0F3A1A",
+          "#18602B",
+          "#21863C",
+          "#2BAC4D",
+          "#34C759",
+          "#67D583",
+          "#9AE3AC",
+          "#CCF1D5"
+        ]
+      },
+      "mark-blue": {
+        "role": "tertiary",
+        "displayName": "Mark Ink: Blue",
+        "canonical": "RGBA.blue (0, 0.478, 1)",
+        "tonalRamp": [
+          "#00234A",
+          "#003A7A",
+          "#0051AB",
+          "#0069DC",
+          "#007AFF",
+          "#409BFF",
+          "#80BCFF",
+          "#BFDEFF"
+        ]
+      },
+      "mark-purple": {
+        "role": "tertiary",
+        "displayName": "Mark Ink: Purple",
+        "canonical": "RGBA.purple (0.686, 0.322, 0.871)",
+        "tonalRamp": [
+          "#33183F",
+          "#542868",
+          "#753891",
+          "#9648BA",
+          "#AF52DE",
+          "#C37DE6",
+          "#D7A8EE",
+          "#EBD4F7"
+        ]
+      },
+      "mark-black": {
+        "role": "tertiary",
+        "displayName": "Mark Ink: Black",
+        "canonical": "RGBA.black",
+        "tonalRamp": [
+          "#000000",
+          "#1F1F1F",
+          "#3E3E3E",
+          "#5D5D5D",
+          "#7B7B7B",
+          "#9A9A9A",
+          "#B9B9B9",
+          "#D8D8D8"
+        ]
+      },
+      "mark-white": {
+        "role": "tertiary",
+        "displayName": "Mark Ink: White",
+        "canonical": "RGBA.white",
+        "tonalRamp": [
+          "#1F1F1F",
+          "#3E3E3E",
+          "#5D5D5D",
+          "#7B7B7B",
+          "#9A9A9A",
+          "#B9B9B9",
+          "#D8D8D8",
+          "#FFFFFF"
+        ]
+      },
+      "mark-marker": {
+        "role": "tertiary",
+        "displayName": "Mark Ink: Marker Yellow",
+        "canonical": "RGBA.marker (1, 0.906, 0.29), multiplied",
+        "tonalRamp": [
+          "#4A4315",
+          "#7A6F23",
+          "#AB9B31",
+          "#DCC73F",
+          "#FFE74A",
+          "#FFED77",
+          "#FFF3A5",
+          "#FFF9D2"
+        ]
       }
     },
     "typographyMeta": {
@@ -242,6 +422,18 @@
       "caption": {
         "displayName": "Caption",
         "purpose": "System caption: History card metadata and the recording badge (semibold)."
+      },
+      "capsule-text-chip": {
+        "displayName": "Capsule Text Chip",
+        "purpose": "Reset and Done in the editor's style capsule while cropping; system face, since the capsule sits inside a window."
+      },
+      "mark-text": {
+        "displayName": "Mark Text",
+        "purpose": "Text marks: system semibold at 14 / 20 / 28 / 40 pt (20 default), 1.25 line height; the same layout on screen, in exports, and in the editing field."
+      },
+      "counter-label": {
+        "displayName": "Counter Label",
+        "purpose": "The label in a counter disc: SF Pro Rounded bold at half the disc's diameter, shrunk to fit 72% of it. Content drawn into the picture, not chrome."
       }
     },
     "shadows": [
@@ -258,12 +450,12 @@
       {
         "name": "floating-bar",
         "value": "0 3px 10px rgba(0,0,0,0.16)",
-        "purpose": "The All-In-One capsule."
+        "purpose": "The All-In-One capsule and the editor's tool rail."
       },
       {
         "name": "floating-reading",
         "value": "0 2px 8px rgba(0,0,0,0.18)",
-        "purpose": "Reading capsules."
+        "purpose": "Reading capsules and the editor's style capsule."
       },
       {
         "name": "action-lift",
@@ -273,7 +465,12 @@
       {
         "name": "in-window-card",
         "value": "0 4px 10px rgba(0,0,0,0.12)",
-        "purpose": "Capture History cards."
+        "purpose": "Capture History cards, the OCR panel's picture, and the annotation editor's picture."
+      },
+      {
+        "name": "mark-shadow",
+        "value": "0 1pt 3pt rgba(0,0,0,0.3), scaled with the capture",
+        "purpose": "Drawn into the picture under arrows, lines, shapes, pen, text, and counters (on by default); the one exported shadow."
       }
     ],
     "motion": [
@@ -316,6 +513,16 @@
         "name": "lens-fade",
         "value": "0.18s ease-out in, 0.15s ease-in out; buttons 0.12s",
         "purpose": "The translation lens appearing over the selection and leaving. Instant under Reduce Motion."
+      },
+      {
+        "name": "capsule-fade",
+        "value": "0.12s ease-out, opacity 0 to 1 (Theme.Motion.fade)",
+        "purpose": "The editor's style capsule appearing for a new selection or tool; it moves without fading on zoom and hides while a mark is dragged. Instant under Reduce Motion."
+      },
+      {
+        "name": "editor-copied-feedback",
+        "value": "1.5s hold",
+        "purpose": "The editor toolbar's Copy and Save read Copied / Saved with a checkmark before reverting."
       }
     ]
   },
@@ -407,28 +614,44 @@
       "description": "Translate Area's result: a borderless panel exactly over the selection holding the captured area with its translation drawn in place (each line painted over with its own background, the translation in the original's ink and size, semibold for headings), a 0.5 pt black 0.18 hairline (1 pt black 0.35 under Increase Contrast) and the window shadow; three card corner buttons (Copy Translation, Open in Panel, Close) fade in just outside its top-right corner while hovered, never over the text. Escape, a click, or another window taking the keys closes it; Option held shows the original.",
       "html": "<div class=\"ds-lens-wrap\"><div class=\"ds-lens-buttons\"><span>⧉</span><span>▢</span><span>✕</span></div><div class=\"ds-lens\"><div class=\"ds-lens-title\">发布说明 Release Notes</div><div class=\"ds-lens-p\">截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。</div><div class=\"ds-lens-p\">快速访问让每次捕获都只需点击一下即可。捕获中的文本可以复制、编辑和搜索。</div><div class=\"ds-lens-p\">文档：https://example.com/docs</div></div></div>",
       "css": ".ds-lens-wrap{width:420px;font-family:system-ui,'PingFang SC',sans-serif;} .ds-lens-buttons{display:flex;justify-content:flex-end;gap:6px;margin-bottom:6px;} .ds-lens-buttons span{width:24px;height:24px;border-radius:12px;background:rgba(0,0,0,0.5);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;} .ds-lens{padding:18px 20px;background:#fbfbfb;border:0.5px solid rgba(0,0,0,0.18);box-shadow:0 10px 30px rgba(0,0,0,0.25);color:#000;} .ds-lens-title{font-size:16px;font-weight:600;margin-bottom:10px;} .ds-lens-p{font-size:12px;line-height:1.5;margin-bottom:6px;}"
+    },
+    {
+      "name": "Tool Rail",
+      "kind": "nav",
+      "refersTo": "tool-rail",
+      "description": "The editor's tools: a 42 pt Liquid Glass capsule (opaque window-colored backing, 0.5 pt separator hairline, floating bar shadow) of 30 pt circular chips in groups split by 18 pt hairlines. Tool in hand: selected chip fill and accent symbol. Approximated with an opaque fill; Reduce Transparency is a solid capsule.",
+      "html": "<div class=\"ds-rail\" role=\"toolbar\" aria-label=\"Tools\"><button class=\"ds-rail-chip\" aria-label=\"Select\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"currentColor\"><path d=\"M3 1.5v10l2.6-2.4 1.8 3.9 1.6-.7-1.8-3.8H11z\"/></svg></button><span class=\"ds-rail-sep\"></span><button class=\"ds-rail-chip ds-rail-on\" aria-label=\"Arrow\" aria-pressed=\"true\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M3 11L11 3M5.5 3H11v5.5\"/></svg></button><button class=\"ds-rail-chip\" aria-label=\"Rectangle\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><rect x=\"2\" y=\"3\" width=\"10\" height=\"8\" rx=\"1.5\"/></svg></button><span class=\"ds-rail-sep\"></span><button class=\"ds-rail-chip\" aria-label=\"Text\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M3 3h8M7 3v8\"/></svg></button></div>",
+      "css": ".ds-rail{display:inline-flex;flex-direction:column;align-items:center;gap:2px;width:42px;padding:6px;box-sizing:border-box;border-radius:9999px;background:#FFFFFF;border:0.5px solid rgba(0,0,0,0.1);box-shadow:0 3px 10px rgba(0,0,0,0.16);} .ds-rail-chip{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:none;border-radius:9999px;background:transparent;color:rgba(0,0,0,0.85);cursor:default;} .ds-rail-chip:hover{background:rgba(0,0,0,0.045);} .ds-rail-chip:focus-visible{outline:2px solid AccentColor;outline-offset:1px;} .ds-rail-on,.ds-rail-on:hover{background:rgba(0,0,0,0.08);color:AccentColor;} .ds-rail-sep{width:18px;height:1px;margin:4px 0;background:rgba(0,0,0,0.1);} @media (prefers-contrast: more){.ds-rail{border:1px solid rgba(0,0,0,0.35);} .ds-rail-on{background:rgba(0,0,0,0.16);} .ds-rail-chip:hover{background:rgba(0,0,0,0.09);}}"
+    },
+    {
+      "name": "Style Capsule",
+      "kind": "chip",
+      "refersTo": "style-capsule-light",
+      "description": "A mark's style beside the mark: white 0.97 capsule, 38 pt tall, 0.5 pt hairline, floating reading shadow, no glass. Color dots (chosen one ringed in the accent), size dots, variants, Shadow, Delete, split by hairlines. Light shown; Dark uses a 0.17 gray at 0.96 and white 0.12 hairline.",
+      "html": "<div class=\"ds-style\" role=\"toolbar\" aria-label=\"Arrow Style\"><button class=\"ds-dot ds-dot-on\" style=\"--c:#FF3B30\" aria-label=\"Red\"></button><button class=\"ds-dot\" style=\"--c:#FFCC00\" aria-label=\"Yellow\"></button><button class=\"ds-dot\" style=\"--c:#007AFF\" aria-label=\"Blue\"></button><button class=\"ds-dot\" style=\"--c:#FFFFFF\" aria-label=\"White\"></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip ds-size\" aria-label=\"Size 1\"><i style=\"width:4px;height:4px\"></i></button><button class=\"ds-cchip ds-size ds-cchip-on\" aria-label=\"Size 2\"><i style=\"width:7px;height:7px\"></i></button><button class=\"ds-cchip ds-size\" aria-label=\"Size 3\"><i style=\"width:10px;height:10px\"></i></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip ds-cchip-on\" aria-label=\"Classic Arrow\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M2.5 11.5L11 3M6 3h5v5\"/></svg></button><button class=\"ds-cchip\" aria-label=\"Open Arrow\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linecap=\"round\"><path d=\"M2.5 11.5L11 3M7 3h4v4\"/></svg></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip\" aria-label=\"Delete\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.4\" stroke-linecap=\"round\"><path d=\"M2.5 4h9M5.5 4V2.5h3V4M4 4l.6 7.5h4.8L10 4\"/></svg></button></div>",
+      "css": ".ds-style{display:inline-flex;align-items:center;gap:2px;height:38px;padding:4px 4px 4px 8px;box-sizing:border-box;border-radius:9999px;background:rgba(255,255,255,0.97);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);color:rgba(0,0,0,0.85);} .ds-dot{width:24px;height:30px;padding:0;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:default;} .ds-dot::before{content:'';width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 0.5px rgba(0,0,0,0.18);} .ds-dot-on::before{box-shadow:0 0 0 0.5px rgba(0,0,0,0.18),0 0 0 2.5px #fff,0 0 0 4.5px AccentColor;} .ds-cchip{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:none;border-radius:9999px;background:transparent;color:inherit;cursor:default;} .ds-size{width:26px;} .ds-size i{display:block;border-radius:50%;background:currentColor;} .ds-cchip:hover{background:rgba(0,0,0,0.045);} .ds-cchip-on,.ds-cchip-on:hover{background:rgba(0,0,0,0.08);color:AccentColor;} .ds-cchip:focus-visible,.ds-dot:focus-visible{outline:2px solid AccentColor;outline-offset:1px;border-radius:9999px;} .ds-style-sep{width:1px;height:18px;margin:0 4px;background:rgba(0,0,0,0.1);} @media (prefers-contrast: more){.ds-style{border:1px solid rgba(0,0,0,0.35);} .ds-cchip-on{background:rgba(0,0,0,0.16);}}"
     }
   ],
   "narrative": {
     "northStar": "The Part of macOS Apple Forgot to Ship",
-    "overview": "OhMyShot looks like a system feature, not an app with a brand. Light and dark follow the system, the accent is the user's own macOS accent, and every window is a standard window with standard controls. What the app adds is a thin, consistent layer of softness for the things that float over other people's screens: continuous-corner cards, fully round capsules, gentle downward shadows, opaque white action capsules, and the rounded system face with fixed-width digits for every live reading. The capture is the hero; the chrome recedes.\n\nDensity is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, Quick Access cards, Capture History, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.\n\nThe confirmed rejection is the first world, \"Contact Sheet\" (rejected by the user on 2026-10-07): no frame numbers, no captures joined into one strip, no film-edge or darkroom motifs, no dark heavy panels, nothing that reads as a Linux utility.\n\nUnits: every dimension in this file is in points. The frontmatter writes points as `px` for tool compatibility; 1 pt renders as 2 device pixels on Retina displays.",
+    "overview": "OhMyShot looks like a system feature, not an app with a brand. Light and dark follow the system, the accent is the user's own macOS accent, and every window is a standard window with standard controls. What the app adds is a thin, consistent layer of softness for the things that float over other people's screens: continuous-corner cards, fully round capsules, gentle downward shadows, opaque white action capsules, and the rounded system face with fixed-width digits for every live reading. The capture is the hero; the chrome recedes.\n\nDensity is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, Quick Access cards, Capture History, the OCR panel, the annotation editor, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.\n\nThe confirmed rejection is the first world, \"Contact Sheet\" (rejected by the user on 2026-10-07): no frame numbers, no captures joined into one strip, no film-edge or darkroom motifs, no dark heavy panels, nothing that reads as a Linux utility.\n\nUnits: every dimension in this file is in points. The frontmatter writes points as `px` for tool compatibility; 1 pt renders as 2 device pixels on Retina displays.",
     "keyCharacteristics": [
       "System semantic colors and the user's accent carry all appearance; literal values are only black or white at fixed opacities.",
       "Continuous corners everywhere: 12 pt cards, fully round capsules for every control and reading.",
       "Soft, downward, widely blurred shadows; never a hard edge or a halo.",
       "SF Pro Rounded with monospaced digits for readings; plain system text styles inside windows.",
-      "Liquid Glass only on small controls (the All-In-One bar, History hover buttons, the History toolbar), never over a full-screen frame.",
+      "Liquid Glass only on small controls (the All-In-One bar, the editor's tool rail, History hover buttons, window toolbars), never over a full-screen frame.",
       "Motion is a single short ease-out or nothing; under Reduce Motion it is nothing."
     ],
     "rules": [
       {
         "name": "The No Brand Hue Rule",
-        "body": "The accent is whatever the user chose in System Settings. Never hard-code a blue, never tint a surface toward a house color.",
+        "body": "The accent is whatever the user chose in System Settings. Never hard-code a blue in chrome, never tint a surface toward a house color. Mark inks are the user's content and the one place fixed hues live.",
         "section": "colors"
       },
       {
         "name": "The Black-and-White Opacity Rule",
-        "body": "Every literal color the app introduces is pure black or white at a stated opacity (or the single 0.17 gray of the Dark reading capsule). New surfaces reuse these steps before inventing a tint.",
+        "body": "Every literal color the app's chrome introduces is pure black or white at a stated opacity (or the single 0.17 gray of the Dark reading capsule). New surfaces reuse these steps before inventing a tint.",
         "section": "colors"
       },
       {
@@ -438,7 +661,7 @@
       },
       {
         "name": "The Rounded-Off-Window Rule",
-        "body": "The rounded face is for floating controls and readings over the screen. Inside a standard window, use system text styles and never the rounded face.",
+        "body": "The rounded face is for floating controls and readings over the screen. Inside a standard window, use system text styles and never the rounded face. A counter's rounded numerals are content drawn into the picture, not chrome.",
         "section": "typography"
       },
       {
@@ -453,7 +676,7 @@
       },
       {
         "name": "The Small Glass Rule",
-        "body": "Liquid Glass appears only on small controls: the All-In-One bar, the History toolbar, and History hover buttons. The full-screen overlay is a flat dimming fill and never carries glass.",
+        "body": "Liquid Glass appears only on small controls: the All-In-One bar, the editor's tool rail, window toolbars and their glassProminent Copy, and History hover buttons. The full-screen overlay is a flat dimming fill and never carries glass, and neither does the editor's style capsule, which sits beside text-bearing marks.",
         "section": "elevation"
       },
       {
@@ -464,13 +687,13 @@
     ],
     "dos": [
       "**Do** use system semantic colors and `controlAccentColor` for every surface and state; add only black or white at the stated opacities.",
-      "**Do** make every floating control a full capsule (radius = height / 2) with concentric inner chips, and every picture a 12 pt continuous-corner card.",
+      "**Do** make every floating control a full capsule (radius = height / 2) with concentric inner chips, and every picture a 12 pt continuous-corner card; the one exception is a picture being edited for export, which shows its own square edges.",
       "**Do** give floating elements a soft downward shadow plus a 0.5 pt hairline so they hold on white pages.",
       "**Do** put live numbers in a reading capsule: SF Pro Rounded 12 pt semibold with monospaced digits.",
       "**Do** keep text-bearing controls opaque over captures; use glass for the rim, not the fill.",
-      "**Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt button outlines.",
+      "**Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills.",
       "**Do** use standard windows, toolbars, grouped Forms, and SwiftUI glass button styles inside windows.",
-      "**Do** hand-draw controls only where AppKit would render them dimmed (non-key floating panels), and make them track presses like standard buttons."
+      "**Do** build chips in floating controls (the All-In-One bar, the tool rail, the style capsule) as borderless buttons with the chip fills, and hand-draw whole controls only where AppKit would render them dimmed (non-key floating panels), tracking presses like standard buttons."
     ],
     "donts": [
       "**Don't** bring back Contact Sheet: no frame numbers, no captures joined into a strip, no film-edge or darkroom motifs.",
@@ -478,8 +701,9 @@
       "**Don't** put glass, blur, or a material over the full-screen overlay; the room is a flat 26% fill.",
       "**Don't** use hard offset shadows, glows, or halos.",
       "**Don't** use the rounded face inside standard windows, or proportional digits in a changing number.",
-      "**Don't** invent a brand hue or tint chrome toward one.",
-      "**Don't** animate anything that follows the pointer, or run any motion under Reduce Motion."
+      "**Don't** invent a brand hue or tint chrome toward one; fixed hues belong to mark inks only.",
+      "**Don't** animate anything that follows the pointer, or run any motion under Reduce Motion.",
+      "**Don't** give the editor a wide tool toolbar or a fixed option strip; tools live in the rail and a mark's style beside the mark."
     ]
   }
 }

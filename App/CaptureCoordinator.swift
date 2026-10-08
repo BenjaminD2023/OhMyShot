@@ -70,16 +70,30 @@ final class CaptureCoordinator {
         }
     }
 
+    #if DEBUG
+    /// Delivers a drawn picture as if it were a capture (history and a card), never touching the
+    /// clipboard: for scripted checks that must not read the screen.
+    func deliverDemo(_ image: CGImage, displayID: CGDirectDisplayID) async {
+        let frame = CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: CGRect(x: 0, y: 0, width: CGFloat(image.width) / 2, height: CGFloat(image.height) / 2))
+        await deliver(frame, appName: "Demo", copiesToClipboard: false)
+    }
+    #endif
+
     // MARK: Saving
 
     /// Saves a copy of a capture to the export location under the file-name template.
     func save(_ item: QuickAccessItem) -> URL? {
+        save(fileAt: item.fileURL)
+    }
+
+    /// Saves a copy of a capture's file to the export location, under the file's name.
+    func save(fileAt url: URL) -> URL? {
         do {
             let directory = settings.exportDirectory
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let name = item.fileURL.deletingPathExtension().lastPathComponent
+            let name = url.deletingPathExtension().lastPathComponent
             let destination = ImageExporter.availableURL(in: directory, name: name, format: .png)
-            try FileManager.default.copyItem(at: item.fileURL, to: destination)
+            try FileManager.default.copyItem(at: url, to: destination)
             Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
             return destination
         } catch {

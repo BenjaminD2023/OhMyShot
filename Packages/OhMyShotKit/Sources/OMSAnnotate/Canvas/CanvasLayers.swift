@@ -1,0 +1,263 @@
+import AppKit
+import QuartzCore
+
+/// Where the document sits in a layer: the document point at the layer's top left, and view points per
+/// document pixel.
+nonisolated struct LayerMapping: Equatable {
+    var origin: CGPoint
+    var zoom: CGFloat
+}
+
+/// A layer that never animates on its own: the canvas follows the pointer, and anything that trailed it
+/// would read as lag. Layers are nonisolated like Core Animation; the canvas changes them on the main
+/// actor and Core Animation draws them there.
+nonisolated class StillLayer: CALayer {
+    override func action(forKey event: String) -> (any CAAction)? { NSNull() }
+}
+
+nonisolated extension CALayer {
+    /// Sets up the context of a layer in the canvas so its user space is document pixels, y down.
+    /// Returns whether the layer's pixels are shown flipped, which the renderer needs for shadows.
+    @discardableResult
+    func prepareDocumentSpace(_ context: CGContext, mapping: LayerMapping) -> Bool {
+        let flipped = contentsAreFlipped()
+        if !flipped {
+            context.translateBy(x: 0, y: bounds.height)
+            context.scaleBy(x: 1, y: -1)
+        }
+        context.scaleBy(x: mapping.zoom, y: mapping.zoom)
+        context.translateBy(x: -mapping.origin.x, y: -mapping.origin.y)
+        return flipped
+    }
+}
+
+/// One mark, drawn by the renderer exports use.
+nonisolated final class MarkLayer: StillLayer {
+    var mark: Annotation {
+        didSet { if mark != oldValue { setNeedsDisplay() } }
+    }
+    var scale: CGFloat = 2
+    var mapping = LayerMapping(origin: .zero, zoom: 1) {
+        didSet { if mapping != oldValue { setNeedsDisplay() } }
+    }
+    /// A blur or pixelation's picture, made from the capture.
+    var redacted: (image: CGImage, rect: CGRect)? {
+        didSet { setNeedsDisplay() }
+    }
+
+    init(mark: Annotation) {
+        self.mark = mark
+        super.init()
+        needsDisplayOnBoundsChange = true
+        if case .highlighter = mark.shape {
+            // Darkens what is under it, as the export's multiply does.
+            compositingFilter = "multiplyBlendMode"
+        }
+    }
+
+    override init(layer: Any) {
+        let other = layer as! MarkLayer
+        mark = other.mark
+        scale = other.scale
+        mapping = other.mapping
+        redacted = other.redacted
+        super.init(layer: layer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func draw(in context: CGContext) {
+        let flipped = prepareDocumentSpace(context, mapping: mapping)
+        AnnotationRenderer.draw(mark, in: context, scale: scale, redacted: redacted, flippedBacking: flipped)
+    }
+}
+
+/// The spotlight dimming, shared by every spot.
+nonisolated final class SpotlightLayer: StillLayer {
+    var spots: [Spot] = [] {
+        didSet { if spots != oldValue { setNeedsDisplay() } }
+    }
+    var canvas: CGRect = .zero {
+        didSet { if canvas != oldValue { setNeedsDisplay() } }
+    }
+    var mapping = LayerMapping(origin: .zero, zoom: 1) {
+        didSet { if mapping != oldValue { setNeedsDisplay() } }
+    }
+
+    override init() {
+        super.init()
+        needsDisplayOnBoundsChange = true
+    }
+
+    override init(layer: Any) {
+        super.init(layer: layer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func draw(in context: CGContext) {
+        guard !spots.isEmpty else { return }
+        prepareDocumentSpace(context, mapping: mapping)
+        AnnotationRenderer.drawSpotlight(spots, canvas: canvas, in: context)
+    }
+}
+
+/// The selection, drawn in view points so its lines and handles keep their size at any zoom: a hairline
+/// box in the accent, and white handles ringed in the accent.
+nonisolated final class SelectionLayer: StillLayer {
+    struct Outline: Equatable {
+        /// In view points.
+        var box: CGRect?
+        var handles: [CGPoint]
+    }
+
+    var outlines: [Outline] = [] {
+        didSet { if outlines != oldValue { setNeedsDisplay() } }
+    }
+    var accent: CGColor = NSColor.controlAccentColor.cgColor {
+        didSet { setNeedsDisplay() }
+    }
+    var increasedContrast = false {
+        didSet { setNeedsDisplay() }
+    }
+
+    static let handleSize: CGFloat = 9
+
+    override init() {
+        super.init()
+        needsDisplayOnBoundsChange = true
+    }
+
+    override init(layer: Any) {
+        super.init(layer: layer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func draw(in context: CGContext) {
+        if !contentsAreFlipped() {
+            context.translateBy(x: 0, y: bounds.height)
+            context.scaleBy(x: 1, y: -1)
+        }
+        let line: CGFloat = increasedContrast ? 2 : 1
+        for outline in outlines {
+            if let box = outline.box {
+                context.setStrokeColor(accent)
+                context.setLineWidth(line)
+                context.stroke(box.insetBy(dx: -line / 2, dy: -line / 2))
+            }
+            for point in outline.handles {
+                let size = Self.handleSize
+                let rect = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
+                context.saveGState()
+                context.setShadow(offset: CGSize(width: 0, height: contentsAreFlipped() ? 1 : -1), blur: 2, color: CGColor(gray: 0, alpha: 0.3))
+                context.setFillColor(CGColor(gray: 1, alpha: 1))
+                context.fillEllipse(in: rect)
+                context.restoreGState()
+                context.setStrokeColor(accent)
+                context.setLineWidth(line)
+                context.strokeEllipse(in: rect.insetBy(dx: line / 2, dy: line / 2))
+            }
+        }
+    }
+}
+
+/// The crop frame, drawn as the capture overlay draws a selection: the picture outside it dimmed 26%
+/// (45% with Increase Contrast), a 1.5 pt white edge over a soft dark outline so it holds on white
+/// pages, thirds while dragging, and thick corners.
+nonisolated final class CropLayer: StillLayer {
+    /// The kept area, in view points.
+    var frameRect: CGRect = .zero {
+        didSet { if frameRect != oldValue { setNeedsDisplay() } }
+    }
+    /// The picture on screen: only it dims outside the frame, never the window around it.
+    var pictureRect: CGRect = .zero {
+        didSet { if pictureRect != oldValue { setNeedsDisplay() } }
+    }
+    var showsThirds = false {
+        didSet { if showsThirds != oldValue { setNeedsDisplay() } }
+    }
+    var increasedContrast = false {
+        didSet { if increasedContrast != oldValue { setNeedsDisplay() } }
+    }
+
+    override init() {
+        super.init()
+        needsDisplayOnBoundsChange = true
+    }
+
+    override init(layer: Any) {
+        super.init(layer: layer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func draw(in context: CGContext) {
+        if !contentsAreFlipped() {
+            context.translateBy(x: 0, y: bounds.height)
+            context.scaleBy(x: 1, y: -1)
+        }
+        let frame = frameRect
+        let outline = CGColor(gray: 0, alpha: increasedContrast ? 0.7 : 0.32)
+        context.saveGState()
+        context.addRect(pictureRect)
+        context.addRect(frame.intersection(pictureRect).isNull ? .zero : frame.intersection(pictureRect))
+        context.setFillColor(CGColor(gray: 0, alpha: increasedContrast ? 0.45 : 0.26))
+        context.fillPath(using: .evenOdd)
+        context.restoreGState()
+
+        let edge = frame.insetBy(dx: -0.75, dy: -0.75)
+        context.setStrokeColor(outline)
+        context.setLineWidth(3.5)
+        context.stroke(edge)
+        context.setStrokeColor(CGColor(gray: 1, alpha: 1))
+        context.setLineWidth(1.5)
+        context.stroke(edge)
+        if showsThirds {
+            context.setStrokeColor(CGColor(gray: 1, alpha: 0.6))
+            context.setLineWidth(0.5)
+            for index in 1...2 {
+                let x = frame.minX + frame.width * CGFloat(index) / 3
+                let y = frame.minY + frame.height * CGFloat(index) / 3
+                context.strokeLineSegments(between: [CGPoint(x: x, y: frame.minY), CGPoint(x: x, y: frame.maxY)])
+                context.strokeLineSegments(between: [CGPoint(x: frame.minX, y: y), CGPoint(x: frame.maxX, y: y)])
+            }
+        }
+        // Thick white corners, the way Photos marks a crop, over the same dark outline.
+        let arm = min(18, frame.width / 3, frame.height / 3)
+        let corners: [(CGPoint, CGFloat, CGFloat)] = [
+            (CGPoint(x: frame.minX - 1.5, y: frame.minY - 1.5), 1, 1),
+            (CGPoint(x: frame.maxX + 1.5, y: frame.minY - 1.5), -1, 1),
+            (CGPoint(x: frame.maxX + 1.5, y: frame.maxY + 1.5), -1, -1),
+            (CGPoint(x: frame.minX - 1.5, y: frame.maxY + 1.5), 1, -1),
+        ]
+        let arms = CGMutablePath()
+        for (corner, dx, dy) in corners {
+            arms.move(to: CGPoint(x: corner.x + dx * arm, y: corner.y))
+            arms.addLine(to: corner)
+            arms.addLine(to: CGPoint(x: corner.x, y: corner.y + dy * arm))
+        }
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        context.setStrokeColor(outline)
+        context.setLineWidth(5.5)
+        context.addPath(arms)
+        context.strokePath()
+        context.setStrokeColor(CGColor(gray: 1, alpha: 1))
+        context.setLineWidth(3)
+        context.addPath(arms)
+        context.strokePath()
+    }
+}

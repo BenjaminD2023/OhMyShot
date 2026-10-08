@@ -12,6 +12,8 @@ public final class QuickAccessController {
         /// Asks where to save a copy.
         public var saveAs: (QuickAccessItem) -> URL?
         public var open: (QuickAccessItem) -> Void
+        /// Opens the capture in the annotation editor.
+        public var annotate: (QuickAccessItem) -> Void
         public var reveal: (QuickAccessItem) -> Void
         /// Opens the capture in the OCR panel.
         public var recognizeText: (QuickAccessItem) -> Void
@@ -24,6 +26,7 @@ public final class QuickAccessController {
             save: @escaping (QuickAccessItem) -> URL?,
             saveAs: @escaping (QuickAccessItem) -> URL?,
             open: @escaping (QuickAccessItem) -> Void,
+            annotate: @escaping (QuickAccessItem) -> Void,
             reveal: @escaping (QuickAccessItem) -> Void,
             recognizeText: @escaping (QuickAccessItem) -> Void,
             moveToTrash: @escaping (QuickAccessItem) -> Void,
@@ -33,6 +36,7 @@ public final class QuickAccessController {
             self.save = save
             self.saveAs = saveAs
             self.open = open
+            self.annotate = annotate
             self.reveal = reveal
             self.recognizeText = recognizeText
             self.moveToTrash = moveToTrash
@@ -61,6 +65,11 @@ public final class QuickAccessController {
     /// The captures currently shown as cards.
     public var itemIDs: Set<UUID> { Set(items.map(\.id)) }
 
+    /// The card showing capture `id`, if one is.
+    public func item(_ id: UUID) -> QuickAccessItem? {
+        items.first { $0.id == id }
+    }
+
     public var canRestoreRecentlyClosed: Bool {
         recentlyClosed.contains { FileManager.default.fileExists(atPath: $0.fileURL.path(percentEncoded: false)) }
     }
@@ -80,11 +89,37 @@ public final class QuickAccessController {
         }
     }
 
+    /// Shows a capture's new picture (marked up, or put back as taken) on its card, where it is.
+    public func update(_ item: QuickAccessItem) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        var item = item
+        item.savedURL = item.savedURL ?? items[index].savedURL
+        let reshaped = CaptureCardView.preferredHeight(for: item) != CaptureCardView.preferredHeight(for: items[index])
+        items[index] = item
+        stack?.replace(item)
+        if reshaped, let displayID {
+            present(entering: nil, on: displayID)
+        }
+    }
+
+    /// Marks a capture saved elsewhere (from the editor) as saved on its card.
+    public func markSaved(_ id: UUID, at url: URL) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].savedURL = url
+        stack?.markSaved(id, at: url)
+    }
+
     /// Copies the newest card's capture: the keyboard path to Quick Access.
     public func copyLatest() {
         guard let latest = items.last else { return }
         actions.copy(latest)
         stack?.showCopied(latest.id)
+    }
+
+    /// Opens the newest card's capture in the editor, as a double-click would, for scripted checks.
+    public func annotateLatest() {
+        guard let latest = items.last else { return }
+        actions.annotate(latest)
     }
 
     /// Shows the newest card's hover state without a pointer, for scripted checks.
@@ -193,6 +228,7 @@ public final class QuickAccessController {
         stack.onSave = { [weak self] item in self?.recordSave(of: item, at: self?.actions.save(item)) }
         stack.onSaveAs = { [weak self] item in self?.recordSave(of: item, at: self?.actions.saveAs(item)) }
         stack.onOpen = { [weak self] item in self?.actions.open(item) }
+        stack.onAnnotate = { [weak self] item in self?.actions.annotate(item) }
         stack.onReveal = { [weak self] item in self?.actions.reveal(item) }
         stack.onRecognizeText = { [weak self] item in self?.actions.recognizeText(item) }
         stack.onMoveToTrash = { [weak self] item in

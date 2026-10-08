@@ -21,6 +21,14 @@ colors:
   chip-selected-dark: "rgba(255,255,255,0.16)"
   chip-hover-light: "rgba(0,0,0,0.045)"
   chip-hover-dark: "rgba(255,255,255,0.09)"
+  chip-selected-contrast-light: "rgba(0,0,0,0.16)"
+  chip-selected-contrast-dark: "rgba(255,255,255,0.28)"
+  chip-hover-contrast-light: "rgba(0,0,0,0.09)"
+  chip-hover-contrast-dark: "rgba(255,255,255,0.16)"
+  capsule-surface-light: "rgba(255,255,255,0.97)"
+  capsule-surface-dark: "rgba(43,43,46,0.96)"
+  hairline-contrast-light: "rgba(0,0,0,0.35)"
+  hairline-contrast-dark: "rgba(255,255,255,0.5)"
   action-white: "#F7F7F7"
   action-white-hover: "#FFFFFF"
   action-white-pressed: "#D6D6D6"
@@ -33,6 +41,16 @@ colors:
   picture-border-light: "rgba(0,0,0,0.10)"
   picture-border-dark: "rgba(255,255,255,0.16)"
   media-badge: "rgba(0,0,0,0.55)"
+  spotlight-dim: "rgba(0,0,0,0.5)"
+  mark-red: "#FF3B30"
+  mark-orange: "#FF9500"
+  mark-yellow: "#FFCC00"
+  mark-green: "#34C759"
+  mark-blue: "#007AFF"
+  mark-purple: "#AF52DE"
+  mark-black: "#000000"
+  mark-white: "#FFFFFF"
+  mark-marker: "#FFE74A"
 typography:
   reading:
     fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
@@ -67,11 +85,24 @@ typography:
     fontFamily: "SF Pro, system-ui"
     fontSize: "10px"
     fontWeight: 400
+  capsule-text-chip:
+    fontFamily: "SF Pro, system-ui"
+    fontSize: "12px"
+    fontWeight: 600
+  mark-text:
+    fontFamily: "SF Pro, system-ui"
+    fontSize: "20px"
+    fontWeight: 600
+    lineHeight: 1.25
+  counter-label:
+    fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
+    fontWeight: 700
 rounded:
   card: "12px"
   capsule: "9999px"
 spacing:
   chip-gap: "2px"
+  capsule-inset: "4px"
   edge: "6px"
   inset: "8px"
   offset: "10px"
@@ -80,6 +111,8 @@ spacing:
   grid-gap: "20px"
   window-inset: "24px"
   panel-padding: "28px"
+  style-capsule-height: "38px"
+  rail-width: "42px"
 components:
   reading-capsule-light:
     backgroundColor: "{colors.reading-capsule-light}"
@@ -140,6 +173,48 @@ components:
     typography: "{typography.caption}"
     rounded: "{rounded.capsule}"
     padding: "3px 7px"
+  tool-rail:
+    rounded: "{rounded.capsule}"
+    width: "{spacing.rail-width}"
+    padding: "6px"
+  rail-chip:
+    rounded: "{rounded.capsule}"
+    size: "30px"
+  rail-chip-selected-light:
+    backgroundColor: "{colors.chip-selected-light}"
+    rounded: "{rounded.capsule}"
+    size: "30px"
+  rail-chip-selected-dark:
+    backgroundColor: "{colors.chip-selected-dark}"
+    rounded: "{rounded.capsule}"
+    size: "30px"
+  style-capsule-light:
+    backgroundColor: "{colors.capsule-surface-light}"
+    rounded: "{rounded.capsule}"
+    height: "{spacing.style-capsule-height}"
+    padding: "4px 4px 4px 8px"
+  style-capsule-dark:
+    backgroundColor: "{colors.capsule-surface-dark}"
+    rounded: "{rounded.capsule}"
+    height: "{spacing.style-capsule-height}"
+    padding: "4px 4px 4px 8px"
+  capsule-chip:
+    rounded: "{rounded.capsule}"
+    height: "30px"
+    width: "30px"
+  capsule-chip-selected-light:
+    backgroundColor: "{colors.chip-selected-light}"
+    rounded: "{rounded.capsule}"
+    height: "30px"
+  capsule-chip-selected-dark:
+    backgroundColor: "{colors.chip-selected-dark}"
+    rounded: "{rounded.capsule}"
+    height: "30px"
+  capsule-text-chip-prominent-light:
+    backgroundColor: "{colors.chip-selected-light}"
+    typography: "{typography.capsule-text-chip}"
+    rounded: "{rounded.capsule}"
+    height: "30px"
 ---
 
 # Design System: OhMyShot
@@ -150,7 +225,7 @@ components:
 
 OhMyShot looks like a system feature, not an app with a brand. Light and dark follow the system, the accent is the user's own macOS accent, and every window is a standard window with standard controls. What the app adds is a thin, consistent layer of softness for the things that float over other people's screens: continuous-corner cards, fully round capsules, gentle downward shadows, opaque white action capsules, and the rounded system face with fixed-width digits for every live reading. The capture is the hero; the chrome recedes.
 
-Density is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, Quick Access cards, Capture History, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.
+Density is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, Quick Access cards, Capture History, the OCR panel, the annotation editor, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.
 
 The confirmed rejection is the first world, "Contact Sheet" (rejected by the user on 2026-10-07): no frame numbers, no captures joined into one strip, no film-edge or darkroom motifs, no dark heavy panels, nothing that reads as a Linux utility.
 
@@ -161,7 +236,7 @@ Units: every dimension in this file is in points. The frontmatter writes points 
 - Continuous corners everywhere: 12 pt cards, fully round capsules for every control and reading.
 - Soft, downward, widely blurred shadows; never a hard edge or a halo.
 - SF Pro Rounded with monospaced digits for readings; plain system text styles inside windows.
-- Liquid Glass only on small controls (the All-In-One bar, History hover buttons, the History toolbar), never over a full-screen frame.
+- Liquid Glass only on small controls (the All-In-One bar, the editor's tool rail, History hover buttons, window toolbars), never over a full-screen frame.
 - Motion is a single short ease-out or nothing; under Reduce Motion it is nothing.
 
 ## Colors
@@ -169,7 +244,7 @@ Units: every dimension in this file is in points. The frontmatter writes points 
 A system-colored world: macOS semantic colors and the user's accent do the work, and the app's own values are neutral black and white at stated opacities.
 
 ### Primary
-- **The User's Accent** (`AccentColor`, AppKit `controlAccentColor`): the only hue the app ever uses for state. It marks the selected mode's symbol in the All-In-One bar, the center cell outline in the loupe, and the 3 pt selection ring around a selected Capture History card. It is never a fill behind text and never a brand color; OhMyShot has no brand hue.
+- **The User's Accent** (`AccentColor`, AppKit `controlAccentColor`): the only hue the app ever uses for state. It marks the selected mode's symbol in the All-In-One bar, the tool in hand in the editor's rail and the selected variant in its style capsule, the ring around the chosen color dot, the editor's selection box and handle rings, the center cell outline in the loupe, and the 3 pt selection ring around a selected Capture History card. It is never a fill behind text and never a brand color; OhMyShot has no brand hue.
 
 ### Neutral
 - **System surfaces** (`windowBackgroundColor`, `controlBackgroundColor`, SwiftUI `.background.secondary`): the opaque backing inside the All-In-One glass, the Reduce Transparency capsule, the letterbox behind a Quick Access picture, and the placeholder behind a History thumbnail. These follow light and dark automatically; no hex is recorded because none exists.
@@ -183,11 +258,18 @@ A system-colored world: macOS semantic colors and the user's accent do the work,
 - **Scrims** (black at 0.22 over floating Quick Access cards; black at 0.28 over in-window History cards): the hover dimming that lets white or glass controls read on any picture.
 - **Picture Border** (black at 0.10 in Light, white at 0.16 in Dark, 0.5 pt): the edge of a Quick Access picture.
 - **Saved green** (`systemGreen` with a white glyph): the saved badge on a card, the one non-accent hue, used only as a status mark.
+- **Chip Fill steps** (selected black 0.08 / white 0.16, hover black 0.045 / white 0.09; with Increase Contrast selected black 0.16 / white 0.28, hover black 0.09 / white 0.16): one pair for every tinted chip in a floating control. The editor's rail and style capsule carry the Increase Contrast steps; the All-In-One bar uses the base steps.
+- **Capsule Surface** (white 0.97; Dark a 0.17 gray at 0.96): the fill of the text result card and the editor's style capsule, the reading capsule's materials at control and card size. The style capsule draws its Dark fill as a pure 0.17 gray where the text card lifts blue to 0.18; the difference is 1/255 and is not a second token.
+- **Contrast Hairline** (black 0.35 / white 0.5, 1 pt): the edge every floating capsule, card, and picture takes under Increase Contrast in place of its 0.5 pt hairline (the text result card, the lens, the editor's rail, capsule, and picture).
+- **Spotlight Dimming** (black at 0.5): what a spotlight mark leaves of the picture outside its spots; overlapping spots stay bright. It is drawn into the picture, so it is darker than the room dimming, which only shows a selection.
+
+### Mark Inks
+Colors a user puts into a picture are content, not chrome, and are fixed sRGB values so the screen and the export agree in either appearance. The style capsule offers eight, in this order: **Red** (#FF3B30, the default for every tool), **Orange** (#FF9500), **Yellow** (#FFCC00), **Green** (#34C759), **Blue** (#007AFF), **Purple** (#AF52DE), **Black** (#000000, the default for solid redaction), and **White** (#FFFFFF); the color panel adds any other opaque color. **Marker Yellow** (#FFE74A, multiplied into the picture) is the highlighter's default. Ink on a mark (text on a label, a counter's number, the outline around outlined text) is black 0.88 on light colors and white on dark ones, chosen by the color's luminance.
 
 ### Named Rules
-**The No Brand Hue Rule.** The accent is whatever the user chose in System Settings. Never hard-code a blue, never tint a surface toward a house color.
+**The No Brand Hue Rule.** The accent is whatever the user chose in System Settings. Never hard-code a blue in chrome, never tint a surface toward a house color. Mark inks are the user's content and the one place fixed hues live.
 
-**The Black-and-White Opacity Rule.** Every literal color the app introduces is pure black or white at a stated opacity (or the single 0.17 gray of the Dark reading capsule). New surfaces reuse these steps before inventing a tint.
+**The Black-and-White Opacity Rule.** Every literal color the app's chrome introduces is pure black or white at a stated opacity (or the single 0.17 gray of the Dark reading capsule). New surfaces reuse these steps before inventing a tint.
 
 **The Resolve-Per-Appearance Rule.** Layer colors do not follow appearance changes on their own; every layer-drawn color is resolved for the view's effective appearance and re-resolved when it changes.
 
@@ -207,9 +289,13 @@ A system-colored world: macOS semantic colors and the user's accent do the work,
 - **Body** (system body, 13 pt): Settings rows and window text, via the grouped Form defaults.
 - **Callout** (system `callout`, 12 pt; medium for a History card's relative time): secondary explanations and empty-state messages, max width 360 pt.
 - **Caption** (system `caption`, 10 pt, secondary): a History card's "W × H · App" line; semibold with monospaced digits in the recording badge.
+- **Capsule Text Chip** (system semibold 600, 12 pt, label color): the words in the editor's style capsule (crop's Reset and Done). The capsule sits inside a window, so it takes the system face.
+- **Mark Text** (system semibold 600, 14 / 20 / 28 / 40 pt steps, 20 by default, 1.25 line height): text the user types into a picture, drawn by the same layout on screen, in exports, and in the editing field, so nothing moves when editing ends.
+- **Counter Label** (SF Pro Rounded bold, half the disc's diameter, shrunk to fit 72% of it): the numbers, letters, or Roman numerals in counter marks.
+- The editor's zoom menu label ("100%") uses monospaced digits.
 
 ### Named Rules
-**The Rounded-Off-Window Rule.** The rounded face is for floating controls and readings over the screen. Inside a standard window, use system text styles and never the rounded face.
+**The Rounded-Off-Window Rule.** The rounded face is for floating controls and readings over the screen. Inside a standard window, use system text styles and never the rounded face. A counter's rounded numerals are content drawn into the picture, not chrome.
 
 **The Steady Digits Rule.** Any number that changes while the user watches uses monospaced digits.
 
@@ -221,8 +307,9 @@ There is no page grid; layout is anchored to screens, selections, and windows.
 - **Quick Access:** a single column of separate cards, 220 pt wide, each 100 to 172 pt tall by the capture's aspect (extreme shapes letterbox). Cards are 12 pt apart inside an 18 pt margin that leaves room for their shadows; the column sits at the bottom-left of the screen's visible frame, inset 8 pt. Newest is at the bottom; the oldest card drops when the column would exceed the visible height.
 - **Card hover layout:** Copy and Save capsules stacked 8 pt apart, centered; Close and More round buttons 8 pt from the top corners; the saved badge 8 pt from the bottom-right.
 - **Capture History:** a standard 920 × 640 pt window (minimum 560 × 420) with an adaptive grid of cards 200 to 280 pt wide, 20 pt between columns, 22 pt between rows, 24 pt side insets, 20 pt top and bottom.
+- **Annotation editor:** a standard window sized to show the capture at its on-screen size plus 100 pt across and 138 pt down (at least 760 × 560, at most 90% of the visible screen; minimum 720 × 560). The picture is fitted, never above on-screen size, inside canvas insets of 24 top, 72 left (the rail), 62 bottom (the capsule's band), and 28 right, sized on whole points. The tool rail stands 12 pt from the left edge, centered in the height above the 62 pt band and never closer than 12 pt to the top. The style capsule centers 10 pt below the selected marks, goes 10 pt above them without room, and drops to the window's bottom when the selection fills the view; it clamps 8 pt from the edges and never left of the rail plus 8 pt. With nothing selected it rests in the band at the rail's foot, 12 pt from the left and the bottom.
 - **Settings:** a preference-style window with toolbar tabs; each pane is a grouped Form 520 pt wide. Non-form panes (About) use 28 pt padding.
-- **Spacing rhythm:** 2 (bar chip gap), 6 (edge clamp, bar inset), 8 (insets), 10 (offsets from a selection), 12 (card gap), 18 (stack margin), 20 to 24 (window grid), 28 (panel padding).
+- **Spacing rhythm:** 2 (chip gap), 4 (style capsule inset), 6 (edge clamp, bar and rail inset, space around a chip divider), 8 (insets, capsule clamps), 10 (offsets from a selection), 12 (card gap, rail inset), 18 (stack margin, divider length), 20 to 24 (window grid), 28 (panel padding).
 
 ## Elevation & Depth
 
@@ -234,7 +321,10 @@ Depth is soft shadow plus system materials. Floating elements over arbitrary scr
 - **Floating bar** (black 0.16, blur radius 10, offset 3 pt downward): the All-In-One capsule.
 - **Floating reading** (black 0.18, blur radius 8, offset 2 pt downward): reading capsules.
 - **Action lift** (black 0.18, blur radius 4, offset 1 pt downward): the white Copy and Save capsules, so they hold on bright pictures.
-- **In-window card** (black 0.12, blur radius 10, offset 4 pt downward): Capture History cards.
+- **In-window card** (black 0.12, blur radius 10, offset 4 pt downward): Capture History cards, the OCR panel's picture, and the annotation editor's picture.
+- **Mark shadow** (black 0.3, blur 3 pt, drop 1 pt, scaled with the capture): drawn into the picture under arrows, lines, shapes, pen strokes, text, and counters (on by default; off for highlighter, redaction, and spotlight), so marks hold on busy pictures. It is the one shadow that is exported.
+
+The editor's tool rail takes the floating bar shadow and its style capsule the floating reading shadow; selection handles carry a small lift (black 0.3, blur 2, 1 pt down) of their own.
 
 `Theme.Shadow` also declares a 5 pt offset that no shipped surface uses; the card applies 6 pt.
 
@@ -244,15 +334,15 @@ A floating panel leaves room around its card for the whole shadow to fade out: t
 ### Named Rules
 **The Soft Lift Rule.** Shadows are downward, widely blurred, and low opacity. No hard offset shadows, no glows, no halos.
 
-**The Small Glass Rule.** Liquid Glass appears only on small controls: the All-In-One bar, the History toolbar, and History hover buttons. The full-screen overlay is a flat dimming fill and never carries glass.
+**The Small Glass Rule.** Liquid Glass appears only on small controls: the All-In-One bar, the editor's tool rail, window toolbars and their glassProminent Copy, and History hover buttons. The full-screen overlay is a flat dimming fill and never carries glass, and neither does the editor's style capsule, which sits beside text-bearing marks.
 
 **The Opaque Behind Text Rule.** Any control with text that floats over a capture or a screen has an opaque (or at least 0.94) fill. Glass supplies the rim, not the backing.
 
 ## Shapes
 
-Continuous (squircle) corners throughout. Pictures and cards are 12 pt; every control, reading, and badge is a full capsule whose radius is half its height; nested controls are capsules concentric with their capsule container (the bar insets its chips by 6 pt). The History selection ring is 16 pt (card radius plus 4), drawn 5 pt outside the card so the corner stays concentric. The loupe is a circle with a 3 pt white rim; its center pixel cell has a 1.5 pt corner. The color swatch in a reading is a 10 pt square with a 5 pt radius.
+Continuous (squircle) corners throughout. Pictures and cards are 12 pt, except the annotation editor's picture, which is square: it is the image that gets exported, edge to edge, and marks and the crop run to its pixel edges; every control, reading, and badge is a full capsule whose radius is half its height; nested controls are capsules concentric with their capsule container (the bar insets its chips by 6 pt). The History selection ring is 16 pt (card radius plus 4), drawn 5 pt outside the card so the corner stays concentric. The loupe is a circle with a 3 pt white rim; its center pixel cell has a 1.5 pt corner. The color swatch in a reading is a 10 pt square with a 5 pt radius. The editor's rail is a capsule 42 pt wide whose 30 pt chips are circles; the style capsule is 38 pt tall with 30 pt chips 4 pt inside it, concentric. The drag-out thumbnail in the editor's toolbar has a 4 pt continuous corner.
 
-Hairlines are 0.5 pt (card borders, bar edge, reading capsule edge); the selection edge is 1.5 pt; Increase Contrast adds a 1 pt outline to card buttons.
+Hairlines are 0.5 pt (card borders, bar and rail edges, reading and style capsule edges, picture edges); the capture and crop selection edge is 1.5 pt; the editor's mark selection is a 1 pt accent line; Increase Contrast turns the hairlines into the 1 pt contrast hairline and adds a 1 pt outline to card buttons.
 
 ## Components
 
@@ -260,14 +350,14 @@ Hairlines are 0.5 pt (card borders, bar edge, reading capsule edge); the selecti
 - **Card action capsule** (Copy, Save): hand-drawn opaque white capsule, 112 × 30 pt, symbol and label centered 6 pt apart, action lift shadow. Brightens to pure white on hover and drops to #D6D6D6 while pressed; fires only on release inside, like a standard button. "Copied" (1.2 s) and "Saved" swap the label and symbol to a checkmark. With Increase Contrast, a 1 pt black 0.5 outline.
 - **Card corner button** (Close, More): 24 pt dark circle, 10.5 pt bold white symbol, tooltip as label. More opens the card's menu. With Increase Contrast, a 1 pt white 0.7 outline.
 - Card buttons are drawn by hand because AppKit draws standard controls dimmed in non-key windows and the Quick Access panel never becomes key. Clicking them never brings OhMyShot forward.
-- **In windows:** standard controls only. History hover actions use `.glassProminent` (Restore, large, callout semibold) and `.glass` icon buttons (16 pt symbols); Settings uses standard toggles, pickers, and push buttons.
+- **In windows:** standard controls only. History hover actions use `.glassProminent` (Restore, large, callout semibold) and `.glass` icon buttons (16 pt symbols); toolbars put one `.glassProminent` Copy with title and symbol last (the OCR panel, the annotation editor); Settings uses standard toggles, pickers, and push buttons.
 
 ### Chips (All-In-One bar)
 - **Style:** borderless capsule chips, 30 pt tall, at least 84 pt wide (Cancel is a 30 pt icon-only chip after a 20 pt separator), SF Symbol plus label.
 - **State:** selected = light highlight (black 0.08 / white 0.16) + accent-tinted symbol + semibold label in the label color; hover = half-strength highlight (black 0.045 / white 0.09); rest = clear.
 
 ### Cards / Containers
-- **Quick Access card:** separate rounded picture, 12 pt continuous corners, 0.5 pt picture border, floating card shadow, no number or caption. Hover fades in the 0.22 scrim and the controls over 0.12 s ease-out; the saved badge hides while hovered. Click-through without activating the app, double-click to open, drag out to another app, two-finger swipe to close, right-click for the full menu.
+- **Quick Access card:** separate rounded picture, 12 pt continuous corners, 0.5 pt picture border, floating card shadow, no number or caption. Hover fades in the 0.22 scrim and the controls over 0.12 s ease-out; the saved badge hides while hovered. Click-through without activating the app, double-click to annotate, drag out to another app, two-finger swipe to close, right-click for the full menu.
 - **Capture History card:** cropped (aspect-fill) thumbnail 150 pt tall, 12 pt corners, 0.5 pt separator border, in-window shadow; relative time and "W × H · App" below. Hover shows the 0.28 scrim with Restore and four glass icon buttons. Selected = 3 pt accent ring 5 pt outside. Recordings carry a bottom-left play badge with the duration.
 
 ### Reading Capsule (Signature)
@@ -302,6 +392,46 @@ How translated text is drawn over an image, in the OCR panel and Translate Area 
 ### Translation Lens (Translate Area)
 Translate Area's result: a borderless panel exactly over the selection, at the overlay's level, holding the captured area with the Translation Overlay drawn on it, so the screen seems to change language where it was dragged over. A 0.5 pt black 0.18 hairline (1 pt black 0.35 under Increase Contrast) and the system window shadow say it lies over the screen. It sits just below the level of menus, over the menu bar and the Dock but under its own context menu. It takes keys without bringing the app forward: Escape closes it, ⌘C copies the translation (the lens stays; the copy button shows a checkmark for 1.2 s), Return opens the area in the OCR panel, translated, and Option held shows the original. A click on it, or another window taking the keys, closes it. While the pointer is over it (also when it opens under the pointer), three card corner buttons (24 pt dark circles: Copy Translation, Open in Panel, Close) fade in outside it, in a row ending at its right edge 6 pt above it, below it when the area reaches the top of the screen, inside its corner only when it fills the screen's height; they never cover the translation. Its context menu holds Copy Translation, Show Original, Open in Panel, and Close. VoiceOver reads it as text, "Translation, English → Chinese, Simplified", with the translation as its value (its translated parts in the target language) and Copy Translation, Open in Panel, and Close as actions, and hears "Translated, … Escape closes it." when it appears, with where to read lines that were shortened. Between the drag and the lens, the Text Selection highlight holds the area. When nothing could be translated (text already in the target, code, a language still to download), the area opens in the OCR panel, translated, which says why and offers a download or another language. Option held as the drag ends opens the panel instead.
 
+### Annotation Editor
+A standard titled window named for the capture, unified toolbar, full-size content, on `.background.secondary`. The capture owns it: tools stand in a slim glass rail at its left edge and a mark's style sits in a capsule beside the mark; there is no wide tool toolbar and no fixed option strip. Reached by double-clicking a Quick Access card, Annotate… in a card's menu, or Annotate… on a screenshot in Capture History; one editor per capture. Edits are kept in the capture itself when the window closes and whenever the capture leaves it (copied, saved, dragged out): its file then shows the marks, the marks stay editable, and the card and History thumbnail show the new picture.
+
+- **Toolbar:** Undo and Redo at the leading edge (disabled when there is nothing to undo); then, trailing, the zoom menu (its label the current percentage, monospaced digits; Zoom to Fit ⌘0, Actual Size, Zoom In ⌘+, Zoom Out ⌘−), a 34 × 24 pt drag-out thumbnail of the capture (aspect-fill, 0.5 pt black 0.18 edge, open-hand cursor), Save (a copy to the export folder, ⌘S), a fixed space, and one `.glassProminent` Copy with title and symbol (⌘C). Copy and Save swap to "Copied" / "Saved" with a checkmark for 1.5 s; VoiceOver hears "Copied". A failure beeps.
+- **Picture:** square-cornered, the picture border (0.5 pt; the contrast hairline under Increase Contrast) and the in-window card shadow; both are hidden for a window captured with its shadow, whose corners are transparent, so no rectangle is drawn that is not in the picture.
+
+### Tool Rail (Signature)
+The All-In-One bar turned upright: a 42 pt Liquid Glass capsule with an opaque window-colored backing inside, a 0.5 pt separator hairline, and the floating bar shadow; with Reduce Transparency a solid window-colored capsule, swapped live when the setting changes. Under Increase Contrast its edge is the 1 pt contrast hairline.
+
+- **Chips:** 30 pt circular borderless chips, 6 pt inside the rail and 2 pt apart, each an SF Symbol at 14 pt medium in label color, no label; the tooltip names the tool and its key ("Arrow (A)").
+- **Groups:** Select; Arrow, Line, Rectangle, Ellipse, Pen, Highlighter; Text, Counter; Redact, Spotlight; Crop. Groups are split by 18 pt separator hairlines with 6 pt around them.
+- **State:** the tool in hand takes the selected chip fill and an accent-tinted symbol; hover takes the hover fill; rest is clear. Increase Contrast uses the contrast chip fills.
+
+### Style Capsule (Signature)
+A white capsule holding the controls for one kind of mark, beside the selected mark or at the rail's foot for the next one. It uses the capsule surface (white 0.97; Dark 0.17 gray at 0.96), a 0.5 pt hairline (black 0.08 / white 0.12; the 1 pt contrast hairline under Increase Contrast), and the floating reading shadow; 38 pt tall, 4 pt inset (8 pt at the leading edge), chips 2 pt apart, sections split by 18 pt separator hairlines with 6 pt around them. No glass.
+
+- **Sections, in order:** colors (the eight mark inks, then Other Color…), sizes, the kind's variants, Shadow, and Delete when a mark is selected. A kind shows only what it uses: no colors for spotlight, crop, or a blur or pixelate redaction; no sizes for redaction or spotlight; Shadow only for arrows, lines, shapes, pen, text, and counters.
+- **Color dots:** 24 pt chips holding a 12 pt disc with a 0.5 pt black 0.18 edge, so white and yellow hold on the white capsule. The chosen color is ringed in the accent (2 pt) instead of filled. Other Color… shows a hue wheel, or the custom color ringed when one is in use, and opens the system color panel without alpha.
+- **Sizes:** dots of 4, 7, 10, and 13 pt in 26 pt chips for stroke widths 2 / 4 / 6 / 10 pt (default 4, pen 3); highlighter 10 / 18 / 28 (default 18); counters 2 / 4 / 7. Text sizes are letters of 9, 12, 15, and 18 pt in 28 pt chips for 14 / 20 / 28 / 40 pt. A size set another way shows as the nearest step.
+- **Variants:** 30 pt chips with drawn or SF Symbol glyphs (13 pt medium): arrow heads (classic, tapered, open, double), line (solid, dashed), rectangle and ellipse (outline, filled), text looks (plain, outlined, label), counter numbering (1, A, I), redaction (solid, blur, pixelate), spotlight (rectangle, oval). The Shadow chip draws a rounded square over its own soft shadow.
+- **State:** selected chips take the selected chip fill and an accent-tinted glyph; hover the hover fill; Increase Contrast the contrast fills. VoiceOver reads chips by name with "Selected", and Shadow as On or Off.
+- **Crop:** the capsule holds only Reset and Done, text chips in the capsule text face (title width plus 28 pt). Done carries the selected fill with label-colored text: the accent is never a fill behind text.
+
+### Canvas
+- **Selection:** a 1 pt accent box (2 pt under Increase Contrast) with 9 pt white circular handles ringed in the accent and lifted by a small shadow, drawn in view points so they keep their size at any zoom. Arrows show start, end, and a bend handle at the curve's middle.
+- **Crop frame:** drawn as the capture overlay draws a selection: the picture outside the frame dimmed with the room dimming (26%, 45% with Increase Contrast; only the picture, never the window), a 1.5 pt white edge over a 3.5 pt selection outline, white 0.6 thirds at 0.5 pt while dragging, and thick white corners (3 pt over a 5.5 pt outline, round caps, arms up to 18 pt).
+- **Text editing:** the field matches the mark exactly (face, size, line height, color, label fill and corner) so text does not move when editing ends; no automatic substitutions; Chinese and other input methods work in place. Selected text keeps its ink: on plain and outlined text the system selection color at 0.35 (0.45 in Dark); on a label a wash opposite to the ink (white 0.35 under dark ink, black 0.22 under white ink).
+- **Cursors:** crosshair for drawing tools, I-beam for Text, arrow for Select, open hand over a mark (closed while moving), resize cursors on handles, crosshair on arrow ends and bends.
+
+### Marks
+Every mark is drawn by one renderer, on screen and in exports, so what is copied is what was seen.
+
+- **Arrows:** one filled outline per arrow, bendable along a quadratic curve. Heads are 3 × the stroke plus 4 pt long. Classic: a filled head with a notched back; tapered: a body widening from a fine tail to the head; open: a chevron over the full body; double: classic heads at both ends.
+- **Lines and shapes:** round-capped lines, dashed at 1.5 × the stroke on, 2.5 × off; rectangles with 4 pt corners by default; rectangles and ellipses outlined or filled.
+- **Pen and highlighter:** smooth curves through the pointer's samples; the highlighter multiplies into the picture, so text stays dark and white turns yellow.
+- **Text looks:** plain; outlined (an edge of 16% of the size, at least 2 pt, in the opposite ink); label (a rounded fill in the color, corners 32% of the size, padding 40% across and 16% down, ink black 0.88 or white).
+- **Counters:** a disc (16 + 3 × the stroke pt across) in the color with the label in the opposite ink, numbered 1, 2, 3; A, B, C; or I, II, III.
+- **Redaction:** solid (the color, black by default), blur (strong enough that text cannot be read), or pixelate (blocks at least 12 px, larger for larger areas, each nudged by noise seeded from the mark so it redraws the same and cannot be worked back).
+- **Spotlight:** everything outside the spots dimmed by the spotlight dimming; rectangle or oval spots.
+
 ### Capture Overlay (Signature)
 Softly dimmed screen; selection with a white 1.5 pt edge over a dark outline; a crosshair with a 4 pt center gap and 13 pt arms, white over the same outline; a 120 pt loupe showing 15 captured pixels across (8 pt per pixel, aligned to device pixels) with a faint 0.08 grid, an accent center cell, a white rim, and the lens shadow. Window mode drops the crosshair and loupe and highlights the hovered window.
 
@@ -322,22 +452,23 @@ A Liquid Glass capsule with an opaque window-colored backing inside, a 0.5 pt se
 - The optional text result card fades in over 0.22 s with a 6 pt rise of its layer (never of its window, whose size can change mid-animation), and fades out over 0.12 s.
 - In the OCR panel, Copy buttons swap their symbol for a checkmark with the system's symbol replace transition and back after 1.5 s (toolbar) or 1.2 s (rows).
 - The translation lens fades in over 0.18 s ease-out and out over 0.15 s ease-in; its buttons fade over 0.12 s.
+- In the annotation editor, the style capsule fades in over 0.12 s ease-out when a new selection or tool calls for it and simply moves when the picture zooms or scrolls; it hides while a mark is drawn, moved, or reshaped. Canvas layers never animate on their own, so marks, handles, and the crop frame stay under the pointer.
 - Under Reduce Motion all of these are instant. Nothing trails the pointer: overlay layers update without animation. The two durations live in `Theme.Motion` (`slide` 0.22 s, `fade` 0.12 s).
 
 ### Future Surfaces
-The annotation editor, recording controls, and pins are not built. They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.
+Recording controls and pins are not built, nor is in-place annotation over the capture overlay (it will host the editor's canvas). They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.
 
 ## Do's and Don'ts
 
 ### Do:
 - **Do** use system semantic colors and `controlAccentColor` for every surface and state; add only black or white at the stated opacities.
-- **Do** make every floating control a full capsule (radius = height / 2) with concentric inner chips, and every picture a 12 pt continuous-corner card.
+- **Do** make every floating control a full capsule (radius = height / 2) with concentric inner chips, and every picture a 12 pt continuous-corner card; the one exception is a picture being edited for export, which shows its own square edges.
 - **Do** give floating elements a soft downward shadow plus a 0.5 pt hairline so they hold on white pages.
 - **Do** put live numbers in a reading capsule: SF Pro Rounded 12 pt semibold with monospaced digits.
 - **Do** keep text-bearing controls opaque over captures; use glass for the rim, not the fill.
-- **Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt button outlines.
+- **Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills.
 - **Do** use standard windows, toolbars, grouped Forms, and SwiftUI glass button styles inside windows.
-- **Do** hand-draw controls only where AppKit would render them dimmed (non-key floating panels), and make them track presses like standard buttons.
+- **Do** build chips in floating controls (the All-In-One bar, the tool rail, the style capsule) as borderless buttons with the chip fills, and hand-draw whole controls only where AppKit would render them dimmed (non-key floating panels), tracking presses like standard buttons.
 
 ### Don't:
 - **Don't** bring back Contact Sheet: no frame numbers, no captures joined into a strip, no film-edge or darkroom motifs.
@@ -345,5 +476,6 @@ The annotation editor, recording controls, and pins are not built. They must use
 - **Don't** put glass, blur, or a material over the full-screen overlay; the room is a flat 26% fill.
 - **Don't** use hard offset shadows, glows, or halos.
 - **Don't** use the rounded face inside standard windows, or proportional digits in a changing number.
-- **Don't** invent a brand hue or tint chrome toward one.
+- **Don't** invent a brand hue or tint chrome toward one; fixed hues belong to mark inks only.
 - **Don't** animate anything that follows the pointer, or run any motion under Reduce Motion.
+- **Don't** give the editor a wide tool toolbar or a fixed option strip; tools live in the rail and a mark's style beside the mark.

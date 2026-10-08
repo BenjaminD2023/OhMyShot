@@ -12,6 +12,8 @@ public struct HistoryActions {
     public var copy: (HistoryItem) -> Void
     public var save: (HistoryItem) -> Void
     public var open: (HistoryItem) -> Void
+    /// Opens the capture in the annotation editor.
+    public var annotate: (HistoryItem) -> Void
     public var reveal: (HistoryItem) -> Void
     /// Opens the capture in the OCR panel.
     public var recognizeText: (HistoryItem) -> Void
@@ -23,6 +25,7 @@ public struct HistoryActions {
         copy: @escaping (HistoryItem) -> Void,
         save: @escaping (HistoryItem) -> Void,
         open: @escaping (HistoryItem) -> Void,
+        annotate: @escaping (HistoryItem) -> Void,
         reveal: @escaping (HistoryItem) -> Void,
         recognizeText: @escaping (HistoryItem) -> Void,
         moveToTrash: @escaping (HistoryItem) -> Void
@@ -31,6 +34,7 @@ public struct HistoryActions {
         self.copy = copy
         self.save = save
         self.open = open
+        self.annotate = annotate
         self.reveal = reveal
         self.recognizeText = recognizeText
         self.moveToTrash = moveToTrash
@@ -88,6 +92,12 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
     /// Picks up captures taken while the window is open.
     public func reload() {
         model.reload()
+    }
+
+    /// Picks up new pictures of existing captures (marked up, or put back as taken).
+    public func reload(changed ids: Set<UUID>) {
+        model.reload()
+        model.refreshThumbnails(for: ids)
     }
 
     #if DEBUG
@@ -150,6 +160,17 @@ final class HistoryModel {
         let ids = Set(items.map(\.id))
         thumbnails = thumbnails.filter { ids.contains($0.key) }
         if let selection, !ids.contains(selection) { self.selection = nil }
+    }
+
+    /// Loads the thumbnails of captures whose picture changed, keeping the old ones until then.
+    func refreshThumbnails(for ids: Set<UUID>) {
+        for item in items where ids.contains(item.id) {
+            Task {
+                if let image = await HistoryStore.thumbnail(of: store.fileURL(for: item), maxPixels: 520) {
+                    thumbnails[item.id] = image
+                }
+            }
+        }
     }
 
     func loadThumbnail(for item: HistoryItem) async {
@@ -464,6 +485,7 @@ struct HistoryCard: View {
         .accessibilityAction(named: Text("Quick Look", bundle: .module)) { model.quickLook(item) }
         .accessibilityActions {
             if item.kind == .screenshot {
+                Button { model.actions.annotate(item) } label: { Text("Annotate", bundle: .module) }
                 Button { model.actions.recognizeText(item) } label: { Text("Recognize Text", bundle: .module) }
             }
         }
@@ -538,6 +560,9 @@ struct HistoryCard: View {
         Divider()
         Button { model.quickLook(item) } label: { Text("Quick Look", bundle: .module) }
             .keyboardShortcut(.space, modifiers: [])
+        if item.kind == .screenshot {
+            Button { model.actions.annotate(item) } label: { Text("Annotate…", bundle: .module) }
+        }
         Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
         if item.kind == .screenshot {
             Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }

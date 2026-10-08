@@ -17,6 +17,7 @@ let package = Package(
         .library(name: "OMSCapture", targets: ["OMSCapture"]),
         .library(name: "OMSUI", targets: ["OMSUI"]),
         .library(name: "OMSOCR", targets: ["OMSOCR"]),
+        .library(name: "OMSAnnotate", targets: ["OMSAnnotate"]),
     ],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", .upToNextMinor(from: "3.1.0")),
@@ -47,6 +48,14 @@ let package = Package(
             name: "OMSOCR",
             swiftSettings: swiftSettings
         ),
+        // The annotation canvas the editor and in-place annotation share. Main-actor by default; the
+        // document and its renderer are nonisolated, so exports render off the main actor.
+        .target(
+            name: "OMSAnnotate",
+            dependencies: ["OMSCore"],
+            resources: [.process("Resources")],
+            swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
+        ),
         .testTarget(
             name: "OMSCoreTests",
             dependencies: ["OMSCore"],
@@ -56,6 +65,11 @@ let package = Package(
             name: "OMSOCRTests",
             dependencies: ["OMSOCR"],
             swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "OMSAnnotateTests",
+            dependencies: ["OMSAnnotate"],
+            swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
         .testTarget(
             name: "OMSCaptureTests",

@@ -13,6 +13,7 @@ final class CardStackView: NSView {
     var onSave: ((QuickAccessItem) -> Void)?
     var onSaveAs: ((QuickAccessItem) -> Void)?
     var onOpen: ((QuickAccessItem) -> Void)?
+    var onAnnotate: ((QuickAccessItem) -> Void)?
     var onReveal: ((QuickAccessItem) -> Void)?
     var onRecognizeText: ((QuickAccessItem) -> Void)?
     var onMoveToTrash: ((QuickAccessItem) -> Void)?
@@ -97,6 +98,11 @@ final class CardStackView: NSView {
         cards[id]?.showSaved()
     }
 
+    /// Shows a capture's new picture on its card.
+    func replace(_ item: QuickAccessItem) {
+        cards[item.id]?.item = item
+    }
+
     private func makeCard(for item: QuickAccessItem) -> CaptureCardView {
         let card = CaptureCardView(item: item)
         card.onCopy = { [weak self, weak card] in
@@ -110,6 +116,7 @@ final class CardStackView: NSView {
         }
         card.onSaveAs = { [weak self, weak card] in card.map { self?.onSaveAs?($0.item) } }
         card.onOpen = { [weak self, weak card] in card.map { self?.onOpen?($0.item) } }
+        card.onAnnotate = { [weak self, weak card] in card.map { self?.onAnnotate?($0.item) } }
         card.onReveal = { [weak self, weak card] in card.map { self?.onReveal?($0.item) } }
         card.onRecognizeText = { [weak self, weak card] in card.map { self?.onRecognizeText?($0.item) } }
         card.onMoveToTrash = { [weak self, weak card] in card.map { self?.onMoveToTrash?($0.item) } }
@@ -129,13 +136,19 @@ final class CaptureCardView: NSView, NSDraggingSource {
     var onSave: (() -> Void)?
     var onSaveAs: (() -> Void)?
     var onOpen: (() -> Void)?
+    var onAnnotate: (() -> Void)?
     var onReveal: (() -> Void)?
     var onRecognizeText: (() -> Void)?
     var onMoveToTrash: (() -> Void)?
     var onClose: (() -> Void)?
 
     var item: QuickAccessItem {
-        didSet { updateAccessibility() }
+        didSet {
+            if item.thumbnail !== oldValue.thumbnail {
+                picture.contents = item.thumbnail
+            }
+            updateAccessibility()
+        }
     }
 
     private let picture = CALayer()
@@ -203,6 +216,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
         setAccessibilityCustomActions([
             NSAccessibilityCustomAction(name: String(localized: "Copy", bundle: .module)) { [weak self] in self?.onCopy?(); return true },
             NSAccessibilityCustomAction(name: String(localized: "Save", bundle: .module)) { [weak self] in self?.onSave?(); return true },
+            NSAccessibilityCustomAction(name: String(localized: "Annotate", bundle: .module)) { [weak self] in self?.onAnnotate?(); return true },
             NSAccessibilityCustomAction(name: String(localized: "Open", bundle: .module)) { [weak self] in self?.onOpen?(); return true },
             NSAccessibilityCustomAction(name: String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onRecognizeText?(); return true },
             NSAccessibilityCustomAction(name: String(localized: "Move to Trash", bundle: .module)) { [weak self] in self?.onMoveToTrash?(); return true },
@@ -351,7 +365,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
         // Clicking a card must not pull this app in front of the one being worked in.
         NSApp.preventWindowOrdering()
         mouseDownPoint = convert(event.locationInWindow, from: nil)
-        if event.clickCount == 2 { onOpen?() }
+        if event.clickCount == 2 { onAnnotate?() }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -402,6 +416,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
         add(String(localized: "Save", bundle: .module), "square.and.arrow.down", #selector(saveClicked))
         add(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", #selector(saveAsClicked))
         menu.addItem(.separator())
+        add(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle", #selector(annotateClicked))
         add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked))
         add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked))
         add(String(localized: "Show in Finder", bundle: .module), "folder", #selector(revealClicked))
@@ -415,6 +430,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
     @objc private func saveClicked() { onSave?() }
     @objc private func saveAsClicked() { onSaveAs?() }
     @objc private func openClicked() { onOpen?() }
+    @objc private func annotateClicked() { onAnnotate?() }
     @objc private func revealClicked() { onReveal?() }
     @objc private func recognizeTextClicked() { onRecognizeText?() }
     @objc private func trashClicked() { onMoveToTrash?() }

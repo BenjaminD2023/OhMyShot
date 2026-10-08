@@ -3,6 +3,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
+import OMSAnnotate
 import OMSCapture
 import OMSCore
 import OMSOCR
@@ -24,11 +25,14 @@ struct DebugHooks {
     let showOnboarding: () -> Void
     let showHistory: () -> Void
     let restoreLatestFromHistory: () -> Void
+    let annotateLatestFromHistory: () -> Void
+    let deleteLatestFromHistory: () -> Void
     let setRetention: (HistoryRetention) -> Void
     let historyWindow: () -> NSWindow?
     let historyCount: () -> Int
     let previewRetentionChange: (HistoryRetention?) -> Void
     let textCapture: TextCaptureCoordinator
+    let annotations: AnnotationCoordinator
 
     /// Where `snapshot` writes window captures.
     static let snapshotDirectory = URL.cachesDirectory.appending(path: "\(Log.subsystem)/debug-snapshots", directoryHint: .isDirectory)
@@ -191,6 +195,36 @@ struct DebugHooks {
             Log.app.notice("debug.relief done")
         case "relaunch":
             Relauncher.relaunch()
+        case "editor-demo":
+            // The annotation editor on the drawn page: marks=0 for none, spot=1 adds a spotlight,
+            // tool=<tool>, select=<index>, edit=<index of a text mark>, zoom=actual.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in items.first { $0.name == name }?.value }
+            DebugEditorDemo.open(
+                marks: value("marks") != "0",
+                spot: value("spot") == "1",
+                tool: value("tool").flatMap(AnnotationTool.init(rawValue:)),
+                select: value("select").flatMap(Int.init),
+                editText: value("edit").flatMap(Int.init),
+                actualSize: value("zoom") == "actual"
+            )
+        case "editor-act":
+            // Acts on the demo editor, or else on an editor opened from a card.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            DebugEditorDemo.act(on: annotations.openEditors.first) { name in items.first { $0.name == name }?.value }
+        case "qa-demo":
+            // The drawn page delivered as a capture: into the history and a card, never the clipboard.
+            if let image = DebugPanelDemo.image(), let display = displays.layout.primary {
+                Task { await captures.deliverDemo(image, displayID: display.id) }
+            }
+        case "qa-annotate":
+            quickAccess.annotateLatest()
+        case "history-annotate-latest":
+            // The newest capture in the editor, as Capture History's Annotate opens it.
+            annotateLatestFromHistory()
+        case "history-delete-latest":
+            // Deletes the newest capture outright (no Trash), its card too: cleanup after scripted checks.
+            deleteLatestFromHistory()
         case "close-windows":
             for window in NSApp.windows where window.isVisible && window.styleMask.contains(.titled) {
                 window.performClose(nil)
@@ -323,9 +357,12 @@ struct DebugHooks {
             // shares it). The overlay's own panels are off screen whenever it is not in use.
             let ceiling = Int(NSWindow.Level.popUpMenu.rawValue) + 1
             let windows = content.windows.filter { $0.owningApplication?.processID == pid && $0.isOnScreen && $0.windowLayer <= ceiling }
+            var used = Set<String>()
             for window in windows {
-                let name = (window.title.flatMap { $0.isEmpty ? nil : $0 } ?? "window-\(window.windowID)")
+                var name = (window.title.flatMap { $0.isEmpty ? nil : $0 } ?? "window-\(window.windowID)")
                     .replacingOccurrences(of: "/", with: "-")
+                // Two windows with one title (a closing editor and its successor) keep both captures.
+                if !used.insert(name).inserted { name += " \(window.windowID)" }
                 let configuration = SCScreenshotConfiguration()
                 configuration.dynamicRange = .sdr
                 configuration.showsCursor = false
@@ -342,7 +379,7 @@ struct DebugHooks {
                 else { continue }
                 CGImageDestinationAddImage(destination, image, nil)
                 guard CGImageDestinationFinalize(destination) else { continue }
-                Log.app.notice("debug.snapshot \(file.path(percentEncoded: false), privacy: .public) \(image.width, privacy: .public)x\(image.height, privacy: .public)")
+                Log.app.notice("debug.snapshot \(file.path(percentEncoded: false), privacy: .public) \(image.width, privacy: .public)x\(image.height, privacy: .public) window \(window.windowID, privacy: .public) at \(NSStringFromRect(window.frame), privacy: .public)")
             }
             if windows.isEmpty {
                 Log.app.notice("debug.snapshot no windows on screen")
