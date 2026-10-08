@@ -117,6 +117,11 @@
       "cerRaw" : 0.04807692307692308,
       "lineOrder" : 1
     },
+    "zh-en-lines" : {
+      "cerContent" : 0.01904761904761905,
+      "cerRaw" : 0.02168021680216802,
+      "lineOrder" : 1
+    },
     "zh-hant" : {
       "cerContent" : 0.013157894736842105,
       "cerRaw" : 0.012658227848101266,

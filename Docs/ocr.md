@@ -58,33 +58,48 @@ one per engine and major macOS version; a run reports cases that got worse than 
 8. **Small text holds up**: 2.4% content CER at 9 px, none from 11 px up.
 9. **Speed**: about 170 ms per image at p50 and 260 ms at p95. A cold first call took about 10 s; with
    the models already cached by the system it took 0.2–0.3 s.
+10. **Two models run side by side.** The Chinese-and-English and the English model on the same image at
+    once take p50 189 ms / p95 278 ms, against 172 / 261 ms for the first alone (the `text-zh-en+en`
+    probe; the English model alone takes 95 / 138 ms).
+11. **In prose, both models find the same lines.** On a Chinese page with English lines the English
+    model returns the English lines with the very boxes the Chinese model gave them, and reads them
+    correctly where the Chinese model, without language correction, confuses letter case ("QuICK
+    Access Keeps … Cick away"). Only code with a Chinese comment trips its detector (point 4).
 
 ## L1 (`VisionPipeline` in OMSOCR)
 
 What the pipeline does, in order, and why:
 
-1. **Primary pass** with `[zh-Hans, en-US]`, language correction off, while `DetectTextRectanglesRequest`
-   runs alongside it.
-2. **Latin model for Latin text**: when the result has at most two CJK characters (and under 5%), the
-   image is read again with `[en-US]` and that result kept if it has at least 80% of the characters. A
-   single misread glyph (a closing brace read as 子) must not keep code on the CJK model.
+1. **Primary pass** with `[zh-Hans, en-US]`, language correction off, while the Latin model `[en-US]`
+   reads the whole page and `DetectTextRectanglesRequest` finds text regions, all three side by side.
+   Every accurate request holds one of two process-wide slots (`RecognitionSlots`), since a third
+   running at once can stall Vision.
+2. **Latin model for Latin text**: when the primary result has at most two CJK characters (and under
+   5%), the Latin page reading replaces it if it has at least 80% of the characters. A single misread
+   glyph (a closing brace read as 子) must not keep code on the CJK model.
 3. **Gap filling**: text regions the lines leave empty, or cover with less than half the characters
    their width holds, are merged, padded, and read again, region by region, with each fallback model
    (Korean, then English, in the benchmark). A region's new lines replace the old ones only if they
    hold more characters.
 4. **Code with CJK comments**: each run of code lines between CJK lines is read again on its own with
    the Latin model, the region kept clear of the CJK lines so its detector does not fail.
-5. **Lone brackets**: neither Vision's recognizer nor its text detector reports a line holding a single
+5. **English lines on a CJK page** (not code): every line in Latin script alone takes the Latin page
+   reading of its box, if that reading is between 80% and 125% as long. A line the page reading missed
+   is cut out with the others like it and stacked in a strip that holds nothing else (`LineStrip`),
+   read in one request; with no CJK in view the Latin detector finds every line.
+6. **Lone brackets**: neither Vision's recognizer nor its text detector reports a line holding a single
    glyph, so closing braces vanish. Scanning the listing's pixels finds unread rows one or two
    characters wide; each becomes the closer of the bracket left open on the line above that starts in
    the same column. Nothing is guessed when no open bracket lines up.
-6. **Spaces from pixels**: where Chinese meets Latin letters or digits, the empty pixel columns at that
+7. **Spaces from pixels**: where Chinese meets Latin letters or digits, the empty pixel columns at that
    spot decide. macOS layout itself leaves 0.07–0.25 em there when nobody typed a space (0.25–0.29 em in
    Japanese), and a typed space leaves 0.32–0.50 em, so a space is added above 0.3 em and one of
    Vision's is removed below 0.2 em. Japanese lines get no spaces back. (Vision's per-character boxes
    cannot be used for this: they tile the line, with any space folded into a neighbor.)
-7. **Text assembly** (`TextAssembler`): reading order with vertical columns right to left; a listing
-   where at least 40% of lines look like code keeps ASCII punctuation (except beside CJK, as in Chinese
+8. **Text assembly** (`TextAssembler`): reading order with vertical columns right to left; a listing
+   where at least 40% of lines look like code (a `key: value` line counts when the key looks like code,
+   lowercase or with `_`, `.`, `-`, or stands alone; a capitalized label such as `Phone: …` counts half,
+   so a contact card is prose) keeps ASCII punctuation (except beside CJK, as in Chinese
    comments) and gets its indentation back from x positions, snapped to steps of 4 or 2; elsewhere,
    lines without CJK use half-width punctuation, CJK lines turn half-width marks between CJK into
    full-width and keep their full-width ones, and stray spaces between Han or kana go (Korean keeps its
@@ -94,13 +109,14 @@ Results on the corpus (macOS 27.2, release build):
 
 | | best plain Vision setup | L1 |
 | --- | --- | --- |
-| Content CER, mean | 5.6% (automatic language) | 0.6% |
-| Raw CER, mean | 8.9% | 1.1% |
-| Line order, mean | 0.94 | 0.99 |
+| Content CER, mean | 5.5% (automatic language) | 0.56% |
+| Raw CER, mean | 8.5% | 1.07% |
+| Line order, mean | 0.95 | 0.99 |
 | Code indentation | 0.20 | 0.93 |
 | Korean, alone / in a mixed image | 0% / Korean line lost | 0% / 0.9% |
 | Code with a Chinese comment (raw) | 20.1% | 0.6% |
-| Time per image, p50 / p95 | 170 / 250 ms | 174 / 389 ms |
+| English lines on a Chinese page (`zh-en-lines`) | 1.9% | 0% |
+| Time per image, p50 / p95 | 164 / 218 ms | 183–189 / 379–399 ms |
 
 These numbers are a fit, not yet a measurement: every rule was tuned on the corpus it is scored on, and
 every image was drawn by Core Text at 2× in Apple's system fonts. The spacing thresholds in particular
@@ -112,7 +128,9 @@ Still open:
 - **Real screenshots**: at least one each from a browser, a terminal, a chat app, and an editor.
 - **Line-number gutters**: no case has one, though most editor screenshots do. The gutter digits would
   read as lines of their own and shift every indent by the gutter's width.
-- **Speed**: p95 is above the 300 ms target, from the extra passes on images that need them.
+- **Speed**: p95 is above the 300 ms target, from the extra passes on images that need them (Korean
+  fallback, code with Chinese comments). Reading the Latin page alongside the first pass made English
+  pages 85–126 ms faster (no second pass after the first) and costs Chinese and mixed pages 0–32 ms.
 - **Tables**: L1 reads table text but not structure; the OCR panel takes structure from the document
   request (93% of cells on the synthetic tables) and fills each cell from the L1 lines inside it, since
   the document request's own reading is weaker (it read "价格" as "fitz" on the panel's demo page).
@@ -139,17 +157,11 @@ Vision invents spaces).
 On the panel's demo page (1520×1120 px, Chinese and English paragraphs, contacts, a 4×3 table, a QR
 code) `analyze` takes 620 ms warm; a 800×600 px screen region takes 500 ms.
 
-Found through the panel, still open:
+Found through the panel. Fixed since: whole English lines on a Chinese page misread by the Chinese
+model (L1 step 5; the panel's demo page now reads without an error, "1 TB" included), and `Label: value`
+lines taken for code (step 8). Still open:
 
-- **Whole English lines on a Chinese page** are read by the Chinese model, which has no language
-  correction: "Quick Access keeps every capture one click away" came back as "QuICK Access Keeps every
-  capture one Click away", "copied, edited" as "copiea, editea". The `zh-en-lines` benchmark case
-  records it (L1 content CER 1.9%, the same as plain Vision). Code runs between Chinese lines are
-  already read again with the Latin model; prose runs need the same, within the latency budget.
-- **`Label: value` lines read as code**: the YAML rule in `TextAssembler.isCodeLike` scores
-  "Docs: https://…" and "Phone: +1 …" as code, so a contact card or release note with four such lines in
-  ten is treated as a code listing (monospaced in the panel, lines never joined).
-- **Digit–unit spaces in Latin lines**: spacing restoration measures against CJK glyph widths, so a
-  Latin-only line gets none, and "1 TB" stays "1TB" when Vision drops the space.
+- **English words inside a Chinese line** are still read by the Chinese model ("macOS" as "macos" in
+  `zh-en-chat`): step 5 replaces whole lines only.
 - **Reading order across columns**: lines are ordered top to bottom, so a caption beside a column is
   read in the middle of it.

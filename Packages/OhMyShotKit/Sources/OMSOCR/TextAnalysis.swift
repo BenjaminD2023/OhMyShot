@@ -63,7 +63,10 @@ extension VisionPipeline {
         request.textRecognitionOptions.useLanguageCorrection = false
         request.barcodeDetectionOptions.enabled = false
         let configured = request
-        let observations = try await withTimeout(options.timeout) { try await configured.perform(on: image) }
+        let timeout = options.timeout
+        let observations = try await RecognitionSlots.shared.run {
+            try await withTimeout(timeout) { try await configured.perform(on: image) }
+        }
         let size = CGSize(width: image.width, height: image.height)
         return observations.first?.document.tables.map { table in
             OCRTable(

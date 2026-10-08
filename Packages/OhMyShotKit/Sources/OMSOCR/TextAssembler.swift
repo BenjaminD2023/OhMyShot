@@ -73,7 +73,12 @@ public enum TextAssembler {
         let patterns: [(String, Int)] = [
             (#"^(func|let|var|const|if|else|for|while|return|guard|def|class|struct|enum|import|from|public|private|static|switch|case|try|catch|fn|pub|package|#include)\b"#, 2),
             (#"\w\("#, 1),
-            (#"^[A-Za-z_][\w.-]*:(\s|$)"#, 2), // key: value, as in YAML
+            // key: value, as in YAML, when the key looks like code (lowercase, or with _ . -) or stands
+            // alone; a capitalized label with a value ("Phone: +1 …") is as likely prose and counts half,
+            // so a contact card is not a code listing, while "Type: AWS::S3::Bucket" still is.
+            (#"^([a-z_][\w.-]*|[A-Za-z_]\w*[_.-][\w.-]*):(\s|$)"#, 2),
+            (#"^[A-Za-z_][\w.-]*:$"#, 2),
+            (#"^[A-Z]\w*:\s"#, 1),
             (#"^-\s+[A-Za-z_][\w.-]*:"#, 2), // - key: value
         ]
         for (pattern, weight) in patterns where trimmed.range(of: pattern, options: .regularExpression) != nil {

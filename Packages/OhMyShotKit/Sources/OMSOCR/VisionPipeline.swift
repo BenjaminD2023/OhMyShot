@@ -46,10 +46,14 @@ public struct VisionPipeline: OCREngine {
     @concurrent
     public func recognize(_ image: CGImage) async throws -> OCRResult {
         let started = ContinuousClock.now
-        // Text detection is cheap and independent of the first pass, so the two run side by side.
+        // The first pass, the Latin model over the whole page, and text detection run side by side.
+        // Vision runs the two models at once for about 17 ms more than the first pass alone (measured),
+        // and the Latin reading serves both an English page and the English lines of a Chinese one.
         async let primary = readLines(in: image, languages: options.primaryLanguages)
+        async let latinPage = readLines(in: image, languages: Self.english)
         async let detected = textRectangles(in: image)
         var lines = try await primary
+        let latin = (try? await latinPage) ?? []
         let rectangles = try await detected
 
         // Text that is all but free of CJK (a stray misread glyph aside) reads better with the Latin
@@ -58,18 +62,21 @@ public struct VisionPipeline: OCREngine {
         let all = lines.flatMap(\.text).filter { !$0.isWhitespace }
         let cjk = all.filter(Script.isCJK).count
         var fallbacks = options.fallbackLanguages
-        if !all.isEmpty, cjk <= 2, Double(cjk) < Double(all.count) * 0.05 {
-            let latin = try await readLines(in: image, languages: Self.english)
-            if characterCount(latin) >= characterCount(lines) * 4 / 5 {
-                lines = latin
-                // The Latin model drops the odd Chinese word (a name, a file name); let the primary
-                // model have the regions it leaves empty first.
-                fallbacks.insert(options.primaryLanguages, at: 0)
-            }
+        var readByLatinModel = false
+        if !all.isEmpty, cjk <= 2, Double(cjk) < Double(all.count) * 0.05,
+           characterCount(latin) >= characterCount(lines) * 4 / 5 {
+            lines = latin
+            readByLatinModel = true
+            // The Latin model drops the odd Chinese word (a name, a file name); let the primary model have
+            // the regions it leaves empty first.
+            fallbacks.insert(options.primaryLanguages, at: 0)
         }
 
         lines = try await fillGaps(in: image, lines: lines, rectangles: rectangles, fallbacks: fallbacks)
         lines = try await rereadCodeWithLatinModel(in: image, lines: lines)
+        if !readByLatinModel {
+            lines = try await readLatinLines(lines, page: latin, in: image)
+        }
         lines = inferLoneBrackets(in: lines, image: image)
 
         let ordered = ReadingOrder.sorted(lines)
@@ -95,7 +102,10 @@ public struct VisionPipeline: OCREngine {
             request.regionOfInterest = regionOfInterest
         }
         let configured = request
-        let observations = try await withTimeout(options.timeout) { try await configured.perform(on: image) }
+        let timeout = options.timeout
+        let observations = try await RecognitionSlots.shared.run {
+            try await withTimeout(timeout) { try await configured.perform(on: image) }
+        }
         let place: (NormalizedRect) -> CGRect = { rect in
             if let regionOfInterest {
                 rect.toImageCoordinates(from: regionOfInterest, imageSize: size, origin: .upperLeft)
@@ -217,6 +227,70 @@ public struct VisionPipeline: OCREngine {
             }
         }
         return lines + inferred
+    }
+
+    // MARK: Latin lines on a CJK page
+
+    /// On a page with CJK, the lines written in English alone are read by the Chinese model too, which has
+    /// no language correction and confuses letter case ("Quick" as "QuICK", "copied" as "copiea"). Each
+    /// such line takes the Latin model's reading of the same box from the page pass (Vision's two models
+    /// find the same lines in prose). A line the page pass missed is read again in a strip that holds
+    /// nothing else (`LineStrip`): with CJK in view, the Latin model's detector can miss whole lines. A
+    /// line keeps its box, and its text changes only when the Latin reading is about as long. Code
+    /// listings keep their own pass (`rereadCodeWithLatinModel`), which also finds lines the first missed.
+    private func readLatinLines(_ lines: [OCRLine], page: [OCRLine], in image: CGImage) async throws -> [OCRLine] {
+        guard !TextAssembler.isCodeListing(ReadingOrder.sorted(lines)) else { return lines }
+        var lines = lines
+        var unread: [Int] = []
+        for index in lines.indices where lines[index].box.width > lines[index].box.height && Script.isLatinLine(lines[index].text) {
+            if let pieces = Self.pieces(of: lines[index].box, in: page) {
+                Self.adopt(pieces, at: index, in: &lines)
+            } else {
+                unread.append(index)
+            }
+        }
+        let size = CGSize(width: image.width, height: image.height)
+        guard !unread.isEmpty, let strip = LineStrip(source: image, crops: LineStrip.crops(for: unread, of: lines, in: size)) else {
+            return lines
+        }
+        var rows = [Int: [OCRLine]]()
+        for line in try await readLines(in: strip.image, languages: Self.english) {
+            if let row = strip.row(of: line.box) { rows[row, default: []].append(line) }
+        }
+        for (row, index) in unread.enumerated() {
+            if let pieces = rows[row] { Self.adopt(pieces, at: index, in: &lines) }
+        }
+        return lines
+    }
+
+    /// The page reading's lines that make up a box: those lying mostly inside it, when together they span
+    /// most of its width.
+    static func pieces(of box: CGRect, in page: [OCRLine]) -> [OCRLine]? {
+        let inside = page.filter { candidate in
+            let shared = candidate.box.intersection(box)
+            guard !shared.isNull, candidate.box.width > 0, candidate.box.height > 0 else { return false }
+            return shared.width * shared.height >= candidate.box.width * candidate.box.height * 0.7
+        }
+        let covered = inside.reduce(0) { $0 + $1.box.intersection(box).width }
+        return inside.isEmpty || covered < box.width * 0.8 ? nil : inside
+    }
+
+    /// Puts the Latin reading in place of a line's text, left to right, if it is about as long (between
+    /// 80% and 125% of the characters): a reading much shorter or longer is a misread of its own.
+    static func adopt(_ pieces: [OCRLine], at index: Int, in lines: inout [OCRLine]) {
+        let ordered = pieces.sorted { $0.box.minX < $1.box.minX }
+        let text = ordered.map(\.text).joined(separator: " ")
+        let before = lines[index].text.filter { !$0.isWhitespace }.count
+        let after = text.filter { !$0.isWhitespace }.count
+        guard !Script.containsCJK(text), after * 5 >= before * 4, after * 4 <= before * 5 else { return }
+        let line = lines[index]
+        lines[index] = OCRLine(
+            text: text,
+            box: line.box,
+            confidence: ordered.map(\.confidence).min() ?? line.confidence,
+            direction: line.direction,
+            wrapsToNextLine: line.wrapsToNextLine
+        )
     }
 
     // MARK: Code
@@ -442,12 +516,15 @@ extension VisionPipeline.Options {
 }
 
 extension VisionPipeline {
-    /// Loads the primary model before the first real request by reading a few rendered characters (a
-    /// blank image might never reach the recognizer). Run it while the person is still selecting.
+    /// Loads both models a recognition uses, the primary and the Latin, before the first real request by
+    /// reading a few rendered characters (a blank image might never reach the recognizer). Run it while
+    /// the person is still selecting.
     @concurrent
     public func prewarm() async {
         guard let image = Self.warmupImage() else { return }
-        _ = try? await readLines(in: image, languages: options.primaryLanguages)
+        async let primary = try? readLines(in: image, languages: options.primaryLanguages)
+        async let latin = try? readLines(in: image, languages: Self.english)
+        _ = await (primary, latin)
     }
 
     private static func warmupImage() -> CGImage? {

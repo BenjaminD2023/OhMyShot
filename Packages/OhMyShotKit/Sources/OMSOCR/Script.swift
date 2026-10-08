@@ -36,6 +36,19 @@ enum Script {
     static func containsCJK(_ text: some StringProtocol) -> Bool {
         text.contains(where: isCJK)
     }
+
+    /// A line in Latin script alone: no CJK, every letter Latin (so Cyrillic or Greek is not taken for
+    /// it), and at least two letters, which leaves out lines of figures such as "$0".
+    static func isLatinLine(_ text: some StringProtocol) -> Bool {
+        var letters = 0
+        for character in text {
+            if isCJK(character) { return false }
+            guard character.isLetter else { continue }
+            guard character.unicodeScalars.allSatisfy({ $0.value < 0x250 || (0x1E00...0x1EFF).contains($0.value) }) else { return false }
+            letters += 1
+        }
+        return letters >= 2
+    }
 }
 
 /// Full-width punctuation and its half-width twin.

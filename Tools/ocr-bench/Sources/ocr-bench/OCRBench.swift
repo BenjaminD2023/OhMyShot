@@ -18,7 +18,8 @@ import UniformTypeIdentifiers
 ///   --write-baseline   record this run as the baseline for this major macOS version
 ///   --list             list engines and cases, then exit
 ///
-/// Engines run one request at a time: Vision can stall when several accurate requests overlap.
+/// Engines run one request at a time: Vision can stall when several accurate requests overlap. (The
+/// `text-zh-en+en` probe runs two on purpose, to measure how Vision runs two models side by side.)
 @main
 struct OCRBench {
     private static let zhHans = Locale.Language(identifier: "zh-Hans")
@@ -51,6 +52,12 @@ struct OCRBench {
         VisionTextEngine(name: "text-ja-first", configuration: .init(languages: [ja, zhHans, en]), timeout: timeout),
         VisionTextEngine(name: "text-hant-first", configuration: .init(languages: [zhHant, en]), timeout: timeout),
         VisionTextEngine(name: "text-en", configuration: .init(languages: [en]), timeout: timeout),
+        // The Chinese and the Latin model on the same image at once: does Vision run them side by side?
+        ConcurrentProbe(
+            name: "text-zh-en+en",
+            first: VisionTextEngine(name: "zh-en", configuration: .init(languages: [zhHans, en]), timeout: timeout),
+            second: VisionTextEngine(name: "en", configuration: .init(languages: [en]), timeout: timeout)
+        ),
     ]
 
     static func main() async throws {
@@ -204,5 +211,21 @@ extension Duration {
     var milliseconds: Double {
         let (seconds, attoseconds) = components
         return Double(seconds) * 1000 + Double(attoseconds) / 1e15
+    }
+}
+
+/// Two engines on the same image at once; reports the first one's reading and the time both took.
+struct ConcurrentProbe: OCREngine {
+    let name: String
+    let first: any OCREngine
+    let second: any OCREngine
+
+    @concurrent
+    func recognize(_ image: CGImage) async throws -> OCRResult {
+        let started = ContinuousClock.now
+        async let a = first.recognize(image)
+        async let b = second.recognize(image)
+        let (result, _) = try await (a, b)
+        return OCRResult(lines: result.lines, text: result.text, duration: ContinuousClock.now - started)
     }
 }

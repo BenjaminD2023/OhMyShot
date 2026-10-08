@@ -108,3 +108,29 @@ Same machine and display. The panel opened on its drawn demo page (`ohmyshot-dev
   next to nothing (139 → 119 MB over 25 s, mostly Vision freeing late). The table request accounts for
   only about 15 MB of it. Running recognition in a helper process that exits when idle, as planned for
   the model packs (M6), would return all of it; until then the panel misses the after-use target.
+
+## M2 — English lines on Chinese pages (2026-10-08)
+
+L1 now reads the whole page with the Latin model alongside the first pass (Docs/ocr.md, L1 steps 1, 2,
+and 5). Benchmark per image, L1 alone, before → after: English pages 85–126 ms faster (`en-ui` 311 →
+185 ms, `code-yaml` 312 → 200 ms), Chinese and mixed pages 0–32 ms slower, p50 178 → 183–189 ms and p95
+388 → 379–399 ms across runs.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Capture Text recognition (`ocr.recognize`), five runs on a fresh launch | 177–309 ms | < 300 ms for about 1000×600 px |
+| Footprint after those five, settling | 91 MB right after, 73 MB after 40 s, 64 MB after 100 s (live heap 16 MB) | < 60 MB after use |
+| Idle once settled | 0.01% CPU, 0 wakeups in 30 s, no live resources | 0.0%, < 30 |
+
+### Findings
+
+- **Both models resident cost little once settled**: 64 MB, against 61–70 MB with the Chinese model
+  alone (M2 Capture Text). Right after a launch's first recognitions both models prepare once more
+  (1.6% CPU over the next 30 s, peaking at 19%), then settle.
+- **A deliberate energy trade**: every recognition now runs the Latin model too, including on pages of
+  Chinese alone that never use its reading: about half again as much neural-engine work per recognition
+  (the Latin pass alone takes about 95 ms), for 0–32 ms of latency, correct English on mixed pages, and
+  English pages that no longer wait for a second pass. Recognition only ever runs when asked for.
+- **The strip fallback works end to end**: with every line forced through it, `zh-en-lines` and the
+  panel's demo page still read without an error. On the corpus the page reading matched every line, so
+  the strip is not used there.
