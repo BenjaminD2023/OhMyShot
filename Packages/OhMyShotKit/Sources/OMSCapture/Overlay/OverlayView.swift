@@ -13,6 +13,8 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didReleaseWith modifiers: NSEvent.ModifierFlags)
     /// Shift or Option changed; the key view hears it, wherever the drag is.
     func overlayView(_ view: OverlayView, didChangeModifiers modifiers: NSEvent.ModifierFlags)
+    /// The pointer moved, wherever it is: the key panel hears every move, even over another display.
+    func overlayView(_ view: OverlayView, didMovePointerTo point: CGPoint)
     /// Space went down: it moves a selection being dragged, or else switches modes.
     func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool)
     func overlayViewDidReleaseSpace(_ view: OverlayView)
@@ -189,9 +191,13 @@ final class OverlayView: NSView {
 
     /// Puts the crosshair and magnifier where the pointer is now, for an overlay that appears a moment
     /// after its session began.
+    ///
+    /// The crosshair and magnifier show only on the display the pointer is over; window mode highlights
+    /// the window under it on every display the window reaches.
     func movePointer(to globalPointer: CGPoint) {
         guard !isSimulated, !isAnnotating else { return }
-        withoutAnimation { updatePointer(display.frame.contains(globalPointer) ? local(globalPointer) : nil) }
+        let here = mode == .window || display.frame.contains(globalPointer)
+        withoutAnimation { updatePointer(here ? local(globalPointer) : nil) }
     }
 
     /// Draws the controller's selection: the part of it on this display, the size reading if this
@@ -241,17 +247,19 @@ final class OverlayView: NSView {
         ))
     }
 
+    // Pointer moves go to the controller, which passes them to every display: the key panel hears moves
+    // over other displays too, and drawing them here left a stray magnifier at this display's edge.
     override func mouseMoved(with event: NSEvent) {
         if purpose == .text { NSCursor.crosshair.set() }
         guard !isSimulated, !isAnnotating else { return }
-        withoutAnimation { updatePointer(convert(event.locationInWindow, from: nil)) }
+        delegate?.overlayView(self, didMovePointerTo: global(convert(event.locationInWindow, from: nil)))
     }
 
     override func mouseEntered(with event: NSEvent) {
         // Cursor rects only work in the key panel; on other displays the crosshair is set here.
         if purpose == .text { NSCursor.crosshair.set() }
         guard !isSimulated, !isAnnotating else { return }
-        withoutAnimation { updatePointer(convert(event.locationInWindow, from: nil)) }
+        delegate?.overlayView(self, didMovePointerTo: global(convert(event.locationInWindow, from: nil)))
     }
 
     /// The text selection's edge: 1 pt, or 2 pt with Increase Contrast so it holds over blue content.

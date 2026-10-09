@@ -34,6 +34,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 - Selections may cross displays (2026-10-09, the user's request; the roadmap had kept v1 to one
   display): one selection drawn in parts, the size capsule on one display, the capture stitched at the
   sharpest display's scale with no fill where no display reaches. In-place annotation stays on one.
+- While an area is chosen the overlay sits at the screen-saver level (2026-10-09): just above pop-up
+  menus, presses in the menu bar's band went to the menu bar on macOS 26+.
 - Freeze the screen is on by default (2026-10-09, the user's call; the roadmap had live selection as
   the default). The screen is taken on the shortcut, before the overlay appears or the app activates,
   and the kept area is cut from it, so a hover card that closes as the pointer leaves is still captured.

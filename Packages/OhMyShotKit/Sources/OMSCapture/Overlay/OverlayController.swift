@@ -147,6 +147,7 @@ public final class OverlayController {
         windows = mode == .window ? WindowCatalog.snapshot(layout: layout) : []
         let viewMode: OverlayView.Mode = mode == .window ? .window : .area
         for (id, entry) in entries {
+            entry.panel.level = OverlayPanel.selectionLevel
             entry.view.reset(
                 pointer: pointer, mode: viewMode, windows: windows,
                 showsToolbar: id == pointerDisplay?.id && purpose != .text,
@@ -333,6 +334,7 @@ public final class OverlayController {
             other.view.clear()
         }
         entry.view.enterAnnotation()
+        entry.panel.level = OverlayPanel.annotationLevel
         entry.panel.makeKey()
         onAnnotate(AnnotationRequest(host: entry.view, display: entry.view.display, area: area, frame: frame))
     }
@@ -468,6 +470,7 @@ extension OverlayController {
 
 extension OverlayController: OverlayViewDelegate {
     func overlayView(_ view: OverlayView, didPressAt point: CGPoint) {
+        Log.capture.notice("Selection began at \(NSStringFromPoint(point), privacy: .public) on display \(view.display.id, privacy: .public)")
         startSelection(on: view.display)
         selection.begin(at: point)
         dragPoint = point
@@ -510,6 +513,12 @@ extension OverlayController: OverlayViewDelegate {
         guard let last = dragPoint, !spaceHeld else { return }
         selection.drag(to: last, modifiers: selectionModifiers(modifiers))
         showSelection()
+    }
+
+    func overlayView(_ view: OverlayView, didMovePointerTo point: CGPoint) {
+        for entry in entries.values {
+            entry.view.movePointer(to: point)
+        }
     }
 
     func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool) {
