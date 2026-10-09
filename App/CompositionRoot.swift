@@ -23,6 +23,7 @@ final class CompositionRoot {
     private lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions())
     private lazy var textCapture = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
     private lazy var annotations = AnnotationCoordinator(history: history)
+    private lazy var pins = PinController(settings: settings, actions: makePinActions())
     private let hotkeys: HotkeyCenter
     private let urlScheme: String
     private var statusItem: StatusItemController?
@@ -46,6 +47,7 @@ final class CompositionRoot {
             captureEntries: [
                 .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
                 .init(title: String(localized: "Annotate Area"), shortcut: .annotateArea) { [weak self] in self?.handle(.annotateArea) },
+                .init(title: String(localized: "Capture Area and Pin"), shortcut: .pinArea) { [weak self] in self?.handle(.pinArea) },
                 .init(title: String(localized: "Capture Window"), shortcut: .captureWindow) { [weak self] in self?.handle(.captureWindow) },
                 .init(title: String(localized: "Capture Fullscreen"), shortcut: .captureFullscreen) { [weak self] in self?.handle(.captureFullscreen) },
                 .init(
@@ -68,6 +70,35 @@ final class CompositionRoot {
                     self?.textCapture.openClipboardImage()
                 },
                 .init(title: String(localized: "Recognize Text in Image…")) { [weak self] in self?.textCapture.openImageFile() },
+            ],
+            pinEntries: [
+                .init(
+                    title: String(localized: "Pin from Clipboard"),
+                    isEnabled: { PasteboardImage.mayHoldImage(.general) }
+                ) { [weak self] in
+                    self?.pinClipboard()
+                },
+                .init(title: String(localized: "Pin Image…")) { [weak self] in self?.choosePicturesToPin() },
+                .init(
+                    title: String(localized: "Hide Pins"),
+                    isEnabled: { [weak self] in !(self?.pins.isEmpty ?? true) },
+                    currentTitle: { [weak self] in self?.pins.areHidden == true ? String(localized: "Show Pins") : String(localized: "Hide Pins") }
+                ) { [weak self] in
+                    guard let self else { return }
+                    pins.setHidden(!pins.areHidden)
+                },
+                .init(
+                    title: String(localized: "Unlock Pins"),
+                    isEnabled: { [weak self] in self?.pins.hasLockedPins ?? false }
+                ) { [weak self] in
+                    self?.pins.unlockAll()
+                },
+                .init(
+                    title: String(localized: "Close All Pins"),
+                    isEnabled: { [weak self] in !(self?.pins.isEmpty ?? true) }
+                ) { [weak self] in
+                    self?.pins.closeAll()
+                },
             ],
             historyEntries: [
                 .init(title: String(localized: "Annotate Image…")) { [weak self] in self?.chooseFilesToAnnotate() },
@@ -106,6 +137,11 @@ final class CompositionRoot {
                 self?.removeExpiredHistory()
             }
         })
+        observations.append(Task { [weak self] in
+            for await _ in Observations({ "\(settings.pinCornerRadius) \(settings.pinShadow) \(settings.pinBorder)" }) {
+                self?.pins.appearanceChanged()
+            }
+        })
 
         captures.onCaptured = { [weak self] item in
             self?.didCapture(item)
@@ -116,6 +152,16 @@ final class CompositionRoot {
         captures.selfTimerKeys = { [weak self] in
             self?.hotkeys.keys(for: .selfTimer)
         }
+        captures.onPin = { [weak self] frame, entry in
+            guard let self else { return }
+            // A window captured with its shadow is larger than its frame: the scale is its display's.
+            let scale = displays.layout.display(id: frame.displayID)?.pixelsPerPoint ?? frame.pixelsPerPoint
+            pins.pin(frame.image, scale: scale, origin: entry.map { .capture($0.id) } ?? .clipboard, over: frame.frame)
+        }
+        // Pins are in new captures as they are on screen (Settings can leave them out); a pin just opened
+        // is fetched into the capturable content at once, so the next capture has it.
+        capturer.includedWindowIDs = { [weak self] in self?.pins.capturedWindowIDs ?? [] }
+        pins.onChange = { [weak self] in self?.shareableContent.refresh() }
         annotations.onChange = { [weak self] entry, data in
             self?.pictureChanged(entry, data: data)
         }
@@ -209,6 +255,8 @@ final class CompositionRoot {
             captures.captureArea()
         case .annotateArea:
             captures.annotateArea()
+        case .pinArea:
+            captures.pinArea()
         case .captureFullscreen:
             captures.captureFullscreen()
         case .captureWindow:
@@ -233,6 +281,14 @@ final class CompositionRoot {
         switch command {
         case .openSettings(let tab):
             showSettings(SettingsTab(urlTab: tab))
+        case .captureArea(let region, .pin) where region.rect == nil:
+            guard permissions.status(of: .screenRecording) == .granted else {
+                showOnboarding()
+                return
+            }
+            captures.pinArea()
+        case .pin(let file):
+            if let file { pin(fileAt: file) } else { pinClipboard() }
         case .captureArea(let region, _) where region.rect == nil:
             captures.captureArea()
         case .allInOne(let region) where region.rect == nil:
@@ -324,27 +380,123 @@ final class CompositionRoot {
     }
 
     private func annotateImage(at url: URL) async {
-        guard let loaded = await Self.loadImage(url), let png = try? await ImageExporter.encode(loaded.image, as: .png) else {
+        guard let loaded = await Self.loadImage(url) else {
             Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to annotate it")
             NSSound.beep()
             return
         }
+        await annotate(image: loaded.image, scale: loaded.scale, name: url.deletingPathExtension().lastPathComponent)
+    }
+
+    /// Opens a picture with no capture of its own in the editor, added to the history first so its marks
+    /// are kept like a capture's.
+    private func annotate(image: CGImage, scale: CGFloat, name: String) async {
         do {
+            let png = try await ImageExporter.encode(image, as: .png)
             let entry = try history.add(
-                data: png, name: url.deletingPathExtension().lastPathComponent, fileExtension: ImageExporter.Format.png.fileExtension,
-                kind: .screenshot, pixelWidth: loaded.image.width, pixelHeight: loaded.image.height, appName: nil
+                data: png, name: name, fileExtension: ImageExporter.Format.png.fileExtension,
+                kind: .screenshot, pixelWidth: image.width, pixelHeight: image.height, appName: nil
             )
             historyWindow?.reload()
-            annotations.annotate(entry, scale: loaded.scale)
+            annotations.annotate(entry, scale: scale)
         } catch {
-            Log.capture.error("Adding \(url.lastPathComponent, privacy: .public) to the history failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Adding \(name, privacy: .public) to the history failed: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
         }
     }
 
+    // MARK: Pins
+
+    private func makePinActions() -> PinController.Actions {
+        PinController.Actions(
+            copy: { pin in
+                Task {
+                    guard let png = try? await ImageExporter.encode(pin.image, as: .png) else { return NSSound.beep() }
+                    PasteboardWriter.write(png: png, image: pin.image)
+                }
+            },
+            save: { [weak self] pin in
+                guard let self else { return }
+                if case .capture(let id) = pin.origin, let entry = history.item(id: id) {
+                    _ = captures.save(fileAt: history.fileURL(for: entry))
+                } else {
+                    Task { _ = await self.captures.save(image: pin.image) }
+                }
+            },
+            saveAs: { [weak self] pin in self?.savePinAs(pin) },
+            annotate: { [weak self] pin in
+                guard let self else { return }
+                if case .capture(let id) = pin.origin, let entry = history.item(id: id) {
+                    annotations.annotate(entry, scale: pin.scale)
+                } else {
+                    Task { await self.annotate(image: pin.image, scale: pin.scale, name: String(localized: "Pin")) }
+                }
+            },
+            recognizeText: { [weak self] pin in
+                self?.textCapture.openPanel(image: pin.image, scale: pin.scale, source: String(localized: "Pin"))
+            }
+        )
+    }
+
+    /// Pins the picture on the clipboard, or beeps when there is none.
+    private func pinClipboard() {
+        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
+        switch PasteboardImage.read(.general) {
+        case .file(let url):
+            pin(fileAt: url, fallbackScale: scale)
+        case .data(let data):
+            guard let loaded = ImageLoader.load(data: data, fallbackScale: scale) else { return NSSound.beep() }
+            pins.pin(loaded.image, scale: loaded.scale, origin: .clipboard)
+        case nil:
+            NSSound.beep()
+        }
+    }
+
+    /// Pins a picture file; `origin` says when it is a capture's. A file with no resolution of its own is
+    /// taken at `fallbackScale`, its display's for a capture.
+    private func pin(fileAt url: URL, origin: PinController.Origin? = nil, fallbackScale: CGFloat = 2) {
+        Task {
+            guard let loaded = await Self.loadImage(url, fallbackScale: fallbackScale) else {
+                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to pin it")
+                return NSSound.beep()
+            }
+            pins.pin(loaded.image, scale: loaded.scale, origin: origin ?? .file(url))
+        }
+    }
+
+    private func choosePicturesToPin() {
+        let chooser = NSOpenPanel()
+        chooser.allowedContentTypes = [.image]
+        chooser.allowsMultipleSelection = true
+        chooser.message = String(localized: "Choose pictures to keep on screen.")
+        chooser.prompt = String(localized: "Pin")
+        NSApp.activate()
+        chooser.begin { [weak self] response in
+            guard response == .OK else { return }
+            for url in chooser.urls { self?.pin(fileAt: url) }
+        }
+    }
+
+    private func savePinAs(_ pin: PinController.Pin) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = FilenameTemplate.standard.name(date: .now, appName: nil) + "." + ImageExporter.Format.png.fileExtension
+        panel.directoryURL = settings.exportDirectory
+        panel.allowedContentTypes = [.png]
+        NSApp.activate()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do {
+                try await ImageExporter.encode(pin.image, as: .png).write(to: url)
+            } catch {
+                Log.capture.error("Save As failed: \(error.localizedDescription, privacy: .public)")
+                NSSound.beep()
+            }
+        }
+    }
+
     /// Decodes off the main actor: a large photo takes a while.
-    @concurrent private nonisolated static func loadImage(_ url: URL) async -> ImageLoader.Loaded? {
-        ImageLoader.load(contentsOf: url, fallbackScale: 1)
+    @concurrent private nonisolated static func loadImage(_ url: URL, fallbackScale: CGFloat = 1) async -> ImageLoader.Loaded? {
+        ImageLoader.load(contentsOf: url, fallbackScale: fallbackScale)
     }
 
     /// Opens a capture in the annotation editor; `displayID` is the screen it came from, for its scale.
@@ -379,6 +531,11 @@ final class CompositionRoot {
                 // Captures are saved without a resolution, so the scale is their display's.
                 let scale = displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 1
                 Task { await self.textCapture.openPanel(forFileAt: item.fileURL, fallbackScale: scale) }
+            },
+            pin: { [weak self] item in
+                guard let self else { return }
+                let scale = displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
+                pin(fileAt: item.fileURL, origin: .capture(item.id), fallbackScale: scale)
             },
             moveToTrash: { [weak self] item in
                 guard let self else { return }
@@ -440,6 +597,11 @@ final class CompositionRoot {
                 // The display a capture came from is not recorded; most captures come from the sharpest.
                 let scale = displays.layout.displays.map(\.pixelsPerPoint).max() ?? 1
                 Task { await self.textCapture.openPanel(forFileAt: self.history.fileURL(for: entry), fallbackScale: scale) }
+            },
+            pin: { [weak self] entry in
+                guard let self else { return }
+                let scale = displays.layout.displays.map(\.pixelsPerPoint).max() ?? 2
+                pin(fileAt: history.fileURL(for: entry), origin: .capture(entry.id), fallbackScale: scale)
             },
             moveToTrash: { [weak self] entry in
                 self?.quickAccess.remove(entry.id)
@@ -568,7 +730,9 @@ final class CompositionRoot {
             },
             previewRetentionChange: { [weak self] retention in self?.historyWindow?.previewRetentionChange(to: retention) },
             textCapture: textCapture,
-            annotations: annotations
+            annotations: annotations,
+            pins: pins,
+            settings: settings
         )
     }
     #endif

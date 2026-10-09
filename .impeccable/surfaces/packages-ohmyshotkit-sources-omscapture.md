@@ -34,6 +34,14 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 - Selections may cross displays (2026-10-09, the user's request; the roadmap had kept v1 to one
   display): one selection drawn in parts, the size capsule on one display, the capture stitched at the
   sharpest display's scale with no fill where no display reaches. In-place annotation stays on one.
+- Pins (2026-10-09): image pins in OMSUI beside Quick Access and the Translation Lens (the roadmap's
+  module map had OMSAnnotate; OMSUI holds the card buttons and floating-panel patterns pins reuse).
+  Floating level with Quick Access a level above, on every Space and over full-screen apps, the system
+  window shadow and hairline of the Translation Lens, 12 pt corners by default. Capture Area and Pin
+  lands the pin over the captured area at 1:1 (the Snipaste convention), keeps the capture in the
+  history, and shows no card and leaves the clipboard alone. Pins appear in new captures by default.
+  Text and color pins and Live Text selection come later; the release build has no default shortcut
+  for Capture Area and Pin (⇧⌘7 types a slash on German layouts).
 - Self-Timer (2026-10-09): choose first, then count down, then capture live at zero (the ⌘⇧5 timer and
   camera convention), so a menu that closes on any key can be opened during the countdown. The
   countdown takes neither the keyboard nor the pointer; it is cancelled by its shortcut again or from

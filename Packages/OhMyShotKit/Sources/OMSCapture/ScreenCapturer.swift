@@ -14,6 +14,10 @@ public final class ScreenCapturer {
 
     private let content: ShareableContentCache
 
+    /// This app's windows that captures take in anyway, as they are on screen: the pins, when Settings
+    /// says so. Everything else of this app (the overlay, cards, the countdown) stays out.
+    public var includedWindowIDs: (() -> Set<CGWindowID>)?
+
     public init(content: ShareableContentCache) {
         self.content = content
     }
@@ -84,7 +88,9 @@ public final class ScreenCapturer {
     ) async throws -> CapturedFrame {
         let scDisplay = try await content.display(id: display.id)
         let excluded = includingOwnWindows ? [] : try await content.ownApplication().map { [$0] } ?? []
-        let filter = SCContentFilter(display: scDisplay, excludingApplications: excluded, exceptingWindows: [])
+        let included = includingOwnWindows ? [] : includedWindowIDs?() ?? []
+        let excepted = included.isEmpty ? [] : try await content.windows(withIDs: included)
+        let filter = SCContentFilter(display: scDisplay, excludingApplications: excluded, exceptingWindows: excepted)
 
         let captured = region.map { $0.intersection(display.frame) } ?? display.frame
         guard !captured.isEmpty else { throw CaptureError.emptyResult }

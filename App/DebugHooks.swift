@@ -35,6 +35,8 @@ struct DebugHooks {
     let previewRetentionChange: (HistoryRetention?) -> Void
     let textCapture: TextCaptureCoordinator
     let annotations: AnnotationCoordinator
+    let pins: PinController
+    let settings: SettingsStore
 
     /// Where `snapshot` writes window captures.
     static let snapshotDirectory = URL.cachesDirectory.appending(path: "\(Log.subsystem)/debug-snapshots", directoryHint: .isDirectory)
@@ -235,6 +237,31 @@ struct DebugHooks {
             let rect = ["x", "y", "w", "h"].compactMap { Self.intParameter($0, in: url) }
             let span = Self.intParameter("span", in: url) ?? 0
             Task { await runFreezeDemo(area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil, span: span) }
+        case "pin-demo":
+            // Pins the drawn page, never anything from the screen or the clipboard: centered on the pointer's
+            // display, or with x, y over that point in display points from its top-left corner, at 1:1.
+            pinDemo(at: ["x", "y"].compactMap { Self.intParameter($0, in: url) })
+        case "pin-act":
+            // Acts on the newest pin: zoom=<percent>, opacity=<percent>, lock=1|0, move=dx,dy (points),
+            // hide=1|0, close=all. Logs every pin.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in items.first { $0.name == name }?.value }
+            let move = value("move")?.split(separator: ",").compactMap { Double($0) }
+            pins.debugAct(
+                zoom: value("zoom").flatMap(Double.init).map { CGFloat($0) / 100 },
+                opacity: value("opacity").flatMap(Double.init).map { CGFloat($0) / 100 },
+                locked: value("lock").map { $0 == "1" },
+                move: move.flatMap { $0.count == 2 ? CGVector(dx: $0[0], dy: $0[1]) : nil }
+            )
+            if let hide = value("hide") { pins.setHidden(hide == "1") }
+            if value("close") == "all" { pins.closeAll() }
+            Log.app.notice("debug.pin-act pins=\(self.pins.count, privacy: .public) hidden=\(self.pins.areHidden, privacy: .public) locked=\(self.pins.hasLockedPins, privacy: .public) \(self.pins.debugSummary, privacy: .public)")
+        case "pin-capture-check":
+            // Whether a capture of the newest pin's area has the pin in it, as Settings says it should, or
+            // with setting=0 that it does not. Reads that area of the screen to compare it with the drawn
+            // page and drops it; nothing is kept or looked at.
+            let setting = Self.intParameter("setting", in: url).map { $0 == 1 }
+            Task { await checkPinInCapture(setting: setting) }
         case "selftimer-demo":
             // Self-Timer over a drawn screen, never the real one: the area chosen without the mouse on drawn
             // frames, the countdown shown over an app-drawn backdrop with a picture of the display taken
@@ -641,6 +668,47 @@ struct DebugHooks {
             return CGRect(x: x, y: edge - 200, width: 600, height: 400)
         }
         return nil
+    }
+
+    /// Pins the drawn page at 1:1: over a point when given (display points from the top-left corner of
+    /// the pointer's display), else centered.
+    func pinDemo(at point: [Int]) {
+        guard let image = DebugPanelDemo.image() else { return }
+        let layout = displays.layout
+        let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary
+        let scale = display?.pixelsPerPoint ?? 2
+        var area: CGRect?
+        if point.count == 2, let display {
+            let size = CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
+            area = CGRect(x: display.frame.minX + CGFloat(point[0]), y: display.frame.maxY - CGFloat(point[1]) - size.height, width: size.width, height: size.height)
+        }
+        pins.pin(image, scale: scale, origin: .clipboard, over: area)
+        Log.app.notice("debug.pin-demo \(self.pins.debugSummary, privacy: .public)")
+    }
+
+    /// Captures the newest pin's area, compares its middle (clear of the rounded corners and the edge)
+    /// with the drawn page, and logs whether the pin was in the capture.
+    func checkPinInCapture(setting: Bool?) async {
+        guard let frame = pins.newestFrame, let page = DebugPanelDemo.image() else {
+            Log.app.error("debug.pin-capture-check: no pin")
+            return
+        }
+        let saved = settings.pinsAppearInCaptures
+        if let setting { settings.pinsAppearInCaptures = setting }
+        defer { settings.pinsAppearInCaptures = saved }
+        do {
+            let inset = CGFloat(settings.pinCornerRadius) + 4
+            let middle = frame.insetBy(dx: inset, dy: inset)
+            let captured = try await capturer.captureArea(middle, in: displays.layout)
+            // The same middle of the page, as the pin shows it at 1:1.
+            let scale = CGFloat(page.width) / frame.width
+            let crop = CGRect(x: (inset * scale).rounded(), y: (inset * scale).rounded(), width: CGFloat(captured.image.width), height: CGFloat(captured.image.height))
+            guard let expected = page.cropping(to: crop) else { return }
+            let difference = Self.pixelDifference(captured.image, expected)
+            Log.app.notice("debug.pin-capture-check setting=\(self.settings.pinsAppearInCaptures, privacy: .public) largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public)")
+        } catch {
+            Log.app.error("debug.pin-capture-check failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Self-Timer on drawn screens. The backdrop under the countdown is the drawn page too, so neither the

@@ -17,6 +17,8 @@ public struct HistoryActions {
     public var reveal: (HistoryItem) -> Void
     /// Opens the capture in the OCR panel.
     public var recognizeText: (HistoryItem) -> Void
+    /// Keeps the capture on screen as a pin.
+    public var pin: (HistoryItem) -> Void
     /// Moves the capture to the Trash, where it can be put back from.
     public var moveToTrash: (HistoryItem) -> Void
 
@@ -28,6 +30,7 @@ public struct HistoryActions {
         annotate: @escaping (HistoryItem) -> Void,
         reveal: @escaping (HistoryItem) -> Void,
         recognizeText: @escaping (HistoryItem) -> Void,
+        pin: @escaping (HistoryItem) -> Void,
         moveToTrash: @escaping (HistoryItem) -> Void
     ) {
         self.restore = restore
@@ -37,6 +40,7 @@ public struct HistoryActions {
         self.annotate = annotate
         self.reveal = reveal
         self.recognizeText = recognizeText
+        self.pin = pin
         self.moveToTrash = moveToTrash
     }
 }
@@ -487,6 +491,7 @@ struct HistoryCard: View {
             if item.kind == .screenshot {
                 Button { model.actions.annotate(item) } label: { Text("Annotate", bundle: .module) }
                 Button { model.actions.recognizeText(item) } label: { Text("Recognize Text", bundle: .module) }
+                Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
             }
         }
         .accessibilityAction(named: Text("Move to Trash", bundle: .module)) { model.moveToTrash(item) }
@@ -566,6 +571,7 @@ struct HistoryCard: View {
         Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
         if item.kind == .screenshot {
             Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }
+            Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
         }
         Button { model.actions.reveal(item) } label: { Text("Show in Finder", bundle: .module) }
         Divider()

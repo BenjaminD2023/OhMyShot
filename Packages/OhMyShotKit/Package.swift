@@ -76,5 +76,10 @@ let package = Package(
             dependencies: ["OMSCapture"],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
+        .testTarget(
+            name: "OMSUITests",
+            dependencies: ["OMSUI"],
+            swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
+        ),
     ]
 )

@@ -75,6 +75,29 @@ public final class SettingsStore {
     /// The delays Self-Timer offers, in seconds.
     public static let selfTimerDelays = [2, 3, 5, 10, 15]
 
+    /// Pins' corners, in points; 0 is square. Pins have their own look, apart from how captures are taken.
+    public var pinCornerRadius: Double {
+        didSet { defaults.set(pinCornerRadius, forKey: Key.pinCornerRadius) }
+    }
+
+    /// The corner radii Settings offers for pins, in points.
+    public static let pinCornerRadii: ClosedRange<Double> = 0...24
+
+    /// Whether pins cast a shadow.
+    public var pinShadow: Bool {
+        didSet { defaults.set(pinShadow, forKey: Key.pinShadow) }
+    }
+
+    /// Whether pins have a hairline edge, so a white picture still reads against a white window.
+    public var pinBorder: Bool {
+        didSet { defaults.set(pinBorder, forKey: Key.pinBorder) }
+    }
+
+    /// Whether pins are in new screenshots, as they are on screen.
+    public var pinsAppearInCaptures: Bool {
+        didSet { defaults.set(pinsAppearInCaptures, forKey: Key.pinsAppearInCaptures) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -93,6 +116,10 @@ public final class SettingsStore {
             // captured, since the screen is taken the moment the shortcut is pressed.
             Key.freezeScreen: true,
             Key.selfTimerDelay: 5,
+            Key.pinCornerRadius: 12.0,
+            Key.pinShadow: true,
+            Key.pinBorder: true,
+            Key.pinsAppearInCaptures: true,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
@@ -103,6 +130,10 @@ public final class SettingsStore {
         freezeScreen = defaults.bool(forKey: Key.freezeScreen)
         let delay = defaults.integer(forKey: Key.selfTimerDelay)
         selfTimerDelay = Self.selfTimerDelays.contains(delay) ? delay : 5
+        pinCornerRadius = min(max(defaults.double(forKey: Key.pinCornerRadius), Self.pinCornerRadii.lowerBound), Self.pinCornerRadii.upperBound)
+        pinShadow = defaults.bool(forKey: Key.pinShadow)
+        pinBorder = defaults.bool(forKey: Key.pinBorder)
+        pinsAppearInCaptures = defaults.bool(forKey: Key.pinsAppearInCaptures)
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
@@ -119,6 +150,10 @@ public final class SettingsStore {
         static let exportDirectory = "exportDirectory"
         static let freezeScreen = "freezeScreen"
         static let selfTimerDelay = "selfTimerDelay"
+        static let pinCornerRadius = "pinCornerRadius"
+        static let pinShadow = "pinShadow"
+        static let pinBorder = "pinBorder"
+        static let pinsAppearInCaptures = "pinsAppearInCaptures"
         static let copyAfterCapture = "copyAfterCapture"
         static let saveAfterCapture = "saveAfterCapture"
         static let showQuickAccess = "showQuickAccess"

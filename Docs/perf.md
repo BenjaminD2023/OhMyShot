@@ -304,3 +304,21 @@ granted; one press, not a distribution. The user tried it and reported no proble
 confirmed: that a window letting the pointer through, ordered in above an app, closes none of its
 hover cards or menus.
 
+### Pins (2026-10-09)
+
+Debug build, the drawn demo page (1520×1120 px) pinned at 1:1 on the built-in display.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Footprint before / with two pins / 5 s after closing them | 74 / 100 / 74 MB | back to where it was |
+| Live resources after closing | none | none when idle |
+
+- **A pin costs about its picture twice over** (13 MB for a 6 MB picture: the bitmap and the window's
+  backing). A pin of a whole 6K display would hold about 80–160 MB while it is open; pins are the first
+  windows that stay open with a full-resolution picture, so they are the first thing to look at if the
+  footprint stays high. They hold nothing else: no timers, no observers beyond the accessibility display
+  options, and their window lease goes with the last pin.
+- **Captures take pins in through the filter**, as `exceptingWindows`; a pin opened since the last fetch
+  of the capturable content triggers one refetch in the next capture, and the content is fetched again
+  in the background as soon as a pin opens, so that capture rarely pays for it.
+

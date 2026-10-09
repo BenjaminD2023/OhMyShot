@@ -175,6 +175,38 @@ struct GeneralSettingsView: View {
                     Text("Play sounds", bundle: .module)
                 }
             }
+            Section {
+                LabeledContent {
+                    HStack(spacing: 10) {
+                        Slider(value: $settings.pinCornerRadius, in: SettingsStore.pinCornerRadii, step: 1) {
+                            Text("Corners", bundle: .module)
+                        }
+                        .labelsHidden()
+                        Text("\(Int(settings.pinCornerRadius)) pt", bundle: .module)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 40, alignment: .trailing)
+                    }
+                } label: {
+                    Text("Corners", bundle: .module)
+                }
+                Toggle(isOn: $settings.pinShadow) {
+                    Text("Shadow", bundle: .module)
+                }
+                Toggle(isOn: $settings.pinBorder) {
+                    Text("Edge", bundle: .module)
+                    Text("A hairline, so a white picture still reads against a white window.", bundle: .module)
+                }
+                Toggle(isOn: $settings.pinsAppearInCaptures) {
+                    Text("Show pins in new screenshots", bundle: .module)
+                    Text("When off, pins stay out of captures, like the rest of OhMyShot.", bundle: .module)
+                }
+            } header: {
+                Text("Pins", bundle: .module)
+            } footer: {
+                Text("Pin a capture from its Quick Access card or Capture History, a picture from the clipboard or a file from the menu bar, or an area with Capture Area and Pin.", bundle: .module)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .scrollDisabled(true)

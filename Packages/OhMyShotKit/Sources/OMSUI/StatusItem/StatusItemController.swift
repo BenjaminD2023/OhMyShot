@@ -44,6 +44,7 @@ public final class StatusItemController {
     private let menuTarget = MenuTarget()
     private let captureEntries: [Entry]
     private let textEntries: [Entry]
+    private let pinEntries: [Entry]
     private let historyEntries: [Entry]
     private let openSettings: () -> Void
     private let quit: () -> Void
@@ -52,6 +53,7 @@ public final class StatusItemController {
     public init(
         captureEntries: [Entry],
         textEntries: [Entry] = [],
+        pinEntries: [Entry] = [],
         historyEntries: [Entry] = [],
         openSettings: @escaping () -> Void,
         quit: @escaping () -> Void,
@@ -59,6 +61,7 @@ public final class StatusItemController {
     ) {
         self.captureEntries = captureEntries
         self.textEntries = textEntries
+        self.pinEntries = pinEntries
         self.historyEntries = historyEntries
         self.openSettings = openSettings
         self.quit = quit
@@ -89,7 +92,7 @@ public final class StatusItemController {
     private func makeMenu() -> NSMenu {
         menuTarget.removeAll()
         let menu = NSMenu()
-        for group in [captureEntries, textEntries, historyEntries] where !group.isEmpty {
+        for group in [captureEntries, textEntries, pinEntries, historyEntries] where !group.isEmpty {
             for entry in group {
                 let item = menuTarget.item(for: entry)
                 if let shortcut = entry.shortcut {

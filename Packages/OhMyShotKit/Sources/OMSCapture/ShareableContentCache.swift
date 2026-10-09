@@ -46,6 +46,14 @@ public final class ShareableContentCache {
         return own
     }
 
+    /// The windows among `ids`, fetching once more when one is missing: a pin opened since the last fetch.
+    public func windows(withIDs ids: Set<CGWindowID>) async throws -> [SCWindow] {
+        let found = try await current().windows.filter { ids.contains($0.windowID) }
+        guard found.count < ids.count else { return found }
+        content = nil
+        return try await current().windows.filter { ids.contains($0.windowID) }
+    }
+
     public func display(id: CGDirectDisplayID) async throws -> SCDisplay {
         if let display = try await current().displays.first(where: { $0.displayID == id }) {
             return display

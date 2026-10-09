@@ -17,6 +17,8 @@ public final class QuickAccessController {
         public var reveal: (QuickAccessItem) -> Void
         /// Opens the capture in the OCR panel.
         public var recognizeText: (QuickAccessItem) -> Void
+        /// Keeps the capture on screen as a pin.
+        public var pin: (QuickAccessItem) -> Void
         public var moveToTrash: (QuickAccessItem) -> Void
         /// A card was dismissed without being trashed.
         public var closed: (QuickAccessItem) -> Void
@@ -29,6 +31,7 @@ public final class QuickAccessController {
             annotate: @escaping (QuickAccessItem) -> Void,
             reveal: @escaping (QuickAccessItem) -> Void,
             recognizeText: @escaping (QuickAccessItem) -> Void,
+            pin: @escaping (QuickAccessItem) -> Void,
             moveToTrash: @escaping (QuickAccessItem) -> Void,
             closed: @escaping (QuickAccessItem) -> Void
         ) {
@@ -39,6 +42,7 @@ public final class QuickAccessController {
             self.annotate = annotate
             self.reveal = reveal
             self.recognizeText = recognizeText
+            self.pin = pin
             self.moveToTrash = moveToTrash
             self.closed = closed
         }
@@ -231,6 +235,7 @@ public final class QuickAccessController {
         stack.onAnnotate = { [weak self] item in self?.actions.annotate(item) }
         stack.onReveal = { [weak self] item in self?.actions.reveal(item) }
         stack.onRecognizeText = { [weak self] item in self?.actions.recognizeText(item) }
+        stack.onPin = { [weak self] item in self?.actions.pin(item) }
         stack.onMoveToTrash = { [weak self] item in
             guard let self else { return }
             items.removeAll { $0.id == item.id }
@@ -260,7 +265,8 @@ final class QuickAccessPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        level = .floating
+        // A step above pins, which share the floating level: a card that comes and goes stays on top.
+        level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true

@@ -20,6 +20,9 @@ final class CaptureCoordinator {
     var onCaptured: ((QuickAccessItem) -> Void)?
     /// Opens a capture in the annotation editor: its record and its pixels per point.
     var openInEditor: ((HistoryItem, CGFloat) -> Void)?
+    /// Receives a capture to pin where it was taken, with its record in the history. Set by the
+    /// composition root, which has the pins.
+    var onPin: ((CapturedFrame, HistoryItem?) -> Void)?
     /// How Self-Timer is cancelled, told to VoiceOver when it starts: the keys of its shortcut, or nil
     /// when it has none and the menu bar is the way. Set by the composition root.
     var selfTimerKeys: (() -> String?)?
@@ -109,6 +112,71 @@ final class CaptureCoordinator {
         #if DEBUG
         inPlaceView = view
         #endif
+    }
+
+    // MARK: Capture Area and Pin
+
+    /// Capture Area and Pin: choose an area (or a window), and it stays on screen as a pin where it was,
+    /// at its own size. It is kept in the history like any capture, without a Quick Access card or the
+    /// clipboard: the pin is where it went.
+    /// - Parameter freezes: whether the screen holds still while choosing; nil follows the setting.
+    func pinArea(freezes: Bool? = nil) {
+        guard !overlay.isActive else { return }
+        cancelSelfTimer()
+        let app = NSWorkspace.shared.frontmostApplication?.localizedName
+        overlay.freezesScreen = freezes ?? settings.freezeScreen
+        overlay.begin(mode: .area) { [weak self] outcome in
+            switch outcome {
+            case .region(let rect, _, _, let frozen):
+                Task { await self?.pin(area: rect, frozen: frozen, appName: app) }
+            case .window(let target, _):
+                Task { await self?.pin(window: target) }
+            case .annotated, .cancelled:
+                break
+            }
+        }
+    }
+
+    private func pin(area rect: CGRect, frozen: CapturedFrame?, appName: String?) async {
+        do {
+            let frame: CapturedFrame
+            if let frozen { frame = frozen } else { frame = try await capturer.captureArea(rect, in: displays.layout) }
+            let entry = await deliver(frame, appName: appName, copy: .never, showsCard: false)
+            onPin?(frame, entry)
+        } catch {
+            Log.capture.error("Capture Area and Pin failed to capture: \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
+        }
+    }
+
+    private func pin(window target: WindowTarget) async {
+        do {
+            let frame = try await capturer.captureWindow(target, shadow: true, layout: displays.layout)
+            let entry = await deliver(frame, appName: target.ownerName, copy: .never, showsCard: false)
+            onPin?(frame, entry)
+        } catch {
+            Log.capture.error("Capture Area and Pin failed to capture the window: \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
+        }
+    }
+
+    /// Saves a picture with no file of its own (a pin from the clipboard) to the export location, named
+    /// as captures are.
+    func save(image: CGImage) async -> URL? {
+        do {
+            let data = try await ImageExporter.encode(image, as: .png)
+            let directory = settings.exportDirectory
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let name = FilenameTemplate.standard.name(date: .now, appName: nil)
+            let destination = ImageExporter.availableURL(in: directory, name: name, format: .png)
+            try data.write(to: destination)
+            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
+            return destination
+        } catch {
+            Log.capture.error("Saving failed: \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
+            return nil
+        }
     }
 
     // MARK: Self-Timer
