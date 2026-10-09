@@ -5,6 +5,7 @@ import Observation
 import OMSAnnotate
 import OMSCapture
 import OMSCore
+import OMSOCR
 import OMSUI
 import OSLog
 import UniformTypeIdentifiers
@@ -45,6 +46,14 @@ final class CompositionRoot {
     }
 
     func start() {
+        // The redaction tool's suggestions: what reading finds better covered, read on this Mac.
+        AnnotationSession.findRedactions = { image in
+            let probe = LatencyProbe("annotate.redactions")
+            let found = (try? await SensitiveTextScanner().scan(image)) ?? []
+            probe.end()
+            Log.app.notice("Redaction suggestions: \(found.count, privacy: .public) found")
+            return found.map { RedactionSuggestion(rect: $0.box, label: Self.label(for: $0.kind)) }
+        }
         let statusItem = StatusItemController(
             captureEntries: [
                 .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
@@ -425,6 +434,21 @@ final class CompositionRoot {
         } catch {
             Log.capture.error("Adding \(name, privacy: .public) to the history failed: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
+        }
+    }
+
+    /// What a redaction suggestion's kind is called in its tooltip.
+    nonisolated static func label(for kind: SensitiveText.Kind) -> String {
+        switch kind {
+        case .email: String(localized: "Email address")
+        case .phone: String(localized: "Phone number")
+        case .card: String(localized: "Card number")
+        case .idNumber: String(localized: "ID number")
+        case .secret: String(localized: "Key or token")
+        case .ipAddress: String(localized: "IP address")
+        case .password: String(localized: "Password")
+        case .address: String(localized: "Address")
+        case .name: String(localized: "Name")
         }
     }
 

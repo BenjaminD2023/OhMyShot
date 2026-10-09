@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 ///
 /// Marks are layers drawn by the same renderer as exports; the capture is one layer the GPU scales.
 /// Zooming redraws the marks at the new size, so they stay sharp.
-public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation {
+public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemValidation, NSViewToolTipOwner {
     public let session: AnnotationSession
     /// Room around the picture that it keeps clear of when fitted, such as the tool rail's.
     public var contentInsets = NSEdgeInsets(top: 28, left: 28, bottom: 28, right: 28) {
@@ -75,6 +75,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var markLayers: [Annotation.ID: MarkLayer] = [:]
     private let selectionLayer = SelectionLayer()
     private let cropLayer = CropLayer()
+    /// The redaction tool's suggestions: dashed accent outlines around text reading found better covered,
+    /// each covered by a click. Never part of the picture.
+    private let suggestionLayer = CAShapeLayer()
+    /// A white line under the dashes, so their gaps are white.
+    private let suggestionHalo = CAShapeLayer()
+    /// The suggestions as VoiceOver finds them, one button each.
+    private var suggestionElements: [(suggestion: RedactionSuggestion, element: SuggestionElement)] = []
+    /// While a redaction is drawn by hand, the suggestions step aside.
+    private var hidesSuggestions = false
 
     private var displayOptions: NSObjectProtocol?
     private var userZoom: CGFloat?
@@ -120,12 +129,21 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         pictureLayer.isHidden = !captureHasOpaqueCorners
         host.layer?.addSublayer(pictureLayer)
         host.layer?.addSublayer(canvasLayer)
+        for layer in [suggestionHalo, suggestionLayer] {
+            layer.fillColor = nil
+            layer.isHidden = true
+            layer.actions = ["path": NSNull(), "hidden": NSNull(), "frame": NSNull(), "bounds": NSNull(), "position": NSNull()]
+            host.layer?.addSublayer(layer)
+        }
+        suggestionLayer.lineDashPattern = [4, 3]
         host.layer?.addSublayer(selectionLayer)
         host.layer?.addSublayer(cropLayer)
         cropLayer.isHidden = true
 
         session.observe { [weak self] event in self?.sessionChanged(event) }
         syncMarks()
+        // An editor that opens with the redaction tool in hand reads the capture for its suggestions now.
+        if session.tool == .redact { session.findRedactionsIfNeeded() }
         // Pictures dropped on the canvas are combined into the capture.
         registerForDraggedTypes([.fileURL, .png, .tiff])
         setAccessibilityElement(true)
@@ -236,6 +254,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
     }
 
+    public override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil, window != nil { session.cancelFindingRedactions() }
+    }
+
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
@@ -343,7 +366,71 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         if let cropRect { cropLayer.frameRect = viewRect(cropRect) }
         updateSelectionOutlines()
         CATransaction.commit()
+        updateSuggestions()
         onViewportChange?()
+    }
+
+    // MARK: Redaction suggestions
+
+    /// Outlines the open suggestions while the redaction tool is in hand and nothing is being drawn, with
+    /// each one's kind as its tooltip.
+    /// - Parameter fadingIn: the outlines arrive with a short fade (a reading that just finished), or at once
+    ///   with Reduce Motion.
+    private func updateSuggestions(fadingIn: Bool = false) {
+        let open = session.tool == .redact && !hidesSuggestions ? session.openRedactionSuggestions : []
+        let path = CGMutablePath()
+        for suggestion in open {
+            path.addRoundedRect(in: viewRect(session.coveringRect(of: suggestion)), cornerWidth: 3, cornerHeight: 3)
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for layer in [suggestionHalo, suggestionLayer] {
+            layer.frame = host.bounds
+            layer.path = path
+            layer.isHidden = open.isEmpty
+            if fadingIn, !open.isEmpty, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 0
+                fade.duration = 0.12
+                fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                layer.add(fade, forKey: "fade")
+            }
+        }
+        CATransaction.commit()
+        removeAllToolTips()
+        for suggestion in open {
+            addToolTip(viewRect(session.coveringRect(of: suggestion)), owner: self, userData: nil)
+        }
+        updateSuggestionElements(open)
+    }
+
+    public func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
+        guard let suggestion = session.redactionSuggestion(at: documentPoint(point)) else { return "" }
+        return suggestion.label + "\n" + String(localized: "Click to redact", bundle: .module)
+    }
+
+    /// One button per open suggestion for VoiceOver, kept while the suggestions stay the same so its focus
+    /// holds, and moved with the picture.
+    private func updateSuggestionElements(_ open: [RedactionSuggestion]) {
+        if suggestionElements.map(\.suggestion) != open {
+            suggestionElements = open.map { suggestion in
+                let element = SuggestionElement()
+                element.setAccessibilityRole(.button)
+                element.setAccessibilityLabel(String(localized: "\(suggestion.label), suggested redaction", bundle: .module))
+                element.setAccessibilityParent(self)
+                element.press = { [weak self] in self?.session.acceptRedactionSuggestion(suggestion) ?? false }
+                return (suggestion, element)
+            }
+            NSAccessibility.post(element: self, notification: .layoutChanged)
+        }
+        for (suggestion, element) in suggestionElements {
+            element.setAccessibilityFrameInParentSpace(viewRect(session.coveringRect(of: suggestion)))
+        }
+    }
+
+    public override func accessibilityChildren() -> [Any]? {
+        let children = super.accessibilityChildren() ?? []
+        return suggestionElements.isEmpty ? children : children + suggestionElements.map(\.element)
     }
 
     private var baseColorSpace: CGColorSpace {
@@ -515,7 +602,24 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             refreshRedactionsIfNeeded()
         case .settings:
             break
+        case .suggestions:
+            let finished = !session.isFindingRedactions
+            updateSuggestions(fadingIn: finished)
+            updateAccessibility()
+            let count = session.openRedactionSuggestions.count
+            if finished, session.tool == .redact {
+                // VoiceOver hears the end of the reading even when it found nothing.
+                NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
+                    .announcement: count > 0
+                        ? String(localized: "\(count) suggestions to redact", bundle: .module)
+                        : String(localized: "No suggestions to redact", bundle: .module),
+                    .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+                ])
+            }
         }
+        // Covered suggestions go, and the tool's own come and go with it.
+        if event == .document || event == .tool { updateSuggestions() }
+        if event == .tool { updateAccessibility() }
     }
 
     private func syncMarks() {
@@ -793,6 +897,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         var document = session.document
         switch drag {
         case .creating(let id, let tool, let start):
+            if tool == .redact, !hidesSuggestions, hypot(location.x - viewPoint(start).x, location.y - viewPoint(start).y) >= 4 {
+                hidesSuggestions = true
+                updateSuggestions()
+            }
             guard let mark = tool.mark(from: start, to: point, constrained: shift, settings: session.settings(for: tool), id: id) else { return }
             if let index = document.index(of: id) { document.items[index] = mark } else { document.items.append(mark) }
             session.updateLive(document, selecting: [])
@@ -844,6 +952,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         self.drag = nil
         let location = convert(event.locationInWindow, from: nil)
         defer {
+            hidesSuggestions = false
+            updateSuggestions()
             updateCursor(at: location)
             // Controls hidden during the drag come back where the marks now are.
             onViewportChange?()
@@ -853,6 +963,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             let startView = viewPoint(start)
             guard hypot(location.x - startView.x, location.y - startView.y) >= 4, session.document.item(id) != nil else {
                 session.cancelLiveChange()
+                // A click with the redaction tool on a suggestion covers it.
+                if tool == .redact { session.acceptRedactionSuggestion(at: start) }
                 return
             }
             session.endLiveChange(actionName: Self.addName(for: tool))
@@ -1113,6 +1225,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             cursor = handle == .bend || handle == .start || handle == .end ? .crosshair : Self.resizeCursor(for: handle)
         } else if hitItem(at: documentPoint(location)) != nil {
             cursor = .openHand
+        } else if session.tool == .redact, session.redactionSuggestion(at: documentPoint(location)) != nil {
+            cursor = .pointingHand
         } else {
             cursor = switch session.tool {
             case .select: .arrow
@@ -1492,6 +1606,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             pictureLayer.borderWidth = contrast ? 1 : 0.5
             pictureLayer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.16) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.10)
             selectionLayer.accent = NSColor.controlAccentColor.cgColor
+            // No fill: the accent is never a fill behind text, and this is the text being judged.
+            suggestionLayer.strokeColor = NSColor.controlAccentColor.cgColor
+            suggestionLayer.lineWidth = contrast ? 2 : 1.5
+            // As wide as the dashes, so their gaps are white: the outline holds on any content, blue link
+            // text and dark pages included, without reaching onto the text it surrounds.
+            suggestionHalo.strokeColor = CGColor(gray: 1, alpha: contrast ? 1 : 0.85)
+            suggestionHalo.lineWidth = contrast ? 2 : 1.5
             // Quiet in either appearance, a little firmer with Increase Contrast.
             backdropLayer.checker = dark
                 ? (CGColor(gray: 0.20, alpha: 1), CGColor(gray: contrast ? 0.30 : 0.25, alpha: 1))
@@ -1506,7 +1627,21 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     private func updateAccessibility() {
         let count = session.document.items.count
-        setAccessibilityLabel(String(localized: "Capture, \(count) marks", bundle: .module))
+        let suggestions = session.tool == .redact ? session.openRedactionSuggestions.count : 0
+        setAccessibilityLabel(suggestions > 0
+            ? String(localized: "Capture, \(count) marks, \(suggestions) suggestions to redact", bundle: .module)
+            : String(localized: "Capture, \(count) marks", bundle: .module))
+    }
+}
+
+/// A redaction suggestion as VoiceOver finds it: a button that covers the text.
+nonisolated final class SuggestionElement: NSAccessibilityElement {
+    /// Set and called on the main thread, where accessibility actions arrive.
+    nonisolated(unsafe) var press: (@MainActor () -> Bool)?
+
+    override func accessibilityPerformPress() -> Bool {
+        guard let press else { return false }
+        return MainActor.assumeIsolated { press() }
     }
 }
 

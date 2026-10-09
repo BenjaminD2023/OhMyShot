@@ -101,6 +101,22 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     }
 
     #if DEBUG
+    /// For scripted screenshots that show nothing: the window behind the wallpaper in the middle of the
+    /// main display, ordered in without making the app active.
+    public func showBehindWallpaper() {
+        guard let window else { return }
+        if windowLease == nil {
+            windowLease = ActiveResources.shared.acquire(.window)
+        }
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+        if let screen = NSScreen.screens.first {
+            window.setFrameOrigin(CGPoint(x: screen.frame.midX - window.frame.width / 2, y: screen.frame.midY - window.frame.height / 2))
+        }
+        window.orderFront(nil)
+        window.makeFirstResponder(content.canvas)
+        updateZoomLabel()
+    }
+
     /// For scripted screenshots: a tool in hand, a mark selected (by its place in the document), a text
     /// mark being edited, the capture at its actual size.
     public func preview(tool: AnnotationTool?, select: Int?, editText: Int?, actualSize: Bool) {
@@ -235,7 +251,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         if let current = session.document.backdrop, let layout = session.backdropLayout {
             backdrop = "\(current.fill) pad=\(current.padding) inset=\(current.inset) balanced=\(current.balanced) corners=\(current.cornerRadius) shadow=\(current.shadow) ratio=\(current.ratio.map { "\($0.width):\($0.height)" } ?? "auto") align=\(current.alignment.rawValue) output=\(NSStringFromRect(layout.output)) card=\(NSStringFromRect(layout.card)) matte=\(layout.matte != nil) bare=\(layout.isBare)"
         }
-        return "backdrop=[\(backdrop)] marks=[\(kinds)] selected=\(session.selection.count) tool=\(session.tool.rawValue) canvas=\(NSStringFromRect(session.document.canvas)) undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") redo=\(session.undoManager.canRedo ? session.undoManager.redoActionName : "-") unkept=\(session.hasUnkeptChanges) editing=\(content.canvas.isEditingText)"
+        return "backdrop=[\(backdrop)] marks=[\(kinds)] selected=\(session.selection.count) tool=\(session.tool.rawValue) canvas=\(NSStringFromRect(session.document.canvas)) undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") redo=\(session.undoManager.canRedo ? session.undoManager.redoActionName : "-") unkept=\(session.hasUnkeptChanges) editing=\(content.canvas.isEditingText) suggestions=\(session.isFindingRedactions ? "finding" : session.openRedactionSuggestions.map { "\($0.label)@\(NSStringFromRect($0.rect))" }.joined(separator: ";"))"
     }
     #endif
 

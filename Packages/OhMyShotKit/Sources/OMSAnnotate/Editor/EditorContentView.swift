@@ -12,6 +12,8 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     var onViewportChange: (() -> Void)?
     private let rail = ToolRail()
     private let capsule = StyleCapsule()
+    /// The open suggestions Redact All counted when the capsule was last shown.
+    private var shownSuggestions = 0
     /// What the capsule was last placed for, so a new selection fades it in while a zoom just moves it.
     private var capsuleAnchor: [Annotation.ID]?
     /// The background's adjustments, while their popover is open.
@@ -43,6 +45,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             canvas.refreshEditingStyle()
         }
         capsule.onDelete = { [weak self] in self?.session.deleteSelection() }
+        capsule.onRedactAll = { [weak self] in self?.session.acceptAllRedactionSuggestions() }
         capsule.onCropReset = { [weak self] in self?.canvas.resetCrop() }
         capsule.onCropDone = { [weak self] in
             guard let self else { return }
@@ -90,14 +93,22 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         case .document:
             // The selected mark may have changed kind of settings (undo, a restyle elsewhere), or the
             // background its fill.
-            if !session.selection.isEmpty || session.tool == .background { refreshCapsule() }
+            if !session.selection.isEmpty || session.tool == .background || suggestionCountChanged { refreshCapsule() }
             adjustments?.refresh()
         case .history:
             break
+        case .suggestions:
+            if session.tool == .redact { refreshCapsule() }
         }
     }
 
+    /// Whether Redact All's count is out of date: the capsule is rebuilt for it, not for every drag frame.
+    private var suggestionCountChanged: Bool {
+        session.tool == .redact && session.openRedactionSuggestions.count != shownSuggestions
+    }
+
     private func refreshCapsule() {
+        shownSuggestions = session.tool == .redact ? session.openRedactionSuggestions.count : 0
         if session.tool == .background {
             capsule.showBackground(StyleCapsule.BackgroundState(
                 backdrop: session.document.backdrop,
@@ -105,7 +116,11 @@ final class EditorContentView: NSView, NSPopoverDelegate {
                 blur: session.blurredCapture
             ))
         } else {
-            capsule.show(kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty)
+            capsule.show(
+                kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
+                suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
+                finding: session.tool == .redact && session.isFindingRedactions
+            )
         }
         placeCapsule()
     }

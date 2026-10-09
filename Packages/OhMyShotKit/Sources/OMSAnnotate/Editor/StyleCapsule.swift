@@ -8,6 +8,8 @@ final class StyleCapsule: NSView {
     /// A settings change and its undo name.
     var onChange: ((String, (inout ToolSettings) -> Void) -> Void)?
     var onDelete: (() -> Void)?
+    /// Redact All: covers every open redaction suggestion.
+    var onRedactAll: (() -> Void)?
     var onCropReset: (() -> Void)?
     var onCropDone: (() -> Void)?
     /// A background fill was picked; nil takes the background away.
@@ -28,6 +30,9 @@ final class StyleCapsule: NSView {
     private var kind: AnnotationTool = .arrow
     private var settings = ToolSettings()
     private var hasSelection = false
+    /// The redaction tool's open suggestions.
+    private var suggestions = 0
+    private var finding = false
     private var chips: [CapsuleChip] = []
     /// What the background controls show, when the background is in hand.
     private var background: BackgroundState?
@@ -135,10 +140,15 @@ final class StyleCapsule: NSView {
     }
 
     /// Shows the controls for `kind` with `settings`; `hasSelection` adds Delete.
-    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool) {
+    /// - Parameters:
+    ///   - suggestions: redaction suggestions not yet covered, for Redact All.
+    ///   - finding: the capture is being read for them.
+    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, finding: Bool = false) {
         self.kind = kind
         self.settings = settings
         self.hasSelection = hasSelection
+        self.suggestions = suggestions
+        self.finding = finding
         background = nil
         rebuild()
     }
@@ -191,6 +201,12 @@ final class StyleCapsule: NSView {
         }
         if hasSelection {
             sections.append([symbolChip("trash", name: String(localized: "Delete", bundle: .module), selected: false) { [weak self] in self?.onDelete?() }])
+        }
+        // Kept beside Delete too: a redaction drawn by hand is selected, and the rest still wait.
+        if kind == .redact, finding {
+            sections.append([CapsuleStatus(String(localized: "Finding text…", bundle: .module))])
+        } else if kind == .redact, suggestions > 0 {
+            sections.append([textChip(String(localized: "Redact All (\(suggestions))", bundle: .module)) { [weak self] in self?.onRedactAll?() }])
         }
         for (index, section) in sections.enumerated() {
             if index > 0 { addDivider() }
@@ -793,6 +809,37 @@ final class StyleCapsule: NSView {
         case .blur: String(localized: "Blur", bundle: .module)
         case .pixelate: String(localized: "Pixelate", bundle: .module)
         }
+    }
+}
+
+/// A quiet status in the capsule where a chip will come: a small spinner and a few words, as the text
+/// panel shows its reading.
+final class CapsuleStatus: NSStackView {
+    init(_ text: String) {
+        super.init(frame: .zero)
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isIndeterminate = true
+        spinner.startAnimation(nil)
+        let label = NSTextField(labelWithString: text)
+        label.font = NSFont.systemFont(ofSize: 12)
+        label.textColor = .secondaryLabelColor
+        orientation = .horizontal
+        spacing = 6
+        edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 12)
+        addArrangedSubview(spinner)
+        addArrangedSubview(label)
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(equalToConstant: 30).isActive = true
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel(text)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
     }
 }
 

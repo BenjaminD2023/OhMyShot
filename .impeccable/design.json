@@ -54,6 +54,11 @@
         "displayName": "Ruler Outline",
         "canonical": "CGColor(gray: 1, alpha: 0.85); 1.0 under Increase Contrast"
       },
+      "suggestion-outline": {
+        "role": "neutral",
+        "displayName": "Suggestion Outline",
+        "canonical": "CGColor(gray: 1, alpha: 0.85), 1.5 pt under 1.5 pt accent dashes [4, 3]; solid white, 2 pt under 2 pt dashes, under Increase Contrast. As wide as the dashes, unlike the Ruler Outline's 3 pt, so it stays off the glyphs of the text it surrounds and neighboring outlines do not touch."
+      },
       "reading-capsule-light": {
         "role": "neutral",
         "displayName": "Reading Capsule, Light",
@@ -582,6 +587,11 @@
         "purpose": "The style capsule appearing for a new selection or tool, in the editor and in in-place annotation; it moves without fading on zoom and hides while a mark is dragged (and, in place, while the selection is adjusted). Instant under Reduce Motion."
       },
       {
+        "name": "suggestion-fade",
+        "value": "0.12s ease-out, opacity 0 to 1",
+        "purpose": "Redaction suggestion outlines arriving when a reading finishes. Picking up the Redact tool again, covering a suggestion, or ending a hand-drawn redaction shows or removes them at once. Instant under Reduce Motion."
+      },
+      {
         "name": "countdown-fade",
         "value": "0.12s ease-out, opacity 0 to 1 (Theme.Motion.fade); no fade out",
         "purpose": "The Self-Timer outline and disc appearing together; gone at once at zero or on cancel. Instant under Reduce Motion."
@@ -769,7 +779,7 @@
       "name": "Style Capsule",
       "kind": "chip",
       "refersTo": "style-capsule-light",
-      "description": "A mark's style beside the mark: white 0.97 capsule, 38 pt tall, 0.5 pt hairline, floating reading shadow, no glass. Color dots (chosen one ringed in the accent), size dots, variants, Shadow, Delete, split by hairlines. Light shown; Dark uses a 0.17 gray at 0.96 and white 0.12 hairline. With the Background tool it holds 14 pt fill swatches in 24 pt chips (No Background, Transparent, ten gradients, Blurred Capture, Background Color…, Picture; the one in use ringed in the accent), then Adjust (a 320 pt grouped Form in the system popover) and Presets chips. A combined image shows only Shadow and Delete.",
+      "description": "A mark's style beside the mark: white 0.97 capsule, 38 pt tall, 0.5 pt hairline, floating reading shadow, no glass. Color dots (chosen one ringed in the accent), size dots, variants, Shadow, Delete, split by hairlines. Light shown; Dark uses a 0.17 gray at 0.96 and white 0.12 hairline. With the Background tool it holds 14 pt fill swatches in 24 pt chips (No Background, Transparent, ten gradients, Blurred Capture, Background Color…, Picture; the one in use ringed in the accent), then Adjust (a 320 pt grouped Form in the system popover) and Presets chips. A combined image shows only Shadow and Delete. With the Redact tool a last section after Delete holds, while the capture is read, a small system spinner and \"Finding text…\" (12 pt regular, secondary ink, 6 pt apart, 8/12 pt insets, 30 pt tall), then \"Redact All (N)\", a plain text chip that covers every open suggestion in the current method as one undo step.",
       "html": "<div class=\"ds-style\" role=\"toolbar\" aria-label=\"Arrow Style\"><button class=\"ds-dot ds-dot-on\" style=\"--c:#FF3B30\" aria-label=\"Red\"></button><button class=\"ds-dot\" style=\"--c:#FFCC00\" aria-label=\"Yellow\"></button><button class=\"ds-dot\" style=\"--c:#007AFF\" aria-label=\"Blue\"></button><button class=\"ds-dot\" style=\"--c:#FFFFFF\" aria-label=\"White\"></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip ds-size\" aria-label=\"Size 1\"><i style=\"width:4px;height:4px\"></i></button><button class=\"ds-cchip ds-size ds-cchip-on\" aria-label=\"Size 2\"><i style=\"width:7px;height:7px\"></i></button><button class=\"ds-cchip ds-size\" aria-label=\"Size 3\"><i style=\"width:10px;height:10px\"></i></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip ds-cchip-on\" aria-label=\"Classic Arrow\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M2.5 11.5L11 3M6 3h5v5\"/></svg></button><button class=\"ds-cchip\" aria-label=\"Open Arrow\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linecap=\"round\"><path d=\"M2.5 11.5L11 3M7 3h4v4\"/></svg></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip\" aria-label=\"Delete\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.4\" stroke-linecap=\"round\"><path d=\"M2.5 4h9M5.5 4V2.5h3V4M4 4l.6 7.5h4.8L10 4\"/></svg></button></div>",
       "css": ".ds-style{display:inline-flex;align-items:center;gap:2px;height:38px;padding:4px 4px 4px 8px;box-sizing:border-box;border-radius:9999px;background:rgba(255,255,255,0.97);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);color:rgba(0,0,0,0.85);} .ds-dot{width:24px;height:30px;padding:0;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:default;} .ds-dot::before{content:'';width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 0.5px rgba(0,0,0,0.18);} .ds-dot-on::before{box-shadow:0 0 0 0.5px rgba(0,0,0,0.18),0 0 0 2.5px #fff,0 0 0 4.5px AccentColor;} .ds-cchip{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:none;border-radius:9999px;background:transparent;color:inherit;cursor:default;} .ds-size{width:26px;} .ds-size i{display:block;border-radius:50%;background:currentColor;} .ds-cchip:hover{background:rgba(0,0,0,0.045);} .ds-cchip-on,.ds-cchip-on:hover{background:rgba(0,0,0,0.08);color:AccentColor;} .ds-cchip:focus-visible,.ds-dot:focus-visible{outline:2px solid AccentColor;outline-offset:1px;border-radius:9999px;} .ds-style-sep{width:1px;height:18px;margin:0 4px;background:rgba(0,0,0,0.1);} @media (prefers-contrast: more){.ds-style{border:1px solid rgba(0,0,0,0.35);} .ds-cchip-on{background:rgba(0,0,0,0.16);}}"
     },
@@ -845,7 +855,7 @@
       },
       {
         "name": "The Soft Lift Rule",
-        "body": "Shadows are downward, widely blurred, and low opacity. No hard offset shadows, no glows, no halos. A thin overlay line's contrast outline (the dark stroke under the white selection edge and crosshair, the white stroke under the ruler's accent lines) is part of the line, not a halo.",
+        "body": "Shadows are downward, widely blurred, and low opacity. No hard offset shadows, no glows, no halos. A thin overlay line's contrast outline (the dark stroke under the white selection edge and crosshair, the white stroke under the ruler's accent lines and under a redaction suggestion's dashes) is part of the line, not a halo.",
         "section": "elevation"
       },
       {
@@ -860,7 +870,7 @@
       },
       {
         "name": "The Exported-Is-Drawn Rule",
-        "body": "What is drawn into the picture is exported: marks, the mark shadow, the background, its card shadow, and the matte. What helps on screen never is: the checkerboard, selection and handles, the drop ring, the crop frame and the in-place selection frame, the picture border, and the in-window shadow.",
+        "body": "What is drawn into the picture is exported: marks, the mark shadow, the background, its card shadow, and the matte. What helps on screen never is: the checkerboard, selection and handles, the drop ring, the crop frame and the in-place selection frame, redaction suggestions, the picture border, and the in-window shadow.",
         "section": "elevation"
       }
     ],
@@ -870,7 +880,7 @@
       "**Do** give floating elements a soft downward shadow plus a 0.5 pt hairline so they hold on white pages.",
       "**Do** put live numbers in a reading capsule: SF Pro Rounded 12 pt semibold with monospaced digits.",
       "**Do** keep text-bearing controls opaque over captures; use glass for the rim, not the fill.",
-      "**Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills, 2 pt ruler lines over a 4 pt solid white outline.",
+      "**Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills, 2 pt ruler lines over a 4 pt solid white outline, 2 pt suggestion dashes over a 2 pt solid white line.",
       "**Do** use standard windows, toolbars, grouped Forms, and SwiftUI glass button styles inside windows.",
       "**Do** build chips in floating controls (the All-In-One bar, the in-place toolbar, the tool rail, the style capsule) as borderless buttons with the chip fills, and hand-draw whole controls only where AppKit would render them dimmed (non-key floating panels), tracking presses like standard buttons."
     ],
@@ -878,10 +888,11 @@
       "**Don't** bring back Contact Sheet: no frame numbers, no captures joined into a strip, no film-edge or darkroom motifs.",
       "**Don't** build dark heavy panels, bars, or strips; small dark round corner buttons over a hovered picture or pin, and a locked pin's mark in the same style, are the only dark chrome.",
       "**Don't** put glass, blur, or a material over the full-screen overlay; the room is a flat 26% fill.",
-      "**Don't** use hard offset shadows, glows, or halos; a thin overlay line's contrast outline (dark under white, white under the ruler's accent) is not one.",
+      "**Don't** use hard offset shadows, glows, or halos; a thin overlay line's contrast outline (dark under white, white under the ruler's accent and a suggestion's dashes) is not one.",
       "**Don't** use the rounded face inside standard windows, or proportional digits in a changing number.",
       "**Don't** invent a brand hue or tint chrome toward one; fixed hues belong to mark inks only.",
       "**Don't** animate anything that follows the pointer, or run any motion under Reduce Motion.",
+      "**Don't** fill an outline around text the user is judging, or let its contrast line reach onto the glyphs; outlines that sit tight around text take a white line no wider than their own.",
       "**Don't** give the editor a wide tool toolbar or a fixed option strip; tools live in the rail and a mark's style beside the mark."
     ]
   }

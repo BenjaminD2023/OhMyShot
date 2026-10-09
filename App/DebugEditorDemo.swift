@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import CoreImage
 import Foundation
 import OMSAnnotate
 import OMSCore
@@ -11,12 +12,16 @@ import OSLog
 enum DebugEditorDemo {
     private static var editor: AnnotationEditorWindowController?
 
+    /// The demo editor's window, while it is open.
+    static var window: NSWindow? { editor?.window }
+
     /// - Parameters:
     ///   - marks: whether to start with the sample marks.
     ///   - spot: adds a spotlight over the QR code.
-    static func open(marks: Bool, spot: Bool, tool: AnnotationTool?, select: Int?, editText: Int?, actualSize: Bool) {
+    ///   - hidden: behind the wallpaper, the app left inactive.
+    static func open(marks: Bool, spot: Bool, tool: AnnotationTool?, select: Int?, editText: Int?, actualSize: Bool, hidden: Bool = false, dark: Bool = false) {
         editor?.close()
-        guard let image = DebugPanelDemo.image() else { return }
+        guard let page = DebugPanelDemo.image(), let image = dark ? inverted(page) : page else { return }
         let file = DebugHooks.snapshotDirectory.appending(path: "editor-demo.png")
         try? FileManager.default.createDirectory(at: DebugHooks.snapshotDirectory, withIntermediateDirectories: true)
         var document = AnnotationDocument(pixelSize: CGSize(width: image.width, height: image.height), scale: 2)
@@ -39,7 +44,7 @@ enum DebugEditorDemo {
             Task { @MainActor in editor = nil }
         }
         editor = controller
-        controller.show()
+        if hidden { controller.showBehindWallpaper() } else { controller.show() }
         Task {
             // After the window has laid out, so the selection's capsule finds its place.
             try? await Task.sleep(for: .milliseconds(300))
@@ -151,10 +156,22 @@ enum DebugEditorDemo {
         if let text = value("type") {
             (editor.window?.firstResponder as? NSTextView)?.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
         }
+        // redactall=1 covers every redaction suggestion, as the capsule's Redact All does.
+        if value("redactall") == "1" {
+            editor.session.acceptAllRedactionSuggestions()
+        }
         Log.app.notice("debug.editor-act \(editor.debugSummary, privacy: .public)")
         if value("chain") == "1" {
             Log.app.notice("debug.editor-chain \(editor.debugUndoChain, privacy: .public)")
         }
+    }
+
+    /// The page with its shades turned over: white text on black, for how marks read on dark content.
+    private static func inverted(_ image: CGImage) -> CGImage? {
+        let filter = CIFilter(name: "CIColorInvert")
+        filter?.setValue(CIImage(cgImage: image), forKey: kCIInputImageKey)
+        guard let output = filter?.outputImage else { return nil }
+        return CIContext().createCGImage(output, from: output.extent, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
     }
 
     private static func backdropFill(_ text: String) -> Backdrop.Fill? {

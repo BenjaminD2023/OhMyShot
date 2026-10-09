@@ -42,6 +42,8 @@ struct DebugHooks {
 
     /// Where `snapshot` writes window captures.
     static let snapshotDirectory = URL.cachesDirectory.appending(path: "\(Log.subsystem)/debug-snapshots", directoryHint: .isDirectory)
+    /// The real reader for redaction suggestions, while redact-slow stands in for it.
+    private static var unslowedFindRedactions: (@Sendable (CGImage) async -> [RedactionSuggestion])?
 
     func handle(_ url: URL) {
         let hook = url.pathComponents.dropFirst().first ?? ""
@@ -214,7 +216,9 @@ struct DebugHooks {
             Relauncher.relaunch()
         case "editor-demo":
             // The annotation editor on the drawn page: marks=0 for none, spot=1 adds a spotlight,
-            // tool=<tool>, select=<index>, edit=<index of a text mark>, zoom=actual.
+            // tool=<tool>, select=<index>, edit=<index of a text mark>, zoom=actual; hidden=1 opens it
+            // behind the wallpaper without making the app active, for editor-render; dark=1 turns the
+            // page's shades over (white text on black).
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in items.first { $0.name == name }?.value }
             DebugEditorDemo.open(
@@ -223,8 +227,19 @@ struct DebugHooks {
                 tool: value("tool").flatMap(AnnotationTool.init(rawValue:)),
                 select: value("select").flatMap(Int.init),
                 editText: value("edit").flatMap(Int.init),
-                actualSize: value("zoom") == "actual"
+                actualSize: value("zoom") == "actual",
+                hidden: value("hidden") == "1",
+                dark: value("dark") == "1"
             )
+        case "editor-render":
+            // The demo editor's window alone, through ScreenCaptureKit, as <name>.png: works behind the
+            // wallpaper (editor-demo?hidden=1), so nothing shows.
+            if let window = DebugEditorDemo.window {
+                let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "name" }?.value ?? "editor-render"
+                Task { await captureHiddenWindow(window, name: name) }
+            } else {
+                Log.app.error("debug.editor-render: no demo editor")
+            }
         case "inplace-demo":
             // In-place annotation over a drawn screen, never the real one: x, y, w, h choose the area in
             // the display's points from its top-left corner (default: just around the drawn page).
@@ -370,7 +385,7 @@ struct DebugHooks {
             Task { await runSelfTimerDemo(seconds: Self.intParameter("seconds", in: url) ?? 3) }
         case "inplace-act":
             // Acts on the in-place annotation: tool=<tool>, drag=x1,y1,x2,y2 (display points from the
-            // top-left), shift=1, clicks=2, key=<characters>&code=<key code>[&cmd=1], type=<text>,
+            // top-left), shift=1, clicks=2, key=<characters>&code=<key code>[&cmd=1], type=<text>, redactall=1,
             // action=undo|redo|copy|save|cancel|openInEditor. Logs a summary.
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             actInPlace { name in items.first { $0.name == name }?.value }
@@ -378,6 +393,29 @@ struct DebugHooks {
             // Acts on the demo editor, or else on an editor opened from a card.
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             DebugEditorDemo.act(on: annotations.openEditors.first) { name in items.first { $0.name == name }?.value }
+        case "redact-slow":
+            // Reads for redaction suggestions take seconds= longer (0 puts them back), so the capsule's
+            // finding state can be captured.
+            if Self.unslowedFindRedactions == nil { Self.unslowedFindRedactions = AnnotationSession.findRedactions }
+            let seconds = Self.intParameter("seconds", in: url) ?? 3
+            let original = Self.unslowedFindRedactions
+            if seconds == 0 {
+                AnnotationSession.findRedactions = original
+            } else {
+                AnnotationSession.findRedactions = { @Sendable image in
+                    try? await Task.sleep(for: .seconds(seconds))
+                    return await original?(image) ?? []
+                }
+            }
+            Log.app.notice("debug.redact-slow \(seconds, privacy: .public) s")
+        case "redact-scan":
+            // Reads the drawn demo page for redaction suggestions and logs them; nothing is shown.
+            if let image = DebugPanelDemo.image(), let find = AnnotationSession.findRedactions {
+                Task {
+                    let found = await find(image).map { "\($0.label)@\(NSStringFromRect($0.rect))" }
+                    Log.app.notice("debug.redact-scan \(found.joined(separator: "; "), privacy: .public)")
+                }
+            }
         case "qa-demo":
             // The drawn page delivered as a capture: into the history and a card, never the clipboard.
             if let image = DebugPanelDemo.image(), let display = displays.layout.primary {
@@ -977,6 +1015,7 @@ struct DebugHooks {
             return
         }
         if let tool = value("tool").flatMap(AnnotationTool.init(rawValue:)) { view.session.tool = tool }
+        if value("redactall") == "1" { view.session.acceptAllRedactionSuggestions() }
         if let drag = value("drag")?.split(separator: ",").compactMap({ Double($0) }), drag.count == 4 {
             view.simulateDrag(
                 from: CGPoint(x: drag[0], y: drag[1]), to: CGPoint(x: drag[2], y: drag[3]),

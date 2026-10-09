@@ -37,3 +37,9 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   the rail's tools, Undo/Redo, and Open in Editor, Save, Cancel, and accent Copy; the style capsule
   sits right-aligned under it. The selection keeps a resizable frame. Its interface is specified in
   DESIGN.md's In-Place Annotation component.
+- OCR redaction suggestions: built (2026-10-10). Picking up the Redact tool reads the capture once,
+  on this Mac, and outlines text better covered (emails, phones, cards, ID numbers, keys, IPs,
+  passwords, addresses, names) in dashed accent over a same-width white line, no fill; a click covers
+  one in the current method, Redact All in the capsule covers the rest, and "Finding text…" holds the
+  capsule's place while reading. The same in the editor and in place; never exported. Its interface
+  is specified in DESIGN.md's Canvas, Style Capsule, and Suggestion Outline entries.

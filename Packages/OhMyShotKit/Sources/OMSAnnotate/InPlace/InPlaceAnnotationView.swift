@@ -39,6 +39,8 @@ public final class InPlaceAnnotationView: NSView {
     private let chrome = SelectionChromeView()
     let toolbar = InPlaceToolbar()
     private let capsule = StyleCapsule()
+    /// The open suggestions Redact All counted when the capsule was last shown.
+    private var shownSuggestions = 0
     private let actions: Actions
     private var adjustment: Adjustment?
     private var finished = false
@@ -84,6 +86,7 @@ public final class InPlaceAnnotationView: NSView {
             canvas.refreshEditingStyle()
         }
         capsule.onDelete = { [weak self] in self?.session.deleteSelection() }
+        capsule.onRedactAll = { [weak self] in self?.session.acceptAllRedactionSuggestions() }
         canvas.onCopy = { [weak self] in self?.perform(.copy) }
         canvas.onSave = { [weak self] in self?.perform(.save) }
         canvas.onViewportChange = { [weak self] in self?.placeAccessories() }
@@ -219,7 +222,7 @@ public final class InPlaceAnnotationView: NSView {
         switch event {
         case .document:
             layoutSelection()
-            if !session.selection.isEmpty { refreshCapsule() }
+            if !session.selection.isEmpty || suggestionCountChanged { refreshCapsule() }
         case .selection, .settings:
             refreshCapsule()
         case .tool:
@@ -229,11 +232,23 @@ public final class InPlaceAnnotationView: NSView {
         case .history:
             toolbar.canUndo = session.undoManager.canUndo
             toolbar.canRedo = session.undoManager.canRedo
+        case .suggestions:
+            if session.tool == .redact { refreshCapsule() }
         }
     }
 
+    /// Whether Redact All's count is out of date: the capsule is rebuilt for it, not for every drag frame.
+    private var suggestionCountChanged: Bool {
+        session.tool == .redact && session.openRedactionSuggestions.count != shownSuggestions
+    }
+
     private func refreshCapsule() {
-        capsule.show(kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty)
+        shownSuggestions = session.tool == .redact ? session.openRedactionSuggestions.count : 0
+        capsule.show(
+            kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
+            suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
+            finding: session.tool == .redact && session.isFindingRedactions
+        )
         placeAccessories()
     }
 
@@ -532,7 +547,7 @@ public final class InPlaceAnnotationView: NSView {
     /// A summary for scripted checks.
     public var debugSummary: String {
         let marks = session.document.items.map { AnnotationSession.tool(for: $0).rawValue }.joined(separator: ",")
-        return "selection=\(NSStringFromRect(selectionRect)) canvas=\(NSStringFromRect(session.document.canvas)) tool=\(session.tool.rawValue) marks=[\(marks)] toolbar=\(NSStringFromRect(toolbar.frame)) capsule=\(capsule.alphaValue > 0 ? NSStringFromRect(capsule.frame) : "hidden") undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") canvasZoom=\(canvas.zoom) canvasPicture=\(NSStringFromRect(canvas.pictureFrame))"
+        return "selection=\(NSStringFromRect(selectionRect)) canvas=\(NSStringFromRect(session.document.canvas)) tool=\(session.tool.rawValue) marks=[\(marks)] toolbar=\(NSStringFromRect(toolbar.frame)) capsule=\(capsule.alphaValue > 0 ? NSStringFromRect(capsule.frame) : "hidden") undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") canvasZoom=\(canvas.zoom) canvasPicture=\(NSStringFromRect(canvas.pictureFrame)) suggestions=\(session.isFindingRedactions ? "finding" : "\(session.openRedactionSuggestions.count)")"
     }
     #endif
 }

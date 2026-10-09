@@ -17,7 +17,13 @@ public final class AnnotationSession {
         case settings
         /// What Undo and Redo would do changed.
         case history
+        /// Redaction suggestions came in, or started being looked for.
+        case suggestions
     }
+
+    /// Finds what in a capture is better covered, for the redaction tool's suggestions; set once by the app,
+    /// which reads text. Nil leaves the tool without suggestions.
+    public static var findRedactions: (@Sendable (CGImage) async -> [RedactionSuggestion])?
 
     /// The capture, as it was taken.
     public let base: CGImage
@@ -28,6 +34,7 @@ public final class AnnotationSession {
             // Cropping and the background are passing modes; the next capture opens with a drawing tool.
             if !tool.isPictureMode, remembersTool { UserDefaults.standard.set(tool.rawValue, forKey: Self.toolKey) }
             if tool.isPictureMode, !oldValue.isPictureMode { toolBeforeMode = oldValue }
+            if tool == .redact { findRedactionsIfNeeded() }
             notify(.tool)
         }
     }
@@ -40,6 +47,12 @@ public final class AnnotationSession {
     public private(set) var selection: [Annotation.ID] = []
     /// Whether the document changed since it was last kept.
     public private(set) var hasUnkeptChanges = false
+    /// What reading found better covered, once the redaction tool has been in hand.
+    public private(set) var redactionSuggestions: [RedactionSuggestion] = []
+    /// Whether the capture is being read for them.
+    public private(set) var isFindingRedactions = false
+    @ObservationIgnored private var hasLookedForRedactions = false
+    @ObservationIgnored private var findTask: Task<Void, Never>?
 
     @ObservationIgnored public let undoManager = UndoManager()
     @ObservationIgnored private var settings: [AnnotationTool: ToolSettings]
@@ -285,6 +298,99 @@ public final class AnnotationSession {
         let source = AnnotationRenderer.redactionSource(document, base: base)
         redactionCache = (images, source)
         return source
+    }
+
+    // MARK: Redaction suggestions
+
+    /// Reads the capture for redaction suggestions, once per session: the first time the redaction tool is
+    /// in hand, so nothing is read for an editor that never covers anything.
+    public func findRedactionsIfNeeded() {
+        guard !hasLookedForRedactions, let find = Self.findRedactions else { return }
+        hasLookedForRedactions = true
+        // What blurs read: the capture with any combined images, placed where it sits in the document.
+        let source = redactionSource ?? (base, .zero)
+        isFindingRedactions = true
+        notify(.suggestions)
+        findTask = Task { [weak self] in
+            let found = await find(source.image)
+            guard let self, !Task.isCancelled else { return }
+            redactionSuggestions = found.map { RedactionSuggestion(rect: $0.rect.offsetBy(dx: source.origin.x, dy: source.origin.y), label: $0.label) }
+            isFindingRedactions = false
+            findTask = nil
+            notify(.suggestions)
+        }
+    }
+
+    /// Drops a reading still under way, for a canvas that is closing; the next time the redaction tool is
+    /// in hand reads again.
+    public func cancelFindingRedactions() {
+        guard let findTask else { return }
+        findTask.cancel()
+        self.findTask = nil
+        hasLookedForRedactions = false
+        isFindingRedactions = false
+    }
+
+    /// The suggestions no redaction covers yet, within what the picture keeps after a crop.
+    public var openRedactionSuggestions: [RedactionSuggestion] {
+        let covers = document.items.compactMap { item -> CGRect? in
+            if case .redaction(let redaction) = item.shape { redaction.rect.standardized } else { nil }
+        }
+        let kept = document.canvas.standardized
+        return redactionSuggestions.filter { suggestion in
+            // Only the part a crop keeps needs covering.
+            let visible = suggestion.rect.intersection(kept)
+            guard !visible.isNull, visible.width > 0, visible.height > 0 else { return false }
+            let area = visible.width * visible.height
+            return !covers.contains { cover in
+                let shared = cover.intersection(visible)
+                return !shared.isNull && shared.width * shared.height >= area * 0.9
+            }
+        }
+    }
+
+    /// Where an open suggestion's redaction would go: its covering rectangle, within what a crop keeps.
+    public func coveringRect(of suggestion: RedactionSuggestion) -> CGRect {
+        suggestion.coveringRect(within: document.canvas)
+    }
+
+    /// The open suggestion at `point` (capture pixels), if any.
+    public func redactionSuggestion(at point: CGPoint) -> RedactionSuggestion? {
+        openRedactionSuggestions.first { coveringRect(of: $0).contains(point) }
+    }
+
+    /// Covers the open suggestion at `point` with a redaction in the tool's method, as one undoable step.
+    @discardableResult
+    public func acceptRedactionSuggestion(at point: CGPoint) -> Bool {
+        guard let suggestion = redactionSuggestion(at: point) else { return false }
+        return acceptRedactionSuggestion(suggestion)
+    }
+
+    /// Covers `suggestion`, if it is still open, as one undoable step.
+    @discardableResult
+    public func acceptRedactionSuggestion(_ suggestion: RedactionSuggestion) -> Bool {
+        guard openRedactionSuggestions.contains(suggestion) else { return false }
+        cover([suggestion], actionName: String(localized: "Redact", bundle: .module))
+        return true
+    }
+
+    /// Covers every open suggestion, as one undoable step.
+    public func acceptAllRedactionSuggestions() {
+        let open = openRedactionSuggestions
+        guard !open.isEmpty else { return }
+        cover(open, actionName: String(localized: "Redact All", bundle: .module))
+    }
+
+    private func cover(_ suggestions: [RedactionSuggestion], actionName: String) {
+        let settings = settings(for: .redact)
+        var newDocument = document
+        for suggestion in suggestions {
+            let rect = coveringRect(of: suggestion)
+            if let mark = AnnotationTool.redact.mark(from: rect.origin, to: CGPoint(x: rect.maxX, y: rect.maxY), constrained: false, settings: settings) {
+                newDocument.items.append(mark)
+            }
+        }
+        commit(newDocument, selecting: [], actionName: actionName)
     }
 
     // MARK: Selection
