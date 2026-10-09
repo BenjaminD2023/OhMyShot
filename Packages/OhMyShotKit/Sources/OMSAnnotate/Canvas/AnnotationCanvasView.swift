@@ -25,6 +25,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public var isEditingText: Bool { editing != nil }
     /// After any change to where the picture or the selection is on screen.
     public var onViewportChange: (() -> Void)?
+    /// Drawing in place over the capture overlay: the picture at the screen's own size under the frozen
+    /// screen's pixels, no zoom, no window chrome, the drawing tools only. Set by `configureInPlace`.
+    public private(set) var isInPlace = false
+    /// Chooses the pointer for a point in this view ahead of the canvas, for a host whose own controls
+    /// reach over it (the in-place selection's edges); nil leaves it to the canvas.
+    public var cursorOverride: ((CGPoint) -> NSCursor?)?
     public var onCopy: (() -> Void)?
     public var onSave: (() -> Void)?
     public var onSaveProject: (() -> Void)?
@@ -258,7 +264,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func updateViewport() {
         let canvas = shownCanvas
         let area = freeArea
-        zoom = userZoom ?? fitZoom
+        // In place the capture is shown at the size it has on screen, wherever the view's frame is.
+        zoom = isInPlace ? 1 / session.document.scale : userZoom ?? fitZoom
         let size = CGSize(width: canvas.width * zoom, height: canvas.height * zoom)
         var origin = CGPoint(x: area.midX - size.width / 2, y: area.midY - size.height / 2)
         if let focus {
@@ -285,7 +292,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         pictureLayer.frame = canvasFrame
         pictureLayer.shadowPath = CGPath(rect: pictureLayer.bounds, transform: nil)
         // On a clear background only the capture's own shadow marks the picture's edge.
-        pictureLayer.isHidden = frames.backdrop.map { $0.fill == .clear } ?? !captureHasOpaqueCorners
+        pictureLayer.isHidden = isInPlace || (frames.backdrop.map { $0.fill == .clear } ?? !captureHasOpaqueCorners)
         canvasLayer.frame = canvasFrame
         // Drawn layers cover only what is on screen: zoomed in on a large capture, a layer the size of a
         // whole mark would need a backing store of hundreds of megabytes.
@@ -426,11 +433,35 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         updateViewport()
     }
 
+    /// Draws in place over the capture overlay from now on: the view's frame is the selection, the
+    /// picture shows at the screen's own size, nothing zooms, no window chrome is drawn, pictures are
+    /// not combined in, and only the drawing tools (and Select) answer their keys.
+    public func configureInPlace() {
+        isInPlace = true
+        contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        unregisterDraggedTypes()
+        // The frozen screen under the canvas is the capture already: drawing it again would only hold a
+        // second copy of a whole display's pixels.
+        imageLayer.isHidden = true
+        needsLayout = true
+    }
+
+    /// The tools in-place annotation offers: every drawing tool and Select, never the picture modes
+    /// (cropping is the selection itself there, and a background would grow past it).
+    public static let inPlaceTools: [AnnotationTool] = AnnotationTool.allCases.filter { !$0.isPictureMode }
+
+    /// The mark under a point in this view, if any.
+    public func mark(at viewPoint: CGPoint) -> Annotation.ID? {
+        hitItem(at: documentPoint(viewPoint))?.id
+    }
+
     public override func magnify(with event: NSEvent) {
+        guard !isInPlace else { return }
         setZoom(zoom * (1 + event.magnification), around: convert(event.locationInWindow, from: nil))
     }
 
     public override func smartMagnify(with event: NSEvent) {
+        guard !isInPlace else { return }
         if isFitted {
             setZoom(1 / session.document.scale, around: convert(event.locationInWindow, from: nil))
         } else {
@@ -439,6 +470,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     public override func scrollWheel(with event: NSEvent) {
+        guard !isInPlace else { return }
         if event.modifierFlags.contains(.command) {
             let factor = 1 + event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.01 : 0.1)
             setZoom(zoom * factor, around: convert(event.locationInWindow, from: nil))
@@ -853,7 +885,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     public override func menu(for event: NSEvent) -> NSMenu? {
-        guard !session.selection.isEmpty else { return pictureMenu(at: documentPoint(convert(event.locationInWindow, from: nil))) }
+        guard !session.selection.isEmpty else { return isInPlace ? nil : pictureMenu(at: documentPoint(convert(event.locationInWindow, from: nil))) }
         let menu = NSMenu()
         func add(_ title: String, _ action: Selector, _ symbol: String) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -964,6 +996,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     /// ⌘V: pictures on the clipboard are combined into the capture.
     @objc public func paste(_ sender: Any?) {
+        // In place the canvas is the selection; a picture combined in would grow it past the screen.
+        guard !isInPlace else {
+            NSSound.beep()
+            return
+        }
         if !pastePictures(from: .general) { NSSound.beep() }
     }
 
@@ -1057,6 +1094,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func updateCursor(at location: CGPoint) {
         guard drag == nil else { return }
         if editing?.view.frame.contains(location) == true { return }
+        if let override = cursorOverride?(location) {
+            override.set()
+            return
+        }
         let cursor: NSCursor
         if session.tool == .background {
             cursor = .arrow
@@ -1156,7 +1197,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             guard
                 flags.subtracting([.shift, .capsLock]).isEmpty,
                 let character = event.charactersIgnoringModifiers?.lowercased().first,
-                let tool = AnnotationTool.allCases.first(where: { $0.key == character })
+                let tool = AnnotationTool.allCases.first(where: { $0.key == character }),
+                !isInPlace || !tool.isPictureMode
             else { return false }
             session.tool = tool
             return true
@@ -1167,6 +1209,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard flags == .command || flags == [.command, .shift] else { return super.performKeyEquivalent(with: event) }
+        // In place nothing zooms: ⌘+, ⌘−, and ⌘0 pass on.
+        if isInPlace, ["=", "+", "-", "0"].contains(event.charactersIgnoringModifiers ?? "") { return super.performKeyEquivalent(with: event) }
         switch event.charactersIgnoringModifiers {
         case "d" where flags == .command:
             session.duplicateSelection()
@@ -1258,7 +1302,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case #selector(selectAll(_:)):
             return !session.document.items.isEmpty
         case #selector(paste(_:)):
-            return Self.offersPictures(.general)
+            return !isInPlace && Self.offersPictures(.general)
         default:
             return true
         }

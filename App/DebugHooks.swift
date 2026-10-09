@@ -208,6 +208,17 @@ struct DebugHooks {
                 editText: value("edit").flatMap(Int.init),
                 actualSize: value("zoom") == "actual"
             )
+        case "inplace-demo":
+            // In-place annotation over a drawn screen, never the real one: x, y, w, h choose the area in
+            // the display's points from its top-left corner (default: just around the drawn page).
+            let rect = ["x", "y", "w", "h"].compactMap { Self.intParameter($0, in: url) }
+            Task { await openInPlaceDemo(area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil) }
+        case "inplace-act":
+            // Acts on the in-place annotation: tool=<tool>, drag=x1,y1,x2,y2 (display points from the
+            // top-left), shift=1, clicks=2, key=<characters>&code=<key code>[&cmd=1], type=<text>,
+            // action=undo|redo|copy|save|cancel|openInEditor. Logs a summary.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            actInPlace { name in items.first { $0.name == name }?.value }
         case "editor-act":
             // Acts on the demo editor, or else on an editor opened from a card.
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
@@ -479,6 +490,53 @@ struct DebugHooks {
                 Log.app.error("debug.window-test failed: \(error.localizedDescription, privacy: .public)")
             }
         }
+    }
+
+    /// In-place annotation on a drawn screen: every display shows a plain desktop, the pointer's the demo
+    /// page too, so nothing on the real screen is recorded. Its copy never reaches the clipboard.
+    func openInPlaceDemo(area: CGRect?) async {
+        let layout = displays.layout
+        guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
+        var frames: [CGDirectDisplayID: CapturedFrame] = [:]
+        for each in layout.displays {
+            if let image = DebugPanelDemo.screen(for: each, page: each.id == display.id) {
+                frames[each.id] = CapturedFrame(image: image, hdrImage: nil, displayID: each.id, frame: each.frame)
+            }
+        }
+        overlay.injectedFrames = frames
+        captures.annotateArea(copiesToClipboard: false)
+        await waitForOverlayFrames()
+        let chosen = area ?? DebugPanelDemo.pageRect(on: display).insetBy(dx: -24, dy: -24)
+        overlay.simulateAnnotation(selection: CGRect(
+            x: display.frame.minX + chosen.minX, y: display.frame.maxY - chosen.maxY, width: chosen.width, height: chosen.height
+        ))
+        try? await Task.sleep(for: .milliseconds(100))
+        if let view = captures.inPlaceView {
+            Log.app.notice("debug.inplace-demo \(view.debugSummary, privacy: .public)")
+        } else {
+            Log.app.error("debug.inplace-demo did not start: annotating=\(self.overlay.isAnnotating, privacy: .public)")
+        }
+    }
+
+    func actInPlace(_ value: (String) -> String?) {
+        guard let view = captures.inPlaceView, view.window != nil else {
+            Log.app.error("debug.inplace-act: no in-place annotation")
+            return
+        }
+        if let tool = value("tool").flatMap(AnnotationTool.init(rawValue:)) { view.session.tool = tool }
+        if let drag = value("drag")?.split(separator: ",").compactMap({ Double($0) }), drag.count == 4 {
+            view.simulateDrag(
+                from: CGPoint(x: drag[0], y: drag[1]), to: CGPoint(x: drag[2], y: drag[3]),
+                modifiers: value("shift") == "1" ? .shift : [], clickCount: value("clicks").flatMap(Int.init) ?? 1
+            )
+        }
+        if let key = value("key") {
+            view.simulateKey(key, keyCode: value("code").flatMap(UInt16.init) ?? 0, modifiers: value("cmd") == "1" ? (value("shift") == "1" ? [.command, .shift] : .command) : [])
+        }
+        if let text = value("type") { view.simulateTyping(text) }
+        let summary = view.debugSummary
+        if let action = value("action") { view.simulateAction(action) }
+        Log.app.notice("debug.inplace-act \(summary, privacy: .public) annotating=\(self.overlay.isAnnotating, privacy: .public)")
     }
 
     private func waitForOverlayFrames() async {

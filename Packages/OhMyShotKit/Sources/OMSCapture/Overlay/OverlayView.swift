@@ -36,6 +36,8 @@ final class OverlayView: NSView {
     private var pointer: CGPoint?
     /// Set by `simulate`, so the real (hidden) pointer cannot move a scripted render.
     private var isSimulated = false
+    /// In-place annotation has the display: its interface takes the input and draws the selection.
+    private(set) var isAnnotating = false
     private var increasedContrast = false
 
     private let backdrop = CALayer()
@@ -92,6 +94,7 @@ final class OverlayView: NSView {
         spaceHeld = false
         lastDragPoint = nil
         isSimulated = false
+        isAnnotating = false
         capturedFrame = nil
         increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         self.purpose = purpose
@@ -101,9 +104,12 @@ final class OverlayView: NSView {
         toolbar.select(mode == .area ? .area : .window)
         layoutToolbar()
         window?.invalidateCursorRects(for: self)
-        setAccessibilityHelp(purpose == .text
-            ? String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.")
-            : String(localized: "Drag to capture an area. Press Space to capture a window instead. Press Escape to cancel."))
+        let help = switch purpose {
+        case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.")
+        case .annotate: String(localized: "Drag over an area to mark it up. Press Space to choose a window instead. Press Escape to cancel.")
+        case .screenshot: String(localized: "Drag to capture an area. Press Space to capture a window instead. Press Escape to cancel.")
+        }
+        setAccessibilityHelp(help)
         withoutAnimation {
             applyAppearance()
             backdrop.contents = nil
@@ -137,12 +143,35 @@ final class OverlayView: NSView {
         }
     }
 
-    /// Drops the frame so its memory is released while the overlay is hidden.
+    /// Drops the frame so its memory is released while the overlay is hidden, and takes away any
+    /// interface in-place annotation put over it.
     func clear() {
         capturedFrame = nil
+        isAnnotating = false
+        for subview in subviews where subview !== toolbar {
+            subview.removeFromSuperview()
+        }
         withoutAnimation {
             backdrop.contents = nil
             loupeImage.contents = nil
+        }
+    }
+
+    /// The display's frame, once it has arrived.
+    func frame() -> CapturedFrame? {
+        capturedFrame
+    }
+
+    /// Hands the display to in-place annotation: the frozen screen stays; the selection, readings,
+    /// crosshair, magnifier, and All-In-One bar go, since its interface draws its own.
+    func enterAnnotation() {
+        isAnnotating = true
+        lastDragPoint = nil
+        toolbar.isHidden = true
+        withoutAnimation {
+            for layer in [room, outline, border, crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer] {
+                layer.isHidden = true
+            }
         }
     }
 
@@ -190,14 +219,14 @@ final class OverlayView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         if purpose == .text { NSCursor.crosshair.set() }
-        guard !isSimulated else { return }
+        guard !isSimulated, !isAnnotating else { return }
         withoutAnimation { updatePointer(convert(event.locationInWindow, from: nil)) }
     }
 
     override func mouseEntered(with event: NSEvent) {
         // Cursor rects only work in the key panel; on other displays the crosshair is set here.
         if purpose == .text { NSCursor.crosshair.set() }
-        guard !isSimulated else { return }
+        guard !isSimulated, !isAnnotating else { return }
         withoutAnimation { updatePointer(convert(event.locationInWindow, from: nil)) }
     }
 
@@ -207,12 +236,12 @@ final class OverlayView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        guard !isSimulated else { return }
+        guard !isSimulated, !isAnnotating else { return }
         withoutAnimation { updatePointer(nil) }
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard mode == .area else { return }
+        guard mode == .area, !isAnnotating else { return }
         let point = global(convert(event.locationInWindow, from: nil))
         selection.begin(at: point)
         lastDragPoint = point
@@ -220,7 +249,7 @@ final class OverlayView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard mode == .area else { return }
+        guard mode == .area, !isAnnotating else { return }
         let localPoint = convert(event.locationInWindow, from: nil)
         let point = global(localPoint)
         if spaceHeld, let last = lastDragPoint {
@@ -238,6 +267,7 @@ final class OverlayView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard !isAnnotating else { return }
         if mode == .window {
             if let hoveredWindow { delegate?.overlayView(self, didSelectWindow: hoveredWindow, modifiers: event.modifierFlags) }
             return
@@ -253,12 +283,18 @@ final class OverlayView: NSView {
     }
 
     override func flagsChanged(with event: NSEvent) {
-        guard let last = lastDragPoint, !spaceHeld else { return }
+        guard let last = lastDragPoint, !spaceHeld, !isAnnotating else { return }
         selection.drag(to: last, modifiers: modifiers(event.modifierFlags))
         withoutAnimation { updateSelectionLayers() }
     }
 
     override func keyDown(with event: NSEvent) {
+        // In-place annotation answers its own keys; what it leaves reaches here and goes no further, so
+        // Space never switches to choosing a window under it.
+        guard !isAnnotating else {
+            super.keyDown(with: event)
+            return
+        }
         switch event.keyCode {
         case 53: // Escape
             delegate?.overlayViewDidCancel(self)
@@ -299,7 +335,7 @@ final class OverlayView: NSView {
     private func modifiers(_ flags: NSEvent.ModifierFlags) -> SelectionModel.Modifiers {
         var modifiers: SelectionModel.Modifiers = []
         if flags.contains(.shift) { modifiers.insert(.square) }
-        if flags.contains(.option), purpose == .screenshot { modifiers.insert(.fromCenter) }
+        if flags.contains(.option), purpose != .text { modifiers.insert(.fromCenter) }
         return modifiers
     }
 
@@ -388,8 +424,8 @@ final class OverlayView: NSView {
         crosshairOutline.strokeColor = CGColor(gray: 0, alpha: outlineOpacity)
         loupeCenter.strokeColor = Theme.cgColor(.controlAccentColor, for: effectiveAppearance)
         let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        sizePill.applyAppearance(dark: isDark)
-        loupePill.applyAppearance(dark: isDark)
+        sizePill.applyAppearance(dark: isDark, contrast: increasedContrast)
+        loupePill.applyAppearance(dark: isDark, contrast: increasedContrast)
         // Text: the selection reads as selected text (the system's selection color, lightly filled,
         // edged in the accent), over an undimmed screen. Screenshot: a white edge over a soft outline.
         let text = purpose == .text
@@ -463,7 +499,7 @@ final class OverlayView: NSView {
             pointerLayers.forEach { $0.isHidden = true }
             return
         }
-        guard let point, purpose == .screenshot else {
+        guard let point, purpose != .text else {
             pointerLayers.forEach { $0.isHidden = true }
             return
         }
@@ -623,9 +659,11 @@ final class Pill {
         textLayer.contentsScale = scale
     }
 
-    func applyAppearance(dark: Bool) {
+    /// The reading capsule's materials; under Increase Contrast its hairline is the 1 pt contrast one.
+    func applyAppearance(dark: Bool, contrast: Bool = false) {
         layer.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.94) : CGColor(gray: 1, alpha: 0.96)
-        layer.borderColor = dark ? CGColor(gray: 1, alpha: 0.12) : CGColor(gray: 0, alpha: 0.08)
+        layer.borderWidth = contrast ? 1 : 0.5
+        layer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
         textLayer.foregroundColor = dark ? CGColor(gray: 1, alpha: 0.92) : CGColor(gray: 0, alpha: 0.85)
         // Strong enough that a white or near-white sample still reads as a swatch on the white capsule.
         swatchLayer.borderColor = dark ? CGColor(gray: 1, alpha: 0.38) : CGColor(gray: 0, alpha: 0.3)

@@ -4,6 +4,7 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import Foundation
 import ImageIO
+import OMSCore
 
 /// A page with everything the OCR panel handles: wrapping paragraphs in Chinese and English, a link,
 /// contacts, a date, a table, and a QR code. Drawn in the app, so scripted checks never read the screen.
@@ -11,6 +12,30 @@ enum DebugPanelDemo {
     static let size = CGSize(width: 760, height: 560)
 
     /// `prose`: the paragraphs alone, no table or code, for measuring the common case.
+    /// A whole display drawn for scripted checks of the capture overlay, so they never record what is
+    /// really on screen: a plain light desktop, with the demo page at its middle when `page` is set.
+    static func screen(for display: DisplayInfo, page: Bool) -> CGImage? {
+        let scale = display.pixelsPerPoint
+        let width = Int(display.pixelSize.width), height = Int(display.pixelSize.height)
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.setFillColor(CGColor(gray: 0.86, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        if page, let image = image(scale: scale) {
+            let rect = pageRect(on: display)
+            // Core Graphics is y up; the page rect is from the top-left corner.
+            context.draw(image, in: CGRect(x: rect.minX * scale, y: (display.frame.height - rect.maxY) * scale, width: rect.width * scale, height: rect.height * scale))
+        }
+        return context.makeImage()
+    }
+
+    /// Where `screen(for:page:)` draws the page, in the display's points from its top-left corner.
+    static func pageRect(on display: DisplayInfo) -> CGRect {
+        CGRect(x: ((display.frame.width - size.width) / 2).rounded(), y: ((display.frame.height - size.height) / 2).rounded(), width: size.width, height: size.height)
+    }
+
     static func image(scale: CGFloat = 2, blank: Bool = false, prose: Bool = false) -> CGImage? {
         guard let context = CGContext(
             data: nil, width: Int(size.width * scale), height: Int(size.height * scale),

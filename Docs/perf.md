@@ -231,3 +231,20 @@ Debug app on a capture read back from the history (1520×1120 px).
 - **The drawn demo page is not a fair test of memory here.** It is made with Core Image, so the
   background's reads of its pixels (edge, blur) render it again on the CPU; the editor then closed at
   80–86 MB instead of about 50. Captures read from files do not do this.
+
+### In-place annotation (2026-10-09)
+
+Debug build, the capture overlay on drawn screens (the built-in display at 2056×1329 points, 2×, and
+the ultrawide), a selection around the drawn page, one rectangle drawn, then cancelled.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Footprint before / annotating / 15 s after (two rounds) | 97 / 202 / 118 MB, the same both rounds | back to where it was |
+| Live resources after it ends | none | none when idle |
+
+- **The canvas does not draw the capture again.** In place, the frozen screen under the canvas is the
+  capture, so the canvas's own picture layer is hidden: a second copy of a whole display's pixels
+  (44 MB on the built-in display, 79 MB on the ultrawide) is never uploaded.
+- **The annotating figure is mostly the frozen screens**: both displays' frames are held while the
+  overlay is up, as in freeze mode. The delivered selection is copied out of the frame, so the frame is
+  released when the overlay ends even while the copy is on the clipboard.

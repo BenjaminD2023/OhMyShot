@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OMSAnnotate
 import OMSCapture
 import OMSCore
 import OSLog
@@ -17,10 +18,12 @@ final class CaptureCoordinator {
     /// Receives every finished capture, already in the history; the composition root decides whether
     /// it gets a Quick Access card.
     var onCaptured: ((QuickAccessItem) -> Void)?
-    /// Sets a new screenshot on the background chosen for every screenshot, if there is one: the
-    /// picture to show and copy, and the document that recreates it from the capture. Given the capture
-    /// and its pixels per point.
-    var compose: ((CGImage, CGFloat) async -> (image: CGImage, document: Data)?)?
+    /// Opens a capture in the annotation editor: its record and its pixels per point.
+    var openInEditor: ((HistoryItem, CGFloat) -> Void)?
+    #if DEBUG
+    /// The in-place annotation on screen, for scripted checks.
+    private(set) weak var inPlaceView: InPlaceAnnotationView?
+    #endif
     private lazy var shutter = NSSound(
         contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif",
         byReference: true
@@ -36,6 +39,64 @@ final class CaptureCoordinator {
 
     func captureArea() {
         begin(mode: .area)
+    }
+
+    /// Choose an area (or a window) and mark it up in place, on the frozen screen; then copy it, save
+    /// it, or carry on in the editor.
+    /// - Parameter copiesToClipboard: false for scripted checks, which never touch the clipboard.
+    func annotateArea(copiesToClipboard: Bool = true) {
+        guard !overlay.isActive else { return }
+        let app = NSWorkspace.shared.frontmostApplication?.localizedName
+        overlay.onAnnotate = { [weak self] request in self?.annotateInPlace(request, appName: app, copiesToClipboard: copiesToClipboard) }
+        overlay.begin(mode: .area, purpose: .annotate) { _ in }
+    }
+
+    private func annotateInPlace(_ request: OverlayController.AnnotationRequest, appName: String?, copiesToClipboard: Bool) {
+        let display = request.display
+        let host = request.host
+        // The overlay is y up in global points; the frozen frame is y down from the display's corner.
+        let area = CGRect(
+            x: request.area.minX - display.frame.minX, y: display.frame.maxY - request.area.maxY,
+            width: request.area.width, height: request.area.height
+        )
+        let scale = CGFloat(request.frame.image.width) / max(display.frame.width, 1)
+        // Back to global points, y up, from wherever the selection was moved or resized to.
+        let frame = { (result: InPlaceAnnotationView.Result) in
+            CapturedFrame(image: result.capture, hdrImage: nil, displayID: display.id, frame: CGRect(
+                x: display.frame.minX + result.area.minX, y: display.frame.maxY - result.area.maxY,
+                width: result.area.width, height: result.area.height
+            ))
+        }
+        let view = InPlaceAnnotationView(
+            frame: request.frame.image, scale: scale, size: host.bounds.size, selection: area,
+            actions: .init(
+                copy: { [weak self] result in
+                    // The overlay goes first, so the screen comes back at once; the result renders after.
+                    self?.overlay.finishAnnotation()
+                    Task { await self?.deliver(frame(result), appName: appName, copiesToClipboard: copiesToClipboard, marks: result.document, copy: .always) }
+                },
+                save: { [weak self] result in
+                    self?.overlay.finishAnnotation()
+                    Task { await self?.deliver(frame(result), appName: appName, copiesToClipboard: copiesToClipboard, marks: result.document, savesCopy: true) }
+                },
+                openInEditor: { [weak self] result in
+                    self?.overlay.finishAnnotation()
+                    Task { [weak self] in
+                        guard let self, let entry = await self.deliver(
+                            frame(result), appName: appName, marks: result.document, copy: .never, showsCard: false, playsSound: false
+                        ) else { return }
+                        self.openInEditor?(entry, scale)
+                    }
+                },
+                cancel: { [weak self] in self?.overlay.cancel() }
+            )
+        )
+        view.frame = host.bounds
+        host.addSubview(view)
+        view.begin()
+        #if DEBUG
+        inPlaceView = view
+        #endif
     }
 
     /// Hover a window and click it: captured on its own, with its rounded corners and shadow.
@@ -140,7 +201,7 @@ final class CaptureCoordinator {
                 Task { await self?.captureRegion(rect, on: display, appName: app) }
             case .window(let target, _):
                 Task { await self?.captureWindow(target) }
-            case .cancelled:
+            case .annotated, .cancelled:
                 break
             }
         }
@@ -157,11 +218,45 @@ final class CaptureCoordinator {
         }
     }
 
-    private func deliver(_ frame: CapturedFrame, appName: String?, copiesToClipboard: Bool = true) async {
-        if settings.playSounds { shutter?.play() }
+    /// Whether a delivered capture goes to the clipboard: as the settings say, always (copying is what
+    /// finishing in-place annotation means), or never (it carries on in the editor).
+    enum Copy {
+        case asSet
+        case always
+        case never
+    }
+
+    /// Keeps a capture in the history, copies it, saves it, and gives it a Quick Access card, as the
+    /// settings say. `marks` are drawn on it first (in-place annotation); the background chosen for
+    /// every screenshot is set under them. Returns its record.
+    @discardableResult
+    private func deliver(
+        _ frame: CapturedFrame, appName: String?, copiesToClipboard: Bool = true,
+        marks: AnnotationDocument? = nil, copy: Copy = .asSet, savesCopy: Bool = false, showsCard: Bool = true, playsSound: Bool = true
+    ) async -> HistoryItem? {
+        if settings.playSounds, playsSound { shutter?.play() }
         let probe = LatencyProbe("capture.deliver")
         do {
             let png = try await ImageExporter.encode(frame.image, as: .png)
+            // Marks drawn in place, and the background chosen for every screenshot, are drawn in first. The
+            // capture's file then shows them while the capture and the document stay beside it, as edits
+            // do, so the editor can change or remove them.
+            var shown = (image: frame.image, png: png)
+            var document: Data?
+            let scale = frame.frame.width > 0 ? CGFloat(frame.image.width) / frame.frame.width : 1
+            if let composed = await composed(frame.image, scale: scale, marks: marks), let composedPNG = try? await ImageExporter.encode(composed.image, as: .png) {
+                shown = (composed.image, composedPNG)
+                document = composed.document
+            }
+            let copies = switch copy {
+            case .asSet: copiesToClipboard && settings.copyAfterCapture
+            case .always: copiesToClipboard
+            case .never: false
+            }
+            // On the clipboard before anything is written, so the picture is not lost if keeping it fails.
+            if copies {
+                PasteboardWriter.write(png: shown.png, image: shown.image)
+            }
             let name = FilenameTemplate.standard.name(date: .now, appName: appName)
             var entry = try history.add(
                 data: png,
@@ -172,19 +267,10 @@ final class CaptureCoordinator {
                 pixelHeight: frame.image.height,
                 appName: appName
             )
-            // On a background chosen for every screenshot, the capture's file shows the background while
-            // the capture and the background's settings stay beside it, as edits do, so the editor can
-            // change or remove it.
-            var shown = (image: frame.image, png: png)
-            let scale = frame.frame.width > 0 ? CGFloat(frame.image.width) / frame.frame.width : 1
-            if let composed = await compose?(frame.image, scale), let composedPNG = try? await ImageExporter.encode(composed.image, as: .png) {
+            if let document {
                 entry = try history.replaceImage(
-                    of: entry, with: composedPNG, pixelWidth: composed.image.width, pixelHeight: composed.image.height, annotations: composed.document
+                    of: entry, with: shown.png, pixelWidth: shown.image.width, pixelHeight: shown.image.height, annotations: document
                 )
-                shown = (composed.image, composedPNG)
-            }
-            if copiesToClipboard, settings.copyAfterCapture {
-                PasteboardWriter.write(png: shown.png, image: shown.image)
             }
             var item = QuickAccessItem(
                 id: entry.id,
@@ -195,14 +281,30 @@ final class CaptureCoordinator {
                 displayID: frame.displayID,
                 createdAt: entry.createdAt
             )
-            if settings.saveAfterCapture {
+            if settings.saveAfterCapture || savesCopy {
                 item.savedURL = save(item)
             }
             probe.end()
-            Log.capture.notice("Captured \(frame.image.width, privacy: .public)x\(frame.image.height, privacy: .public) into history as \(entry.fileName, privacy: .public)")
-            onCaptured?(item)
+            Log.capture.notice("Captured \(frame.image.width, privacy: .public)x\(frame.image.height, privacy: .public) into history as \(entry.fileName, privacy: .public)\(marks.map { " with \($0.items.count) mark(s)" } ?? "", privacy: .public)")
+            if showsCard { onCaptured?(item) }
+            return entry
         } catch {
             Log.capture.error("Keeping the capture failed: \(error.localizedDescription, privacy: .public)")
+            // Said out loud too: the overlay is gone, and nothing else would show that the capture was not kept.
+            NSSound.beep()
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+                .announcement: String(localized: "The capture couldn’t be kept."), .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ])
+            return nil
         }
+    }
+
+    /// The capture as it is kept: with marks drawn in place and the background chosen for every new
+    /// screenshot set under them, and the document that recreates it; nil when it is kept as captured.
+    private func composed(_ image: CGImage, scale: CGFloat, marks: AnnotationDocument?) async -> (image: CGImage, document: Data)? {
+        var document = marks ?? AnnotationDocument(pixelSize: CGSize(width: image.width, height: image.height), scale: scale)
+        if document.backdrop == nil { document.backdrop = BackdropPresets.shared.automatic?.backdrop }
+        guard !document.isEmpty, let rendered = await AnnotationRenderer.render(document, base: image), let data = try? JSONEncoder().encode(document) else { return nil }
+        return (rendered, data)
     }
 }

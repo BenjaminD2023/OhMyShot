@@ -32,4 +32,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 - Background tool, combine, and project files: built (2026-10-09) inside the locked structure — a rail
   chip whose capsule holds the fills, an Adjust popover, and a Presets menu; images dropped or pasted
   in; a split Save button for a project copy.
-- In-place annotation reuses the canvas inside the capture overlay with its own small toolbar.
+- In-place annotation: built (2026-10-09). The same canvas runs inside the capture overlay at the
+  screen's own size (no zoom, crop, background, or combining there), beside a small glass toolbar of
+  the rail's tools, Undo/Redo, and Open in Editor, Save, Cancel, and accent Copy; the style capsule
+  sits right-aligned under it. The selection keeps a resizable frame. Its interface is specified in
+  DESIGN.md's In-Place Annotation component.

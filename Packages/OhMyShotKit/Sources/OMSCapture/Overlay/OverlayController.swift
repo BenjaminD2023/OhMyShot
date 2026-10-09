@@ -15,6 +15,8 @@ public final class OverlayController {
         /// with Option), read from that event: a later global read would race the keys' release.
         case region(CGRect, display: DisplayInfo, modifiers: NSEvent.ModifierFlags)
         case window(WindowTarget, modifiers: NSEvent.ModifierFlags)
+        /// In-place annotation finished (`finishAnnotation`); its own handler has the result.
+        case annotated
         case cancelled
     }
 
@@ -23,7 +25,23 @@ public final class OverlayController {
     public enum Purpose: Sendable {
         case screenshot
         case text
+        /// Mark up the selection in place: the screen freezes, and once an area (or a window) is chosen
+        /// the overlay stays, handing its display's frozen frame to `onAnnotate`.
+        case annotate
     }
+
+    /// What in-place annotation is given once its area is chosen: the view to host its interface (the
+    /// overlay of that display, y up, covering the display), the display, the chosen area in global
+    /// points, and the display's frozen frame. End it with `finishAnnotation()` or `cancel()`.
+    public struct AnnotationRequest {
+        public let host: NSView
+        public let display: DisplayInfo
+        public let area: CGRect
+        public let frame: CapturedFrame
+    }
+
+    /// Starts in-place annotation over the overlay; set by whoever owns the annotation interface.
+    public var onAnnotate: ((AnnotationRequest) -> Void)?
 
     public enum Mode: Sendable {
         case area
@@ -51,6 +69,14 @@ public final class OverlayController {
     private var frameLeases: [ActiveResources.Lease] = []
     private var windowLease: ActiveResources.Lease?
     private var windows: [WindowTarget] = []
+    private var purpose: Purpose = .screenshot
+    /// An area chosen for annotation before its display's frame arrived.
+    private var pendingAnnotation: (display: CGDirectDisplayID, area: CGRect)?
+    #if DEBUG
+    /// Frames to show instead of capturing the screen, for scripted checks of the overlay that must never
+    /// record what is on screen.
+    public var injectedFrames: [CGDirectDisplayID: CapturedFrame]?
+    #endif
 
     public init(topology: DisplayTopology, capturer: ScreenCapturer) {
         self.topology = topology
@@ -80,6 +106,8 @@ public final class OverlayController {
         isActive = true
         session += 1
         firstFrameArrived = false
+        self.purpose = purpose
+        pendingAnnotation = nil
         self.completion = completion
         previousApp = NSWorkspace.shared.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
 
@@ -97,7 +125,7 @@ public final class OverlayController {
         for (id, entry) in entries {
             entry.view.reset(
                 pointer: pointer, mode: viewMode, windows: windows,
-                showsToolbar: id == pointerDisplay?.id && purpose == .screenshot,
+                showsToolbar: id == pointerDisplay?.id && purpose != .text,
                 purpose: purpose
             )
         }
@@ -108,10 +136,13 @@ public final class OverlayController {
             entry.panel.orderFrontRegardless()
         }
         if let id = pointerDisplay?.id, let view = entries[id]?.view {
+            let announcement = switch purpose {
+            case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.")
+            case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.")
+            case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.")
+            }
             NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
-                .announcement: purpose == .text
-                    ? String(localized: "Drag over text to copy it, or press Space to choose a window.")
-                    : String(localized: "Drag to capture an area, or press Space to capture a window."),
+                .announcement: announcement,
                 .priority: NSAccessibilityPriorityLevel.high.rawValue,
             ])
         }
@@ -120,7 +151,7 @@ public final class OverlayController {
             entry.panel.makeFirstResponder(entry.view)
         }
         // A screenshot draws its own crosshair and magnifier; copying text keeps the system crosshair.
-        hidesCursor = purpose == .screenshot
+        hidesCursor = purpose != .text
         if hidesCursor { NSCursor.hide() }
         CATransaction.flush()
         visible.end()
@@ -144,11 +175,30 @@ public final class OverlayController {
         end(.cancelled)
     }
 
+    /// Ends in-place annotation: the overlay goes away and the previous app gets the keyboard back.
+    public func finishAnnotation() {
+        end(.annotated)
+    }
+
+    /// Whether in-place annotation is showing, for scripted checks.
+    public var isAnnotating: Bool {
+        isActive && entries.values.contains { $0.view.isAnnotating }
+    }
+
     /// Draws a selection and pointer without mouse input, for scripted checks of the rendering.
     public func simulate(selection rect: CGRect, pointer: CGPoint) {
         guard isActive, let display = topology.layout.display(at: rect.origin) else { return }
         entries[display.id]?.view.simulate(selection: rect, pointer: pointer)
     }
+
+    #if DEBUG
+    /// Chooses an area for in-place annotation without mouse input, for scripted checks.
+    public func simulateAnnotation(selection rect: CGRect) {
+        guard isActive, purpose == .annotate, let display = topology.layout.display(at: CGPoint(x: rect.midX, y: rect.midY)) else { return }
+        entries[display.id]?.view.simulate(selection: rect, pointer: CGPoint(x: rect.maxX, y: rect.minY))
+        startAnnotating(on: display.id, area: rect)
+    }
+    #endif
 
     /// Whether every display's frame has arrived, for scripted checks.
     public var hasFrames: Bool { frameLeases.count == entries.count }
@@ -163,13 +213,27 @@ public final class OverlayController {
     private func loadFrames(for displays: [DisplayInfo], session: Int, probe: LatencyProbe) async {
         for (index, display) in displays.enumerated() {
             do {
-                let frame = try await capturer.captureDisplay(display)
+                let frame: CapturedFrame
+                #if DEBUG
+                if let injected = injectedFrames?[display.id] {
+                    frame = injected
+                } else {
+                    frame = try await capturer.captureDisplay(display)
+                }
+                #else
+                frame = try await capturer.captureDisplay(display)
+                #endif
                 guard isActive, session == self.session else { return }
-                entries[display.id]?.view.show(frame, frozen: freezesScreen)
+                // Annotating in place draws on the frozen screen, so it always holds still.
+                entries[display.id]?.view.show(frame, frozen: freezesScreen || purpose == .annotate)
                 frameLeases.append(ActiveResources.shared.acquire(.frameBuffer))
                 if index == 0 {
                     firstFrameArrived = true
                     probe.end()
+                }
+                if let pending = pendingAnnotation, pending.display == display.id {
+                    pendingAnnotation = nil
+                    startAnnotating(on: display.id, area: pending.area)
                 }
             } catch {
                 Log.capture.error("Overlay frame for display \(display.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
@@ -187,9 +251,33 @@ public final class OverlayController {
         end(.cancelled)
     }
 
+    /// Hands the chosen area to in-place annotation, once its display's frozen frame is there.
+    private func startAnnotating(on displayID: CGDirectDisplayID, area: CGRect) {
+        guard let entry = entries[displayID] else { return }
+        guard let frame = entry.view.frame(), let onAnnotate else {
+            pendingAnnotation = (displayID, area)
+            return
+        }
+        // The pointer is the system's again: marks need the arrow, the I-beam, and the resize cursors.
+        if hidesCursor { NSCursor.unhide() }
+        hidesCursor = false
+        // Only this display stays: the others would start selections of their own.
+        for (id, other) in entries where id != displayID {
+            other.panel.orderOut(nil)
+            other.view.clear()
+        }
+        entry.view.enterAnnotation()
+        entry.panel.makeKey()
+        onAnnotate(AnnotationRequest(host: entry.view, display: entry.view.display, area: area, frame: frame))
+    }
+
     private func end(_ outcome: Outcome) {
         guard isActive else { return }
         isActive = false
+        pendingAnnotation = nil
+        #if DEBUG
+        injectedFrames = nil
+        #endif
         for entry in entries.values {
             entry.panel.orderOut(nil)
             entry.view.clear()
@@ -213,14 +301,26 @@ public final class OverlayController {
 
 extension OverlayController: OverlayViewDelegate {
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) {
+        if purpose == .annotate {
+            startAnnotating(on: view.display.id, area: rect)
+            return
+        }
         end(.region(rect, display: view.display, modifiers: modifiers))
     }
 
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {
+        if purpose == .annotate {
+            // A window is annotated where it is on the frozen screen.
+            let area = target.frame.intersection(view.display.frame)
+            if !area.isNull, area.width >= 1, area.height >= 1 { startAnnotating(on: view.display.id, area: area) }
+            return
+        }
         end(.window(target, modifiers: modifiers))
     }
 
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) {
+        // Once an area is chosen for annotation, even while its frame is still on the way, it stays chosen.
+        guard pendingAnnotation == nil, !isAnnotating else { return }
         if mode == .window, windows.isEmpty {
             windows = WindowCatalog.snapshot(layout: topology.layout)
         }

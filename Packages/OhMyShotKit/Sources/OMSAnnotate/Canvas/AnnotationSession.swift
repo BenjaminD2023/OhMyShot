@@ -26,13 +26,16 @@ public final class AnnotationSession {
         didSet {
             guard tool != oldValue else { return }
             // Cropping and the background are passing modes; the next capture opens with a drawing tool.
-            if !tool.isPictureMode { UserDefaults.standard.set(tool.rawValue, forKey: Self.toolKey) }
+            if !tool.isPictureMode, remembersTool { UserDefaults.standard.set(tool.rawValue, forKey: Self.toolKey) }
             if tool.isPictureMode, !oldValue.isPictureMode { toolBeforeMode = oldValue }
             notify(.tool)
         }
     }
     /// The tool in hand before cropping or the background, to go back to when done.
     public private(set) var toolBeforeMode: AnnotationTool = .arrow
+    /// Whether the tool in hand is the one the next editor opens with. In-place annotation starts with
+    /// no tool and keeps its choices to itself.
+    @ObservationIgnored private let remembersTool: Bool
     /// The selected marks, in the order they were selected.
     public private(set) var selection: [Annotation.ID] = []
     /// Whether the document changed since it was last kept.
@@ -56,7 +59,9 @@ public final class AnnotationSession {
     ///   - image: the capture.
     ///   - scale: pixels per point of the screen it came from.
     ///   - document: marks made earlier, when a capture is opened again.
-    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument? = nil) {
+    ///   - tool: the tool to start with, which is then not remembered for the editor; nil starts with the
+    ///     editor's last tool.
+    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument? = nil, tool startingTool: AnnotationTool? = nil) {
         base = image
         let size = CGSize(width: image.width, height: image.height)
         if let document, document.pixelSize == size {
@@ -64,8 +69,9 @@ public final class AnnotationSession {
         } else {
             self.document = AnnotationDocument(pixelSize: size, scale: scale)
         }
+        remembersTool = startingTool == nil
         let stored = UserDefaults.standard.string(forKey: Self.toolKey).flatMap(AnnotationTool.init(rawValue:))
-        tool = stored.flatMap { $0.isPictureMode ? nil : $0 } ?? .arrow
+        tool = startingTool ?? stored.flatMap { $0.isPictureMode ? nil : $0 } ?? .arrow
         settings = Self.loadSettings()
         lastBackdrop = UserDefaults.standard.data(forKey: Self.backdropKey).flatMap { try? JSONDecoder().decode(Backdrop.self, from: $0) } ?? Backdrop()
         undoManager.levelsOfUndo = 100

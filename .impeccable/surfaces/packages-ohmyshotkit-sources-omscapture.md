@@ -31,3 +31,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 - The card's editor action arrives with the annotation editor (M3).
 - The capture sound is the system Screen Capture sound for now.
+- In-place annotation (Annotate Area, built 2026-10-09): after the area is chosen the overlay stays on
+  the frozen screen; the selection keeps its frame (the crop frame's corners) and resizes from its edges;
+  a horizontal glass toolbar in the All-In-One manner stands 10 pt below the selection against its right
+  edge (above it, or inside it, without room), the editor's style capsule under it. The convention of
+  Chinese screenshot tools, which the product's users prefer.

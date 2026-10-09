@@ -45,6 +45,7 @@ final class CompositionRoot {
         let statusItem = StatusItemController(
             captureEntries: [
                 .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
+                .init(title: String(localized: "Annotate Area"), shortcut: .annotateArea) { [weak self] in self?.handle(.annotateArea) },
                 .init(title: String(localized: "Capture Window"), shortcut: .captureWindow) { [weak self] in self?.handle(.captureWindow) },
                 .init(title: String(localized: "Capture Fullscreen"), shortcut: .captureFullscreen) { [weak self] in self?.handle(.captureFullscreen) },
                 .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
@@ -100,11 +101,8 @@ final class CompositionRoot {
         captures.onCaptured = { [weak self] item in
             self?.didCapture(item)
         }
-        captures.compose = { image, scale in
-            guard let backdrop = BackdropPresets.shared.automatic?.backdrop else { return nil }
-            let document = AnnotationDocument(pixelSize: CGSize(width: image.width, height: image.height), scale: scale, backdrop: backdrop)
-            guard let composed = await AnnotationRenderer.render(document, base: image), let data = try? JSONEncoder().encode(document) else { return nil }
-            return (composed, data)
+        captures.openInEditor = { [weak self] entry, scale in
+            self?.annotations.annotate(entry, scale: scale)
         }
         annotations.onChange = { [weak self] entry, data in
             self?.pictureChanged(entry, data: data)
@@ -196,6 +194,8 @@ final class CompositionRoot {
         switch shortcut {
         case .captureArea, .allInOne:
             captures.captureArea()
+        case .annotateArea:
+            captures.annotateArea()
         case .captureFullscreen:
             captures.captureFullscreen()
         case .captureWindow:

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-09T18:00:00Z",
+  "generatedAt": "2026-10-09T21:00:00Z",
   "title": "Design System: OhMyShot",
   "extensions": {
     "colorMeta": {
@@ -242,12 +242,12 @@
       "hairline-contrast-light": {
         "role": "neutral",
         "displayName": "Contrast Hairline, Light",
-        "canonical": "CGColor(gray: 0, alpha: 0.35), 1 pt"
+        "canonical": "CGColor(gray: 0, alpha: 0.35), 1 pt; reading capsules and the in-place toolbar among the surfaces"
       },
       "hairline-contrast-dark": {
         "role": "neutral",
         "displayName": "Contrast Hairline, Dark",
-        "canonical": "CGColor(gray: 1, alpha: 0.5), 1 pt"
+        "canonical": "CGColor(gray: 1, alpha: 0.5), 1 pt; reading capsules and the in-place toolbar among the surfaces"
       },
       "spotlight-dim": {
         "role": "neutral",
@@ -490,12 +490,12 @@
       {
         "name": "floating-bar",
         "value": "0 3px 10px rgba(0,0,0,0.16)",
-        "purpose": "The All-In-One capsule and the editor's tool rail."
+        "purpose": "The All-In-One capsule, the in-place toolbar, and the editor's tool rail."
       },
       {
         "name": "floating-reading",
         "value": "0 2px 8px rgba(0,0,0,0.18)",
-        "purpose": "Reading capsules and the editor's style capsule."
+        "purpose": "Reading capsules (the in-place size reading among them) and the editor's style capsule."
       },
       {
         "name": "action-lift",
@@ -562,7 +562,7 @@
       {
         "name": "capsule-fade",
         "value": "0.12s ease-out, opacity 0 to 1 (Theme.Motion.fade)",
-        "purpose": "The editor's style capsule appearing for a new selection or tool; it moves without fading on zoom and hides while a mark is dragged. Instant under Reduce Motion."
+        "purpose": "The style capsule appearing for a new selection or tool, in the editor and in in-place annotation; it moves without fading on zoom and hides while a mark is dragged (and, in place, while the selection is adjusted). Instant under Reduce Motion."
       },
       {
         "name": "editor-copied-feedback",
@@ -661,6 +661,14 @@
       "css": ".ds-lens-wrap{width:420px;font-family:system-ui,'PingFang SC',sans-serif;} .ds-lens-buttons{display:flex;justify-content:flex-end;gap:6px;margin-bottom:6px;} .ds-lens-buttons span{width:24px;height:24px;border-radius:12px;background:rgba(0,0,0,0.5);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;} .ds-lens{padding:18px 20px;background:#fbfbfb;border:0.5px solid rgba(0,0,0,0.18);box-shadow:0 10px 30px rgba(0,0,0,0.25);color:#000;} .ds-lens-title{font-size:16px;font-weight:600;margin-bottom:10px;} .ds-lens-p{font-size:12px;line-height:1.5;margin-bottom:6px;}"
     },
     {
+      "name": "In-Place Toolbar",
+      "kind": "nav",
+      "refersTo": "inplace-toolbar",
+      "description": "Annotate Area's toolbar beside the selection over the frozen screen: the tool rail laid flat, a 42 pt Liquid Glass capsule (opaque window-colored backing, 0.5 pt separator hairline, floating bar shadow) of 30 pt circular chips 6 pt inside, groups split by 18 pt separators: drawing tools | Text, Counter | Redact, Spotlight | Undo, Redo | Open in Editor, Save, Cancel, Copy (checkmark in the accent). No Select chip; the tool in hand takes the selected fill and accent symbol. Stands 10 pt below the selection, right-aligned, with the style capsule 6 pt under it; above, or inside the bottom-right, when there is no room. Approximated with an opaque fill; Reduce Transparency is a solid capsule.",
+      "html": "<div class=\"ds-ipt\" role=\"toolbar\" aria-label=\"Mark Up\"><button class=\"ds-ipt-chip ds-ipt-on\" aria-label=\"Arrow\" aria-pressed=\"true\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M3 11L11 3M5.5 3H11v5.5\"/></svg></button><button class=\"ds-ipt-chip\" aria-label=\"Rectangle\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"><rect x=\"2\" y=\"3\" width=\"10\" height=\"8\" rx=\"1.5\"/></svg></button><span class=\"ds-ipt-sep\"></span><button class=\"ds-ipt-chip\" aria-label=\"Undo\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\"><path d=\"M5 3L2 6l3 3M2 6h6a3.5 3.5 0 0 1 0 7H6\"/></svg></button><button class=\"ds-ipt-chip\" aria-label=\"Redo\" disabled><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\"><path d=\"M9 3l3 3-3 3M12 6H6a3.5 3.5 0 0 0 0 7h2\"/></svg></button><span class=\"ds-ipt-sep\"></span><button class=\"ds-ipt-chip\" aria-label=\"Cancel\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M2 2l6 6M8 2l-6 6\"/></svg></button><button class=\"ds-ipt-chip ds-ipt-copy\" aria-label=\"Copy\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2.5 7.5l3 3 6-7\"/></svg></button></div>",
+      "css": ".ds-ipt{display:inline-flex;align-items:center;gap:2px;height:42px;padding:6px;box-sizing:border-box;border-radius:9999px;background:#FFFFFF;border:0.5px solid rgba(0,0,0,0.1);box-shadow:0 3px 10px rgba(0,0,0,0.16);} .ds-ipt-chip{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:none;border-radius:9999px;background:transparent;color:rgba(0,0,0,0.85);cursor:default;} .ds-ipt-chip:hover{background:rgba(0,0,0,0.045);} .ds-ipt-chip:disabled{color:rgba(0,0,0,0.26);background:transparent;} .ds-ipt-chip:focus-visible{outline:2px solid AccentColor;outline-offset:1px;} .ds-ipt-on,.ds-ipt-on:hover{background:rgba(0,0,0,0.08);color:AccentColor;} .ds-ipt-copy{color:AccentColor;} .ds-ipt-sep{width:1px;height:18px;margin:0 4px;background:rgba(0,0,0,0.1);} @media (prefers-contrast: more){.ds-ipt{border:1px solid rgba(0,0,0,0.35);} .ds-ipt-on{background:rgba(0,0,0,0.16);} .ds-ipt-chip:hover{background:rgba(0,0,0,0.09);}}"
+    },
+    {
       "name": "Tool Rail",
       "kind": "nav",
       "refersTo": "tool-rail",
@@ -679,13 +687,13 @@
   ],
   "narrative": {
     "northStar": "The Part of macOS Apple Forgot to Ship",
-    "overview": "OhMyShot looks like a system feature, not an app with a brand. Light and dark follow the system, the accent is the user's own macOS accent, and every window is a standard window with standard controls. What the app adds is a thin, consistent layer of softness for the things that float over other people's screens: continuous-corner cards, fully round capsules, gentle downward shadows, opaque white action capsules, and the rounded system face with fixed-width digits for every live reading. The capture is the hero; the chrome recedes.\n\nDensity is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, Quick Access cards, Capture History, the OCR panel, the annotation editor, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.\n\nThe confirmed rejection is the first world, \"Contact Sheet\" (rejected by the user on 2026-10-07): no frame numbers, no captures joined into one strip, no film-edge or darkroom motifs, no dark heavy panels, nothing that reads as a Linux utility.\n\nUnits: every dimension in this file is in points. The frontmatter writes points as `px` for tool compatibility; 1 pt renders as 2 device pixels on Retina displays.",
+    "overview": "OhMyShot looks like a system feature, not an app with a brand. Light and dark follow the system, the accent is the user's own macOS accent, and every window is a standard window with standard controls. What the app adds is a thin, consistent layer of softness for the things that float over other people's screens: continuous-corner cards, fully round capsules, gentle downward shadows, opaque white action capsules, and the rounded system face with fixed-width digits for every live reading. The capture is the hero; the chrome recedes.\n\nDensity is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, in-place annotation, Quick Access cards, Capture History, the OCR panel, the annotation editor, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.\n\nThe confirmed rejection is the first world, \"Contact Sheet\" (rejected by the user on 2026-10-07): no frame numbers, no captures joined into one strip, no film-edge or darkroom motifs, no dark heavy panels, nothing that reads as a Linux utility.\n\nUnits: every dimension in this file is in points. The frontmatter writes points as `px` for tool compatibility; 1 pt renders as 2 device pixels on Retina displays.",
     "keyCharacteristics": [
       "System semantic colors and the user's accent carry all appearance; literal values are only black or white at fixed opacities.",
       "Continuous corners everywhere: 12 pt cards, fully round capsules for every control and reading.",
       "Soft, downward, widely blurred shadows; never a hard edge or a halo.",
       "SF Pro Rounded with monospaced digits for readings; plain system text styles inside windows.",
-      "Liquid Glass only on small controls (the All-In-One bar, the editor's tool rail, History hover buttons, window toolbars), never over a full-screen frame.",
+      "Liquid Glass only on small controls (the All-In-One bar, the in-place toolbar, the editor's tool rail, History hover buttons, window toolbars), never over a full-screen frame.",
       "Motion is a single short ease-out or nothing; under Reduce Motion it is nothing."
     ],
     "rules": [
@@ -721,7 +729,7 @@
       },
       {
         "name": "The Small Glass Rule",
-        "body": "Liquid Glass appears only on small controls: the All-In-One bar, the editor's tool rail, window toolbars and their glassProminent Copy, and History hover buttons. The full-screen overlay is a flat dimming fill and never carries glass, and neither does the editor's style capsule, which sits beside text-bearing marks.",
+        "body": "Liquid Glass appears only on small controls: the All-In-One bar, the in-place toolbar, the editor's tool rail, window toolbars and their glassProminent Copy, and History hover buttons. The two overlay toolbars are small controls on the overlay, not over it; the full-screen overlay itself is a flat dimming fill and never carries glass, and neither does the editor's style capsule, which sits beside text-bearing marks.",
         "section": "elevation"
       },
       {
@@ -731,7 +739,7 @@
       },
       {
         "name": "The Exported-Is-Drawn Rule",
-        "body": "What is drawn into the picture is exported: marks, the mark shadow, the background, its card shadow, and the matte. What helps on screen never is: the checkerboard, selection and handles, the drop ring, the crop frame, the picture border, and the in-window shadow.",
+        "body": "What is drawn into the picture is exported: marks, the mark shadow, the background, its card shadow, and the matte. What helps on screen never is: the checkerboard, selection and handles, the drop ring, the crop frame and the in-place selection frame, the picture border, and the in-window shadow.",
         "section": "elevation"
       }
     ],
@@ -743,7 +751,7 @@
       "**Do** keep text-bearing controls opaque over captures; use glass for the rim, not the fill.",
       "**Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills.",
       "**Do** use standard windows, toolbars, grouped Forms, and SwiftUI glass button styles inside windows.",
-      "**Do** build chips in floating controls (the All-In-One bar, the tool rail, the style capsule) as borderless buttons with the chip fills, and hand-draw whole controls only where AppKit would render them dimmed (non-key floating panels), tracking presses like standard buttons."
+      "**Do** build chips in floating controls (the All-In-One bar, the in-place toolbar, the tool rail, the style capsule) as borderless buttons with the chip fills, and hand-draw whole controls only where AppKit would render them dimmed (non-key floating panels), tracking presses like standard buttons."
     ],
     "donts": [
       "**Don't** bring back Contact Sheet: no frame numbers, no captures joined into a strip, no film-edge or darkroom motifs.",

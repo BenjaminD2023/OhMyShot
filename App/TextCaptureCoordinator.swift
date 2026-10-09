@@ -73,7 +73,7 @@ final class TextCaptureCoordinator {
             case .window(let target, _):
                 self?.highlight.show(target.frame)
                 Task { await self?.recognize(window: target, joinLines: joinLines) }
-            case .cancelled:
+            case .annotated, .cancelled:
                 break
             }
         }
@@ -182,7 +182,7 @@ final class TextCaptureCoordinator {
             case .window(let target, let modifiers):
                 self?.highlight.show(target.frame)
                 Task { await self?.translate(window: target, inPanel: modifiers.contains(.option)) }
-            case .cancelled:
+            case .annotated, .cancelled:
                 break
             }
         }

@@ -5,6 +5,8 @@ import KeyboardShortcuts
 /// The global shortcuts that start a capture.
 public enum CaptureShortcut: String, CaseIterable, Sendable {
     case captureArea
+    /// Choose an area and mark it up in place, on the frozen screen.
+    case annotateArea
     case captureFullscreen
     case captureWindow
     case capturePreviousArea
@@ -26,6 +28,7 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     public var title: String {
         switch self {
         case .captureArea: String(localized: "Capture Area", bundle: .module)
+        case .annotateArea: String(localized: "Annotate Area", bundle: .module)
         case .captureFullscreen: String(localized: "Capture Fullscreen", bundle: .module)
         case .captureWindow: String(localized: "Capture Window", bundle: .module)
         case .capturePreviousArea: String(localized: "Capture Previous Area", bundle: .module)
@@ -65,7 +68,7 @@ public final class HotkeyCenter {
         var installed = Set(defaults.stringArray(forKey: key) ?? [])
         if defaults.object(forKey: key) == nil, defaults.bool(forKey: "didInstallDefaultShortcuts") {
             // Installed before shortcuts were tracked one by one: every one that existed then.
-            installed = Set(CaptureShortcut.allCases.filter { $0 != .translateArea }.map(\.rawValue))
+            installed = Set(CaptureShortcut.allCases.filter { $0 != .translateArea && $0 != .annotateArea }.map(\.rawValue))
         }
         for shortcut in CaptureShortcut.allCases where !installed.contains(shortcut.rawValue) {
             let taken = CaptureShortcut.allCases.compactMap { KeyboardShortcuts.getShortcut(for: $0.name) }
@@ -98,6 +101,7 @@ public final class HotkeyCenter {
         case .captureFullscreen: KeyboardShortcuts.Shortcut(.three, modifiers: modifiers)
         case .captureArea: KeyboardShortcuts.Shortcut(.four, modifiers: modifiers)
         case .allInOne: KeyboardShortcuts.Shortcut(.five, modifiers: modifiers)
+        case .annotateArea: KeyboardShortcuts.Shortcut(.six, modifiers: modifiers)
         case .captureWindow, .capturePreviousArea, .selfTimer, .captureTextJoined, .openHistory, .copyLatestCapture: nil
         }
     }
