@@ -43,3 +43,11 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   one in the current method, Redact All in the capsule covers the rest, and "Finding text…" holds the
   capsule's place while reading. The same in the editor and in place; never exported. Its interface
   is specified in DESIGN.md's Canvas, Style Capsule, and Suggestion Outline entries.
+- Text-snapping highlighter: built (2026-10-10), matching CleanShot's smart highlighter. Picking up
+  the Highlighter reads the capture once, on this Mac, for where its lines and words lie (never what
+  they say); a drag that starts on text runs on as a text selection does (the rest of the first line,
+  the lines between whole, the last line up to the pointer), whole words only, each band the height of
+  its paragraph's letters, and a click highlights one word. ⌘ draws freely,
+  the I-beam over text says a drag will snap, and "Finding text…" holds the capsule's place while
+  reading. The same in the editor and in place, where only the selection and its surroundings are
+  read. Its interface is specified in DESIGN.md's Canvas, Style Capsule, and Marks entries.

@@ -123,7 +123,7 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         case .counter(let counter): numbering = counter.numbering
         case .redaction(let redaction): self.redaction = redaction.method
         case .spotlight(let spot): oval = spot.oval
-        case .pen, .highlighter, .image: break
+        case .pen, .highlighter, .textHighlight, .image: break
         }
     }
 
@@ -158,7 +158,7 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         case .spotlight(var spot):
             spot.oval = oval
             item.shape = .spotlight(spot)
-        case .pen, .highlighter, .image:
+        case .pen, .highlighter, .textHighlight, .image:
             break
         }
         return item

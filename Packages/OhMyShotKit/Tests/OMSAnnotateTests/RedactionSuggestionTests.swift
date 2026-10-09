@@ -159,7 +159,7 @@ extension RedactionSuggestionTests {
         defer { AnnotationSession.findRedactions = nil }
         session.tool = .redact
         #expect(session.isFindingRedactions)
-        session.cancelFindingRedactions()
+        session.cancelReading()
         #expect(!session.isFindingRedactions)
         try? await Task.sleep(for: .milliseconds(250))
         // The dropped reading never lands.

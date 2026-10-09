@@ -38,6 +38,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private enum Drag {
         case creating(id: Annotation.ID, tool: AnnotationTool, start: CGPoint)
         case drawing(id: Annotation.ID)
+        /// A highlighter drag: its points, and how it lies over the text when it started on some.
+        case highlighting(id: Annotation.ID, points: [CGPoint], snapping: TextSnapping?)
         case moving(start: CGPoint, originals: [Annotation])
         case reshaping(handle: Handle, original: Annotation)
         case cropping(handle: Handle?, start: CGPoint, original: CGRect)
@@ -142,8 +144,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
         session.observe { [weak self] event in self?.sessionChanged(event) }
         syncMarks()
-        // An editor that opens with the redaction tool in hand reads the capture for its suggestions now.
+        // An editor that opens with the redaction tool in hand reads the capture for its suggestions now,
+        // and one that opens with the highlighter for its lines of text.
         if session.tool == .redact { session.findRedactionsIfNeeded() }
+        if session.tool == .highlighter { session.findTextLinesIfNeeded() }
         // Pictures dropped on the canvas are combined into the capture.
         registerForDraggedTypes([.fileURL, .png, .tiff])
         setAccessibilityElement(true)
@@ -256,7 +260,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     public override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
-        if newWindow == nil, window != nil { session.cancelFindingRedactions() }
+        if newWindow == nil, window != nil { session.cancelReading() }
     }
 
     public override func viewDidMoveToWindow() {
@@ -616,6 +620,22 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                     .priority: NSAccessibilityPriorityLevel.medium.rawValue,
                 ])
             }
+        case .textLines:
+            // A pointer resting on text takes the text cursor once the lines are known.
+            if drag == nil, let window {
+                let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+                if bounds.contains(location) { updateCursor(at: location) }
+            }
+            if !session.isFindingTextLines, session.tool == .highlighter {
+                // VoiceOver hears whether highlights will snap, even when no text was found.
+                let count = session.textLines.count
+                NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
+                    .announcement: count > 0
+                        ? String(localized: "\(count) lines of text to highlight", bundle: .module)
+                        : String(localized: "No text to highlight", bundle: .module),
+                    .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+                ])
+            }
         }
         // Covered suggestions go, and the tool's own come and go with it.
         if event == .document || event == .tool { updateSuggestions() }
@@ -750,11 +770,17 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     private var tolerance: CGFloat { 5 / zoom }
 
-    private func hitItem(at point: CGPoint) -> Annotation? {
+    /// The mark a press at `point` (pixels) takes hold of. With `pressing`, a press that would highlight
+    /// text with the highlighter is left to highlight: the edges of highlights already there, which hug
+    /// the lines above and below, do not catch it unless they are selected.
+    private func hitItem(at point: CGPoint, pressing: Bool = false) -> Annotation? {
         let scale = session.document.scale
         let interiorForAll = session.tool == .select
+        let highlighting = pressing && session.tool == .highlighter && TextSnapping.line(at: point, in: session.textLines) != nil
         for item in session.document.items.reversed() {
-            let interior = interiorForAll || session.selection.contains(item.id)
+            let selected = session.selection.contains(item.id)
+            if highlighting, item.multiplies, !selected { continue }
+            let interior = interiorForAll || selected
             if item.contains(point, tolerance: tolerance, scale: scale, interior: interior) { return item }
         }
         return nil
@@ -821,7 +847,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return
         }
 
-        if let item = hitItem(at: point) {
+        if let item = hitItem(at: point, pressing: true) {
             if event.clickCount == 2, case .text = item.shape {
                 beginEditing(item.id, isNew: false)
                 return
@@ -860,14 +886,23 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case .arrow, .line, .rectangle, .ellipse, .redact, .spotlight:
             session.beginLiveChange()
             drag = .creating(id: UUID(), tool: tool, start: point)
-        case .pen, .highlighter:
+        case .pen:
             session.beginLiveChange()
-            let stroke = Stroke(points: [point])
-            let item = Annotation(shape: tool == .pen ? .pen(stroke) : .highlighter(stroke), style: settings.style)
+            let item = Annotation(shape: .pen(Stroke(points: [point])), style: settings.style)
             var document = session.document
             document.items.append(item)
             session.updateLive(document)
             drag = .drawing(id: item.id)
+        case .highlighter:
+            session.beginLiveChange()
+            // Started on text, it snaps to the text; a click there highlights the word.
+            let snapping = TextSnapping(at: point, lines: session.textLines)
+            let shape = Self.highlight(along: [point], snapping: snapping, freely: event.modifierFlags.contains(.command))
+            let item = Annotation(shape: shape, style: settings.style)
+            var document = session.document
+            document.items.append(item)
+            session.updateLive(document)
+            drag = .highlighting(id: item.id, points: [point], snapping: snapping)
         case .text:
             session.beginLiveChange()
             let layout = TextLayout(TextBlock(origin: .zero, string: " ", fontSize: settings.fontSize, look: settings.textLook), scale: scale)
@@ -890,6 +925,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     public override func mouseDragged(with event: NSEvent) {
+        if case .highlighting = drag {
+            continueHighlighting(with: event)
+            return
+        }
         guard let drag else { return }
         let location = convert(event.locationInWindow, from: nil)
         let point = documentPoint(location)
@@ -906,20 +945,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.updateLive(document, selecting: [])
         case .drawing(let id):
             guard let index = document.index(of: id) else { return }
-            switch document.items[index].shape {
-            case .pen(var stroke):
-                guard let last = stroke.points.last, hypot(point.x - last.x, point.y - last.y) * zoom >= 1.5 else { return }
-                stroke.points.append(point)
-                document.items[index].shape = .pen(stroke)
-            case .highlighter(var stroke):
-                guard let last = stroke.points.last, hypot(point.x - last.x, point.y - last.y) * zoom >= 1.5 else { return }
-                // Shift keeps a highlighter level, as along a line of text.
-                stroke.points.append(shift ? CGPoint(x: point.x, y: stroke.points[0].y) : point)
-                document.items[index].shape = .highlighter(stroke)
-            default:
-                return
-            }
+            guard case .pen(var stroke) = document.items[index].shape,
+                  let last = stroke.points.last, hypot(point.x - last.x, point.y - last.y) * zoom >= 1.5 else { return }
+            stroke.points.append(point)
+            document.items[index].shape = .pen(stroke)
             session.updateLive(document)
+        case .highlighting:
+            // Followed by continueHighlighting.
+            break
         case .moving(let start, let originals):
             var delta = CGSize(width: point.x - start.x, height: point.y - start.y)
             if shift {
@@ -971,6 +1004,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.select([id])
         case .drawing:
             session.endLiveChange(actionName: String(localized: "Draw", bundle: .module))
+        case .highlighting(let id, _, _):
+            guard let index = session.document.index(of: id), case .textHighlight(let highlight) = session.document.items[index].shape else {
+                session.endLiveChange(actionName: String(localized: "Draw", bundle: .module))
+                return
+            }
+            session.updateLive(Self.joiningHighlights(of: session.document, to: id, highlight))
+            session.endLiveChange(actionName: String(localized: "Highlight", bundle: .module))
         case .moving(_, let originals):
             // An image moved past the canvas's edge takes the canvas with it.
             if originals.contains(where: { if case .image = $0.shape { true } else { false } }) { session.growCanvasToHoldImages() }
@@ -985,6 +1025,71 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 self.cropRect = session.document.canvas
                 cropLayer.frameRect = viewRect(session.document.canvas)
             }
+        }
+    }
+
+    /// Follows a highlighter drag to the pointer: its points grow in place, and the mark is drawn again.
+    private func continueHighlighting(with event: NSEvent) {
+        guard case .highlighting(let id, var points, var snapping) = drag, let index = session.document.index(of: id) else { return }
+        let point = documentPoint(convert(event.locationInWindow, from: nil))
+        guard let last = points.last, hypot(point.x - last.x, point.y - last.y) * zoom >= 1.5 else { return }
+        // Let go of while the points grow, so they are not copied at every step.
+        drag = nil
+        // Shift keeps a stroke level, as along a line of text, and a snapped one on its first line.
+        let next = event.modifierFlags.contains(.shift) ? CGPoint(x: point.x, y: points[0].y) : point
+        points.append(next)
+        snapping?.extend(to: next)
+        drag = .highlighting(id: id, points: points, snapping: snapping)
+        var document = session.document
+        document.items[index].shape = Self.highlight(along: points, snapping: snapping, freely: event.modifierFlags.contains(.command))
+        session.updateLive(document)
+    }
+
+    /// `document` with the new highlight `id` joined to the highlights of its color that it meets on a line:
+    /// highlighting over a highlight extends it, so a word highlighted twice (a double click) is no darker
+    /// and the overlap of two strokes along one line does not show. The joined highlight takes the place
+    /// of the uppermost of them, so nothing that lay over another mark drops under it; a highlight that
+    /// only covers what is highlighted already changes nothing.
+    private static func joiningHighlights(of document: AnnotationDocument, to id: Annotation.ID, _ highlight: TextHighlight) -> AnnotationDocument {
+        guard let color = document.item(id)?.style.color else { return document }
+        var document = document
+        var joined = highlight
+        var absorbed: [Int] = []
+        var found = true
+        while found {
+            found = false
+            for (index, item) in document.items.enumerated() where item.id != id && item.style.color == color && !absorbed.contains(index) {
+                guard case .textHighlight(let other) = item.shape, other.meets(joined) else { continue }
+                joined = other.merged(with: joined)
+                absorbed.append(index)
+                found = true
+            }
+        }
+        guard let keeper = absorbed.max() else { return document }
+        document.items[keeper].shape = .textHighlight(joined)
+        let removed = Set(absorbed.filter { $0 != keeper }.map { document.items[$0].id } + [id])
+        document.items.removeAll { removed.contains($0.id) }
+        return document
+    }
+
+    /// What a highlighter drag along `points` draws: bands over the text it ran along when it started on
+    /// text, a free stroke when it started off text or while ⌘ is held.
+    private static func highlight(along points: [CGPoint], snapping: TextSnapping?, freely: Bool) -> Shape {
+        if let snapping, !freely { return .textHighlight(TextHighlight(rects: snapping.rects)) }
+        return .highlighter(Stroke(points: points))
+    }
+
+    public override func flagsChanged(with event: NSEvent) {
+        super.flagsChanged(with: event)
+        let freely = event.modifierFlags.contains(.command)
+        if case .highlighting(let id, let points, let snapping) = drag, snapping != nil, let index = session.document.index(of: id) {
+            // ⌘ frees the stroke from the text while it is held, mid-drag too.
+            var document = session.document
+            document.items[index].shape = Self.highlight(along: points, snapping: snapping, freely: freely)
+            session.updateLive(document)
+        } else if drag == nil, let window {
+            let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            if bounds.contains(location) { updateCursor(at: location) }
         }
     }
 
@@ -1223,7 +1328,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
         } else if session.selection.count == 1, let item = session.selectedItems.first, let handle = handle(at: location, of: item) {
             cursor = handle == .bend || handle == .start || handle == .end ? .crosshair : Self.resizeCursor(for: handle)
-        } else if hitItem(at: documentPoint(location)) != nil {
+        } else if hitItem(at: documentPoint(location), pressing: true) != nil {
             cursor = .openHand
         } else if session.tool == .redact, session.redactionSuggestion(at: documentPoint(location)) != nil {
             cursor = .pointingHand
@@ -1231,6 +1336,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             cursor = switch session.tool {
             case .select: .arrow
             case .text: .iBeam
+            // Over text the highlighter snaps to it, which the text cursor says, until ⌘ frees it.
+            case .highlighter where !NSEvent.modifierFlags.contains(.command) && TextSnapping.line(at: documentPoint(location), in: session.textLines) != nil:
+                .iBeam
             default: .crosshair
             }
         }

@@ -33,6 +33,8 @@ final class StyleCapsule: NSView {
     /// The redaction tool's open suggestions.
     private var suggestions = 0
     private var finding = false
+    /// Whether the size chips mean anything: not for highlights snapped to text.
+    private var sized = true
     private var chips: [CapsuleChip] = []
     /// What the background controls show, when the background is in hand.
     private var background: BackgroundState?
@@ -142,13 +144,16 @@ final class StyleCapsule: NSView {
     /// Shows the controls for `kind` with `settings`; `hasSelection` adds Delete.
     /// - Parameters:
     ///   - suggestions: redaction suggestions not yet covered, for Redact All.
-    ///   - finding: the capture is being read for them.
-    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, finding: Bool = false) {
+    ///   - finding: the capture is being read for the tool: for redaction suggestions, or the lines of text
+    ///     the highlighter snaps to.
+    ///   - sized: false leaves out the sizes, for highlights snapped to text.
+    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, finding: Bool = false, sized: Bool = true) {
         self.kind = kind
         self.settings = settings
         self.hasSelection = hasSelection
         self.suggestions = suggestions
         self.finding = finding
+        self.sized = sized
         background = nil
         rebuild()
     }
@@ -203,7 +208,7 @@ final class StyleCapsule: NSView {
             sections.append([symbolChip("trash", name: String(localized: "Delete", bundle: .module), selected: false) { [weak self] in self?.onDelete?() }])
         }
         // Kept beside Delete too: a redaction drawn by hand is selected, and the rest still wait.
-        if kind == .redact, finding {
+        if kind == .redact || kind == .highlighter, finding {
             sections.append([CapsuleStatus(String(localized: "Finding text…", bundle: .module))])
         } else if kind == .redact, suggestions > 0 {
             sections.append([textChip(String(localized: "Redact All (\(suggestions))", bundle: .module)) { [weak self] in self?.onRedactAll?() }])
@@ -291,6 +296,7 @@ final class StyleCapsule: NSView {
     }
 
     private func sizeChips() -> [NSView] {
+        guard sized else { return [] }
         switch kind {
         case .text:
             let sizes: [CGFloat] = [14, 20, 28, 40]

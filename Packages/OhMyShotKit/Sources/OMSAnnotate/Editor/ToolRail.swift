@@ -181,7 +181,7 @@ final class ToolRail: NSView {
         chip.wantsLayer = true
         chip.layer?.cornerRadius = Self.chip / 2
         chip.setButtonType(.onOff)
-        chip.toolTip = "\(name) (\(String(tool.key).uppercased()))"
+        chip.toolTip = Self.help(for: tool)
         chip.setAccessibilityLabel(name)
         chip.translatesAutoresizingMaskIntoConstraints = false
         chip.widthAnchor.constraint(equalToConstant: Self.chip).isActive = true
@@ -213,6 +213,13 @@ final class ToolRail: NSView {
         case .crop: "crop"
         case .background: "rectangle.center.inset.filled"
         }
+    }
+
+    /// A tool's help tag: its name and key, and for the highlighter how it meets text.
+    static func help(for tool: AnnotationTool) -> String {
+        let title = "\(name(of: tool)) (\(String(tool.key).uppercased()))"
+        guard tool == .highlighter else { return title }
+        return title + "\n" + String(localized: "Snaps to text. Hold ⌘ to draw freely.", bundle: .module)
     }
 
     static func name(of tool: AnnotationTool) -> String {

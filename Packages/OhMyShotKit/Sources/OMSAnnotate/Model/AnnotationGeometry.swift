@@ -31,7 +31,7 @@ nonisolated extension Annotation {
             return spot.rect.standardized
         case .image(let image):
             return image.rect.standardized
-        case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter:
+        case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .textHighlight:
             return MarkPaths.outline(of: self, scale: scale)?.boundingBoxOfPath ?? .null
         }
     }
@@ -53,10 +53,18 @@ nonisolated extension Annotation {
         }
     }
 
+    /// Highlighter marks, which darken what is under them as ink on paper does.
+    public var multiplies: Bool {
+        switch shape {
+        case .highlighter, .textHighlight: true
+        default: false
+        }
+    }
+
     /// Marks that would hide what they cover if the shadow fell on it never cast one.
     public var castsShadow: Bool {
         switch shape {
-        case .highlighter, .redaction, .spotlight: false
+        case .highlighter, .textHighlight, .redaction, .spotlight: false
         default: true
         }
     }
@@ -65,7 +73,7 @@ nonisolated extension Annotation {
     /// unless they are already selected.
     public var coversArea: Bool {
         switch shape {
-        case .redaction, .spotlight, .highlighter, .image: true
+        case .redaction, .spotlight, .highlighter, .textHighlight, .image: true
         case .rectangle(let box), .ellipse(let box): box.filled
         default: false
         }
@@ -85,7 +93,7 @@ nonisolated extension Annotation {
             if !edgeOnly { return true }
             let inner = rect.insetBy(dx: tolerance, dy: tolerance)
             return inner.isNull || !inner.contains(point)
-        case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter:
+        case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .textHighlight:
             guard let path = MarkPaths.outline(of: self, scale: scale) else { return false }
             guard path.boundingBoxOfPath.insetBy(dx: -tolerance, dy: -tolerance).contains(point) else { return false }
             let edge = path.copy(strokingWithWidth: tolerance * 2, lineCap: .round, lineJoin: .round, miterLimit: 10)
@@ -113,7 +121,8 @@ nonisolated extension Annotation {
         case .text:
             let frame = bounds(scale: scale)
             return [(.right, CGPoint(x: frame.maxX, y: frame.midY))]
-        case .pen, .highlighter, .counter:
+        // A highlight snapped to text is drawn again rather than reshaped: its ends belong to words.
+        case .pen, .highlighter, .textHighlight, .counter:
             return []
         }
     }
@@ -178,7 +187,7 @@ nonisolated extension Annotation {
             let inset = block.look == .label ? block.fontSize * scale * 0.4 : 0
             block.width = max(point.x - block.origin.x - inset * 2, block.fontSize * scale * 2) + inset * 2
             copy.shape = .text(block)
-        case .pen, .highlighter, .counter:
+        case .pen, .highlighter, .textHighlight, .counter:
             break
         }
         return copy
@@ -210,6 +219,9 @@ nonisolated extension Annotation {
         case .highlighter(var stroke):
             stroke.points = stroke.points.map(move)
             copy.shape = .highlighter(stroke)
+        case .textHighlight(var highlight):
+            highlight.rects = highlight.rects.map(move)
+            copy.shape = .textHighlight(highlight)
         case .text(var block):
             block.origin = move(block.origin)
             copy.shape = .text(block)

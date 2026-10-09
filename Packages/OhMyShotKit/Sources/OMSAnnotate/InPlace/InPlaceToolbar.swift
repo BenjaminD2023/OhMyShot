@@ -201,7 +201,7 @@ final class InPlaceToolbar: NSView {
 
     private func makeToolChip(_ tool: AnnotationTool) -> RailChip {
         let name = ToolRail.name(of: tool)
-        let chip = makeChip(symbol: ToolRail.symbol(for: tool), name: name, help: "\(name) (\(String(tool.key).uppercased()))")
+        let chip = makeChip(symbol: ToolRail.symbol(for: tool), name: name, help: ToolRail.help(for: tool))
         chip.setButtonType(.onOff)
         toolChips[tool] = chip
         return chip

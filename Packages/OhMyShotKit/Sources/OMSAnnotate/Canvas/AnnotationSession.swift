@@ -19,11 +19,16 @@ public final class AnnotationSession {
         case history
         /// Redaction suggestions came in, or started being looked for.
         case suggestions
+        /// The capture's lines of text came in, or started being looked for.
+        case textLines
     }
 
     /// Finds what in a capture is better covered, for the redaction tool's suggestions; set once by the app,
     /// which reads text. Nil leaves the tool without suggestions.
     public static var findRedactions: (@Sendable (CGImage) async -> [RedactionSuggestion])?
+    /// Finds the lines of text in a capture, for the highlighter to snap to; set once by the app, which reads
+    /// text. Nil leaves the highlighter drawing freely.
+    public static var findTextLines: (@Sendable (CGImage) async -> [TextLine])?
 
     /// The capture, as it was taken.
     public let base: CGImage
@@ -35,6 +40,7 @@ public final class AnnotationSession {
             if !tool.isPictureMode, remembersTool { UserDefaults.standard.set(tool.rawValue, forKey: Self.toolKey) }
             if tool.isPictureMode, !oldValue.isPictureMode { toolBeforeMode = oldValue }
             if tool == .redact { findRedactionsIfNeeded() }
+            if tool == .highlighter { findTextLinesIfNeeded() }
             notify(.tool)
         }
     }
@@ -53,6 +59,16 @@ public final class AnnotationSession {
     public private(set) var isFindingRedactions = false
     @ObservationIgnored private var hasLookedForRedactions = false
     @ObservationIgnored private var findTask: Task<Void, Never>?
+    /// The capture's lines of text, once the highlighter has been in hand.
+    public private(set) var textLines: [TextLine] = []
+    /// Whether the capture is being read for them.
+    public private(set) var isFindingTextLines = false
+    @ObservationIgnored private var hasLookedForTextLines = false
+    @ObservationIgnored private var textLinesTask: Task<Void, Never>?
+    /// The combined images each reading saw: one made before an image was combined, moved, or removed
+    /// describes a picture that is gone.
+    @ObservationIgnored private var redactionsReadOver: [Annotation]?
+    @ObservationIgnored private var textLinesReadOver: [Annotation]?
 
     @ObservationIgnored public let undoManager = UndoManager()
     @ObservationIgnored private var settings: [AnnotationTool: ToolSettings]
@@ -161,7 +177,7 @@ public final class AnnotationSession {
         case .rectangle: .rectangle
         case .ellipse: .ellipse
         case .pen: .pen
-        case .highlighter: .highlighter
+        case .highlighter, .textHighlight: .highlighter
         case .text: .text
         case .counter: .counter
         case .redaction: .redact
@@ -300,6 +316,25 @@ public final class AnnotationSession {
         return source
     }
 
+    // MARK: Reading
+
+    /// What reading looks at: the capture as blurs see it, combined images included, cut to the canvas and
+    /// a margin around it, and where its corner is in the document. Annotating a small area of a large
+    /// screen in place reads that area, not the whole display; an editor reads the whole capture unless it
+    /// is cropped.
+    var readingSource: (image: CGImage, origin: CGPoint) {
+        let source = redactionSource ?? (base, .zero)
+        let bounds = CGRect(origin: source.origin, size: CGSize(width: source.image.width, height: source.image.height))
+        let canvas = document.canvas.standardized
+        // Room for a selection moved or grown a little after reading, and for lines its edge cuts.
+        let margin = max(max(canvas.width, canvas.height) * 0.25, 160)
+        let region = canvas.insetBy(dx: -margin, dy: -margin).integral.intersection(bounds)
+        guard !region.isNull, region != bounds, region.width >= 1, region.height >= 1,
+              let part = source.image.cropping(to: region.offsetBy(dx: -source.origin.x, dy: -source.origin.y))
+        else { return source }
+        return (part, region.origin)
+    }
+
     // MARK: Redaction suggestions
 
     /// Reads the capture for redaction suggestions, once per session: the first time the redaction tool is
@@ -307,8 +342,8 @@ public final class AnnotationSession {
     public func findRedactionsIfNeeded() {
         guard !hasLookedForRedactions, let find = Self.findRedactions else { return }
         hasLookedForRedactions = true
-        // What blurs read: the capture with any combined images, placed where it sits in the document.
-        let source = redactionSource ?? (base, .zero)
+        let source = readingSource
+        redactionsReadOver = images
         isFindingRedactions = true
         notify(.suggestions)
         findTask = Task { [weak self] in
@@ -321,14 +356,48 @@ public final class AnnotationSession {
         }
     }
 
-    /// Drops a reading still under way, for a canvas that is closing; the next time the redaction tool is
-    /// in hand reads again.
-    public func cancelFindingRedactions() {
-        guard let findTask else { return }
-        findTask.cancel()
-        self.findTask = nil
+    /// Drops readings still under way, for a canvas that is closing; the next time their tool is in hand
+    /// reads again.
+    public func cancelReading() {
+        if findTask != nil { forgetRedactions() }
+        if textLinesTask != nil { forgetTextLines() }
+    }
+
+    private func forgetRedactions() {
+        findTask?.cancel()
+        findTask = nil
+        redactionSuggestions = []
         hasLookedForRedactions = false
         isFindingRedactions = false
+        redactionsReadOver = nil
+    }
+
+    private func forgetTextLines() {
+        textLinesTask?.cancel()
+        textLinesTask = nil
+        textLines = []
+        hasLookedForTextLines = false
+        isFindingTextLines = false
+        textLinesReadOver = nil
+    }
+
+    /// The combined images, which reading sees as part of the capture.
+    private var images: [Annotation] {
+        document.items.filter { if case .image = $0.shape { true } else { false } }
+    }
+
+    /// Forgets what was read of a picture whose combined images have changed since, and reads it again
+    /// for the tool in hand.
+    private func forgetReadingsOfChangedImages() {
+        let images = self.images
+        if let read = redactionsReadOver, read != images {
+            forgetRedactions()
+            if tool == .redact { findRedactionsIfNeeded() } else { notify(.suggestions) }
+        }
+        if let read = textLinesReadOver, read != images {
+            forgetTextLines()
+            if tool == .highlighter { findTextLinesIfNeeded() } else { notify(.textLines) }
+        }
     }
 
     /// The suggestions no redaction covers yet, within what the picture keeps after a crop.
@@ -391,6 +460,45 @@ public final class AnnotationSession {
             }
         }
         commit(newDocument, selecting: [], actionName: actionName)
+    }
+
+    // MARK: Text lines
+
+    /// Reads the capture for its lines of text, once per session: the first time the highlighter is in
+    /// hand, so nothing is read for an editor that never highlights. A stroke drawn before they come in is
+    /// drawn freely.
+    public func findTextLinesIfNeeded() {
+        guard !hasLookedForTextLines, let find = Self.findTextLines else { return }
+        hasLookedForTextLines = true
+        let source = readingSource
+        textLinesReadOver = images
+        isFindingTextLines = true
+        notify(.textLines)
+        textLinesTask = Task { [weak self] in
+            let found = await find(source.image)
+            guard let self, !Task.isCancelled else { return }
+            textLines = found.filter { !$0.words.isEmpty }.map { $0.offsetBy(dx: source.origin.x, dy: source.origin.y) }
+            isFindingTextLines = false
+            textLinesTask = nil
+            notify(.textLines)
+        }
+    }
+
+    /// Whether the capture is being read for the tool in hand: for the redaction tool's suggestions, or the
+    /// lines of text the highlighter snaps to.
+    public var isReadingForTool: Bool {
+        switch tool {
+        case .redact: isFindingRedactions
+        case .highlighter: isFindingTextLines
+        default: false
+        }
+    }
+
+    /// Whether a size means anything for what the controls change: not for highlights snapped to text,
+    /// whose height is their text's.
+    public var sizeApplies: Bool {
+        let selected = selectedItems
+        return selected.isEmpty || selected.contains { if case .textHighlight = $0.shape { false } else { true } }
     }
 
     // MARK: Selection
@@ -476,6 +584,7 @@ public final class AnnotationSession {
         // Told here rather than through the undo manager's group notifications, which close only at
         // the end of an event and are not posted for every change.
         notify(.history)
+        forgetReadingsOfChangedImages()
     }
 
     /// Undoes the last change to the marks.

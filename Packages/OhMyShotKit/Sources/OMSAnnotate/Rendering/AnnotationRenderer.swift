@@ -27,7 +27,7 @@ nonisolated public enum AnnotationRenderer {
             context.setFillColor(color)
             context.addPath(path)
             context.fillPath()
-        case .highlighter:
+        case .highlighter, .textHighlight:
             guard let path = MarkPaths.outline(of: item, scale: scale) else { return }
             // Darkens what is under it, as ink on paper does: text stays black, white turns yellow.
             context.setBlendMode(.multiply)

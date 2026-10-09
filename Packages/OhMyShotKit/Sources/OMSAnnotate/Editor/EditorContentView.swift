@@ -99,6 +99,8 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             break
         case .suggestions:
             if session.tool == .redact { refreshCapsule() }
+        case .textLines:
+            if session.tool == .highlighter { refreshCapsule() }
         }
     }
 
@@ -119,7 +121,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             capsule.show(
                 kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
                 suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
-                finding: session.tool == .redact && session.isFindingRedactions
+                finding: session.isReadingForTool, sized: session.sizeApplies
             )
         }
         placeCapsule()

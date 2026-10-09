@@ -234,6 +234,8 @@ public final class InPlaceAnnotationView: NSView {
             toolbar.canRedo = session.undoManager.canRedo
         case .suggestions:
             if session.tool == .redact { refreshCapsule() }
+        case .textLines:
+            if session.tool == .highlighter { refreshCapsule() }
         }
     }
 
@@ -247,7 +249,7 @@ public final class InPlaceAnnotationView: NSView {
         capsule.show(
             kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
             suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
-            finding: session.tool == .redact && session.isFindingRedactions
+            finding: session.isReadingForTool, sized: session.sizeApplies
         )
         placeAccessories()
     }
@@ -546,8 +548,11 @@ public final class InPlaceAnnotationView: NSView {
 
     /// A summary for scripted checks.
     public var debugSummary: String {
-        let marks = session.document.items.map { AnnotationSession.tool(for: $0).rawValue }.joined(separator: ",")
-        return "selection=\(NSStringFromRect(selectionRect)) canvas=\(NSStringFromRect(session.document.canvas)) tool=\(session.tool.rawValue) marks=[\(marks)] toolbar=\(NSStringFromRect(toolbar.frame)) capsule=\(capsule.alphaValue > 0 ? NSStringFromRect(capsule.frame) : "hidden") undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") canvasZoom=\(canvas.zoom) canvasPicture=\(NSStringFromRect(canvas.pictureFrame)) suggestions=\(session.isFindingRedactions ? "finding" : "\(session.openRedactionSuggestions.count)")"
+        let marks = session.document.items.map { item -> String in
+            if case .textHighlight(let highlight) = item.shape { return "textHighlight(\(highlight.rects.map { NSStringFromRect($0) }.joined(separator: "|")))" }
+            return AnnotationSession.tool(for: item).rawValue
+        }.joined(separator: ",")
+        return "selection=\(NSStringFromRect(selectionRect)) canvas=\(NSStringFromRect(session.document.canvas)) tool=\(session.tool.rawValue) marks=[\(marks)] toolbar=\(NSStringFromRect(toolbar.frame)) capsule=\(capsule.alphaValue > 0 ? NSStringFromRect(capsule.frame) : "hidden") undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") canvasZoom=\(canvas.zoom) canvasPicture=\(NSStringFromRect(canvas.pictureFrame)) suggestions=\(session.isFindingRedactions ? "finding" : "\(session.openRedactionSuggestions.count)") textlines=\(session.isFindingTextLines ? "finding" : "\(session.textLines.count)")"
     }
     #endif
 }

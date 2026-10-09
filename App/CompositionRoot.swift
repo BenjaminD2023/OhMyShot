@@ -54,6 +54,14 @@ final class CompositionRoot {
             Log.app.notice("Redaction suggestions: \(found.count, privacy: .public) found")
             return found.map { RedactionSuggestion(rect: $0.box, label: Self.label(for: $0.kind)) }
         }
+        // The lines of text the highlighter snaps to: where they lie, never what they say.
+        AnnotationSession.findTextLines = { image in
+            let probe = LatencyProbe("annotate.textlines")
+            let lines = (try? await TextLineReader().read(image)) ?? []
+            probe.end()
+            Log.app.notice("Text lines: \(lines.count, privacy: .public) found")
+            return lines.map { TextLine(rect: $0.box, words: $0.words) }
+        }
         let statusItem = StatusItemController(
             captureEntries: [
                 .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },

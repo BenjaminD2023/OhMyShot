@@ -44,6 +44,7 @@ struct DebugHooks {
     static let snapshotDirectory = URL.cachesDirectory.appending(path: "\(Log.subsystem)/debug-snapshots", directoryHint: .isDirectory)
     /// The real reader for redaction suggestions, while redact-slow stands in for it.
     private static var unslowedFindRedactions: (@Sendable (CGImage) async -> [RedactionSuggestion])?
+    private static var unslowedFindTextLines: (@Sendable (CGImage) async -> [TextLine])?
 
     func handle(_ url: URL) {
         let hook = url.pathComponents.dropFirst().first ?? ""
@@ -408,12 +409,36 @@ struct DebugHooks {
                 }
             }
             Log.app.notice("debug.redact-slow \(seconds, privacy: .public) s")
+        case "textlines-slow":
+            // Reads for the highlighter's lines of text take seconds= longer (0 puts them back), so the
+            // capsule's finding state can be captured.
+            if Self.unslowedFindTextLines == nil { Self.unslowedFindTextLines = AnnotationSession.findTextLines }
+            let seconds = Self.intParameter("seconds", in: url) ?? 3
+            let original = Self.unslowedFindTextLines
+            if seconds == 0 {
+                AnnotationSession.findTextLines = original
+            } else {
+                AnnotationSession.findTextLines = { @Sendable image in
+                    try? await Task.sleep(for: .seconds(seconds))
+                    return await original?(image) ?? []
+                }
+            }
+            Log.app.notice("debug.textlines-slow \(seconds, privacy: .public) s")
         case "redact-scan":
             // Reads the drawn demo page for redaction suggestions and logs them; nothing is shown.
             if let image = DebugPanelDemo.image(), let find = AnnotationSession.findRedactions {
                 Task {
                     let found = await find(image).map { "\($0.label)@\(NSStringFromRect($0.rect))" }
                     Log.app.notice("debug.redact-scan \(found.joined(separator: "; "), privacy: .public)")
+                }
+            }
+        case "textlines-scan":
+            // Reads the drawn demo page for the lines the highlighter snaps to and logs where they lie (each
+            // line's rect and word count); nothing is shown.
+            if let image = DebugPanelDemo.image(), let find = AnnotationSession.findTextLines {
+                Task {
+                    let found = await find(image).map { "\(NSStringFromRect($0.rect))/\($0.words.count)" }
+                    Log.app.notice("debug.textlines-scan \(found.count, privacy: .public): \(found.joined(separator: "; "), privacy: .public)")
                 }
             }
         case "qa-demo":
@@ -1017,9 +1042,12 @@ struct DebugHooks {
         if let tool = value("tool").flatMap(AnnotationTool.init(rawValue:)) { view.session.tool = tool }
         if value("redactall") == "1" { view.session.acceptAllRedactionSuggestions() }
         if let drag = value("drag")?.split(separator: ",").compactMap({ Double($0) }), drag.count == 4 {
+            var modifiers: NSEvent.ModifierFlags = value("shift") == "1" ? .shift : []
+            // With a drag and no key, cmd=1 holds ⌘ through the drag.
+            if value("cmd") == "1", value("key") == nil { modifiers.insert(.command) }
             view.simulateDrag(
                 from: CGPoint(x: drag[0], y: drag[1]), to: CGPoint(x: drag[2], y: drag[3]),
-                modifiers: value("shift") == "1" ? .shift : [], clickCount: value("clicks").flatMap(Int.init) ?? 1
+                modifiers: modifiers, clickCount: value("clicks").flatMap(Int.init) ?? 1
             )
         }
         if let key = value("key") {

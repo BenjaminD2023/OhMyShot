@@ -77,6 +77,8 @@ nonisolated public enum Shape: Codable, Sendable, Equatable {
     case pen(Stroke)
     /// A translucent marker that darkens the picture under it, so text stays legible.
     case highlighter(Stroke)
+    /// The highlighter laid along text: a band over each line, each the height of its text.
+    case textHighlight(TextHighlight)
     case text(TextBlock)
     case counter(Counter)
     case redaction(Redaction)
@@ -146,6 +148,16 @@ nonisolated public struct Stroke: Codable, Sendable, Equatable {
 
     public init(points: [CGPoint]) {
         self.points = points
+    }
+}
+
+/// A highlighter stroke snapped to text.
+nonisolated public struct TextHighlight: Codable, Sendable, Equatable {
+    /// A band over each line, top to bottom, in pixels.
+    public var rects: [CGRect]
+
+    public init(rects: [CGRect]) {
+        self.rects = rects
     }
 }
 

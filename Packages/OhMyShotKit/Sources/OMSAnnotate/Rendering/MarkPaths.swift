@@ -34,6 +34,14 @@ nonisolated enum MarkPaths {
                 return CGPath(ellipseIn: CGRect(x: first.x - width / 2, y: first.y - width / 2, width: width, height: width), transform: nil)
             }
             return smoothPath(through: stroke.points).copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round, miterLimit: 10)
+        case .textHighlight(let highlight):
+            // One path, filled once: where the bands of two lines meet, the color does not double.
+            let path = CGMutablePath()
+            for rect in highlight.rects.map(\.standardized) where rect.width > 0 && rect.height > 0 {
+                let radius = min(rect.height * 0.2, rect.width / 2)
+                path.addRoundedRect(in: rect, cornerWidth: radius, cornerHeight: radius)
+            }
+            return path.isEmpty ? nil : path
         case .text, .counter, .redaction, .spotlight, .image:
             return nil
         }

@@ -49,8 +49,9 @@ nonisolated final class MarkLayer: StillLayer {
         self.mark = mark
         super.init()
         needsDisplayOnBoundsChange = true
-        if case .highlighter = mark.shape {
-            // Darkens what is under it, as the export's multiply does.
+        if mark.multiplies {
+            // Darkens what is under it, as the export's multiply does. A highlighter's mark stays one:
+            // while drawn it may turn from a stroke to a highlight snapped to text and back.
             compositingFilter = "multiplyBlendMode"
         }
     }

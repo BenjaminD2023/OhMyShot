@@ -245,13 +245,14 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         let kinds = session.document.items.map { item -> String in
             if case .counter(let counter) = item.shape { return "counter(\(counter.label))" }
             if case .image(let image) = item.shape { return "image(\(NSStringFromRect(image.rect)))" }
+            if case .textHighlight(let highlight) = item.shape { return "textHighlight(\(highlight.rects.map { NSStringFromRect($0) }.joined(separator: "|")))" }
             return AnnotationSession.tool(for: item).rawValue
         }.joined(separator: ",")
         var backdrop = "none"
         if let current = session.document.backdrop, let layout = session.backdropLayout {
             backdrop = "\(current.fill) pad=\(current.padding) inset=\(current.inset) balanced=\(current.balanced) corners=\(current.cornerRadius) shadow=\(current.shadow) ratio=\(current.ratio.map { "\($0.width):\($0.height)" } ?? "auto") align=\(current.alignment.rawValue) output=\(NSStringFromRect(layout.output)) card=\(NSStringFromRect(layout.card)) matte=\(layout.matte != nil) bare=\(layout.isBare)"
         }
-        return "backdrop=[\(backdrop)] marks=[\(kinds)] selected=\(session.selection.count) tool=\(session.tool.rawValue) canvas=\(NSStringFromRect(session.document.canvas)) undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") redo=\(session.undoManager.canRedo ? session.undoManager.redoActionName : "-") unkept=\(session.hasUnkeptChanges) editing=\(content.canvas.isEditingText) suggestions=\(session.isFindingRedactions ? "finding" : session.openRedactionSuggestions.map { "\($0.label)@\(NSStringFromRect($0.rect))" }.joined(separator: ";"))"
+        return "backdrop=[\(backdrop)] marks=[\(kinds)] selected=\(session.selection.count) tool=\(session.tool.rawValue) canvas=\(NSStringFromRect(session.document.canvas)) undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") redo=\(session.undoManager.canRedo ? session.undoManager.redoActionName : "-") unkept=\(session.hasUnkeptChanges) editing=\(content.canvas.isEditingText) suggestions=\(session.isFindingRedactions ? "finding" : session.openRedactionSuggestions.map { "\($0.label)@\(NSStringFromRect($0.rect))" }.joined(separator: ";")) textlines=\(session.isFindingTextLines ? "finding" : "\(session.textLines.count)")"
     }
     #endif
 

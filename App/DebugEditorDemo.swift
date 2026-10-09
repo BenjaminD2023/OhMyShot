@@ -54,7 +54,7 @@ enum DebugEditorDemo {
     }
 
     /// Acts on the open demo editor: drag=x1,y1,x2,y2 (capture pixels) with tool=, shift=1, option=1,
-    /// clicks=2; key=<characters>&code=<key code>[&cmd=1|&shift=1]; type=<text> into the text being
+    /// cmd=1, clicks=2; key=<characters>&code=<key code>[&cmd=1|&shift=1]; type=<text> into the text being
     /// edited. Logs a summary afterwards.
     static func act(on other: AnnotationEditorWindowController?, _ value: (String) -> String?) {
         guard let editor = editor ?? other else {
@@ -66,6 +66,8 @@ enum DebugEditorDemo {
             var modifiers: NSEvent.ModifierFlags = []
             if value("shift") == "1" { modifiers.insert(.shift) }
             if value("option") == "1" { modifiers.insert(.option) }
+            // cmd=1 with a drag holds ⌘ through it (a highlighter drawing freely).
+            if value("cmd") == "1" { modifiers.insert(.command) }
             editor.simulateDrag(
                 from: CGPoint(x: drag[0], y: drag[1]), to: CGPoint(x: drag[2], y: drag[3]),
                 modifiers: modifiers, clickCount: value("clicks").flatMap(Int.init) ?? 1
