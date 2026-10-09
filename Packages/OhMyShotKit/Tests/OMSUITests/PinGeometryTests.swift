@@ -29,10 +29,26 @@ struct PinGeometryTests {
     @Test func zoomingKeepsThePointUnderThePointer() {
         let frame = CGRect(x: 100, y: 100, width: 200, height: 100)
         let anchor = CGPoint(x: 150, y: 125)
-        let zoomed = PinGeometry.zoomed(frame, by: 2, around: anchor)
+        let zoomed = PinGeometry.zoomed(frame, to: CGSize(width: 400, height: 200), around: anchor)
         #expect(zoomed == CGRect(x: 50, y: 75, width: 400, height: 200))
         // The anchor sits at the same fraction of the pin before and after.
         #expect((anchor.x - zoomed.minX) / zoomed.width == (anchor.x - frame.minX) / frame.width)
+    }
+
+    @Test func zoomingInAndOutKeepsThePicturesShape() {
+        // A trackpad gesture in and out on a small pin, the window server rounding the frame after every step
+        // (sizes up, origins down, as it does). Scaling the rounded frame each step left 104 x 38 at 139 x 84.
+        let base = CGSize(width: 104, height: 38)
+        var frame = CGRect(origin: CGPoint(x: 200, y: 300), size: base)
+        var zoom: CGFloat = 1
+        for delta in Array(repeating: CGFloat(3), count: 150) + Array(repeating: CGFloat(-3), count: 150) {
+            zoom = PinGeometry.zoom(zoom, scrolledBy: delta, precise: true)
+            let anchor = CGPoint(x: frame.minX + frame.width * 0.3, y: frame.minY + frame.height * 0.6)
+            let next = PinGeometry.zoomed(frame, to: CGSize(width: base.width * zoom, height: base.height * zoom), around: anchor)
+            frame = CGRect(x: next.minX.rounded(.down), y: next.minY.rounded(.down), width: next.width.rounded(.up), height: next.height.rounded(.up))
+        }
+        #expect(abs(frame.width - base.width * zoom) <= 1)
+        #expect(abs(frame.height - base.height * zoom) <= 1)
     }
 
     @Test func cornerButtonsStandInTheTopCornersOfARoomyPin() {

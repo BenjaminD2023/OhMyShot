@@ -99,7 +99,7 @@ final class PinWindow: NSPanel {
         let clamped = PinGeometry.clamp(newZoom, to: PinGeometry.zoomRange)
         guard abs(clamped - zoom) > 0.0001 else { return }
         let point = anchor ?? CGPoint(x: frame.midX, y: frame.midY)
-        let next = PinGeometry.zoomed(frame, by: clamped / zoom, around: point)
+        let next = PinGeometry.zoomed(frame, to: CGSize(width: baseSize.width * clamped, height: baseSize.height * clamped), around: point)
         zoom = clamped
         setFrame(next, display: true)
         invalidateShadow()

@@ -24,15 +24,14 @@ enum PinGeometry {
         return (CGRect(x: visible.midX - fitted.width / 2, y: visible.midY - fitted.height / 2, width: fitted.width, height: fitted.height), fit)
     }
 
-    /// `frame` grown or shrunk by `ratio`, keeping `anchor` (a point in the same space) where it is on
-    /// screen: the pointer, or the pin's center.
-    static func zoomed(_ frame: CGRect, by ratio: CGFloat, around anchor: CGPoint) -> CGRect {
-        CGRect(
-            x: anchor.x - (anchor.x - frame.minX) * ratio,
-            y: anchor.y - (anchor.y - frame.minY) * ratio,
-            width: frame.width * ratio,
-            height: frame.height * ratio
-        )
+    /// `frame` at `size`, keeping `anchor` (a point in the same space: the pointer, or the pin's center)
+    /// where it is in it. The size comes from the pin's own size and zoom, never from `frame`: the window
+    /// server rounds a window's frame to whole points, and sizes scaled from rounded frames drift apart step
+    /// by step, until a pin zoomed in and out no longer has its picture's shape.
+    static func zoomed(_ frame: CGRect, to size: CGSize, around anchor: CGPoint) -> CGRect {
+        let fx = frame.width > 0 ? (anchor.x - frame.minX) / frame.width : 0.5
+        let fy = frame.height > 0 ? (anchor.y - frame.minY) / frame.height : 0.5
+        return CGRect(x: anchor.x - fx * size.width, y: anchor.y - fy * size.height, width: size.width, height: size.height)
     }
 
     /// The zoom after scrolling up (positive) or down by `delta`: points from a trackpad, lines from a
