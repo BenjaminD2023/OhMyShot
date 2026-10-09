@@ -35,6 +35,29 @@ struct PinGeometryTests {
         #expect((anchor.x - zoomed.minX) / zoomed.width == (anchor.x - frame.minX) / frame.width)
     }
 
+    @Test func cornerButtonsStandInTheTopCornersOfARoomyPin() {
+        let buttons = PinGeometry.cornerButtons(in: CGSize(width: 300, height: 200), button: 24)
+        #expect(buttons.close == CGRect(x: 8, y: 168, width: 24, height: 24))
+        #expect(buttons.more == CGRect(x: 268, y: 168, width: 24, height: 24))
+    }
+
+    @Test func aOneLineCardHasThemCenteredInItsHeight() {
+        // A one-line text card is 38 pt tall at 100 percent.
+        let buttons = PinGeometry.cornerButtons(in: CGSize(width: 103, height: 38), button: 24)
+        #expect(buttons.close == CGRect(x: 8, y: 7, width: 24, height: 24))
+        #expect(buttons.more == CGRect(x: 71, y: 7, width: 24, height: 24))
+        // At 40 pt the two placements meet, so zooming never makes the buttons jump.
+        #expect(PinGeometry.cornerButtons(in: CGSize(width: 103, height: 40), button: 24).close?.maxY == 32)
+    }
+
+    @Test func aNarrowPinHasCloseAloneAndATinyOneNeither() {
+        let narrow = PinGeometry.cornerButtons(in: CGSize(width: 64, height: 64), button: 24)
+        #expect(narrow.close == CGRect(x: 8, y: 32, width: 24, height: 24) && narrow.more == nil)
+        #expect(narrow.trailing == CGRect(x: 32, y: 32, width: 24, height: 24))
+        #expect(PinGeometry.cornerButtons(in: CGSize(width: 39, height: 64), button: 24).close == nil)
+        #expect(PinGeometry.cornerButtons(in: CGSize(width: 200, height: 35), button: 24).close == nil)
+    }
+
     @Test func scrollingZoomsAndFadesWithinBounds() {
         #expect(abs(PinGeometry.zoom(1, scrolledBy: 1, precise: false) - 1.105) < 0.001)
         #expect(PinGeometry.zoom(7.9, scrolledBy: 50, precise: false) == 8)

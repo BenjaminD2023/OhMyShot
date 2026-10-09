@@ -262,21 +262,26 @@ struct DebugHooks {
             Log.app.notice("debug.pin-color-demo \(self.pins.debugSummary, privacy: .public)")
         case "pin-render":
             // Draws a pin behind the desktop picture and captures its window alone, nothing shown:
-            // kind=text|code|color|alpha, zoom=<percent>, mode=light|dark. Writes
-            // pin-render-<kind>-<zoom>-<mode>.png to the snapshot folder.
+            // kind=text|line|narrow|code|color|alpha, zoom=<percent>, mode=light|dark, controls=1 for
+            // Close and More as on hover. Writes pin-render-<kind>-<zoom>-<mode>[-controls].png to the
+            // snapshot folder.
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in items.first { $0.name == name }?.value }
             let kind = value("kind") ?? "text"
             let zoom = value("zoom").flatMap(Double.init) ?? 100
             let mode = value("mode") ?? "light"
+            let controls = value("controls") == "1"
             let content: PinController.Content? = switch kind {
+            case "line": .text("npm run dev")
+            case "narrow": .text("OK")
             case "code": .text("func pinned() {\n    let shortcut = \"⌃⌥⌘7\"\n    print(\"Capture Area and Pin: \\(shortcut)\")\n}")
             case "color": PinColor.parse("#3366FF").map { .color($0) }
             case "alpha": PinColor.parse("#3366FF80").map { .color($0) }
             default: .text("截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。Quick Access keeps every capture one click away; the text in a capture can be copied, edited, and searched.")
             }
             guard let content else { return }
-            Task { await renderPin(content, name: "pin-render-\(kind)-\(Int(zoom))-\(mode)", zoom: CGFloat(zoom) / 100, dark: mode == "dark") }
+            let name = "pin-render-\(kind)-\(Int(zoom))-\(mode)" + (controls ? "-controls" : "")
+            Task { await renderPin(content, name: name, zoom: CGFloat(zoom) / 100, dark: mode == "dark", controls: controls) }
         case "pin-act":
             // Acts on the newest pin: zoom=<percent>, opacity=<percent>, lock=1|0, move=dx,dy (points),
             // hide=1|0, close=all. Logs every pin.
@@ -493,8 +498,8 @@ struct DebugHooks {
 
     /// Opens a pin of `content` behind the desktop picture, captures its window alone as the window server
     /// draws it, and closes it.
-    func renderPin(_ content: PinController.Content, name: String, zoom: CGFloat, dark: Bool) async {
-        let window = pins.debugHiddenPin(content, zoom: zoom, dark: dark)
+    func renderPin(_ content: PinController.Content, name: String, zoom: CGFloat, dark: Bool, controls: Bool) async {
+        let window = pins.debugHiddenPin(content, zoom: zoom, dark: dark, controls: controls)
         defer { window.orderOut(nil) }
         // Long enough for the window server to have the pin's first frame.
         try? await Task.sleep(for: .milliseconds(250))

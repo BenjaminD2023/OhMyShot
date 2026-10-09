@@ -185,10 +185,10 @@ public final class PinController {
     public var newestFrame: CGRect? { windows.last?.frame }
 
     /// Opens a pin of `content` at `zoom` behind the desktop picture of the main display, in the light or
-    /// dark appearance and without its shadow, for a scripted capture of how pins draw: the window server
-    /// captures only windows on a display, and there nothing shows. It is no pin of the controller's; the
-    /// caller orders it out.
-    public func debugHiddenPin(_ content: Content, zoom: CGFloat, dark: Bool) -> NSWindow {
+    /// dark appearance and without its shadow, with Close and More showing as on hover when `controls`, for
+    /// a scripted capture of how pins draw: the window server captures only windows on a display, and there
+    /// nothing shows. It is no pin of the controller's; the caller orders it out.
+    public func debugHiddenPin(_ content: Content, zoom: CGFloat, dark: Bool, controls: Bool = false) -> NSWindow {
         let base = PinWindow.baseSize(of: content)
         let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         let window = PinWindow(
@@ -200,6 +200,7 @@ public final class PinController {
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.hasShadow = false
         window.orderFrontRegardless()
+        if controls { window.debugShowControls() }
         window.displayIfNeeded()
         return window
     }

@@ -32,6 +32,11 @@ final class CardButton: NSControl {
         }
     }
 
+    /// What the button stands on, filled under it: over text, so the letters it covers don't show through.
+    var backdrop: NSColor? {
+        didSet { needsDisplay = true }
+    }
+
     private let style: Style
     private var pressed = false {
         didSet { needsDisplay = true }
@@ -89,6 +94,10 @@ final class CardButton: NSControl {
         let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let radius = bounds.height / 2
+        if let backdrop {
+            backdrop.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        }
         let ink: NSColor
         switch style {
         case .pill:

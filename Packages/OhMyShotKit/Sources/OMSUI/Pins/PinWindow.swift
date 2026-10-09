@@ -137,6 +137,12 @@ final class PinWindow: NSPanel {
         pinView.setAccessibilityValue(String(localized: "\(Int((zoom * 100).rounded())) percent, opacity \(Int((opacity * 100).rounded())) percent", bundle: .module))
     }
 
+    #if DEBUG
+    func debugShowControls() {
+        pinView.debugShowControls()
+    }
+    #endif
+
     // MARK: Actions
 
     /// Copies what the pin holds: the picture, the text, or the color's hex.
@@ -212,7 +218,8 @@ final class PinView: NSView {
     private let moreButton = CardButton(style: .round, title: String(localized: "More", bundle: .module), symbolName: "ellipsis")
     private var look: PinAppearance
     private var tracking: NSTrackingArea?
-    private var hovered = false
+    /// Close and More show while the pointer is over an unlocked pin, and take clicks only then.
+    private var controlsShown = false
     private var readingFade: Task<Void, Never>?
     private var displayOptions: NSObjectProtocol?
 
@@ -363,8 +370,14 @@ final class PinView: NSView {
         contentLayer.borderWidth = border ? (contrast ? 1 : 0.5) : 0
         if case .text = content {
             // The Text Result Card's materials: the reading capsule's fill and hairline at card size.
-            contentLayer.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
+            let fill = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
+            contentLayer.backgroundColor = fill
             contentLayer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
+            // On a short card Close and More stand over the ends of a line: the card under them hides
+            // the letters they cover, which would show through the dark disc.
+            let backdrop = fill.copy(alpha: 1).flatMap(NSColor.init(cgColor:))
+            closeButton.backdrop = backdrop
+            moreButton.backdrop = backdrop
         } else {
             // A hairline, so a white picture or swatch reads against a white window: 0.5 pt black 0.18,
             // 1 pt black 0.35 with Increase Contrast (always shown then).
@@ -405,11 +418,14 @@ final class PinView: NSView {
             reading.layer.opacity = bounds.width >= size.width + 16 && bounds.height >= size.height + 16 ? 1 : 0
         }
         CATransaction.commit()
-        // Close and More 8 pt in from the top corners; a locked pin's mark where More would be.
-        let button = closeButton.intrinsicContentSize.width
-        closeButton.frame = CGRect(x: 8, y: bounds.height - 8 - button, width: button, height: button)
-        moreButton.frame = CGRect(x: bounds.width - 8 - button, y: bounds.height - 8 - button, width: button, height: button)
-        lockMark.frame = moreButton.frame
+        // Close and More where they fit, 8 pt in from the top corners or centered in a short pin's
+        // height; a locked pin's mark where More would be.
+        let buttons = PinGeometry.cornerButtons(in: bounds.size, button: closeButton.intrinsicContentSize.width)
+        closeButton.isHidden = buttons.close == nil
+        moreButton.isHidden = buttons.more == nil
+        if let close = buttons.close { closeButton.frame = close }
+        if let more = buttons.more { moreButton.frame = more }
+        lockMark.frame = buttons.trailing
         if let textView {
             let zoom = pinWindow?.zoom ?? 1
             textView.zoom = zoom
@@ -477,17 +493,30 @@ final class PinView: NSView {
     override func mouseEntered(with event: NSEvent) { setControlsVisible(true) }
     override func mouseExited(with event: NSEvent) { setControlsVisible(false) }
 
-    /// Close and More show on hover, when the pin is large enough to hold them clear of each other.
+    /// Close and More fade in on hover wherever they fit (`PinGeometry.cornerButtons`), never on a locked pin.
     private func setControlsVisible(_ visible: Bool) {
-        hovered = visible
-        let roomy = bounds.width >= 72 && bounds.height >= 56
-        let shown = visible && roomy && !isLocked
+        controlsShown = visible && !isLocked
+        let shown = controlsShown
         let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Theme.Motion.fade
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
             closeButton.animator().alphaValue = shown ? 1 : 0
             moreButton.animator().alphaValue = shown ? 1 : 0
         }
+    }
+
+    #if DEBUG
+    /// Shows Close and More as the pointer would, for scripted renders.
+    func debugShowControls() {
+        setControlsVisible(true)
+    }
+    #endif
+
+    /// Faded out, Close and More let the pin take the click, so it drags from under them.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        if !controlsShown, let hit, hit === closeButton || hit === moreButton { return self }
+        return hit
     }
 
     // MARK: Pointer

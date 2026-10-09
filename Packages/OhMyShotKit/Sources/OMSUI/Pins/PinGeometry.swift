@@ -46,6 +46,21 @@ enum PinGeometry {
         clamp(opacity + delta * (precise ? 0.005 : 0.05), to: opacityRange)
     }
 
+    /// Where Close and More stand on a pin of `size` points, in its own coordinates (origin at the bottom
+    /// left): `button` points square, 8 pt in from the top corners, or centered in the height on a pin too
+    /// short to leave 8 pt above them, so a one-line text card has them too. Each is nil where it does not
+    /// fit: Close needs 8 pt beside it and 6 pt above and below, More 8 pt between it and Close.
+    /// `trailing` is More's place whether or not it fits, for a locked pin's mark.
+    static func cornerButtons(in size: CGSize, button: CGFloat) -> (close: CGRect?, more: CGRect?, trailing: CGRect) {
+        let inset: CGFloat = 8
+        let top = min(inset, (size.height - button) / 2)
+        let y = size.height - top - button
+        let trailing = CGRect(x: size.width - inset - button, y: y, width: button, height: button)
+        guard size.width >= button + 2 * inset, size.height >= button + 12 else { return (nil, nil, trailing) }
+        let close = CGRect(x: inset, y: y, width: button, height: button)
+        return (close, size.width >= 2 * button + 3 * inset ? trailing : nil, trailing)
+    }
+
     static func clamp(_ value: CGFloat, to range: ClosedRange<CGFloat>) -> CGFloat {
         min(max(value, range.lowerBound), range.upperBound)
     }
