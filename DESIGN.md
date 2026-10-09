@@ -464,6 +464,8 @@ Every mark is drawn by one renderer, on screen and in exports, so what is copied
 ### Capture Overlay (Signature)
 Softly dimmed screen; selection with a white 1.5 pt edge over a dark outline; a crosshair with a 4 pt center gap and 13 pt arms, white over the same outline; a 120 pt loupe showing 15 captured pixels across (8 pt per pixel, aligned to device pixels) with a faint 0.08 grid, an accent center cell, a white rim, and the lens shadow. Window mode drops the crosshair and loupe and highlights the hovered window.
 
+A drag can carry the selection from one display onto another: each display draws its own part of it (dimmed outside, the white edge only where the selection ends), the crosshair and loupe follow the pointer onto whichever display it is over, and the size capsule appears once, on the display under the middle of the selection's bottom edge. The capture is put together from each display's part at the sharpest display's scale, clear where no display reaches. In-place annotation keeps its selection on the display it began on, where its interface lives.
+
 The screen is frozen by default: it is captured the moment the shortcut is pressed, before the overlay covers it or takes the keyboard, so hover cards, tooltips, and open menus are still in it, and the overlay appears already holding it (about 45 ms later). What is kept is cut from that frozen screen. With Freeze off (Settings › General) the overlay appears at once over the live screen and the area is captured when the drag ends. A window is always captured on its own, with its shadow and transparent corners.
 
 ### All-In-One Bar (Signature)

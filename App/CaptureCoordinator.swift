@@ -125,13 +125,14 @@ final class CaptureCoordinator {
         }
     }
 
-    /// Captures a region and delivers it, as the overlay does after a drag. Also used by scripted checks.
+    /// Captures an area, on one display or across several, and delivers it, as the overlay does after a
+    /// drag on a live screen. Also used by scripted checks.
     /// - Parameter copiesToClipboard: false leaves the clipboard alone whatever the settings say, so
     ///   scripted test captures never replace what the user copied.
-    func captureRegion(_ rect: CGRect, on display: DisplayInfo, appName: String?, copiesToClipboard: Bool = true) async {
+    func captureArea(_ rect: CGRect, appName: String?, copiesToClipboard: Bool = true) async {
         let probe = LatencyProbe("capture.region")
         do {
-            let frame = try await capturer.captureRegion(rect, on: display)
+            let frame = try await capturer.captureArea(rect, in: displays.layout)
             probe.end()
             await deliver(frame, appName: appName, copiesToClipboard: copiesToClipboard)
         } catch {
@@ -204,8 +205,8 @@ final class CaptureCoordinator {
             case .region(_, _, _, let frozen?):
                 // The screen was held still: the selection is kept as it was seen.
                 Task { await self?.deliver(frozen, appName: app, copiesToClipboard: copiesToClipboard) }
-            case .region(let rect, let display, _, nil):
-                Task { await self?.captureRegion(rect, on: display, appName: app, copiesToClipboard: copiesToClipboard) }
+            case .region(let rect, _, _, nil):
+                Task { await self?.captureArea(rect, appName: app, copiesToClipboard: copiesToClipboard) }
             case .window(let target, _):
                 // A window is captured on its own, frozen or not: with its shadow and its transparent
                 // corners, which the frozen screen does not have.

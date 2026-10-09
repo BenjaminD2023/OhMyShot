@@ -118,14 +118,14 @@ struct DebugHooks {
             // A 400×300 point region at the center of the primary display, delivered like any capture.
             if let display = displays.layout.primary {
                 let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
-                Task { await captures.captureRegion(rect, on: display, appName: "Test", copiesToClipboard: false) }
+                Task { await captures.captureArea(rect, appName: "Test", copiesToClipboard: false) }
             }
         case "text-test":
             // Capture Text on the same centered region as capture-test, without touching the clipboard.
             let join = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "join" && $0.value == "1" } ?? false
             if let display = displays.layout.primary {
                 let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
-                Task { await textCapture.recognize(region: rect, on: display, joinLines: join, copiesToClipboard: false) }
+                Task { await textCapture.recognize(region: rect, joinLines: join, copiesToClipboard: false) }
             }
         case "text-card":
             // state=copied|empty|single: the optional result card with sample text, by a centered
@@ -169,7 +169,7 @@ struct DebugHooks {
             // timing and logs only, never for snapshots.
             if let display = displays.layout.primary {
                 let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
-                Task { await textCapture.openPanel(region: rect, on: display) }
+                Task { await textCapture.openPanel(region: rect) }
             }
         case "drop-check":
             // Whether AppKit finds drop targets by registered type rather than by the public hit test,
@@ -219,9 +219,12 @@ struct DebugHooks {
         case "freeze-demo":
             // A frozen screenshot over drawn screens, never the real one, chosen without the mouse and kept
             // off the clipboard: logs whether what was kept is the frozen selection, then removes it. x, y,
-            // w, h choose the area in the display's points from its top-left corner (default: the page).
+            // w, h choose the area in the display's points from its top-left corner (default: the page);
+            // span=1 takes an area across the edge two displays share, span=2 the same at the lower of
+            // their bottom edges, reaching where no display is.
             let rect = ["x", "y", "w", "h"].compactMap { Self.intParameter($0, in: url) }
-            Task { await runFreezeDemo(area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil) }
+            let span = Self.intParameter("span", in: url) ?? 0
+            Task { await runFreezeDemo(area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil, span: span) }
         case "inplace-act":
             // Acts on the in-place annotation: tool=<tool>, drag=x1,y1,x2,y2 (display points from the
             // top-left), shift=1, clicks=2, key=<characters>&code=<key code>[&cmd=1], type=<text>,
@@ -532,7 +535,7 @@ struct DebugHooks {
     /// A frozen screenshot over drawn screens: the drawn page frozen behind the overlay, an area chosen
     /// without the mouse, and the capture delivered with the clipboard left alone. What is kept must be
     /// the area cut from the frozen frame, pixel for pixel; then the capture and its card are removed.
-    func runFreezeDemo(area: CGRect?) async {
+    func runFreezeDemo(area: CGRect?, span: Int) async {
         let layout = displays.layout
         guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
         var frames: [CGDirectDisplayID: CapturedFrame] = [:]
@@ -541,13 +544,27 @@ struct DebugHooks {
                 frames[each.id] = CapturedFrame(image: image, hdrImage: nil, displayID: each.id, frame: each.frame)
             }
         }
-        guard let drawn = frames[display.id] else { return }
+        let rect: CGRect
+        if span > 0 {
+            guard let spanning = layout.displays.lazy.compactMap({ other in
+                other.id == display.id ? nil : Self.areaAcross(display, other, atBottom: span == 2)
+            }).first else {
+                Log.app.error("debug.freeze-demo: no two displays share an edge")
+                return
+            }
+            rect = spanning
+        } else {
+            let chosen = area ?? DebugPanelDemo.pageRect(on: display)
+            rect = CGRect(x: display.frame.minX + chosen.minX, y: display.frame.maxY - chosen.maxY, width: chosen.width, height: chosen.height)
+        }
+        // What the frozen screens hold under the area: one display's crop, or each one's put together.
+        let parts = layout.displays.compactMap { frames[$0.id]?.cropped(to: rect) }
+        let scale = layout.displays.filter { !$0.frame.intersection(rect).isEmpty }.map(\.pixelsPerPoint).max() ?? 2
+        guard let expected = parts.count == 1 ? parts.first : CapturedFrame.stitched(parts, covering: rect, pixelsPerPoint: scale) else { return }
         let before = historyCount()
         overlay.injectedFrames = frames
         captures.captureArea(copiesToClipboard: false, freezes: true)
         await waitForOverlayFrames()
-        let chosen = area ?? DebugPanelDemo.pageRect(on: display)
-        let rect = CGRect(x: display.frame.minX + chosen.minX, y: display.frame.maxY - chosen.maxY, width: chosen.width, height: chosen.height)
         overlay.simulateSelection(rect)
         for _ in 0..<80 where historyCount() == before {
             try? await Task.sleep(for: .milliseconds(50))
@@ -557,13 +574,37 @@ struct DebugHooks {
             return
         }
         defer { deleteLatestFromHistory() }
-        guard let expected = drawn.cropped(to: rect)?.image, let file = latestCaptureFile(),
-              let source = CGImageSourceCreateWithURL(file as CFURL, nil), let kept = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        guard let file = latestCaptureFile(), let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+              let kept = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             Log.app.error("debug.freeze-demo could not read the capture back")
             return
         }
-        let difference = Self.pixelDifference(kept, expected)
-        Log.app.notice("debug.freeze-demo kept \(kept.width, privacy: .public)x\(kept.height, privacy: .public), frozen selection \(expected.width, privacy: .public)x\(expected.height, privacy: .public), largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public)")
+        let difference = Self.pixelDifference(kept, expected.image)
+        Log.app.notice("debug.freeze-demo kept \(kept.width, privacy: .public)x\(kept.height, privacy: .public) from \(parts.count, privacy: .public) display(s), frozen selection \(expected.image.width, privacy: .public)x\(expected.image.height, privacy: .public), largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public)")
+    }
+
+    /// An area 600 × 400 points across the edge two displays share, in the middle of the stretch they
+    /// share, or with `atBottom` from the lower of their bottom edges, so part of it lies where no
+    /// display is. Nil when they share no edge.
+    private static func areaAcross(_ first: DisplayInfo, _ second: DisplayInfo, atBottom: Bool) -> CGRect? {
+        let a = first.frame, b = second.frame
+        let sideBySide = abs(a.minX - b.maxX) < 1 || abs(b.minX - a.maxX) < 1
+        let stacked = abs(a.minY - b.maxY) < 1 || abs(b.minY - a.maxY) < 1
+        if sideBySide {
+            let edge = abs(a.minX - b.maxX) < 1 ? a.minX : a.maxX
+            let low = max(a.minY, b.minY), high = min(a.maxY, b.maxY)
+            guard high - low >= 400 else { return nil }
+            let y = atBottom ? min(a.minY, b.minY) : (low + high) / 2 - 200
+            return CGRect(x: edge - 300, y: y, width: 600, height: 400)
+        }
+        if stacked {
+            let edge = abs(a.minY - b.maxY) < 1 ? a.minY : a.maxY
+            let low = max(a.minX, b.minX), high = min(a.maxX, b.maxX)
+            guard high - low >= 600 else { return nil }
+            let x = atBottom ? min(a.minX, b.minX) : (low + high) / 2 - 300
+            return CGRect(x: x, y: edge - 200, width: 600, height: 400)
+        }
+        return nil
     }
 
     /// The largest difference of any channel between two pictures of one size, both drawn in sRGB; nil

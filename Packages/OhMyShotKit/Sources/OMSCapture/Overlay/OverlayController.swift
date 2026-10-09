@@ -15,7 +15,8 @@ public final class OverlayController {
     public enum Outcome: Sendable {
         /// `modifiers` are the keys held when the mouse was released (Capture Text opens the OCR panel
         /// with Option), read from that event: a later global read would race the keys' release.
-        /// `frozen` is the selection as it was frozen on screen; nil when the screen was live (or that
+        /// The area may cross displays; `display` is the one holding most of it. `frozen` is the area as it
+        /// was frozen on screen, put together from each display's part; nil when the screen was live (or a
         /// display's frame had not arrived), and the area is captured now instead.
         case region(CGRect, display: DisplayInfo, modifiers: NSEvent.ModifierFlags, frozen: CapturedFrame?)
         case window(WindowTarget, modifiers: NSEvent.ModifierFlags)
@@ -84,6 +85,16 @@ public final class OverlayController {
     private var purpose: Purpose = .screenshot
     /// An area chosen for annotation before its display's frame arrived.
     private var pendingAnnotation: (display: CGDirectDisplayID, area: CGRect)?
+    /// The selection being dragged out: one for every display, since a drag may carry it onto another.
+    /// In-place annotation keeps it on the display it began on, where its interface lives.
+    private var selection = SelectionModel(bounds: .zero, pixelsPerPoint: 1)
+    /// The display the drag began on, where the pointer is now in global space, and the highest it
+    /// went; nil while no drag is going on.
+    private var dragDisplay: DisplayInfo?
+    private var dragPoint: CGPoint?
+    private var dragTop: CGFloat = -.greatestFiniteMagnitude
+    /// Space held during a drag moves the selection instead of resizing it.
+    private var spaceHeld = false
     #if DEBUG
     /// Frames to show instead of capturing the screen, for scripted checks of the overlay that must never
     /// record what is on screen.
@@ -120,6 +131,10 @@ public final class OverlayController {
         firstFrameArrived = false
         self.purpose = purpose
         pendingAnnotation = nil
+        selection = SelectionModel(bounds: .zero, pixelsPerPoint: 1)
+        dragDisplay = nil
+        dragPoint = nil
+        spaceHeld = false
         self.completion = completion
         previousApp = NSWorkspace.shared.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
 
@@ -226,24 +241,27 @@ public final class OverlayController {
 
     /// Draws a selection and pointer without mouse input, for scripted checks of the rendering.
     public func simulate(selection rect: CGRect, pointer: CGPoint) {
-        guard isActive, let display = topology.layout.display(at: rect.origin) else { return }
-        entries[display.id]?.view.simulate(selection: rect, pointer: pointer)
+        guard isActive, let display = startDisplay(of: rect) else { return }
+        place(rect, startingOn: display)
+        if let under = topology.layout.display(at: pointer) { entries[under.id]?.view.simulate(pointer: pointer) }
     }
 
     #if DEBUG
-    /// Chooses an area as a drag ending there would, without mouse input, for scripted checks.
+    /// Chooses an area as a drag ending there would, without mouse input, for scripted checks. The area
+    /// may cross displays.
     public func simulateSelection(_ rect: CGRect) {
-        guard isActive, purpose != .annotate, let display = topology.layout.display(at: CGPoint(x: rect.midX, y: rect.midY)),
-              let view = entries[display.id]?.view else { return }
-        view.simulate(selection: rect, pointer: CGPoint(x: rect.maxX, y: rect.minY))
-        overlayView(view, didSelect: rect, modifiers: [])
+        guard isActive, purpose != .annotate, let display = startDisplay(of: rect) else { return }
+        place(rect, startingOn: display)
+        guard let placed = selection.rect else { return }
+        select(placed, startingOn: display, modifiers: [])
     }
 
     /// Chooses an area for in-place annotation without mouse input, for scripted checks.
     public func simulateAnnotation(selection rect: CGRect) {
-        guard isActive, purpose == .annotate, let display = topology.layout.display(at: CGPoint(x: rect.midX, y: rect.midY)) else { return }
-        entries[display.id]?.view.simulate(selection: rect, pointer: CGPoint(x: rect.maxX, y: rect.minY))
-        startAnnotating(on: display.id, area: rect)
+        guard isActive, purpose == .annotate, let display = startDisplay(of: rect) else { return }
+        place(rect, startingOn: display)
+        guard let placed = selection.rect else { return }
+        startAnnotating(on: display.id, area: placed)
     }
     #endif
 
@@ -323,6 +341,8 @@ public final class OverlayController {
         guard isActive else { return }
         isActive = false
         pendingAnnotation = nil
+        dragPoint = nil
+        spaceHeld = false
         #if DEBUG
         injectedFrames = nil
         #endif
@@ -349,16 +369,163 @@ public final class OverlayController {
     }
 }
 
-extension OverlayController: OverlayViewDelegate {
-    func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) {
+// MARK: - Selecting
+
+extension OverlayController {
+    /// A fresh selection for a drag that begins on `display`: free to cross onto every display, at the
+    /// sharpest one's pixels, except in place, where it stays on its own display.
+    private func startSelection(on display: DisplayInfo) {
+        let displays = purpose == .annotate ? [display] : topology.layout.displays
+        selection = SelectionModel(
+            bounds: displays.reduce(CGRect.null) { $0.union($1.frame) },
+            pixelsPerPoint: displays.map(\.pixelsPerPoint).max() ?? display.pixelsPerPoint
+        )
+        dragDisplay = display
+        dragTop = -.greatestFiniteMagnitude
+    }
+
+    /// Sets the selection to `rect`, as a drag from its top-left corner to its bottom-right would.
+    private func place(_ rect: CGRect, startingOn display: DisplayInfo) {
+        startSelection(on: display)
+        selection.begin(at: CGPoint(x: rect.minX, y: rect.maxY))
+        selection.drag(to: CGPoint(x: rect.maxX, y: rect.minY))
+        showSelection()
+    }
+
+    /// The display a drag over `rect` from its top-left corner would begin on.
+    private func startDisplay(of rect: CGRect) -> DisplayInfo? {
+        let layout = topology.layout
+        return layout.display(at: CGPoint(x: rect.minX + 1, y: rect.maxY - 1))
+            ?? layout.displays.first { !$0.frame.intersection(rect).isEmpty }
+    }
+
+    /// Draws the selection on every display, each its own part. The size reading goes on the display
+    /// under the middle of the selection's bottom edge, or else the pointer's.
+    private func showSelection() {
+        let layout = topology.layout
+        let reading = selection.rect.flatMap { rect in
+            layout.display(at: CGPoint(x: rect.midX, y: rect.minY)) ?? dragPoint.flatMap { layout.display(at: $0) } ?? dragDisplay
+        }
+        for (id, entry) in entries {
+            entry.view.show(selection: selection, showsReading: id == reading?.id, isDragging: dragPoint != nil)
+        }
+    }
+
+    /// Shift keeps the selection square; Option grows it from the center, except when copying text,
+    /// where Option means "open the OCR panel" when the mouse is released.
+    private func selectionModifiers(_ flags: NSEvent.ModifierFlags) -> SelectionModel.Modifiers {
+        var modifiers: SelectionModel.Modifiers = []
+        if flags.contains(.shift) { modifiers.insert(.square) }
+        if flags.contains(.option), purpose != .text { modifiers.insert(.fromCenter) }
+        return modifiers
+    }
+
+    /// Ends the session with an area: handed to in-place annotation, or kept as it was frozen on screen,
+    /// or captured once the overlay has gone. `display` is where the drag began; the outcome names the
+    /// display holding most of the area.
+    private func select(_ rect: CGRect, startingOn display: DisplayInfo, modifiers: NSEvent.ModifierFlags) {
         if purpose == .annotate {
-            startAnnotating(on: view.display.id, area: rect)
+            startAnnotating(on: display.id, area: rect)
             return
         }
-        // What was frozen on screen is what is kept: cut from the frame the selection was made on, not
+        let involved = topology.layout.displays.filter { !$0.frame.intersection(rect).isEmpty }
+        let main = involved.max { Self.area(of: $0.frame.intersection(rect)) < Self.area(of: $1.frame.intersection(rect)) } ?? display
+        // What was frozen on screen is what is kept: cut from the frames the selection was made on, not
         // captured again once the overlay has gone and whatever it held still has closed.
-        let frozen = holdsStill ? view.frame()?.cropped(to: rect) : nil
-        end(.region(rect, display: view.display, modifiers: modifiers, frozen: frozen))
+        let frozen = holdsStill ? frozenArea(rect, on: involved) : nil
+        end(.region(rect, display: main, modifiers: modifiers, frozen: frozen))
+    }
+
+    /// The area as it was frozen on screen: cut from one display's frame, or put together from each
+    /// display's part. Nil when a display's frame has not arrived; the area is then captured live, by
+    /// which time a popup may have closed, so that is logged.
+    private func frozenArea(_ rect: CGRect, on displays: [DisplayInfo]) -> CapturedFrame? {
+        let parts = displays.compactMap { entries[$0.id]?.view.frame()?.cropped(to: rect) }
+        guard !parts.isEmpty, parts.count == displays.count else {
+            Log.capture.notice("Frozen area incomplete, \(parts.count, privacy: .public) of \(displays.count, privacy: .public) display(s): captured live")
+            return nil
+        }
+        guard parts.count > 1 else { return parts[0] }
+        let scale = displays.map(\.pixelsPerPoint).max() ?? parts[0].pixelsPerPoint
+        return CapturedFrame.stitched(parts, covering: rect, pixelsPerPoint: scale)
+    }
+
+    private static func area(of rect: CGRect) -> CGFloat {
+        rect.isNull ? 0 : rect.width * rect.height
+    }
+
+    /// One line per selection, for telling where a drag stopped: the area, the last and highest points
+    /// the drag reached, and whether each panel covers its whole display.
+    private func logSelection(_ rect: CGRect, from display: DisplayInfo, endingAt point: CGPoint) {
+        let panels = entries.values.map { entry in
+            entry.panel.frame == entry.view.display.frame
+                ? "\(entry.view.display.id) covers its display"
+                : "\(entry.view.display.id) at \(NSStringFromRect(entry.panel.frame)) on \(NSStringFromRect(entry.view.display.frame))"
+        }.sorted().joined(separator: ", ")
+        Log.capture.notice("Selection \(NSStringFromRect(rect), privacy: .public) from display \(display.id, privacy: .public), last point \(NSStringFromPoint(point), privacy: .public), highest y \(self.dragTop, privacy: .public); panels: \(panels, privacy: .public)")
+    }
+}
+
+extension OverlayController: OverlayViewDelegate {
+    func overlayView(_ view: OverlayView, didPressAt point: CGPoint) {
+        startSelection(on: view.display)
+        selection.begin(at: point)
+        dragPoint = point
+        dragTop = point.y
+        spaceHeld = false
+        showSelection()
+    }
+
+    func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) {
+        guard let last = dragPoint else { return }
+        if spaceHeld {
+            selection.move(by: CGVector(dx: point.x - last.x, dy: point.y - last.y))
+        } else {
+            selection.drag(to: point, modifiers: selectionModifiers(modifiers))
+        }
+        dragPoint = point
+        dragTop = max(dragTop, point.y)
+        showSelection()
+        // Drag events reach only the display the press began on: the crosshair and magnifier follow the
+        // pointer onto whichever display it is over.
+        for entry in entries.values {
+            entry.view.movePointer(to: point)
+        }
+    }
+
+    func overlayView(_ view: OverlayView, didReleaseWith modifiers: NSEvent.ModifierFlags) {
+        guard let last = dragPoint, let display = dragDisplay else { return }
+        dragPoint = nil
+        spaceHeld = false
+        guard let rect = selection.rect, !selection.isTooSmall else {
+            selection.reset()
+            showSelection()
+            return
+        }
+        logSelection(rect, from: display, endingAt: last)
+        select(rect, startingOn: display, modifiers: modifiers)
+    }
+
+    func overlayView(_ view: OverlayView, didChangeModifiers modifiers: NSEvent.ModifierFlags) {
+        guard let last = dragPoint, !spaceHeld else { return }
+        selection.drag(to: last, modifiers: selectionModifiers(modifiers))
+        showSelection()
+    }
+
+    func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool) {
+        if dragPoint != nil {
+            spaceHeld = true
+        } else if !isRepeat {
+            overlayView(view, didSwitchTo: view.mode == .area ? .window : .area)
+        }
+    }
+
+    func overlayViewDidReleaseSpace(_ view: OverlayView) {
+        spaceHeld = false
+    }
+
+    func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) {
+        select(rect, startingOn: view.display, modifiers: modifiers)
     }
 
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {
@@ -374,6 +541,9 @@ extension OverlayController: OverlayViewDelegate {
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) {
         // Once an area is chosen for annotation, even while its frame is still on the way, it stays chosen.
         guard pendingAnnotation == nil, !isAnnotating else { return }
+        selection.reset()
+        dragPoint = nil
+        spaceHeld = false
         if mode == .window, windows.isEmpty {
             windows = WindowCatalog.snapshot(layout: topology.layout)
         }

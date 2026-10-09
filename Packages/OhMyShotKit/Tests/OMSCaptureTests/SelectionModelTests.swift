@@ -63,4 +63,30 @@ struct SelectionModelTests {
         model.drag(to: CGPoint(x: -999, y: 501))
         #expect(model.isTooSmall)
     }
+
+    /// Both of the author's displays: the built-in one left of the ultrawide, their tops level.
+    let bothDisplays = CGRect(x: -2056, y: 111, width: 2056, height: 1329).union(CGRect(x: 0, y: 0, width: 3440, height: 1440))
+
+    @Test func aDragCarriesTheSelectionOntoTheNextDisplay() {
+        var model = SelectionModel(bounds: bothDisplays, pixelsPerPoint: 2)
+        model.begin(at: CGPoint(x: 500, y: 1300))
+        model.drag(to: CGPoint(x: -400, y: 900))
+        #expect(model.rect == CGRect(x: -400, y: 900, width: 900, height: 400))
+        #expect(model.pixelSize == (1800, 800))
+    }
+
+    @Test func acrossDisplaysEdgesStillSnapToWholePixels() {
+        var model = SelectionModel(bounds: bothDisplays, pixelsPerPoint: 2)
+        model.begin(at: CGPoint(x: 100.3, y: 1000.2))
+        model.drag(to: CGPoint(x: -100.8, y: 1200.74))
+        #expect(model.rect == CGRect(x: -101, y: 1000, width: 201.5, height: 200.5))
+    }
+
+    @Test func movingAcrossDisplaysStopsAtTheOuterEdges() {
+        var model = SelectionModel(bounds: bothDisplays, pixelsPerPoint: 2)
+        model.begin(at: CGPoint(x: -100, y: 1000))
+        model.drag(to: CGPoint(x: 100, y: 1200))
+        model.move(by: CGVector(dx: -5000, dy: 1000))
+        #expect(model.rect == CGRect(x: -2056, y: 1240, width: 200, height: 200))
+    }
 }

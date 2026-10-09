@@ -1,9 +1,10 @@
 import CoreGraphics
 
-/// The rectangle being dragged out on one display, kept on that display and on its pixel grid.
+/// The rectangle being dragged out, kept within its bounds (one display, or every display when a
+/// drag may cross from one to another) and on the pixel grid.
 ///
-/// Coordinates are AppKit global points. Edges snap to the display's framebuffer pixels, so a
-/// selection always captures whole pixels and its reported size is exact.
+/// Coordinates are AppKit global points. Edges snap to framebuffer pixels (the sharpest display's,
+/// across displays), so a selection always captures whole pixels and its reported size is exact.
 public struct SelectionModel: Equatable, Sendable {
     public struct Modifiers: OptionSet, Sendable {
         public let rawValue: Int
@@ -15,7 +16,7 @@ public struct SelectionModel: Equatable, Sendable {
         public static let fromCenter = Modifiers(rawValue: 1 << 1)
     }
 
-    /// The display's frame; the selection never leaves it.
+    /// The display's frame, or the box around every display; the selection never leaves it.
     public let bounds: CGRect
     public let pixelsPerPoint: CGFloat
 

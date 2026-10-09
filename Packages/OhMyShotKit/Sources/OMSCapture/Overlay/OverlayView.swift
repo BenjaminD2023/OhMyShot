@@ -4,6 +4,19 @@ import OMSCore
 import QuartzCore
 
 protocol OverlayViewDelegate: AnyObject {
+    /// A press in area mode, at a point in global space: a selection begins. The selection is the
+    /// controller's, shared by every display, since a drag may carry it onto another one.
+    func overlayView(_ view: OverlayView, didPressAt point: CGPoint)
+    /// The pointer dragged on, perhaps onto another display.
+    func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags)
+    /// The press ended; `modifiers` are the keys held then.
+    func overlayView(_ view: OverlayView, didReleaseWith modifiers: NSEvent.ModifierFlags)
+    /// Shift or Option changed; the key view hears it, wherever the drag is.
+    func overlayView(_ view: OverlayView, didChangeModifiers modifiers: NSEvent.ModifierFlags)
+    /// Space went down: it moves a selection being dragged, or else switches modes.
+    func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool)
+    func overlayViewDidReleaseSpace(_ view: OverlayView)
+    /// The whole display, chosen with the All-In-One bar.
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode)
@@ -29,10 +42,11 @@ final class OverlayView: NSView {
     private(set) var mode: Mode = .area
     private var windows: [WindowTarget] = []
     private var hoveredWindow: WindowTarget?
+    /// The controller's selection, of which this display draws its part.
     private var selection: SelectionModel
+    /// Whether this display shows the selection's size: only one does.
+    private var showsReading = false
     private var capturedFrame: CapturedFrame?
-    private var spaceHeld = false
-    private var lastDragPoint: CGPoint?
     private var pointer: CGPoint?
     /// Set by `simulate`, so the real (hidden) pointer cannot move a scripted render.
     private var isSimulated = false
@@ -91,8 +105,7 @@ final class OverlayView: NSView {
         self.windows = windows
         hoveredWindow = nil
         selection.reset()
-        spaceHeld = false
-        lastDragPoint = nil
+        showsReading = false
         isSimulated = false
         isAnnotating = false
         capturedFrame = nil
@@ -166,7 +179,6 @@ final class OverlayView: NSView {
     /// crosshair, magnifier, and All-In-One bar go, since its interface draws its own.
     func enterAnnotation() {
         isAnnotating = true
-        lastDragPoint = nil
         toolbar.isHidden = true
         withoutAnimation {
             for layer in [room, outline, border, crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer] {
@@ -182,15 +194,20 @@ final class OverlayView: NSView {
         withoutAnimation { updatePointer(display.frame.contains(globalPointer) ? local(globalPointer) : nil) }
     }
 
-    /// Shows a selection and pointer without mouse input, for scripted checks.
-    func simulate(selection rect: CGRect, pointer globalPointer: CGPoint) {
+    /// Draws the controller's selection: the part of it on this display, the size reading if this
+    /// display has it. The All-In-One bar steps out of the way while a region is being dragged.
+    func show(selection: SelectionModel, showsReading: Bool, isDragging: Bool) {
+        self.selection = selection
+        self.showsReading = showsReading
+        if !toolbar.isHidden { toolbar.alphaValue = isDragging && selection.rect != nil ? 0 : 1 }
+        withoutAnimation { updateSelectionLayers() }
+    }
+
+    /// Puts the pointer somewhere without mouse input, for scripted checks; the real (hidden) pointer
+    /// cannot move it after that.
+    func simulate(pointer globalPointer: CGPoint) {
         isSimulated = true
-        selection.begin(at: CGPoint(x: rect.minX, y: rect.maxY))
-        selection.drag(to: CGPoint(x: rect.maxX, y: rect.minY))
-        withoutAnimation {
-            updateSelectionLayers()
-            updatePointer(local(globalPointer))
-        }
+        withoutAnimation { updatePointer(local(globalPointer)) }
     }
 
     override func layout() {
@@ -247,30 +264,16 @@ final class OverlayView: NSView {
         withoutAnimation { updatePointer(nil) }
     }
 
+    // Area mode hands the press to the controller, which keeps one selection for every display: drag
+    // events keep coming here even once the pointer is over another display, in global space.
     override func mouseDown(with event: NSEvent) {
         guard mode == .area, !isAnnotating else { return }
-        let point = global(convert(event.locationInWindow, from: nil))
-        selection.begin(at: point)
-        lastDragPoint = point
-        withoutAnimation { updateSelectionLayers() }
+        delegate?.overlayView(self, didPressAt: global(convert(event.locationInWindow, from: nil)))
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard mode == .area, !isAnnotating else { return }
-        let localPoint = convert(event.locationInWindow, from: nil)
-        let point = global(localPoint)
-        if spaceHeld, let last = lastDragPoint {
-            selection.move(by: CGVector(dx: point.x - last.x, dy: point.y - last.y))
-        } else {
-            selection.drag(to: point, modifiers: modifiers(event.modifierFlags))
-        }
-        lastDragPoint = point
-        // The bar steps out of the way while a region is being dragged.
-        if !toolbar.isHidden, selection.rect != nil { toolbar.alphaValue = 0 }
-        withoutAnimation {
-            updateSelectionLayers()
-            updatePointer(localPoint)
-        }
+        delegate?.overlayView(self, didDragTo: global(convert(event.locationInWindow, from: nil)), modifiers: event.modifierFlags)
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -279,20 +282,12 @@ final class OverlayView: NSView {
             if let hoveredWindow { delegate?.overlayView(self, didSelectWindow: hoveredWindow, modifiers: event.modifierFlags) }
             return
         }
-        lastDragPoint = nil
-        toolbar.alphaValue = 1
-        guard let rect = selection.rect, !selection.isTooSmall else {
-            selection.reset()
-            withoutAnimation { updateSelectionLayers() }
-            return
-        }
-        delegate?.overlayView(self, didSelect: rect, modifiers: event.modifierFlags)
+        delegate?.overlayView(self, didReleaseWith: event.modifierFlags)
     }
 
     override func flagsChanged(with event: NSEvent) {
-        guard let last = lastDragPoint, !spaceHeld, !isAnnotating else { return }
-        selection.drag(to: last, modifiers: modifiers(event.modifierFlags))
-        withoutAnimation { updateSelectionLayers() }
+        guard !isAnnotating else { return }
+        delegate?.overlayView(self, didChangeModifiers: event.modifierFlags)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -308,18 +303,14 @@ final class OverlayView: NSView {
         case 49:
             // While dragging, Space moves the selection; before a drag it switches between capturing a
             // region and capturing a window, as in macOS's own screenshot tool.
-            if lastDragPoint != nil {
-                spaceHeld = true
-            } else if !event.isARepeat {
-                delegate?.overlayView(self, didSwitchTo: mode == .area ? .window : .area)
-            }
+            delegate?.overlayView(self, didPressSpace: event.isARepeat)
         default:
             super.keyDown(with: event)
         }
     }
 
     override func keyUp(with event: NSEvent) {
-        if event.keyCode == 49 { spaceHeld = false }
+        if event.keyCode == 49 { delegate?.overlayViewDidReleaseSpace(self) }
     }
 
     private func toolbarChose(_ choice: AllInOneBar.Choice) {
@@ -335,15 +326,6 @@ final class OverlayView: NSView {
         default:
             break
         }
-    }
-
-    /// Shift keeps the selection square; Option grows it from the center, except when copying text,
-    /// where Option means "open the OCR panel" when the mouse is released.
-    private func modifiers(_ flags: NSEvent.ModifierFlags) -> SelectionModel.Modifiers {
-        var modifiers: SelectionModel.Modifiers = []
-        if flags.contains(.shift) { modifiers.insert(.square) }
-        if flags.contains(.option), purpose != .text { modifiers.insert(.fromCenter) }
-        return modifiers
     }
 
     // MARK: - Drawing
@@ -478,7 +460,7 @@ final class OverlayView: NSView {
             text = "\(size.width) × \(size.height)"
         }
         sizePill.text = text
-        sizePill.layer.isHidden = purpose == .text
+        sizePill.layer.isHidden = purpose == .text || (mode == .area && !showsReading)
         // Text mode has no readings; a hovered window is named, without its size.
         setAccessibilityValue(purpose == .text ? (mode == .window ? hoveredWindow?.ownerName : nil) : text)
         // Centered under the selection; tucked inside when there is no room below, and lifted above the

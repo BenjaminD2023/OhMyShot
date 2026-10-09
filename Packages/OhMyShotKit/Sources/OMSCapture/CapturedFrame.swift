@@ -52,6 +52,35 @@ public struct CapturedFrame: Sendable {
             width: pixels.width / scale, height: pixels.height / scale
         ))
     }
+
+    /// The captures of an area's parts on several displays, put together as one capture of `area`: at
+    /// `pixelsPerPoint` (the sharpest display's), in the parts' color space when they share one and in
+    /// Display P3 when they do not, and clear where no display reaches. It belongs to the display that
+    /// holds most of it. Nil without parts.
+    public static func stitched(_ parts: [CapturedFrame], covering area: CGRect, pixelsPerPoint scale: CGFloat) -> CapturedFrame? {
+        let width = Int((area.width * scale).rounded())
+        let height = Int((area.height * scale).rounded())
+        guard let largest = parts.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }),
+              width > 0, height > 0 else { return nil }
+        let spaces = parts.map { $0.image.colorSpace }
+        let shared = spaces.allSatisfy { $0 == spaces[0] } ? spaces[0].flatMap { $0.model == .rgb ? $0 : nil } : nil
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: shared ?? CGColorSpace(name: CGColorSpace.displayP3)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return nil }
+        for part in parts {
+            // Both are y up: each part goes where it lies within the area.
+            let rect = CGRect(
+                x: (part.frame.minX - area.minX) * scale, y: (part.frame.minY - area.minY) * scale,
+                width: part.frame.width * scale, height: part.frame.height * scale
+            )
+            context.interpolationQuality = abs(part.pixelsPerPoint - scale) < 0.001 ? .none : .high
+            context.draw(part.image, in: rect)
+        }
+        guard let image = context.makeImage() else { return nil }
+        return CapturedFrame(image: image, hdrImage: nil, displayID: largest.displayID, frame: area)
+    }
 }
 
 public enum CaptureError: Error, Equatable, Sendable {

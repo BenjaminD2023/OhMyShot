@@ -258,9 +258,13 @@ keyboard back, by which time a hover card or an open menu had gone.
 - **The frames come first.** The overlay's frames are captured on the shortcut, before its panels are
   ordered in or the app activates, and the overlay appears once the pointer's display is in. With the
   screen frozen, `overlay.visible` therefore equals `overlay.frozen` (M1: p50 43.3 / p95 47.7 ms) rather
-  than about 7–10 ms; by those numbers it is still inside the 50 ms target, but it has not been measured
-  again (`bench-overlay?n=50&freeze=1` shows the overlay 50 times on the screen). A live overlay is
-  unchanged: it appears at once and the frames follow.
+  than about 7–10 ms. The first real shortcut presses after the change (three, the ultrawide under the
+  pointer) measured `overlay.frozen` 78–111 ms and `overlay.visible` 88–126 ms: about twice M1's frozen
+  p50 and over the 50 ms target. The likeliest cause is that the frame is now requested while the app is
+  still in the background, without the foreground app's scheduling boost; not yet investigated, and not
+  measured over 50 runs (`bench-overlay?n=50&freeze=1` shows the overlay 50 times on the screen). The
+  same presses logged `app active true, keyboard true`: the activation requested after the frame is
+  granted. A live overlay is unchanged: it appears at once and the frames follow.
 - **A frozen area is cut, not captured again.** The kept area is copied out of the display's frame
   already in memory: one ScreenCaptureKit screenshot fewer per capture (31–43 ms for a region in M1), and
   the display's frame is still released when the overlay ends. Windows are still captured on their own.

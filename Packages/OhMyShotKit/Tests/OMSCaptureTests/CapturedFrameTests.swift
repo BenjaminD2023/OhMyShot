@@ -65,4 +65,62 @@ struct CapturedFrameTests {
     @Test func aSelectionOffTheDisplayGivesNothing() {
         #expect(frame().cropped(to: CGRect(x: 10, y: 10, width: 50, height: 50)) == nil)
     }
+
+    // MARK: Stitching
+
+    /// A display's capture in one color: `frame` in global points at `scale` pixels per point.
+    private func solid(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat, frame: CGRect, scale: CGFloat, space: CFString = CGColorSpace.sRGB, id: CGDirectDisplayID) -> CapturedFrame {
+        let colorSpace = CGColorSpace(name: space)!
+        let context = CGContext(
+            data: nil, width: Int(frame.width * scale), height: Int(frame.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
+            space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        )!
+        context.setFillColor(CGColor(colorSpace: colorSpace, components: [red, green, blue, 1])!)
+        context.fill(CGRect(x: 0, y: 0, width: context.width, height: context.height))
+        return CapturedFrame(image: context.makeImage()!, hdrImage: nil, displayID: id, frame: frame)
+    }
+
+    /// A red display on the right, and a blue one left of it whose top is level and whose bottom is
+    /// 30 points higher; the area crosses their shared edge and reaches below the blue one.
+    private let area = CGRect(x: -40, y: 10, width: 80, height: 60)
+
+    @Test func partsGoWhereTheyLieAndNothingFillsWhereNoDisplayIs() throws {
+        let right = solid(1, 0, 0, frame: CGRect(x: 0, y: 0, width: 100, height: 100), scale: 2, id: 1)
+        let left = solid(0, 0, 1, frame: CGRect(x: -80, y: 30, width: 80, height: 70), scale: 2, id: 2)
+        let parts = try [#require(right.cropped(to: area)), #require(left.cropped(to: area))]
+        let stitched = try #require(CapturedFrame.stitched(parts, covering: area, pixelsPerPoint: 2))
+        #expect(stitched.image.width == 160 && stitched.image.height == 120)
+        #expect(stitched.frame == area)
+        // The red part is the larger: 40 × 60 points against 40 × 40.
+        #expect(stitched.displayID == 1)
+        #expect(pixel(stitched.image, x: 10, y: 10) == [0, 0, 255, 255])
+        #expect(pixel(stitched.image, x: 79, y: 30) == [0, 0, 255, 255])
+        #expect(pixel(stitched.image, x: 80, y: 30) == [255, 0, 0, 255])
+        #expect(pixel(stitched.image, x: 150, y: 60) == [255, 0, 0, 255])
+        // Below the blue display: nothing.
+        #expect(pixel(stitched.image, x: 10, y: 110) == [0, 0, 0, 0])
+    }
+
+    @Test func aLessSharpDisplayIsScaledUpToTheSharpestOne() throws {
+        let right = solid(1, 0, 0, frame: CGRect(x: 0, y: 0, width: 100, height: 100), scale: 2, id: 1)
+        let left = solid(0, 0, 1, frame: CGRect(x: -80, y: 30, width: 80, height: 70), scale: 1, id: 2)
+        let parts = try [#require(right.cropped(to: area)), #require(left.cropped(to: area))]
+        #expect(parts[1].image.width == 40)
+        let stitched = try #require(CapturedFrame.stitched(parts, covering: area, pixelsPerPoint: 2))
+        #expect(stitched.image.width == 160 && stitched.image.height == 120)
+        #expect(pixel(stitched.image, x: 40, y: 40) == [0, 0, 255, 255])
+    }
+
+    @Test func partsInDifferentColorSpacesComeTogetherInDisplayP3() throws {
+        let right = solid(1, 0, 0, frame: CGRect(x: 0, y: 0, width: 100, height: 100), scale: 2, space: CGColorSpace.displayP3, id: 1)
+        let left = solid(0, 0, 1, frame: CGRect(x: -80, y: 30, width: 80, height: 70), scale: 2, id: 2)
+        let leftPart = try #require(left.cropped(to: area))
+        let mixedParts = try [#require(right.cropped(to: area)), leftPart]
+        let mixed = try #require(CapturedFrame.stitched(mixedParts, covering: area, pixelsPerPoint: 2))
+        #expect(mixed.image.colorSpace?.name == CGColorSpace.displayP3)
+        let sameRight = solid(1, 0, 0, frame: CGRect(x: 0, y: 0, width: 100, height: 100), scale: 2, id: 1)
+        let sameParts = try [#require(sameRight.cropped(to: area)), leftPart]
+        let same = try #require(CapturedFrame.stitched(sameParts, covering: area, pixelsPerPoint: 2))
+        #expect(same.image.colorSpace?.name == CGColorSpace.sRGB)
+    }
 }
