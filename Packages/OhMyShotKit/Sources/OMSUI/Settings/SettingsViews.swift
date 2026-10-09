@@ -163,6 +163,14 @@ struct GeneralSettingsView: View {
                     Text("Freeze the screen while selecting", bundle: .module)
                     Text("Keeps hover states and open menus in place until the capture is taken.", bundle: .module)
                 }
+                Picker(selection: $settings.selfTimerDelay) {
+                    ForEach(SettingsStore.selfTimerDelays, id: \.self) { seconds in
+                        Text("\(seconds) seconds", bundle: .module).tag(seconds)
+                    }
+                } label: {
+                    Text("Self-Timer delay", bundle: .module)
+                    Text("Time to open a menu or hover over something before the capture is taken.", bundle: .module)
+                }
                 Toggle(isOn: $settings.playSounds) {
                     Text("Play sounds", bundle: .module)
                 }

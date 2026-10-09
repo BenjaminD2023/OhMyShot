@@ -16,6 +16,8 @@ public final class StatusItemController {
         public let shortcut: CaptureShortcut?
         /// Checked each time the menu opens; the entry is dimmed when it returns false.
         public let isEnabled: (() -> Bool)?
+        /// Asked each time the menu opens, for an entry whose title follows what is going on.
+        public let currentTitle: (() -> String)?
         public let perform: () -> Void
 
         public init(
@@ -23,12 +25,14 @@ public final class StatusItemController {
             keyEquivalent: String = "",
             shortcut: CaptureShortcut? = nil,
             isEnabled: (() -> Bool)? = nil,
+            currentTitle: (() -> String)? = nil,
             perform: @escaping () -> Void
         ) {
             self.title = title
             self.keyEquivalent = keyEquivalent
             self.shortcut = shortcut
             self.isEnabled = isEnabled
+            self.currentTitle = currentTitle
             self.perform = perform
         }
     }
@@ -181,7 +185,9 @@ private final class MenuTarget: NSObject, NSMenuItemValidation {
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         guard entries.indices.contains(menuItem.tag) else { return true }
-        return entries[menuItem.tag].isEnabled?() ?? true
+        let entry = entries[menuItem.tag]
+        if let title = entry.currentTitle?() { menuItem.title = title }
+        return entry.isEnabled?() ?? true
     }
 
     @objc private func run(_ sender: NSMenuItem) {

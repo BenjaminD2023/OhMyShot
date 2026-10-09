@@ -269,3 +269,12 @@ keyboard back, by which time a hover card or an open menu had gone.
   already in memory: one ScreenCaptureKit screenshot fewer per capture (31–43 ms for a region in M1), and
   the display's frame is still released when the overlay ends. Windows are still captured on their own.
 
+### Self-Timer (2026-10-09)
+
+- **Nothing runs until it is started, and nothing after.** The countdown holds a timer lease and a
+  window lease only while it counts down; it ticks on absolute `ContinuousClock` deadlines with 100 ms
+  tolerance, so the seconds do not drift and the wakeups can coalesce. Its panels are released at zero
+  or on cancel.
+- **The capture at zero is a plain live capture** (one ScreenCaptureKit screenshot of the area, per
+  display it crosses), delivered like any other.
+

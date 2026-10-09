@@ -227,6 +227,9 @@ components:
     rounded: "{rounded.capsule}"
     height: "42px"
     padding: "6px"
+  countdown-disc:
+    rounded: "{rounded.capsule}"
+    size: "64px"
 ---
 
 # Design System: OhMyShot
@@ -237,7 +240,7 @@ components:
 
 OhMyShot looks like a system feature, not an app with a brand. Light and dark follow the system, the accent is the user's own macOS accent, and every window is a standard window with standard controls. What the app adds is a thin, consistent layer of softness for the things that float over other people's screens: continuous-corner cards, fully round capsules, gentle downward shadows, opaque white action capsules, and the rounded system face with fixed-width digits for every live reading. The capture is the hero; the chrome recedes.
 
-Density is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, in-place annotation, Quick Access cards, Capture History, the OCR panel, the annotation editor, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.
+Density is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, in-place annotation, the Self-Timer countdown, Quick Access cards, Capture History, the OCR panel, the annotation editor, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.
 
 The confirmed rejection is the first world, "Contact Sheet" (rejected by the user on 2026-10-07): no frame numbers, no captures joined into one strip, no film-edge or darkroom motifs, no dark heavy panels, nothing that reads as a Linux utility.
 
@@ -248,7 +251,7 @@ Units: every dimension in this file is in points. The frontmatter writes points 
 - Continuous corners everywhere: 12 pt cards, fully round capsules for every control and reading.
 - Soft, downward, widely blurred shadows; never a hard edge or a halo.
 - SF Pro Rounded with monospaced digits for readings; plain system text styles inside windows.
-- Liquid Glass only on small controls (the All-In-One bar, the in-place toolbar, the editor's tool rail, History hover buttons, window toolbars), never over a full-screen frame.
+- Liquid Glass only on small controls (the All-In-One bar, the in-place toolbar, the editor's tool rail, the Self-Timer disc, History hover buttons, window toolbars), never over a full-screen frame.
 - Motion is a single short ease-out or nothing; under Reduce Motion it is nothing.
 
 ## Colors
@@ -300,7 +303,7 @@ A background is content too, fixed values so the screen and the export agree. Th
 **Character:** The rounded face softens the few words that float over someone else's screen; the plain system face keeps windows indistinguishable from Apple's own.
 
 ### Hierarchy
-- **Reading** (SF Pro Rounded semibold 600, 12 pt, monospaced digits): live numbers on screen, such as "1200 × 720", "App · W × H", and "x, y  #HEX". Fixed-width figures keep the capsule from jittering as values change.
+- **Reading** (SF Pro Rounded semibold 600, 12 pt, monospaced digits): live numbers on screen, such as "1200 × 720", "App · W × H", and "x, y  #HEX". Fixed-width figures keep the capsule from jittering as values change. The Self-Timer disc's seconds take the same face at 26 pt.
 - **Control Label** (SF Pro Rounded medium 500, 12 pt; semibold 600 when selected): All-In-One bar labels. Symbols beside them are 13 pt medium.
 - **Action Label** (SF Pro Rounded semibold 600, 13 pt; symbol 12 pt bold): the Copy and Save capsules on a card.
 - **Title** (system `title3` semibold, 15 pt): empty-state titles in Capture History; `title2` semibold for the About and onboarding headings.
@@ -337,7 +340,7 @@ Depth is soft shadow plus system materials. Floating elements over arbitrary scr
 ### Shadow Vocabulary
 - **Floating card** (black 0.22, blur radius 14, offset 6 pt downward): Quick Access cards.
 - **Floating lens** (black 0.28, blur radius 12, offset 4 pt downward): the loupe.
-- **Floating bar** (black 0.16, blur radius 10, offset 3 pt downward): the All-In-One capsule and the in-place toolbar.
+- **Floating bar** (black 0.16, blur radius 10, offset 3 pt downward): the All-In-One capsule, the in-place toolbar, and the Self-Timer disc.
 - **Floating reading** (black 0.18, blur radius 8, offset 2 pt downward): reading capsules, the in-place size reading among them.
 - **Action lift** (black 0.18, blur radius 4, offset 1 pt downward): the white Copy and Save capsules, so they hold on bright pictures.
 - **In-window card** (black 0.12, blur radius 10, offset 4 pt downward): Capture History cards, the OCR panel's picture, and the annotation editor's picture.
@@ -349,12 +352,12 @@ The editor's tool rail takes the floating bar shadow and its style capsule the f
 `Theme.Shadow` also declares a 5 pt offset that no shipped surface uses; the card applies 6 pt.
 
 
-A floating panel leaves room around its card for the whole shadow to fade out: twice the blur plus the drop (34 pt for the floating card shadow). A shadow cut off at the panel's edge reads as a hard rectangle.
+A floating panel leaves room around its card for the whole shadow to fade out: twice the blur plus the drop (34 pt for the floating card shadow; the Self-Timer disc's panel leaves 24 pt for the floating bar shadow). A shadow cut off at the panel's edge reads as a hard rectangle.
 
 ### Named Rules
 **The Soft Lift Rule.** Shadows are downward, widely blurred, and low opacity. No hard offset shadows, no glows, no halos.
 
-**The Small Glass Rule.** Liquid Glass appears only on small controls: the All-In-One bar, the in-place toolbar, the editor's tool rail, window toolbars and their glassProminent Copy, and History hover buttons. The two overlay toolbars are small controls on the overlay, not over it; the full-screen overlay itself is a flat dimming fill and never carries glass, and neither does the editor's style capsule, which sits beside text-bearing marks.
+**The Small Glass Rule.** Liquid Glass appears only on small controls: the All-In-One bar, the in-place toolbar, the editor's tool rail, the Self-Timer disc, window toolbars and their glassProminent Copy, and History hover buttons. The two overlay toolbars are small controls on the overlay, not over it; the full-screen overlay itself is a flat dimming fill and never carries glass, and neither does the editor's style capsule, which sits beside text-bearing marks.
 
 **The Opaque Behind Text Rule.** Any control with text that floats over a capture or a screen has an opaque (or at least 0.94) fill. Glass supplies the rim, not the backing; the editor's Adjust popover sets its Form on the opaque window color inside the system popover.
 
@@ -484,11 +487,23 @@ Marking up a selection where it lies, without opening a window. Annotate Area (�
 - **Outcomes:** Copy puts the marked selection on the clipboard, into Capture History (the plain selection kept beside the marks, still editable), and in a Quick Access card. Save does the same and also saves to the export folder. Open in Editor keeps it in the history and opens the editor with the marks editable, without the clipboard or a card. The picture reaches the clipboard before anything is written; a failure beeps and is announced.
 - **VoiceOver:** the area announces "Mark up the selection. Press Return to copy it, or Escape to cancel." when it starts; its value is "W × H pixels", posted again after each adjustment; the toolbar reads as "Mark Up".
 
+### Self-Timer Countdown
+Self-Timer opens the capture overlay as for a screenshot (frozen by default, All-In-One bar, crosshair and loupe); once an area or a window is chosen the overlay leaves, and the countdown shows where the capture will be while the screen is set up: a menu opened, a card hovered. It takes neither the keyboard nor the pointer, which would close the very menu being set up.
+
+- **Outline:** the chosen area (a window's frame for a window) drawn as the capture overlay draws a selection: a white 1.5 pt edge over the 3.5 pt dark outline (0.32; 0.7 under Increase Contrast). Nothing is dimmed: the screen is in use. One outline panel per display the area reaches.
+- **Disc:** 64 pt, Liquid Glass over an opaque window-colored backing, as the All-In-One bar is; a solid window-colored disc under Reduce Transparency. The seconds left in the reading face at 26 pt, label ink, centered. A 2.5 pt ring in the accent, inset 6 pt, round caps, starting at twelve o'clock, runs out over the whole countdown over a faint track of label ink at 0.12 (0.3 under Increase Contrast). Rim: the 0.5 pt separator hairline, or the 1 pt contrast hairline under Increase Contrast. The floating bar shadow, with 24 pt of room around the disc in its panel. The first second is on the disc before it shows, so it never appears blank; seconds are counted to absolute deadlines and never drift.
+- **Placement:** centered 12 pt below the area; above it when there is no room below; inside its bottom edge only when neither fits, since inside covers what is being set up. Always on a display, 8 pt from its edges.
+- **Panels:** borderless and clear, just above pop-up menus so an opened menu cannot cover them, on every Space, never key, never activating the app, and letting every click through. Like every window of the app, they are left out of the capture.
+- **Ending:** at zero the countdown leaves the screen and the capture is taken live, the screen as it is then, whatever was frozen while choosing; it is named after the app in front at that moment. An area is cut from the screen; a window is captured on its own. If another capture is being chosen at zero, nothing is captured.
+- **Cancelling:** the Self-Timer shortcut again, or the status menu entry, which reads "Cancel Self-Timer" while the countdown runs. Starting another capture cancels it too. Nothing is captured.
+- **Delay:** 2, 3, 5, 10, or 15 seconds, 5 by default (Settings › General › Self-Timer delay). Self-Timer has no shortcut by default.
+- **VoiceOver:** the disc is not an element. Starting announces "Capturing in N seconds. Press [the shortcut's keys] again to cancel.", or "Capturing in N seconds. Choose Cancel Self-Timer in the menu bar to cancel." when it has no shortcut; cancelling announces "Self-Timer cancelled."
+
 ### Navigation
 - **Capture History toolbar:** a SwiftUI toolbar bridged into a unified window toolbar: segmented Show filter (All, Screenshots, Recordings), a "Keep for …" menu, and Move All to Trash. Empty states are filter-aware (a 40 pt light tertiary symbol, title3 title, callout message).
 - **Keyboard:** arrows select, Return restores, Space opens Quick Look; ⌘C, ⌘S, and ⌘⌫ arrive as commands through an invisible main menu and are disabled with nothing selected.
 - **Settings:** preference toolbar tabs; grouped sections such as "After capturing", "Capture History", and "Translation" (Translate into: Automatic, the first of the preferred languages the text isn't already in, then the system's languages). General › After capturing ends with a Background picker (None, then the saved presets) that puts each new screenshot on a preset; it is disabled, with a line saying to save a preset in the editor first, while there are none.
-- **Status menu:** grouped capture commands (Capture Area, Annotate Area, Window, Fullscreen, Capture Text, Translate Area), then Recognize Text in Clipboard Image (enabled when the clipboard offers an image or a file) and Recognize Text in Image…, then Annotate Image… (a picture or a project; several at once), Capture History, and Restore Recently Closed. An image dropped on the menu bar icon opens in the OCR panel; the icon highlights while it is over it.
+- **Status menu:** grouped capture commands (Capture Area, Annotate Area, Window, Fullscreen, Self-Timer, Capture Text, Translate Area; Self-Timer reads "Cancel Self-Timer" while a countdown runs, its title asked again each time the menu opens), then Recognize Text in Clipboard Image (enabled when the clipboard offers an image or a file) and Recognize Text in Image…, then Annotate Image… (a picture or a project; several at once), Capture History, and Restore Recently Closed. An image dropped on the menu bar icon opens in the OCR panel; the icon highlights while it is over it.
 - **Find:** the Edit menu carries Find…, Find Next, Find Previous, and Use Selection for Find for the OCR panel's text.
 - **Destructive confirmations** state the count and consequence and name the action ("Delete 3 Captures"; "This can't be undone.").
 
@@ -499,7 +514,8 @@ Marking up a selection where it lies, without opening a window. Annotate Area (�
 - In the OCR panel, Copy buttons swap their symbol for a checkmark with the system's symbol replace transition and back after 1.5 s (toolbar) or 1.2 s (rows).
 - The translation lens fades in over 0.18 s ease-out and out over 0.15 s ease-in; its buttons fade over 0.12 s.
 - In the annotation editor, the style capsule fades in over 0.12 s ease-out when a new selection or tool calls for it and simply moves when the picture zooms or scrolls; it hides while a mark is drawn, moved, or reshaped. In in-place annotation the capsule fades in the same way (0.12 s ease-out) for a new tool or selection and hides while a mark is drawn or the selection is adjusted; the toolbar and selection chrome appear and move without animation. Canvas layers never animate on their own, so marks, handles, and the crop frame stay under the pointer.
-- Under Reduce Motion all of these are instant. Nothing trails the pointer: overlay layers update without animation. The two durations live in `Theme.Motion` (`slide` 0.22 s, `fade` 0.12 s).
+- The Self-Timer countdown's outline and disc fade in together over 0.12 s ease-out; its ring runs out linearly over the whole delay while the digit steps down each second; at zero it is gone at once, with no fade out.
+- Under Reduce Motion all of these are instant; the Self-Timer countdown appears without a fade and its ring steps down each second instead of running out. Nothing trails the pointer: overlay layers update without animation. The two durations live in `Theme.Motion` (`slide` 0.22 s, `fade` 0.12 s).
 
 ### Future Surfaces
 Recording controls and pins are not built. They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.

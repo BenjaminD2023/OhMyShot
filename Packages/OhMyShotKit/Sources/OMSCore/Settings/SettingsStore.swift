@@ -67,6 +67,14 @@ public final class SettingsStore {
         didSet { defaults.set(freezeScreen, forKey: Key.freezeScreen) }
     }
 
+    /// How long Self-Timer waits, in seconds, between choosing what to capture and capturing it.
+    public var selfTimerDelay: Int {
+        didSet { defaults.set(selfTimerDelay, forKey: Key.selfTimerDelay) }
+    }
+
+    /// The delays Self-Timer offers, in seconds.
+    public static let selfTimerDelays = [2, 3, 5, 10, 15]
+
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -84,6 +92,7 @@ public final class SettingsStore {
             // Frozen by default: a hover card or menu that closes as the pointer leaves it can still be
             // captured, since the screen is taken the moment the shortcut is pressed.
             Key.freezeScreen: true,
+            Key.selfTimerDelay: 5,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
@@ -92,6 +101,8 @@ public final class SettingsStore {
         exportDirectory = defaults.string(forKey: Key.exportDirectory).map { URL(filePath: $0, directoryHint: .isDirectory) }
             ?? URL.desktopDirectory
         freezeScreen = defaults.bool(forKey: Key.freezeScreen)
+        let delay = defaults.integer(forKey: Key.selfTimerDelay)
+        selfTimerDelay = Self.selfTimerDelays.contains(delay) ? delay : 5
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
@@ -107,6 +118,7 @@ public final class SettingsStore {
         static let approvedAutomationCallers = "approvedAutomationCallers"
         static let exportDirectory = "exportDirectory"
         static let freezeScreen = "freezeScreen"
+        static let selfTimerDelay = "selfTimerDelay"
         static let copyAfterCapture = "copyAfterCapture"
         static let saveAfterCapture = "saveAfterCapture"
         static let showQuickAccess = "showQuickAccess"

@@ -80,6 +80,11 @@ public final class HotkeyCenter {
         defaults.set(installed.sorted(), forKey: key)
     }
 
+    /// The keys a shortcut is set to, as the menu shows them (such as "⌃⌥⌘7"); nil when it has none.
+    public func keys(for shortcut: CaptureShortcut) -> String? {
+        KeyboardShortcuts.getShortcut(for: shortcut.name)?.description
+    }
+
     /// Starts listening. The handler runs on key down, so the overlay can appear before the keys are
     /// released.
     public func activate(_ handler: @escaping (CaptureShortcut) -> Void) {

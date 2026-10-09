@@ -20,9 +20,16 @@ final class CaptureCoordinator {
     var onCaptured: ((QuickAccessItem) -> Void)?
     /// Opens a capture in the annotation editor: its record and its pixels per point.
     var openInEditor: ((HistoryItem, CGFloat) -> Void)?
+    /// How Self-Timer is cancelled, told to VoiceOver when it starts: the keys of its shortcut, or nil
+    /// when it has none and the menu bar is the way. Set by the composition root.
+    var selfTimerKeys: (() -> String?)?
+    /// Self-Timer's countdown, between choosing what to capture and capturing it.
+    private let countdown = SelfTimerCountdown()
     #if DEBUG
     /// The in-place annotation on screen, for scripted checks.
     private(set) weak var inPlaceView: InPlaceAnnotationView?
+    /// Stands in for Self-Timer's capture at zero, for scripted checks that must not read the screen.
+    var selfTimerCapture: ((CGRect) -> CapturedFrame?)?
     #endif
     private lazy var shutter = NSSound(
         contentsOfFile: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif",
@@ -50,6 +57,7 @@ final class CaptureCoordinator {
     /// - Parameter copiesToClipboard: false for scripted checks, which never touch the clipboard.
     func annotateArea(copiesToClipboard: Bool = true) {
         guard !overlay.isActive else { return }
+        cancelSelfTimer()
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         overlay.onAnnotate = { [weak self] request in self?.annotateInPlace(request, appName: app, copiesToClipboard: copiesToClipboard) }
         overlay.begin(mode: .area, purpose: .annotate) { _ in }
@@ -101,6 +109,92 @@ final class CaptureCoordinator {
         #if DEBUG
         inPlaceView = view
         #endif
+    }
+
+    // MARK: Self-Timer
+
+    /// What Self-Timer captures at zero.
+    private enum TimerTarget {
+        case area(CGRect)
+        case window(WindowTarget)
+    }
+
+    var isSelfTimerRunning: Bool {
+        countdown.isRunning
+    }
+
+    /// Self-Timer: choose an area, a window, or the screen as for a screenshot; it is captured once the
+    /// delay is over, as it is on screen then, so a menu or a hover card can be opened meanwhile.
+    /// Pressing the shortcut again while it counts down cancels it.
+    /// - Parameters:
+    ///   - copiesToClipboard: false for scripted checks, which never touch the clipboard.
+    ///   - freezes: whether the screen holds still while choosing; nil follows the setting.
+    ///   - delay: seconds to wait; nil follows the setting. Scripted checks keep it short.
+    func selfTimer(copiesToClipboard: Bool = true, freezes: Bool? = nil, delay: Int? = nil) {
+        if countdown.isRunning {
+            cancelSelfTimer()
+            return
+        }
+        guard !overlay.isActive else { return }
+        overlay.freezesScreen = freezes ?? settings.freezeScreen
+        overlay.begin(mode: .area) { [weak self] outcome in
+            let seconds = delay ?? self?.settings.selfTimerDelay ?? 5
+            switch outcome {
+            case .region(let rect, _, _, _):
+                // Whatever was frozen while choosing, what is captured is the screen once the time is up.
+                self?.countDown(to: .area(rect), seconds: seconds, copiesToClipboard: copiesToClipboard)
+            case .window(let target, _):
+                self?.countDown(to: .window(target), seconds: seconds, copiesToClipboard: copiesToClipboard)
+            case .annotated, .cancelled:
+                break
+            }
+        }
+    }
+
+    /// Stops a running Self-Timer; nothing is captured.
+    func cancelSelfTimer() {
+        guard countdown.isRunning else { return }
+        countdown.cancel()
+        Log.capture.notice("Self-Timer cancelled")
+        announce(String(localized: "Self-Timer cancelled."))
+    }
+
+    private func countDown(to target: TimerTarget, seconds: Int, copiesToClipboard: Bool) {
+        let area = switch target {
+        case .area(let rect): rect
+        case .window(let window): window.frame
+        }
+        let keys = selfTimerKeys?()
+        announce(keys.map { String(localized: "Capturing in \(seconds) seconds. Press \($0) again to cancel.") }
+            ?? String(localized: "Capturing in \(seconds) seconds. Choose Cancel Self-Timer in the menu bar to cancel."))
+        countdown.start(seconds: seconds, area: area, layout: displays.layout) { [weak self] in
+            guard let self else { return }
+            // Another capture is being chosen: not captured under its overlay.
+            guard !overlay.isActive else {
+                Log.capture.notice("Self-Timer skipped: another capture was being chosen")
+                return
+            }
+            // Named after what is in front now, which is what the capture shows.
+            let app = NSWorkspace.shared.frontmostApplication?.localizedName
+            #if DEBUG
+            if let stand = selfTimerCapture, case .area(let rect) = target {
+                if let frame = stand(rect) { Task { await self.deliver(frame, appName: "Demo", copiesToClipboard: false) } }
+                return
+            }
+            #endif
+            Task {
+                switch target {
+                case .area(let rect): await self.captureArea(rect, appName: app, copiesToClipboard: copiesToClipboard)
+                case .window(let window): await self.captureWindow(window, copiesToClipboard: copiesToClipboard)
+                }
+            }
+        }
+    }
+
+    private func announce(_ message: String) {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
     }
 
     /// Hover a window and click it: captured on its own, with its rounded corners and shadow.
@@ -198,6 +292,8 @@ final class CaptureCoordinator {
 
     private func begin(mode: OverlayController.Mode, copiesToClipboard: Bool = true, freezes: Bool? = nil) {
         guard !overlay.isActive else { return }
+        // A new capture replaces a Self-Timer still counting down, rather than leaving it under the overlay.
+        cancelSelfTimer()
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         overlay.freezesScreen = freezes ?? settings.freezeScreen
         overlay.begin(mode: mode) { [weak self] outcome in

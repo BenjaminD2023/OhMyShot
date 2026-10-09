@@ -225,6 +225,12 @@ struct DebugHooks {
             let rect = ["x", "y", "w", "h"].compactMap { Self.intParameter($0, in: url) }
             let span = Self.intParameter("span", in: url) ?? 0
             Task { await runFreezeDemo(area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil, span: span) }
+        case "selftimer-demo":
+            // Self-Timer over a drawn screen, never the real one: the area chosen without the mouse on drawn
+            // frames, the countdown shown over an app-drawn backdrop with a picture of the display taken
+            // partway (selftimer-demo-<display>-<light|dark>.png), and at zero the drawn area delivered in place of a
+            // capture, clipboard untouched, checked, and removed. seconds= sets the delay (default 3).
+            Task { await runSelfTimerDemo(seconds: Self.intParameter("seconds", in: url) ?? 3) }
         case "inplace-act":
             // Acts on the in-place annotation: tool=<tool>, drag=x1,y1,x2,y2 (display points from the
             // top-left), shift=1, clicks=2, key=<characters>&code=<key code>[&cmd=1], type=<text>,
@@ -607,6 +613,59 @@ struct DebugHooks {
         return nil
     }
 
+    /// Self-Timer on drawn screens. The backdrop under the countdown is the drawn page too, so neither the
+    /// picture taken partway nor the countdown's glass holds anything of the real screen.
+    func runSelfTimerDemo(seconds: Int) async {
+        let layout = displays.layout
+        guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
+        var frames: [CGDirectDisplayID: CapturedFrame] = [:]
+        for each in layout.displays {
+            if let image = DebugPanelDemo.screen(for: each, page: each.id == display.id) {
+                frames[each.id] = CapturedFrame(image: image, hdrImage: nil, displayID: each.id, frame: each.frame)
+            }
+        }
+        guard let drawn = frames[display.id] else { return }
+        let backdrop = DemoBackdropPanel(frame: display.frame, image: drawn.image)
+        backdrop.orderFrontRegardless()
+        defer { backdrop.orderOut(nil) }
+        let before = historyCount()
+        captures.selfTimerCapture = { rect in drawn.cropped(to: rect) }
+        defer { captures.selfTimerCapture = nil }
+        overlay.injectedFrames = frames
+        captures.selfTimer(copiesToClipboard: false, freezes: true, delay: seconds)
+        await waitForOverlayFrames()
+        let page = DebugPanelDemo.pageRect(on: display)
+        let rect = CGRect(x: display.frame.minX + page.minX, y: display.frame.maxY - page.maxY, width: page.width, height: page.height)
+        overlay.simulateSelection(rect)
+        try? await Task.sleep(for: .milliseconds(1200))
+        Log.app.notice("debug.selftimer-demo counting=\(self.captures.isSelfTimerRunning, privacy: .public)")
+        do {
+            let picture = try await capturer.captureDisplay(display, includingOwnWindows: true)
+            try FileManager.default.createDirectory(at: Self.snapshotDirectory, withIntermediateDirectories: true)
+            let tone = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? "dark" : "light"
+            let file = Self.snapshotDirectory.appending(path: "selftimer-demo-\(display.id)-\(tone).png")
+            try await ImageExporter.write(picture.image, to: file, format: .png)
+            Log.app.notice("debug.selftimer-demo \(file.path(percentEncoded: false), privacy: .public)")
+        } catch {
+            Log.app.error("debug.selftimer-demo picture failed: \(error.localizedDescription, privacy: .public)")
+        }
+        for _ in 0..<((seconds + 4) * 10) where historyCount() == before {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        guard historyCount() == before + 1 else {
+            Log.app.error("debug.selftimer-demo kept nothing")
+            return
+        }
+        defer { deleteLatestFromHistory() }
+        guard let expected = drawn.cropped(to: rect)?.image, let file = latestCaptureFile(),
+              let source = CGImageSourceCreateWithURL(file as CFURL, nil), let kept = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            Log.app.error("debug.selftimer-demo could not read the capture back")
+            return
+        }
+        let difference = Self.pixelDifference(kept, expected)
+        Log.app.notice("debug.selftimer-demo kept \(kept.width, privacy: .public)x\(kept.height, privacy: .public) at zero, largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public)")
+    }
+
     /// The largest difference of any channel between two pictures of one size, both drawn in sRGB; nil
     /// when their sizes differ.
     private static func pixelDifference(_ first: CGImage, _ second: CGImage) -> Int? {
@@ -673,6 +732,28 @@ struct DebugHooks {
             ? "idle"
             : snapshot.map { "\($0.key.rawValue)=\($0.value)" }.sorted().joined(separator: " ")
         Log.resources.notice("debug.resources \(summary, privacy: .public)")
+    }
+}
+/// A drawn screen behind Self-Timer's countdown in scripted checks: one level under it, above
+/// everything else, and letting clicks through.
+private final class DemoBackdropPanel: NSPanel {
+    init(frame: CGRect, image: CGImage) {
+        super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        level = .popUpMenu
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        ignoresMouseEvents = true
+        isReleasedWhenClosed = false
+        animationBehavior = .none
+        let view = NSView(frame: CGRect(origin: .zero, size: frame.size))
+        view.wantsLayer = true
+        view.layer?.contents = image
+        view.layer?.contentsGravity = .resize
+        contentView = view
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
     }
 }
 #endif

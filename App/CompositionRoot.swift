@@ -48,6 +48,15 @@ final class CompositionRoot {
                 .init(title: String(localized: "Annotate Area"), shortcut: .annotateArea) { [weak self] in self?.handle(.annotateArea) },
                 .init(title: String(localized: "Capture Window"), shortcut: .captureWindow) { [weak self] in self?.handle(.captureWindow) },
                 .init(title: String(localized: "Capture Fullscreen"), shortcut: .captureFullscreen) { [weak self] in self?.handle(.captureFullscreen) },
+                .init(
+                    title: String(localized: "Self-Timer"),
+                    shortcut: .selfTimer,
+                    currentTitle: { [weak self] in
+                        self?.captures.isSelfTimerRunning == true ? String(localized: "Cancel Self-Timer") : String(localized: "Self-Timer")
+                    }
+                ) { [weak self] in
+                    self?.handle(.selfTimer)
+                },
                 .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
                 .init(title: String(localized: "Translate Area"), shortcut: .translateArea) { [weak self] in self?.handle(.translateArea) },
             ],
@@ -104,6 +113,9 @@ final class CompositionRoot {
         captures.openInEditor = { [weak self] entry, scale in
             self?.annotations.annotate(entry, scale: scale)
         }
+        captures.selfTimerKeys = { [weak self] in
+            self?.hotkeys.keys(for: .selfTimer)
+        }
         annotations.onChange = { [weak self] entry, data in
             self?.pictureChanged(entry, data: data)
         }
@@ -120,6 +132,7 @@ final class CompositionRoot {
             guard let self else { return }
             shareableContent.refresh()
             overlay.cancel()
+            captures.cancelSelfTimer()
             overlay.prepare()
         }
 
@@ -200,11 +213,16 @@ final class CompositionRoot {
             captures.captureFullscreen()
         case .captureWindow:
             captures.captureWindow()
+        case .selfTimer:
+            captures.selfTimer()
         case .captureText:
+            captures.cancelSelfTimer()
             textCapture.captureText(joinLines: false)
         case .captureTextJoined:
+            captures.cancelSelfTimer()
             textCapture.captureText(joinLines: true)
         case .translateArea:
+            captures.cancelSelfTimer()
             textCapture.translateArea()
         default:
             Log.hotkeys.notice("Not available yet: \(shortcut.rawValue, privacy: .public)")
@@ -223,11 +241,18 @@ final class CompositionRoot {
             captures.captureFullscreen()
         case .captureWindow:
             captures.captureWindow()
+        case .selfTimer:
+            guard permissions.status(of: .screenRecording) == .granted else {
+                showOnboarding()
+                return
+            }
+            captures.selfTimer()
         case .captureText(nil, let region, let lineBreaks) where region.rect == nil:
             guard permissions.status(of: .screenRecording) == .granted else {
                 showOnboarding()
                 return
             }
+            captures.cancelSelfTimer()
             textCapture.captureText(joinLines: lineBreaks == false)
         case .openHistory:
             showHistory()
