@@ -232,12 +232,12 @@
       "capsule-surface-light": {
         "role": "neutral",
         "displayName": "Capsule Surface, Light",
-        "canonical": "CGColor(gray: 1, alpha: 0.97)"
+        "canonical": "CGColor(gray: 1, alpha: 0.97); the text result card, a text pin's card, and the style capsule"
       },
       "capsule-surface-dark": {
         "role": "neutral",
         "displayName": "Capsule Surface, Dark",
-        "canonical": "CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) (text result card); the style capsule draws CGColor(gray: 0.17, alpha: 0.96)"
+        "canonical": "CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) (text result card and text pin); the style capsule draws CGColor(gray: 0.17, alpha: 0.96)"
       },
       "hairline-contrast-light": {
         "role": "neutral",
@@ -412,22 +412,22 @@
       "checker-light": {
         "role": "neutral",
         "displayName": "Checkerboard, Light",
-        "canonical": "CGColor(gray: 1, alpha: 1); on screen only"
+        "canonical": "CGColor(gray: 1, alpha: 1); on screen only: a Transparent background's room and a translucent color pin's swatch, 8 pt squares"
       },
       "checker-light-alt": {
         "role": "neutral",
         "displayName": "Checkerboard Alternate, Light",
-        "canonical": "CGColor(gray: 0.91, alpha: 1); 0.84 under Increase Contrast; on screen only"
+        "canonical": "CGColor(gray: 0.91, alpha: 1); 0.84 under Increase Contrast; on screen only: a Transparent background's room and a translucent color pin's swatch, 8 pt squares"
       },
       "checker-dark": {
         "role": "neutral",
         "displayName": "Checkerboard, Dark",
-        "canonical": "CGColor(gray: 0.20, alpha: 1); on screen only"
+        "canonical": "CGColor(gray: 0.20, alpha: 1); on screen only: a Transparent background's room and a translucent color pin's swatch, 8 pt squares"
       },
       "checker-dark-alt": {
         "role": "neutral",
         "displayName": "Checkerboard Alternate, Dark",
-        "canonical": "CGColor(gray: 0.25, alpha: 1); 0.30 under Increase Contrast; on screen only"
+        "canonical": "CGColor(gray: 0.25, alpha: 1); 0.30 under Increase Contrast; on screen only: a Transparent background's room and a translucent color pin's swatch, 8 pt squares"
       }
     },
     "typographyMeta": {
@@ -582,12 +582,12 @@
       {
         "name": "pin-reading-fade",
         "value": "text lands at once, holds 0.9s, then opacity 1 to 0 over 0.12s (Theme.Motion.fade)",
-        "purpose": "A pin's reading capsule after zoom, opacity, Copy, or Lock. Under Reduce Motion it simply goes after 0.9s."
+        "purpose": "A pin's reading capsule after zoom, opacity, Copy, or Lock. A color pin's reading gives way back to its hex at once instead of fading. Under Reduce Motion it simply goes after 0.9s."
       },
       {
         "name": "pin-controls-fade",
         "value": "0.12s (Theme.Motion.fade), opacity 0 to 1",
-        "purpose": "A pin's Close and More on hover. The pin's own moves, zoom, and picture fade never animate. Instant under Reduce Motion."
+        "purpose": "A pin's Close and More on hover. The pin's own moves, zoom, and the fade of its picture, card, or swatch never animate. Instant under Reduce Motion."
       }
     ]
   },
@@ -596,7 +596,7 @@
       "name": "Reading Capsule",
       "kind": "custom",
       "refersTo": "reading-capsule-light",
-      "description": "Rounded capsule for every live on-screen number (the overlay's readings and a pin's zoom, opacity, Copied, and Locked), with optional color swatch. Nothing in it animates on its own: geometry, text, and colors change at once, so no number trails the pointer; a surface that fades it animates only its opacity. Light shown; Dark uses rgba(43,43,46,0.94) fill and 0.92 white ink.",
+      "description": "Rounded capsule for every live on-screen number (the overlay's readings and a pin's zoom, opacity, Copied, and Locked), with optional color swatch. A color pin's hex is the one resting value: it shows while no other reading does and a passing reading gives way back to it at once. Nothing in it animates on its own: geometry, text, and colors change at once, so no number trails the pointer; a surface that fades it animates only its opacity. Light shown; Dark uses rgba(43,43,46,0.94) fill and 0.92 white ink.",
       "html": "<div class=\"ds-reading\"><span class=\"ds-reading-swatch\"></span>812, 344   #3A7BD5</div>",
       "css": ".ds-reading{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 11px 0 10px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family: 'SF Pro Rounded', ui-rounded, system-ui, sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:pre;} .ds-reading-swatch{width:10px;height:10px;border-radius:5px;background:#3A7BD5;border:1px solid rgba(0,0,0,0.3);box-sizing:border-box;}"
     },
@@ -684,9 +684,25 @@
       "name": "Pin",
       "kind": "custom",
       "refersTo": "pin-picture",
-      "description": "A picture kept above every app's windows: a borderless, non-activating floating panel on every Space and over full-screen apps that takes the keys only when clicked. Continuous corners from Settings (0-24 pt, 12 default), the system window shadow, a 0.5 pt black 0.18 hairline (1 pt black 0.35 under Increase Contrast), and a 1.5 pt keyboardFocusIndicatorColor ring inside the edge while key. On hover (at least 72 x 56 pt, unlocked) Close and More card corner buttons fade in 8 pt from the top corners; a reading capsule 10 pt above the bottom shows zoom, opacity, Copied, or Locked for 0.9 s, then fades over 0.12 s. Scroll or pinch zooms around the pointer (10-800%), Option-scroll fades the picture only (20-100%). A locked pin lets clicks through and wears a lock.fill disc where More would be.",
+      "description": "A picture kept above every app's windows (the Text Pin and Color Pin below share this window, its controls, reading, ring, and lock mark): a borderless, non-activating floating panel on every Space and over full-screen apps that takes the keys only when clicked. Continuous corners from Settings (0-24 pt, 12 default), the system window shadow, a 0.5 pt black 0.18 hairline (1 pt black 0.35 under Increase Contrast), and a 1.5 pt keyboardFocusIndicatorColor ring inside the edge while key. On hover (at least 72 x 56 pt, unlocked) Close and More card corner buttons fade in 8 pt from the top corners; a reading capsule 10 pt above the bottom shows zoom, opacity, Copied, or Locked for 0.9 s, then fades over 0.12 s. Scroll or pinch zooms around the pointer (10-800%), Option-scroll fades the picture only (20-100%). A locked pin lets clicks through and wears a lock.fill disc where More would be.",
       "html": "<div class=\"ds-pin\" tabindex=\"0\"><div class=\"ds-pin-pic\"></div><button class=\"ds-pin-btn ds-pin-close\" aria-label=\"Close\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M2 2l6 6M8 2l-6 6\"/></svg></button><button class=\"ds-pin-btn ds-pin-more\" aria-label=\"More\"><svg width=\"12\" height=\"4\" viewBox=\"0 0 12 4\" fill=\"currentColor\"><circle cx=\"2\" cy=\"2\" r=\"1.4\"/><circle cx=\"6\" cy=\"2\" r=\"1.4\"/><circle cx=\"10\" cy=\"2\" r=\"1.4\"/></svg></button><div class=\"ds-pin-reading\">150%</div></div>",
       "css": ".ds-pin{position:relative;width:260px;height:170px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.25);} .ds-pin-pic{position:absolute;inset:0;border-radius:12px;background:linear-gradient(135deg,#F4F6FA,#D5DEEA);border:0.5px solid rgba(0,0,0,0.18);} .ds-pin:focus-visible{outline:none;} .ds-pin:focus-visible::after{content:'';position:absolute;inset:0;border-radius:12px;border:1.5px solid AccentColor;pointer-events:none;} .ds-pin-btn{position:absolute;top:8px;width:24px;height:24px;padding:0;border:none;border-radius:9999px;background:rgba(0,0,0,0.5);color:#fff;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s;} .ds-pin-close{left:8px;} .ds-pin-more{right:8px;} .ds-pin-btn:hover{background:rgba(0,0,0,0.62);} .ds-pin:hover .ds-pin-btn{opacity:1;} .ds-pin-reading{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);height:24px;padding:0 11px;display:flex;align-items:center;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;} @media (prefers-reduced-motion: reduce){.ds-pin-btn{transition:none;}}"
+    },
+    {
+      "name": "Text Pin",
+      "kind": "custom",
+      "refersTo": "pin-text-light",
+      "description": "The clipboard's text kept above every app's windows, in the Pin's window: a card in the Text Result Card's materials (capsule surface white 0.97, Dark a 0.17 gray at 0.96; the reading capsule's 0.5 pt black 0.08 / white 0.12 hairline from Settings › Edge, 1 pt black 0.35 / white 0.5 and always shown under Increase Contrast), with the Pin's Settings corners, window shadow, and ring. Label ink, 14 x 11 pt padding, the system face at 13 pt, or monospaced at 12 pt for code (a fenced block, or two or more indented lines). As wide as its text, 64 to 420 pt; cut at 30 lines with an ellipsis and never more than 4000 characters laid out, while Copy Text (⌘C) takes everything. Laid out once at 100% and drawn scaled with the zoom, so it wraps alike at every zoom. The text takes no clicks; the whole card drags. VoiceOver: static text, \"Text pin: \" and its text, actions Copy, Lock, Close. No Save, Annotate, or Recognize Text. Light shown; Dark uses rgba(43,43,46,0.96) fill, white 0.12 hairline, and white label ink.",
+      "html": "<div class=\"ds-pin-text\" tabindex=\"0\"><div class=\"ds-pin-text-card\">Pinned notes stay above every window.\nThe text wraps the same at any zoom.\nCopy Text takes all of it.</div><button class=\"ds-pin-text-btn ds-pin-text-close\" aria-label=\"Close\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M2 2l6 6M8 2l-6 6\"/></svg></button><button class=\"ds-pin-text-btn ds-pin-text-more\" aria-label=\"More\"><svg width=\"12\" height=\"4\" viewBox=\"0 0 12 4\" fill=\"currentColor\"><circle cx=\"2\" cy=\"2\" r=\"1.4\"/><circle cx=\"6\" cy=\"2\" r=\"1.4\"/><circle cx=\"10\" cy=\"2\" r=\"1.4\"/></svg></button></div>",
+      "css": ".ds-pin-text{position:relative;display:inline-block;max-width:420px;min-width:64px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.25);} .ds-pin-text-card{padding:11px 14px;border-radius:12px;background:rgba(255,255,255,0.97);border:0.5px solid rgba(0,0,0,0.08);color:rgba(0,0,0,0.85);font-family:system-ui,sans-serif;font-size:13px;line-height:16px;white-space:pre-wrap;} .ds-pin-text-btn{position:absolute;top:8px;width:24px;height:24px;padding:0;border:none;border-radius:9999px;background:rgba(0,0,0,0.5);color:#fff;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s;} .ds-pin-text-close{left:8px;} .ds-pin-text-more{right:8px;} .ds-pin-text-btn:hover{background:rgba(0,0,0,0.62);} .ds-pin-text:hover .ds-pin-text-btn{opacity:1;} .ds-pin-text:focus-visible{outline:none;} .ds-pin-text:focus-visible::after{content:'';position:absolute;inset:0;border-radius:12px;border:1.5px solid AccentColor;pointer-events:none;} @media (prefers-reduced-motion: reduce){.ds-pin-text-btn{transition:none;}}"
+    },
+    {
+      "name": "Color Pin",
+      "kind": "custom",
+      "refersTo": "pin-color",
+      "description": "A copied color (or text that is exactly #RGB, #RGBA, #RRGGBB, #RRGGBBAA, rgb(), or rgba()) kept above every app's windows, in the Pin's window: a 128 x 128 pt swatch in the color's own color space, with the Pin's Settings corners, window shadow, 0.5 pt black 0.18 hairline, and ring. A translucent color sits over the checkerboard token, 8 pt squares on screen at every zoom (white and 0.91 gray; Dark 0.20 and 0.25; 0.84 and 0.30 under Increase Contrast). Its hex (\"#3366FF\", \"#3366FF80\" when translucent) rests in the reading capsule while the swatch is at least the capsule plus 16 pt in width and height, and hides otherwise; zoom, opacity, and Copied pass and give way back to it instead of fading. Menu: Copy Hex (⌘C) and Copy RGB (rgb() or rgba()), then Zoom, Opacity, Lock, Close, Close All Pins. Opacity fades the swatch and checkerboard only. VoiceOver: an image, \"Color pin, #3366FF\", actions Copy Hex, Copy RGB, Lock, Close.",
+      "html": "<div class=\"ds-pin-color\" tabindex=\"0\"><div class=\"ds-pin-color-swatch\"></div><button class=\"ds-pin-color-btn ds-pin-color-close\" aria-label=\"Close\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M2 2l6 6M8 2l-6 6\"/></svg></button><button class=\"ds-pin-color-btn ds-pin-color-more\" aria-label=\"More\"><svg width=\"12\" height=\"4\" viewBox=\"0 0 12 4\" fill=\"currentColor\"><circle cx=\"2\" cy=\"2\" r=\"1.4\"/><circle cx=\"6\" cy=\"2\" r=\"1.4\"/><circle cx=\"10\" cy=\"2\" r=\"1.4\"/></svg></button><div class=\"ds-pin-color-reading\">#3366FF80</div></div>",
+      "css": ".ds-pin-color{position:relative;width:128px;height:128px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.25);} .ds-pin-color-swatch{position:absolute;inset:0;border-radius:12px;overflow:hidden;background:linear-gradient(rgba(51,102,255,0.5),rgba(51,102,255,0.5)),repeating-conic-gradient(#E8E8E8 0 25%,#FFFFFF 0 50%) 0 0/16px 16px;border:0.5px solid rgba(0,0,0,0.18);} @media (prefers-color-scheme: dark){.ds-pin-color-swatch{background:linear-gradient(rgba(51,102,255,0.5),rgba(51,102,255,0.5)),repeating-conic-gradient(#404040 0 25%,#333333 0 50%) 0 0/16px 16px;}} .ds-pin-color-btn{position:absolute;top:8px;width:24px;height:24px;padding:0;border:none;border-radius:9999px;background:rgba(0,0,0,0.5);color:#fff;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s;} .ds-pin-color-close{left:8px;} .ds-pin-color-more{right:8px;} .ds-pin-color-btn:hover{background:rgba(0,0,0,0.62);} .ds-pin-color:hover .ds-pin-color-btn{opacity:1;} .ds-pin-color:focus-visible{outline:none;} .ds-pin-color:focus-visible::after{content:'';position:absolute;inset:0;border-radius:12px;border:1.5px solid AccentColor;pointer-events:none;} .ds-pin-color-reading{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);height:24px;padding:0 11px;display:flex;align-items:center;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;} @media (prefers-reduced-motion: reduce){.ds-pin-color-btn{transition:none;}}"
     },
     {
       "name": "In-Place Toolbar",

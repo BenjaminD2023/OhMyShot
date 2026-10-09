@@ -40,8 +40,15 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   window shadow and hairline of the Translation Lens, 12 pt corners by default. Capture Area and Pin
   lands the pin over the captured area at 1:1 (the Snipaste convention), keeps the capture in the
   history, and shows no card and leaves the clipboard alone. Pins appear in new captures by default.
-  Text and color pins and Live Text selection come later; the release build has no default shortcut
-  for Capture Area and Pin (⇧⌘7 types a slash on German layouts).
+  The release build has no default shortcut for Capture Area and Pin (⇧⌘7 types a slash on German
+  layouts). Live Text selection on pins comes later.
+- Text and color pins (2026-10-09): Pin from Clipboard takes a picture first, then a color (a copied
+  color, or text that is exactly a color's value), then text; a copied file that is not a picture beeps
+  rather than pinning its name. Text sits on a card in the Text Result Card's materials, monospaced
+  for code, cut at 30 lines, laid out once at 100 percent and drawn scaled, so it wraps the same at
+  every zoom. A color is a 128 pt swatch in its own color space, on the checkerboard when translucent,
+  with its hex resting in the reading capsule while it fits. Saving, Annotate, and Recognize Text stay
+  with pictures.
 - Self-Timer (2026-10-09): choose first, then count down, then capture live at zero (the ⌘⇧5 timer and
   camera convention), so a menu that closes on any key can be opened during the countdown. The
   countdown takes neither the keyboard nor the pointer; it is cancelled by its shortcut again or from
