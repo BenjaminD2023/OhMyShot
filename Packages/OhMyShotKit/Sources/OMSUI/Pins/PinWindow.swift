@@ -48,6 +48,7 @@ final class PinWindow: NSPanel {
         pinView.autoresizingMask = [.width, .height]
         contentView = pinView
         pinView.pinWindow = self
+        updateAccessibilityValue()
     }
 
     @available(*, unavailable)

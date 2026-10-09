@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-09T23:30:00Z",
+  "generatedAt": "2026-10-09T23:59:00Z",
   "title": "Design System: OhMyShot",
   "extensions": {
     "colorMeta": {
@@ -578,6 +578,16 @@
         "name": "editor-copied-feedback",
         "value": "1.5s hold",
         "purpose": "The editor toolbar's Copy and Save read Copied / Saved with a checkmark before reverting."
+      },
+      {
+        "name": "pin-reading-fade",
+        "value": "text lands at once, holds 0.9s, then opacity 1 to 0 over 0.12s (Theme.Motion.fade)",
+        "purpose": "A pin's reading capsule after zoom, opacity, Copy, or Lock. Under Reduce Motion it simply goes after 0.9s."
+      },
+      {
+        "name": "pin-controls-fade",
+        "value": "0.12s (Theme.Motion.fade), opacity 0 to 1",
+        "purpose": "A pin's Close and More on hover. The pin's own moves, zoom, and picture fade never animate. Instant under Reduce Motion."
       }
     ]
   },
@@ -586,7 +596,7 @@
       "name": "Reading Capsule",
       "kind": "custom",
       "refersTo": "reading-capsule-light",
-      "description": "Rounded capsule for every live on-screen number, with optional color swatch. Light shown; Dark uses rgba(43,43,46,0.94) fill and 0.92 white ink.",
+      "description": "Rounded capsule for every live on-screen number (the overlay's readings and a pin's zoom, opacity, Copied, and Locked), with optional color swatch. Nothing in it animates on its own: geometry, text, and colors change at once, so no number trails the pointer; a surface that fades it animates only its opacity. Light shown; Dark uses rgba(43,43,46,0.94) fill and 0.92 white ink.",
       "html": "<div class=\"ds-reading\"><span class=\"ds-reading-swatch\"></span>812, 344   #3A7BD5</div>",
       "css": ".ds-reading{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 11px 0 10px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family: 'SF Pro Rounded', ui-rounded, system-ui, sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:pre;} .ds-reading-swatch{width:10px;height:10px;border-radius:5px;background:#3A7BD5;border:1px solid rgba(0,0,0,0.3);box-sizing:border-box;}"
     },
@@ -610,7 +620,7 @@
       "name": "Card Corner Button",
       "kind": "button",
       "refersTo": "card-corner-button",
-      "description": "24 pt dark round Close/More button in a hovered card's top corners.",
+      "description": "24 pt dark round Close/More button in a hovered card's or pin's top corners; a locked pin wears one with lock.fill as its lock mark.",
       "html": "<button class=\"ds-corner\" aria-label=\"Close\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M2 2l6 6M8 2l-6 6\"/></svg></button>",
       "css": ".ds-corner{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:none;border-radius:9999px;background:rgba(0,0,0,0.5);color:#FFFFFF;cursor:default;} .ds-corner:hover{background:rgba(0,0,0,0.62);} .ds-corner:active{background:rgba(0,0,0,0.72);} .ds-corner:focus-visible{outline:2px solid AccentColor;outline-offset:2px;}"
     },
@@ -669,6 +679,14 @@
       "description": "Translate Area's result: a borderless panel exactly over the selection holding the captured area with its translation drawn in place (each line painted over with its own background, the translation in the original's ink and size, semibold for headings), a 0.5 pt black 0.18 hairline (1 pt black 0.35 under Increase Contrast) and the window shadow; three card corner buttons (Copy Translation, Open in Panel, Close) fade in just outside its top-right corner while hovered, never over the text. Escape, a click, or another window taking the keys closes it; Option held shows the original.",
       "html": "<div class=\"ds-lens-wrap\"><div class=\"ds-lens-buttons\"><span>⧉</span><span>▢</span><span>✕</span></div><div class=\"ds-lens\"><div class=\"ds-lens-title\">发布说明 Release Notes</div><div class=\"ds-lens-p\">截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。</div><div class=\"ds-lens-p\">快速访问让每次捕获都只需点击一下即可。捕获中的文本可以复制、编辑和搜索。</div><div class=\"ds-lens-p\">文档：https://example.com/docs</div></div></div>",
       "css": ".ds-lens-wrap{width:420px;font-family:system-ui,'PingFang SC',sans-serif;} .ds-lens-buttons{display:flex;justify-content:flex-end;gap:6px;margin-bottom:6px;} .ds-lens-buttons span{width:24px;height:24px;border-radius:12px;background:rgba(0,0,0,0.5);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;} .ds-lens{padding:18px 20px;background:#fbfbfb;border:0.5px solid rgba(0,0,0,0.18);box-shadow:0 10px 30px rgba(0,0,0,0.25);color:#000;} .ds-lens-title{font-size:16px;font-weight:600;margin-bottom:10px;} .ds-lens-p{font-size:12px;line-height:1.5;margin-bottom:6px;}"
+    },
+    {
+      "name": "Pin",
+      "kind": "custom",
+      "refersTo": "pin-picture",
+      "description": "A picture kept above every app's windows: a borderless, non-activating floating panel on every Space and over full-screen apps that takes the keys only when clicked. Continuous corners from Settings (0-24 pt, 12 default), the system window shadow, a 0.5 pt black 0.18 hairline (1 pt black 0.35 under Increase Contrast), and a 1.5 pt keyboardFocusIndicatorColor ring inside the edge while key. On hover (at least 72 x 56 pt, unlocked) Close and More card corner buttons fade in 8 pt from the top corners; a reading capsule 10 pt above the bottom shows zoom, opacity, Copied, or Locked for 0.9 s, then fades over 0.12 s. Scroll or pinch zooms around the pointer (10-800%), Option-scroll fades the picture only (20-100%). A locked pin lets clicks through and wears a lock.fill disc where More would be.",
+      "html": "<div class=\"ds-pin\" tabindex=\"0\"><div class=\"ds-pin-pic\"></div><button class=\"ds-pin-btn ds-pin-close\" aria-label=\"Close\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\"><path d=\"M2 2l6 6M8 2l-6 6\"/></svg></button><button class=\"ds-pin-btn ds-pin-more\" aria-label=\"More\"><svg width=\"12\" height=\"4\" viewBox=\"0 0 12 4\" fill=\"currentColor\"><circle cx=\"2\" cy=\"2\" r=\"1.4\"/><circle cx=\"6\" cy=\"2\" r=\"1.4\"/><circle cx=\"10\" cy=\"2\" r=\"1.4\"/></svg></button><div class=\"ds-pin-reading\">150%</div></div>",
+      "css": ".ds-pin{position:relative;width:260px;height:170px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.25);} .ds-pin-pic{position:absolute;inset:0;border-radius:12px;background:linear-gradient(135deg,#F4F6FA,#D5DEEA);border:0.5px solid rgba(0,0,0,0.18);} .ds-pin:focus-visible{outline:none;} .ds-pin:focus-visible::after{content:'';position:absolute;inset:0;border-radius:12px;border:1.5px solid AccentColor;pointer-events:none;} .ds-pin-btn{position:absolute;top:8px;width:24px;height:24px;padding:0;border:none;border-radius:9999px;background:rgba(0,0,0,0.5);color:#fff;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s;} .ds-pin-close{left:8px;} .ds-pin-more{right:8px;} .ds-pin-btn:hover{background:rgba(0,0,0,0.62);} .ds-pin:hover .ds-pin-btn{opacity:1;} .ds-pin-reading{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);height:24px;padding:0 11px;display:flex;align-items:center;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;} @media (prefers-reduced-motion: reduce){.ds-pin-btn{transition:none;}}"
     },
     {
       "name": "In-Place Toolbar",
@@ -763,7 +781,7 @@
     ],
     "dos": [
       "**Do** use system semantic colors and `controlAccentColor` for every surface and state; add only black or white at the stated opacities.",
-      "**Do** make every floating control a full capsule (radius = height / 2) with concentric inner chips, and every picture a 12 pt continuous-corner card; the one exception is a picture being edited for export, which shows its own square edges.",
+      "**Do** make every floating control a full capsule (radius = height / 2) with concentric inner chips, and every picture a 12 pt continuous-corner card; the exceptions are a picture being edited for export, which shows its own square edges, and a pin, whose corners are the user's (0 to 24 pt, 12 by default).",
       "**Do** give floating elements a soft downward shadow plus a 0.5 pt hairline so they hold on white pages.",
       "**Do** put live numbers in a reading capsule: SF Pro Rounded 12 pt semibold with monospaced digits.",
       "**Do** keep text-bearing controls opaque over captures; use glass for the rim, not the fill.",
@@ -773,7 +791,7 @@
     ],
     "donts": [
       "**Don't** bring back Contact Sheet: no frame numbers, no captures joined into a strip, no film-edge or darkroom motifs.",
-      "**Don't** build dark heavy panels, bars, or strips; small dark round corner buttons over a hovered picture are the only dark chrome.",
+      "**Don't** build dark heavy panels, bars, or strips; small dark round corner buttons over a hovered picture, and a locked pin's mark in the same style, are the only dark chrome.",
       "**Don't** put glass, blur, or a material over the full-screen overlay; the room is a flat 26% fill.",
       "**Don't** use hard offset shadows, glows, or halos.",
       "**Don't** use the rounded face inside standard windows, or proportional digits in a changing number.",
