@@ -204,7 +204,7 @@ struct GeneralSettingsView: View {
             } header: {
                 Text("Pins", bundle: .module)
             } footer: {
-                Text("Pin a capture from its Quick Access card or Capture History, a picture from the clipboard or a file from the menu bar, or an area with Capture Area and Pin.", bundle: .module)
+                Text("Pin a capture from its Quick Access card or Capture History; the clipboard's picture, color, or text, or a picture file, from the menu bar; or an area with Capture Area and Pin.", bundle: .module)
                     .foregroundStyle(.secondary)
             }
         }

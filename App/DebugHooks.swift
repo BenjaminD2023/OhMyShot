@@ -241,6 +241,42 @@ struct DebugHooks {
             // Pins the drawn page, never anything from the screen or the clipboard: centered on the pointer's
             // display, or with x, y over that point in display points from its top-left corner, at 1:1.
             pinDemo(at: ["x", "y"].compactMap { Self.intParameter($0, in: url) })
+        case "pin-text-demo":
+            // Pins fixed demo text, never the clipboard's: code=1 for an indented snippet, long=1 for a
+            // paragraph that wraps at the card's width.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let has = { (name: String) in items.contains { $0.name == name && $0.value == "1" } }
+            let text = has("code")
+                ? "func pinned() {\n    let shortcut = \"⌃⌥⌘7\"\n    print(\"Capture Area and Pin: \\(shortcut)\")\n}"
+                : has("long")
+                    ? "截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。Quick Access keeps every capture one click away; the text in a capture can be copied, edited, and searched."
+                    : "brew install --cask ohmyshot"
+            pins.pin(text: text)
+            Log.app.notice("debug.pin-text-demo \(self.pins.debugSummary, privacy: .public)")
+        case "pin-color-demo":
+            // Pins a fixed color, never the clipboard's: hex=RRGGBB[AA] (no #), default the accent-like blue.
+            let hex = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "hex" }?.value ?? "3366FF"
+            if let color = PinColor.parse("#" + hex) {
+                pins.pin(color: color)
+            }
+            Log.app.notice("debug.pin-color-demo \(self.pins.debugSummary, privacy: .public)")
+        case "pin-render":
+            // Draws a pin behind the desktop picture and captures its window alone, nothing shown:
+            // kind=text|code|color|alpha, zoom=<percent>, mode=light|dark. Writes
+            // pin-render-<kind>-<zoom>-<mode>.png to the snapshot folder.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in items.first { $0.name == name }?.value }
+            let kind = value("kind") ?? "text"
+            let zoom = value("zoom").flatMap(Double.init) ?? 100
+            let mode = value("mode") ?? "light"
+            let content: PinController.Content? = switch kind {
+            case "code": .text("func pinned() {\n    let shortcut = \"⌃⌥⌘7\"\n    print(\"Capture Area and Pin: \\(shortcut)\")\n}")
+            case "color": PinColor.parse("#3366FF").map { .color($0) }
+            case "alpha": PinColor.parse("#3366FF80").map { .color($0) }
+            default: .text("截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。Quick Access keeps every capture one click away; the text in a capture can be copied, edited, and searched.")
+            }
+            guard let content else { return }
+            Task { await renderPin(content, name: "pin-render-\(kind)-\(Int(zoom))-\(mode)", zoom: CGFloat(zoom) / 100, dark: mode == "dark") }
         case "pin-act":
             // Acts on the newest pin: zoom=<percent>, opacity=<percent>, lock=1|0, move=dx,dy (points),
             // hide=1|0, close=all. Logs every pin.
@@ -452,6 +488,39 @@ struct DebugHooks {
             }
         } catch {
             Log.app.error("debug.snapshot failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Opens a pin of `content` behind the desktop picture, captures its window alone as the window server
+    /// draws it, and closes it.
+    func renderPin(_ content: PinController.Content, name: String, zoom: CGFloat, dark: Bool) async {
+        let window = pins.debugHiddenPin(content, zoom: zoom, dark: dark)
+        defer { window.orderOut(nil) }
+        // Long enough for the window server to have the pin's first frame.
+        try? await Task.sleep(for: .milliseconds(250))
+        do {
+            let shareable = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            guard let target = shareable.windows.first(where: { $0.windowID == CGWindowID(window.windowNumber) }) else {
+                Log.app.error("debug.pin-render no window \(window.windowNumber, privacy: .public)")
+                return
+            }
+            let configuration = SCScreenshotConfiguration()
+            configuration.dynamicRange = .sdr
+            configuration.showsCursor = false
+            let output = try await SCScreenshotManager.captureScreenshot(
+                contentFilter: SCContentFilter(desktopIndependentWindow: target),
+                configuration: configuration
+            )
+            guard let image = output.sdrImage else {
+                Log.app.error("debug.pin-render no image")
+                return
+            }
+            let file = Self.snapshotDirectory.appending(path: "\(name).png")
+            try FileManager.default.createDirectory(at: Self.snapshotDirectory, withIntermediateDirectories: true)
+            try await ImageExporter.write(image, to: file, format: .png)
+            Log.app.notice("debug.pin-render \(file.path(percentEncoded: false), privacy: .public) \(image.width, privacy: .public)x\(image.height, privacy: .public)")
+        } catch {
+            Log.app.error("debug.pin-render failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

@@ -16,7 +16,7 @@ struct PinAppearance: Equatable {
 /// window, so nothing around a pin catches the pointer.
 final class PinWindow: NSPanel {
     let pin: PinController.Pin
-    /// The picture's size in points at 100 percent.
+    /// The pin's size in points at 100 percent.
     let baseSize: CGSize
     private(set) var zoom: CGFloat
     private(set) var opacity: CGFloat = 1
@@ -31,10 +31,10 @@ final class PinWindow: NSPanel {
 
     init(pin: PinController.Pin, frame: CGRect, zoom: CGFloat, appearance: PinAppearance, actions: PinController.Actions) {
         self.pin = pin
-        baseSize = CGSize(width: CGFloat(pin.image.width) / pin.scale, height: CGFloat(pin.image.height) / pin.scale)
+        baseSize = Self.baseSize(of: pin.content)
         self.zoom = zoom
         self.actions = actions
-        pinView = PinView(image: pin.image, scale: pin.scale, appearance: appearance)
+        pinView = PinView(content: pin.content, appearance: appearance)
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
@@ -54,6 +54,23 @@ final class PinWindow: NSPanel {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    /// A color's swatch, in points.
+    static let swatchSize = CGSize(width: 128, height: 128)
+
+    /// How large a pin of `content` is at 100 percent: a picture at its own size, a text card as its text
+    /// lays out, a color as a swatch.
+    static func baseSize(of content: PinController.Content) -> CGSize {
+        switch content {
+        case .image(let image, let scale): CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
+        case .text(let text): PinText.cardSize(for: text)
+        case .color: swatchSize
+        }
+    }
+
+    var isPicture: Bool {
+        if case .image = pin.content { true } else { false }
     }
 
     override var canBecomeKey: Bool { !isLocked }
@@ -122,25 +139,45 @@ final class PinWindow: NSPanel {
 
     // MARK: Actions
 
+    /// Copies what the pin holds: the picture, the text, or the color's hex.
     func copyPin() {
-        actions.copy(pin)
+        switch pin.content {
+        case .image: actions.copy(pin)
+        case .text(let text): Self.copy(text)
+        case .color(let color): Self.copy(color.hex)
+        }
         pinView.showReading(String(localized: "Copied", bundle: .module))
     }
 
+    /// Copies a color pin's value as rgb().
+    func copyRGB() {
+        guard case .color(let color) = pin.content else { return }
+        Self.copy(color.rgb)
+        pinView.showReading(String(localized: "Copied", bundle: .module))
+    }
+
+    private static func copy(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    // Saving, marking up, and reading text are for pictures.
+
     func savePin() {
-        actions.save(pin)
+        if isPicture { actions.save(pin) }
     }
 
     func savePinAs() {
-        actions.saveAs(pin)
+        if isPicture { actions.saveAs(pin) }
     }
 
     func annotatePin() {
-        actions.annotate(pin)
+        if isPicture { actions.annotate(pin) }
     }
 
     func recognizePinText() {
-        actions.recognizeText(pin)
+        if isPicture { actions.recognizeText(pin) }
     }
 
     func closePin() {
@@ -152,12 +189,20 @@ final class PinWindow: NSPanel {
     }
 }
 
-/// A pin's picture: rounded as Settings says, a hairline edge, an accent ring while it has the keys, the
-/// Close and More buttons on hover, and a reading capsule for its zoom and opacity as they change.
+/// What a pin shows: a picture, a text card, or a color swatch, rounded as Settings says, with a hairline
+/// edge, an accent ring while it has the keys, the Close and More buttons on hover, and a reading capsule
+/// for its zoom and opacity as they change (a color's value rests there).
 final class PinView: NSView {
     weak var pinWindow: PinWindow?
 
-    private let imageLayer = CALayer()
+    private let content: PinController.Content
+    /// The picture, the card's fill, or the swatch's checkerboard: what corners, edge, and opacity apply to.
+    private let contentLayer = CALayer()
+    private let swatch = CALayer()
+    private let checker = PinCheckerLayer()
+    private let textView: PinTextView?
+    /// What the reading shows when nothing else is: a color's hex.
+    private var restingReading: String?
     private let ring = CALayer()
     private let reading = ReadingCapsule()
     /// A locked pin's lasting mark: a small dark disc in the card corner button's style, the one kind of
@@ -185,18 +230,37 @@ final class PinView: NSView {
         }
     }
 
-    init(image: CGImage, scale: CGFloat, appearance: PinAppearance) {
+    init(content: PinController.Content, appearance: PinAppearance) {
+        self.content = content
         look = appearance
+        if case .text(let text) = content {
+            textView = PinTextView(text: text)
+        } else {
+            textView = nil
+        }
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false
-        imageLayer.contents = image
-        imageLayer.contentsScale = scale
-        imageLayer.contentsGravity = .resize
-        imageLayer.minificationFilter = .trilinear
-        imageLayer.masksToBounds = true
-        imageLayer.cornerCurve = .continuous
-        layer?.addSublayer(imageLayer)
+        contentLayer.masksToBounds = true
+        contentLayer.cornerCurve = .continuous
+        layer?.addSublayer(contentLayer)
+        var scale: CGFloat = 2
+        switch content {
+        case .image(let image, let pictureScale):
+            scale = pictureScale
+            contentLayer.contents = image
+            contentLayer.contentsScale = pictureScale
+            contentLayer.contentsGravity = .resize
+            contentLayer.minificationFilter = .trilinear
+        case .text:
+            if let textView { addSubview(textView) }
+        case .color(let color):
+            // Translucent colors over the checkerboard, so the value never seems more solid than it is.
+            if color.alpha < 1 { contentLayer.addSublayer(checker) }
+            swatch.backgroundColor = color.original
+            contentLayer.addSublayer(swatch)
+            restingReading = color.hex
+        }
         ring.cornerCurve = .continuous
         // Inside the picture's edge, so kept to 1.5 pt, most of it over the hairline.
         ring.borderWidth = 1.5
@@ -218,17 +282,40 @@ final class PinView: NSView {
             addSubview(button)
         }
         setAccessibilityElement(true)
-        setAccessibilityRole(.image)
-        setAccessibilityLabel(String(localized: "Pin, \(Int(CGFloat(image.width) / scale)) by \(Int(CGFloat(image.height) / scale)) points", bundle: .module))
-        setAccessibilityCustomActions([
-            NSAccessibilityCustomAction(name: String(localized: "Copy", bundle: .module)) { [weak self] in self?.pinWindow?.copyPin(); return true },
-            NSAccessibilityCustomAction(name: String(localized: "Save", bundle: .module)) { [weak self] in self?.pinWindow?.savePin(); return true },
-            NSAccessibilityCustomAction(name: String(localized: "Annotate", bundle: .module)) { [weak self] in self?.pinWindow?.annotatePin(); return true },
-            NSAccessibilityCustomAction(name: String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.pinWindow?.recognizePinText(); return true },
-            NSAccessibilityCustomAction(name: String(localized: "Lock", bundle: .module)) { [weak self] in self?.pinWindow?.setLocked(true); return true },
-            NSAccessibilityCustomAction(name: String(localized: "Close", bundle: .module)) { [weak self] in self?.pinWindow?.closePin(); return true },
-        ])
+        var actions: [NSAccessibilityCustomAction] = []
+        func action(_ name: String, _ run: @escaping (PinWindow) -> Void) {
+            actions.append(NSAccessibilityCustomAction(name: name) { [weak self] in
+                guard let window = self?.pinWindow else { return false }
+                run(window)
+                return true
+            })
+        }
+        switch content {
+        case .image(let image, let pictureScale):
+            setAccessibilityRole(.image)
+            setAccessibilityLabel(String(localized: "Pin, \(Int(CGFloat(image.width) / pictureScale)) by \(Int(CGFloat(image.height) / pictureScale)) points", bundle: .module))
+            action(String(localized: "Copy", bundle: .module)) { $0.copyPin() }
+            action(String(localized: "Save", bundle: .module)) { $0.savePin() }
+            action(String(localized: "Annotate", bundle: .module)) { $0.annotatePin() }
+            action(String(localized: "Recognize Text", bundle: .module)) { $0.recognizePinText() }
+        case .text(let text):
+            setAccessibilityRole(.staticText)
+            setAccessibilityLabel(String(localized: "Text pin: \(PinText.displayed(text))", bundle: .module))
+            action(String(localized: "Copy", bundle: .module)) { $0.copyPin() }
+        case .color(let color):
+            setAccessibilityRole(.image)
+            setAccessibilityLabel(String(localized: "Color pin, \(color.hex)", bundle: .module))
+            action(String(localized: "Copy Hex", bundle: .module)) { $0.copyPin() }
+            action(String(localized: "Copy RGB", bundle: .module)) { $0.copyRGB() }
+        }
+        action(String(localized: "Lock", bundle: .module)) { $0.setLocked(true) }
+        action(String(localized: "Close", bundle: .module)) { $0.closePin() }
+        setAccessibilityCustomActions(actions)
         apply(appearance)
+        if let restingReading {
+            reading.text = restingReading
+            reading.layer.opacity = 1
+        }
     }
 
     @available(*, unavailable)
@@ -270,15 +357,26 @@ final class PinView: NSView {
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        imageLayer.cornerRadius = appearance.cornerRadius
+        contentLayer.cornerRadius = appearance.cornerRadius
         ring.cornerRadius = appearance.cornerRadius
-        // A hairline, so a white picture reads against a white window: 0.5 pt black 0.18, 1 pt black 0.35
-        // with Increase Contrast (always shown then).
         let border = appearance.border || contrast
-        imageLayer.borderWidth = border ? (contrast ? 1 : 0.5) : 0
-        imageLayer.borderColor = CGColor(gray: 0, alpha: contrast ? 0.35 : 0.18)
+        contentLayer.borderWidth = border ? (contrast ? 1 : 0.5) : 0
+        if case .text = content {
+            // The Text Result Card's materials: the reading capsule's fill and hairline at card size.
+            contentLayer.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
+            contentLayer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
+        } else {
+            // A hairline, so a white picture or swatch reads against a white window: 0.5 pt black 0.18,
+            // 1 pt black 0.35 with Increase Contrast (always shown then).
+            contentLayer.borderColor = CGColor(gray: 0, alpha: contrast ? 0.35 : 0.18)
+        }
         reading.applyAppearance(dark: dark, contrast: contrast)
+        // The checkerboard token: quiet in either appearance, a little firmer with Increase Contrast.
+        checker.colors = dark
+            ? (CGColor(gray: 0.20, alpha: 1), CGColor(gray: contrast ? 0.30 : 0.25, alpha: 1))
+            : (CGColor(gray: 1, alpha: 1), CGColor(gray: contrast ? 0.84 : 0.91, alpha: 1))
         CATransaction.commit()
+        textView?.needsDisplay = true
         updateRing()
     }
 
@@ -295,17 +393,33 @@ final class PinView: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        imageLayer.frame = bounds
+        contentLayer.frame = bounds
+        swatch.frame = contentLayer.bounds
+        checker.frame = contentLayer.bounds
         ring.frame = bounds
         // The reading 10 pt above the bottom edge, centered.
         let size = reading.layer.bounds.size
         reading.layer.frame.origin = CGPoint(x: ((bounds.width - size.width) / 2).rounded(), y: min(10, max(bounds.height - size.height, 0) / 2))
+        // A color's value rests there only while the swatch has room for it around the capsule.
+        if let restingReading, reading.text == restingReading {
+            reading.layer.opacity = bounds.width >= size.width + 16 && bounds.height >= size.height + 16 ? 1 : 0
+        }
         CATransaction.commit()
         // Close and More 8 pt in from the top corners; a locked pin's mark where More would be.
         let button = closeButton.intrinsicContentSize.width
         closeButton.frame = CGRect(x: 8, y: bounds.height - 8 - button, width: button, height: button)
         moreButton.frame = CGRect(x: bounds.width - 8 - button, y: bounds.height - 8 - button, width: button, height: button)
         lockMark.frame = moreButton.frame
+        if let textView {
+            let zoom = pinWindow?.zoom ?? 1
+            textView.zoom = zoom
+            textView.frame = bounds.insetBy(dx: PinText.padding.width * zoom, dy: PinText.padding.height * zoom)
+        }
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        checker.contentsScale = window?.backingScaleFactor ?? 2
     }
 
     /// Shows `text` in the reading capsule, then lets it fade after a moment.
@@ -322,6 +436,16 @@ final class PinView: NSView {
         readingFade = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(900))
             guard !Task.isCancelled, let self else { return }
+            // A color's value comes back in place of the passing reading.
+            if let resting = self.restingReading {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                self.reading.text = resting
+                self.needsLayout = true
+                self.layoutSubtreeIfNeeded()
+                CATransaction.commit()
+                return
+            }
             let fade = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Theme.Motion.fade
             CATransaction.begin()
             CATransaction.setAnimationDuration(fade)
@@ -333,8 +457,9 @@ final class PinView: NSView {
     func setPictureOpacity(_ opacity: CGFloat) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        imageLayer.opacity = Float(opacity)
+        contentLayer.opacity = Float(opacity)
         CATransaction.commit()
+        textView?.alphaValue = opacity
     }
 
     // MARK: Hover
@@ -415,7 +540,7 @@ final class PinView: NSView {
         guard let pin = pinWindow, pin.isKeyWindow, event.modifierFlags.contains(.command) else { return false }
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "c": pin.copyPin()
-        case "s": event.modifierFlags.contains(.shift) ? pin.savePinAs() : pin.savePin()
+        case "s" where pin.isPicture: event.modifierFlags.contains(.shift) ? pin.savePinAs() : pin.savePin()
         case "w": pin.closePin()
         case "=", "+": pin.setZoom(pin.zoom * 1.25)
         case "-": pin.setZoom(pin.zoom / 1.25)
@@ -452,12 +577,20 @@ final class PinView: NSView {
             if let symbol { menuItem.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
             return menuItem
         }
-        menu.addItem(item(String(localized: "Copy", bundle: .module), "doc.on.doc", key: "c") { pin.copyPin() })
-        menu.addItem(item(String(localized: "Save", bundle: .module), "square.and.arrow.down", key: "s") { pin.savePin() })
-        menu.addItem(item(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", key: "s", modifiers: [.command, .shift]) { pin.savePinAs() })
-        menu.addItem(.separator())
-        menu.addItem(item(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle") { pin.annotatePin() })
-        menu.addItem(item(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder") { pin.recognizePinText() })
+        switch content {
+        case .image:
+            menu.addItem(item(String(localized: "Copy", bundle: .module), "doc.on.doc", key: "c") { pin.copyPin() })
+            menu.addItem(item(String(localized: "Save", bundle: .module), "square.and.arrow.down", key: "s") { pin.savePin() })
+            menu.addItem(item(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", key: "s", modifiers: [.command, .shift]) { pin.savePinAs() })
+            menu.addItem(.separator())
+            menu.addItem(item(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle") { pin.annotatePin() })
+            menu.addItem(item(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder") { pin.recognizePinText() })
+        case .text:
+            menu.addItem(item(String(localized: "Copy Text", bundle: .module), "doc.on.doc", key: "c") { pin.copyPin() })
+        case .color:
+            menu.addItem(item(String(localized: "Copy Hex", bundle: .module), "number", key: "c") { pin.copyPin() })
+            menu.addItem(item(String(localized: "Copy RGB", bundle: .module), "eyedropper") { pin.copyRGB() })
+        }
         menu.addItem(.separator())
         let zoom = NSMenu()
         zoom.addItem(item(String(localized: "Actual Size", bundle: .module), nil, key: "0") { pin.setZoom(1) })
@@ -484,6 +617,89 @@ final class PinView: NSView {
         menu.addItem(item(String(localized: "Close", bundle: .module), "xmark") { pin.closePin() })
         menu.addItem(item(String(localized: "Close All Pins", bundle: .module), nil) { pin.closeAllPins() })
         return menu
+    }
+}
+
+/// A text card's text, laid out once at 100 percent and drawn scaled with the pin, so it wraps where it
+/// did at 100 percent at any zoom and stays sharp. It takes no clicks and is no element of its own: the
+/// pin drags from anywhere, and VoiceOver reads the pin, which carries the text.
+private final class PinTextView: NSView {
+    private let text: NSAttributedString
+    private let size: CGSize
+    var zoom: CGFloat = 1 {
+        didSet { if zoom != oldValue { needsDisplay = true } }
+    }
+
+    init(text: String) {
+        self.text = PinText.attributed(text)
+        size = PinText.textSize(for: text)
+        super.init(frame: .zero)
+        setAccessibilityElement(false)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        context.scaleBy(x: zoom, y: zoom)
+        text.draw(with: CGRect(origin: .zero, size: size), options: PinText.drawing, context: nil)
+        context.restoreGState()
+    }
+}
+
+/// The checkerboard under a translucent color: squares a fixed 8 pt on screen at any zoom, in the
+/// checkerboard token's grays.
+nonisolated private final class PinCheckerLayer: CALayer {
+    var colors: (light: CGColor, dark: CGColor) = (CGColor(gray: 1, alpha: 1), CGColor(gray: 0.91, alpha: 1)) {
+        didSet { setNeedsDisplay() }
+    }
+    private static let side: CGFloat = 8
+
+    override init() {
+        super.init()
+        needsDisplayOnBoundsChange = true
+        contentsScale = 2
+    }
+
+    override init(layer: Any) {
+        colors = (layer as? PinCheckerLayer)?.colors ?? colors
+        super.init(layer: layer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func draw(in context: CGContext) {
+        context.setFillColor(colors.light)
+        context.fill(bounds)
+        context.setFillColor(colors.dark)
+        let side = Self.side
+        var row = 0
+        var y = bounds.minY
+        while y < bounds.maxY {
+            var x = bounds.minX + (row.isMultiple(of: 2) ? 0 : side)
+            while x < bounds.maxX {
+                context.fill(CGRect(x: x, y: y, width: side, height: side))
+                x += 2 * side
+            }
+            y += side
+            row += 1
+        }
     }
 }
 

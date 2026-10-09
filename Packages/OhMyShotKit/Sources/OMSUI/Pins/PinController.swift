@@ -1,19 +1,24 @@
 import AppKit
 import OMSCore
 
-/// Pins: pictures kept above every app's windows, for reference while working — a capture, or a picture
-/// from the clipboard or a file. Each is its own small window: dragged to move, scrolled or pinched to
+/// Pins: things kept above every app's windows, for reference while working — a capture, a picture from
+/// the clipboard or a file, or the clipboard's text or color. Each is its own small window: dragged to move, scrolled or pinched to
 /// zoom, Option-scrolled to fade, moved with the arrows, closed with Escape, its close button, or a
 /// middle click; its menu holds the rest. A locked pin lets every click through and is unlocked from the
 /// menu bar. A pin keeps its own copy of the picture, so it outlives the capture's place in the history.
 public final class PinController {
-    /// A pinned picture and where it came from.
+    /// What is pinned and where it came from.
     public struct Pin {
         public let id: UUID
-        public let image: CGImage
-        /// Pixels per point.
-        public let scale: CGFloat
+        public let content: Content
         public let origin: Origin
+    }
+
+    public enum Content {
+        /// A picture, at `scale` pixels per point.
+        case image(CGImage, scale: CGFloat)
+        case text(String)
+        case color(PinColor)
     }
 
     public enum Origin: Equatable {
@@ -23,8 +28,8 @@ public final class PinController {
         case clipboard
     }
 
-    /// What a pin's menu does beyond the window itself; the composition root has the history, the
-    /// editor, and the OCR panel.
+    /// What a picture pin's menu does beyond the window itself; the composition root has the history,
+    /// the editor, and the OCR panel. Text and color pins copy their own text and values.
     public struct Actions {
         public var copy: (Pin) -> Void
         public var save: (Pin) -> Void
@@ -81,9 +86,24 @@ public final class PinController {
     /// on the pointer's display.
     @discardableResult
     public func pin(_ image: CGImage, scale: CGFloat, origin: Origin, over area: CGRect? = nil) -> UUID {
+        open(.image(image, scale: max(scale, 1)), origin: origin, over: area)
+    }
+
+    /// Pins text on a card, centered on the pointer's display.
+    @discardableResult
+    public func pin(text: String) -> UUID {
+        open(.text(text), origin: .clipboard, over: nil)
+    }
+
+    /// Pins a color as a swatch with its value, centered on the pointer's display.
+    @discardableResult
+    public func pin(color: PinColor) -> UUID {
+        open(.color(color), origin: .clipboard, over: nil)
+    }
+
+    private func open(_ content: Content, origin: Origin, over area: CGRect?) -> UUID {
         if areHidden { setHidden(false) }
-        let scale = max(scale, 1)
-        let size = CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
+        let size = PinWindow.baseSize(of: content)
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         var placed = PinGeometry.initialFrame(size: size, requested: area, visible: visible)
@@ -93,7 +113,7 @@ public final class PinController {
                 placed.frame = placed.frame.offsetBy(dx: 24, dy: -24)
             }
         }
-        let pin = Pin(id: UUID(), image: image, scale: scale, origin: origin)
+        let pin = Pin(id: UUID(), content: content, origin: origin)
         let window = PinWindow(pin: pin, frame: placed.frame, zoom: placed.zoom, appearance: appearance, actions: actions)
         window.onClose = { [weak self] in self?.close($0) }
         window.onCloseAll = { [weak self] in self?.closeAll() }
@@ -163,6 +183,26 @@ public final class PinController {
 
     /// The newest pin's window frame, for scripted checks.
     public var newestFrame: CGRect? { windows.last?.frame }
+
+    /// Opens a pin of `content` at `zoom` behind the desktop picture of the main display, in the light or
+    /// dark appearance and without its shadow, for a scripted capture of how pins draw: the window server
+    /// captures only windows on a display, and there nothing shows. It is no pin of the controller's; the
+    /// caller orders it out.
+    public func debugHiddenPin(_ content: Content, zoom: CGFloat, dark: Bool) -> NSWindow {
+        let base = PinWindow.baseSize(of: content)
+        let visible = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let window = PinWindow(
+            pin: Pin(id: UUID(), content: content, origin: .clipboard),
+            frame: CGRect(x: visible.minX + 40, y: visible.minY + 40, width: base.width * zoom, height: base.height * zoom),
+            zoom: zoom, appearance: appearance, actions: actions
+        )
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.hasShadow = false
+        window.orderFrontRegardless()
+        window.displayIfNeeded()
+        return window
+    }
 
     /// Acts on the newest pin as its controls would, for scripted checks.
     public func debugAct(zoom: CGFloat? = nil, opacity: CGFloat? = nil, locked: Bool? = nil, move: CGVector? = nil) {

@@ -74,7 +74,7 @@ final class CompositionRoot {
             pinEntries: [
                 .init(
                     title: String(localized: "Pin from Clipboard"),
-                    isEnabled: { PasteboardImage.mayHoldImage(.general) }
+                    isEnabled: { Self.clipboardMayHoldPin() }
                 ) { [weak self] in
                     self?.pinClipboard()
                 },
@@ -407,47 +407,70 @@ final class CompositionRoot {
 
     // MARK: Pins
 
+    /// What a picture pin's menu does; text and color pins copy their own values.
     private func makePinActions() -> PinController.Actions {
         PinController.Actions(
             copy: { pin in
+                guard case .image(let image, _) = pin.content else { return }
                 Task {
-                    guard let png = try? await ImageExporter.encode(pin.image, as: .png) else { return NSSound.beep() }
-                    PasteboardWriter.write(png: png, image: pin.image)
+                    guard let png = try? await ImageExporter.encode(image, as: .png) else { return NSSound.beep() }
+                    PasteboardWriter.write(png: png, image: image)
                 }
             },
             save: { [weak self] pin in
-                guard let self else { return }
+                guard let self, case .image(let image, _) = pin.content else { return }
                 if case .capture(let id) = pin.origin, let entry = history.item(id: id) {
                     _ = captures.save(fileAt: history.fileURL(for: entry))
                 } else {
-                    Task { _ = await self.captures.save(image: pin.image) }
+                    Task { _ = await self.captures.save(image: image) }
                 }
             },
             saveAs: { [weak self] pin in self?.savePinAs(pin) },
             annotate: { [weak self] pin in
-                guard let self else { return }
+                guard let self, case .image(let image, let scale) = pin.content else { return }
                 if case .capture(let id) = pin.origin, let entry = history.item(id: id) {
-                    annotations.annotate(entry, scale: pin.scale)
+                    annotations.annotate(entry, scale: scale)
                 } else {
-                    Task { await self.annotate(image: pin.image, scale: pin.scale, name: String(localized: "Pin")) }
+                    Task { await self.annotate(image: image, scale: scale, name: String(localized: "Pin")) }
                 }
             },
             recognizeText: { [weak self] pin in
-                self?.textCapture.openPanel(image: pin.image, scale: pin.scale, source: String(localized: "Pin"))
+                guard case .image(let image, let scale) = pin.content else { return }
+                self?.textCapture.openPanel(image: image, scale: scale, source: String(localized: "Pin"))
             }
         )
     }
 
-    /// Pins the picture on the clipboard, or beeps when there is none.
+    /// Whether the clipboard may hold something to pin, judged by its types alone: reading the types
+    /// never asks for clipboard access, reading the contents may.
+    private static func clipboardMayHoldPin() -> Bool {
+        let pasteboard = NSPasteboard.general
+        guard let types = pasteboard.types else { return false }
+        return PasteboardImage.mayHoldImage(pasteboard) || types.contains(.string) || types.contains(.color)
+    }
+
+    /// Pins what the clipboard holds: a picture first, then a color (a color, or text that is exactly a
+    /// color's value), then text. Beeps when there is nothing to pin.
     private func pinClipboard() {
+        let pasteboard = NSPasteboard.general
         let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
-        switch PasteboardImage.read(.general) {
+        switch PasteboardImage.read(pasteboard) {
         case .file(let url):
-            pin(fileAt: url, fallbackScale: scale)
+            return pin(fileAt: url, fallbackScale: scale)
         case .data(let data):
             guard let loaded = ImageLoader.load(data: data, fallbackScale: scale) else { return NSSound.beep() }
             pins.pin(loaded.image, scale: loaded.scale, origin: .clipboard)
+            return
         case nil:
+            break
+        }
+        // A copied file that is not a picture brings its name along as text: that is not what was meant.
+        if pasteboard.types?.contains(.fileURL) == true { return NSSound.beep() }
+        if let color = NSColor(from: pasteboard).flatMap({ PinColor($0.cgColor) }) {
+            pins.pin(color: color)
+        } else if let text = pasteboard.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let color = PinColor.parse(text) { pins.pin(color: color) } else { pins.pin(text: text) }
+        } else {
             NSSound.beep()
         }
     }
@@ -478,6 +501,7 @@ final class CompositionRoot {
     }
 
     private func savePinAs(_ pin: PinController.Pin) {
+        guard case .image(let image, _) = pin.content else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = FilenameTemplate.standard.name(date: .now, appName: nil) + "." + ImageExporter.Format.png.fileExtension
         panel.directoryURL = settings.exportDirectory
@@ -486,7 +510,7 @@ final class CompositionRoot {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task {
             do {
-                try await ImageExporter.encode(pin.image, as: .png).write(to: url)
+                try await ImageExporter.encode(image, as: .png).write(to: url)
             } catch {
                 Log.capture.error("Save As failed: \(error.localizedDescription, privacy: .public)")
                 NSSound.beep()
