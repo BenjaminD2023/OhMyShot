@@ -29,17 +29,19 @@ final class ColorPickerCoordinator {
         guard !overlay.isActive else { return }
         overlay.colorFormat = settings.colorFormat
         overlay.begin(mode: .area, purpose: .color) { [weak self] outcome in
-            guard case .color(let color, let point, _, let modifiers) = outcome else { return }
-            self?.deliver(color, at: point, modifiers: modifiers, copiesToClipboard: copiesToClipboard)
+            guard case .color(let color, let point, _, let modifiers, let keyboard) = outcome else { return }
+            self?.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard, copiesToClipboard: copiesToClipboard)
         }
     }
 
     /// A color taken off the screen, by the picker or by C over a magnifier: copied in the chosen notation
     /// and shown by where it was, or with Option shown on the color card, which copies nothing by itself.
-    /// - Parameter copiesToClipboard: false for scripted checks, which never touch the clipboard.
-    func deliver(_ color: ScreenColor, at point: CGPoint, modifiers: NSEvent.ModifierFlags, copiesToClipboard: Bool = true) {
+    /// - Parameters:
+    ///   - keyboard: a key took it, so the card takes the keyboard too.
+    ///   - copiesToClipboard: false for scripted checks, which never touch the clipboard.
+    func deliver(_ color: ScreenColor, at point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool = false, copiesToClipboard: Bool = true) {
         if modifiers.contains(.option) {
-            card.show(color, near: point)
+            card.show(color, near: point, format: settings.colorFormat, fromKeyboard: keyboard)
             return
         }
         let text = color.string(in: settings.colorFormat)
@@ -60,7 +62,7 @@ final class ColorPickerCoordinator {
         overlay.colorFormat = settings.colorFormat
         overlay.begin(mode: .area, purpose: .color) { [weak self] outcome in
             guard let self else { return }
-            if case .color(let color, _, _, _) = outcome {
+            if case .color(let color, _, _, _, _) = outcome {
                 card.showContrast(with: color)
             } else {
                 card.setPickingContrast(false)
@@ -72,7 +74,7 @@ final class ColorPickerCoordinator {
     /// The color card for `color`, against `other` when given, behind the desktop picture: its window, for
     /// a scripted capture. Nothing shows.
     func debugHiddenCard(_ color: ScreenColor, against other: ScreenColor?) -> NSWindow? {
-        card.show(color, near: NSScreen.main.map { CGPoint(x: $0.visibleFrame.midX, y: $0.visibleFrame.midY) } ?? .zero)
+        card.show(color, near: NSScreen.main.map { CGPoint(x: $0.visibleFrame.midX, y: $0.visibleFrame.midY) } ?? .zero, format: settings.colorFormat)
         if let other { card.showContrast(with: other) }
         return card.debugHide()
     }

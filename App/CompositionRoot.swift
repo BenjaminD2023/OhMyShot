@@ -130,6 +130,12 @@ final class CompositionRoot {
         }
 
         let settings = settings
+        observations.append(Task { [weak self] in
+            for await format in Observations({ settings.colorFormat }) {
+                // Every overlay's magnifier reads in it, not only Pick Color's: C copies it while capturing.
+                self?.overlay.colorFormat = format
+            }
+        })
         observations.append(Task { [weak statusItem] in
             for await visible in Observations({ settings.showMenuBarIcon }) {
                 statusItem?.setVisible(visible)
@@ -153,8 +159,8 @@ final class CompositionRoot {
         captures.openInEditor = { [weak self] entry, scale in
             self?.annotations.annotate(entry, scale: scale)
         }
-        captures.onColor = { [weak self] color, point, modifiers in
-            self?.colorPicker.deliver(color, at: point, modifiers: modifiers)
+        captures.onColor = { [weak self] color, point, modifiers, keyboard in
+            self?.colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard)
         }
         colorPicker.pin = { [weak self] color in
             guard let pinned = PinColor(color.cgColor) else { return NSSound.beep() }

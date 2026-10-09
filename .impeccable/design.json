@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-09T23:59:00Z",
+  "generatedAt": "2026-10-10T12:00:00Z",
   "title": "Design System: OhMyShot",
   "extensions": {
     "colorMeta": {
@@ -48,6 +48,11 @@
         "role": "neutral",
         "displayName": "Loupe Grid",
         "canonical": "CGColor(gray: 0, alpha: 0.08)"
+      },
+      "ruler-outline": {
+        "role": "neutral",
+        "displayName": "Ruler Outline",
+        "canonical": "CGColor(gray: 1, alpha: 0.85); 1.0 under Increase Contrast"
       },
       "reading-capsule-light": {
         "role": "neutral",
@@ -474,13 +479,25 @@
       "counter-label": {
         "displayName": "Counter Label",
         "purpose": "The label in a counter disc: SF Pro Rounded bold at half the disc's diameter, shrunk to fit 72% of it. Content drawn into the picture, not chrome."
+      },
+      "reading-title": {
+        "displayName": "Reading Title",
+        "purpose": "The color card's title, the color in the chosen notation: Theme.Typeface.reading(size: 15, weight: .semibold), 13 pt when longer than 12 characters. The contrast figures take 13 pt semibold."
+      },
+      "reading-value": {
+        "displayName": "Reading Value",
+        "purpose": "Each notation's value on the color card and the contrast color's hex: Theme.Typeface.reading(size: 12, weight: .medium)."
+      },
+      "field-label": {
+        "displayName": "Field Label",
+        "purpose": "The color card's row names, subtitle, and contrast verdicts, in secondary ink: Theme.Typeface.label(size: 11, weight: .medium)."
       }
     },
     "shadows": [
       {
         "name": "floating-card",
         "value": "0 6px 14px rgba(0,0,0,0.22)",
-        "purpose": "Quick Access cards over arbitrary screen content."
+        "purpose": "Quick Access cards over arbitrary screen content, the text result card, and the color card (34 pt of room in its panel)."
       },
       {
         "name": "floating-lens",
@@ -495,7 +512,7 @@
       {
         "name": "floating-reading",
         "value": "0 2px 8px rgba(0,0,0,0.18)",
-        "purpose": "Reading capsules (the in-place size reading among them) and the editor's style capsule."
+        "purpose": "Reading capsules (the in-place size reading, the ruler's readings, and the Copied reading among them) and the editor's style capsule."
       },
       {
         "name": "action-lift",
@@ -588,6 +605,26 @@
         "name": "pin-controls-fade",
         "value": "0.12s (Theme.Motion.fade), opacity 0 to 1",
         "purpose": "A pin's Close and More on hover. The pin's own moves, zoom, and the fade of its picture, card, or swatch never animate. Instant under Reduce Motion."
+      },
+      {
+        "name": "copied-reading-fade",
+        "value": "text lands at once, holds 0.9s, then opacity 1 to 0 over 0.12s (Theme.Motion.fade)",
+        "purpose": "The Copied reading after Pick Color, C over the magnifier, or Measure's Return. Under Reduce Motion it simply goes after 0.9s."
+      },
+      {
+        "name": "ruler-copied",
+        "value": "0.9s hold, then back at once",
+        "purpose": "After ⌘C in Measure, the box reading (else the width reading) says Copied, then shows the length again without a fade."
+      },
+      {
+        "name": "color-card-rise",
+        "value": "0.22s ease-out fade with a 6pt rise of the layer (Theme.Motion.slide); out over 0.12s",
+        "purpose": "The color card appearing and going, as the text result card does. Instant under Reduce Motion."
+      },
+      {
+        "name": "color-card-copied",
+        "value": "1.2s hold, symbol swapped without a transition",
+        "purpose": "A color card row's copy chip shows a checkmark after copying, then doc.on.doc again."
       }
     ]
   },
@@ -596,7 +633,7 @@
       "name": "Reading Capsule",
       "kind": "custom",
       "refersTo": "reading-capsule-light",
-      "description": "Rounded capsule for every live on-screen number (the overlay's readings and a pin's zoom, opacity, Copied, and Locked), with optional color swatch. A color pin's hex is the one resting value: it shows while no other reading does and a passing reading gives way back to it at once. Nothing in it animates on its own: geometry, text, and colors change at once, so no number trails the pointer; a surface that fades it animates only its opacity. Light shown; Dark uses rgba(43,43,46,0.94) fill and 0.92 white ink.",
+      "description": "Rounded capsule for every live on-screen number (the overlay's readings, the picker's color in the notation a click copies, the ruler's lengths and box size, a pin's zoom, opacity, Copied, and Locked, and the Copied reading), with optional color swatch. \"Copied\" is a reading: a pin's and the ruler's say it after ⌘C; a pick or Measure's Return shows \"Copied #3366FF\" in the Copied reading. A color pin's hex is the one resting value: it shows while no other reading does and a passing reading gives way back to it at once. Nothing in it animates on its own: geometry, text, and colors change at once, so no number trails the pointer; a surface that fades it animates only its opacity. Light shown; Dark uses rgba(43,43,46,0.94) fill and 0.92 white ink.",
       "html": "<div class=\"ds-reading\"><span class=\"ds-reading-swatch\"></span>812, 344   #3A7BD5</div>",
       "css": ".ds-reading{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 11px 0 10px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family: 'SF Pro Rounded', ui-rounded, system-ui, sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:pre;} .ds-reading-swatch{width:10px;height:10px;border-radius:5px;background:#3A7BD5;border:1px solid rgba(0,0,0,0.3);box-sizing:border-box;}"
     },
@@ -644,7 +681,7 @@
       "name": "Capture Overlay Selection",
       "kind": "custom",
       "refersTo": "reading-capsule-light",
-      "description": "Selection over the 26% dimmed room: white 1.5 pt edge over a 0.32 black outline, size reading centered 10 pt below.",
+      "description": "Selection over the 26% dimmed room: white 1.5 pt edge over a 0.32 black outline, size reading centered 10 pt below. C copies the color under the magnifier's center cell in Settings' notation and ends the capture, as in Snipaste (Capture Area, Capture Area and Pin, the Self-Timer's choosing, Annotate Area before an area is chosen, and Measure; not window mode or Capture Text); with Option it opens the color card. The magnifier's reading shows the color in Settings' notation (hex by default), what C copies.",
       "html": "<div class=\"ds-room\"><div class=\"ds-sel\"></div><div class=\"ds-sel-size\">1200 × 720</div></div>",
       "css": ".ds-room{position:relative;width:320px;height:200px;background:linear-gradient(135deg,#F4F6F8,#DDE3EA);overflow:hidden;} .ds-sel{position:absolute;left:60px;top:40px;width:200px;height:110px;border:1.5px solid #FFFFFF;box-shadow:0 0 0 1px rgba(0,0,0,0.32),inset 0 0 0 1px rgba(0,0,0,0.32),0 0 0 9999px rgba(0,0,0,0.26);} .ds-sel-size{position:absolute;left:50%;top:162px;transform:translateX(-50%);height:24px;line-height:24px;padding:0 11px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family: 'SF Pro Rounded', ui-rounded, system-ui, sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;}"
     },
@@ -735,11 +772,43 @@
       "description": "A mark's style beside the mark: white 0.97 capsule, 38 pt tall, 0.5 pt hairline, floating reading shadow, no glass. Color dots (chosen one ringed in the accent), size dots, variants, Shadow, Delete, split by hairlines. Light shown; Dark uses a 0.17 gray at 0.96 and white 0.12 hairline. With the Background tool it holds 14 pt fill swatches in 24 pt chips (No Background, Transparent, ten gradients, Blurred Capture, Background Color…, Picture; the one in use ringed in the accent), then Adjust (a 320 pt grouped Form in the system popover) and Presets chips. A combined image shows only Shadow and Delete.",
       "html": "<div class=\"ds-style\" role=\"toolbar\" aria-label=\"Arrow Style\"><button class=\"ds-dot ds-dot-on\" style=\"--c:#FF3B30\" aria-label=\"Red\"></button><button class=\"ds-dot\" style=\"--c:#FFCC00\" aria-label=\"Yellow\"></button><button class=\"ds-dot\" style=\"--c:#007AFF\" aria-label=\"Blue\"></button><button class=\"ds-dot\" style=\"--c:#FFFFFF\" aria-label=\"White\"></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip ds-size\" aria-label=\"Size 1\"><i style=\"width:4px;height:4px\"></i></button><button class=\"ds-cchip ds-size ds-cchip-on\" aria-label=\"Size 2\"><i style=\"width:7px;height:7px\"></i></button><button class=\"ds-cchip ds-size\" aria-label=\"Size 3\"><i style=\"width:10px;height:10px\"></i></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip ds-cchip-on\" aria-label=\"Classic Arrow\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M2.5 11.5L11 3M6 3h5v5\"/></svg></button><button class=\"ds-cchip\" aria-label=\"Open Arrow\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.3\" stroke-linecap=\"round\"><path d=\"M2.5 11.5L11 3M7 3h4v4\"/></svg></button><span class=\"ds-style-sep\"></span><button class=\"ds-cchip\" aria-label=\"Delete\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 14 14\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.4\" stroke-linecap=\"round\"><path d=\"M2.5 4h9M5.5 4V2.5h3V4M4 4l.6 7.5h4.8L10 4\"/></svg></button></div>",
       "css": ".ds-style{display:inline-flex;align-items:center;gap:2px;height:38px;padding:4px 4px 4px 8px;box-sizing:border-box;border-radius:9999px;background:rgba(255,255,255,0.97);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);color:rgba(0,0,0,0.85);} .ds-dot{width:24px;height:30px;padding:0;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:default;} .ds-dot::before{content:'';width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 0.5px rgba(0,0,0,0.18);} .ds-dot-on::before{box-shadow:0 0 0 0.5px rgba(0,0,0,0.18),0 0 0 2.5px #fff,0 0 0 4.5px AccentColor;} .ds-cchip{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:none;border-radius:9999px;background:transparent;color:inherit;cursor:default;} .ds-size{width:26px;} .ds-size i{display:block;border-radius:50%;background:currentColor;} .ds-cchip:hover{background:rgba(0,0,0,0.045);} .ds-cchip-on,.ds-cchip-on:hover{background:rgba(0,0,0,0.08);color:AccentColor;} .ds-cchip:focus-visible,.ds-dot:focus-visible{outline:2px solid AccentColor;outline-offset:1px;border-radius:9999px;} .ds-style-sep{width:1px;height:18px;margin:0 4px;background:rgba(0,0,0,0.1);} @media (prefers-contrast: more){.ds-style{border:1px solid rgba(0,0,0,0.35);} .ds-cchip-on{background:rgba(0,0,0,0.16);}}"
+    },
+    {
+      "name": "Pick Color",
+      "kind": "custom",
+      "refersTo": "reading-capsule-light",
+      "description": "One pixel's color off the frozen screen: always frozen, undimmed, no selection outline or All-In-One bar. Crosshair and magnifier as in a capture, but the magnifier's center cell is a 1.5 pt white outline over a 3 pt black 0.32 outline (0.7 under Increase Contrast) instead of the accent, and its reading shows the color in the notation a click copies. A click, Return, Enter, or C copies in Settings' notation (HEX default; RGB, HSL, OKLCH, Display P3) and closes, with the Copied reading by the point; Option with a click, Return, or C opens the Color Card instead. Arrows move one captured pixel, ten with Shift, warping the hidden pointer and crossing onto a neighboring display. VoiceOver hears the color as the overlay's value, announced after each nudge.",
+      "html": "<div class=\"ds-pick\"><div class=\"ds-pick-lens\"><div class=\"ds-pick-cell\"></div></div><div class=\"ds-pick-reading\"><span class=\"ds-pick-swatch\"></span>812, 344   rgb(51, 102, 255)</div></div>",
+      "css": ".ds-pick{position:relative;width:200px;height:180px;background:linear-gradient(135deg,#F4F6F8,#DDE3EA);} .ds-pick-lens{position:absolute;left:40px;top:12px;width:120px;height:120px;border-radius:50%;border:3px solid #FFFFFF;box-sizing:border-box;box-shadow:0 4px 12px rgba(0,0,0,0.28);background:repeating-linear-gradient(0deg,rgba(0,0,0,0.08) 0 1px,transparent 1px 8px),repeating-linear-gradient(90deg,rgba(0,0,0,0.08) 0 1px,transparent 1px 8px),#3366FF;} .ds-pick-cell{position:absolute;left:50%;top:50%;width:8px;height:8px;transform:translate(-50%,-50%);border:1.5px solid #FFFFFF;border-radius:1.5px;box-shadow:0 0 0 1px rgba(0,0,0,0.32),inset 0 0 0 0.75px rgba(0,0,0,0.32);} .ds-pick-reading{position:absolute;left:50%;top:142px;transform:translateX(-50%);height:24px;padding:0 11px 0 10px;display:inline-flex;align-items:center;gap:6px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:pre;} .ds-pick-swatch{width:10px;height:10px;border-radius:5px;background:#3366FF;border:1px solid rgba(0,0,0,0.3);box-sizing:border-box;}"
+    },
+    {
+      "name": "Copied Reading",
+      "kind": "custom",
+      "refersTo": "reading-capsule-light",
+      "description": "What was just copied, in a reading capsule 14 pt below and right of the point: \"Copied #3366FF\" with its swatch after Pick Color or C, \"Copied 120 × 36 pt\" without one after Measure's Return. A click-through panel one level above the overlay's screen-saver level, on every Space, never key. Shows at once, holds 0.9 s, fades over 0.12 s (just goes under Reduce Motion). VoiceOver hears its text. Measure's ⌘C uses the ruler's own reading instead.",
+      "html": "<div class=\"ds-copied\"><span class=\"ds-copied-swatch\"></span>Copied #3366FF</div>",
+      "css": ".ds-copied{height:24px;padding:0 11px 0 10px;display:inline-flex;align-items:center;gap:6px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:pre;animation:ds-copied-out 1.02s forwards;} .ds-copied-swatch{width:10px;height:10px;border-radius:5px;background:#3366FF;border:1px solid rgba(0,0,0,0.3);box-sizing:border-box;} @keyframes ds-copied-out{0%,88%{opacity:1}100%{opacity:0}} .ds-copied:hover{animation:none;} @media (prefers-reduced-motion: reduce){.ds-copied{animation:none;}}"
+    },
+    {
+      "name": "Color Card",
+      "kind": "card",
+      "refersTo": "color-card-light",
+      "description": "Option-click in Pick Color: a 368 pt card in the text result card's materials (white 0.97, 0.5 pt black 0.08 hairline, 12 pt continuous corners, floating card shadow, 14 pt padding). A 28 pt swatch (7 pt corner, capsule swatch edge); the title in the chosen notation, reading face 15 pt semibold (13 pt past 12 characters), Display P3 when the notation is HEX, RGB, or HSL and the color is outside sRGB; a subtitle only then (\"Outside sRGB: HEX, RGB, and HSL are the closest\"). Five 26 pt rows with 24 pt copy chips that show a checkmark for 1.2 s. Contrast… picks a second color, then reads Pick Another… and adds Background (16 pt swatch, Swap), WCAG 2 rounded down to a tenth with its level, and APCA Lc with what it allows. Pin makes a color pin. A level above pins; takes the keys only when opened from the keyboard or with VoiceOver on (Escape closes, ⌘C copies the lead notation, Tab with Full Keyboard Access, Space or Return presses, capsule focus ring). Gone after 15 s (60 s with VoiceOver), held while hovered or picking. Dark uses rgba(43,43,46,0.96) fill and a white 0.12 hairline.",
+      "html": "<div class=\"ds-cc\"><div class=\"ds-cc-head\"><span class=\"ds-cc-swatch\"></span><span class=\"ds-cc-title\">#3366FF</span><button class=\"ds-cc-icon\" aria-label=\"Close\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"><path d=\"M2 2l6 6M8 2l-6 6\"/></svg></button></div><div class=\"ds-cc-rule\"></div><div class=\"ds-cc-row\"><span class=\"ds-cc-label\">HEX</span><span class=\"ds-cc-value\">#3366FF</span><button class=\"ds-cc-icon\" aria-label=\"Copy HEX\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M2.5 6.5l2.3 2.3L9.5 3.5\"/></svg></button></div><div class=\"ds-cc-row\"><span class=\"ds-cc-label\">RGB</span><span class=\"ds-cc-value\">rgb(51, 102, 255)</span><button class=\"ds-cc-icon\" aria-label=\"Copy RGB\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.2\"><rect x=\"3.5\" y=\"3.5\" width=\"6.5\" height=\"7\" rx=\"1.2\"/><path d=\"M2 8V2.8C2 2.4 2.4 2 2.8 2H7\"/></svg></button></div><div class=\"ds-cc-row\"><span class=\"ds-cc-label\">HSL</span><span class=\"ds-cc-value\">hsl(225, 100%, 60%)</span><button class=\"ds-cc-icon\" aria-label=\"Copy HSL\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.2\"><rect x=\"3.5\" y=\"3.5\" width=\"6.5\" height=\"7\" rx=\"1.2\"/><path d=\"M2 8V2.8C2 2.4 2.4 2 2.8 2H7\"/></svg></button></div><div class=\"ds-cc-row\"><span class=\"ds-cc-label\">OKLCH</span><span class=\"ds-cc-value\">oklch(57.3% 0.234 265.3)</span><button class=\"ds-cc-icon\" aria-label=\"Copy OKLCH\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.2\"><rect x=\"3.5\" y=\"3.5\" width=\"6.5\" height=\"7\" rx=\"1.2\"/><path d=\"M2 8V2.8C2 2.4 2.4 2 2.8 2H7\"/></svg></button></div><div class=\"ds-cc-row\"><span class=\"ds-cc-label\">Display P3</span><span class=\"ds-cc-value\">color(display-p3 0.25 0.395 0.964)</span><button class=\"ds-cc-icon\" aria-label=\"Copy Display P3\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.2\"><rect x=\"3.5\" y=\"3.5\" width=\"6.5\" height=\"7\" rx=\"1.2\"/><path d=\"M2 8V2.8C2 2.4 2.4 2 2.8 2H7\"/></svg></button></div><div class=\"ds-cc-buttons\"><button class=\"ds-cc-chip\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 13 13\"><circle cx=\"6.5\" cy=\"6.5\" r=\"5.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.2\"/><path d=\"M6.5 1a5.5 5.5 0 0 0 0 11z\" fill=\"currentColor\"/></svg>Contrast…</button><button class=\"ds-cc-chip\"><svg width=\"12\" height=\"13\" viewBox=\"0 0 12 13\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.2\" stroke-linejoin=\"round\"><path d=\"M4 1.5h4M4.5 1.5v4L2.5 8h7l-2-2.5v-4M6 8v4.5\"/></svg>Pin</button></div></div>",
+      "css": ".ds-cc{width:368px;box-sizing:border-box;padding:14px;border-radius:12px;background:rgba(255,255,255,0.97);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 6px 14px rgba(0,0,0,0.22);color:rgba(0,0,0,0.85);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;} .ds-cc-head{display:flex;align-items:center;gap:10px;height:34px;} .ds-cc-swatch{width:28px;height:28px;border-radius:7px;background:#3366FF;border:0.5px solid rgba(0,0,0,0.18);box-sizing:border-box;flex:none;} .ds-cc-title{flex:1;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;} .ds-cc-rule{height:1px;background:rgba(0,0,0,0.1);margin:5px 0;} .ds-cc-row{display:flex;align-items:center;height:26px;} .ds-cc-label{width:74px;flex:none;font-size:11px;font-weight:500;color:rgba(0,0,0,0.5);} .ds-cc-value{flex:1;font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;} .ds-cc-icon{width:24px;height:24px;flex:none;padding:0;border:none;border-radius:12px;background:rgba(0,0,0,0.06);color:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;} .ds-cc-icon:hover{background:rgba(0,0,0,0.10);} .ds-cc-icon:active{background:rgba(0,0,0,0.16);} .ds-cc-buttons{display:flex;gap:8px;margin-top:12px;} .ds-cc-chip{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 11px;border:none;border-radius:9999px;background:rgba(0,0,0,0.06);color:rgba(0,0,0,0.85);font-family:system-ui,sans-serif;font-size:12px;font-weight:500;} .ds-cc-chip:hover{background:rgba(0,0,0,0.10);} .ds-cc-chip:active{background:rgba(0,0,0,0.16);} .ds-cc-icon:focus-visible,.ds-cc-chip:focus-visible{outline:3px solid color-mix(in srgb,AccentColor 50%,transparent);outline-offset:0;}"
+    },
+    {
+      "name": "Measure",
+      "kind": "custom",
+      "refersTo": "reading-capsule-light",
+      "description": "A PixelSnap-style ruler on the frozen screen: undimmed, no bar, no magnifier. From the pointer's pixel, 1 pt accent lines run to the nearest change of color each way (a channel more than 8/255 off), over a 3 pt white 0.85 outline (2 pt over 4 pt solid white under Increase Contrast), with 8 pt end caps, each length in a reading capsule by its line (\"120 pt\"; points to a tenth or whole pixels). A dragged box (accent edge over the outline, accent wash 0.08) is 0.6 opacity while dragged; let go, it shrinks to what it holds (background = the color most corners share) with an alignment haptic, then is solid, its size 10 pt below it. ⌘C copies and the reading says Copied for 0.9 s; Return copies and closes; Tab or U switches points and pixels (remembered); C takes the color. Pixels are copied per display when the pointer arrives and let go when it leaves.",
+      "html": "<div class=\"ds-ruler\"><div class=\"ds-ruler-target\"></div><div class=\"ds-ruler-h\"></div><div class=\"ds-ruler-v\"></div><div class=\"ds-ruler-w\">120 pt</div><div class=\"ds-ruler-hr\">36 pt</div></div>",
+      "css": ".ds-ruler{position:relative;width:300px;height:150px;background:#F5F6F8;} .ds-ruler-target{position:absolute;left:90px;top:57px;width:120px;height:36px;border-radius:8px;background:#FFFFFF;box-shadow:0 0 0 0.5px rgba(0,0,0,0.12);} .ds-ruler-h{position:absolute;left:90px;top:74.5px;width:120px;height:1px;background:AccentColor;box-shadow:0 0 0 1px rgba(255,255,255,0.85);} .ds-ruler-h::before,.ds-ruler-h::after{content:'';position:absolute;top:-4px;width:1px;height:8px;background:AccentColor;box-shadow:0 0 0 1px rgba(255,255,255,0.85);} .ds-ruler-h::before{left:0;} .ds-ruler-h::after{right:0;} .ds-ruler-v{position:absolute;left:160px;top:57px;width:1px;height:36px;background:AccentColor;box-shadow:0 0 0 1px rgba(255,255,255,0.85);} .ds-ruler-v::before,.ds-ruler-v::after{content:'';position:absolute;left:-4px;width:8px;height:1px;background:AccentColor;box-shadow:0 0 0 1px rgba(255,255,255,0.85);} .ds-ruler-v::before{top:0;} .ds-ruler-v::after{bottom:0;} .ds-ruler-w{position:absolute;left:150px;top:22px;transform:translateX(-50%);height:24px;padding:0 11px 0 10px;display:inline-flex;align-items:center;gap:6px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:pre;} .ds-ruler-hr{position:absolute;left:168px;top:63px;height:24px;padding:0 11px 0 10px;display:inline-flex;align-items:center;gap:6px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:pre;} @media (prefers-contrast: more){.ds-ruler-h,.ds-ruler-v,.ds-ruler-h::before,.ds-ruler-h::after,.ds-ruler-v::before,.ds-ruler-v::after{box-shadow:0 0 0 1px #FFFFFF;}}"
     }
   ],
   "narrative": {
     "northStar": "The Part of macOS Apple Forgot to Ship",
-    "overview": "OhMyShot looks like a system feature, not an app with a brand. Light and dark follow the system, the accent is the user's own macOS accent, and every window is a standard window with standard controls. What the app adds is a thin, consistent layer of softness for the things that float over other people's screens: continuous-corner cards, fully round capsules, gentle downward shadows, opaque white action capsules, and the rounded system face with fixed-width digits for every live reading. The capture is the hero; the chrome recedes.\n\nDensity is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, in-place annotation, the Self-Timer countdown, Quick Access cards, Capture History, the OCR panel, the annotation editor, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.\n\nThe confirmed rejection is the first world, \"Contact Sheet\" (rejected by the user on 2026-10-07): no frame numbers, no captures joined into one strip, no film-edge or darkroom motifs, no dark heavy panels, nothing that reads as a Linux utility.\n\nUnits: every dimension in this file is in points. The frontmatter writes points as `px` for tool compatibility; 1 pt renders as 2 device pixels on Retina displays.",
+    "overview": "OhMyShot looks like a system feature, not an app with a brand. Light and dark follow the system, the accent is the user's own macOS accent, and every window is a standard window with standard controls. What the app adds is a thin, consistent layer of softness for the things that float over other people's screens: continuous-corner cards, fully round capsules, gentle downward shadows, opaque white action capsules, and the rounded system face with fixed-width digits for every live reading. The capture is the hero; the chrome recedes.\n\nDensity is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, in-place annotation, the Self-Timer countdown, Pick Color and its color card, the Measure ruler, Quick Access cards, Capture History, the OCR panel, the annotation editor, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.\n\nThe confirmed rejection is the first world, \"Contact Sheet\" (rejected by the user on 2026-10-07): no frame numbers, no captures joined into one strip, no film-edge or darkroom motifs, no dark heavy panels, nothing that reads as a Linux utility.\n\nUnits: every dimension in this file is in points. The frontmatter writes points as `px` for tool compatibility; 1 pt renders as 2 device pixels on Retina displays.",
     "keyCharacteristics": [
       "System semantic colors and the user's accent carry all appearance; literal values are only black or white at fixed opacities.",
       "Continuous corners everywhere: 12 pt cards, fully round capsules for every control and reading.",
@@ -776,7 +845,7 @@
       },
       {
         "name": "The Soft Lift Rule",
-        "body": "Shadows are downward, widely blurred, and low opacity. No hard offset shadows, no glows, no halos.",
+        "body": "Shadows are downward, widely blurred, and low opacity. No hard offset shadows, no glows, no halos. A thin overlay line's contrast outline (the dark stroke under the white selection edge and crosshair, the white stroke under the ruler's accent lines) is part of the line, not a halo.",
         "section": "elevation"
       },
       {
@@ -801,7 +870,7 @@
       "**Do** give floating elements a soft downward shadow plus a 0.5 pt hairline so they hold on white pages.",
       "**Do** put live numbers in a reading capsule: SF Pro Rounded 12 pt semibold with monospaced digits.",
       "**Do** keep text-bearing controls opaque over captures; use glass for the rim, not the fill.",
-      "**Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills.",
+      "**Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills, 2 pt ruler lines over a 4 pt solid white outline.",
       "**Do** use standard windows, toolbars, grouped Forms, and SwiftUI glass button styles inside windows.",
       "**Do** build chips in floating controls (the All-In-One bar, the in-place toolbar, the tool rail, the style capsule) as borderless buttons with the chip fills, and hand-draw whole controls only where AppKit would render them dimmed (non-key floating panels), tracking presses like standard buttons."
     ],
@@ -809,7 +878,7 @@
       "**Don't** bring back Contact Sheet: no frame numbers, no captures joined into a strip, no film-edge or darkroom motifs.",
       "**Don't** build dark heavy panels, bars, or strips; small dark round corner buttons over a hovered picture or pin, and a locked pin's mark in the same style, are the only dark chrome.",
       "**Don't** put glass, blur, or a material over the full-screen overlay; the room is a flat 26% fill.",
-      "**Don't** use hard offset shadows, glows, or halos.",
+      "**Don't** use hard offset shadows, glows, or halos; a thin overlay line's contrast outline (dark under white, white under the ruler's accent) is not one.",
       "**Don't** use the rounded face inside standard windows, or proportional digits in a changing number.",
       "**Don't** invent a brand hue or tint chrome toward one; fixed hues belong to mark inks only.",
       "**Don't** animate anything that follows the pointer, or run any motion under Reduce Motion.",

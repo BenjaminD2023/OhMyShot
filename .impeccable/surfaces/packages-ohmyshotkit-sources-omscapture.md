@@ -69,3 +69,9 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   a horizontal glass toolbar in the All-In-One manner stands 10 pt below the selection against its right
   edge (above it, or inside it, without room), the editor's style capsule under it. The convention of
   Chinese screenshot tools, which the product's users prefer.
+- Pick Color and Measure (decided 2026-10-09, the user's settled choices): a click copies the color in
+  the notation chosen in Settings (HEX by default), and an Option-click opens the color card, which
+  copies nothing by itself. Measure is PixelSnap-style: lines from the pointer to the nearest change of
+  color on hover, plus a dragged box that snaps to what it holds. It reads in points by default, and Tab
+  switches to pixels, remembered. C over the magnifier copies the color as in Snipaste, also while
+  capturing. In the shipped code Return also copies (and closes Measure), and U also switches units.

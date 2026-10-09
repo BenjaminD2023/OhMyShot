@@ -23,8 +23,9 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode)
     func overlayViewDidCancel(_ view: OverlayView)
-    /// A color taken at a point in global space (a click, Return, or C), with the keys held then.
-    func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags)
+    /// A color taken at a point in global space (a click, Return, or C), with the keys held then; `keyboard`
+    /// says it was a key, so what follows can take the keyboard too.
+    func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool)
     /// The arrow keys moved the crosshair by whole pixels; down is positive.
     func overlayView(_ view: OverlayView, didNudge pixels: CGVector)
     /// The ruler's measurement, to copy; `ending` closes the overlay after it (Return).
@@ -76,6 +77,9 @@ final class OverlayView: NSView {
     private let loupeImage = CALayer()
     private let loupeGrid = CAShapeLayer()
     private let loupeCenter = CAShapeLayer()
+    /// While picking, the center cell is drawn as the crosshair is, white over a dark outline, so it holds
+    /// over the accent's own color: that cell is what a click copies.
+    private let loupeCenterOutline = CAShapeLayer()
     private let loupeRim = CAShapeLayer()
     private let loupePill = ReadingCapsule(showsSwatch: true)
     private let toolbar = AllInOneBar()
@@ -135,6 +139,7 @@ final class OverlayView: NSView {
             let measure = self.measure ?? MeasureOverlay(display: display)
             if measure.layer.superlayer == nil { layer?.insertSublayer(measure.layer, below: crosshairOutline) }
             measure.unit = measureUnit
+            measure.onRedraw = { [weak self] in self?.updateMeasureCrosshair() }
             self.measure = measure
         } else {
             measure?.layer.removeFromSuperlayer()
@@ -150,8 +155,8 @@ final class OverlayView: NSView {
         case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.")
         case .annotate: String(localized: "Drag over an area to mark it up. Press Space to choose a window instead. Press Escape to cancel.")
         case .screenshot: String(localized: "Drag to capture an area. Press Space to capture a window instead. Press Escape to cancel.")
-        case .color: String(localized: "Click to copy the color under the crosshair. Option-click shows it in every notation. The arrow keys move one pixel. Press Escape to cancel.")
-        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement and Tab switches between points and pixels. Press Escape to cancel.")
+        case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.")
+        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel.")
         }
         setAccessibilityHelp(help)
         withoutAnimation {
@@ -214,6 +219,14 @@ final class OverlayView: NSView {
         return capturedFrame?.color(atPixel: pixel.x, pixel.y)
     }
 
+    private func updateMeasureCrosshair() {
+        guard purpose == .measure, let measure, pointer != nil else { return }
+        withoutAnimation {
+            crosshair.isHidden = measure.showsLines
+            crosshairOutline.isHidden = measure.showsLines
+        }
+    }
+
     #if DEBUG
     /// Drags the ruler's box over `rect` (global space) and lets go, for scripted checks.
     func debugMeasureBox(_ rect: CGRect) {
@@ -226,11 +239,19 @@ final class OverlayView: NSView {
     var debugMeasurement: String? {
         measure?.measurement
     }
+
+    /// Copies the ruler's measurement as ⌘C does, for scripted checks.
+    func debugCopyMeasurement() {
+        guard let text = measure?.measurement else { return }
+        delegate?.overlayView(self, didCopyMeasurement: text, ending: false)
+        measure?.flashCopied()
+    }
     #endif
 
     func setMeasureUnit(_ unit: MeasureUnit) {
         measure?.unit = unit
         setAccessibilityValue(measure?.accessibilityValue)
+        if measure?.accessibilityValue != nil { announceValue() }
     }
 
     /// Hands the display to in-place annotation: the frozen screen stays; the selection, readings,
@@ -368,10 +389,11 @@ final class OverlayView: NSView {
         }
         switch purpose {
         case .color:
-            delegate?.overlayView(self, didPickColorAt: global(convert(event.locationInWindow, from: nil)), modifiers: event.modifierFlags)
+            delegate?.overlayView(self, didPickColorAt: global(convert(event.locationInWindow, from: nil)), modifiers: event.modifierFlags, keyboard: false)
         case .measure:
             measure?.endBox()
             setAccessibilityValue(measure?.accessibilityValue)
+            announceValue()
         case .screenshot, .text, .annotate:
             delegate?.overlayView(self, didReleaseWith: event.modifierFlags)
         }
@@ -409,7 +431,7 @@ final class OverlayView: NSView {
             }
             delegate?.overlayView(self, didNudge: CGVector(dx: direction.dx * step, dy: direction.dy * step))
         case 36, 76 where purpose == .color:
-            if let pointer { delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags) }
+            if let pointer { delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags, keyboard: true) }
         case 36, 76 where purpose == .measure:
             if let text = measure?.measurement { delegate?.overlayView(self, didCopyMeasurement: text, ending: true) }
         case 48 where purpose == .measure:
@@ -418,8 +440,9 @@ final class OverlayView: NSView {
             if character == "u", purpose == .measure, let measure {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
             } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose != .text, let pointer, capturedFrame != nil {
-                // C takes the color under the crosshair, as in Snipaste: from the magnifier while capturing.
-                delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: [])
+                // C takes the color under the crosshair, as in Snipaste: from the magnifier while capturing. With
+                // Option it opens the color card, as an Option-click does.
+                delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags.intersection(.option), keyboard: true)
             } else {
                 super.keyDown(with: event)
             }
@@ -431,7 +454,18 @@ final class OverlayView: NSView {
         guard purpose == .measure, event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "c",
               let text = measure?.measurement else { return super.performKeyEquivalent(with: event) }
         delegate?.overlayView(self, didCopyMeasurement: text, ending: false)
+        measure?.flashCopied()
         return true
+    }
+
+    /// Tells VoiceOver what the crosshair is on now (the color, or the measurement), for keys that move it
+    /// or change the reading; the pointer's own moves only update the value.
+    func announceValue() {
+        guard let value = accessibilityValue() as? String, !value.isEmpty else { return }
+        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
+            .announcement: value,
+            .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+        ])
     }
 
     override func keyUp(with event: NSEvent) {
@@ -499,8 +533,13 @@ final class OverlayView: NSView {
         )
         loupeCenter.fillColor = nil
         loupeCenter.lineWidth = 1.5
+        loupeCenterOutline.frame = lensBounds
+        loupeCenterOutline.path = loupeCenter.path
+        loupeCenterOutline.fillColor = nil
+        loupeCenterOutline.lineWidth = 3
         loupe.addSublayer(loupeImage)
         loupe.addSublayer(loupeGrid)
+        loupe.addSublayer(loupeCenterOutline)
         loupe.addSublayer(loupeCenter)
 
         // A soft shadow under the lens and a white rim around it, both outside the masked lens.
@@ -536,7 +575,10 @@ final class OverlayView: NSView {
         let outlineOpacity = increasedContrast ? Theme.Overlay.outlineOpacityIncreasedContrast : Theme.Overlay.outlineOpacity
         outline.strokeColor = CGColor(gray: 0, alpha: outlineOpacity)
         crosshairOutline.strokeColor = CGColor(gray: 0, alpha: outlineOpacity)
-        loupeCenter.strokeColor = Theme.cgColor(.controlAccentColor, for: effectiveAppearance)
+        let picking = purpose == .color
+        loupeCenter.strokeColor = picking ? .white : Theme.cgColor(.controlAccentColor, for: effectiveAppearance)
+        loupeCenterOutline.strokeColor = CGColor(gray: 0, alpha: outlineOpacity)
+        loupeCenterOutline.isHidden = !picking
         let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         sizePill.applyAppearance(dark: isDark, contrast: increasedContrast)
         loupePill.applyAppearance(dark: isDark, contrast: increasedContrast)
@@ -627,9 +669,11 @@ final class OverlayView: NSView {
         crosshair.isHidden = false
         crosshairOutline.isHidden = false
         if purpose == .measure {
-            // The ruler reads the screen itself; no magnifier.
+            // The ruler reads the screen itself; no magnifier. Its lines cross at the pointer, so the drawn
+            // crosshair shows only while they do not: before the pixels are in, or while a box is up.
             for layer in [loupe, loupeRim, loupeShadow, loupePill.layer] { layer.isHidden = true }
             measure?.movePointer(to: point)
+            updateMeasureCrosshair()
             setAccessibilityValue(measure?.accessibilityValue)
             return
         }
@@ -647,8 +691,8 @@ final class OverlayView: NSView {
             loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image)
             let color = frame.color(atPixel: pixel.x, pixel.y)
             loupePill.swatch = color?.cgColor
-            // Picking, the reading is what a click copies; capturing, the hex.
-            let value = color.map { purpose == .color ? $0.string(in: colorFormat) : $0.hex }
+            // The reading is what a click (or C) copies, in Settings' notation.
+            let value = color.map { $0.string(in: colorFormat) }
             loupePill.text = value.map { "\(pixel.x), \(pixel.y)   \($0)" } ?? "\(pixel.x), \(pixel.y)"
             // VoiceOver hears the color under the crosshair while picking.
             if purpose == .color { setAccessibilityValue(value) }

@@ -24,23 +24,27 @@ final class MeasureCoordinator {
         overlay.measureUnit = settings.measureUnit
         overlay.colorFormat = settings.colorFormat
         overlay.onMeasureUnitChange = { [weak self] unit in self?.settings.measureUnit = unit }
-        overlay.onCopyMeasurement = { [weak self] text in self?.copy(text, toClipboard: copiesToClipboard) }
+        overlay.onCopyMeasurement = { [weak self] text, point, closing in
+            self?.copy(text, toClipboard: copiesToClipboard, closingAt: closing ? point : nil)
+        }
         overlay.begin(mode: .area, purpose: .measure) { [weak self] outcome in
             guard let self else { return }
             overlay.onMeasureUnitChange = nil
             overlay.onCopyMeasurement = nil
-            if case .color(let color, let point, _, let modifiers) = outcome {
-                colorPicker.deliver(color, at: point, modifiers: modifiers, copiesToClipboard: copiesToClipboard)
+            if case .color(let color, let point, _, let modifiers, let keyboard) = outcome {
+                colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard, copiesToClipboard: copiesToClipboard)
             }
         }
     }
 
-    private func copy(_ text: String, toClipboard: Bool) {
+    /// Copies the measurement. ⌘C leaves the overlay up, and its reading says "Copied"; Return closes it, and
+    /// the copied reading shows by where the crosshair was.
+    private func copy(_ text: String, toClipboard: Bool, closingAt point: CGPoint?) {
         if toClipboard {
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.setString(text, forType: .string)
         }
-        copied.show(String(localized: "Copied \(text)"), near: NSEvent.mouseLocation)
+        if let point { copied.show(String(localized: "Copied \(text)"), near: point) }
     }
 }

@@ -21,7 +21,7 @@ final class CaptureCoordinator {
     /// Opens a capture in the annotation editor: its record and its pixels per point.
     var openInEditor: ((HistoryItem, CGFloat) -> Void)?
     /// A color taken with C over the magnifier while capturing: where it was, and the keys held then.
-    var onColor: ((ScreenColor, CGPoint, NSEvent.ModifierFlags) -> Void)?
+    var onColor: ((ScreenColor, CGPoint, NSEvent.ModifierFlags, Bool) -> Void)?
     /// Receives a capture to pin where it was taken, with its record in the history. Set by the
     /// composition root, which has the pins.
     var onPin: ((CapturedFrame, HistoryItem?) -> Void)?
@@ -66,7 +66,7 @@ final class CaptureCoordinator {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         overlay.onAnnotate = { [weak self] request in self?.annotateInPlace(request, appName: app, copiesToClipboard: copiesToClipboard) }
         overlay.begin(mode: .area, purpose: .annotate) { [weak self] outcome in
-            if case .color(let color, let point, _, let modifiers) = outcome { self?.onColor?(color, point, modifiers) }
+            if case .color(let color, let point, _, let modifiers, let keyboard) = outcome { self?.onColor?(color, point, modifiers, keyboard) }
         }
     }
 
@@ -135,8 +135,8 @@ final class CaptureCoordinator {
                 Task { await self?.pin(area: rect, frozen: frozen, appName: app) }
             case .window(let target, _):
                 Task { await self?.pin(window: target) }
-            case .color(let color, let point, _, let modifiers):
-                self?.onColor?(color, point, modifiers)
+            case .color(let color, let point, _, let modifiers, let keyboard):
+                self?.onColor?(color, point, modifiers, keyboard)
             case .annotated, .cancelled:
                 break
             }
@@ -219,8 +219,8 @@ final class CaptureCoordinator {
                 self?.countDown(to: .area(rect), seconds: seconds, copiesToClipboard: copiesToClipboard)
             case .window(let target, _):
                 self?.countDown(to: .window(target), seconds: seconds, copiesToClipboard: copiesToClipboard)
-            case .color(let color, let point, _, let modifiers):
-                self?.onColor?(color, point, modifiers)
+            case .color(let color, let point, _, let modifiers, let keyboard):
+                self?.onColor?(color, point, modifiers, keyboard)
             case .annotated, .cancelled:
                 break
             }
@@ -383,8 +383,8 @@ final class CaptureCoordinator {
                 // A window is captured on its own, frozen or not: with its shadow and its transparent
                 // corners, which the frozen screen does not have.
                 Task { await self?.captureWindow(target, copiesToClipboard: copiesToClipboard) }
-            case .color(let color, let point, _, let modifiers):
-                self?.onColor?(color, point, modifiers)
+            case .color(let color, let point, _, let modifiers, let keyboard):
+                self?.onColor?(color, point, modifiers, keyboard)
             case .annotated, .cancelled:
                 break
             }

@@ -14,6 +14,12 @@ final class MeasureOverlay {
         didSet { if unit != oldValue { redraw() } }
     }
 
+    /// Runs after every redraw, the lines' coming in included, for the overlay's crosshair.
+    var onRedraw: (() -> Void)?
+
+    /// Whether the lines from the pointer are up; they cross at the pointer, in place of the crosshair.
+    var showsLines: Bool { !lines.isHidden }
+
     private let display: DisplayInfo
     private var frame: CapturedFrame?
     private var grid: PixelGrid?
@@ -27,6 +33,8 @@ final class MeasureOverlay {
     private var boxPixels: (width: Int, height: Int)?
     /// The two lines' lengths in pixels, for copying.
     private var cross: (width: Int, height: Int)?
+    /// While set, the reading says "Copied", as a pin's reading does.
+    private var copiedFeedback: Task<Void, Never>?
 
     private let linesHalo = CAShapeLayer()
     private let lines = CAShapeLayer()
@@ -84,6 +92,8 @@ final class MeasureOverlay {
 
     /// Lets the frame and its pixels go, and forgets what was measured.
     func clear() {
+        copiedFeedback?.cancel()
+        copiedFeedback = nil
         gridBuild?.cancel()
         gridBuild = nil
         frame = nil
@@ -100,6 +110,11 @@ final class MeasureOverlay {
         withoutAnimation {
             lines.strokeColor = accent
             boxEdge.strokeColor = accent
+            // Increase Contrast doubles the accent edges, as it does the overlay's other lines.
+            lines.lineWidth = contrast ? 2 : 1
+            boxEdge.lineWidth = contrast ? 2 : 1
+            linesHalo.lineWidth = contrast ? 4 : 3
+            boxHalo.lineWidth = contrast ? 4 : 3
             // A white halo keeps the accent line on any background, the accent's own color included.
             let halo = CGColor(gray: 1, alpha: contrast ? 1 : 0.85)
             linesHalo.strokeColor = halo
@@ -114,11 +129,30 @@ final class MeasureOverlay {
 
     // MARK: Input
 
-    /// The pointer, in the overlay's coordinates; nil when it is on another display.
+    /// The pointer, in the overlay's coordinates; nil when it is on another display, which lets this
+    /// display's pixels go until the pointer comes back (copying them again takes tens of milliseconds).
     func movePointer(to point: CGPoint?) {
         pointer = point
-        if point != nil { buildGrid() }
+        if point != nil {
+            buildGrid()
+        } else {
+            gridBuild?.cancel()
+            gridBuild = nil
+            grid = nil
+        }
         guard boxStart == nil else { return }
+        redraw()
+    }
+
+    /// The reading says "Copied" for a moment: the box's, or else the line across's.
+    func flashCopied() {
+        copiedFeedback?.cancel()
+        copiedFeedback = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled, let self else { return }
+            self.copiedFeedback = nil
+            self.redraw()
+        }
         redraw()
     }
 
@@ -152,6 +186,8 @@ final class MeasureOverlay {
         if let grid, let snapped = grid.contentBounds(in: pixelRect(drawn)) {
             box = pointRect(snapped)
             boxPixels = (Int(snapped.width), Int(snapped.height))
+            // A tap on the trackpad as the box takes its content's edges.
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
     }
 
@@ -182,7 +218,10 @@ final class MeasureOverlay {
             drawLines()
             drawBox()
         }
+        onRedraw?()
     }
+
+    private var copiedText: String { String(localized: "Copied") }
 
     /// The lines from the pointer, while no box is drawn or shown: a box keeps the screen to itself until a
     /// click clears it, rather than lines running out from its corner.
@@ -217,15 +256,22 @@ final class MeasureOverlay {
 
         // Each length by its line: above the middle of the line across, right of the middle of the line
         // down; on the other side where the display's edge is too close.
-        widthReading.text = unit.reading(across.count, pixelsPerPoint: scale)
+        widthReading.text = copiedFeedback != nil ? copiedText : unit.reading(across.count, pixelsPerPoint: scale)
         heightReading.text = unit.reading(down.count, pixelsPerPoint: scale)
         let widthSize = widthReading.layer.bounds.size, heightSize = heightReading.layer.bounds.size
         var widthOrigin = CGPoint(x: (left + right) / 2 - widthSize.width / 2, y: row + 8)
         if widthOrigin.y + widthSize.height > size.height - 6 { widthOrigin.y = row - 8 - widthSize.height }
         var heightOrigin = CGPoint(x: column + 8, y: (top + bottom) / 2 - heightSize.height / 2)
         if heightOrigin.x + heightSize.width > size.width - 6 { heightOrigin.x = column - 8 - heightSize.width }
-        widthReading.layer.frame.origin = clamped(widthOrigin, size: widthSize)
-        heightReading.layer.frame.origin = clamped(heightOrigin, size: heightSize)
+        widthOrigin = clamped(widthOrigin, size: widthSize)
+        heightOrigin = clamped(heightOrigin, size: heightSize)
+        // On something small both lines' middles are near the pointer: the length down steps below the line
+        // across rather than overlap the length across.
+        if CGRect(origin: widthOrigin, size: widthSize).insetBy(dx: -2, dy: -2).intersects(CGRect(origin: heightOrigin, size: heightSize)) {
+            heightOrigin = clamped(CGPoint(x: heightOrigin.x, y: row - 8 - heightSize.height), size: heightSize)
+        }
+        widthReading.layer.frame.origin = widthOrigin
+        heightReading.layer.frame.origin = heightOrigin
         widthReading.layer.isHidden = false
         heightReading.layer.isHidden = false
     }
@@ -238,10 +284,12 @@ final class MeasureOverlay {
         let path = CGPath(rect: box, transform: nil)
         boxHalo.path = path
         boxEdge.path = path
-        // Dashed while it is drawn, solid once it has snapped.
-        boxEdge.lineDashPattern = boxStart == nil ? nil : [4, 3]
-        for layer in [boxHalo, boxEdge] { layer.isHidden = false }
-        boxReading.text = unit.reading(width: boxPixels.width, height: boxPixels.height, pixelsPerPoint: scale)
+        // Lighter while it is drawn, solid once it has snapped.
+        for layer in [boxHalo, boxEdge] {
+            layer.isHidden = false
+            layer.opacity = boxStart == nil ? 1 : 0.6
+        }
+        boxReading.text = copiedFeedback != nil ? copiedText : unit.reading(width: boxPixels.width, height: boxPixels.height, pixelsPerPoint: scale)
         let readingSize = boxReading.layer.bounds.size
         var origin = CGPoint(x: box.midX - readingSize.width / 2, y: box.minY - 10 - readingSize.height)
         if origin.y < 6 { origin.y = box.maxY + 10 }

@@ -9,6 +9,7 @@ colors:
   room-dim: "rgba(0,0,0,0.26)"
   room-dim-contrast: "rgba(0,0,0,0.45)"
   loupe-grid: "rgba(0,0,0,0.08)"
+  ruler-outline: "rgba(255,255,255,0.85)"
   reading-capsule-light: "rgba(255,255,255,0.96)"
   reading-capsule-dark: "rgba(43,43,46,0.94)"
   reading-ink-light: "rgba(0,0,0,0.85)"
@@ -105,6 +106,20 @@ typography:
   counter-label:
     fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
     fontWeight: 700
+  reading-title:
+    fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
+    fontSize: "15px"
+    fontWeight: 600
+    fontFeature: "\"tnum\" 1"
+  reading-value:
+    fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
+    fontSize: "12px"
+    fontWeight: 500
+    fontFeature: "\"tnum\" 1"
+  field-label:
+    fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
+    fontSize: "11px"
+    fontWeight: 500
 rounded:
   card: "12px"
   capsule: "9999px"
@@ -247,6 +262,18 @@ components:
   pin-color:
     rounded: "{rounded.card}"
     size: "128px"
+  color-card-light:
+    backgroundColor: "{colors.capsule-surface-light}"
+    typography: "{typography.reading-value}"
+    rounded: "{rounded.card}"
+    padding: "14px"
+    width: "368px"
+  color-card-dark:
+    backgroundColor: "{colors.capsule-surface-dark}"
+    typography: "{typography.reading-value}"
+    rounded: "{rounded.card}"
+    padding: "14px"
+    width: "368px"
 ---
 
 # Design System: OhMyShot
@@ -257,7 +284,7 @@ components:
 
 OhMyShot looks like a system feature, not an app with a brand. Light and dark follow the system, the accent is the user's own macOS accent, and every window is a standard window with standard controls. What the app adds is a thin, consistent layer of softness for the things that float over other people's screens: continuous-corner cards, fully round capsules, gentle downward shadows, opaque white action capsules, and the rounded system face with fixed-width digits for every live reading. The capture is the hero; the chrome recedes.
 
-Density is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, in-place annotation, the Self-Timer countdown, Quick Access cards, Capture History, the OCR panel, the annotation editor, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.
+Density is low and the vocabulary is small. A handful of shapes (12 pt cards, capsules, one circular loupe) and a handful of tints (black and white at stated opacities over system colors) cover every shipped surface: the capture overlay, the All-In-One bar, in-place annotation, the Self-Timer countdown, Pick Color and its color card, the Measure ruler, Quick Access cards, Capture History, the OCR panel, the annotation editor, and Settings. Light and dark are first-class and are resolved per view, and Reduce Motion, Reduce Transparency, and Increase Contrast each have a shipped, specific response rather than a generic fallback.
 
 The confirmed rejection is the first world, "Contact Sheet" (rejected by the user on 2026-10-07): no frame numbers, no captures joined into one strip, no film-edge or darkroom motifs, no dark heavy panels, nothing that reads as a Linux utility.
 
@@ -276,13 +303,14 @@ Units: every dimension in this file is in points. The frontmatter writes points 
 A system-colored world: macOS semantic colors and the user's accent do the work, and the app's own values are neutral black and white at stated opacities.
 
 ### Primary
-- **The User's Accent** (`AccentColor`, AppKit `controlAccentColor`): the only hue the app ever uses for state. It marks the selected mode's symbol in the All-In-One bar, the tool in hand in the editor's rail and in the in-place toolbar, the in-place toolbar's Copy check, the selected variant in the style capsule, the ring around the chosen color dot, the editor's selection box and handle rings, the center cell outline in the loupe, and the 3 pt selection ring around a selected Capture History card. It is never a fill behind text and never a brand color; OhMyShot has no brand hue.
+- **The User's Accent** (`AccentColor`, AppKit `controlAccentColor`): the only hue the app ever uses for state. It marks the selected mode's symbol in the All-In-One bar, the tool in hand in the editor's rail and in the in-place toolbar, the in-place toolbar's Copy check, the selected variant in the style capsule, the ring around the chosen color dot, the editor's selection box and handle rings, the center cell outline in the loupe (except while picking a color, where the cell is drawn white over the selection outline so it holds over the accent's own color), the Measure ruler's lines and box edge, and the 3 pt selection ring around a selected Capture History card. The ruler's box carries a wash of the accent at 0.08 with no text on it (the box reading stands outside the box). It is never a fill behind text and never a brand color; OhMyShot has no brand hue.
 
 ### Neutral
 - **System surfaces** (`windowBackgroundColor`, `controlBackgroundColor`, SwiftUI `.background.secondary`): the opaque backing inside the All-In-One and in-place toolbar glass, the Reduce Transparency capsule, the letterbox behind a Quick Access picture, and the placeholder behind a History thumbnail. These follow light and dark automatically; no hex is recorded because none exists.
 - **System ink** (`labelColor`, `.secondary`, `.tertiary`, `separatorColor`): all window text, bar labels, the empty-state symbol (tertiary), a disabled Undo or Redo in the in-place toolbar (tertiary), the bar's hairline edge, and History card borders.
-- **White** (#FFFFFF): the 1.5 pt selection border and the thick corners of a resizable frame, the crosshair, and the loupe rim and fill. White reads on the dimmed screen; the dark outline underneath makes it read on white pages.
-- **Selection Outline** (black at 0.32, 0.7 with Increase Contrast): a 3.5 pt stroke under the white edge and the crosshair, so the white line holds on light content.
+- **White** (#FFFFFF): the 1.5 pt selection border and the thick corners of a resizable frame, the crosshair, the loupe rim and fill, and the loupe's 1.5 pt center cell while picking a color. White reads on the dimmed screen; the dark outline underneath makes it read on white pages.
+- **Selection Outline** (black at 0.32, 0.7 with Increase Contrast): a 3.5 pt stroke under the white edge and the crosshair (3 pt under the picker's white center cell), so the white line holds on light content.
+- **Ruler Outline** (white at 0.85, 3 pt; solid white at 4 pt under Increase Contrast): the Selection Outline's device turned over for the ruler. A 3 pt white stroke under each 1 pt accent line and the box edge (2 pt over 4 pt under Increase Contrast), so the accent holds on any content, the accent's own color included. The code calls it a halo; it is an outline under a line, never a glow.
 - **Room Dimming** (black at 0.26, 0.45 with Increase Contrast): the flat fill over the screen outside the selection, in the capture overlay and in in-place annotation. Light enough that the screen stays readable.
 - **Reading Capsule** (white at 0.96 in Light; a near-neutral 0.17 gray at 0.94 in Dark): the fill of every on-screen reading, with ink at 0.85 black or 0.92 white and a 0.5 pt border at 0.08 black or 0.12 white.
 - **Action White** (#F7F7F7, #FFFFFF on hover, #D6D6D6 pressed, ink #1A1A1A): the opaque Copy and Save capsules over a hovered Quick Access card. They stay white in both appearances because they sit on a picture, not on chrome.
@@ -330,6 +358,8 @@ A background is content too, fixed values so the screen and the export agree. Th
 - **Capsule Text Chip** (system semibold 600, 12 pt, label color): the words in the editor's style capsule (crop's Reset and Done). The capsule sits inside a window, so it takes the system face.
 - **Mark Text** (system semibold 600, 14 / 20 / 28 / 40 pt steps, 20 by default, 1.25 line height): text the user types into a picture, drawn by the same layout on screen, in exports, and in the editing field, so nothing moves when editing ends.
 - **Counter Label** (SF Pro Rounded bold, half the disc's diameter, shrunk to fit 72% of it): the numbers, letters, or Roman numerals in counter marks.
+- **Card Readings** (the rounded face, monospaced digits): on the color card, the title at 15 pt semibold (13 pt when longer than 12 characters, so "color(display-p3 …)" fits), each notation's value at 12 pt medium, and the contrast figures ("3.9:1", "Lc 64") at 13 pt semibold. They are readings, so they take the rounded face under the Rounded-Off-Window Rule; a floating card's prose (the text result card, a text pin) stays in the system face.
+- **Field Label** (SF Pro Rounded medium 500, 11 pt, secondary ink): the color card's row names (HEX, RGB, HSL, OKLCH, Display P3, Background, WCAG 2, APCA), its subtitle, and its contrast verdicts.
 - The editor's zoom menu label ("100%") uses monospaced digits.
 
 ### Named Rules
@@ -342,6 +372,7 @@ A background is content too, fixed values so the screen and the export agree. Th
 There is no page grid; layout is anchored to screens, selections, and windows.
 
 - **Overlay:** the size capsule centers under the selection 10 pt below it; with no room below it tucks 10 pt inside the selection; if it would meet the All-In-One bar it lifts 10 pt above the bar. All floating readings clamp 6 pt from the display edges. The loupe sits 22 pt below-right of the pointer and flips away from the display edges; its info capsule sits 8 pt below the lens. The All-In-One bar centers horizontally 40 pt above the bottom of the display and fades out while a region is dragged.
+- **Pick Color and Measure:** the Copied reading sits 14 pt below and right of the point, where the magnifier's reading was, flipped left or up 6 pt from the visible frame. The ruler's width reading sits 8 pt above the middle of its line across (below near the top), its height reading 8 pt right of the middle of its line down (left near the right edge); the box reading centers 10 pt below the box, above it without room; all clamp 6 pt from the display's edges. The color card centers under the point, 6 pt below a 24 pt square around it, above without room, and 8 pt inside the visible frame.
 - **In-place annotation:** the toolbar stands 10 pt below the selection, right-aligned to it, and the style capsule 6 pt under the toolbar, right-aligned to the toolbar. When that stack (42 + 6 + 38 pt) does not fit below, both go above, the capsule above the toolbar; when it fits neither way, the toolbar sits inside the selection's bottom-right, 10 pt clear of the frame as drawn, with the capsule above it, right-aligned to the toolbar. Everything stays 8 pt inside the display. The side is chosen with the capsule's band reserved whether it shows or not, so picking a tool never moves the toolbar. The size reading sits 10 pt above the selection's top-left corner; covered or off screen, 8 pt inside that corner (when the selection has 16 pt to spare); too small for that, 8 pt left of the toolbar on its row; else 10 pt below the selection. It keeps 6 pt from the toolbar and capsule and clamps 6 pt from the display's edges.
 - **Quick Access:** a single column of separate cards, 220 pt wide, each 100 to 172 pt tall by the capture's aspect (extreme shapes letterbox). Cards are 12 pt apart inside an 18 pt margin that leaves room for their shadows; the column sits at the bottom-left of the screen's visible frame, inset 8 pt. Newest is at the bottom; the oldest card drops when the column would exceed the visible height.
 - **Card hover layout:** Copy and Save capsules stacked 8 pt apart, centered; Close and More round buttons 8 pt from the top corners; the saved badge 8 pt from the bottom-right.
@@ -355,10 +386,10 @@ There is no page grid; layout is anchored to screens, selections, and windows.
 Depth is soft shadow plus system materials. Floating elements over arbitrary screen content carry a diffuse downward shadow and a 0.5 pt hairline so they hold their edge on white pages; in-window elements carry a lighter shadow. Shadows always follow the element's exact rounded shape. Liquid Glass gives the All-In-One bar its rim, but its fill is opaque, so screen text never shows through a control.
 
 ### Shadow Vocabulary
-- **Floating card** (black 0.22, blur radius 14, offset 6 pt downward): Quick Access cards.
+- **Floating card** (black 0.22, blur radius 14, offset 6 pt downward): Quick Access cards, the text result card, and the color card.
 - **Floating lens** (black 0.28, blur radius 12, offset 4 pt downward): the loupe.
 - **Floating bar** (black 0.16, blur radius 10, offset 3 pt downward): the All-In-One capsule, the in-place toolbar, and the Self-Timer disc.
-- **Floating reading** (black 0.18, blur radius 8, offset 2 pt downward): reading capsules, the in-place size reading among them.
+- **Floating reading** (black 0.18, blur radius 8, offset 2 pt downward): reading capsules, the in-place size reading, the ruler's readings, and the Copied reading among them.
 - **Action lift** (black 0.18, blur radius 4, offset 1 pt downward): the white Copy and Save capsules, so they hold on bright pictures.
 - **In-window card** (black 0.12, blur radius 10, offset 4 pt downward): Capture History cards, the OCR panel's picture, and the annotation editor's picture.
 - **Mark shadow** (black 0.3, blur 3 pt, drop 1 pt, scaled with the capture): drawn into the picture under arrows, lines, shapes, pen strokes, text, and counters (on by default; off for highlighter, redaction, and spotlight; off by default for combined images), so marks hold on busy pictures. It is exported.
@@ -372,7 +403,7 @@ The editor's tool rail takes the floating bar shadow and its style capsule the f
 A floating panel leaves room around its card for the whole shadow to fade out: twice the blur plus the drop (34 pt for the floating card shadow; the Self-Timer disc's panel leaves 24 pt for the floating bar shadow). A shadow cut off at the panel's edge reads as a hard rectangle.
 
 ### Named Rules
-**The Soft Lift Rule.** Shadows are downward, widely blurred, and low opacity. No hard offset shadows, no glows, no halos.
+**The Soft Lift Rule.** Shadows are downward, widely blurred, and low opacity. No hard offset shadows, no glows, no halos. A thin overlay line's contrast outline (the dark stroke under the white selection edge and crosshair, the white stroke under the ruler's accent lines) is part of the line, not a halo.
 
 **The Small Glass Rule.** Liquid Glass appears only on small controls: the All-In-One bar, the in-place toolbar, the editor's tool rail, the Self-Timer disc, window toolbars and their glassProminent Copy, and History hover buttons. The two overlay toolbars are small controls on the overlay, not over it; the full-screen overlay itself is a flat dimming fill and never carries glass, and neither does the editor's style capsule, which sits beside text-bearing marks.
 
@@ -382,7 +413,7 @@ A floating panel leaves room around its card for the whole shadow to fade out: t
 
 ## Shapes
 
-Continuous (squircle) corners throughout. Pictures and cards are 12 pt, except the annotation editor's picture, which is square: it is the image that gets exported, edge to edge, and marks and the crop run to its pixel edges (on a background, the capture's card inside it takes the background's Corners, 0 to 40 pt, 12 by default); every control, reading, and badge is a full capsule whose radius is half its height; nested controls are capsules concentric with their capsule container (the bar insets its chips by 6 pt). The History selection ring is 16 pt (card radius plus 4), drawn 5 pt outside the card so the corner stays concentric. The loupe is a circle with a 3 pt white rim; its center pixel cell has a 1.5 pt corner. The color swatch in a reading is a 10 pt square with a 5 pt radius. The editor's rail is a capsule 42 pt wide whose 30 pt chips are circles; the style capsule is 38 pt tall with 30 pt chips 4 pt inside it, concentric; the in-place toolbar is the rail laid flat, a capsule 42 pt tall with 30 pt circular chips 6 pt inside it. The drag-out thumbnail in the editor's toolbar has a 4 pt continuous corner. A pin, picture, text card, or color swatch alike, takes Settings' pin Corners (0 to 24 pt, 12 by default; 0 is square), continuous, and its focus ring follows the same corner. Background swatches are 14 pt discs in 24 pt chips; the Position grid's cells are 16 × 12 pt with 3 pt continuous corners.
+Continuous (squircle) corners throughout. Pictures and cards are 12 pt, except the annotation editor's picture, which is square: it is the image that gets exported, edge to edge, and marks and the crop run to its pixel edges (on a background, the capture's card inside it takes the background's Corners, 0 to 40 pt, 12 by default); every control, reading, and badge is a full capsule whose radius is half its height; nested controls are capsules concentric with their capsule container (the bar insets its chips by 6 pt). The History selection ring is 16 pt (card radius plus 4), drawn 5 pt outside the card so the corner stays concentric. The loupe is a circle with a 3 pt white rim; its center pixel cell has a 1.5 pt corner. The color swatch in a reading is a 10 pt square with a 5 pt radius. The color card's swatch is 28 pt with a 7 pt continuous corner, its contrast swatch 16 pt with a 4 pt corner, both with the capsule swatch edge. The ruler's lines are square-capped and end in 8 pt caps across them; its box is square-cornered, on whole pixels. The editor's rail is a capsule 42 pt wide whose 30 pt chips are circles; the style capsule is 38 pt tall with 30 pt chips 4 pt inside it, concentric; the in-place toolbar is the rail laid flat, a capsule 42 pt tall with 30 pt circular chips 6 pt inside it. The drag-out thumbnail in the editor's toolbar has a 4 pt continuous corner. A pin, picture, text card, or color swatch alike, takes Settings' pin Corners (0 to 24 pt, 12 by default; 0 is square), continuous, and its focus ring follows the same corner. Background swatches are 14 pt discs in 24 pt chips; the Position grid's cells are 16 × 12 pt with 3 pt continuous corners.
 
 Hairlines are 0.5 pt (card borders, bar, rail, and in-place toolbar edges, reading and style capsule edges, picture edges); the capture, crop, and in-place selection edge is 1.5 pt; the editor's mark selection is a 1 pt accent line; Increase Contrast turns the hairlines into the 1 pt contrast hairline and adds a 1 pt outline to card buttons.
 
@@ -392,6 +423,7 @@ Hairlines are 0.5 pt (card borders, bar, rail, and in-place toolbar edges, readi
 - **Card action capsule** (Copy, Save): hand-drawn opaque white capsule, 112 × 30 pt, symbol and label centered 6 pt apart, action lift shadow. Brightens to pure white on hover and drops to #D6D6D6 while pressed; fires only on release inside, like a standard button. "Copied" (1.2 s) and "Saved" swap the label and symbol to a checkmark. With Increase Contrast, a 1 pt black 0.5 outline.
 - **Card corner button** (Close, More): 24 pt dark circle, 10.5 pt bold white symbol, tooltip as label. More opens the card's menu. With Increase Contrast, a 1 pt white 0.7 outline. Pins use the same buttons, and a locked pin wears one as its lock mark. Over text it can stand on a backdrop, a fill of what lies under it, so the letters it covers don't show through the dark disc (a text pin's Close and More).
 - Card buttons are drawn by hand because AppKit draws standard controls dimmed in non-key windows and the Quick Access panel never becomes key. Clicking them never brings OhMyShot forward.
+- **Keys:** in a panel that takes the keys (the color card opened from the keyboard or with VoiceOver on), card buttons are reached with Tab when Full Keyboard Access is on, as standard buttons are, show the system focus ring around their capsule or circle, and press with Space or Return.
 - **In windows:** standard controls only. History hover actions use `.glassProminent` (Restore, large, callout semibold) and `.glass` icon buttons (16 pt symbols); toolbars put one `.glassProminent` Copy with title and symbol last (the OCR panel, the annotation editor); Settings uses standard toggles, pickers, and push buttons.
 
 ### Chips (All-In-One bar)
@@ -403,7 +435,7 @@ Hairlines are 0.5 pt (card borders, bar, rail, and in-place toolbar edges, readi
 - **Capture History card:** cropped (aspect-fill) thumbnail 150 pt tall, 12 pt corners, 0.5 pt separator border, in-window shadow; relative time and "W × H · App" below. Hover shows the 0.28 scrim with Restore and four glass icon buttons. Selected = 3 pt accent ring 5 pt outside. Recordings carry a bottom-left play badge with the duration.
 
 ### Reading Capsule (Signature)
-The rounded capsule for every on-screen number: the selection size, the window name and size, the loupe's coordinates with color swatch and hex, and a pin's zoom and opacity (and its Copied and Locked). A color pin's hex is the one resting value: it shows while no other reading does, and a passing reading gives way back to it at once, without a fade. Height is text height plus 9 pt, 11 pt side padding, 0.5 pt border (the 1 pt contrast hairline under Increase Contrast), floating reading shadow. The swatch border is strong enough (black 0.3 / white 0.38) that a white sample still reads. Nothing in it animates on its own: its size, place, corner, shadow path, text, swatch, and colors change at once, with Reduce Motion or without, so no number trails the pointer; a surface that fades the capsule animates only its opacity.
+The rounded capsule for every on-screen number: the selection size, the window name and size, the loupe's coordinates with color swatch and the color in Settings' notation, hex by default (what a click or C copies), the ruler's lengths and box size, a pin's zoom and opacity (and its Copied and Locked), and the Copied reading. "Copied" is a reading too: a pin's reading says it after ⌘C, the ruler's box reading (else its width reading) says it for 0.9 s after ⌘C, and a picked color or a measurement taken with Return shows "Copied #3366FF" or "Copied 120 × 36 pt" in the Copied reading by the point. A color pin's hex is the one resting value: it shows while no other reading does, and a passing reading gives way back to it at once, without a fade. Height is text height plus 9 pt, 11 pt side padding, 0.5 pt border (the 1 pt contrast hairline under Increase Contrast), floating reading shadow. The swatch border is strong enough (black 0.3 / white 0.38) that a white sample still reads. Nothing in it animates on its own: its size, place, corner, shadow path, text, swatch, and colors change at once, with Reduce Motion or without, so no number trails the pointer; a surface that fades the capsule animates only its opacity.
 
 ### Text Selection (Capture Text)
 Copying text gets a lighter overlay than a screenshot: no dimming, no magnifier, no readings, no All-In-One bar, and the system crosshair instead of a drawn one. The selection (or the hovered window, after Space) is drawn like selected text: the system's text-selection color for the current appearance, filled at 0.35 (0.45 in Dark), edged with a 1 pt line in the accent (2 pt under Increase Contrast), on whole points. When the mouse is released, the same highlight takes over in place, just above pop-up menus, click-through and without taking focus, while the text is read; if reading takes over a second it breathes slowly (opacity 1 to 0.5, 0.9 s each way; not under Reduce Motion). It fades over 0.35 s once the text is on the clipboard; with nothing to read it fades in 0.15 s with the system beep. VoiceOver hears the count or "No text found". That is the whole feedback by default.
@@ -510,6 +542,8 @@ While an area or a window is chosen, the overlay's panels sit at the screen-save
 
 The screen is frozen by default: it is captured the moment the shortcut is pressed, before the app takes the keyboard or the pointer, so hover cards, tooltips, and open menus are still in it. The overlay appears at once but lets the pointer through, without the crosshair, until the pointer's display is captured; then the frozen screen is behind it and it takes the keyboard and the pointer. What is kept is cut from that frozen screen. With Freeze off (Settings › General) the overlay appears at once over the live screen and the area is captured when the drag ends. A window is always captured on its own, with its shadow and transparent corners.
 
+C copies the color under the crosshair, the magnifier's center cell, in Settings' notation and ends the capture, as in Snipaste; the Copied reading shows by the point. It works in every overlay that chooses an area once its display's frame is in (Capture Area, Capture Area and Pin, the Self-Timer's choosing, and Annotate Area until an area is chosen), and in Measure; not in window mode or Capture Text. With Option it opens the color card instead, as an Option-click does. The magnifier's reading shows the color in Settings' notation (hex by default), so it is what C copies.
+
 ### All-In-One Bar (Signature)
 A Liquid Glass capsule with an opaque window-colored backing inside, a 0.5 pt separator hairline, and the floating bar shadow. With Reduce Transparency it is a solid window-colored capsule with the same hairline.
 
@@ -536,11 +570,42 @@ Self-Timer opens the capture overlay as for a screenshot (frozen by default, All
 - **Delay:** 2, 3, 5, 10, or 15 seconds, 5 by default (Settings › General › Self-Timer delay). Self-Timer has no shortcut by default.
 - **VoiceOver:** the disc is not an element. Starting announces "Capturing in N seconds. Press [the shortcut's keys] again to cancel.", or "Capturing in N seconds. Choose Cancel Self-Timer in the menu bar to cancel." when it has no shortcut; cancelling announces "Self-Timer cancelled."
 
+### Pick Color
+One pixel's color off the screen, in the capture overlay's world. The overlay is always frozen, whatever Freeze says, and shows the screen as it is: no dimming, no selection outline, no All-In-One bar, since it chooses no area. The crosshair and the magnifier follow the pointer as in a capture. While picking, the magnifier's center cell is drawn as the crosshair is, a 1.5 pt white outline over a 3 pt selection outline (0.32; 0.7 under Increase Contrast), so the cell a click copies holds over any color, the accent's included. The magnifier's reading shows the pixel and the color in the notation a click copies ("812, 344   rgb(51, 102, 255)").
+
+- **Taking:** a click, Return, Enter, or C copies the color in Settings' notation and closes; the Copied reading says so by the point, with the swatch. With Option, a click, Return, or C opens the color card instead, which copies nothing by itself.
+- **Notations:** HEX ("#3366FF", the default), RGB ("rgb(51, 102, 255)"), and HSL ("hsl(225, 100%, 60%)") are sRGB, clamped; OKLCH ("oklch(57.3% 0.234 265.3)") and Display P3 ("color(display-p3 0.25 0.395 0.964)") keep a wide-gamut color's true value. Colors are read in the frame's own space; within 3/255 of sRGB's edges counts as inside.
+- **Keys:** the arrows move the crosshair one captured pixel, ten with Shift. The hidden pointer is moved along, so the mouse carries on from the crosshair; a nudge past a display's edge crosses onto the neighboring display when there is one, else stops at the edge. Escape cancels.
+- **VoiceOver:** help reads "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel."; the overlay's value is the color in the chosen notation, announced after each nudge.
+
+### Copied Reading
+What was just copied, as a reading capsule by the point it came from: "Copied #3366FF" with the color's swatch after Pick Color or C, "Copied 120 × 36 pt" without one after Measure's Return. Its panel sits one level above the overlay's screen-saver level, so it reads over a measuring session still up, on every Space; it takes no clicks and no focus. It shows at once, stays 0.9 s, and fades over 0.12 s, as a pin's reading does. VoiceOver hears its text. Measure's ⌘C does not use it: the ruler's own reading says "Copied".
+
+### Color Card
+The color in every notation, its contrast against a second color, and Pin, opened by an Option-click (or Option-Return) in Pick Color. A 368 pt card, wide enough for Display P3's notation to show whole, in the text result card's materials: the capsule surface (white 0.97; Dark a 0.17 gray at 0.96), the 0.5 pt reading hairline (the 1 pt contrast hairline under Increase Contrast), 12 pt continuous corners, the floating card shadow with 34 pt of room for it, and 14 pt padding.
+
+- **Header:** the 28 pt swatch in the color's own space; the title, the color in the chosen notation (Display P3 when that notation is HEX, RGB, or HSL and the color lies outside sRGB), middle-truncated; a 24 pt close chip at the right. Outside sRGB only, a subtitle in the field label face: "Outside sRGB: HEX, RGB, and HSL are the closest"; without it the title centers on the swatch.
+- **Rows:** after a one-pixel separator hairline, five 26 pt rows, HEX, RGB, HSL, OKLCH, Display P3: the name in a 74 pt column, the value in label ink, and a 24 pt copy chip (`doc.on.doc`, tooltip "Copy HEX") whose symbol turns to a checkmark for 1.2 s. VoiceOver hears "Copied …".
+- **Contrast:** Contrast… (`circle.lefthalf.filled`) picks a second color in Pick Color's overlay while the card holds; it then reads "Pick Another…". A second hairline and three rows follow: Background (Text once swapped) with a 16 pt swatch, the hex, and a Swap chip (`arrow.left.arrow.right`, "Make #3366FF the Background"); WCAG 2, the ratio rounded down to a tenth ("3.9:1", so a failing pair never reads as passing) with its level (AAA; AA, AAA for large text; AA for large text only; Fails AA); APCA, "Lc 64" (a true minus for light text on dark) with what it allows (Any text, Body text, Large or bold text, Headlines, Placeholder and disabled text, Too low for text). The card's color is the text until swapped.
+- **Buttons:** Contrast… and Pin (`pin`), 26 pt chips 8 pt apart, 12 pt under the rows. Pin makes a color pin and closes the card.
+- **Panel:** borderless, non-activating, a level above pins (as Quick Access is), on every Space and over full-screen apps; clicking it never brings the app forward. It takes the keys only when opened from the keyboard or with VoiceOver on: then the lead notation's copy chip has focus, Escape closes, ⌘C copies the lead notation (its chip shows the checkmark), and Tab moves through the chips with Full Keyboard Access.
+- **Staying:** gone after 15 s left alone, 60 s with VoiceOver; held while hovered or while the second color is picked. VoiceOver reads it as a group, "Color " and the title, announced as it opens; the contrast is announced as it comes in and on Swap.
+
+### Measure
+A PixelSnap-style ruler on the frozen screen. The overlay is always frozen, undimmed, without the All-In-One bar or the magnifier.
+
+- **Lines:** from the pointer's pixel out to the nearest change of color each way (a channel more than 8/255 off), through the middle of the pixel on whole device pixels: 1 pt accent lines over the 3 pt ruler outline, with 8 pt caps across each end (2 pt over 4 pt solid white under Increase Contrast). They cross at the pointer in place of the crosshair, which shows only before the display's pixels are in or while a box is up.
+- **Readings:** reading capsules, the length by each line ("120 pt"): points to a tenth without a trailing ".0", or whole pixels ("61 px").
+- **Box:** a drag draws a box on whole pixels, accent edge over the ruler outline with the accent wash inside, at 0.6 opacity while dragged. Let go, it shrinks to what it holds (the background being the color most of its corners share) with an alignment tap on the trackpad, or stays as drawn around nothing but background; either way it is then solid, with its size below it ("48 × 48 pt"). A box keeps the screen to itself, no lines, until a click clears it.
+- **Keys:** the arrows as in Pick Color. ⌘C copies the measurement (the box's size, else the two lines' "W × H") and the overlay stays, its reading saying "Copied" for 0.9 s; Return copies and closes, with the Copied reading by the crosshair; Tab or U switches between points (the default) and pixels, remembered as Settings' Measure in; C takes the color under the crosshair as Pick Color does; Escape cancels.
+- **Pixels:** a display's pixels are copied out off the main thread the first time the pointer comes to it, and let go when the pointer leaves for another display.
+- **VoiceOver:** help reads "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel."; the value is the measurement, announced after a box, a unit switch, or a nudge.
+
 ### Navigation
 - **Capture History toolbar:** a SwiftUI toolbar bridged into a unified window toolbar: segmented Show filter (All, Screenshots, Recordings), a "Keep for …" menu, and Move All to Trash. Empty states are filter-aware (a 40 pt light tertiary symbol, title3 title, callout message).
 - **Keyboard:** arrows select, Return restores, Space opens Quick Look; ⌘C, ⌘S, and ⌘⌫ arrive as commands through an invisible main menu and are disabled with nothing selected.
-- **Settings:** preference toolbar tabs; grouped sections such as "After capturing", "Capture History", and "Translation" (Translate into: Automatic, the first of the preferred languages the text isn't already in, then the system's languages). General › After capturing ends with a Background picker (None, then the saved presets) that puts each new screenshot on a preset; it is disabled, with a line saying to save a preset in the editor first, while there are none. General ends with a Pins section: Corners (a slider, 0 to 24 pt in 1 pt steps, its reading to the right in secondary ink with monospaced digits, 40 pt wide), Shadow, Edge ("A hairline, so a white picture still reads against a white window."), and Show pins in new screenshots ("When off, pins stay out of captures, like the rest of OhMyShot."), all on by default; the look applies to open pins at once, and the last toggle to the next capture. Its footer names where pins come from.
-- **Status menu:** grouped capture commands (Capture Area, Annotate Area, Capture Area and Pin, Window, Fullscreen, Self-Timer, Capture Text, Translate Area; Self-Timer reads "Cancel Self-Timer" while a countdown runs, its title asked again each time the menu opens; Capture Area and Pin has no shortcut by default), then Recognize Text in Clipboard Image (enabled when the clipboard offers an image or a file) and Recognize Text in Image…, then the pins: Pin from Clipboard (enabled when the clipboard's types include a picture, text, or a color; only the types are read, never the contents), Pin Image… (several at once), Hide Pins (reading "Show Pins" while they are hidden; enabled with a pin open), Unlock Pins (enabled while a pin is locked), and Close All Pins (enabled with a pin open), then Annotate Image… (a picture or a project; several at once), Capture History, and Restore Recently Closed. An image dropped on the menu bar icon opens in the OCR panel; the icon highlights while it is over it.
+- **Settings:** preference toolbar tabs; grouped sections such as "After capturing", "Capture History", and "Translation" (Translate into: Automatic, the first of the preferred languages the text isn't already in, then the system's languages). General › After capturing ends with a Background picker (None, then the saved presets) that puts each new screenshot on a preset; it is disabled, with a line saying to save a preset in the editor first, while there are none. General's untitled section after Self-Timer delay and Play sounds holds "Copy colors as" (HEX, RGB, HSL, OKLCH, Display P3; "For Pick Color, and C while capturing or measuring.") and "Measure in" (Points, Pixels; "Tab switches between them while measuring."). General ends with a Pins section: Corners (a slider, 0 to 24 pt in 1 pt steps, its reading to the right in secondary ink with monospaced digits, 40 pt wide), Shadow, Edge ("A hairline, so a white picture still reads against a white window."), and Show pins in new screenshots ("When off, pins stay out of captures, like the rest of OhMyShot."), all on by default; the look applies to open pins at once, and the last toggle to the next capture. Its footer names where pins come from.
+- **Status menu:** grouped capture commands (Capture Area, Annotate Area, Capture Area and Pin, Window, Fullscreen, Self-Timer, Capture Text, Translate Area, Pick Color, Measure; Self-Timer reads "Cancel Self-Timer" while a countdown runs, its title asked again each time the menu opens; Capture Area and Pin, Pick Color, and Measure have no shortcut by default), then Recognize Text in Clipboard Image (enabled when the clipboard offers an image or a file) and Recognize Text in Image…, then the pins: Pin from Clipboard (enabled when the clipboard's types include a picture, text, or a color; only the types are read, never the contents), Pin Image… (several at once), Hide Pins (reading "Show Pins" while they are hidden; enabled with a pin open), Unlock Pins (enabled while a pin is locked), and Close All Pins (enabled with a pin open), then Annotate Image… (a picture or a project; several at once), Capture History, and Restore Recently Closed. An image dropped on the menu bar icon opens in the OCR panel; the icon highlights while it is over it.
 - **Find:** the Edit menu carries Find…, Find Next, Find Previous, and Use Selection for Find for the OCR panel's text.
 - **Destructive confirmations** state the count and consequence and name the action ("Delete 3 Captures"; "This can't be undone.").
 
@@ -553,7 +618,9 @@ Self-Timer opens the capture overlay as for a screenshot (frozen by default, All
 - In the annotation editor, the style capsule fades in over 0.12 s ease-out when a new selection or tool calls for it and simply moves when the picture zooms or scrolls; it hides while a mark is drawn, moved, or reshaped. In in-place annotation the capsule fades in the same way (0.12 s ease-out) for a new tool or selection and hides while a mark is drawn or the selection is adjusted; the toolbar and selection chrome appear and move without animation. Canvas layers never animate on their own, so marks, handles, and the crop frame stay under the pointer.
 - The Self-Timer countdown's outline and disc fade in together over 0.12 s ease-out; its ring runs out linearly over the whole delay while the digit steps down each second; at zero it is gone at once, with no fade out.
 - A pin's reading shows at once and, after 0.9 s, fades over 0.12 s; its Close and More fade over 0.12 s on hover. A color pin's reading gives way back to its hex at once instead of fading. The pin itself moves, zooms, and fades its picture, card, or swatch without animation, so it stays under the pointer.
-- Under Reduce Motion all of these are instant (a pin's reading simply goes after 0.9 s); the Self-Timer countdown appears without a fade and its ring steps down each second instead of running out. Nothing trails the pointer: overlay layers update without animation. The two durations live in `Theme.Motion` (`slide` 0.22 s, `fade` 0.12 s).
+- The Copied reading shows at once and, after 0.9 s, fades over 0.12 s. The ruler's "Copied" stays 0.9 s and gives way to the length at once; its box goes from 0.6 to solid opacity at once.
+- The color card fades in over 0.22 s with a 6 pt rise of its layer, as the text result card does, and fades out over 0.12 s; its copy chips swap to a checkmark and back after 1.2 s, without a transition.
+- Under Reduce Motion all of these are instant (a pin's reading and the Copied reading simply go after 0.9 s); the Self-Timer countdown appears without a fade and its ring steps down each second instead of running out. Nothing trails the pointer: overlay layers update without animation. The two durations live in `Theme.Motion` (`slide` 0.22 s, `fade` 0.12 s).
 
 ### Future Surfaces
 Recording controls are not built. They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.
@@ -566,7 +633,7 @@ Recording controls are not built. They must use this system (system colors and a
 - **Do** give floating elements a soft downward shadow plus a 0.5 pt hairline so they hold on white pages.
 - **Do** put live numbers in a reading capsule: SF Pro Rounded 12 pt semibold with monospaced digits.
 - **Do** keep text-bearing controls opaque over captures; use glass for the rim, not the fill.
-- **Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills.
+- **Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills, 2 pt ruler lines over a 4 pt solid white outline.
 - **Do** use standard windows, toolbars, grouped Forms, and SwiftUI glass button styles inside windows.
 - **Do** build chips in floating controls (the All-In-One bar, the in-place toolbar, the tool rail, the style capsule) as borderless buttons with the chip fills, and hand-draw whole controls only where AppKit would render them dimmed (non-key floating panels), tracking presses like standard buttons.
 
@@ -574,7 +641,7 @@ Recording controls are not built. They must use this system (system colors and a
 - **Don't** bring back Contact Sheet: no frame numbers, no captures joined into a strip, no film-edge or darkroom motifs.
 - **Don't** build dark heavy panels, bars, or strips; small dark round corner buttons over a hovered picture or pin, and a locked pin's mark in the same style, are the only dark chrome.
 - **Don't** put glass, blur, or a material over the full-screen overlay; the room is a flat 26% fill.
-- **Don't** use hard offset shadows, glows, or halos.
+- **Don't** use hard offset shadows, glows, or halos; a thin overlay line's contrast outline (dark under white, white under the ruler's accent) is not one.
 - **Don't** use the rounded face inside standard windows, or proportional digits in a changing number.
 - **Don't** invent a brand hue or tint chrome toward one; fixed hues belong to mark inks only.
 - **Don't** animate anything that follows the pointer, or run any motion under Reduce Motion.

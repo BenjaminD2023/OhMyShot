@@ -293,6 +293,9 @@ struct DebugHooks {
             // stays for a snapshot; end it with close-windows. It covers a display: ask first.
             let drawsBox = Self.intParameter("box", in: url) != 0
             Task { await runMeasureDemo(drawsBox: drawsBox) }
+        case "measure-copy":
+            // ⌘C in a measure-demo session: the reading says "Copied"; the clipboard is left alone.
+            overlay.debugCopyMeasurement()
         case "color-demo":
             // Pick Color over drawn screens: at=button|square puts the crosshair in the #007AFF button or the
             // Display P3 red square, and the overlay stays for a snapshot. It covers a display: ask first.

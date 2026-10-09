@@ -90,6 +90,25 @@ final class CardButton: NSControl {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    // MARK: Keys
+
+    /// Reached with Tab when Full Keyboard Access is on, as standard buttons are, in a panel that takes the
+    /// keys (the color card opened from the keyboard); Space or Return presses it.
+    override var acceptsFirstResponder: Bool { NSApp.isFullKeyboardAccessEnabled }
+
+    override var focusRingMaskBounds: NSRect { bounds }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 49, 36, 76: sendAction(action, to: target)
+        default: super.keyDown(with: event)
+        }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua

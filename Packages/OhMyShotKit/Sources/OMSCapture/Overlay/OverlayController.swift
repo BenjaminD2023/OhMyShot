@@ -23,8 +23,9 @@ public final class OverlayController {
         /// In-place annotation finished (`finishAnnotation`); its own handler has the result.
         case annotated
         /// A color taken off the frozen screen (the color picker, or C over a capture's magnifier), where
-        /// it was, and the keys held as it was taken (Option asks for the color card).
-        case color(ScreenColor, at: CGPoint, display: DisplayInfo, modifiers: NSEvent.ModifierFlags)
+        /// it was, the keys held as it was taken (Option asks for the color card), and whether a key took it,
+        /// so what follows can take the keyboard too.
+        case color(ScreenColor, at: CGPoint, display: DisplayInfo, modifiers: NSEvent.ModifierFlags, keyboard: Bool)
         case cancelled
     }
 
@@ -68,8 +69,9 @@ public final class OverlayController {
     /// What the ruler reads in. Tab switches it during a session, and `onMeasureUnitChange` hears it.
     public var measureUnit: MeasureUnit = .points
     public var onMeasureUnitChange: ((MeasureUnit) -> Void)?
-    /// The ruler's measurement, copied with ⌘C, or with Return as the overlay closes.
-    public var onCopyMeasurement: ((String) -> Void)?
+    /// The ruler's measurement to copy, where the crosshair is (global space), and whether the overlay is
+    /// closing after it (Return) rather than staying, with "Copied" in its reading (⌘C).
+    public var onCopyMeasurement: ((String, CGPoint?, Bool) -> Void)?
     private var hidesCursor = false
 
     public private(set) var isActive = false
@@ -247,7 +249,7 @@ public final class OverlayController {
             case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.")
             case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.")
             case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.")
-            case .color: String(localized: "Click to copy the color under the crosshair. The arrow keys move one pixel.")
+            case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.")
             case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.")
             }
             NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
@@ -320,7 +322,7 @@ public final class OverlayController {
         guard isActive, purpose != .text, let display = topology.layout.display(at: point), let view = entries[display.id]?.view else { return }
         pointer = point
         nudged = true
-        overlayView(view, didPickColorAt: point, modifiers: modifiers)
+        overlayView(view, didPickColorAt: point, modifiers: modifiers, keyboard: false)
     }
 
     /// Drags the ruler's box over `rect` in global space and lets go, for scripted checks.
@@ -331,6 +333,12 @@ public final class OverlayController {
 
     /// Where the crosshair is, in global space, for scripted checks.
     public var debugPointer: CGPoint? { pointer }
+
+    /// Copies the ruler's measurement as ⌘C does, for scripted checks.
+    public func debugCopyMeasurement() {
+        guard let point = pointer, let display = topology.layout.display(at: point) else { return }
+        entries[display.id]?.view.debugCopyMeasurement()
+    }
 
     /// The ruler's measurement on the display under the crosshair, for scripted checks.
     public var debugMeasurement: String? {
@@ -612,12 +620,12 @@ extension OverlayController: OverlayViewDelegate {
         }
     }
 
-    func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags) {
-        // After the arrow keys the crosshair, not the hidden pointer, says where the color is.
+    func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) {
+        // After the arrow keys the crosshair says where the color is.
         let location = nudged ? (pointer ?? point) : point
         guard isActive, let display = topology.layout.display(at: location), let color = entries[display.id]?.view.color(at: location) else { return }
         Log.capture.notice("Picked \(color.hex, privacy: .public) (\(color.displayP3, privacy: .public)\(color.isInSRGB ? "" : ", outside sRGB", privacy: .public)) at \(NSStringFromPoint(location), privacy: .public)")
-        end(.color(color, at: location, display: display, modifiers: modifiers))
+        end(.color(color, at: location, display: display, modifiers: modifiers, keyboard: keyboard))
     }
 
     func overlayView(_ view: OverlayView, didNudge pixels: CGVector) {
@@ -625,20 +633,30 @@ extension OverlayController: OverlayViewDelegate {
         let layout = topology.layout
         guard let display = layout.display(at: base) ?? layout.primary else { return }
         let scale = entries[display.id]?.view.frame()?.pixelsPerPoint ?? display.pixelsPerPoint
-        // Kept on the display; down is positive in pixels and negative in global space.
-        let next = CGPoint(
-            x: min(max(base.x + pixels.dx / scale, display.frame.minX), display.frame.maxX - 0.5 / scale),
-            y: min(max(base.y - pixels.dy / scale, display.frame.minY + 0.5 / scale), display.frame.maxY)
-        )
+        // Down is positive in pixels and negative in global space. Onto a neighboring display if there is one
+        // that way, else kept on this one: a display holds y below its top edge, so the top row stays in reach.
+        var next = CGPoint(x: base.x + pixels.dx / scale, y: base.y - pixels.dy / scale)
+        if layout.display(at: next) == nil {
+            next = CGPoint(
+                x: min(max(next.x, display.frame.minX), display.frame.maxX - 0.5 / scale),
+                y: min(max(next.y, display.frame.minY), display.frame.maxY - 0.5 / scale)
+            )
+        }
         pointer = next
         nudged = true
+        // The hidden system pointer goes along, so the mouse's next move carries on from the crosshair
+        // instead of throwing the nudge away.
+        if let primary = NSScreen.screens.first {
+            CGWarpMouseCursorPosition(CGPoint(x: next.x, y: primary.frame.maxY - next.y))
+        }
         for entry in entries.values {
             entry.view.movePointer(to: next)
         }
+        if let under = layout.display(at: next) { entries[under.id]?.view.announceValue() }
     }
 
     func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) {
-        onCopyMeasurement?(text)
+        onCopyMeasurement?(text, pointer ?? NSEvent.mouseLocation, ending)
         if ending { end(.cancelled) }
     }
 

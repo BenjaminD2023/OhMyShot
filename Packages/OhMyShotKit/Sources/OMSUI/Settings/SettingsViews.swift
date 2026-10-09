@@ -180,7 +180,7 @@ struct GeneralSettingsView: View {
                     }
                 } label: {
                     Text("Copy colors as", bundle: .module)
-                    Text("For Pick Color, and C over the magnifier while capturing.", bundle: .module)
+                    Text("For Pick Color, and C while capturing or measuring.", bundle: .module)
                 }
                 Picker(selection: $settings.measureUnit) {
                     Text("Points", bundle: .module).tag(MeasureUnit.points)

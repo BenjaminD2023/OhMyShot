@@ -3,15 +3,17 @@ import OMSCore
 
 /// The card an Option-click with the color picker opens: the color in every notation, each a click from
 /// the clipboard; its contrast against a second color picked from the screen (WCAG 2 and APCA); and Pin.
-/// It floats by where the color was picked without taking focus, and goes away by itself when left
-/// alone; hovering it holds it, and so does picking the second color.
+/// It floats by where the color was picked, a level above pins, without taking focus unless it was opened
+/// from the keyboard or VoiceOver is on; then Escape closes it, ⌘C copies its lead notation, and Tab moves
+/// through its buttons with Full Keyboard Access. It goes away by itself when left alone; hovering it
+/// holds it, and so does picking the second color.
 public final class ColorCardHUD {
     /// Contrast… was pressed: the owner picks a second color off the screen for `showContrast(with:)`.
     public var onContrast: (() -> Void)?
     /// Pin was pressed; the card has gone.
     public var onPin: ((ScreenColor) -> Void)?
 
-    private var panel: TextResultPanel?
+    private var panel: ColorCardPanel?
     private var card: ColorCard?
     private var anchor: CGRect = .zero
     private var dismissal: Task<Void, Never>?
@@ -23,19 +25,26 @@ public final class ColorCardHUD {
 
     public var isShowing: Bool { panel != nil }
 
-    /// Shows `color` by `point`, in AppKit's global coordinates, replacing any card already up.
-    public func show(_ color: ScreenColor, near point: CGPoint) {
+    /// Shows `color` by `point`, in AppKit's global coordinates, replacing any card already up. Its title is
+    /// the color in `format`, the notation clicks copy (Display P3 when that is an sRGB notation the color is
+    /// outside of). `fromKeyboard`: the card takes the keys, as it does whenever VoiceOver is on.
+    public func show(_ color: ScreenColor, near point: CGPoint, format: ColorFormat, fromKeyboard: Bool = false) {
         anchor = CGRect(x: point.x - 12, y: point.y - 12, width: 24, height: 24)
         picking = false
         let isNew = panel == nil
         let panel = self.panel ?? makePanel()
-        card?.show(color)
+        card?.show(color, format: format)
         place(panel)
         if isNew {
             appear(panel)
             windowLease = windowLease ?? ActiveResources.shared.acquire(.window)
         }
-        announce(String(localized: "Color \(color.hex)", bundle: .module))
+        panel.takesKeys = fromKeyboard || NSWorkspace.shared.isVoiceOverEnabled
+        if panel.takesKeys {
+            panel.makeKey()
+            panel.makeFirstResponder(card?.firstControl)
+        }
+        announce(card?.accessibilityLabel() ?? "")
         scheduleDismissal()
     }
 
@@ -88,7 +97,7 @@ public final class ColorCardHUD {
         }
     }
 
-    private func makePanel() -> TextResultPanel {
+    private func makePanel() -> ColorCardPanel {
         let card = ColorCard()
         card.onClose = { [weak self] in self?.dismiss() }
         card.onContrast = { [weak self] in
@@ -107,7 +116,9 @@ public final class ColorCardHUD {
             guard let self, let panel = self.panel else { return }
             self.place(panel)
         }
-        let panel = TextResultPanel()
+        let panel = ColorCardPanel()
+        panel.onCancel = { [weak self] in self?.dismiss() }
+        panel.onCopy = { [weak card] in card?.copyLead() }
         panel.contentView = card
         self.panel = panel
         self.card = card
@@ -173,6 +184,52 @@ public final class ColorCardHUD {
     }
 }
 
+/// The card's panel: the text result card's floating manners, a level above pins (as Quick Access is), and
+/// able to take the keys when the card asks: Escape closes the card and ⌘C copies its lead notation.
+final class ColorCardPanel: NSPanel {
+    var takesKeys = false
+    var onCancel: (() -> Void)?
+    var onCopy: (() -> Void)?
+
+    init() {
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        hidesOnDeactivate = false
+        becomesKeyOnlyIfNeeded = true
+        isMovable = false
+        isReleasedWhenClosed = false
+        animationBehavior = .none
+        autorecalculatesKeyViewLoop = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override var canBecomeKey: Bool { takesKeys }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == 53 {
+            onCancel?()
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "c" {
+            onCopy?()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 /// The card itself, in the text result card's materials: a swatch and the hex; a row for each notation
 /// with its copy button; the contrast against a second color once there is one; Contrast… and Pin.
 final class ColorCard: NSView {
@@ -214,6 +271,8 @@ final class ColorCard: NSView {
     private let pinButton = CardButton(style: .chip, title: String(localized: "Pin", bundle: .module), symbolName: "pin")
 
     private var color: ScreenColor?
+    /// The notation the title shows and ⌘C copies.
+    private var lead: ColorFormat = .hex
     /// The second color; the card's own color is the text on it, until swapped.
     private var other: ScreenColor?
     private var swapped = false
@@ -243,6 +302,7 @@ final class ColorCard: NSView {
 
         title.font = Theme.Typeface.reading(size: 15, weight: .semibold)
         title.textColor = .labelColor
+        title.lineBreakMode = .byTruncatingMiddle
         subtitle.font = Theme.Typeface.label(size: 11, weight: .medium)
         subtitle.textColor = .secondaryLabelColor
         for format in ColorFormat.allCases {
@@ -253,7 +313,6 @@ final class ColorCard: NSView {
             value.font = Theme.Typeface.reading(size: 12, weight: .medium)
             value.textColor = .labelColor
             value.lineBreakMode = .byTruncatingMiddle
-            value.isSelectable = true
             let copy = CardButton(style: .chipIcon, title: String(localized: "Copy \(format.title)", bundle: .module), symbolName: "doc.on.doc")
             copy.target = self
             copy.action = #selector(copyRow(_:))
@@ -313,14 +372,19 @@ final class ColorCard: NSView {
 
     // MARK: Content
 
-    func show(_ color: ScreenColor) {
+    func show(_ color: ScreenColor, format: ColorFormat) {
         self.color = color
         other = nil
         swapped = false
-        title.stringValue = color.hex
-        subtitle.stringValue = color.isInSRGB
-            ? String(localized: "Within sRGB", bundle: .module)
-            : String(localized: "Outside sRGB: HEX, RGB, and HSL are the nearest", bundle: .module)
+        // The notation clicks copy leads, unless it is an sRGB one the color is outside of.
+        let sRGBNotation = format == .hex || format == .rgb || format == .hsl
+        lead = sRGBNotation && !color.isInSRGB ? .displayP3 : format
+        title.stringValue = color.string(in: lead)
+        // A long notation steps the title down a size rather than cutting it.
+        title.font = Theme.Typeface.reading(size: title.stringValue.count > 12 ? 13 : 15, weight: .semibold)
+        // Said only when it matters: the common case says nothing.
+        subtitle.stringValue = color.isInSRGB ? "" : String(localized: "Outside sRGB: HEX, RGB, and HSL are the closest", bundle: .module)
+        subtitle.isHidden = color.isInSRGB
         for row in rows {
             row.value.stringValue = color.string(in: row.format)
             row.copy.symbolName = "doc.on.doc"
@@ -328,8 +392,19 @@ final class ColorCard: NSView {
         contrastButton.title = String(localized: "Contrast…", bundle: .module)
         refreshContrast()
         applyAppearance()
-        setAccessibilityLabel(String(localized: "Color \(color.hex)", bundle: .module))
+        setAccessibilityLabel(String(localized: "Color \(title.stringValue)", bundle: .module))
         needsLayout = true
+    }
+
+    /// The first button the keys go to: the lead notation's copy button.
+    var firstControl: NSView? {
+        rows.first { $0.format == lead }?.copy
+    }
+
+    /// Copies the lead notation, as ⌘C does, with the row's button saying so.
+    func copyLead() {
+        guard let row = rows.first(where: { $0.format == lead }) else { return }
+        copyRow(row.copy)
     }
 
     func showContrast(with other: ScreenColor) {
@@ -427,8 +502,9 @@ final class ColorCard: NSView {
 
         let textLeft = left + 28 + 10
         closeButton.frame = CGRect(x: right - 24, y: y, width: 24, height: 24)
-        // Text fields inset their glyphs by 2 pt.
-        title.frame = CGRect(x: textLeft - 2, y: y, width: closeButton.frame.minX - 8 - textLeft, height: 19)
+        // Text fields inset their glyphs by 2 pt. Without a subtitle the title centers on the swatch.
+        let titleY = subtitle.isHidden ? y + 3 + (28 - 19) / 2 : y
+        title.frame = CGRect(x: textLeft - 2, y: titleY, width: closeButton.frame.minX - 8 - textLeft, height: 19)
         subtitle.frame = CGRect(x: textLeft - 2, y: y + 19, width: right - textLeft + 2, height: 15)
         y += 34 + 5
         CATransaction.begin()
