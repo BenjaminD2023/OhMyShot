@@ -262,16 +262,19 @@ struct DebugHooks {
             Log.app.notice("debug.pin-color-demo \(self.pins.debugSummary, privacy: .public)")
         case "pin-render":
             // Draws a pin behind the desktop picture and captures its window alone, nothing shown:
-            // kind=text|line|narrow|code|color|alpha, zoom=<percent>, mode=light|dark, controls=1 for
-            // Close and More as on hover. Writes pin-render-<kind>-<zoom>-<mode>[-controls].png to the
-            // snapshot folder.
+            // kind=text|line|narrow|code|color|alpha|page (the drawn demo page as a picture),
+            // zoom=<percent>, mode=light|dark, controls=1 for Close and More as on hover, select=all to
+            // read a picture's text with Live Text and select all of it. Writes
+            // pin-render-<kind>-<zoom>-<mode>[-controls][-select].png to the snapshot folder.
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in items.first { $0.name == name }?.value }
             let kind = value("kind") ?? "text"
             let zoom = value("zoom").flatMap(Double.init) ?? 100
             let mode = value("mode") ?? "light"
             let controls = value("controls") == "1"
+            let select = value("select") == "all"
             let content: PinController.Content? = switch kind {
+            case "page": DebugPanelDemo.image().map { .image($0, scale: CGFloat($0.width) / DebugPanelDemo.size.width) }
             case "line": .text("npm run dev")
             case "narrow": .text("OK")
             case "code": .text("func pinned() {\n    let shortcut = \"⌃⌥⌘7\"\n    print(\"Capture Area and Pin: \\(shortcut)\")\n}")
@@ -280,8 +283,24 @@ struct DebugHooks {
             default: .text("截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。Quick Access keeps every capture one click away; the text in a capture can be copied, edited, and searched.")
             }
             guard let content else { return }
-            let name = "pin-render-\(kind)-\(Int(zoom))-\(mode)" + (controls ? "-controls" : "")
-            Task { await renderPin(content, name: name, zoom: CGFloat(zoom) / 100, dark: mode == "dark", controls: controls) }
+            let name = "pin-render-\(kind)-\(Int(zoom))-\(mode)" + (controls ? "-controls" : "") + (select ? "-select" : "")
+            Task { await renderPin(content, name: name, zoom: CGFloat(zoom) / 100, dark: mode == "dark", controls: controls, selectAll: select) }
+        case "pin-read":
+            // Reads the drawn page's text with Live Text in a pin behind the desktop picture, nothing shown or
+            // captured, and closes it; release=1 instead lets the text reader go and returns freed pages, as
+            // closing the last pin does. For memory checks with footprint.
+            if Self.intParameter("release", in: url) == 1 {
+                pins.debugReleaseTextReader()
+                MemoryRelief.returnFreedPages()
+                Log.app.notice("debug.pin-read released")
+            } else if let page = DebugPanelDemo.image() {
+                Task {
+                    let window = pins.debugHiddenPin(.image(page, scale: CGFloat(page.width) / DebugPanelDemo.size.width), zoom: 1, dark: false)
+                    let characters = await pins.debugReadText(in: window, selectAll: false)
+                    window.orderOut(nil)
+                    Log.app.notice("debug.pin-read \(characters, privacy: .public) characters")
+                }
+            }
         case "pin-act":
             // Acts on the newest pin: zoom=<percent>, opacity=<percent>, lock=1|0, move=dx,dy (points),
             // hide=1|0, close=all. Logs every pin.
@@ -498,9 +517,13 @@ struct DebugHooks {
 
     /// Opens a pin of `content` behind the desktop picture, captures its window alone as the window server
     /// draws it, and closes it.
-    func renderPin(_ content: PinController.Content, name: String, zoom: CGFloat, dark: Bool, controls: Bool) async {
+    func renderPin(_ content: PinController.Content, name: String, zoom: CGFloat, dark: Bool, controls: Bool, selectAll: Bool) async {
         let window = pins.debugHiddenPin(content, zoom: zoom, dark: dark, controls: controls)
         defer { window.orderOut(nil) }
+        if selectAll {
+            let characters = await pins.debugReadText(in: window, selectAll: true)
+            Log.app.notice("debug.pin-render Live Text found \(characters, privacy: .public) characters")
+        }
         // Long enough for the window server to have the pin's first frame.
         try? await Task.sleep(for: .milliseconds(250))
         do {

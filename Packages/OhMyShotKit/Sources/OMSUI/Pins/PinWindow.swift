@@ -1,6 +1,7 @@
 import AppKit
 import OMSCore
 import QuartzCore
+import VisionKit
 
 /// How pins look, from Settings; every pin takes it again when it changes.
 struct PinAppearance: Equatable {
@@ -29,12 +30,16 @@ final class PinWindow: NSPanel {
     /// Locked or unlocked: the menu bar's Unlock Pins follows.
     var onChange: (() -> Void)?
 
-    init(pin: PinController.Pin, frame: CGRect, zoom: CGFloat, appearance: PinAppearance, actions: PinController.Actions) {
+    /// `textReader` reads a picture's text for Live Text.
+    init(
+        pin: PinController.Pin, frame: CGRect, zoom: CGFloat, appearance: PinAppearance, actions: PinController.Actions,
+        textReader: PinTextReader? = nil
+    ) {
         self.pin = pin
         baseSize = Self.baseSize(of: pin.content)
         self.zoom = zoom
         self.actions = actions
-        pinView = PinView(content: pin.content, appearance: appearance)
+        pinView = PinView(content: pin.content, appearance: appearance, textReader: textReader)
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
@@ -79,6 +84,23 @@ final class PinWindow: NSPanel {
     override func becomeKey() {
         super.becomeKey()
         pinView.isFocused = true
+        pinView.readTextIfNeeded()
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .keyDown where [53, 123, 124, 125, 126].contains(event.keyCode) && firstResponder !== pinView:
+            // Escape and the arrows stay the pin's even while Live Text holds the keyboard.
+            pinView.keyDown(with: event)
+            return
+        case .leftMouseDown, .rightMouseDown:
+            // Key before the press is delivered: Live Text's text takes no first mouse, so on a pin that was
+            // not key the first press on text only made it key.
+            if canBecomeKey, !isKeyWindow { makeKey() }
+        default:
+            break
+        }
+        super.sendEvent(event)
     }
 
     override func resignKey() {
@@ -141,6 +163,10 @@ final class PinWindow: NSPanel {
     func debugShowControls() {
         pinView.debugShowControls()
     }
+
+    func debugReadText(selectAll: Bool) async -> Int {
+        await pinView.debugReadText(selectAll: selectAll)
+    }
     #endif
 
     // MARK: Actions
@@ -152,6 +178,12 @@ final class PinWindow: NSPanel {
         case .text(let text): Self.copy(text)
         case .color(let color): Self.copy(color.hex)
         }
+        pinView.showReading(String(localized: "Copied", bundle: .module))
+    }
+
+    /// Copies text selected in the picture with Live Text.
+    func copySelectedText(_ text: String) {
+        Self.copy(text)
         pinView.showReading(String(localized: "Copied", bundle: .module))
     }
 
@@ -197,7 +229,8 @@ final class PinWindow: NSPanel {
 
 /// What a pin shows: a picture, a text card, or a color swatch, rounded as Settings says, with a hairline
 /// edge, an accent ring while it has the keys, the Close and More buttons on hover, and a reading capsule
-/// for its zoom and opacity as they change (a color's value rests there).
+/// for its zoom and opacity as they change (a color's value rests there). A picture's text can be selected
+/// in place with Live Text once VisionKit has read it.
 final class PinView: NSView {
     weak var pinWindow: PinWindow?
 
@@ -220,6 +253,10 @@ final class PinView: NSView {
     private var tracking: NSTrackingArea?
     /// Close and More show while the pointer is over an unlocked pin, and take clicks only then.
     private var controlsShown = false
+    private let textReader: PinTextReader?
+    private var textReading: Task<Void, Never>?
+    /// Live Text over the picture, once VisionKit has found text or a code in it.
+    private var liveText: ImageAnalysisOverlayView?
     private var readingFade: Task<Void, Never>?
     private var displayOptions: NSObjectProtocol?
 
@@ -230,6 +267,7 @@ final class PinView: NSView {
     var isLocked = false {
         didSet {
             guard isLocked != oldValue else { return }
+            if isLocked { liveText?.resetSelection() }
             lockMark.isHidden = !isLocked
             setControlsVisible(false)
             updateRing()
@@ -237,9 +275,10 @@ final class PinView: NSView {
         }
     }
 
-    init(content: PinController.Content, appearance: PinAppearance) {
+    init(content: PinController.Content, appearance: PinAppearance, textReader: PinTextReader? = nil) {
         self.content = content
         look = appearance
+        if case .image = content { self.textReader = textReader } else { self.textReader = nil }
         if case .text(let text) = content {
             textView = PinTextView(text: text)
         } else {
@@ -272,6 +311,7 @@ final class PinView: NSView {
         // Inside the picture's edge, so kept to 1.5 pt, most of it over the hairline.
         ring.borderWidth = 1.5
         ring.isHidden = true
+        ring.zPosition = 1
         layer?.addSublayer(ring)
         reading.setScale(scale)
         reading.layer.zPosition = 1
@@ -332,6 +372,7 @@ final class PinView: NSView {
 
     isolated deinit {
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        textReading?.cancel()
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -366,6 +407,7 @@ final class PinView: NSView {
         CATransaction.setDisableActions(true)
         contentLayer.cornerRadius = appearance.cornerRadius
         ring.cornerRadius = appearance.cornerRadius
+        liveText?.layer?.cornerRadius = appearance.cornerRadius
         let border = appearance.border || contrast
         contentLayer.borderWidth = border ? (contrast ? 1 : 0.5) : 0
         if case .text = content {
@@ -426,6 +468,7 @@ final class PinView: NSView {
         if let close = buttons.close { closeButton.frame = close }
         if let more = buttons.more { moreButton.frame = more }
         lockMark.frame = buttons.trailing
+        liveText?.setContentsRectNeedsUpdate()
         if let textView {
             let zoom = pinWindow?.zoom ?? 1
             textView.zoom = zoom
@@ -476,6 +519,7 @@ final class PinView: NSView {
         contentLayer.opacity = Float(opacity)
         CATransaction.commit()
         textView?.alphaValue = opacity
+        liveText?.alphaValue = opacity
     }
 
     // MARK: Hover
@@ -484,14 +528,43 @@ final class PinView: NSView {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
         var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways, .inVisibleRect]
-        if window?.frame.contains(NSEvent.mouseLocation) == true { options.insert(.assumeInside) }
+        // A picture's cursor follows where its text takes a press.
+        if textReader != nil { options.formUnion([.mouseMoved, .cursorUpdate]) }
+        if window?.frame.contains(NSEvent.mouseLocation) == true {
+            options.insert(.assumeInside)
+            // A pin that opens under the pointer gets no mouseEntered.
+            readTextIfNeeded()
+        }
         let area = NSTrackingArea(rect: bounds, options: options, owner: self)
         addTrackingArea(area)
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) { setControlsVisible(true) }
+    override func mouseEntered(with event: NSEvent) {
+        setControlsVisible(true)
+        readTextIfNeeded()
+    }
+
     override func mouseExited(with event: NSEvent) { setControlsVisible(false) }
+
+    override func mouseMoved(with event: NSEvent) { updateCursor(at: event.locationInWindow) }
+    override func cursorUpdate(with event: NSEvent) { updateCursor(at: event.locationInWindow) }
+
+    override func flagsChanged(with event: NSEvent) {
+        super.flagsChanged(with: event)
+        if let window, window.frame.contains(NSEvent.mouseLocation) {
+            updateCursor(at: window.convertPoint(fromScreen: NSEvent.mouseLocation))
+        }
+    }
+
+    /// The I-beam where a press would go to the picture's text, the arrow everywhere else: by the border, with
+    /// ⌘ held, over the corner buttons.
+    private func updateCursor(at windowPoint: CGPoint) {
+        guard let liveText else { return }
+        let target = hitTest(superview?.convert(windowPoint, from: nil) ?? windowPoint)
+        let onText = target.map { $0 === liveText || $0.isDescendant(of: liveText) } ?? false
+        (onText ? NSCursor.iBeam : NSCursor.arrow).set()
+    }
 
     /// Close and More fade in on hover wherever they fit (`PinGeometry.cornerButtons`), never on a locked pin.
     private func setControlsVisible(_ visible: Bool) {
@@ -510,18 +583,105 @@ final class PinView: NSView {
     func debugShowControls() {
         setControlsVisible(true)
     }
+
+    /// Reads the picture's text now and waits for it, for scripted checks; selects all of it when asked.
+    func debugReadText(selectAll: Bool) async -> Int {
+        readTextIfNeeded()
+        await textReading?.value
+        guard let liveText else { return 0 }
+        if selectAll { liveText.selectedRanges = [liveText.text.startIndex..<liveText.text.endIndex] }
+        return liveText.text.count
+    }
+
+    /// Whether Live Text has text or a detected item at `point`, in the pin's coordinates.
+    func debugHasText(at point: CGPoint) -> Bool {
+        guard let liveText else { return false }
+        return liveText.hasInteractiveItem(at: liveText.analysisPoint(point, from: self))
+    }
     #endif
 
-    /// Faded out, Close and More let the pin take the click, so it drags from under them.
+    /// Faded out, Close and More let the pin take the click, so it drags from under them. Live Text covers
+    /// the whole picture but takes only the presses `takesTextPress(at:)` gives it.
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         if !controlsShown, let hit, hit === closeButton || hit === moreButton { return self }
+        if let liveText, let hit, hit === liveText || hit.isDescendant(of: liveText) {
+            return takesTextPress(at: convert(point, from: superview)) ? hit : self
+        }
         return hit
+    }
+
+    // MARK: Live Text
+
+    /// Reads the picture's text the first time the pointer comes to the pin: VisionKit takes a fraction of a
+    /// second, spent only on pins someone reaches for.
+    func readTextIfNeeded() {
+        guard textReading == nil, let textReader, case .image(let image, _) = content else { return }
+        textReading = Task { [weak self] in
+            let probe = LatencyProbe("pin.livetext")
+            let analysis = await textReader.read(image)
+            probe.end()
+            guard let self, !Task.isCancelled, let analysis else { return }
+            self.showLiveText(analysis)
+        }
+    }
+
+    private func showLiveText(_ analysis: ImageAnalysis) {
+        let overlay = ImageAnalysisOverlayView(self)
+        overlay.preferredInteractionTypes = [.textSelection, .dataDetectors]
+        // Its own Live Text button stays hidden: the text is selectable without it.
+        overlay.isSupplementaryInterfaceHidden = true
+        overlay.frame = bounds
+        overlay.autoresizingMask = [.width, .height]
+        // A selection is part of the picture: rounded and faded with it.
+        overlay.wantsLayer = true
+        overlay.layer?.masksToBounds = true
+        overlay.layer?.cornerCurve = .continuous
+        overlay.layer?.cornerRadius = look.cornerRadius
+        overlay.alphaValue = pinWindow?.opacity ?? 1
+        overlay.analysis = analysis
+        // Under the corner buttons and the lock mark.
+        addSubview(overlay, positioned: .below, relativeTo: lockMark)
+        liveText = overlay
+        // VoiceOver can take the text the screen shows.
+        let copyText = NSAccessibilityCustomAction(name: String(localized: "Copy Text", bundle: .module)) { [weak self] in
+            guard let self, let text = self.liveText?.text, !text.isEmpty else { return false }
+            self.pinWindow?.copySelectedText(text)
+            return true
+        }
+        var actions = accessibilityCustomActions() ?? []
+        actions.insert(copyText, at: min(1, actions.count))
+        setAccessibilityCustomActions(actions)
+        if case .image(let image, let pictureScale) = content {
+            setAccessibilityLabel(String(localized: "Pin with text, \(Int(CGFloat(image.width) / pictureScale)) by \(Int(CGFloat(image.height) / pictureScale)) points", bundle: .module))
+        }
+    }
+
+    /// The border by which a picture filled with text still drags.
+    private static let grabBorder: CGFloat = 6
+
+    /// Whether a press at `point` (in the pin's coordinates) goes to the picture's text, as in Preview: a left
+    /// press on text, a right press also on a detected item (a link's or a code's menu), so a drag across a
+    /// QR code still moves the pin. Never by the border, and never with ⌘ held, which drags from anywhere.
+    private func takesTextPress(at point: CGPoint) -> Bool {
+        guard
+            let liveText, !NSEvent.modifierFlags.contains(.command),
+            bounds.insetBy(dx: Self.grabBorder, dy: Self.grabBorder).contains(point)
+        else { return false }
+        let location = liveText.analysisPoint(point, from: self)
+        return NSApp.currentEvent?.type == .rightMouseDown ? liveText.hasInteractiveItem(at: location) : liveText.hasText(at: location)
     }
 
     // MARK: Pointer
 
     override func mouseDown(with event: NSEvent) {
+        // A press on the picture away from its text clears a selection, as a click elsewhere does in Preview;
+        // one by the border or with ⌘ held only moves the pin. (The drag returns at once, so whether the pin
+        // moved is not known here.)
+        let point = convert(event.locationInWindow, from: nil)
+        if !event.modifierFlags.contains(.command), bounds.insetBy(dx: Self.grabBorder, dy: Self.grabBorder).contains(point) {
+            liveText?.resetSelection()
+        }
         window?.makeKey()
         window?.performDrag(with: event)
     }
@@ -555,7 +715,9 @@ final class PinView: NSView {
         guard let pin = pinWindow else { return }
         let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
         switch event.keyCode {
-        case 53: pin.closePin()
+        case 53:
+            // A selection in the picture's text goes first.
+            if let liveText, liveText.hasActiveTextSelection { liveText.resetSelection() } else { pin.closePin() }
         case 123: pin.move(by: CGVector(dx: -step, dy: 0))
         case 124: pin.move(by: CGVector(dx: step, dy: 0))
         case 125: pin.move(by: CGVector(dx: 0, dy: -step))
@@ -568,7 +730,11 @@ final class PinView: NSView {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let pin = pinWindow, pin.isKeyWindow, event.modifierFlags.contains(.command) else { return false }
         switch event.charactersIgnoringModifiers?.lowercased() {
-        case "c": pin.copyPin()
+        case "c":
+            if liveText?.hasActiveTextSelection == true { copySelectedText() } else { pin.copyPin() }
+        case "a":
+            guard liveText != nil else { return false }
+            selectAllText()
         case "s" where pin.isPicture: event.modifierFlags.contains(.shift) ? pin.savePinAs() : pin.savePin()
         case "w": pin.closePin()
         case "=", "+": pin.setZoom(pin.zoom * 1.25)
@@ -585,6 +751,17 @@ final class PinView: NSView {
         makeMenu()
     }
 
+    /// Copies what the selection in the picture's text holds.
+    private func copySelectedText() {
+        guard let liveText, liveText.hasActiveTextSelection else { return }
+        pinWindow?.copySelectedText(liveText.selectedText)
+    }
+
+    private func selectAllText() {
+        guard let liveText else { return }
+        liveText.selectedRanges = [liveText.text.startIndex..<liveText.text.endIndex]
+    }
+
     @objc private func moreClicked(_ sender: NSView) {
         makeMenu().popUp(positioning: nil, at: CGPoint(x: 0, y: sender.bounds.maxY + 4), in: sender)
     }
@@ -593,7 +770,9 @@ final class PinView: NSView {
         pinWindow?.closePin()
     }
 
-    private func makeMenu() -> NSMenu {
+    /// `afterLiveText`: the pin's items follow Live Text's own over the text, which copy the text. Either way
+    /// ⌘C goes where it goes on the keyboard: to the selection when there is one, else to the picture.
+    private func makeMenu(afterLiveText: Bool = false) -> NSMenu {
         let menu = NSMenu()
         guard let pin = pinWindow else { return menu }
         func item(_ title: String, _ symbol: String?, key: String = "", modifiers: NSEvent.ModifierFlags = .command, _ action: @escaping () -> Void) -> NSMenuItem {
@@ -608,7 +787,18 @@ final class PinView: NSView {
         }
         switch content {
         case .image:
-            menu.addItem(item(String(localized: "Copy", bundle: .module), "doc.on.doc", key: "c") { pin.copyPin() })
+            let selection = liveText?.hasActiveTextSelection == true
+            if afterLiveText {
+                menu.addItem(item(String(localized: "Copy Image", bundle: .module), "photo", key: selection ? "" : "c") { pin.copyPin() })
+            } else if selection {
+                menu.addItem(item(String(localized: "Copy Text", bundle: .module), "doc.on.doc", key: "c") { [weak self] in self?.copySelectedText() })
+                menu.addItem(item(String(localized: "Copy Image", bundle: .module), "photo") { pin.copyPin() })
+            } else {
+                menu.addItem(item(String(localized: "Copy", bundle: .module), "doc.on.doc", key: "c") { pin.copyPin() })
+            }
+            if !afterLiveText, liveText != nil {
+                menu.addItem(item(String(localized: "Select All Text", bundle: .module), "character.cursor.ibeam", key: "a") { [weak self] in self?.selectAllText() })
+            }
             menu.addItem(item(String(localized: "Save", bundle: .module), "square.and.arrow.down", key: "s") { pin.savePin() })
             menu.addItem(item(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", key: "s", modifiers: [.command, .shift]) { pin.savePinAs() })
             menu.addItem(.separator())
@@ -645,6 +835,40 @@ final class PinView: NSView {
         menu.addItem(.separator())
         menu.addItem(item(String(localized: "Close", bundle: .module), "xmark") { pin.closePin() })
         menu.addItem(item(String(localized: "Close All Pins", bundle: .module), nil) { pin.closeAllPins() })
+        return menu
+    }
+}
+
+extension PinView: ImageAnalysisOverlayViewDelegate {
+    /// The picture fills the pin.
+    func contentsRect(for overlayView: ImageAnalysisOverlayView) -> CGRect {
+        CGRect(x: 0, y: 0, width: 1, height: 1)
+    }
+
+    /// Escape and the arrows stay the pin's while Live Text has the keys.
+    func overlayView(_ overlayView: ImageAnalysisOverlayView, shouldHandleKeyDownEvent event: NSEvent) -> Bool {
+        ![53, 123, 124, 125, 126].contains(event.keyCode)
+    }
+
+    /// Over the text, Live Text's menu (Copy, Look Up, Translate, and the like), then the pin's, in place of
+    /// VisionKit's items for an image it does not hold.
+    func overlayView(_ overlayView: ImageAnalysisOverlayView, updatedMenuFor menu: NSMenu, for event: NSEvent, at point: CGPoint) -> NSMenu {
+        let imageTags: Set<Int> = [
+            ImageAnalysisOverlayView.MenuTag.copyImage, ImageAnalysisOverlayView.MenuTag.shareImage,
+            ImageAnalysisOverlayView.MenuTag.copySubject, ImageAnalysisOverlayView.MenuTag.shareSubject,
+        ]
+        for item in menu.items where imageTags.contains(item.tag) {
+            menu.removeItem(item)
+        }
+        while menu.items.last?.isSeparatorItem == true {
+            menu.removeItem(at: menu.items.count - 1)
+        }
+        let pinMenu = makeMenu(afterLiveText: true)
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        for item in pinMenu.items {
+            pinMenu.removeItem(item)
+            menu.addItem(item)
+        }
         return menu
     }
 }

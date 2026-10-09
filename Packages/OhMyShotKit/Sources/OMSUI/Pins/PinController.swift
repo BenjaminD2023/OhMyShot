@@ -6,6 +6,7 @@ import OMSCore
 /// zoom, Option-scrolled to fade, moved with the arrows, closed with Escape, its close button, or a
 /// middle click; its menu holds the rest. A locked pin lets every click through and is unlocked from the
 /// menu bar. A pin keeps its own copy of the picture, so it outlives the capture's place in the history.
+/// A picture's text can be selected in place with Live Text, as in Preview.
 public final class PinController {
     /// What is pinned and where it came from.
     public struct Pin {
@@ -59,6 +60,7 @@ public final class PinController {
     private let settings: SettingsStore
     private let actions: Actions
     private var windows: [PinWindow] = []
+    private let textReader = PinTextReader()
     private var windowLease: ActiveResources.Lease?
     public private(set) var areHidden = false
 
@@ -114,7 +116,7 @@ public final class PinController {
             }
         }
         let pin = Pin(id: UUID(), content: content, origin: origin)
-        let window = PinWindow(pin: pin, frame: placed.frame, zoom: placed.zoom, appearance: appearance, actions: actions)
+        let window = PinWindow(pin: pin, frame: placed.frame, zoom: placed.zoom, appearance: appearance, actions: actions, textReader: textReader)
         window.onClose = { [weak self] in self?.close($0) }
         window.onCloseAll = { [weak self] in self?.closeAll() }
         window.onChange = { [weak self] in self?.onChange?() }
@@ -169,6 +171,7 @@ public final class PinController {
         if windows.isEmpty {
             windowLease = nil
             areHidden = false
+            textReader.release()
             MemoryRelief.returnFreedPages()
         }
         onChange?()
@@ -194,7 +197,7 @@ public final class PinController {
         let window = PinWindow(
             pin: Pin(id: UUID(), content: content, origin: .clipboard),
             frame: CGRect(x: visible.minX + 40, y: visible.minY + 40, width: base.width * zoom, height: base.height * zoom),
-            zoom: zoom, appearance: appearance, actions: actions
+            zoom: zoom, appearance: appearance, actions: actions, textReader: textReader
         )
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -203,6 +206,18 @@ public final class PinController {
         if controls { window.debugShowControls() }
         window.displayIfNeeded()
         return window
+    }
+
+    /// Reads the text of a picture pin from `debugHiddenPin` and waits for it, selecting all of it when
+    /// `selectAll`: how many characters Live Text found, 0 for none.
+    public func debugReadText(in window: NSWindow, selectAll: Bool) async -> Int {
+        guard let pin = window as? PinWindow else { return 0 }
+        return await pin.debugReadText(selectAll: selectAll)
+    }
+
+    /// Lets the text reader go, as closing the last pin does.
+    public func debugReleaseTextReader() {
+        textReader.release()
     }
 
     /// Acts on the newest pin as its controls would, for scripted checks.

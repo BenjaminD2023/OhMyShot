@@ -41,7 +41,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   lands the pin over the captured area at 1:1 (the Snipaste convention), keeps the capture in the
   history, and shows no card and leaves the clipboard alone. Pins appear in new captures by default.
   The release build has no default shortcut for Capture Area and Pin (⇧⌘7 types a slash on German
-  layouts). Live Text selection on pins comes later.
+  layouts).
 - Text and color pins (2026-10-09): Pin from Clipboard takes a picture first, then a color (a copied
   color, or text that is exactly a color's value), then text; a copied file that is not a picture beeps
   rather than pinning its name. Text sits on a card in the Text Result Card's materials, monospaced
@@ -49,6 +49,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   every zoom. A color is a 128 pt swatch in its own color space, on the checkerboard when translucent,
   with its hex resting in the reading capsule while it fits. Saving, Annotate, and Recognize Text stay
   with pictures.
+- Live Text on picture pins (2026-10-09): direct selection as in Preview, the user's call over a selection mode with
+  its own button. Over text the cursor is an I-beam and a drag selects; a drag elsewhere, within 6 pt of the edge,
+  or with ⌘ held moves the pin. They accepted that the first drag on a tightly cropped text capture selects rather
+  than moves it. VisionKit reads a pin once, the first time the pointer comes to it, never in the background.
 - Self-Timer (2026-10-09): choose first, then count down, then capture live at zero (the ⌘⇧5 timer and
   camera convention), so a menu that closes on any key can be opened during the countdown. The
   countdown takes neither the keyboard nor the pointer; it is cancelled by its shortcut again or from
