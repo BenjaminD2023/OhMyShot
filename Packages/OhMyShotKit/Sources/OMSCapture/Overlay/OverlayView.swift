@@ -23,10 +23,18 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode)
     func overlayViewDidCancel(_ view: OverlayView)
+    /// A color taken at a point in global space (a click, Return, or C), with the keys held then.
+    func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags)
+    /// The arrow keys moved the crosshair by whole pixels; down is positive.
+    func overlayView(_ view: OverlayView, didNudge pixels: CGVector)
+    /// The ruler's measurement, to copy; `ending` closes the overlay after it (Return).
+    func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool)
+    func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit)
 }
 
 /// The capture overlay on one display: a lightly dimmed screen, the selection with its size, a small
-/// crosshair, a magnifier for exact placement, and the All-In-One bar.
+/// crosshair, a magnifier for exact placement, and the All-In-One bar. Picking a color and measuring use
+/// the same overlay, undimmed: the magnifier, or the ruler.
 ///
 /// Everything is a layer whose geometry changes on input, with implicit animations off, so the overlay
 /// never trails the pointer.
@@ -74,6 +82,10 @@ final class OverlayView: NSView {
     /// Copying text gets a lighter overlay than a screenshot: no dimming, no magnifier or readings, the
     /// system crosshair, and a selection drawn like selected text.
     private var purpose: OverlayController.Purpose = .screenshot
+    /// The notation picked colors are copied in, which the magnifier's reading shows while picking.
+    private var colorFormat: ColorFormat = .hex
+    /// The ruler, while measuring.
+    private var measure: MeasureOverlay?
 
     init(display: DisplayInfo) {
         self.display = display
@@ -106,7 +118,7 @@ final class OverlayView: NSView {
     /// still showing then, and a crosshair under it would double it.
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
-        purpose: OverlayController.Purpose = .screenshot
+        purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex, measureUnit: MeasureUnit = .points
     ) {
         self.mode = mode
         self.windows = windows
@@ -118,6 +130,16 @@ final class OverlayView: NSView {
         capturedFrame = nil
         increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         self.purpose = purpose
+        self.colorFormat = colorFormat
+        if purpose == .measure {
+            let measure = self.measure ?? MeasureOverlay(display: display)
+            if measure.layer.superlayer == nil { layer?.insertSublayer(measure.layer, below: crosshairOutline) }
+            measure.unit = measureUnit
+            self.measure = measure
+        } else {
+            measure?.layer.removeFromSuperlayer()
+            measure = nil
+        }
         // The bar first: the size reading below steers clear of it.
         toolbar.isHidden = !showsToolbar
         toolbar.alphaValue = 1
@@ -128,6 +150,8 @@ final class OverlayView: NSView {
         case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.")
         case .annotate: String(localized: "Drag over an area to mark it up. Press Space to choose a window instead. Press Escape to cancel.")
         case .screenshot: String(localized: "Drag to capture an area. Press Space to capture a window instead. Press Escape to cancel.")
+        case .color: String(localized: "Click to copy the color under the crosshair. Option-click shows it in every notation. The arrow keys move one pixel. Press Escape to cancel.")
+        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement and Tab switches between points and pixels. Press Escape to cancel.")
         }
         setAccessibilityHelp(help)
         withoutAnimation {
@@ -143,6 +167,7 @@ final class OverlayView: NSView {
     /// frame also becomes the backdrop, so the screen holds still while selecting.
     func show(_ frame: CapturedFrame, frozen: Bool) {
         capturedFrame = frame
+        measure?.show(frame)
         withoutAnimation {
             backdrop.contents = frozen ? frame.image : nil
             loupeImage.contents = frame.image
@@ -167,6 +192,7 @@ final class OverlayView: NSView {
     /// interface in-place annotation put over it.
     func clear() {
         capturedFrame = nil
+        measure?.clear()
         isAnnotating = false
         for subview in subviews where subview !== toolbar {
             subview.removeFromSuperview()
@@ -180,6 +206,31 @@ final class OverlayView: NSView {
     /// The display's frame, once it has arrived.
     func frame() -> CapturedFrame? {
         capturedFrame
+    }
+
+    /// The color of the pixel at a point in global space, the one the magnifier centers on.
+    func color(at globalPoint: CGPoint) -> ScreenColor? {
+        let pixel = pixelCoordinate(at: local(globalPoint))
+        return capturedFrame?.color(atPixel: pixel.x, pixel.y)
+    }
+
+    #if DEBUG
+    /// Drags the ruler's box over `rect` (global space) and lets go, for scripted checks.
+    func debugMeasureBox(_ rect: CGRect) {
+        let box = local(rect)
+        measure?.beginBox(at: CGPoint(x: box.minX, y: box.maxY))
+        measure?.dragBox(to: CGPoint(x: box.maxX, y: box.minY))
+        measure?.endBox()
+    }
+
+    var debugMeasurement: String? {
+        measure?.measurement
+    }
+    #endif
+
+    func setMeasureUnit(_ unit: MeasureUnit) {
+        measure?.unit = unit
+        setAccessibilityValue(measure?.accessibilityValue)
     }
 
     /// Hands the display to in-place annotation: the frozen screen stays; the selection, readings,
@@ -279,14 +330,34 @@ final class OverlayView: NSView {
 
     // Area mode hands the press to the controller, which keeps one selection for every display: drag
     // events keep coming here even once the pointer is over another display, in global space.
+    // Picking a color takes the pixel when the mouse is released; the ruler draws its box here, on the
+    // display the press began on.
     override func mouseDown(with event: NSEvent) {
         guard mode == .area, !isAnnotating else { return }
-        delegate?.overlayView(self, didPressAt: global(convert(event.locationInWindow, from: nil)))
+        let point = convert(event.locationInWindow, from: nil)
+        switch purpose {
+        case .color:
+            break
+        case .measure:
+            measure?.beginBox(at: point)
+        case .screenshot, .text, .annotate:
+            delegate?.overlayView(self, didPressAt: global(point))
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard mode == .area, !isAnnotating else { return }
-        delegate?.overlayView(self, didDragTo: global(convert(event.locationInWindow, from: nil)), modifiers: event.modifierFlags)
+        let point = convert(event.locationInWindow, from: nil)
+        switch purpose {
+        case .color:
+            delegate?.overlayView(self, didMovePointerTo: global(point))
+        case .measure:
+            let inside = CGPoint(x: min(max(point.x, 0), bounds.maxX), y: min(max(point.y, 0), bounds.maxY))
+            measure?.dragBox(to: inside)
+            delegate?.overlayView(self, didMovePointerTo: global(inside))
+        case .screenshot, .text, .annotate:
+            delegate?.overlayView(self, didDragTo: global(point), modifiers: event.modifierFlags)
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -295,7 +366,15 @@ final class OverlayView: NSView {
             if let hoveredWindow { delegate?.overlayView(self, didSelectWindow: hoveredWindow, modifiers: event.modifierFlags) }
             return
         }
-        delegate?.overlayView(self, didReleaseWith: event.modifierFlags)
+        switch purpose {
+        case .color:
+            delegate?.overlayView(self, didPickColorAt: global(convert(event.locationInWindow, from: nil)), modifiers: event.modifierFlags)
+        case .measure:
+            measure?.endBox()
+            setAccessibilityValue(measure?.accessibilityValue)
+        case .screenshot, .text, .annotate:
+            delegate?.overlayView(self, didReleaseWith: event.modifierFlags)
+        }
     }
 
     override func flagsChanged(with event: NSEvent) {
@@ -310,16 +389,49 @@ final class OverlayView: NSView {
             super.keyDown(with: event)
             return
         }
+        let character = event.charactersIgnoringModifiers?.lowercased()
+        let picks = purpose == .color || purpose == .measure
         switch event.keyCode {
         case 53: // Escape
             delegate?.overlayViewDidCancel(self)
-        case 49:
+        case 49 where !picks:
             // While dragging, Space moves the selection; before a drag it switches between capturing a
             // region and capturing a window, as in macOS's own screenshot tool.
             delegate?.overlayView(self, didPressSpace: event.isARepeat)
+        case 123, 124, 125, 126 where picks:
+            // The arrows move the crosshair a pixel at a time, ten with Shift.
+            let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+            let direction: CGVector = switch event.keyCode {
+            case 123: CGVector(dx: -1, dy: 0)
+            case 124: CGVector(dx: 1, dy: 0)
+            case 125: CGVector(dx: 0, dy: 1)
+            default: CGVector(dx: 0, dy: -1)
+            }
+            delegate?.overlayView(self, didNudge: CGVector(dx: direction.dx * step, dy: direction.dy * step))
+        case 36, 76 where purpose == .color:
+            if let pointer { delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags) }
+        case 36, 76 where purpose == .measure:
+            if let text = measure?.measurement { delegate?.overlayView(self, didCopyMeasurement: text, ending: true) }
+        case 48 where purpose == .measure:
+            if let measure { delegate?.overlayView(self, didChangeUnit: measure.unit.toggled) }
         default:
-            super.keyDown(with: event)
+            if character == "u", purpose == .measure, let measure {
+                delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
+            } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose != .text, let pointer, capturedFrame != nil {
+                // C takes the color under the crosshair, as in Snipaste: from the magnifier while capturing.
+                delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: [])
+            } else {
+                super.keyDown(with: event)
+            }
         }
+    }
+
+    /// ⌘C copies the ruler's measurement; the overlay stays for the next one.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard purpose == .measure, event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "c",
+              let text = measure?.measurement else { return super.performKeyEquivalent(with: event) }
+        delegate?.overlayView(self, didCopyMeasurement: text, ending: false)
+        return true
     }
 
     override func keyUp(with event: NSEvent) {
@@ -431,8 +543,11 @@ final class OverlayView: NSView {
         // Text: the selection reads as selected text (the system's selection color, lightly filled,
         // edged in the accent), over an undimmed screen. Screenshot: a white edge over a soft outline.
         let text = purpose == .text
-        room.isHidden = text
-        outline.isHidden = text
+        // Picking a color and measuring show the screen as it is: they choose no area.
+        let undimmed = text || purpose == .color || purpose == .measure
+        room.isHidden = undimmed
+        outline.isHidden = undimmed
+        measure?.applyAppearance(dark: isDark, contrast: increasedContrast, accent: Theme.cgColor(.controlAccentColor, for: effectiveAppearance))
         border.lineWidth = text ? Self.textSelectionEdge(increasedContrast: increasedContrast) : Theme.Overlay.borderWidth
         border.strokeColor = text ? Theme.cgColor(.controlAccentColor, for: effectiveAppearance) : .white
         // Resolved for this appearance before the alpha is applied: applying it first fixes the
@@ -503,6 +618,7 @@ final class OverlayView: NSView {
         }
         guard let point, purpose != .text else {
             pointerLayers.forEach { $0.isHidden = true }
+            measure?.movePointer(to: nil)
             return
         }
         let crosshairPath = Self.crosshairPath(at: point)
@@ -510,6 +626,13 @@ final class OverlayView: NSView {
         crosshairOutline.path = crosshairPath
         crosshair.isHidden = false
         crosshairOutline.isHidden = false
+        if purpose == .measure {
+            // The ruler reads the screen itself; no magnifier.
+            for layer in [loupe, loupeRim, loupeShadow, loupePill.layer] { layer.isHidden = true }
+            measure?.movePointer(to: point)
+            setAccessibilityValue(measure?.accessibilityValue)
+            return
+        }
 
         // The magnifier sits below and right of the pointer, flipping away from the display's edges.
         let diameter = Theme.Loupe.diameter
@@ -522,9 +645,13 @@ final class OverlayView: NSView {
         let pixel = pixelCoordinate(at: point)
         if let frame = capturedFrame {
             loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image)
-            let color = Self.color(at: pixel, in: frame.image)
+            let color = frame.color(atPixel: pixel.x, pixel.y)
             loupePill.swatch = color?.cgColor
-            loupePill.text = color.map { "\(pixel.x), \(pixel.y)   \($0.hex)" } ?? "\(pixel.x), \(pixel.y)"
+            // Picking, the reading is what a click copies; capturing, the hex.
+            let value = color.map { purpose == .color ? $0.string(in: colorFormat) : $0.hex }
+            loupePill.text = value.map { "\(pixel.x), \(pixel.y)   \($0)" } ?? "\(pixel.x), \(pixel.y)"
+            // VoiceOver hears the color under the crosshair while picking.
+            if purpose == .color { setAccessibilityValue(value) }
             for layer in [loupe, loupeRim, loupeShadow] { layer.isHidden = false }
         } else {
             loupePill.swatch = nil
@@ -561,19 +688,6 @@ final class OverlayView: NSView {
         let left = CGFloat(pixel.x) - half
         let bottom = height - CGFloat(pixel.y) - 1 - half
         return CGRect(x: left / width, y: bottom / height, width: across / width, height: across / height)
-    }
-
-    /// The pixel's color in sRGB. The frame is in the display's color space, so it is converted.
-    private static func color(at pixel: (x: Int, y: Int), in image: CGImage) -> PixelColor? {
-        guard
-            let single = image.cropping(to: CGRect(x: pixel.x, y: pixel.y, width: 1, height: 1)),
-            let space = CGColorSpace(name: CGColorSpace.sRGB),
-            let context = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return nil }
-        context.interpolationQuality = .none
-        context.draw(single, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
-        return PixelColor(red: data[0], green: data[1], blue: data[2])
     }
 
     /// A small crosshair with a gap at the center so the target pixel stays visible.
@@ -620,13 +734,4 @@ final class OverlayView: NSView {
         body()
         CATransaction.commit()
     }
-}
-
-struct PixelColor {
-    let red: UInt8
-    let green: UInt8
-    let blue: UInt8
-
-    var hex: String { String(format: "#%02X%02X%02X", red, green, blue) }
-    var cgColor: CGColor { CGColor(srgbRed: CGFloat(red) / 255, green: CGFloat(green) / 255, blue: CGFloat(blue) / 255, alpha: 1) }
 }

@@ -23,6 +23,26 @@ public struct CapturedFrame: Sendable {
         frame.width > 0 ? CGFloat(image.width) / frame.width : 1
     }
 
+    /// The color of the pixel at (`x`, `y`), counted from the top-left corner, as the display showed it: read
+    /// in the capture's own space, so a Display P3 color keeps what sRGB cannot hold. Nil outside it.
+    public func color(atPixel x: Int, _ y: Int) -> ScreenColor? {
+        guard x >= 0, y >= 0, x < image.width, y < image.height,
+              let single = image.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)) else { return nil }
+        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        var bytes: [UInt8] = [0, 0, 0, 0]
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.interpolationQuality = .none
+            context.draw(single, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        guard drawn, let color = CGColor(colorSpace: space, components: bytes.prefix(3).map { CGFloat($0) / 255 } + [1]) else { return nil }
+        return ScreenColor(color)
+    }
+
     /// The part of this capture under `rect` (AppKit's global space), in whole pixels: what a capture of
     /// that area would have given when this one was taken. The pixels are copied out, so the whole
     /// capture can be let go. Nil when `rect` misses it.

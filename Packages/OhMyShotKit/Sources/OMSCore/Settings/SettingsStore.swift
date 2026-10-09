@@ -98,6 +98,16 @@ public final class SettingsStore {
         didSet { defaults.set(pinsAppearInCaptures, forKey: Key.pinsAppearInCaptures) }
     }
 
+    /// The notation a picked color goes to the clipboard in.
+    public var colorFormat: ColorFormat {
+        didSet { defaults.set(colorFormat.rawValue, forKey: Key.colorFormat) }
+    }
+
+    /// What the ruler reads in; switched with Tab while measuring, and remembered.
+    public var measureUnit: MeasureUnit {
+        didSet { defaults.set(measureUnit.rawValue, forKey: Key.measureUnit) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -120,6 +130,8 @@ public final class SettingsStore {
             Key.pinShadow: true,
             Key.pinBorder: true,
             Key.pinsAppearInCaptures: true,
+            Key.colorFormat: ColorFormat.hex.rawValue,
+            Key.measureUnit: MeasureUnit.points.rawValue,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
@@ -134,6 +146,8 @@ public final class SettingsStore {
         pinShadow = defaults.bool(forKey: Key.pinShadow)
         pinBorder = defaults.bool(forKey: Key.pinBorder)
         pinsAppearInCaptures = defaults.bool(forKey: Key.pinsAppearInCaptures)
+        colorFormat = defaults.string(forKey: Key.colorFormat).flatMap(ColorFormat.init(rawValue:)) ?? .hex
+        measureUnit = defaults.string(forKey: Key.measureUnit).flatMap(MeasureUnit.init(rawValue:)) ?? .points
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
@@ -154,6 +168,8 @@ public final class SettingsStore {
         static let pinShadow = "pinShadow"
         static let pinBorder = "pinBorder"
         static let pinsAppearInCaptures = "pinsAppearInCaptures"
+        static let colorFormat = "colorFormat"
+        static let measureUnit = "measureUnit"
         static let copyAfterCapture = "copyAfterCapture"
         static let saveAfterCapture = "saveAfterCapture"
         static let showQuickAccess = "showQuickAccess"

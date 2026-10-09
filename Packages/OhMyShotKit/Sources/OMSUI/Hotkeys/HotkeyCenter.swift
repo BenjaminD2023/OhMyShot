@@ -19,6 +19,10 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case captureTextJoined
     /// Drag over text and its translation covers it, in place.
     case translateArea
+    /// Take a color off the frozen screen.
+    case pickColor
+    /// Measure the frozen screen.
+    case measure
     case openHistory
     /// Copies the newest Quick Access card's capture, so it can be reached without the pointer.
     case copyLatestCapture
@@ -40,6 +44,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .captureText: String(localized: "Capture Text", bundle: .module)
         case .captureTextJoined: String(localized: "Capture Text, Joining Lines", bundle: .module)
         case .translateArea: String(localized: "Translate Area", bundle: .module)
+        case .pickColor: String(localized: "Pick Color", bundle: .module)
+        case .measure: String(localized: "Measure", bundle: .module)
         case .openHistory: String(localized: "Open Capture History", bundle: .module)
         case .copyLatestCapture: String(localized: "Copy Latest Capture", bundle: .module)
         }
@@ -71,7 +77,7 @@ public final class HotkeyCenter {
         var installed = Set(defaults.stringArray(forKey: key) ?? [])
         if defaults.object(forKey: key) == nil, defaults.bool(forKey: "didInstallDefaultShortcuts") {
             // Installed before shortcuts were tracked one by one: every one that existed then.
-            installed = Set(CaptureShortcut.allCases.filter { ![.translateArea, .annotateArea, .pinArea].contains($0) }.map(\.rawValue))
+            installed = Set(CaptureShortcut.allCases.filter { ![.translateArea, .annotateArea, .pinArea, .pickColor, .measure].contains($0) }.map(\.rawValue))
         }
         for shortcut in CaptureShortcut.allCases where !installed.contains(shortcut.rawValue) {
             let taken = CaptureShortcut.allCases.compactMap { KeyboardShortcuts.getShortcut(for: $0.name) }
@@ -110,8 +116,11 @@ public final class HotkeyCenter {
         case .captureArea: KeyboardShortcuts.Shortcut(.four, modifiers: modifiers)
         case .allInOne: KeyboardShortcuts.Shortcut(.five, modifiers: modifiers)
         case .annotateArea: KeyboardShortcuts.Shortcut(.six, modifiers: modifiers)
-        // ⇧⌘7 types a slash on German and other layouts: the release build leaves it unset.
+        // ⇧⌘7 types a slash on German and other layouts, and ⇧⌘8 and ⇧⌘9 brackets: the release build leaves
+        // them unset.
         case .pinArea: profile == .development ? KeyboardShortcuts.Shortcut(.seven, modifiers: modifiers) : nil
+        case .pickColor: profile == .development ? KeyboardShortcuts.Shortcut(.eight, modifiers: modifiers) : nil
+        case .measure: profile == .development ? KeyboardShortcuts.Shortcut(.nine, modifiers: modifiers) : nil
         case .captureWindow, .capturePreviousArea, .selfTimer, .captureTextJoined, .openHistory, .copyLatestCapture: nil
         }
     }

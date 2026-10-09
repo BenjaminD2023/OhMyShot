@@ -22,6 +22,9 @@ public final class OverlayController {
         case window(WindowTarget, modifiers: NSEvent.ModifierFlags)
         /// In-place annotation finished (`finishAnnotation`); its own handler has the result.
         case annotated
+        /// A color taken off the frozen screen (the color picker, or C over a capture's magnifier), where
+        /// it was, and the keys held as it was taken (Option asks for the color card).
+        case color(ScreenColor, at: CGPoint, display: DisplayInfo, modifiers: NSEvent.ModifierFlags)
         case cancelled
     }
 
@@ -33,6 +36,11 @@ public final class OverlayController {
         /// Mark up the selection in place: the screen freezes, and once an area (or a window) is chosen
         /// the overlay stays, handing its display's frozen frame to `onAnnotate`.
         case annotate
+        /// Take a color off the frozen screen: a click, Return, or C takes the pixel under the crosshair.
+        case color
+        /// Measure the frozen screen: from the pointer out to the nearest edges, or a box snapped to what it
+        /// holds.
+        case measure
     }
 
     /// What in-place annotation is given once its area is chosen: the view to host its interface (the
@@ -55,6 +63,13 @@ public final class OverlayController {
 
     /// Hold the screen still while selecting, so hover states and menus can be captured.
     public var freezesScreen = false
+    /// The notation picked colors are copied in: the magnifier's reading shows it while picking.
+    public var colorFormat: ColorFormat = .hex
+    /// What the ruler reads in. Tab switches it during a session, and `onMeasureUnitChange` hears it.
+    public var measureUnit: MeasureUnit = .points
+    public var onMeasureUnitChange: ((MeasureUnit) -> Void)?
+    /// The ruler's measurement, copied with ⌘C, or with Return as the overlay closes.
+    public var onCopyMeasurement: ((String) -> Void)?
     private var hidesCursor = false
 
     public private(set) var isActive = false
@@ -62,9 +77,10 @@ public final class OverlayController {
     /// pointer's display is captured on a frozen one.
     private var hasInput = false
 
-    /// Whether this session shows the screen as it was when it began; in-place annotation always does.
+    /// Whether this session shows the screen as it was when it began; in-place annotation, picking a
+    /// color, and measuring always do: they read the frozen frame's pixels.
     private var holdsStill: Bool {
-        freezesScreen || purpose == .annotate
+        freezesScreen || purpose == .annotate || purpose == .color || purpose == .measure
     }
 
     private struct Entry {
@@ -95,6 +111,10 @@ public final class OverlayController {
     private var dragTop: CGFloat = -.greatestFiniteMagnitude
     /// Space held during a drag moves the selection instead of resizing it.
     private var spaceHeld = false
+    /// The pointer in global space, and whether the arrow keys moved the crosshair since the mouse last
+    /// did: then a color is taken at the crosshair, not under the hidden pointer.
+    private var pointer: CGPoint?
+    private var nudged = false
     #if DEBUG
     /// Frames to show instead of capturing the screen, for scripted checks of the overlay that must never
     /// record what is on screen.
@@ -136,6 +156,8 @@ public final class OverlayController {
         dragDisplay = nil
         dragPoint = nil
         spaceHeld = false
+        pointer = nil
+        nudged = false
         self.completion = completion
         previousApp = NSWorkspace.shared.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
 
@@ -152,9 +174,11 @@ public final class OverlayController {
             entry.panel.level = OverlayPanel.selectionLevel
             entry.view.reset(
                 pointer: pointer, mode: viewMode, windows: windows,
-                showsToolbar: id == pointerDisplay?.id && purpose != .text,
+                showsToolbar: id == pointerDisplay?.id && (purpose == .screenshot || purpose == .annotate),
                 showsPointer: !holdsStill,
-                purpose: purpose
+                purpose: purpose,
+                colorFormat: colorFormat,
+                measureUnit: measureUnit
             )
         }
         hasInput = false
@@ -223,6 +247,8 @@ public final class OverlayController {
             case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.")
             case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.")
             case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.")
+            case .color: String(localized: "Click to copy the color under the crosshair. The arrow keys move one pixel.")
+            case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.")
             }
             NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
                 .announcement: announcement,
@@ -276,6 +302,40 @@ public final class OverlayController {
         place(rect, startingOn: display)
         guard let placed = selection.rect else { return }
         select(placed, startingOn: display, modifiers: [])
+    }
+
+    /// Puts the crosshair at a point in global space without the mouse, for scripted checks; the real
+    /// (hidden) pointer cannot move it after that.
+    public func simulatePointer(_ point: CGPoint) {
+        guard isActive else { return }
+        pointer = point
+        nudged = true
+        for entry in entries.values {
+            if entry.view.display.frame.contains(point) { entry.view.simulate(pointer: point) } else { entry.view.movePointer(to: point) }
+        }
+    }
+
+    /// Takes the color at a point in global space as a click there would, for scripted checks.
+    public func simulatePick(at point: CGPoint, modifiers: NSEvent.ModifierFlags = []) {
+        guard isActive, purpose != .text, let display = topology.layout.display(at: point), let view = entries[display.id]?.view else { return }
+        pointer = point
+        nudged = true
+        overlayView(view, didPickColorAt: point, modifiers: modifiers)
+    }
+
+    /// Drags the ruler's box over `rect` in global space and lets go, for scripted checks.
+    public func simulateMeasureBox(_ rect: CGRect) {
+        guard isActive, purpose == .measure, let display = startDisplay(of: rect), let view = entries[display.id]?.view else { return }
+        view.debugMeasureBox(rect)
+    }
+
+    /// Where the crosshair is, in global space, for scripted checks.
+    public var debugPointer: CGPoint? { pointer }
+
+    /// The ruler's measurement on the display under the crosshair, for scripted checks.
+    public var debugMeasurement: String? {
+        guard let point = pointer, let display = topology.layout.display(at: point) else { return nil }
+        return entries[display.id]?.view.debugMeasurement
     }
 
     /// Chooses an area for in-place annotation without mouse input, for scripted checks.
@@ -368,6 +428,8 @@ public final class OverlayController {
         pendingAnnotation = nil
         dragPoint = nil
         spaceHeld = false
+        pointer = nil
+        nudged = false
         #if DEBUG
         injectedFrames = nil
         #endif
@@ -498,6 +560,8 @@ extension OverlayController: OverlayViewDelegate {
         selection.begin(at: point)
         dragPoint = point
         dragTop = point.y
+        pointer = point
+        nudged = false
         spaceHeld = false
         showSelection()
     }
@@ -511,6 +575,8 @@ extension OverlayController: OverlayViewDelegate {
         }
         dragPoint = point
         dragTop = max(dragTop, point.y)
+        pointer = point
+        nudged = false
         showSelection()
         // Drag events reach only the display the press began on: the crosshair and magnifier follow the
         // pointer onto whichever display it is over.
@@ -539,9 +605,49 @@ extension OverlayController: OverlayViewDelegate {
     }
 
     func overlayView(_ view: OverlayView, didMovePointerTo point: CGPoint) {
+        pointer = point
+        nudged = false
         for entry in entries.values {
             entry.view.movePointer(to: point)
         }
+    }
+
+    func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags) {
+        // After the arrow keys the crosshair, not the hidden pointer, says where the color is.
+        let location = nudged ? (pointer ?? point) : point
+        guard isActive, let display = topology.layout.display(at: location), let color = entries[display.id]?.view.color(at: location) else { return }
+        Log.capture.notice("Picked \(color.hex, privacy: .public) (\(color.displayP3, privacy: .public)\(color.isInSRGB ? "" : ", outside sRGB", privacy: .public)) at \(NSStringFromPoint(location), privacy: .public)")
+        end(.color(color, at: location, display: display, modifiers: modifiers))
+    }
+
+    func overlayView(_ view: OverlayView, didNudge pixels: CGVector) {
+        let base = pointer ?? NSEvent.mouseLocation
+        let layout = topology.layout
+        guard let display = layout.display(at: base) ?? layout.primary else { return }
+        let scale = entries[display.id]?.view.frame()?.pixelsPerPoint ?? display.pixelsPerPoint
+        // Kept on the display; down is positive in pixels and negative in global space.
+        let next = CGPoint(
+            x: min(max(base.x + pixels.dx / scale, display.frame.minX), display.frame.maxX - 0.5 / scale),
+            y: min(max(base.y - pixels.dy / scale, display.frame.minY + 0.5 / scale), display.frame.maxY)
+        )
+        pointer = next
+        nudged = true
+        for entry in entries.values {
+            entry.view.movePointer(to: next)
+        }
+    }
+
+    func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) {
+        onCopyMeasurement?(text)
+        if ending { end(.cancelled) }
+    }
+
+    func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) {
+        measureUnit = unit
+        for entry in entries.values {
+            entry.view.setMeasureUnit(unit)
+        }
+        onMeasureUnitChange?(unit)
     }
 
     func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool) {

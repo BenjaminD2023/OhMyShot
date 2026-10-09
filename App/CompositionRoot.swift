@@ -24,6 +24,8 @@ final class CompositionRoot {
     private lazy var textCapture = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
     private lazy var annotations = AnnotationCoordinator(history: history)
     private lazy var pins = PinController(settings: settings, actions: makePinActions())
+    private lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
+    private lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
     private let hotkeys: HotkeyCenter
     private let urlScheme: String
     private var statusItem: StatusItemController?
@@ -61,6 +63,8 @@ final class CompositionRoot {
                 },
                 .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
                 .init(title: String(localized: "Translate Area"), shortcut: .translateArea) { [weak self] in self?.handle(.translateArea) },
+                .init(title: String(localized: "Pick Color"), shortcut: .pickColor) { [weak self] in self?.handle(.pickColor) },
+                .init(title: String(localized: "Measure"), shortcut: .measure) { [weak self] in self?.handle(.measure) },
             ],
             textEntries: [
                 .init(
@@ -148,6 +152,13 @@ final class CompositionRoot {
         }
         captures.openInEditor = { [weak self] entry, scale in
             self?.annotations.annotate(entry, scale: scale)
+        }
+        captures.onColor = { [weak self] color, point, modifiers in
+            self?.colorPicker.deliver(color, at: point, modifiers: modifiers)
+        }
+        colorPicker.pin = { [weak self] color in
+            guard let pinned = PinColor(color.cgColor) else { return NSSound.beep() }
+            self?.pins.pin(color: pinned)
         }
         captures.selfTimerKeys = { [weak self] in
             self?.hotkeys.keys(for: .selfTimer)
@@ -272,6 +283,12 @@ final class CompositionRoot {
         case .translateArea:
             captures.cancelSelfTimer()
             textCapture.translateArea()
+        case .pickColor:
+            captures.cancelSelfTimer()
+            colorPicker.pickColor()
+        case .measure:
+            captures.cancelSelfTimer()
+            measurer.measure()
         default:
             Log.hotkeys.notice("Not available yet: \(shortcut.rawValue, privacy: .public)")
         }
@@ -756,6 +773,8 @@ final class CompositionRoot {
             textCapture: textCapture,
             annotations: annotations,
             pins: pins,
+            colorPicker: colorPicker,
+            measurer: measurer,
             settings: settings
         )
     }

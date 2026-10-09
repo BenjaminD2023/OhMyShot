@@ -174,6 +174,21 @@ struct GeneralSettingsView: View {
                 Toggle(isOn: $settings.playSounds) {
                     Text("Play sounds", bundle: .module)
                 }
+                Picker(selection: $settings.colorFormat) {
+                    ForEach(ColorFormat.allCases, id: \.self) { format in
+                        Text(verbatim: format.title).tag(format)
+                    }
+                } label: {
+                    Text("Copy colors as", bundle: .module)
+                    Text("For Pick Color, and C over the magnifier while capturing.", bundle: .module)
+                }
+                Picker(selection: $settings.measureUnit) {
+                    Text("Points", bundle: .module).tag(MeasureUnit.points)
+                    Text("Pixels", bundle: .module).tag(MeasureUnit.pixels)
+                } label: {
+                    Text("Measure in", bundle: .module)
+                    Text("Tab switches between them while measuring.", bundle: .module)
+                }
             }
             Section {
                 LabeledContent {

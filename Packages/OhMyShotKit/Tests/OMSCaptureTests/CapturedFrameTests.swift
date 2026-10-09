@@ -1,4 +1,5 @@
 import CoreGraphics
+import OMSCore
 import Testing
 @testable import OMSCapture
 
@@ -31,6 +32,34 @@ struct CapturedFrameTests {
             context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
         }
         return bytes
+    }
+
+    @Test func aPickedPixelIsReadAsTheDisplayShowedIt() throws {
+        let frame = frame()
+        // The block is at pixels 200..<240 across and 100..<140 down.
+        #expect(frame.color(atPixel: 210, 110)?.hex == "#000000")
+        #expect(frame.color(atPixel: 10, 10)?.hex == "#FFFFFF")
+        #expect(frame.color(atPixel: 800, 10) == nil)
+        // Display P3's own red, which sRGB cannot hold, stays itself.
+        let space = CGColorSpace(name: CGColorSpace.displayP3)!
+        let context = try #require(CGContext(
+            data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ))
+        context.setFillColor(try #require(CGColor(colorSpace: space, components: [1, 0, 0, 1])))
+        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        let image = try #require(context.makeImage())
+        let red = try #require(CapturedFrame(image: image, hdrImage: nil, displayID: 7, frame: CGRect(x: 0, y: 0, width: 1, height: 1)).color(atPixel: 0, 0))
+        #expect(!red.isInSRGB)
+        #expect(red.displayP3 == "color(display-p3 1 0 0)")
+        // An sRGB color kept in an 8-bit Display P3 frame comes back as itself, and within sRGB, though the
+        // rounding leaves it a hair past the edge.
+        context.setFillColor(CGColor(srgbRed: 0, green: 122.0 / 255, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        let blueImage = try #require(context.makeImage())
+        let blue = try #require(CapturedFrame(image: blueImage, hdrImage: nil, displayID: 7, frame: CGRect(x: 0, y: 0, width: 1, height: 1)).color(atPixel: 0, 0))
+        #expect(blue.hex == "#007AFF")
+        #expect(blue.isInSRGB)
     }
 
     @Test func aSelectionComesOutAsItsOwnPixels() throws {

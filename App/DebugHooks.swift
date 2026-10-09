@@ -36,6 +36,8 @@ struct DebugHooks {
     let textCapture: TextCaptureCoordinator
     let annotations: AnnotationCoordinator
     let pins: PinController
+    let colorPicker: ColorPickerCoordinator
+    let measurer: MeasureCoordinator
     let settings: SettingsStore
 
     /// Where `snapshot` writes window captures.
@@ -285,6 +287,41 @@ struct DebugHooks {
             guard let content else { return }
             let name = "pin-render-\(kind)-\(Int(zoom))-\(mode)" + (controls ? "-controls" : "") + (select ? "-select" : "")
             Task { await renderPin(content, name: name, zoom: CGFloat(zoom) / 100, dark: mode == "dark", controls: controls, selectAll: select) }
+        case "measure-demo":
+            // Measure over drawn screens (DebugToolsDemo), never the real one: the crosshair in the 120 × 36 pt
+            // button, then a box drawn loosely around the 48 × 48 pt square; logs both readings. The overlay
+            // stays for a snapshot; end it with close-windows. It covers a display: ask first.
+            let drawsBox = Self.intParameter("box", in: url) != 0
+            Task { await runMeasureDemo(drawsBox: drawsBox) }
+        case "color-demo":
+            // Pick Color over drawn screens: at=button|square puts the crosshair in the #007AFF button or the
+            // Display P3 red square, and the overlay stays for a snapshot. It covers a display: ask first.
+            let target = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "at" }?.value
+            Task { await openColorDemo(at: target == "square" ? DebugToolsDemo.square : DebugToolsDemo.button) }
+        case "color-pick":
+            // Takes the color at the crosshair, as a click would (option=1: as an Option-click); the clipboard
+            // is left alone whenever the session was opened by color-demo. The overlay logs what it took.
+            let option = Self.intParameter("option", in: url) == 1
+            if let point = overlay.debugPointer { overlay.simulatePick(at: point, modifiers: option ? .option : []) }
+        case "color-card":
+            // The color card behind the desktop picture, captured alone, nothing shown: hex=RRGGBB (default
+            // 3366FF), against=RRGGBB for the contrast, mode=light|dark. Writes color-card-<mode>.png.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in items.first { $0.name == name }?.value }
+            let mode = value("mode") ?? "light"
+            NSApp.appearance = NSAppearance(named: mode == "dark" ? .darkAqua : .aqua)
+            // p3=r,g,b (0...1) for a Display P3 color, which a hex cannot name.
+            let p3 = value("p3")?.split(separator: ",").compactMap { Double($0) }
+            let color = p3.flatMap { $0.count == 3 ? CGColor(colorSpace: CGColorSpace(name: CGColorSpace.displayP3)!, components: $0.map { CGFloat($0) } + [1]) : nil }
+                .flatMap(ScreenColor.init) ?? PinColor.parse("#" + (value("hex") ?? "3366FF")).flatMap { ScreenColor($0.original) }
+            let other = value("against").flatMap { PinColor.parse("#" + $0) }.flatMap { ScreenColor($0.original) }
+            guard let color, let window = colorPicker.debugHiddenCard(color, against: other) else { return }
+            let name = value("name") ?? "color-card-\(mode)"
+            Task {
+                await captureHiddenWindow(window, name: name)
+                colorPicker.debugDismissCard()
+                NSApp.appearance = nil
+            }
         case "pin-read":
             // Reads the drawn page's text with Live Text in a pin behind the desktop picture, nothing shown or
             // captured, and closes it; release=1 instead lets the text reader go and returns freed pages, as
@@ -356,6 +393,8 @@ struct DebugHooks {
                 window.performClose(nil)
             }
             textCapture.closeLens()
+            // A demo's overlay too (Measure, Pick Color), as Escape would.
+            if overlay.isActive { overlay.cancel() }
         default:
             Log.app.error("debug.unknown \(hook, privacy: .public)")
         }
@@ -479,9 +518,10 @@ struct DebugHooks {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             let pid = ProcessInfo.processInfo.processIdentifier
-            // Every on-screen window of ours, up to the overlay's level (the text selection highlight
-            // shares it). The overlay's own panels are off screen whenever it is not in use.
-            let ceiling = Int(NSWindow.Level.popUpMenu.rawValue) + 1
+            // Every on-screen window of ours, up to the overlay's level while an area is chosen (the screen
+            // saver's) and the copied reading just above it. The overlay's own panels are off screen whenever
+            // it is not in use.
+            let ceiling = Int(NSWindow.Level.screenSaver.rawValue) + 1
             let windows = content.windows.filter { $0.owningApplication?.processID == pid && $0.isOnScreen && $0.windowLayer <= ceiling }
             var used = Set<String>()
             for window in windows {
@@ -524,12 +564,18 @@ struct DebugHooks {
             let characters = await pins.debugReadText(in: window, selectAll: true)
             Log.app.notice("debug.pin-render Live Text found \(characters, privacy: .public) characters")
         }
-        // Long enough for the window server to have the pin's first frame.
+        await captureHiddenWindow(window, name: name)
+    }
+
+    /// Captures one of the app's windows alone as the window server draws it, once it has had its first
+    /// frame, into the snapshot folder as `name`.png: for windows kept behind the desktop picture.
+    func captureHiddenWindow(_ window: NSWindow, name: String) async {
+        // Long enough for the window server to have the window's first frame.
         try? await Task.sleep(for: .milliseconds(250))
         do {
             let shareable = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
             guard let target = shareable.windows.first(where: { $0.windowID == CGWindowID(window.windowNumber) }) else {
-                Log.app.error("debug.pin-render no window \(window.windowNumber, privacy: .public)")
+                Log.app.error("debug.hidden-window no window \(window.windowNumber, privacy: .public)")
                 return
             }
             let configuration = SCScreenshotConfiguration()
@@ -540,16 +586,60 @@ struct DebugHooks {
                 configuration: configuration
             )
             guard let image = output.sdrImage else {
-                Log.app.error("debug.pin-render no image")
+                Log.app.error("debug.hidden-window no image")
                 return
             }
             let file = Self.snapshotDirectory.appending(path: "\(name).png")
             try FileManager.default.createDirectory(at: Self.snapshotDirectory, withIntermediateDirectories: true)
             try await ImageExporter.write(image, to: file, format: .png)
-            Log.app.notice("debug.pin-render \(file.path(percentEncoded: false), privacy: .public) \(image.width, privacy: .public)x\(image.height, privacy: .public)")
+            Log.app.notice("debug.hidden-window \(file.path(percentEncoded: false), privacy: .public) \(image.width, privacy: .public)x\(image.height, privacy: .public)")
         } catch {
-            Log.app.error("debug.pin-render failed: \(error.localizedDescription, privacy: .public)")
+            Log.app.error("debug.hidden-window failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Frames of the drawn tools screen for every display, injected so nothing real is read.
+    private func injectToolsDemoFrames() -> DisplayInfo? {
+        let layout = displays.layout
+        guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return nil }
+        var frames: [CGDirectDisplayID: CapturedFrame] = [:]
+        for each in layout.displays {
+            if let image = DebugToolsDemo.screen(for: each) {
+                frames[each.id] = CapturedFrame(image: image, hdrImage: nil, displayID: each.id, frame: each.frame)
+            }
+        }
+        overlay.injectedFrames = frames
+        return display
+    }
+
+    /// Measure over the drawn tools screen: a reading inside the button, then a box around the square.
+    func runMeasureDemo(drawsBox: Bool = true) async {
+        guard let display = injectToolsDemoFrames() else { return }
+        measurer.measure(copiesToClipboard: false)
+        await waitForOverlayFrames()
+        let button = DebugToolsDemo.button
+        overlay.simulatePointer(DebugToolsDemo.global(CGPoint(x: button.midX, y: button.midY), on: display))
+        // The ruler copies the frame's pixels off the main thread first.
+        for _ in 0..<40 where overlay.debugMeasurement == nil {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        let hover = overlay.debugMeasurement ?? "none"
+        // box=0 leaves the lines for a snapshot.
+        guard drawsBox else {
+            Log.app.notice("debug.measure-demo in the button \(hover, privacy: .public) (120 × 36 pt drawn)")
+            return
+        }
+        overlay.simulateMeasureBox(DebugToolsDemo.global(DebugToolsDemo.square.insetBy(dx: -20, dy: -16), on: display))
+        Log.app.notice("debug.measure-demo display \(display.id, privacy: .public) at \(display.pixelsPerPoint, privacy: .public) px/pt: in the button \(hover, privacy: .public) (120 × 36 pt drawn); box around the square \(self.overlay.debugMeasurement ?? "none", privacy: .public) (48 × 48 pt drawn)")
+    }
+
+    /// Pick Color over the drawn tools screen, with the crosshair in `target`.
+    func openColorDemo(at target: CGRect) async {
+        guard let display = injectToolsDemoFrames() else { return }
+        colorPicker.pickColor(copiesToClipboard: false)
+        await waitForOverlayFrames()
+        overlay.simulatePointer(DebugToolsDemo.global(CGPoint(x: target.midX, y: target.midY), on: display))
+        Log.app.notice("debug.color-demo crosshair at \(NSStringFromRect(target), privacy: .public) on display \(display.id, privacy: .public)")
     }
 
     /// Captures every display `count` times and logs per-display timing and the output size; the
