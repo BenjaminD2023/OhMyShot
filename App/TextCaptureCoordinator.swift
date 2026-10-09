@@ -63,13 +63,13 @@ final class TextCaptureCoordinator {
             // The highlight appears in the same turn the overlay closes, so no frame goes by without
             // the selection.
             switch outcome {
-            case .region(let rect, let display, let modifiers) where modifiers.contains(.option):
-                Task { await self?.openPanel(region: rect, on: display) }
+            case .region(let rect, let display, let modifiers, let frozen) where modifiers.contains(.option):
+                Task { await self?.openPanel(region: rect, on: display, frozen: frozen) }
             case .window(let target, let modifiers) where modifiers.contains(.option):
                 Task { await self?.openPanel(window: target) }
-            case .region(let rect, let display, _):
+            case .region(let rect, let display, _, let frozen):
                 self?.highlight.show(rect)
-                Task { await self?.recognize(region: rect, on: display, joinLines: joinLines) }
+                Task { await self?.recognize(region: rect, on: display, frozen: frozen, joinLines: joinLines) }
             case .window(let target, _):
                 self?.highlight.show(target.frame)
                 Task { await self?.recognize(window: target, joinLines: joinLines) }
@@ -80,12 +80,14 @@ final class TextCaptureCoordinator {
     }
 
     /// Reads a region of a display, as the overlay does after a drag. Also used by scripted checks.
-    /// - Parameter copiesToClipboard: false leaves the clipboard alone, so scripted checks never
-    ///   replace what the user copied.
-    func recognize(region rect: CGRect, on display: DisplayInfo, joinLines: Bool, copiesToClipboard: Bool = true) async {
+    /// - Parameters:
+    ///   - frozen: the region as the overlay held it still; nil captures it now.
+    ///   - copiesToClipboard: false leaves the clipboard alone, so scripted checks never replace what
+    ///     the user copied.
+    func recognize(region rect: CGRect, on display: DisplayInfo, frozen: CapturedFrame? = nil, joinLines: Bool, copiesToClipboard: Bool = true) async {
         highlight.show(rect)
         do {
-            let frame = try await capturer.captureRegion(rect, on: display)
+            let frame = try await capture(rect, on: display, frozen: frozen)
             await recognize(frame.image, selection: rect, joinLines: joinLines, copiesToClipboard: copiesToClipboard)
         } catch {
             Log.capture.error("Capture Text failed to capture: \(error.localizedDescription, privacy: .public)")
@@ -176,9 +178,9 @@ final class TextCaptureCoordinator {
         overlay.freezesScreen = settings.freezeScreen
         overlay.begin(mode: .area, purpose: .text) { [weak self] outcome in
             switch outcome {
-            case .region(let rect, let display, let modifiers):
+            case .region(let rect, let display, let modifiers, let frozen):
                 self?.highlight.show(rect)
-                Task { await self?.translate(region: rect, on: display, inPanel: modifiers.contains(.option)) }
+                Task { await self?.translate(region: rect, on: display, frozen: frozen, inPanel: modifiers.contains(.option)) }
             case .window(let target, let modifiers):
                 self?.highlight.show(target.frame)
                 Task { await self?.translate(window: target, inPanel: modifiers.contains(.option)) }
@@ -188,9 +190,9 @@ final class TextCaptureCoordinator {
         }
     }
 
-    private func translate(region rect: CGRect, on display: DisplayInfo, inPanel: Bool) async {
+    private func translate(region rect: CGRect, on display: DisplayInfo, frozen: CapturedFrame?, inPanel: Bool) async {
         do {
-            let frame = try await capturer.captureRegion(rect, on: display)
+            let frame = try await capture(rect, on: display, frozen: frozen)
             await translate(frame.image, scale: Self.scale(of: frame), over: rect, source: String(localized: "Screen Area"), inPanel: inPanel)
         } catch {
             Log.capture.error("Translate Area failed to capture: \(error.localizedDescription, privacy: .public)")
@@ -295,9 +297,9 @@ final class TextCaptureCoordinator {
     }
 
     /// Option held when a Capture Text drag ends. Also used by scripted checks.
-    func openPanel(region rect: CGRect, on display: DisplayInfo) async {
+    func openPanel(region rect: CGRect, on display: DisplayInfo, frozen: CapturedFrame? = nil) async {
         do {
-            let frame = try await capturer.captureRegion(rect, on: display)
+            let frame = try await capture(rect, on: display, frozen: frozen)
             openPanel(image: frame.image, scale: Self.scale(of: frame), source: String(localized: "Screen Area"))
         } catch {
             Log.capture.error("Capture Text failed to capture: \(error.localizedDescription, privacy: .public)")
@@ -314,6 +316,12 @@ final class TextCaptureCoordinator {
             Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
         }
+    }
+
+    /// The region as the overlay held it still when the screen was frozen, else captured now.
+    private func capture(_ rect: CGRect, on display: DisplayInfo, frozen: CapturedFrame?) async throws -> CapturedFrame {
+        if let frozen { return frozen }
+        return try await capturer.captureRegion(rect, on: display)
     }
 
     private static func scale(of frame: CapturedFrame) -> CGFloat {

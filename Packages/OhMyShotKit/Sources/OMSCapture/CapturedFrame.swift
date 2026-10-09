@@ -22,6 +22,36 @@ public struct CapturedFrame: Sendable {
     public var pixelsPerPoint: CGFloat {
         frame.width > 0 ? CGFloat(image.width) / frame.width : 1
     }
+
+    /// The part of this capture under `rect` (AppKit's global space), in whole pixels: what a capture of
+    /// that area would have given when this one was taken. The pixels are copied out, so the whole
+    /// capture can be let go. Nil when `rect` misses it.
+    public func cropped(to rect: CGRect) -> CapturedFrame? {
+        let scale = pixelsPerPoint
+        let area = rect.standardized.intersection(frame)
+        guard !area.isNull, area.width > 0, area.height > 0 else { return nil }
+        // Global space is y up; the image is y down from the capture's top-left corner.
+        let minX = ((area.minX - frame.minX) * scale).rounded()
+        let maxX = ((area.maxX - frame.minX) * scale).rounded()
+        let minY = ((frame.maxY - area.maxY) * scale).rounded()
+        let maxY = ((frame.maxY - area.minY) * scale).rounded()
+        let pixels = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard !pixels.isNull, pixels.width >= 1, pixels.height >= 1, let part = image.cropping(to: pixels) else { return nil }
+        // Drawn into a bitmap of its own in the capture's color space, so the pixels stay as they were.
+        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let context = CGContext(
+            data: nil, width: Int(pixels.width), height: Int(pixels.height), bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .none
+        context.draw(part, in: CGRect(origin: .zero, size: pixels.size))
+        guard let copy = context.makeImage() else { return nil }
+        return CapturedFrame(image: copy, hdrImage: nil, displayID: displayID, frame: CGRect(
+            x: frame.minX + pixels.minX / scale, y: frame.maxY - pixels.maxY / scale,
+            width: pixels.width / scale, height: pixels.height / scale
+        ))
+    }
 }
 
 public enum CaptureError: Error, Equatable, Sendable {

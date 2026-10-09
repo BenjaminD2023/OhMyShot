@@ -6,14 +6,18 @@ import QuartzCore
 
 /// Runs one selection session across every display.
 ///
-/// The overlay appears first and the captures follow: the panels order front synchronously on the
+/// A live overlay appears first and the captures follow: the panels order front synchronously on the
 /// hotkey, then each display's frame loads in the background (the pointer's display first) for the
-/// loupe, or as the backdrop when the screen is frozen.
+/// loupe. A frozen screen is the other way round: the frames are taken first, before anything on
+/// screen or in focus changes, so hover states and open menus are still there, and the overlay appears
+/// with the pointer's display already frozen behind it.
 public final class OverlayController {
     public enum Outcome: Sendable {
         /// `modifiers` are the keys held when the mouse was released (Capture Text opens the OCR panel
         /// with Option), read from that event: a later global read would race the keys' release.
-        case region(CGRect, display: DisplayInfo, modifiers: NSEvent.ModifierFlags)
+        /// `frozen` is the selection as it was frozen on screen; nil when the screen was live (or that
+        /// display's frame had not arrived), and the area is captured now instead.
+        case region(CGRect, display: DisplayInfo, modifiers: NSEvent.ModifierFlags, frozen: CapturedFrame?)
         case window(WindowTarget, modifiers: NSEvent.ModifierFlags)
         /// In-place annotation finished (`finishAnnotation`); its own handler has the result.
         case annotated
@@ -53,6 +57,14 @@ public final class OverlayController {
     private var hidesCursor = false
 
     public private(set) var isActive = false
+    /// Whether the session's panels are on screen: at once for a live screen, once the pointer's
+    /// display is captured for a frozen one.
+    private var isRevealed = false
+
+    /// Whether this session shows the screen as it was when it began; in-place annotation always does.
+    private var holdsStill: Bool {
+        freezesScreen || purpose == .annotate
+    }
 
     private struct Entry {
         let panel: OverlayPanel
@@ -116,9 +128,6 @@ public final class OverlayController {
         let layout = topology.layout
         let pointerDisplay = layout.display(at: pointer) ?? layout.primary
 
-        // Active, so the overlay owns the keyboard and the pointer. The app stays an accessory, so no
-        // Dock icon appears, and the overlay covers the menu bar while it is ours.
-        NSApp.activate()
         // The window list is read only when windows are the target; area capture never pays for it.
         windows = mode == .window ? WindowCatalog.snapshot(layout: layout) : []
         let viewMode: OverlayView.Mode = mode == .window ? .window : .area
@@ -128,6 +137,41 @@ public final class OverlayController {
                 showsToolbar: id == pointerDisplay?.id && purpose != .text,
                 purpose: purpose
             )
+        }
+        isRevealed = false
+        // A live overlay shows at once. A frozen one waits for the pointer's display, about 45 ms, so its
+        // frame is taken before the overlay covers the screen or the app takes the keyboard: either could
+        // close a hover card, a tooltip, or an open menu before it is captured.
+        if !holdsStill { reveal(pointerDisplay: pointerDisplay, probe: visible) }
+
+        let session = self.session
+        // Text without freezing shows no frame, but the pointer display's still arrives first: it tells
+        // the watchdog that capturing works.
+        let others = purpose == .text && !freezesScreen ? [] : layout.displays.filter { $0.id != pointerDisplay?.id }
+        let ordered = [pointerDisplay].compactMap(\.self) + others
+        Task { [weak self] in
+            await self?.loadFrames(for: ordered, session: session, probe: frozen) { [weak self] in
+                self?.reveal(pointerDisplay: pointerDisplay, probe: visible)
+            }
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            self?.watchdog(session: session)
+        }
+    }
+
+    /// Puts the session's panels on screen and gives the overlay the keyboard and the pointer; once.
+    private func reveal(pointerDisplay: DisplayInfo?, probe: LatencyProbe) {
+        guard isActive, !isRevealed else { return }
+        isRevealed = true
+        // Active, so the overlay owns the keyboard and the pointer. The app stays an accessory, so no
+        // Dock icon appears, and the overlay covers the menu bar while it is ours.
+        NSApp.activate()
+        // A frozen overlay appears a moment after its session began: the crosshair goes where the pointer
+        // is now.
+        let pointer = NSEvent.mouseLocation
+        for entry in entries.values {
+            entry.view.movePointer(to: pointer)
         }
         // The panels are reused: the reset layers are committed before any panel is ordered in, so none
         // shows a frame of its previous session.
@@ -154,20 +198,15 @@ public final class OverlayController {
         hidesCursor = purpose != .text
         if hidesCursor { NSCursor.hide() }
         CATransaction.flush()
-        visible.end()
+        probe.end()
         windowLease = ActiveResources.shared.acquire(.window)
-
+        // A frozen overlay asks for activation a moment after the shortcut, not while handling it: the log
+        // says whether it was granted, which only a real shortcut press can show.
         let session = self.session
-        // Text without freezing shows no frame, but the pointer display's still arrives first: it tells
-        // the watchdog that capturing works.
-        let others = purpose == .text && !freezesScreen ? [] : layout.displays.filter { $0.id != pointerDisplay?.id }
-        let ordered = [pointerDisplay].compactMap(\.self) + others
         Task { [weak self] in
-            await self?.loadFrames(for: ordered, session: session, probe: frozen)
-        }
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(500))
-            self?.watchdog(session: session)
+            try? await Task.sleep(for: .milliseconds(150))
+            guard let self, isActive, session == self.session else { return }
+            Log.capture.notice("Overlay shown (\(self.holdsStill ? "frozen" : "live", privacy: .public)): app active \(NSApp.isActive, privacy: .public), keyboard \(NSApp.keyWindow is OverlayPanel, privacy: .public)")
         }
     }
 
@@ -192,6 +231,14 @@ public final class OverlayController {
     }
 
     #if DEBUG
+    /// Chooses an area as a drag ending there would, without mouse input, for scripted checks.
+    public func simulateSelection(_ rect: CGRect) {
+        guard isActive, purpose != .annotate, let display = topology.layout.display(at: CGPoint(x: rect.midX, y: rect.midY)),
+              let view = entries[display.id]?.view else { return }
+        view.simulate(selection: rect, pointer: CGPoint(x: rect.maxX, y: rect.minY))
+        overlayView(view, didSelect: rect, modifiers: [])
+    }
+
     /// Chooses an area for in-place annotation without mouse input, for scripted checks.
     public func simulateAnnotation(selection rect: CGRect) {
         guard isActive, purpose == .annotate, let display = topology.layout.display(at: CGPoint(x: rect.midX, y: rect.midY)) else { return }
@@ -210,7 +257,8 @@ public final class OverlayController {
         }.sorted().joined(separator: "; ")
     }
 
-    private func loadFrames(for displays: [DisplayInfo], session: Int, probe: LatencyProbe) async {
+    /// Captures each display in turn, the pointer's first; `onFirstFrame` runs once that one is shown.
+    private func loadFrames(for displays: [DisplayInfo], session: Int, probe: LatencyProbe, onFirstFrame: () -> Void) async {
         for (index, display) in displays.enumerated() {
             do {
                 let frame: CapturedFrame
@@ -224,12 +272,12 @@ public final class OverlayController {
                 frame = try await capturer.captureDisplay(display)
                 #endif
                 guard isActive, session == self.session else { return }
-                // Annotating in place draws on the frozen screen, so it always holds still.
-                entries[display.id]?.view.show(frame, frozen: freezesScreen || purpose == .annotate)
+                entries[display.id]?.view.show(frame, frozen: holdsStill)
                 frameLeases.append(ActiveResources.shared.acquire(.frameBuffer))
                 if index == 0 {
                     firstFrameArrived = true
                     probe.end()
+                    onFirstFrame()
                 }
                 if let pending = pendingAnnotation, pending.display == display.id {
                     pendingAnnotation = nil
@@ -287,10 +335,12 @@ public final class OverlayController {
         frameLeases.removeAll()
         windowLease = nil
         windows = []
-        if let previousApp {
+        // A frozen overlay that never appeared never took the keyboard, so there is nothing to give back.
+        if isRevealed, let previousApp {
             NSApp.yieldActivation(to: previousApp)
             previousApp.activate(from: .current, options: [])
         }
+        isRevealed = false
         previousApp = nil
         MemoryRelief.returnFreedPages()
         let completion = self.completion
@@ -305,7 +355,10 @@ extension OverlayController: OverlayViewDelegate {
             startAnnotating(on: view.display.id, area: rect)
             return
         }
-        end(.region(rect, display: view.display, modifiers: modifiers))
+        // What was frozen on screen is what is kept: cut from the frame the selection was made on, not
+        // captured again once the overlay has gone and whatever it held still has closed.
+        let frozen = holdsStill ? view.frame()?.cropped(to: rect) : nil
+        end(.region(rect, display: view.display, modifiers: modifiers, frozen: frozen))
     }
 
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {

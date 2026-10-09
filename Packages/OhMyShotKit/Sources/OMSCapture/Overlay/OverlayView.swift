@@ -175,6 +175,13 @@ final class OverlayView: NSView {
         }
     }
 
+    /// Puts the crosshair and magnifier where the pointer is now, for an overlay that appears a moment
+    /// after its session began.
+    func movePointer(to globalPointer: CGPoint) {
+        guard !isSimulated, !isAnnotating else { return }
+        withoutAnimation { updatePointer(display.frame.contains(globalPointer) ? local(globalPointer) : nil) }
+    }
+
     /// Shows a selection and pointer without mouse input, for scripted checks.
     func simulate(selection rect: CGRect, pointer globalPointer: CGPoint) {
         isSimulated = true

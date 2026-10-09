@@ -464,6 +464,8 @@ Every mark is drawn by one renderer, on screen and in exports, so what is copied
 ### Capture Overlay (Signature)
 Softly dimmed screen; selection with a white 1.5 pt edge over a dark outline; a crosshair with a 4 pt center gap and 13 pt arms, white over the same outline; a 120 pt loupe showing 15 captured pixels across (8 pt per pixel, aligned to device pixels) with a faint 0.08 grid, an accent center cell, a white rim, and the lens shadow. Window mode drops the crosshair and loupe and highlights the hovered window.
 
+The screen is frozen by default: it is captured the moment the shortcut is pressed, before the overlay covers it or takes the keyboard, so hover cards, tooltips, and open menus are still in it, and the overlay appears already holding it (about 45 ms later). What is kept is cut from that frozen screen. With Freeze off (Settings › General) the overlay appears at once over the live screen and the area is captured when the drag ends. A window is always captured on its own, with its shadow and transparent corners.
+
 ### All-In-One Bar (Signature)
 A Liquid Glass capsule with an opaque window-colored backing inside, a 0.5 pt separator hairline, and the floating bar shadow. With Reduce Transparency it is a solid window-colored capsule with the same hairline.
 

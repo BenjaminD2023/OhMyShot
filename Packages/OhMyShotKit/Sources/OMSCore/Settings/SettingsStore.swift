@@ -81,6 +81,9 @@ public final class SettingsStore {
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
             Key.showTextResult: false,
             Key.translationTarget: "",
+            // Frozen by default: a hover card or menu that closes as the pointer leaves it can still be
+            // captured, since the screen is taken the moment the shortcut is pressed.
+            Key.freezeScreen: true,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)

@@ -30,6 +30,8 @@ struct DebugHooks {
     let setRetention: (HistoryRetention) -> Void
     let historyWindow: () -> NSWindow?
     let historyCount: () -> Int
+    /// The newest capture's file in the history.
+    let latestCaptureFile: () -> URL?
     let previewRetentionChange: (HistoryRetention?) -> Void
     let textCapture: TextCaptureCoordinator
     let annotations: AnnotationCoordinator
@@ -179,8 +181,9 @@ struct DebugHooks {
             let owner = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "owner" }?.value ?? "Finder"
             Task { await testWindowCapture(owner: owner) }
         case "bench-overlay":
+            // freeze=1 measures a frozen overlay, which appears once the pointer's display is captured.
             let count = Self.intParameter("n", in: url) ?? 10
-            Task { await benchmarkOverlay(count: count) }
+            Task { await benchmarkOverlay(count: count, freezes: Self.intParameter("freeze", in: url) == 1) }
         case "latency-selftest":
             Task {
                 for milliseconds in [10, 20, 30, 40, 50] {
@@ -213,6 +216,12 @@ struct DebugHooks {
             // the display's points from its top-left corner (default: just around the drawn page).
             let rect = ["x", "y", "w", "h"].compactMap { Self.intParameter($0, in: url) }
             Task { await openInPlaceDemo(area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil) }
+        case "freeze-demo":
+            // A frozen screenshot over drawn screens, never the real one, chosen without the mouse and kept
+            // off the clipboard: logs whether what was kept is the frozen selection, then removes it. x, y,
+            // w, h choose the area in the display's points from its top-left corner (default: the page).
+            let rect = ["x", "y", "w", "h"].compactMap { Self.intParameter($0, in: url) }
+            Task { await runFreezeDemo(area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil) }
         case "inplace-act":
             // Acts on the in-place annotation: tool=<tool>, drag=x1,y1,x2,y2 (display points from the
             // top-left), shift=1, clicks=2, key=<characters>&code=<key code>[&cmd=1], type=<text>,
@@ -439,6 +448,7 @@ struct DebugHooks {
     ) async {
         let layout = displays.layout
         guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
+        overlay.freezesScreen = false
         overlay.begin(mode: mode, purpose: purpose) { _ in }
         await waitForOverlayFrames()
         let selection = CGRect(x: display.frame.midX - 300, y: display.frame.midY - 180, width: 600, height: 360)
@@ -461,7 +471,8 @@ struct DebugHooks {
 
     /// Opens and closes the overlay `count` times; read the results with Scripts/latency.sh
     /// overlay.visible and overlay.frozen.
-    func benchmarkOverlay(count: Int) async {
+    func benchmarkOverlay(count: Int, freezes: Bool) async {
+        overlay.freezesScreen = freezes
         for _ in 0..<max(count, 1) {
             overlay.begin { _ in }
             await waitForOverlayFrames()
@@ -516,6 +527,60 @@ struct DebugHooks {
         } else {
             Log.app.error("debug.inplace-demo did not start: annotating=\(self.overlay.isAnnotating, privacy: .public)")
         }
+    }
+
+    /// A frozen screenshot over drawn screens: the drawn page frozen behind the overlay, an area chosen
+    /// without the mouse, and the capture delivered with the clipboard left alone. What is kept must be
+    /// the area cut from the frozen frame, pixel for pixel; then the capture and its card are removed.
+    func runFreezeDemo(area: CGRect?) async {
+        let layout = displays.layout
+        guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
+        var frames: [CGDirectDisplayID: CapturedFrame] = [:]
+        for each in layout.displays {
+            if let image = DebugPanelDemo.screen(for: each, page: each.id == display.id) {
+                frames[each.id] = CapturedFrame(image: image, hdrImage: nil, displayID: each.id, frame: each.frame)
+            }
+        }
+        guard let drawn = frames[display.id] else { return }
+        let before = historyCount()
+        overlay.injectedFrames = frames
+        captures.captureArea(copiesToClipboard: false, freezes: true)
+        await waitForOverlayFrames()
+        let chosen = area ?? DebugPanelDemo.pageRect(on: display)
+        let rect = CGRect(x: display.frame.minX + chosen.minX, y: display.frame.maxY - chosen.maxY, width: chosen.width, height: chosen.height)
+        overlay.simulateSelection(rect)
+        for _ in 0..<80 where historyCount() == before {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        guard historyCount() == before + 1 else {
+            Log.app.error("debug.freeze-demo kept nothing: active=\(self.overlay.isActive, privacy: .public)")
+            return
+        }
+        defer { deleteLatestFromHistory() }
+        guard let expected = drawn.cropped(to: rect)?.image, let file = latestCaptureFile(),
+              let source = CGImageSourceCreateWithURL(file as CFURL, nil), let kept = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            Log.app.error("debug.freeze-demo could not read the capture back")
+            return
+        }
+        let difference = Self.pixelDifference(kept, expected)
+        Log.app.notice("debug.freeze-demo kept \(kept.width, privacy: .public)x\(kept.height, privacy: .public), frozen selection \(expected.width, privacy: .public)x\(expected.height, privacy: .public), largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public)")
+    }
+
+    /// The largest difference of any channel between two pictures of one size, both drawn in sRGB; nil
+    /// when their sizes differ.
+    private static func pixelDifference(_ first: CGImage, _ second: CGImage) -> Int? {
+        guard first.width == second.width, first.height == second.height else { return nil }
+        func bytes(_ image: CGImage) -> [UInt8]? {
+            guard let context = CGContext(
+                data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            guard let data = context.data else { return nil }
+            return Array(UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: image.width * 4 * image.height))
+        }
+        guard let a = bytes(first), let b = bytes(second) else { return nil }
+        return zip(a, b).reduce(0) { max($0, abs(Int($1.0) - Int($1.1))) }
     }
 
     func actInPlace(_ value: (String) -> String?) {

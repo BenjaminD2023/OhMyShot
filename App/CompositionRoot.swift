@@ -537,6 +537,10 @@ final class CompositionRoot {
             setRetention: { [weak self] retention in self?.settings.historyRetention = retention },
             historyWindow: { [weak self] in self?.historyWindow?.window },
             historyCount: { [weak self] in self?.history.items().count ?? 0 },
+            latestCaptureFile: { [weak self] in
+                guard let self, let entry = history.items().first else { return nil }
+                return history.fileURL(for: entry)
+            },
             previewRetentionChange: { [weak self] retention in self?.historyWindow?.previewRetentionChange(to: retention) },
             textCapture: textCapture,
             annotations: annotations

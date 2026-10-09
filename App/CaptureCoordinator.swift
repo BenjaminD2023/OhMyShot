@@ -37,8 +37,12 @@ final class CaptureCoordinator {
         self.history = history
     }
 
-    func captureArea() {
-        begin(mode: .area)
+    /// - Parameters:
+    ///   - copiesToClipboard: false for scripted checks, which never touch the clipboard.
+    ///   - freezes: whether the screen holds still while selecting; nil follows the setting. Scripted
+    ///     checks on drawn screens pass true, so the real screen is never captured.
+    func captureArea(copiesToClipboard: Bool = true, freezes: Bool? = nil) {
+        begin(mode: .area, copiesToClipboard: copiesToClipboard, freezes: freezes)
     }
 
     /// Choose an area (or a window) and mark it up in place, on the frozen screen; then copy it, save
@@ -191,28 +195,33 @@ final class CaptureCoordinator {
 
     // MARK: Private
 
-    private func begin(mode: OverlayController.Mode) {
+    private func begin(mode: OverlayController.Mode, copiesToClipboard: Bool = true, freezes: Bool? = nil) {
         guard !overlay.isActive else { return }
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
-        overlay.freezesScreen = settings.freezeScreen
+        overlay.freezesScreen = freezes ?? settings.freezeScreen
         overlay.begin(mode: mode) { [weak self] outcome in
             switch outcome {
-            case .region(let rect, let display, _):
-                Task { await self?.captureRegion(rect, on: display, appName: app) }
+            case .region(_, _, _, let frozen?):
+                // The screen was held still: the selection is kept as it was seen.
+                Task { await self?.deliver(frozen, appName: app, copiesToClipboard: copiesToClipboard) }
+            case .region(let rect, let display, _, nil):
+                Task { await self?.captureRegion(rect, on: display, appName: app, copiesToClipboard: copiesToClipboard) }
             case .window(let target, _):
-                Task { await self?.captureWindow(target) }
+                // A window is captured on its own, frozen or not: with its shadow and its transparent
+                // corners, which the frozen screen does not have.
+                Task { await self?.captureWindow(target, copiesToClipboard: copiesToClipboard) }
             case .annotated, .cancelled:
                 break
             }
         }
     }
 
-    private func captureWindow(_ target: WindowTarget) async {
+    private func captureWindow(_ target: WindowTarget, copiesToClipboard: Bool = true) async {
         let probe = LatencyProbe("capture.window")
         do {
             let frame = try await capturer.captureWindow(target, shadow: true, layout: displays.layout)
             probe.end()
-            await deliver(frame, appName: target.ownerName)
+            await deliver(frame, appName: target.ownerName, copiesToClipboard: copiesToClipboard)
         } catch {
             Log.capture.error("Window capture failed: \(error.localizedDescription, privacy: .public)")
         }
