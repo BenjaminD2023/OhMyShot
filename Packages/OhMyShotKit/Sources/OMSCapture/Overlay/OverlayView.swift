@@ -102,7 +102,12 @@ final class OverlayView: NSView {
 
     /// Starts a fresh session with the pointer at `globalPointer`. The All-In-One bar shows only on the
     /// display where the session started.
-    func reset(pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, purpose: OverlayController.Purpose = .screenshot) {
+    /// `showsPointer` is false for a frozen screen until the overlay takes input: the system arrow is
+    /// still showing then, and a crosshair under it would double it.
+    func reset(
+        pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
+        purpose: OverlayController.Purpose = .screenshot
+    ) {
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
@@ -130,7 +135,7 @@ final class OverlayView: NSView {
             backdrop.contents = nil
             loupeImage.contents = nil
             updateSelectionLayers()
-            updatePointer(display.frame.contains(globalPointer) ? local(globalPointer) : nil)
+            updatePointer(showsPointer && display.frame.contains(globalPointer) ? local(globalPointer) : nil)
         }
     }
 

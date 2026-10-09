@@ -42,8 +42,9 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 - While an area is chosen the overlay sits at the screen-saver level (2026-10-09): just above pop-up
   menus, presses in the menu bar's band went to the menu bar on macOS 26+.
 - Freeze the screen is on by default (2026-10-09, the user's call; the roadmap had live selection as
-  the default). The screen is taken on the shortcut, before the overlay appears or the app activates,
-  and the kept area is cut from it, so a hover card that closes as the pointer leaves is still captured.
+  the default). The screen is taken on the shortcut, before the app takes the keyboard or the pointer
+  (the overlay shows at once but lets the pointer through until then), and the kept area is cut from
+  it, so a hover card that closes as the pointer leaves is still captured.
 - In-place annotation (Annotate Area, built 2026-10-09): after the area is chosen the overlay stays on
   the frozen screen; the selection keeps its frame (the crop frame's corners) and resizes from its edges;
   a horizontal glass toolbar in the All-In-One manner stands 10 pt below the selection against its right

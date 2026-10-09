@@ -5,10 +5,10 @@ import AppKit
 ///
 /// While an area is chosen it sits at the screen-saver level: just above pop-up menus, macOS 26 and
 /// later kept handing presses in the menu bar's band to the menu bar, so a selection could neither start
-/// there nor be dragged up into it, and a press there opened a menu. It still never hides macOS's
-/// periodic Screen Recording confirmation: a frozen overlay appears only once a frame has arrived, and a
-/// live one is dismissed by the overlay controller's watchdog when none does. In-place annotation goes
-/// back just above pop-up menus, under input methods' candidate windows.
+/// there nor be dragged up into it, and a press there opened a menu. When macOS's periodic Screen
+/// Recording confirmation holds the first frame back, the overlay covers it for at most half a second,
+/// until the overlay controller's watchdog dismisses it. In-place annotation goes back just above pop-up
+/// menus, under input methods' candidate windows.
 final class OverlayPanel: NSPanel {
     static let selectionLevel = NSWindow.Level.screenSaver
     static let annotationLevel = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)

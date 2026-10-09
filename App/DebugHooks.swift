@@ -103,8 +103,18 @@ struct DebugHooks {
         case "history-count":
             Log.app.notice("debug.history-count \(historyCount(), privacy: .public) in history, \(quickAccess.itemIDs.count, privacy: .public) card(s), can restore: \(quickAccess.canRestoreRecentlyClosed, privacy: .public)")
         case "capture-display":
+            // save=1 also writes the last capture of each display: a picture of the real screen, so off
+            // unless asked for.
             let count = Self.intParameter("n", in: url) ?? 10
-            Task { await benchmarkDisplayCaptures(count: count) }
+            Task { await benchmarkDisplayCaptures(count: count, saves: Self.intParameter("save", in: url) == 1) }
+        case "capture-timing":
+            // Times captures of the pointer's display, each read and dropped (nothing is kept or looked
+            // at), n= of them 400 ms apart; activity=1 holds a user-initiated activity meanwhile, which
+            // keeps App Nap away.
+            // display=<id> times that display instead of the pointer's.
+            let count = Self.intParameter("n", in: url) ?? 8
+            let displayID = Self.intParameter("display", in: url).map { CGDirectDisplayID($0) }
+            Task { await timeCaptures(count: count, holdsActivity: Self.intParameter("activity", in: url) == 1, displayID: displayID) }
         case "overlay-demo":
             // Optional px/py: the pointer in display points from the top-left corner.
             let pointer = Self.intParameter("px", in: url).flatMap { x in Self.intParameter("py", in: url).map { CGPoint(x: x, y: $0) } }
@@ -420,7 +430,7 @@ struct DebugHooks {
 
     /// Captures every display `count` times and logs per-display timing and the output size; the
     /// last capture of each display is saved next to the window snapshots.
-    func benchmarkDisplayCaptures(count: Int) async {
+    func benchmarkDisplayCaptures(count: Int, saves: Bool) async {
         for display in displays.layout.displays {
             var durations: [Double] = []
             var last: CapturedFrame?
@@ -440,11 +450,31 @@ struct DebugHooks {
             let p95 = sorted[Int(Double(sorted.count - 1) * 0.95)]
             let size = last.map { "\($0.image.width)x\($0.image.height)" } ?? "?"
             Log.app.notice("debug.capture.summary display=\(display.id, privacy: .public) n=\(sorted.count, privacy: .public) first=\(first, format: .fixed(precision: 1), privacy: .public) p50=\(p50, format: .fixed(precision: 1), privacy: .public) p95=\(p95, format: .fixed(precision: 1), privacy: .public) max=\(sorted.last ?? 0, format: .fixed(precision: 1), privacy: .public) ms size=\(size, privacy: .public)")
-            if let image = last?.image {
+            if saves, let image = last?.image {
                 try? FileManager.default.createDirectory(at: Self.snapshotDirectory, withIntermediateDirectories: true)
                 try? await ImageExporter.write(image, to: Self.snapshotDirectory.appending(path: "display-\(display.id).png"), format: .png)
             }
         }
+    }
+
+    /// How long captures of the pointer's display take with the app as it is between shortcuts (in the
+    /// background, no window shown), or holding an activity that keeps App Nap away.
+    func timeCaptures(count: Int, holdsActivity: Bool, displayID: CGDirectDisplayID?) async {
+        let layout = displays.layout
+        guard let display = displayID.flatMap(layout.display(id:)) ?? layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
+        let activity = holdsActivity
+            ? ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "Timing captures")
+            : nil
+        defer { activity.map(ProcessInfo.processInfo.endActivity) }
+        var durations: [Double] = []
+        for _ in 0..<max(count, 1) {
+            let probe = LatencyProbe("debug.capture-timing")
+            _ = try? await capturer.captureDisplay(display)
+            durations.append(probe.end())
+            try? await Task.sleep(for: .milliseconds(400))
+        }
+        let list = durations.map { String(format: "%.1f", $0) }.joined(separator: " ")
+        Log.app.notice("debug.capture-timing activity=\(holdsActivity, privacy: .public) display=\(display.id, privacy: .public) active=\(NSApp.isActive, privacy: .public) ms: \(list, privacy: .public)")
     }
 
     /// Opens the overlay, draws a 600×360 selection centered on the pointer's display with the pointer

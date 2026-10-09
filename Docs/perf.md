@@ -278,3 +278,29 @@ keyboard back, by which time a hover card or an open menu had gone.
 - **The capture at zero is a plain live capture** (one ScreenCaptureKit screenshot of the area, per
   display it crosses), delivered like any other.
 
+### The frozen overlay shows at once again (2026-10-09, evening)
+
+The frozen design above waited for the pointer's display before showing anything. Over the day's 23
+real presses that put `overlay.frozen` at 54–106 ms (median about 73) and `overlay.visible` at 59–120 ms
+(median about 84), over the 50 ms target. Where the time went:
+
+- **The capture itself is about twice M1's.** A bare capture of the built-in display (4112×2658),
+  timed with nothing shown (`capture-timing`, the app in the background), took 41–71 ms; M1 measured
+  24.2 ms. Holding a user-initiated activity (no App Nap) made no difference (45–68 ms against 41–62
+  ms), so App Nap is not the cause. Not resolved: M1's benchmark may have run with the app active, the
+  built-in display has EDR headroom (HDR content on screen may force tone mapping), and the ultrawide
+  was not connected to compare.
+- **Waiting to show the overlay cost the rest**: the reveal and the work before the capture, about 20 ms
+  on top of the capture, all of it in front of the first visible frame.
+
+So a frozen session shows its panels again at once, but they let the pointer through and the app does
+not take the keyboard: what is under the pointer keeps its hover state and its menus until the frame
+is in, and only then does the overlay take input (activate, hide the cursor, show the crosshair). The
+capture request is queued before the panels' first flush. `overlay.begin` (the synchronous part of
+the shortcut) and `overlay.capture` (the pointer display's capture alone) now break `overlay.frozen`
+down. The first real press after the change (built-in display under the pointer): `overlay.begin`
+4.5 ms, `overlay.visible` 18.9 ms, `overlay.capture` 55.5 ms, `overlay.frozen` 74.3 ms, activation
+granted; one press, not a distribution. The user tried it and reported no problems. Not separately
+confirmed: that a window letting the pointer through, ordered in above an app, closes none of its
+hover cards or menus.
+
