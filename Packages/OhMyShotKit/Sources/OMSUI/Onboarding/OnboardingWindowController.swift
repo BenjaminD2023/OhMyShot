@@ -64,57 +64,82 @@ struct OnboardingView: View {
         permissions.status(of: .screenRecording) == .granted
     }
 
+    private var title: LocalizedStringKey {
+        isGranted ? "Screen Recording Is On" : "Allow Screen Recording"
+    }
+
+    private var message: LocalizedStringKey {
+        if isGranted { return "If captures come out blank, relaunch once." }
+        if openedSettings { return "Turn on OhMyShot, then relaunch." }
+        return "OhMyShot needs it to capture your screen."
+    }
+
+    /// Before macOS's own prompt has appeared, the button only leads to it.
+    private var primaryAction: LocalizedStringKey {
+        permissions.hasAsked(.screenRecording) ? "Open System Settings" : "Continue"
+    }
+
+    /// The first time, macOS's own prompt offers System Settings, so opening it too would ask twice.
+    /// macOS prompts only once; after that this opens System Settings itself.
+    private func openSettings() {
+        openedSettings = true
+        if permissions.hasAsked(.screenRecording) {
+            permissions.openSystemSettings(for: .screenRecording)
+        } else {
+            Task { await permissions.request(.screenRecording) }
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(spacing: 16) {
             Image(systemName: isGranted ? "checkmark.circle" : "rectangle.dashed")
-                .font(.system(size: 34, weight: .regular))
+                .font(.system(size: 40, weight: .regular))
                 .foregroundStyle(.tint)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(isGranted ? "OhMyShot can see your screen" : "Let OhMyShot see your screen", bundle: .module)
+            VStack(spacing: 6) {
+                Text(title, bundle: .module)
                     .font(.title2.weight(.semibold))
-                Text(isGranted
-                     ? "Screen Recording is on. If captures still come out blank, relaunch once so macOS applies it."
-                     : "macOS lets an app capture the screen only after you allow it. Turn on OhMyShot under Privacy & Security › Screen & System Audio Recording, then relaunch so the change takes effect.",
-                     bundle: .module)
+                Text(message, bundle: .module)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if openedSettings && !isGranted {
+                    Button(action: openSettings) {
+                        Text("Open System Settings", bundle: .module)
+                    }
+                    .buttonStyle(.link)
+                }
             }
+            .multilineTextAlignment(.center)
 
-            Text("macOS also asks you to confirm about once a month. That reminder comes from macOS, not from OhMyShot.", bundle: .module)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack {
+            HStack(spacing: 10) {
                 Button(action: close) {
                     Text(isGranted ? "Done" : "Not Now", bundle: .module)
+                        .frame(maxWidth: .infinity)
                 }
                 .keyboardShortcut(.cancelAction)
-                Spacer()
+                if !isGranted && !openedSettings {
+                    Button(action: openSettings) {
+                        Text(primaryAction, bundle: .module)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
                 if openedSettings || isGranted {
                     Button(action: relaunch) {
-                        Text("Relaunch OhMyShot", bundle: .module)
-                    }
-                }
-                if !isGranted {
-                    Button {
-                        Task {
-                            await permissions.request(.screenRecording)
-                            permissions.openSystemSettings(for: .screenRecording)
-                            openedSettings = true
-                        }
-                    } label: {
-                        Text("Open System Settings", bundle: .module)
+                        Text("Relaunch", bundle: .module)
+                            .frame(maxWidth: .infinity)
                     }
                     .keyboardShortcut(.defaultAction)
                 }
             }
-            .padding(.top, 4)
+            .controlSize(.large)
+            .padding(.top, 8)
         }
-        .padding(28)
-        .frame(width: 460)
+        .padding(.horizontal, 28)
+        .padding(.top, 36)
+        .padding(.bottom, 24)
+        .frame(width: 380)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             permissions.refresh([.screenRecording])
         }

@@ -10,6 +10,13 @@ public enum Relauncher {
     /// process cannot do the relaunch: it belongs to this app's launch job and dies with it. The new
     /// copy waits for this one to exit (`afterOtherInstancesExit`) before it takes the shortcuts.
     public static func relaunch() {
+        startNewCopy { started in
+            if started { NSApp.terminate(nil) }
+        }
+    }
+
+    /// Starts a new copy of the app and reports whether it started; quitting this one is up to the caller.
+    public static func startNewCopy(_ completion: @escaping @MainActor (Bool) -> Void) {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
         configuration.activates = false
@@ -17,9 +24,8 @@ public enum Relauncher {
             Task { @MainActor in
                 if let error {
                     Log.app.error("Relaunch failed: \(error.localizedDescription, privacy: .public)")
-                    return
                 }
-                NSApp.terminate(nil)
+                completion(error == nil)
             }
         }
     }

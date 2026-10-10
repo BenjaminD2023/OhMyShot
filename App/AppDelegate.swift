@@ -2,6 +2,7 @@ import AppKit
 import CoreServices
 import Foundation
 import OMSCore
+import OSLog
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var root: CompositionRoot?
@@ -47,6 +48,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             pendingFiles.append(contentsOf: files)
         }
+    }
+
+    /// After a permission changes, System Settings offers Quit & Reopen, but it only quits a menu bar
+    /// app. When the quit comes from System Settings, start the new copy here before quitting.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let requester = Self.quitRequester() else { return .terminateNow }
+        Log.app.notice("Quit requested by \(requester, privacy: .public)")
+        guard requester.hasPrefix("com.apple.systempreferences") || requester.hasPrefix("com.apple.settings.") else {
+            return .terminateNow
+        }
+        Relauncher.startNewCopy { _ in
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
+    /// The bundle identifier of the app that sent the Quit Apple event being handled, if any.
+    private static func quitRequester() -> String? {
+        guard
+            let event = NSAppleEventManager.shared().currentAppleEvent,
+            event.eventClass == AEEventClass(kCoreEventClass),
+            event.eventID == AEEventID(kAEQuitApplication),
+            let pid = event.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
+        else { return nil }
+        return NSRunningApplication(processIdentifier: pid_t(pid))?.bundleIdentifier ?? "pid \(pid)"
     }
 
     func applicationWillTerminate(_ notification: Notification) {

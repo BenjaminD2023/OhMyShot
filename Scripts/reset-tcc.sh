@@ -14,3 +14,5 @@ else
 fi
 
 tccutil reset "$SERVICE" "$BUNDLE_ID"
+# Forget that the app has asked, so onboarding leads to macOS's prompt again.
+defaults delete "$BUNDLE_ID" AskedPermissions 2>/dev/null || true

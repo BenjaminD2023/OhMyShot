@@ -49,7 +49,12 @@ public enum PermissionStatus: Sendable, Equatable {
 public final class PermissionCenter {
     public private(set) var statuses: [Permission: PermissionStatus] = [:]
 
-    public init() {}
+    @ObservationIgnored private let defaults: UserDefaults
+    private static let askedKey = "AskedPermissions"
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     /// The last status read for a permission. Call `refresh` first to read it.
     public func status(of permission: Permission) -> PermissionStatus {
@@ -71,9 +76,19 @@ public final class PermissionCenter {
         }
     }
 
+    /// Whether OhMyShot has asked macOS for a permission before. Asking again shows nothing for
+    /// Screen Recording, Accessibility, and Input Monitoring, so callers send the user to System Settings instead.
+    public func hasAsked(_ permission: Permission) -> Bool {
+        defaults.stringArray(forKey: Self.askedKey)?.contains(permission.rawValue) ?? false
+    }
+
     /// Asks macOS for a permission. Screen Recording, Accessibility, and Input Monitoring prompt only
     /// once; after that the user has to switch them on in System Settings.
     public func request(_ permission: Permission) async {
+        let asked = defaults.stringArray(forKey: Self.askedKey) ?? []
+        if !asked.contains(permission.rawValue) {
+            defaults.set(asked + [permission.rawValue], forKey: Self.askedKey)
+        }
         switch permission {
         case .screenRecording:
             _ = CGRequestScreenCaptureAccess()
