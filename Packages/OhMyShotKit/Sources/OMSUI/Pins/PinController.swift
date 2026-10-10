@@ -215,6 +215,11 @@ public final class PinController {
         return await pin.debugReadText(selectAll: selectAll)
     }
 
+    /// Selects part of a text card's text, for scripted renders of a selection.
+    public func debugSelectText(in window: NSWindow, range: NSRange) {
+        (window as? PinWindow)?.debugSelectText(range)
+    }
+
     /// Lets the text reader go, as closing the last pin does.
     public func debugReleaseTextReader() {
         textReader.release()

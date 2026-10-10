@@ -69,7 +69,7 @@ struct PinTextTests {
             "截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。Quick Access keeps every capture one click away.",
         ] {
             let size = PinText.textSize(for: text)
-            let drawn = PinText.attributed(text).boundingRect(with: CGSize(width: size.width, height: 10_000), options: PinText.drawing)
+            let drawn = PinText.attributed(text).boundingRect(with: CGSize(width: size.width, height: 10_000), options: [.usesLineFragmentOrigin, .usesFontLeading])
             #expect(ceil(drawn.height) == size.height, "\(text.prefix(12))")
         }
     }

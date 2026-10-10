@@ -68,3 +68,98 @@ struct PinViewTests {
         return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
     }
 }
+
+extension PinViewTests {
+    private static let appearance = PinAppearance(cornerRadius: 12, shadow: true, border: true)
+
+    /// A text card at `zoom` in its pin window, which is never shown.
+    private func card(_ text: String, zoom: CGFloat = 1) throws -> (view: PinView, text: PinTextView) {
+        let content = PinController.Content.text(text)
+        let size = PinWindow.baseSize(of: content)
+        let actions = PinController.Actions(copy: { _ in }, save: { _ in }, saveAs: { _ in }, annotate: { _ in }, recognizeText: { _ in })
+        let window = PinWindow(
+            pin: PinController.Pin(id: UUID(), content: content, origin: .clipboard),
+            frame: CGRect(x: 0, y: 0, width: size.width * zoom, height: size.height * zoom), zoom: zoom, appearance: Self.appearance, actions: actions
+        )
+        let view = try #require(window.contentView as? PinView)
+        view.layout()
+        return (view, try #require(view.textView))
+    }
+
+    @Test func aCardsTextBreaksWhereItsSizeWasMeasured() throws {
+        for text in [
+            "npm run dev",
+            "Quick Access keeps every capture one click away. The text in a capture can be copied, edited, and searched, and a long line wraps where the card is widest.",
+            "截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。按住 Option 再松开鼠标，就能在面板里查看和编辑识别出的文字。",
+            "func main() {\n    let pins = PinController()\n    pins.pinClipboard()\n}",
+        ] {
+            let (_, textView) = try card(text)
+            let layout = try #require(textView.layoutManager), container = try #require(textView.textContainer)
+            let used = layout.usedRect(for: container)
+            let measured = PinText.textSize(for: text)
+            #expect(ceil(used.height) == measured.height, "\(text.prefix(12)): \(used) vs \(measured)")
+            #expect(used.width <= measured.width + 0.5, "\(text.prefix(12)): \(used) vs \(measured)")
+        }
+    }
+
+    @Test func aLongCardStopsAtThirtyLinesWithAnEllipsis() throws {
+        let text = (1...45).map { "Line \($0) of the log" }.joined(separator: "\n")
+        let (_, textView) = try card(text)
+        let layout = try #require(textView.layoutManager), container = try #require(textView.textContainer)
+        var lines = 0
+        layout.enumerateLineFragments(forGlyphRange: layout.glyphRange(for: container)) { _, _, _, _, _ in lines += 1 }
+        #expect(lines == PinText.maxLines)
+        // The last line shown ends in an ellipsis in place of what follows.
+        let last = layout.characterRange(forGlyphRange: layout.glyphRange(for: container), actualGlyphRange: nil)
+        #expect(last.length < (textView.string as NSString).length)
+        #expect(ceil(layout.usedRect(for: container).height) == PinText.textSize(for: text).height)
+    }
+
+    @Test func aCardsTextTakesPressesOnlyOnItsLines() throws {
+        let (view, textView) = try card("Quick Access keeps every capture one click away.")
+        // The pin's coordinates are y-up: the line is in the middle of the card's height.
+        let middle = view.bounds.midY
+        #expect(view.hitTest(CGPoint(x: PinText.padding.width + 30, y: middle)) === textView)
+        // In the padding beside the text, and within 6 pt of the edge, the pin takes the press and drags.
+        #expect(view.hitTest(CGPoint(x: PinText.padding.width / 2 + 2, y: middle)) === view)
+        #expect(view.hitTest(CGPoint(x: 3, y: middle)) === view)
+        // Past the end of a short line, too.
+        let (short, _) = try card("npm run dev\nand a second, longer line that sets the card's width")
+        #expect(short.hitTest(CGPoint(x: short.bounds.maxX - PinText.padding.width - 20, y: short.bounds.maxY - PinText.padding.height - 6)) === short)
+    }
+
+    @Test func atAZoomItsTextStillTakesPressesWhereItIs() throws {
+        let (view, textView) = try card("Quick Access keeps every capture one click away.", zoom: 2)
+        #expect(textView.bounds.width == textView.frame.width / 2)
+        #expect(view.hitTest(CGPoint(x: (PinText.padding.width + 30) * 2, y: view.bounds.midY)) === textView)
+    }
+
+    @Test func copyingASelectionTakesItOrAllOfTheText() {
+        let full = "first line\nsecond line\n\n"
+        let shown = "first line\nsecond line"
+        #expect(PinText.copied(selecting: NSRange(location: 6, length: 4), in: shown, of: full) == "line")
+        // All that the card holds selected: the whole text, the part past the card's cut too.
+        #expect(PinText.copied(selecting: NSRange(location: 0, length: (shown as NSString).length), in: shown, of: full) == full)
+        #expect(PinText.copied(selecting: NSRange(location: 3, length: 0), in: shown, of: full) == nil)
+    }
+
+    @Test func theMenuCopiesTheSelectionOrAllOfTheText() throws {
+        let (view, textView) = try card("Quick Access keeps every capture one click away.")
+        #expect(view.makeMenu().items.prefix(2).map(\.title) == ["Copy Text", "Select All Text"])
+        textView.setSelectedRange(NSRange(location: 6, length: 6))
+        #expect(view.makeMenu().items.prefix(3).map(\.title) == ["Copy", "Copy All Text", "Select All Text"])
+        #expect(textView.selectionToCopy == "Access")
+        // Over the text, after the text's own menu: the whole text, without ⌘C, which copies the selection.
+        let after = try #require(view.makeMenu(afterLiveText: true).items.first)
+        #expect(after.title == "Copy All Text" && after.keyEquivalent.isEmpty)
+        // A right-click on the text gets the text's own menu with the pin's after it.
+        let window = try #require(view.window)
+        let onText = view.convert(CGPoint(x: PinText.padding.width + 30, y: view.bounds.midY), to: nil)
+        let click = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: onText, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let titles = try #require(textView.menu(for: click)).items.map(\.title)
+        #expect(titles.contains("Copy All Text") && titles.last == "Close All Pins", "\(titles)")
+    }
+}

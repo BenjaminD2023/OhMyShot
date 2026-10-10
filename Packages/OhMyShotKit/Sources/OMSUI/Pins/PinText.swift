@@ -14,9 +14,6 @@ enum PinText {
     /// The most of a long text the card ever lays out, so a pasted log never stalls it.
     static let maxCharacters = 4000
 
-    /// How the text is measured and drawn, the same both times.
-    static let drawing: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine]
-
     /// The system face at 13 pt, or the monospaced one at 12 pt for code.
     static func font(for text: String) -> NSFont {
         isCodeLike(text)
@@ -73,5 +70,16 @@ enum PinText {
     static func cardSize(for text: String) -> CGSize {
         let size = textSize(for: text)
         return CGSize(width: size.width + 2 * padding.width, height: size.height + 2 * padding.height)
+    }
+
+    /// What copying a selection of `range` in `shown`, the part of `full` the card lays out, takes: the
+    /// selected text, or the whole text when all that the card holds is selected, so Select All and Copy
+    /// still take what was cut. Nil with nothing selected.
+    static func copied(selecting range: NSRange, in shown: String, of full: String) -> String? {
+        let length = (shown as NSString).length
+        guard range.location != NSNotFound, range.length > 0 else { return nil }
+        if range.location == 0, range.length >= length { return full }
+        let kept = NSIntersectionRange(range, NSRange(location: 0, length: length))
+        return kept.length > 0 ? (shown as NSString).substring(with: kept) : nil
     }
 }

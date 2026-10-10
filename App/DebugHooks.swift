@@ -285,8 +285,9 @@ struct DebugHooks {
             // Draws a pin behind the desktop picture and captures its window alone, nothing shown:
             // kind=text|line|narrow|code|color|alpha|page (the drawn demo page as a picture),
             // zoom=<percent>, mode=light|dark, controls=1 for Close and More as on hover, select=all to
-            // read a picture's text with Live Text and select all of it. Writes
-            // pin-render-<kind>-<zoom>-<mode>[-controls][-select].png to the snapshot folder.
+            // read a picture's text with Live Text and select all of it, select=part to select part of a
+            // card's text. Writes pin-render-<kind>-<zoom>-<mode>[-controls][-select|-part].png to the
+            // snapshot folder.
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in items.first { $0.name == name }?.value }
             let kind = value("kind") ?? "text"
@@ -294,6 +295,7 @@ struct DebugHooks {
             let mode = value("mode") ?? "light"
             let controls = value("controls") == "1"
             let select = value("select") == "all"
+            let part = value("select") == "part"
             let content: PinController.Content? = switch kind {
             case "page": DebugPanelDemo.image().map { .image($0, scale: CGFloat($0.width) / DebugPanelDemo.size.width) }
             case "line": .text("npm run dev")
@@ -304,8 +306,8 @@ struct DebugHooks {
             default: .text("截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。Quick Access keeps every capture one click away; the text in a capture can be copied, edited, and searched.")
             }
             guard let content else { return }
-            let name = "pin-render-\(kind)-\(Int(zoom))-\(mode)" + (controls ? "-controls" : "") + (select ? "-select" : "")
-            Task { await renderPin(content, name: name, zoom: CGFloat(zoom) / 100, dark: mode == "dark", controls: controls, selectAll: select) }
+            let name = "pin-render-\(kind)-\(Int(zoom))-\(mode)" + (controls ? "-controls" : "") + (select ? "-select" : part ? "-part" : "")
+            Task { await renderPin(content, name: name, zoom: CGFloat(zoom) / 100, dark: mode == "dark", controls: controls, selectAll: select, selectPart: part) }
         case "measure-demo":
             // Measure over drawn screens (DebugToolsDemo), never the real one: the crosshair in the 120 × 36 pt
             // button, then a box drawn loosely around the 48 × 48 pt square; logs both readings. The overlay
@@ -627,9 +629,10 @@ struct DebugHooks {
 
     /// Opens a pin of `content` behind the desktop picture, captures its window alone as the window server
     /// draws it, and closes it.
-    func renderPin(_ content: PinController.Content, name: String, zoom: CGFloat, dark: Bool, controls: Bool, selectAll: Bool) async {
+    func renderPin(_ content: PinController.Content, name: String, zoom: CGFloat, dark: Bool, controls: Bool, selectAll: Bool, selectPart: Bool = false) async {
         let window = pins.debugHiddenPin(content, zoom: zoom, dark: dark, controls: controls)
         defer { window.orderOut(nil) }
+        if selectPart { pins.debugSelectText(in: window, range: NSRange(location: 10, length: 24)) }
         if selectAll {
             let characters = await pins.debugReadText(in: window, selectAll: true)
             Log.app.notice("debug.pin-render Live Text found \(characters, privacy: .public) characters")

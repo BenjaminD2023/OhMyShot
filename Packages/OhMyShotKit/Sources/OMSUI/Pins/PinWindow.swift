@@ -167,6 +167,10 @@ final class PinWindow: NSPanel {
     func debugReadText(selectAll: Bool) async -> Int {
         await pinView.debugReadText(selectAll: selectAll)
     }
+
+    func debugSelectText(_ range: NSRange) {
+        pinView.textView?.setSelectedRange(range)
+    }
     #endif
 
     // MARK: Actions
@@ -239,7 +243,8 @@ final class PinView: NSView {
     private let contentLayer = CALayer()
     private let swatch = CALayer()
     private let checker = PinCheckerLayer()
-    private let textView: PinTextView?
+    /// A text card's text, which selects.
+    let textView: PinTextView?
     /// What the reading shows when nothing else is: a color's hex.
     private var restingReading: String?
     private let ring = CALayer()
@@ -267,7 +272,10 @@ final class PinView: NSView {
     var isLocked = false {
         didSet {
             guard isLocked != oldValue else { return }
-            if isLocked { liveText?.resetSelection() }
+            if isLocked {
+                liveText?.resetSelection()
+                textView?.clearSelection()
+            }
             lockMark.isHidden = !isLocked
             setControlsVisible(false)
             updateRing()
@@ -299,7 +307,11 @@ final class PinView: NSView {
             contentLayer.contentsGravity = .resize
             contentLayer.minificationFilter = .trilinear
         case .text:
-            if let textView { addSubview(textView) }
+            if let textView {
+                addSubview(textView)
+                textView.delegate = self
+                textView.onCopy = { [weak self] text in self?.pinWindow?.copySelectedText(text) }
+            }
         case .color(let color):
             // Translucent colors over the checkerboard, so the value never seems more solid than it is.
             if color.alpha < 1 { contentLayer.addSublayer(checker) }
@@ -528,8 +540,8 @@ final class PinView: NSView {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
         var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways, .inVisibleRect]
-        // A picture's cursor follows where its text takes a press.
-        if textReader != nil { options.formUnion([.mouseMoved, .cursorUpdate]) }
+        // The cursor follows where a picture's or a card's text takes a press.
+        if textReader != nil || textView != nil { options.formUnion([.mouseMoved, .cursorUpdate]) }
         if window?.frame.contains(NSEvent.mouseLocation) == true {
             options.insert(.assumeInside)
             // A pin that opens under the pointer gets no mouseEntered.
@@ -557,12 +569,12 @@ final class PinView: NSView {
         }
     }
 
-    /// The I-beam where a press would go to the picture's text, the arrow everywhere else: by the border, with
-    /// ⌘ held, over the corner buttons.
+    /// The I-beam where a press would go to the picture's or the card's text, the arrow everywhere else: by
+    /// the border, with ⌘ held, over the corner buttons.
     private func updateCursor(at windowPoint: CGPoint) {
-        guard let liveText else { return }
+        guard let text: NSView = liveText ?? textView else { return }
         let target = hitTest(superview?.convert(windowPoint, from: nil) ?? windowPoint)
-        let onText = target.map { $0 === liveText || $0.isDescendant(of: liveText) } ?? false
+        let onText = target.map { $0 === text || $0.isDescendant(of: text) } ?? false
         (onText ? NSCursor.iBeam : NSCursor.arrow).set()
     }
 
@@ -601,11 +613,12 @@ final class PinView: NSView {
     #endif
 
     /// Faded out, Close and More let the pin take the click, so it drags from under them. Live Text covers
-    /// the whole picture but takes only the presses `takesTextPress(at:)` gives it.
+    /// the whole picture, and a card's text its card inside the padding, but they take only the presses
+    /// `takesTextPress(at:)` gives them.
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         if !controlsShown, let hit, hit === closeButton || hit === moreButton { return self }
-        if let liveText, let hit, hit === liveText || hit.isDescendant(of: liveText) {
+        if let text: NSView = liveText ?? textView, let hit, hit === text || hit.isDescendant(of: text) {
             return takesTextPress(at: convert(point, from: superview)) ? hit : self
         }
         return hit
@@ -660,14 +673,14 @@ final class PinView: NSView {
     /// The border by which a picture filled with text still drags.
     private static let grabBorder: CGFloat = 6
 
-    /// Whether a press at `point` (in the pin's coordinates) goes to the picture's text, as in Preview: a left
-    /// press on text, a right press also on a detected item (a link's or a code's menu), so a drag across a
-    /// QR code still moves the pin. Never by the border, and never with ⌘ held, which drags from anywhere.
+    /// Whether a press at `point` (in the pin's coordinates) goes to the picture's or the card's text, as in
+    /// Preview: a press on text; on a picture, a right press also on a detected item (a link's or a code's
+    /// menu), so a drag across a QR code still moves the pin. Never by the border, and never with ⌘ held,
+    /// which drags from anywhere.
     private func takesTextPress(at point: CGPoint) -> Bool {
-        guard
-            let liveText, !NSEvent.modifierFlags.contains(.command),
-            bounds.insetBy(dx: Self.grabBorder, dy: Self.grabBorder).contains(point)
-        else { return false }
+        guard !NSEvent.modifierFlags.contains(.command), bounds.insetBy(dx: Self.grabBorder, dy: Self.grabBorder).contains(point) else { return false }
+        if let textView { return textView.isOnText(textView.convert(point, from: self)) }
+        guard let liveText else { return false }
         let location = liveText.analysisPoint(point, from: self)
         return NSApp.currentEvent?.type == .rightMouseDown ? liveText.hasInteractiveItem(at: location) : liveText.hasText(at: location)
     }
@@ -681,6 +694,7 @@ final class PinView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         if !event.modifierFlags.contains(.command), bounds.insetBy(dx: Self.grabBorder, dy: Self.grabBorder).contains(point) {
             liveText?.resetSelection()
+            textView?.clearSelection()
         }
         window?.makeKey()
         window?.performDrag(with: event)
@@ -716,8 +730,14 @@ final class PinView: NSView {
         let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
         switch event.keyCode {
         case 53:
-            // A selection in the picture's text goes first.
-            if let liveText, liveText.hasActiveTextSelection { liveText.resetSelection() } else { pin.closePin() }
+            // A selection in the picture's or the card's text goes first.
+            if let liveText, liveText.hasActiveTextSelection {
+                liveText.resetSelection()
+            } else if let textView, textView.selectedRange().length > 0 {
+                textView.clearSelection()
+            } else {
+                pin.closePin()
+            }
         case 123: pin.move(by: CGVector(dx: -step, dy: 0))
         case 124: pin.move(by: CGVector(dx: step, dy: 0))
         case 125: pin.move(by: CGVector(dx: 0, dy: -step))
@@ -731,9 +751,9 @@ final class PinView: NSView {
         guard let pin = pinWindow, pin.isKeyWindow, event.modifierFlags.contains(.command) else { return false }
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "c":
-            if liveText?.hasActiveTextSelection == true { copySelectedText() } else { pin.copyPin() }
+            if liveText?.hasActiveTextSelection == true || textView?.selectionToCopy != nil { copySelectedText() } else { pin.copyPin() }
         case "a":
-            guard liveText != nil else { return false }
+            guard liveText != nil || textView != nil else { return false }
             selectAllText()
         case "s" where pin.isPicture: event.modifierFlags.contains(.shift) ? pin.savePinAs() : pin.savePin()
         case "w": pin.closePin()
@@ -751,13 +771,21 @@ final class PinView: NSView {
         makeMenu()
     }
 
-    /// Copies what the selection in the picture's text holds.
+    /// Copies what the selection in the picture's or the card's text holds.
     private func copySelectedText() {
+        if let textView, let text = textView.selectionToCopy {
+            pinWindow?.copySelectedText(text)
+            return
+        }
         guard let liveText, liveText.hasActiveTextSelection else { return }
         pinWindow?.copySelectedText(liveText.selectedText)
     }
 
     private func selectAllText() {
+        if let textView {
+            textView.selectAll(nil)
+            return
+        }
         guard let liveText else { return }
         liveText.selectedRanges = [liveText.text.startIndex..<liveText.text.endIndex]
     }
@@ -770,9 +798,10 @@ final class PinView: NSView {
         pinWindow?.closePin()
     }
 
-    /// `afterLiveText`: the pin's items follow Live Text's own over the text, which copy the text. Either way
-    /// ⌘C goes where it goes on the keyboard: to the selection when there is one, else to the picture.
-    private func makeMenu(afterLiveText: Bool = false) -> NSMenu {
+    /// `afterLiveText`: the pin's items follow Live Text's own, or the card text's own, over the text, which
+    /// copy the selection. Either way ⌘C goes where it goes on the keyboard: to the selection when there is
+    /// one, else to the picture or the whole text.
+    func makeMenu(afterLiveText: Bool = false) -> NSMenu {
         let menu = NSMenu()
         guard let pin = pinWindow else { return menu }
         func item(_ title: String, _ symbol: String?, key: String = "", modifiers: NSEvent.ModifierFlags = .command, _ action: @escaping () -> Void) -> NSMenuItem {
@@ -805,7 +834,18 @@ final class PinView: NSView {
             menu.addItem(item(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle") { pin.annotatePin() })
             menu.addItem(item(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder") { pin.recognizePinText() })
         case .text:
-            menu.addItem(item(String(localized: "Copy Text", bundle: .module), "doc.on.doc", key: "c") { pin.copyPin() })
+            let selection = textView?.selectionToCopy != nil
+            if afterLiveText {
+                menu.addItem(item(String(localized: "Copy All Text", bundle: .module), "doc.on.doc", key: selection ? "" : "c") { pin.copyPin() })
+            } else if selection {
+                menu.addItem(item(String(localized: "Copy", bundle: .module), "doc.on.doc", key: "c") { [weak self] in self?.copySelectedText() })
+                menu.addItem(item(String(localized: "Copy All Text", bundle: .module), "doc.on.doc") { pin.copyPin() })
+            } else {
+                menu.addItem(item(String(localized: "Copy Text", bundle: .module), "doc.on.doc", key: "c") { pin.copyPin() })
+            }
+            if !afterLiveText {
+                menu.addItem(item(String(localized: "Select All Text", bundle: .module), "character.cursor.ibeam", key: "a") { [weak self] in self?.selectAllText() })
+            }
         case .color:
             menu.addItem(item(String(localized: "Copy Hex", bundle: .module), "number", key: "c") { pin.copyPin() })
             menu.addItem(item(String(localized: "Copy RGB", bundle: .module), "eyedropper") { pin.copyRGB() })
@@ -835,6 +875,22 @@ final class PinView: NSView {
         menu.addItem(.separator())
         menu.addItem(item(String(localized: "Close", bundle: .module), "xmark") { pin.closePin() })
         menu.addItem(item(String(localized: "Close All Pins", bundle: .module), nil) { pin.closeAllPins() })
+        return menu
+    }
+}
+
+extension PinView: NSTextViewDelegate {
+    /// Over a card's text, the text's own menu (Copy, Look Up, Translate, and the like), then the pin's.
+    func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+        while menu.items.last?.isSeparatorItem == true {
+            menu.removeItem(at: menu.items.count - 1)
+        }
+        let pinMenu = makeMenu(afterLiveText: true)
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
+        for item in pinMenu.items {
+            pinMenu.removeItem(item)
+            menu.addItem(item)
+        }
         return menu
     }
 }
@@ -874,19 +930,47 @@ extension PinView: ImageAnalysisOverlayViewDelegate {
 }
 
 /// A text card's text, laid out once at 100 percent and drawn scaled with the pin, so it wraps where it
-/// did at 100 percent at any zoom and stays sharp. It takes no clicks and is no element of its own: the
-/// pin drags from anywhere, and VoiceOver reads the pin, which carries the text.
-private final class PinTextView: NSView {
-    private let text: NSAttributedString
-    private let size: CGSize
+/// did at 100 percent at any zoom and stays sharp. It selects as text does: a drag on it selects, a double
+/// click takes a word and a triple click a paragraph. The pin takes every other press, and drags
+/// (`PinView.takesTextPress`), and it keeps the cursor. It is no element of its own: VoiceOver reads the
+/// pin, which carries the text.
+final class PinTextView: NSTextView {
+    /// The whole text, past what the card lays out.
+    let fullText: String
+    /// Copies the selection's text, through the pin, which says "Copied".
+    var onCopy: ((String) -> Void)?
     var zoom: CGFloat = 1 {
-        didSet { if zoom != oldValue { needsDisplay = true } }
+        didSet { if zoom != oldValue { scaleToZoom() } }
     }
 
     init(text: String) {
-        self.text = PinText.attributed(text)
-        size = PinText.textSize(for: text)
-        super.init(frame: .zero)
+        fullText = text
+        let size = PinText.textSize(for: text)
+        let storage = NSTextStorage(attributedString: PinText.attributed(text))
+        // TextKit 1, as the card's size is measured, so the lines break where the measure said.
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        // As wide as the text measured at 100 percent, and as many lines as the card holds, the last one
+        // cut with an ellipsis when there is more.
+        let container = NSTextContainer(size: CGSize(width: size.width, height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        container.maximumNumberOfLines = PinText.maxLines
+        container.lineBreakMode = .byTruncatingTail
+        container.widthTracksTextView = false
+        container.heightTracksTextView = false
+        layout.addTextContainer(container)
+        super.init(frame: CGRect(origin: .zero, size: size), textContainer: container)
+        isEditable = false
+        isSelectable = true
+        isRichText = false
+        importsGraphics = false
+        drawsBackground = false
+        textContainerInset = .zero
+        isVerticallyResizable = false
+        isHorizontallyResizable = false
+        usesFindBar = false
+        isAutomaticLinkDetectionEnabled = false
+        isAutomaticDataDetectionEnabled = false
         setAccessibilityElement(false)
     }
 
@@ -895,21 +979,45 @@ private final class PinTextView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
-    override var isFlipped: Bool { true }
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        scaleToZoom()
+    }
 
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
+    /// The text at 100 percent in the view's own coordinates, drawn at the zoom.
+    private func scaleToZoom() {
+        setBoundsSize(CGSize(width: frame.width / zoom, height: frame.height / zoom))
         needsDisplay = true
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        context.saveGState()
-        context.scaleBy(x: zoom, y: zoom)
-        text.draw(with: CGRect(origin: .zero, size: size), options: PinText.drawing, context: nil)
-        context.restoreGState()
+    /// Whether `point`, in the view's own coordinates, is on the text: on a line, from its first glyph to a
+    /// little past its last.
+    func isOnText(_ point: CGPoint) -> Bool {
+        guard let layoutManager, let textContainer, layoutManager.glyphRange(for: textContainer).length > 0 else { return false }
+        let glyph = layoutManager.glyphIndex(for: point, in: textContainer)
+        return layoutManager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil).insetBy(dx: -4, dy: 0).contains(point)
+    }
+
+    /// What copying the selection takes (`PinText.copied`); nil with nothing selected.
+    var selectionToCopy: String? {
+        PinText.copied(selecting: selectedRange(), in: string, of: fullText)
+    }
+
+    /// Copy in the text's own menu goes as ⌘C does, through the pin.
+    override func copy(_ sender: Any?) {
+        guard let text = selectionToCopy else { return }
+        onCopy?(text)
+    }
+
+    func clearSelection() {
+        setSelectedRange(NSRange(location: 0, length: 0))
+    }
+
+    // The pin sets the cursor: an I-beam only where a press selects.
+    override func resetCursorRects() {}
+    override func cursorUpdate(with event: NSEvent) {}
+    override func mouseMoved(with event: NSEvent) {
+        superview?.mouseMoved(with: event)
     }
 }
 
