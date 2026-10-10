@@ -37,12 +37,13 @@ public final class RecordingControlBar {
     public var isShowing: Bool { panel != nil }
 
     /// Shows the bar by `area` (global points): centered under it, above it without room there, inside its
-    /// bottom edge when neither has room (a whole display). Always on a display.
-    public func show(by area: CGRect, displays: [CGRect]) {
+    /// bottom edge when neither has room (a whole display), above `clearing` points at its foot. Always on a
+    /// display.
+    public func show(by area: CGRect, displays: [CGRect], clearing: CGFloat = 0) {
         hide()
         let view = ControlBarView(actions: actions)
         let size = view.fittingSize
-        let frame = Self.frame(for: size, by: area, displays: displays)
+        let frame = Self.frame(for: size, by: area, inset: max(32, clearing + 12), displays: displays)
         let panel = ControlBarPanel(frame: frame.insetBy(dx: -Self.shadowRoom, dy: -Self.shadowRoom))
         view.frame = CGRect(origin: .zero, size: panel.frame.size)
         panel.contentView = view
@@ -136,15 +137,16 @@ public final class RecordingControlBar {
     }
 }
 
-/// The control bar's panel: borderless and clear, above Quick Access and pins, on every Space and over
-/// full-screen apps, never key, so a click on it never takes the keyboard from the app being recorded.
+/// The control bar's panel: borderless and clear, above Quick Access, pins, and the Dock, on every Space and
+/// over full-screen apps, never key, so a click on it never takes the keyboard from the app being recorded.
 private final class ControlBarPanel: NSPanel {
     init(frame: CGRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
+        // Above the Dock: on a whole display the bar sits inside its bottom edge, where the Dock is.
+        level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         hidesOnDeactivate = false
         isMovableByWindowBackground = true

@@ -161,6 +161,48 @@ public final class SettingsStore {
         didSet { defaults.set(recordingShowsControls, forKey: Key.recordingShowsControls) }
     }
 
+    /// Whether recordings show the keys pressed. Toggled on the recording bar.
+    public var recordingShowsKeystrokes: Bool {
+        didSet { defaults.set(recordingShowsKeystrokes, forKey: Key.recordingShowsKeystrokes) }
+    }
+
+    /// Which keys recordings show: every key, or shortcuts and function keys only.
+    public var recordingKeystrokeMode: KeystrokeMode {
+        didSet { defaults.set(recordingKeystrokeMode.rawValue, forKey: Key.recordingKeystrokeMode) }
+    }
+
+    /// Whether recordings show the camera in a bubble. Chosen on the recording bar.
+    public var recordingCamera: Bool {
+        didSet { defaults.set(recordingCamera, forKey: Key.recordingCamera) }
+    }
+
+    /// The camera recordings show, by its unique ID; empty for the system's default.
+    public var recordingCameraID: String {
+        didSet { defaults.set(recordingCameraID, forKey: Key.recordingCameraID) }
+    }
+
+    /// How the camera's bubble looks. Chosen from the camera's menu on the recording bar.
+    public var recordingCameraStyle: CameraStyle {
+        didSet {
+            defaults.set(recordingCameraStyle.shape.rawValue, forKey: Key.recordingCameraShape)
+            defaults.set(recordingCameraStyle.size.rawValue, forKey: Key.recordingCameraSize)
+            defaults.set(recordingCameraStyle.mirrored, forKey: Key.recordingCameraMirrored)
+        }
+    }
+
+    /// What recordings are kept as. Chosen on the recording bar.
+    public var recordingOutput: RecordingOutput {
+        didSet { defaults.set(recordingOutput.rawValue, forKey: Key.recordingOutput) }
+    }
+
+    /// Frames per second in a GIF: more is smoother and larger.
+    public var recordingGIFFrameRate: Int {
+        didSet { defaults.set(recordingGIFFrameRate, forKey: Key.recordingGIFFrameRate) }
+    }
+
+    /// The GIF frame rates Settings offers.
+    public static let recordingGIFFrameRates = [10, 15, 20, 30]
+
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -194,6 +236,15 @@ public final class SettingsStore {
             Key.recordingMicrophone: false,
             Key.recordingMicrophoneID: "",
             Key.recordingShowsControls: true,
+            Key.recordingCamera: false,
+            Key.recordingCameraID: "",
+            Key.recordingCameraShape: CameraStyle.Shape.circle.rawValue,
+            Key.recordingCameraSize: CameraStyle.Size.medium.rawValue,
+            Key.recordingCameraMirrored: true,
+            Key.recordingShowsKeystrokes: false,
+            Key.recordingKeystrokeMode: KeystrokeMode.all.rawValue,
+            Key.recordingOutput: RecordingOutput.video.rawValue,
+            Key.recordingGIFFrameRate: 15,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
@@ -221,6 +272,18 @@ public final class SettingsStore {
         recordingMicrophone = defaults.bool(forKey: Key.recordingMicrophone)
         recordingMicrophoneID = defaults.string(forKey: Key.recordingMicrophoneID) ?? ""
         recordingShowsControls = defaults.bool(forKey: Key.recordingShowsControls)
+        recordingCamera = defaults.bool(forKey: Key.recordingCamera)
+        recordingCameraID = defaults.string(forKey: Key.recordingCameraID) ?? ""
+        recordingCameraStyle = CameraStyle(
+            shape: defaults.string(forKey: Key.recordingCameraShape).flatMap(CameraStyle.Shape.init(rawValue:)) ?? .circle,
+            size: defaults.string(forKey: Key.recordingCameraSize).flatMap(CameraStyle.Size.init(rawValue:)) ?? .medium,
+            mirrored: defaults.bool(forKey: Key.recordingCameraMirrored)
+        )
+        recordingShowsKeystrokes = defaults.bool(forKey: Key.recordingShowsKeystrokes)
+        recordingKeystrokeMode = defaults.string(forKey: Key.recordingKeystrokeMode).flatMap(KeystrokeMode.init(rawValue:)) ?? .all
+        recordingOutput = defaults.string(forKey: Key.recordingOutput).flatMap(RecordingOutput.init(rawValue:)) ?? .video
+        let gifFrameRate = defaults.integer(forKey: Key.recordingGIFFrameRate)
+        recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : 15
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
@@ -252,6 +315,15 @@ public final class SettingsStore {
         static let recordingMicrophone = "recordingMicrophone"
         static let recordingMicrophoneID = "recordingMicrophoneID"
         static let recordingShowsControls = "recordingShowsControls"
+        static let recordingCamera = "recordingCamera"
+        static let recordingCameraID = "recordingCameraID"
+        static let recordingCameraShape = "recordingCameraShape"
+        static let recordingCameraSize = "recordingCameraSize"
+        static let recordingCameraMirrored = "recordingCameraMirrored"
+        static let recordingShowsKeystrokes = "recordingShowsKeystrokes"
+        static let recordingKeystrokeMode = "recordingKeystrokeMode"
+        static let recordingOutput = "recordingOutput"
+        static let recordingGIFFrameRate = "recordingGIFFrameRate"
         static let copyAfterCapture = "copyAfterCapture"
         static let saveAfterCapture = "saveAfterCapture"
         static let showQuickAccess = "showQuickAccess"

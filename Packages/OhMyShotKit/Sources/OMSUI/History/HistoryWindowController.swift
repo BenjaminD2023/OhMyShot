@@ -12,7 +12,7 @@ public struct HistoryActions {
     public var copy: (HistoryItem) -> Void
     public var save: (HistoryItem) -> Void
     public var open: (HistoryItem) -> Void
-    /// Opens the capture in the annotation editor.
+    /// Opens the capture in the annotation editor, or a recording in the recording window.
     public var annotate: (HistoryItem) -> Void
     public var reveal: (HistoryItem) -> Void
     /// Opens the capture in the OCR panel.
@@ -496,16 +496,26 @@ struct HistoryCard: View {
         .accessibilityAction(named: Text("Move to Trash", bundle: .module)) { model.moveToTrash(item) }
     }
 
+    private var isGIF: Bool {
+        item.fileName.lowercased().hasSuffix(".gif")
+    }
+
     private var accessibilityLabel: Text {
         item.kind == .recording
-            ? Text("Recording, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+            ? isGIF
+                ? Text("GIF, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+                : Text("Recording, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
             : Text("Screenshot, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
     }
 
-    /// A small play badge in the corner, with the length when it is known.
+    /// A small play badge in the corner, or "GIF" for a GIF, with the length when it is known.
     private var recordingBadge: some View {
         HStack(spacing: 4) {
-            Image(systemName: "play.fill")
+            if isGIF {
+                Text(verbatim: "GIF")
+            } else {
+                Image(systemName: "play.fill")
+            }
             if let duration = item.duration {
                 Text(Duration.seconds(duration), format: .time(pattern: .minuteSecond))
                     .monospacedDigit()
@@ -566,6 +576,10 @@ struct HistoryCard: View {
             .keyboardShortcut(.space, modifiers: [])
         if item.kind == .screenshot {
             Button { model.actions.annotate(item) } label: { Text("Annotate…", bundle: .module) }
+        } else if isGIF {
+            Button { model.actions.annotate(item) } label: { Text("Play", bundle: .module) }
+        } else {
+            Button { model.actions.annotate(item) } label: { Text("Edit…", bundle: .module) }
         }
         Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
         if item.kind == .screenshot {

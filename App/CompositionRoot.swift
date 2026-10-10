@@ -210,16 +210,25 @@ final class CompositionRoot {
         recordings.onRecorded = { [weak self] item in
             self?.didCapture(item)
         }
-        recordings.onTick = { [weak self] elapsed, paused in
+        recordings.onStatus = { [weak self] status in
             guard let self else { return }
-            if let elapsed {
-                self.statusItem?.showRecording(elapsed: elapsed, paused: paused) { [weak self] in self?.recordings.stop() }
-            } else {
+            switch status {
+            case .recording(let time, let paused):
+                self.statusItem?.showRecording(elapsed: time, paused: paused) { [weak self] in self?.recordings.stop() }
+            case .makingGIF(let progress):
+                self.statusItem?.showProgress(progress)
+            case .idle:
                 self.statusItem?.endRecording()
             }
         }
         recordings.save = { [weak self] url in
             self?.captures.save(fileAt: url)
+        }
+        recordings.copyFile = { url in
+            CaptureFiles.copy(url)
+        }
+        recordings.onChanged = { [weak self] entry in
+            self?.recordingChanged(entry)
         }
         recordings.shortcutKeys = { [weak self] in
             self?.hotkeys.keys(for: .recordScreen)
@@ -689,7 +698,9 @@ final class CompositionRoot {
             saveAs: { [weak self] item in self?.captures.saveAs(item) },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
             annotate: { [weak self] item in
-                guard let self, item.kind == .screenshot, let entry = history.item(id: item.id) else { return }
+                guard let self, let entry = history.item(id: item.id) else { return }
+                // A recording opens in the recording window.
+                guard item.kind == .screenshot else { return recordings.open(entry) }
                 annotate(entry, displayID: item.displayID)
             },
             reveal: { item in NSWorkspace.shared.activateFileViewerSelecting([item.savedURL ?? item.fileURL]) },
@@ -753,7 +764,9 @@ final class CompositionRoot {
                 NSWorkspace.shared.open(history.fileURL(for: entry))
             },
             annotate: { [weak self] entry in
-                self?.annotate(entry, displayID: self?.quickAccess.item(entry.id)?.displayID)
+                guard let self else { return }
+                guard entry.kind == .screenshot else { return recordings.open(entry) }
+                annotate(entry, displayID: quickAccess.item(entry.id)?.displayID)
             },
             reveal: { [weak self] entry in
                 guard let self else { return }
@@ -782,6 +795,21 @@ final class CompositionRoot {
             }
         }
         return controller
+    }
+
+    /// A recording was edited or put back as it was made: its card shows it as it is now.
+    private func recordingChanged(_ entry: HistoryItem) {
+        historyWindow?.reload()
+        guard let card = quickAccess.item(entry.id) else { return }
+        Task {
+            let url = history.fileURL(for: entry)
+            guard let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: 560) else { return }
+            quickAccess.update(QuickAccessItem(
+                id: entry.id, kind: entry.kind, fileURL: url, thumbnail: thumbnail, pixelWidth: entry.pixelWidth,
+                pixelHeight: entry.pixelHeight, displayID: card.displayID, createdAt: entry.createdAt, duration: entry.duration,
+                savedURL: card.savedURL
+            ))
+        }
     }
 
     /// Brings a history item back as a Quick Access card.
@@ -932,9 +960,10 @@ private extension SettingsTab {
 /// File actions on captures.
 enum CaptureFiles {
     /// Copies a capture's image. Image only, no file: some apps paste a file reference instead of the
-    /// picture when both are offered. A recording is copied as its file.
+    /// picture when both are offered. A recording, a movie or a GIF, is copied as its file: a GIF's picture
+    /// alone would paste as its first frame.
     static func copy(_ url: URL) {
-        if HistoryStore.isMovie(url) { return PasteboardWriter.write(fileURL: url) }
+        if HistoryStore.isRecording(url) { return PasteboardWriter.write(fileURL: url) }
         guard
             let data = try? Data(contentsOf: url),
             let source = CGImageSourceCreateWithData(data as CFData, nil),

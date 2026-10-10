@@ -56,9 +56,14 @@ public struct RecordingFormat: Equatable, Sendable {
         )
     }
 
-    /// AVAssetWriter's settings for the video track. The pixel buffers' own color tags are kept: the stream
-    /// tags them as it converts the display's pixels.
+    /// AVAssetWriter's settings for the video track while recording. The pixel buffers' own color tags are
+    /// kept: the stream tags them as it converts the display's pixels.
     public var videoSettings: [String: Any] {
+        videoSettings(realTime: true)
+    }
+
+    /// The same, for encoding as fast as the encoder goes (`realTime` false), as an edited recording is.
+    public func videoSettings(realTime: Bool) -> [String: Any] {
         var properties: [String: Any] = [
             AVVideoQualityKey: quality,
             AVVideoExpectedSourceFrameRateKey: framesPerSecond,
@@ -67,7 +72,7 @@ public struct RecordingFormat: Equatable, Sendable {
             AVVideoMaxKeyFrameIntervalDurationKey: 2,
             // No B-frames: frames leave the encoder in the order they came, with less latency.
             AVVideoAllowFrameReorderingKey: false,
-            kVTCompressionPropertyKey_RealTime as String: true,
+            kVTCompressionPropertyKey_RealTime as String: realTime,
         ]
         properties[AVVideoProfileLevelKey] = switch codec {
         case .h264: AVVideoProfileLevelH264HighAutoLevel

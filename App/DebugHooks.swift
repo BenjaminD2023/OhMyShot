@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import CoreMedia
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -93,6 +94,14 @@ struct DebugHooks {
             quickAccess.restoreRecentlyClosed()
         case "qa-dismiss-latest":
             quickAccess.dismissLatest()
+        case "qa-render":
+            // The Quick Access panel captured on its own (only this app's cards, nothing else of the screen)
+            // into qa-cards.png. It holds every card showing: run it only when the cards are the checks' own.
+            if let panel = quickAccess.debugPanel {
+                Task { await captureHiddenWindow(panel, name: "qa-cards") }
+            } else {
+                Log.app.notice("debug.qa-render no cards")
+            }
         case "history-key":
             // key=left|right|up|down|return|space|cmd-c|cmd-s|cmd-delete, sent through the window like a
             // real key press.
@@ -338,13 +347,15 @@ struct DebugHooks {
         case "record-flow":
             // The whole flow on a window of scrolling text the app draws behind the desktop picture (never
             // the user's screen): countdown, recording with its control bar and menu bar time, Stop after
-            // seconds=, kept in the history with a card. The countdown and bar show on screen: ask first.
-            // Clean up with qa-dismiss-all and history-delete-latest.
+            // seconds=, kept in the history with a card; gif=1 keeps it as a GIF. The clipboard is left alone.
+            // The countdown and bar show on screen: ask first. Clean up with qa-dismiss-all and
+            // history-delete-latest.
             let seconds = Self.intParameter("seconds", in: url) ?? 3
             Task {
                 await DebugRecordingDemo.runFlow(
                     recordings: recordings, displays: displays, seconds: seconds, countdown: settings.recordingCountdown,
-                    size: CGSize(width: Self.intParameter("w", in: url) ?? 800, height: Self.intParameter("h", in: url) ?? 500)
+                    size: CGSize(width: Self.intParameter("w", in: url) ?? 800, height: Self.intParameter("h", in: url) ?? 500),
+                    output: Self.intParameter("gif", in: url) == 1 ? .gif : .video
                 )
             }
         case "record-act":
@@ -368,9 +379,113 @@ struct DebugHooks {
             let number = { (name: String, fallback: Int) in items.first { $0.name == name }?.value.flatMap(Int.init) ?? fallback }
             Task { await runRecordingSetupDemo(CGRect(x: number("x", 240), y: number("y", 200), width: number("w", 800), height: number("h", 500))) }
         case "record-setup-act":
-            // action=record|cancel|systemAudio|microphone|clicks, or none to log what is framed.
+            // action=record|cancel|video|gif|systemAudio|microphone|clicks, or none to log what is framed.
             let action = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "action" }?.value
             Log.app.notice("debug.record-setup \(action ?? "state", privacy: .public): \(overlay.debugRecordingSetup(action) ?? "nothing framed", privacy: .public)")
+        case "record-choices-render":
+            // The recording bar (before recording) alone behind the desktop picture, captured without showing
+            // anything: output=video|gif, audio=1, mic=1, clicks=1, mode=light|dark. Writes
+            // record-choices-<mode>-<output>.png.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in items.first { $0.name == name }?.value }
+            let output = RecordingOutput(rawValue: value("output") ?? "video") ?? .video
+            let dark = value("mode") == "dark"
+            let window = RecordingBarDemo.hiddenWindow(choices: RecordingChoices(
+                output: output, systemAudio: value("audio") == "1", microphone: value("mic") == "1", showsClicks: value("clicks") == "1",
+                showsKeystrokes: value("keys") == "1", camera: value("camera") == "1"
+            ), recordsWindow: value("window") == "1", dark: dark)
+            Task {
+                await captureHiddenWindow(window, name: "record-choices-\(dark ? "dark" : "light")-\(output.rawValue)\(value("window") == "1" ? "-window" : "")")
+                window.orderOut(nil)
+            }
+        case "camera-render":
+            // The camera's bubble without its camera, behind the desktop picture: shape=circle|roundedSquare,
+            // size=small|medium|large. Writes camera-<shape>-<size>.png.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in items.first { $0.name == name }?.value }
+            let style = CameraStyle(
+                shape: value("shape").flatMap(CameraStyle.Shape.init(rawValue:)) ?? .circle,
+                size: value("size").flatMap(CameraStyle.Size.init(rawValue:)) ?? .medium
+            )
+            let window = CameraBubble.debugHiddenWindow(style: style)
+            Task {
+                await captureHiddenWindow(window, name: "camera-\(style.shape.rawValue)-\(style.size.rawValue)")
+                window.orderOut(nil)
+            }
+        case "keystroke-render":
+            // The keystroke display behind the desktop picture, captured without showing anything:
+            // keys=shortcut (⇧⌘4), keys=typing ("Hello↩"), or keys=long. Writes keystroke-<keys>.png.
+            let kind = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "keys" }?.value ?? "shortcut"
+            let keys: [Keystroke] = switch kind {
+            case "typing":
+                [Keystroke(keyCode: 4, modifiers: .shift, characters: "H", keyCharacters: "h")]
+                    + "ello".map { Keystroke(keyCode: 0, modifiers: [], characters: String($0), keyCharacters: String($0)) }
+                    + [Keystroke(keyCode: 36, modifiers: [], characters: "\r", keyCharacters: "\r")]
+            case "long":
+                "The quick brown fox jumps over the lazy dog".map { Keystroke(keyCode: $0 == " " ? 49 : 0, modifiers: [], characters: String($0), keyCharacters: String($0)) }
+            default:
+                [Keystroke(keyCode: 21, modifiers: [.shift, .command], characters: "$", keyCharacters: "4")]
+            }
+            let display = KeystrokeDisplay(mode: .all)
+            if let window = display.debugShowBehindWallpaper(keys, width: 900) {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    await captureHiddenWindow(window, name: "keystroke-\(kind)")
+                    display.hide()
+                }
+            }
+        case "gif-demo":
+            // Makes a GIF of record-demo.mov in the snapshot folder (record it first with record-demo?keep=1):
+            // fps=, scale= (percent of the recording's pixels). Logs frames, size, time, and the most memory
+            // the app used meanwhile; writes record-demo.gif.
+            let fps = Self.intParameter("fps", in: url) ?? 15
+            let scale = Double(Self.intParameter("scale", in: url) ?? 50) / 100
+            Task { await DebugRecordingDemo.makeGIF(framesPerSecond: fps, scale: scale) }
+        case "record-window-demo":
+            // The recording window on a copy of record-demo.mp4 (make it with record-demo?keep=1) put in the
+            // history as "Demo Recording", behind the desktop picture, nothing shown. action=open (mode=dark)
+            // renders it to record-window[-dark].png; action=edit with trim=<start>-<end> (seconds),
+            // mute=1, scale=<percent> edits it as the toolbar would and renders record-window-edited.png;
+            // action=close keeps the edits; action=reopen opens it again (rendering
+            // record-window-reopened.png); action=revert (window open) puts it back; action=state logs its
+            // record; action=remove deletes the demo.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in items.first { $0.name == name }?.value }
+            let action = value("action") ?? "state"
+            Task {
+                switch action {
+                case "open":
+                    let dark = value("mode") == "dark"
+                    if let window = await recordings.debugOpenDemo(movie: Self.snapshotDirectory.appending(path: "record-demo.mp4"), dark: dark) {
+                        try? await Task.sleep(for: .milliseconds(600))
+                        await captureHiddenWindow(window, name: dark ? "record-window-dark" : "record-window")
+                    }
+                case "edit":
+                    let bounds = value("trim")?.split(separator: "-").compactMap { Double($0) } ?? []
+                    let trim = bounds.count == 2
+                        ? CMTimeRange(start: CMTime(seconds: bounds[0], preferredTimescale: 600), end: CMTime(seconds: bounds[1], preferredTimescale: 600))
+                        : nil
+                    recordings.debugDemoWindow?.debugEdit(trim: trim, keepsAudio: value("mute") != "1", scale: Double(value("scale") ?? "100").map { $0 / 100 } ?? 1)
+                    if let window = recordings.debugDemoWindow?.window {
+                        try? await Task.sleep(for: .milliseconds(400))
+                        await captureHiddenWindow(window, name: "record-window-edited")
+                    }
+                case "reopen":
+                    if let window = recordings.debugReopenDemo() {
+                        try? await Task.sleep(for: .milliseconds(600))
+                        await captureHiddenWindow(window, name: "record-window-reopened")
+                    }
+                case "close":
+                    recordings.debugDemoWindow?.debugPerform("close")
+                case "revert":
+                    recordings.debugDemoWindow?.debugPerform("revert")
+                case "remove":
+                    recordings.debugRemoveDemo()
+                default:
+                    break
+                }
+                Log.app.notice("debug.record-window \(action, privacy: .public): \(recordings.debugDemoState, privacy: .public)")
+            }
         case "record-bar-render":
             // The control bar alone behind the desktop picture, captured without showing anything:
             // elapsed= (seconds), paused=1, mode=light|dark. Writes record-bar-<mode>[-paused].png.

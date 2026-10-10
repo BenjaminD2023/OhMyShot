@@ -9,7 +9,8 @@ import OMSCore
 ///
 /// Flipped: points from the display's top-left corner, as the frame's drawing expects.
 final class RecordingSetupView: NSView {
-    var onChoicesChange: ((RecordingChoices) -> Void)?
+    /// What is chosen changed: the choices on the bar, or the area once an adjustment ends.
+    var onChange: ((RecordingTarget, RecordingChoices) -> Void)?
     var onRecord: ((RecordingTarget, RecordingChoices) -> Void)?
     var onCancel: (() -> Void)?
 
@@ -40,13 +41,17 @@ final class RecordingSetupView: NSView {
         self.display = display
         self.target = target
         self.choices = choices
-        bar = RecordingBar(choices: choices)
+        bar = RecordingBar(choices: choices, recordsWindow: { if case .window = target { true } else { false } }())
         super.init(frame: CGRect(origin: .zero, size: display.frame.size))
         chrome.frame = bounds
         chrome.autoresizingMask = [.width, .height]
         addSubview(chrome)
         addSubview(bar)
+        bar.onOutput = { [weak self] output in self?.choose(output) }
         bar.onToggle = { [weak self] toggle in self?.toggle(toggle) }
+        bar.onMicrophone = { [weak self] id in self?.chooseMicrophone(id) }
+        bar.onCamera = { [weak self] id in self?.chooseCamera(id) }
+        bar.onCameraStyle = { [weak self] style in self?.setCameraStyle(style) }
         bar.onRecord = { [weak self] in self?.record() }
         bar.onCancel = { [weak self] in self?.onCancel?() }
         setAccessibilityElement(true)
@@ -65,8 +70,9 @@ final class RecordingSetupView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    /// Says what to do next.
+    /// Says what to do next, and what is chosen to begin with.
     func begin() {
+        onChange?(target, choices)
         NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
             .announcement: String(localized: "Press Return to start recording, or Escape to cancel."),
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
@@ -126,14 +132,46 @@ final class RecordingSetupView: NSView {
 
     // MARK: Choices
 
+    private func choose(_ output: RecordingOutput) {
+        guard output != choices.output else { return }
+        choices.output = output
+        bar.update(choices)
+        placeBar()
+        onChange?(target, choices)
+    }
+
+    /// A camera by its unique ID (empty for the system's default), or none.
+    private func chooseCamera(_ id: String?) {
+        choices.camera = id != nil
+        if let id { choices.cameraID = id }
+        bar.update(choices)
+        onChange?(target, choices)
+    }
+
+    private func setCameraStyle(_ style: CameraStyle) {
+        choices.cameraStyle = style
+        bar.update(choices)
+        onChange?(target, choices)
+    }
+
+    /// A microphone by its unique ID (empty for the system's default), or none.
+    private func chooseMicrophone(_ id: String?) {
+        choices.microphone = id != nil
+        if let id { choices.microphoneID = id }
+        bar.update(choices)
+        onChange?(target, choices)
+    }
+
     private func toggle(_ toggle: RecordingBar.Toggle) {
         switch toggle {
         case .systemAudio: choices.systemAudio.toggle()
         case .microphone: choices.microphone.toggle()
+        case .camera: choices.camera.toggle()
         case .clicks: choices.showsClicks.toggle()
+        case .keystrokes: choices.showsKeystrokes.toggle()
         }
         bar.update(choices)
-        onChoicesChange?(choices)
+        onChange?(target, choices)
     }
 
     private func record() {
@@ -232,6 +270,7 @@ final class RecordingSetupView: NSView {
         placeBar()
         updateCursor(event)
         NSAccessibility.post(element: self, notification: .valueChanged)
+        onChange?(target, choices)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -328,6 +367,11 @@ final class RecordingSetupView: NSView {
     /// Turns a choice on or off as its chip would, for scripted checks.
     func debugToggle(_ toggle: RecordingBar.Toggle) {
         self.toggle(toggle)
+    }
+
+    /// Chooses Video or GIF as its chip would, for scripted checks.
+    func debugChoose(_ output: RecordingOutput) {
+        choose(output)
     }
     #endif
 }

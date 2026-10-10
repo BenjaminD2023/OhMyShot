@@ -87,24 +87,74 @@ extension DebugRecordingDemo {
     /// The whole recording flow on the scrolling window behind the desktop picture: the countdown (as
     /// Settings has it), recording with the control bar and the menu bar's time, Stop after `seconds`, and
     /// the recording kept in the history with a card. The countdown and the bar show on screen.
-    static func runFlow(recordings: RecordingCoordinator, displays: DisplayTopology, seconds: Int, countdown: Int, size: CGSize) async {
+    static func runFlow(
+        recordings: RecordingCoordinator, displays: DisplayTopology, seconds: Int, countdown: Int, size: CGSize, output: RecordingOutput = .video
+    ) async {
         let window = DemoScrollWindow(size: size, speed: 240)
         window.orderFront(nil)
         defer { window.orderOut(nil) }
         try? await Task.sleep(for: .milliseconds(300))
         guard let display = displays.layout.primary else { return }
         let target = WindowTarget(id: CGWindowID(window.windowNumber), frame: window.frame, ownerName: "Demo", title: nil)
-        recordings.record(.window(target), on: display, choices: RecordingChoices(), appName: "Demo")
+        recordings.debugLeavesClipboard = true
+        recordings.record(.window(target), on: display, choices: RecordingChoices(output: output), appName: "Demo")
         // The countdown, the stream's start, then the recording itself.
         try? await Task.sleep(for: .seconds(countdown) + .milliseconds(600) + .seconds(seconds))
         guard recordings.isRecording else {
+            recordings.debugLeavesClipboard = false
             Log.app.error("debug.record-flow the recording did not start")
             return
         }
         recordings.stop()
-        // Finishing and keeping take a moment; the window stays until then.
-        try? await Task.sleep(for: .seconds(1))
+        // Finishing and keeping take a moment (a GIF longer); the window stays until then, and the clipboard
+        // is left alone until the recording is kept, however long that takes.
+        let started = ContinuousClock.now
+        repeat {
+            try? await Task.sleep(for: .milliseconds(100))
+        } while recordings.debugIsKeeping && ContinuousClock.now - started < .seconds(120)
+        // Recordings the user makes afterwards go to the clipboard again.
+        recordings.debugLeavesClipboard = false
         Log.app.notice("debug.record-flow stopped after \(seconds, privacy: .public) s")
+    }
+
+    /// Makes a GIF of the demo movie record-demo.mov, as a GIF recording would be made, and logs what it
+    /// cost: frames, size, time, and the most memory the app used meanwhile.
+    static func makeGIF(framesPerSecond: Int, scale: Double) async {
+        let movie = directory.appending(path: "record-demo.mov")
+        let destination = directory.appending(path: "record-demo.gif")
+        let before = Memory.footprint()
+        let sampler = Task {
+            var peak = before
+            while !Task.isCancelled {
+                peak = max(peak, Memory.footprint())
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            return peak
+        }
+        let started = ContinuousClock.now
+        do {
+            let gif = try await GIFMaker.make(from: movie, to: destination, options: .init(framesPerSecond: framesPerSecond, scale: scale))
+            let wall = (ContinuousClock.now - started) / .seconds(1)
+            sampler.cancel()
+            let peak = await sampler.value
+            Log.app.notice("debug.gif-demo \(gif.pixelWidth, privacy: .public)x\(gif.pixelHeight, privacy: .public) \(framesPerSecond, privacy: .public) fps: \(gif.frameCount, privacy: .public) frames, \(gif.duration, format: .fixed(precision: 2), privacy: .public) s, \(gif.byteCount, privacy: .public) bytes in \(wall, format: .fixed(precision: 2), privacy: .public) s; footprint \(before / 1_048_576, privacy: .public) MB before, at most \(peak / 1_048_576, privacy: .public) MB while making")
+        } catch {
+            sampler.cancel()
+            Log.app.error("debug.gif-demo failed: \(String(describing: error), privacy: .public)")
+        }
+        MemoryRelief.returnFreedPages()
+    }
+}
+
+/// The app's memory as Activity Monitor counts it.
+private enum Memory {
+    static func footprint() -> UInt64 {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+        }
+        return result == KERN_SUCCESS ? info.phys_footprint : 0
     }
 }
 

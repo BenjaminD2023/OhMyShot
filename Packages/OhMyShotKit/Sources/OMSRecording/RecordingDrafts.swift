@@ -12,10 +12,16 @@ public struct RecordingDrafts: Sendable {
         public var startedAt: Date
         /// The app that was in front when recording began, for the file's name.
         public var appName: String?
+        /// What it is kept as; nil (a draft from before GIFs) is a movie.
+        public var output: RecordingOutput?
+        /// The recorded display's pixels per point, which sizes a GIF as things were on screen.
+        public var pixelsPerPoint: Double?
 
-        public init(startedAt: Date, appName: String?) {
+        public init(startedAt: Date, appName: String?, output: RecordingOutput = .video, pixelsPerPoint: Double? = nil) {
             self.startedAt = startedAt
             self.appName = appName
+            self.output = output
+            self.pixelsPerPoint = pixelsPerPoint
         }
     }
 

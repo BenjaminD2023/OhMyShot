@@ -269,15 +269,20 @@ final class CaptureCardView: NSView, NSDraggingSource {
         durationBadge.frame = CGRect(x: 8, y: bounds.height - 8 - badge.height, width: badge.width, height: badge.height)
     }
 
-    /// A recording shows its length in the bottom-left corner.
+    /// A recording shows its length in the bottom-left corner, after a play mark, or "GIF" for a GIF.
     private func updateDuration() {
         guard item.kind == .recording, let duration = item.duration else {
             durationBadge.isHidden = true
             return
         }
-        durationBadge.text = Self.format(duration)
+        durationBadge.isGIF = isGIF
+        durationBadge.text = isGIF ? "GIF \(Self.format(duration))" : Self.format(duration)
         durationBadge.isHidden = false
         needsLayout = true
+    }
+
+    private var isGIF: Bool {
+        item.fileURL.pathExtension.lowercased() == "gif"
     }
 
     /// A recording's length as cards show it: 0:42, 12:05, 1:02:09.
@@ -300,7 +305,9 @@ final class CaptureCardView: NSView, NSDraggingSource {
 
     private func updateAccessibility() {
         setAccessibilityLabel(item.kind == .recording
-            ? String(localized: "Recording, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+            ? isGIF
+                ? String(localized: "GIF, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+                : String(localized: "Recording, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
             : String(localized: "Screenshot, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module))
         setAccessibilityValue(item.savedURL == nil ? nil : String(localized: "Saved", bundle: .module))
     }
@@ -396,8 +403,8 @@ final class CaptureCardView: NSView, NSDraggingSource {
         // Clicking a card must not pull this app in front of the one being worked in.
         NSApp.preventWindowOrdering()
         mouseDownPoint = convert(event.locationInWindow, from: nil)
-        // A picture opens in the editor; a recording plays.
-        if event.clickCount == 2 { item.kind == .recording ? onOpen?() : onAnnotate?() }
+        // A picture opens in the editor; a recording in the recording window.
+        if event.clickCount == 2 { onAnnotate?() }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -449,7 +456,13 @@ final class CaptureCardView: NSView, NSDraggingSource {
         add(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", #selector(saveAsClicked))
         menu.addItem(.separator())
         if item.kind == .recording {
-            add(String(localized: "Play", bundle: .module), "play", #selector(openClicked))
+            // A movie is trimmed and made smaller there; a GIF only plays.
+            if item.fileURL.pathExtension.lowercased() == "gif" {
+                add(String(localized: "Play", bundle: .module), "play", #selector(annotateClicked))
+            } else {
+                add(String(localized: "Edit…", bundle: .module), "timeline.selection", #selector(annotateClicked))
+            }
+            add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked))
         } else {
             add(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle", #selector(annotateClicked))
             add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked))
@@ -479,8 +492,8 @@ final class CaptureCardView: NSView, NSDraggingSource {
     }
 }
 
-/// A recording's length on its card: a play mark and the time in the reading face, small, in a capsule of
-/// the reading capsule's materials.
+/// A recording's length on its card: a play mark (or the word GIF, set in the text) and the time in the
+/// reading face, small, in a capsule of the reading capsule's materials.
 private final class DurationBadge: NSView {
     private let mark = NSImageView()
     private let label = NSTextField(labelWithString: "")
@@ -491,6 +504,19 @@ private final class DurationBadge: NSView {
             label.stringValue = newValue
             invalidateIntrinsicContentSize()
         }
+    }
+
+    /// A GIF plays on its own: no play mark.
+    var isGIF = false {
+        didSet {
+            mark.isHidden = isGIF
+            needsLayout = true
+        }
+    }
+
+    /// Where the label begins: after the mark, or at the capsule's padding.
+    private var labelX: CGFloat {
+        isGIF ? 7 : 7 + 7 + 4
     }
 
     override init(frame frameRect: NSRect) {
@@ -516,7 +542,7 @@ private final class DurationBadge: NSView {
     override var isFlipped: Bool { true }
 
     override var fittingSize: NSSize {
-        NSSize(width: ceil(label.intrinsicContentSize.width) + 7 + 4 + 7 + 7, height: 18)
+        NSSize(width: ceil(label.intrinsicContentSize.width) + labelX + 7, height: 18)
     }
 
     override func layout() {
@@ -524,7 +550,7 @@ private final class DurationBadge: NSView {
         let height = bounds.height
         mark.frame = CGRect(x: 7, y: (height - 8) / 2, width: 7, height: 8)
         let size = label.intrinsicContentSize
-        label.frame = CGRect(x: 7 + 7 + 4, y: ((height - size.height) / 2).rounded(), width: ceil(size.width), height: size.height)
+        label.frame = CGRect(x: labelX, y: ((height - size.height) / 2).rounded(), width: ceil(size.width), height: size.height)
         layer?.cornerRadius = height / 2
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: height / 2, cornerHeight: height / 2, transform: nil)
     }

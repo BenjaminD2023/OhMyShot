@@ -53,6 +53,11 @@ public final class QuickAccessController {
 
     private let actions: Actions
     private var panel: QuickAccessPanel?
+
+    #if DEBUG
+    /// The cards' panel while it shows, for scripted captures of it.
+    public var debugPanel: NSWindow? { panel }
+    #endif
     private var stack: CardStackView?
     private var items: [QuickAccessItem] = []
     private var recentlyClosed: [QuickAccessItem] = []

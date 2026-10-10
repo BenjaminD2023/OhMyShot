@@ -27,12 +27,13 @@ public enum RecordingFinisher {
     }
 
     /// Writes the movie at `source` as an MP4 at `destination` (replacing anything there), its index first so
-    /// it starts playing before it has all loaded. `source` is left as it is.
+    /// it starts playing before it has all loaded; without `includingAudio`, without its sound. `source` is
+    /// left as it is.
     @concurrent
-    public static func finish(_ source: URL, to destination: URL) async throws -> Movie {
+    public static func finish(_ source: URL, to destination: URL, includingAudio: Bool = true) async throws -> Movie {
         let asset = AVURLAsset(url: source)
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { throw FinishError.noVideo }
-        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        let audioTracks = includingAudio ? try await asset.loadTracks(withMediaType: .audio) : []
         let duration = try await asset.load(.duration)
         let size = try await videoTrack.load(.naturalSize)
 
@@ -113,16 +114,26 @@ public enum RecordingFinisher {
 }
 
 /// Copies one track's samples from a reader to a writer input whenever the input can take more.
-private final class Pump: @unchecked Sendable {
+final class Pump: @unchecked Sendable {
     private let output: AVAssetReaderOutput
     private let input: AVAssetWriterInput
     private let queue: DispatchQueue
+    /// Changes each sample before it is written (its time); nil leaves it out.
+    private let transform: ((CMSampleBuffer) -> CMSampleBuffer?)?
+    /// Given the last sample written, one more to write before the track ends.
+    private let ending: ((CMSampleBuffer) -> CMSampleBuffer?)?
     /// Touched only on `queue`.
     private var isDone = false
+    private var last: CMSampleBuffer?
 
-    init(output: AVAssetReaderOutput, input: AVAssetWriterInput, label: String) {
+    init(
+        output: AVAssetReaderOutput, input: AVAssetWriterInput, label: String,
+        transform: ((CMSampleBuffer) -> CMSampleBuffer?)? = nil, ending: ((CMSampleBuffer) -> CMSampleBuffer?)? = nil
+    ) {
         self.output = output
         self.input = input
+        self.transform = transform
+        self.ending = ending
         queue = DispatchQueue(label: "OhMyShot.finish.\(label)")
     }
 
@@ -132,6 +143,9 @@ private final class Pump: @unchecked Sendable {
                 guard !isDone else { return }
                 while input.isReadyForMoreMediaData {
                     guard let sample = output.copyNextSampleBuffer() else {
+                        if let last, let final = ending?(last) {
+                            input.append(final)
+                        }
                         input.markAsFinished()
                         isDone = true
                         continuation.resume()
@@ -139,11 +153,13 @@ private final class Pump: @unchecked Sendable {
                     }
                     // The reader also hands out markers that hold no media.
                     guard CMSampleBufferGetDataBuffer(sample) != nil || CMSampleBufferGetImageBuffer(sample) != nil else { continue }
-                    if !input.append(sample) {
+                    guard let changed = transform.map({ $0(sample) }) ?? sample else { continue }
+                    if !input.append(changed) {
                         isDone = true
                         continuation.resume()
                         return
                     }
+                    last = changed
                 }
             }
         }

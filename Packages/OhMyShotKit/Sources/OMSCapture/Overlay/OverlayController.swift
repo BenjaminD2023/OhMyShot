@@ -65,8 +65,9 @@ public final class OverlayController {
 
     /// What the recording bar starts with; it changes as the bar is used.
     public var recordingChoices = RecordingChoices()
-    /// A choice on the recording bar changed, to be remembered.
-    public var onRecordingChoicesChange: ((RecordingChoices) -> Void)?
+    /// What is chosen to record changed: a choice on the recording bar (to be remembered), or the area once
+    /// it is adjusted; also told once when the bar appears.
+    public var onRecordingSetupChange: ((RecordingTarget, DisplayInfo, RecordingChoices) -> Void)?
 
     public enum Mode: Sendable {
         case area
@@ -324,9 +325,9 @@ public final class OverlayController {
         select(placed, startingOn: display, modifiers: [])
     }
 
-    /// Drives the recording bar while a choice is framed, for scripted checks: "record", "cancel", or a
-    /// choice to toggle ("systemAudio", "microphone", "clicks"); nil only reads. Returns what is framed and
-    /// the choices, or nil when no choice is framed.
+    /// Drives the recording bar while a choice is framed, for scripted checks: "record", "cancel", "video",
+    /// "gif", or a choice to toggle ("systemAudio", "microphone", "clicks"); nil only reads. Returns what is
+    /// framed and the choices, or nil when no choice is framed.
     public func debugRecordingSetup(_ action: String?) -> String? {
         guard let setup = recordingSetup else { return nil }
         let summary = "target=\(setup.target) choices=\(setup.choices)"
@@ -336,6 +337,9 @@ public final class OverlayController {
         case "systemAudio": setup.debugToggle(.systemAudio)
         case "microphone": setup.debugToggle(.microphone)
         case "clicks": setup.debugToggle(.clicks)
+        case "keystrokes": setup.debugToggle(.keystrokes)
+        case "video": setup.debugChoose(.video)
+        case "gif": setup.debugChoose(.gif)
         default: break
         }
         return summary
@@ -460,9 +464,9 @@ public final class OverlayController {
         entry.panel.makeKey()
         let setup = RecordingSetupView(display: display, target: target, choices: recordingChoices)
         setup.frame = entry.view.bounds
-        setup.onChoicesChange = { [weak self] choices in
+        setup.onChange = { [weak self] target, choices in
             self?.recordingChoices = choices
-            self?.onRecordingChoicesChange?(choices)
+            self?.onRecordingSetupChange?(target, display, choices)
         }
         setup.onRecord = { [weak self] target, choices in
             self?.end(.record(target, display: display, choices: choices))

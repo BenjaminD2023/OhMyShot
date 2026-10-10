@@ -79,16 +79,26 @@ public final class PermissionCenter {
     /// Whether OhMyShot has asked macOS for a permission before. Asking again shows nothing for
     /// Screen Recording, Accessibility, and Input Monitoring, so callers send the user to System Settings instead.
     public func hasAsked(_ permission: Permission) -> Bool {
-        defaults.stringArray(forKey: Self.askedKey)?.contains(permission.rawValue) ?? false
+        Self.hasAsked(permission, defaults: defaults)
+    }
+
+    /// The same, for code that has no permission center at hand (the recording bar).
+    public static func hasAsked(_ permission: Permission, defaults: UserDefaults = .standard) -> Bool {
+        defaults.stringArray(forKey: askedKey)?.contains(permission.rawValue) ?? false
+    }
+
+    /// Notes that macOS has been asked for a permission, as `request` does.
+    public static func markAsked(_ permission: Permission, defaults: UserDefaults = .standard) {
+        let asked = defaults.stringArray(forKey: askedKey) ?? []
+        if !asked.contains(permission.rawValue) {
+            defaults.set(asked + [permission.rawValue], forKey: askedKey)
+        }
     }
 
     /// Asks macOS for a permission. Screen Recording, Accessibility, and Input Monitoring prompt only
     /// once; after that the user has to switch them on in System Settings.
     public func request(_ permission: Permission) async {
-        let asked = defaults.stringArray(forKey: Self.askedKey) ?? []
-        if !asked.contains(permission.rawValue) {
-            defaults.set(asked + [permission.rawValue], forKey: Self.askedKey)
-        }
+        Self.markAsked(permission, defaults: defaults)
         switch permission {
         case .screenRecording:
             _ = CGRequestScreenCaptureAccess()

@@ -108,4 +108,25 @@ struct HistoryStoreTests {
         #expect(!store.hasOriginal(item))
         #expect(!FileManager.default.fileExists(atPath: store.annotationsURL(for: item).path(percentEncoded: false)))
     }
+
+    @Test func anEditedRecordingKeepsTheRecordingAsItWasMade() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "mp4", kind: .recording, pixelWidth: 1920, pixelHeight: 1080, appName: nil, duration: 12)
+        let edited = FileManager.default.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString).mp4")
+        try Data([2]).write(to: edited)
+        let trimmed = try store.replaceRecording(of: item, withFileAt: edited, pixelWidth: 960, pixelHeight: 540, duration: 5)
+        #expect((trimmed.pixelWidth, trimmed.pixelHeight, trimmed.duration) == (960, 540, 5))
+        #expect(store.item(id: item.id)?.duration == 5)
+        #expect(FileManager.default.contents(atPath: store.fileURL(for: item).path(percentEncoded: false)) == Data([2]))
+        #expect(FileManager.default.contents(atPath: store.originalURL(for: item).path(percentEncoded: false)) == Data([1]))
+        #expect(!FileManager.default.fileExists(atPath: edited.path(percentEncoded: false)))
+        // Editing again keeps the first original.
+        let again = FileManager.default.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString).mp4")
+        try Data([3]).write(to: again)
+        try store.replaceRecording(of: trimmed, withFileAt: again, pixelWidth: 960, pixelHeight: 540, duration: 4)
+        #expect(FileManager.default.contents(atPath: store.fileURL(for: item).path(percentEncoded: false)) == Data([3]))
+        #expect(FileManager.default.contents(atPath: store.originalURL(for: item).path(percentEncoded: false)) == Data([1]))
+        #expect(store.items().count == 1)
+    }
 }

@@ -43,8 +43,43 @@ FINISH: unreviewed and undocumented is unfinished; the build ends with the finis
   microphone (system default input) as tracks of their own, mixed into one when the MP4 is made; clicks as
   the system draws them; the countdown (none, 3, or 5 s; 3 by default); pause, restart, delete, stop; crash
   and quit recovery; Settings › Recording (countdown, controls, pointer, frame rate, video format).
-- Not built yet: the microphone's device picker, the camera bubble, keystroke display, GIF, trimming and
-  basic editing, Do Not Disturb, and Studio mode.
+- Built in the second cut (2026-10-10, the user said to go on with the features; each took CleanShot's
+  form, reported to the user to veto):
+  - GIF as an output: Video and GIF chosen on the bar as the All-In-One bar's modes are; a GIF has no sound,
+    so the two sound chips step back while it is chosen. The movie is recorded as always and made into a GIF
+    when stopped (`GIFMaker`: ImageIO encodes each frame alone, frames written as they come, unchanged runs
+    merged, only the changed box written, 15 fps by default, as large as things were on screen, at most 1920
+    pixels); the menu bar shows how far along it is. Settings › Recording › GIF sets the frame rate.
+  - The recording window (basic editing): a standard window with the movie in an AVPlayerView and a toolbar:
+    Trim (QuickTime's trimming bar), Sound on or off, Size (full, three quarters, half, a quarter, shown as the
+    size it makes), Make GIF, Save (Save As…, Open in QuickTime Player, Revert to Original), Copy. Edits are
+    kept in the recording when it leaves the window and when the window closes, the recording as it was made
+    kept beside it, as the annotation editor keeps marks. A GIF only plays there. Double-click on a recording's
+    card opens it; Edit… in the card's and History's menus too.
+  - The microphone chip opens a menu of the Mac's microphones (No Microphone, then each device; the system's
+    default checked until one is chosen by name); one that is gone at recording time gives way to the default.
+  - Keystrokes: a chip on the bar and Settings › Recording › Keystrokes (All keys, or Shortcuts only:
+    keys with ⌘, ⌃, or ⌥, and the function keys). A large reading capsule 28 pt above the bottom of what is
+    recorded, in its materials and face, recorded with it; typing runs on, shortcuts by their symbols; needs
+    Input Monitoring.
+  - The camera: a chip with a menu (No Camera, the Mac's cameras, Shape, Size, Mirror); a bubble (circle or
+    rounded square, 120/180/260 pt, white ring, soft shadow, mirrored by default) 24 pt in from the bottom-left
+    corner of what is recorded, shown as soon as it is chosen so it can be placed, dragged anywhere on its
+    display; double-click fills what is recorded.
+  - Keystrokes and the camera are windows on screen that the recording's filter takes in, so a window
+    recorded on its own (which takes that window alone) has neither: their chips step back for windows.
+- Finish review of the second cut (2026-10-10), fixes applied: Input Monitoring and camera access are asked at
+  the chip, before anything records, and a chip without access steps back with a tooltip saying where to turn
+  it on (still pressable); the camera bubble's panel leaves 28 pt for its shadow, shows the capsule surface
+  before the first frame, never a dark disc, and nothing at all without access or a camera, takes a contrast
+  hairline under Increase Contrast, fills through a 0.12 s fade, and goes under the menu bar when filling a
+  recording; the control bar keeps clear of the keystrokes inside a whole display; the recording window is
+  sized to the movie as it was on screen plus the toolbar, its busy card is opaque, a failure after it closed
+  gets an alert of its own, and Revert to Original also forgets unkept edits; the menu bar keeps its menu
+  while a GIF is made; the keystrokes fade over 0.12 s; mode chips are 84 pt as the All-In-One bar's.
+- DESIGN.md records the recording components (Screen Recording, Recording Window) as of the second cut.
+- Not built yet: a microphone level meter, a virtual camera, clicks drawn other than the system's way, Do Not
+  Disturb (macOS has no public way to turn on a Focus), and Studio mode.
 - Window recordings show no outline (a window moves) and keep their size from the start; a whole display
   shows none either. The control bar goes under the area, above it without room, inside its bottom edge on
   a whole display.

@@ -14,15 +14,24 @@ enum TestMedia {
         CMTime(seconds: origin + seconds, preferredTimescale: 1_000_000_000)
     }
 
-    /// A 420v frame of one gray level, presented at `seconds`.
-    static func frame(at seconds: Double, width: Int = 320, height: Int = 240, gray: UInt8 = 128) -> CMSampleBuffer {
+    /// A 420v frame of one gray level, presented at `seconds`, with `squares` of other grays on it.
+    static func frame(
+        at seconds: Double, width: Int = 320, height: Int = 240, gray: UInt8 = 128, squares: [(x: Int, y: Int, size: Int, gray: UInt8)] = []
+    ) -> CMSampleBuffer {
         var buffer: CVPixelBuffer?
         CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, [
             kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
         ] as CFDictionary, &buffer)
         let pixels = buffer!
         CVPixelBufferLockBaseAddress(pixels, [])
-        memset(CVPixelBufferGetBaseAddressOfPlane(pixels, 0), Int32(gray), CVPixelBufferGetBytesPerRowOfPlane(pixels, 0) * height)
+        let luma = CVPixelBufferGetBaseAddressOfPlane(pixels, 0)!
+        let lumaRow = CVPixelBufferGetBytesPerRowOfPlane(pixels, 0)
+        memset(luma, Int32(gray), lumaRow * height)
+        for square in squares {
+            for row in square.y..<min(square.y + square.size, height) {
+                memset(luma + row * lumaRow + square.x, Int32(square.gray), min(square.size, width - square.x))
+            }
+        }
         memset(CVPixelBufferGetBaseAddressOfPlane(pixels, 1), 128, CVPixelBufferGetBytesPerRowOfPlane(pixels, 1) * height / 2)
         CVPixelBufferUnlockBaseAddress(pixels, [])
         var description: CMVideoFormatDescription?

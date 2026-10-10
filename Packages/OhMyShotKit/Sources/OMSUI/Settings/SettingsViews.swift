@@ -313,7 +313,20 @@ struct RecordingSettingsView: View {
             SettingsRow(Text("Audio", bundle: .module)) {
                 Text("Chosen on the bar before you record.", bundle: .module)
                     .foregroundStyle(.secondary)
-                    .help(Text("Computer audio, the microphone, and clicks are chosen on the bar under what you are about to record.", bundle: .module))
+                    .help(Text("Video or GIF, computer audio, the microphone, clicks, and keystrokes are chosen on the bar under what you are about to record.", bundle: .module))
+            }
+            SettingsRow(Text("Keystrokes", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.recordingKeystrokeMode) {
+                        Text("All keys", bundle: .module).tag(KeystrokeMode.all)
+                        Text("Shortcuts only", bundle: .module).tag(KeystrokeMode.shortcuts)
+                    } label: {
+                        Text("Keystrokes", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("With Show Keystrokes on the recording bar, the keys you press appear near the bottom of the recording. Shortcuts are keys held with Command, Control, or Option, and the function keys. Keys typed into password fields never appear. A window recorded on its own shows none. Needs Input Monitoring.", bundle: .module))
+                }
             }
 
             SettingsDivider()
@@ -341,6 +354,20 @@ struct RecordingSettingsView: View {
                     .labelsHidden()
                     .fixedSize()
                     InfoButton(Text("Recordings are MP4 files at the screen’s own resolution. H.264 plays everywhere; recordings wider or taller than 4096 pixels use HEVC, which H.264 can’t encode in hardware. HEVC makes smaller files, but some players, browsers, and upload forms can’t play it.", bundle: .module))
+                }
+            }
+            SettingsRow(Text("GIF", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.recordingGIFFrameRate) {
+                        ForEach(SettingsStore.recordingGIFFrameRates, id: \.self) { rate in
+                            Text("\(rate) frames per second", bundle: .module).tag(rate)
+                        }
+                    } label: {
+                        Text("GIF frame rate", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("Choose GIF on the recording bar to keep a recording as an animated GIF, which shows wherever pictures do. GIFs have no sound and are made as large as things were on screen, at most 1920 pixels on their longer side. More frames move more smoothly and make larger files.", bundle: .module))
                 }
             }
         }

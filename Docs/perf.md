@@ -398,3 +398,41 @@ with the control bar and the menu bar's time, Stop, kept in the history with a c
 - **Pausing costs the stream, not the file**: frames keep arriving while paused (they are counted and
   dropped, the newest written when recording resumes), so a paused recording still costs what a recording
   of a still screen does.
+
+### GIF (2026-10-10)
+
+The plan left the GIF route open (ImageIO first, gifski if needed). Measured on the demo movie
+(`ohmyshot-dev://debug/record-demo`, 10.2 s of a page of text scrolling 240 pt/s, 2000×1280 at 60 fps,
+3.3 MB as an MP4), made into a GIF at half its pixels (1000×640, as large as it was on screen) and 15 fps:
+the worst case for a GIF, since every frame changes everywhere.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| ImageIO writing all frames into one GIF: size / time / peak memory (prototype, -O) | 31.8 MB / 2.7 s / 1.17 GB | — |
+| ImageIO encoding each frame alone, written as it comes (`GIFMaker`): size / time / memory added | 27.3 MB / 1.8 s / 32 MB (Debug build, in the app) | memory flat with length |
+| The same frames written whole, never transparent (prototype) | 27.1 MB | — |
+| Every frame's unchanged pixels transparent (prototype) | 34.4 MB | — |
+| A still page with a small square moving over it, 150 frames vs 1 (ImageIO) | 204 KB vs 182 KB | — |
+| At 10 fps / at 0.4× (800×512) | 21.9 MB / 22.3 MB | — |
+| Total of the frame delays vs the recording (rounded per frame / per frame start) | 10.57 s / 10.07 s for 10.06 s | as long |
+
+- **ImageIO's GIF writer keeps every frame until it finalizes**, about 7 MB per second of a 1000×640
+  GIF, so a minute would need gigabytes. `GIFMaker` has ImageIO encode each frame alone (it picks the
+  palette and compresses), then copies that frame's palette and data into the file it writes itself. One
+  frame is held at a time, whatever the length.
+- **ImageIO's quality is good enough; gifski is not needed now.** Text stays sharp with no visible
+  dithering at 1:1, and ImageIO already writes only the part of a frame that changed. Size is the cost of
+  GIF itself: a scrolling page changes everywhere in every frame.
+- **Transparency pays only for scattered changes.** Marking unchanged pixels transparent made the
+  scrolling page 27% larger (its runs broke up), so a frame is transparent only when fewer than half of
+  its changed box's 32-pixel runs changed: a pointer and a clock in opposite corners, not a scroll.
+- **Delays are rounded where each frame begins**, not per frame: GIF counts hundredths of a second, so
+  15 fps frames rounded one by one (7 cs each) played 5% slow.
+- **A Debug build was 10× slower until the pixel loops used `memcmp` and `memcpy`**: comparing and copying
+  pixel by pixel in Swift without optimization took 18 s for the same GIF; comparing 32-pixel runs and
+  copying rows brought it to 1.8 s, about what the optimized prototype took.
+- **The whole GIF flow** (`ohmyshot-dev://debug/record-flow?gif=1`, Debug build, on screen with the user's
+  OK): 4.36 s of the demo window at 1600×1000, 60 fps, 250 frames written, none dropped; stopping to the GIF
+  made took 0.58 s (`recording.gif`: 66 frames at 15 fps, 800×500, 7.5 MB for scrolling text), and to the card
+  0.61 s (`recording.keep`). The menu bar went from the time to the GIF's progress to the icon; the clipboard
+  was left alone.

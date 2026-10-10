@@ -43,6 +43,9 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
     public let fileName: String
     /// A recording's length.
     public let duration: TimeInterval?
+    /// A recording's pixels per point on the display it was made on, which sizes a GIF made of it as
+    /// things were on screen; nil for captures and recordings from before it was kept.
+    public let pixelsPerPoint: Double?
 
     public init(
         id: UUID = UUID(),
@@ -52,7 +55,8 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
         pixelHeight: Int,
         appName: String?,
         fileName: String,
-        duration: TimeInterval? = nil
+        duration: TimeInterval? = nil,
+        pixelsPerPoint: Double? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -62,6 +66,7 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
         self.appName = appName
         self.fileName = fileName
         self.duration = duration
+        self.pixelsPerPoint = pixelsPerPoint
     }
 }
 
@@ -127,6 +132,35 @@ public final class HistoryStore: Sendable {
         return try resized(item, pixelWidth: size?.width ?? item.pixelWidth, pixelHeight: size?.height ?? item.pixelHeight)
     }
 
+    /// Keeps an edited recording, the file at `edited` (moved in), in place of the recording, keeping the
+    /// recording as it was made beside it the first time. Returns the record with the new size and length.
+    @discardableResult
+    public func replaceRecording(of item: HistoryItem, withFileAt edited: URL, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval) throws -> HistoryItem {
+        if hasOriginal(item) {
+            try FileManager.default.removeItem(at: fileURL(for: item))
+        } else {
+            try FileManager.default.moveItem(at: fileURL(for: item), to: originalURL(for: item))
+        }
+        try FileManager.default.moveItem(at: edited, to: fileURL(for: item))
+        return try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration)
+    }
+
+    /// Puts a recording back as it was made. Returns the record with its size and length then; unchanged
+    /// when it was never edited.
+    @discardableResult
+    public func restoreRecording(of item: HistoryItem) async throws -> HistoryItem {
+        guard hasOriginal(item) else { return item }
+        _ = try FileManager.default.replaceItemAt(fileURL(for: item), withItemAt: originalURL(for: item))
+        // Read where it has its extension again: AVFoundation knows a movie by it.
+        let asset = AVURLAsset(url: fileURL(for: item))
+        let duration = try await asset.load(.duration).seconds
+        let size = try await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize)
+        return try updated(
+            item, pixelWidth: size.map { Int($0.width.rounded()) } ?? item.pixelWidth,
+            pixelHeight: size.map { Int($0.height.rounded()) } ?? item.pixelHeight, duration: duration
+        )
+    }
+
     /// Keeps the marked-up picture as the capture and lets the original and the marks go: the marks can
     /// no longer be changed.
     public func flatten(_ item: HistoryItem) {
@@ -134,9 +168,13 @@ public final class HistoryStore: Sendable {
     }
 
     private func resized(_ item: HistoryItem, pixelWidth: Int, pixelHeight: Int) throws -> HistoryItem {
+        try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: item.duration)
+    }
+
+    private func updated(_ item: HistoryItem, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval?) throws -> HistoryItem {
         let updated = HistoryItem(
             id: item.id, kind: item.kind, createdAt: item.createdAt, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
-            appName: item.appName, fileName: item.fileName, duration: item.duration
+            appName: item.appName, fileName: item.fileName, duration: duration, pixelsPerPoint: item.pixelsPerPoint
         )
         if updated != item {
             try JSONEncoder.history.encode(updated).write(to: sidecarURL(for: item.id, fileName: item.fileName), options: .atomic)
@@ -169,12 +207,13 @@ public final class HistoryStore: Sendable {
         pixelHeight: Int,
         appName: String?,
         duration: TimeInterval? = nil,
+        pixelsPerPoint: Double? = nil,
         date: Date = .now
     ) throws -> HistoryItem {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let item = HistoryItem(
             kind: kind, createdAt: date, pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: appName,
-            fileName: availableFileName(name, fileExtension: source.pathExtension), duration: duration
+            fileName: availableFileName(name, fileExtension: source.pathExtension), duration: duration, pixelsPerPoint: pixelsPerPoint
         )
         try FileManager.default.moveItem(at: source, to: fileURL(for: item))
         try JSONEncoder.history.encode(item).write(to: sidecarURL(for: item.id, fileName: item.fileName), options: .atomic)
@@ -305,6 +344,11 @@ public final class HistoryStore: Sendable {
     /// Whether a history file is a movie, by its extension.
     public static func isMovie(_ url: URL) -> Bool {
         ["mp4", "mov", "m4v"].contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether a history file is a recording, kept as a movie or a GIF, by its extension.
+    public static func isRecording(_ url: URL) -> Bool {
+        isMovie(url) || url.pathExtension.lowercased() == "gif"
     }
 
     /// The same, from encoded data already in memory.

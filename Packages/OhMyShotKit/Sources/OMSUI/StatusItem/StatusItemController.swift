@@ -46,6 +46,8 @@ public final class StatusItemController {
     private var wantsVisible = false
     /// Stops the recording when the item is clicked; set only while recording.
     private var stopRecording: (() -> Void)?
+    /// While recording or making a GIF, the item shows that in place of the icon and its menu.
+    private var showsActivity = false
     private let captureEntries: [Entry]
     private let textEntries: [Entry]
     private let pinEntries: [Entry]
@@ -75,7 +77,7 @@ public final class StatusItemController {
     public func setVisible(_ visible: Bool) {
         wantsVisible = visible
         // While recording the item stays: it is how the recording is stopped. Settings applies afterwards.
-        guard stopRecording == nil else { return }
+        guard !showsActivity else { return }
         if visible, statusItem == nil {
             statusItem = makeItem()
         } else if !visible, let item = statusItem {
@@ -103,6 +105,7 @@ public final class StatusItemController {
     /// Shown even when Settings hides the icon, since it is one of the ways to stop. Call again each second.
     public func showRecording(elapsed: String, paused: Bool, stop: @escaping () -> Void) {
         stopRecording = stop
+        showsActivity = true
         let item = statusItem ?? makeItem()
         statusItem = item
         item.menu = nil
@@ -127,9 +130,40 @@ public final class StatusItemController {
             : String(localized: "Stop Recording, \(elapsed)", bundle: .module))
     }
 
-    /// The recording ended: the icon and its menu come back, or the item goes if Settings hides it.
+    /// While a recording is made into a GIF: its mark and how far along it is, `fraction` from 0 to 1, with
+    /// the menu still there; the card comes when it is done. Shown even when Settings hides the icon, as while
+    /// recording, since it says the recording isn't kept yet.
+    public func showProgress(_ fraction: Double) {
+        stopRecording = nil
+        menuTarget.stop = nil
+        showsActivity = true
+        let item = statusItem ?? makeItem()
+        statusItem = item
+        if item.menu == nil { item.menu = makeMenu() }
+        item.length = NSStatusItem.variableLength
+        guard let button = item.button else { return }
+        if button.action != nil || button.title.isEmpty {
+            button.target = nil
+            button.action = nil
+            button.image = NSImage(systemSymbolName: "photo.stack", accessibilityDescription: nil)
+            button.image?.isTemplate = true
+            button.imagePosition = .imageLeading
+        }
+        let percent = Int((min(max(fraction, 0), 1) * 100).rounded(.down))
+        let title = "\(percent)%"
+        if button.title != title {
+            button.attributedTitle = NSAttributedString(string: title, attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
+            ])
+        }
+        button.setAccessibilityLabel(String(localized: "Making the GIF, \(percent) percent", bundle: .module))
+    }
+
+    /// The recording ended, or its GIF is made: the icon and its menu come back, or the item goes if
+    /// Settings hides it.
     public func endRecording() {
-        guard stopRecording != nil else { return }
+        guard showsActivity else { return }
+        showsActivity = false
         stopRecording = nil
         menuTarget.stop = nil
         guard let item = statusItem else { return }
