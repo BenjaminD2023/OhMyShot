@@ -61,6 +61,22 @@ colors:
   mark-black: "#000000"
   mark-white: "#FFFFFF"
   mark-marker: "#FFE74A"
+  brand-ground-start: "#5E9CF5"
+  brand-ground-end: "#37CDBE"
+  brand-ground-dark-start: "#2D3140"
+  brand-ground-dark-end: "#15161C"
+  brand-lens: "#DCEBFC"
+  brand-lens-dark: "#20232C"
+  brand-pixel-mid: "#9CC3F8"
+  brand-pixel-mid-dark: "#8AAEF0"
+  brand-pixel-blue: "#3D7FEA"
+  brand-pixel-blue-dark: "#3A6FD0"
+  brand-white-dark: "#F5F5F7"
+  brand-shade: "rgba(11,42,91,0.6)"
+  brand-shade-dark: "rgba(0,0,0,0.6)"
+  brand-lens-edge: "rgba(11,42,91,0.28)"
+  brand-lens-edge-dark: "rgba(0,0,0,0.45)"
+  brand-wordmark-ink: "#1D1D1F"
 typography:
   reading:
     fontFamily: "SF Pro Rounded, ui-rounded, system-ui"
@@ -304,7 +320,7 @@ Units: every dimension in this file is in points. The frontmatter writes points 
 A system-colored world: macOS semantic colors and the user's accent do the work, and the app's own values are neutral black and white at stated opacities.
 
 ### Primary
-- **The User's Accent** (`AccentColor`, AppKit `controlAccentColor`): the only hue the app ever uses for state. It marks the selected mode's symbol in the All-In-One bar, the tool in hand in the editor's rail and in the in-place toolbar, the in-place toolbar's Copy check, the selected variant in the style capsule, the ring around the chosen color dot, the editor's selection box and handle rings, the center cell outline in the loupe (except while picking a color, where the cell is drawn white over the selection outline so it holds over the accent's own color), the Measure ruler's lines and box edge, the dashed outlines of the redaction tool's suggestions, and the 3 pt selection ring around a selected Capture History card. The ruler's box carries a wash of the accent at 0.08 with no text on it (the box reading stands outside the box). It is never a fill behind text and never a brand color; OhMyShot has no brand hue.
+- **The User's Accent** (`AccentColor`, AppKit `controlAccentColor`): the only hue the app ever uses for state. It marks the selected mode's symbol in the All-In-One bar, the tool in hand in the editor's rail and in the in-place toolbar, the in-place toolbar's Copy check, the selected variant in the style capsule, the ring around the chosen color dot, the editor's selection box and handle rings, the center cell outline in the loupe (except while picking a color, where the cell is drawn white over the selection outline so it holds over the accent's own color), the Measure ruler's lines and box edge, the dashed outlines of the redaction tool's suggestions, and the 3 pt selection ring around a selected Capture History card. The ruler's box carries a wash of the accent at 0.08 with no text on it (the box reading stands outside the box). It is never a fill behind text and never a brand color; OhMyShot's chrome has no brand hue (the brand mark's fixed hues stay in the mark; see Brand Mark under Components).
 
 ### Neutral
 - **System surfaces** (`windowBackgroundColor`, `controlBackgroundColor`, SwiftUI `.background.secondary`): the opaque backing inside the All-In-One and in-place toolbar glass, the Reduce Transparency capsule, the letterbox behind a Quick Access picture, and the placeholder behind a History thumbnail. These follow light and dark automatically; no hex is recorded because none exists.
@@ -335,7 +351,7 @@ A background is content too, fixed values so the screen and the export agree. Th
 - **Matte:** canvas reaching past the capture (combined images beside it), and the room Inset and Auto Balance add, is filled with the capture's edge color, or white where the edge has no one color, on screen and in exports. A window captured with its shadow gets no matte; its surroundings stay clear.
 
 ### Named Rules
-**The No Brand Hue Rule.** The accent is whatever the user chose in System Settings. Never hard-code a blue in chrome, never tint a surface toward a house color. Mark inks and background fills are the user's content and the one place fixed hues live.
+**The No Brand Hue Rule.** The accent is whatever the user chose in System Settings. Never hard-code a blue in chrome, never tint a surface toward a house color. Mark inks and background fills are the user's content and the one place fixed hues live. The one exception is the brand mark: the app icon's ground and pixel inks, and the wordmark's O, are the one place the brand carries fixed hues. Chrome still never takes them, and the menu bar glyph takes no hue.
 
 **The Black-and-White Opacity Rule.** Every literal color the app's chrome introduces is pure black or white at a stated opacity (or the single 0.17 gray of the Dark reading capsule, and the opaque grays of the on-screen checkerboard). New surfaces reuse these steps before inventing a tint.
 
@@ -610,6 +626,22 @@ A PixelSnap-style ruler on the frozen screen. The overlay is always frozen, undi
 - **Pixels:** a display's pixels are copied out off the main thread the first time the pointer comes to it, and let go when the pointer leaves for another display.
 - **VoiceOver:** help reads "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel."; the value is the measurement, announced after a box, a unit switch, or a nudge.
 
+### Brand Mark (App Icon, Menu Bar Glyph, Wordmark)
+The mark is the app's own capture loupe: a white ring over magnified pixels with the center cell framed, the loupe the user sees while choosing an area, read as pixel-precise capture. One geometry in `Tools/logo/make_icon.py` draws every form (the Icon Composer bundle, the menu bar template, and the previews in `Tools/logo/preview/`); `Tools/logo/make_wordmark.py` takes its lens and pixel colors from it.
+- **App icon** (`App/AppIcon.icon`, an Icon Composer bundle, named by `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`): drawn on the 1024 pt grid with an 824 pt body; the loupe is centered and nothing else stands on the ground.
+  - **Ground:** the Ocean background fill (#5E9CF5 to #37CDBE), a linear gradient from (0.15, 0) to (0.85, 1) of the body; in Dark, #2D3140 to #15161C.
+  - **Ring:** white, outer radius 316, inner 252 (a 64 pt band; the outer radius is ≈0.38 of the body). Dark: #F5F5F7.
+  - **Lens and pixels:** a #DCEBFC lens disc fills the ring under a 5×5 grid of rounded pixels (84 pt, 18 pt corners, 96 pt pitch), clipped to the lens. Tones step across one diagonal edge: counting column plus row from the top-left (0 to 8), cells up to 3 are white, the anti-diagonal (4) is #9CC3F8, and cells from 5 are #3D7FEA. Dark: #F5F5F7, #8AAEF0, and #3A6FD0 on a #20232C lens.
+  - **Center cell:** a 10 pt white frame on a 92 pt rounded square (the cell plus 8, 22 pt corners) over the same path 32 pt wide in navy #0B2A5B at 0.6 (black at 0.6 in Dark), so the frame reads on the white pixels around it: the icon's version of the loupe's outlined center cell.
+  - **Lens edge:** a 20 pt band just inside the ring (radius 232 to 252) in navy at 0.28 (black at 0.45 in Dark), so the white ring holds against the white pixels under it.
+  - **Layers and glass:** two groups, Loupe over Pixels. Loupe holds the center frame, its shade, the ring, and the lens edge; neutral shadow 0.5 (0.6 in Dark), translucency off, specular on. Pixels holds the white, mid, and blue pixels over the lens; neutral shadow 0.2, translucency 0.2, specular on. The ring and the lens are the only glass layers.
+  - **Tinted and Clear:** every layer carries a gray tinted fill (ring, frame, and white pixels white; mid pixels white at 0.55; blue pixels white at 0.22; lens black at 0.25; center shade black at 0.5; lens edge black at 0.4), so the diagonal step survives in one tint. Reviewed in Default, Dark, Tinted Light and Dark, Clear Light and Dark, and at 32 and 16 px.
+- **Menu bar glyph** (`App/Assets.xcassets/MenuBarIcon.imageset`, an 18 pt vector template image, loaded by `NSImage.statusItemIcon(accessibilityDescription:)`): a ring (outer radius 7.5, inner 6, a 1.5 pt band) around a 3×3 grid of 2 pt squares (0.5 pt corners) at a 2.75 pt pitch, all centered on the 18 pt box. Opacities step across the diagonal: 0.35 for the three top-left cells, 0.65 on the anti-diagonal, 1.0 for the three bottom-right. Black plus alpha only, no hue; the menu bar colors the template.
+  - Keep the opacity ramp: it is the icon's white, mid, and blue pixels in one ink, and it is what separates the glyph from SF Symbols' `circle.grid` family.
+  - The `camera.viewfinder` symbol in `statusItemIcon` is a code fallback for when the asset catalog is absent (tests, previews), not a second mark.
+- **Wordmark** (`Tools/logo/preview/wordmark-light.svg` and `wordmark-dark.svg`): "OhMyShot" in Nunito ExtraBold (800, SIL Open Font License; the font is not in the repo, and the generator takes its path), tracked −0.015 em with the font's own kerning, outlined to plain paths so it renders where fonts don't load. The loupe ring is the O: as tall as Nunito's O, its band the O's mean stroke, holding a #DCEBFC lens with a 3×3 pixel step (white, #9CC3F8, #3D7FEA across the diagonal, as in the menu bar glyph). Ink #1D1D1F in Light and #F5F5F7 in Dark; the O's lens and pixels keep their light colors in both.
+  - Never set the wordmark in SF Pro Rounded: its license covers Apple-platform UI mockups, not logos. SF Pro Rounded stays the face of readings.
+
 ### Navigation
 - **Capture History toolbar:** a SwiftUI toolbar bridged into a unified window toolbar: segmented Show filter (All, Screenshots, Recordings), a "Keep for …" menu, and Move All to Trash. Empty states are filter-aware (a 40 pt light tertiary symbol, title3 title, callout message).
 - **Keyboard:** arrows select, Return restores, Space opens Quick Look; ⌘C, ⌘S, and ⌘⌫ arrive as commands through an invisible main menu and are disabled with nothing selected.
@@ -647,6 +679,7 @@ Recording controls are not built. They must use this system (system colors and a
 - **Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills, 2 pt ruler lines over a 4 pt solid white outline, 2 pt suggestion dashes over a 2 pt solid white line.
 - **Do** use standard windows, toolbars, grouped Forms, and SwiftUI glass button styles inside windows.
 - **Do** build chips in floating controls (the All-In-One bar, the in-place toolbar, the tool rail, the style capsule) as borderless buttons with the chip fills, and hand-draw whole controls only where AppKit would render them dimmed (non-key floating panels), tracking presses like standard buttons.
+- **Do** regenerate the app icon, the menu bar glyph, and the wordmark only from their generators (`Tools/logo/make_icon.py`, `Tools/logo/make_wordmark.py`); never hand-edit `App/AppIcon.icon` or the MenuBarIcon SVG.
 
 ### Don't:
 - **Don't** bring back Contact Sheet: no frame numbers, no captures joined into a strip, no film-edge or darkroom motifs.
@@ -654,7 +687,8 @@ Recording controls are not built. They must use this system (system colors and a
 - **Don't** put glass, blur, or a material over the full-screen overlay; the room is a flat 26% fill.
 - **Don't** use hard offset shadows, glows, or halos; a thin overlay line's contrast outline (dark under white, white under the ruler's accent and a suggestion's dashes) is not one.
 - **Don't** use the rounded face inside standard windows, or proportional digits in a changing number.
-- **Don't** invent a brand hue or tint chrome toward one; fixed hues belong to mark inks only.
+- **Don't** invent a brand hue or tint chrome toward one; fixed hues belong to mark inks, background fills, and the brand mark only.
 - **Don't** animate anything that follows the pointer, or run any motion under Reduce Motion.
 - **Don't** fill an outline around text the user is judging, or let its contrast line reach onto the glyphs; outlines that sit tight around text take a white line no wider than their own.
 - **Don't** give the editor a wide tool toolbar or a fixed option strip; tools live in the rail and a mark's style beside the mark.
+- **Don't** bring back viewfinder brackets, camera bodies, or scissors as the mark; the mark is the loupe.

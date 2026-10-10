@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-10T12:00:00Z",
+  "generatedAt": "2026-10-10T18:00:00Z",
   "title": "Design System: OhMyShot",
   "extensions": {
     "colorMeta": {
@@ -438,6 +438,226 @@
         "role": "neutral",
         "displayName": "Checkerboard Alternate, Dark",
         "canonical": "CGColor(gray: 0.25, alpha: 1); 0.30 under Increase Contrast; on screen only: a Transparent background's room and a translucent color pin's swatch, 8 pt squares"
+      },
+      "brand-ground-start": {
+        "role": "tertiary",
+        "displayName": "App icon: Ocean Ground (start)",
+        "canonical": "make_icon.py GROUND[0]; the Ocean background fill's first stop",
+        "tonalRamp": [
+          "#000A22",
+          "#012351",
+          "#043E86",
+          "#225FB2",
+          "#4582D8",
+          "#6BA6FB",
+          "#A9CBFD",
+          "#E5EFFE"
+        ]
+      },
+      "brand-ground-end": {
+        "role": "tertiary",
+        "displayName": "App icon: Ocean Ground (end)",
+        "canonical": "make_icon.py GROUND[1]; the Ocean background fill's last stop",
+        "tonalRamp": [
+          "#000F0D",
+          "#002C28",
+          "#004D47",
+          "#037168",
+          "#08968B",
+          "#1ABEAF",
+          "#55E3D4",
+          "#B9FFF5"
+        ]
+      },
+      "brand-ground-dark-start": {
+        "role": "tertiary",
+        "displayName": "App icon: Dark Ground (start)",
+        "canonical": "make_icon.py GROUND_DARK[0]",
+        "tonalRamp": [
+          "#080A17",
+          "#212433",
+          "#3D4151",
+          "#5C6071",
+          "#7D8293",
+          "#9FA4B7",
+          "#C3C8DC",
+          "#E9EEFF"
+        ]
+      },
+      "brand-ground-dark-end": {
+        "role": "tertiary",
+        "displayName": "App icon: Dark Ground (end)",
+        "canonical": "make_icon.py GROUND_DARK[1]",
+        "tonalRamp": [
+          "#0A0B10",
+          "#23252B",
+          "#404149",
+          "#5F6168",
+          "#80828A",
+          "#A3A4AD",
+          "#C7C9D1",
+          "#ECEEF7"
+        ]
+      },
+      "brand-lens": {
+        "role": "tertiary",
+        "displayName": "App icon: Lens",
+        "canonical": "make_icon.py LENS; also the wordmark O's lens in both appearances",
+        "tonalRamp": [
+          "#030C17",
+          "#1B2632",
+          "#374351",
+          "#566371",
+          "#768493",
+          "#99A7B7",
+          "#BCCBDB",
+          "#E3F0FF"
+        ]
+      },
+      "brand-lens-dark": {
+        "role": "tertiary",
+        "displayName": "App icon: Lens (Dark)",
+        "canonical": "make_icon.py DARK['lens']",
+        "tonalRamp": [
+          "#080B13",
+          "#22252E",
+          "#3E424C",
+          "#5D616C",
+          "#7E828D",
+          "#A1A5B0",
+          "#C5C9D5",
+          "#EAEEFB"
+        ]
+      },
+      "brand-pixel-mid": {
+        "role": "tertiary",
+        "displayName": "App icon: Mid Pixel",
+        "canonical": "make_icon.py MID",
+        "tonalRamp": [
+          "#000A20",
+          "#02244E",
+          "#21426F",
+          "#3F6292",
+          "#6084B6",
+          "#81A7DB",
+          "#A7CCFF",
+          "#E4F0FF"
+        ]
+      },
+      "brand-pixel-mid-dark": {
+        "role": "tertiary",
+        "displayName": "App icon: Mid Pixel (Dark)",
+        "canonical": "make_icon.py DARK['mid']",
+        "tonalRamp": [
+          "#000729",
+          "#062056",
+          "#223F78",
+          "#40609C",
+          "#6082C1",
+          "#81A5E6",
+          "#ADCAFE",
+          "#E6EFFF"
+        ]
+      },
+      "brand-pixel-blue": {
+        "role": "tertiary",
+        "displayName": "App icon: Blue Pixel",
+        "canonical": "make_icon.py BLUE",
+        "tonalRamp": [
+          "#000925",
+          "#002157",
+          "#013B90",
+          "#185BC2",
+          "#3C7EE9",
+          "#6EA5FE",
+          "#AACBFF",
+          "#E5EFFF"
+        ]
+      },
+      "brand-pixel-blue-dark": {
+        "role": "tertiary",
+        "displayName": "App icon: Blue Pixel (Dark)",
+        "canonical": "make_icon.py DARK['blue']",
+        "tonalRamp": [
+          "#000827",
+          "#011F5A",
+          "#043995",
+          "#285BBA",
+          "#487FE1",
+          "#73A4FB",
+          "#ADCAFD",
+          "#E6EFFE"
+        ]
+      },
+      "brand-white-dark": {
+        "role": "tertiary",
+        "displayName": "App icon: Ring and White Pixels (Dark); Wordmark Ink (Dark)",
+        "canonical": "make_icon.py DARK['ring'], DARK['white']; make_wordmark.py INKS['dark']",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#252526",
+          "#424243",
+          "#616163",
+          "#828284",
+          "#A5A5A7",
+          "#C9C9CB",
+          "#EEEEF0"
+        ]
+      },
+      "brand-shade": {
+        "role": "tertiary",
+        "displayName": "App icon: Center Cell Shade",
+        "canonical": "make_icon.py SHADE #0B2A5B at SHADE_OPACITY 0.6",
+        "tonalRamp": [
+          "#000924",
+          "#042252",
+          "#214174",
+          "#406197",
+          "#6083BB",
+          "#81A6E1",
+          "#AACBFF",
+          "#E6EFFE"
+        ]
+      },
+      "brand-shade-dark": {
+        "role": "tertiary",
+        "displayName": "App icon: Center Cell Shade (Dark)",
+        "canonical": "icon.json center-shade dark fill, black at 0.6"
+      },
+      "brand-lens-edge": {
+        "role": "tertiary",
+        "displayName": "App icon: Lens Edge",
+        "canonical": "make_icon.py SHADE #0B2A5B at EDGE_OPACITY 0.28",
+        "tonalRamp": [
+          "#000924",
+          "#042252",
+          "#214174",
+          "#406197",
+          "#6083BB",
+          "#81A6E1",
+          "#AACBFF",
+          "#E6EFFE"
+        ]
+      },
+      "brand-lens-edge-dark": {
+        "role": "tertiary",
+        "displayName": "App icon: Lens Edge (Dark)",
+        "canonical": "icon.json lens-edge dark fill, black at 0.45"
+      },
+      "brand-wordmark-ink": {
+        "role": "tertiary",
+        "displayName": "Wordmark Ink",
+        "canonical": "make_wordmark.py INKS['light']",
+        "tonalRamp": [
+          "#0B0B0D",
+          "#252527",
+          "#424244",
+          "#616163",
+          "#828284",
+          "#A5A5A7",
+          "#C9C9CB",
+          "#EEEEF1"
+        ]
       }
     },
     "typographyMeta": {
@@ -814,6 +1034,13 @@
       "description": "A PixelSnap-style ruler on the frozen screen: undimmed, no bar, no magnifier. From the pointer's pixel, 1 pt accent lines run to the nearest change of color each way (a channel more than 8/255 off), over a 3 pt white 0.85 outline (2 pt over 4 pt solid white under Increase Contrast), with 8 pt end caps, each length in a reading capsule by its line (\"120 pt\"; points to a tenth or whole pixels). A dragged box (accent edge over the outline, accent wash 0.08) is 0.6 opacity while dragged; let go, it shrinks to what it holds (background = the color most corners share) with an alignment haptic, then is solid, its size 10 pt below it. ⌘C copies and the reading says Copied for 0.9 s; Return copies and closes; Tab or U switches points and pixels (remembered); C takes the color. Pixels are copied per display when the pointer arrives and let go when it leaves.",
       "html": "<div class=\"ds-ruler\"><div class=\"ds-ruler-target\"></div><div class=\"ds-ruler-h\"></div><div class=\"ds-ruler-v\"></div><div class=\"ds-ruler-w\">120 pt</div><div class=\"ds-ruler-hr\">36 pt</div></div>",
       "css": ".ds-ruler{position:relative;width:300px;height:150px;background:#F5F6F8;} .ds-ruler-target{position:absolute;left:90px;top:57px;width:120px;height:36px;border-radius:8px;background:#FFFFFF;box-shadow:0 0 0 0.5px rgba(0,0,0,0.12);} .ds-ruler-h{position:absolute;left:90px;top:74.5px;width:120px;height:1px;background:AccentColor;box-shadow:0 0 0 1px rgba(255,255,255,0.85);} .ds-ruler-h::before,.ds-ruler-h::after{content:'';position:absolute;top:-4px;width:1px;height:8px;background:AccentColor;box-shadow:0 0 0 1px rgba(255,255,255,0.85);} .ds-ruler-h::before{left:0;} .ds-ruler-h::after{right:0;} .ds-ruler-v{position:absolute;left:160px;top:57px;width:1px;height:36px;background:AccentColor;box-shadow:0 0 0 1px rgba(255,255,255,0.85);} .ds-ruler-v::before,.ds-ruler-v::after{content:'';position:absolute;left:-4px;width:8px;height:1px;background:AccentColor;box-shadow:0 0 0 1px rgba(255,255,255,0.85);} .ds-ruler-v::before{top:0;} .ds-ruler-v::after{bottom:0;} .ds-ruler-w{position:absolute;left:150px;top:22px;transform:translateX(-50%);height:24px;padding:0 11px 0 10px;display:inline-flex;align-items:center;gap:6px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:pre;} .ds-ruler-hr{position:absolute;left:168px;top:63px;height:24px;padding:0 11px 0 10px;display:inline-flex;align-items:center;gap:6px;border-radius:9999px;background:rgba(255,255,255,0.96);color:rgba(0,0,0,0.85);border:0.5px solid rgba(0,0,0,0.08);box-shadow:0 2px 8px rgba(0,0,0,0.18);font-family:'SF Pro Rounded',ui-rounded,system-ui,sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:pre;} @media (prefers-contrast: more){.ds-ruler-h,.ds-ruler-v,.ds-ruler-h::before,.ds-ruler-h::after,.ds-ruler-v::before,.ds-ruler-v::after{box-shadow:0 0 0 1px #FFFFFF;}}"
+    },
+    {
+      "name": "Brand Mark",
+      "kind": "custom",
+      "description": "The app's own capture loupe in three forms: the app icon (Icon Composer bundle, Ocean ground #5E9CF5 to #37CDBE, white glass ring 316/252 on an 824 pt body, 5x5 rounded pixels stepping white / #9CC3F8 / #3D7FEA across one diagonal on a #DCEBFC lens, center cell framed white over navy), the 18 pt menu bar template (ring around a 3x3 grid stepping 0.35 / 0.65 / 1.0, black plus alpha only), and the Nunito ExtraBold wordmark with the ring as its O. Shown: the menu bar glyph in light and dark menu bar ink, and the wordmark's O.",
+      "html": "<div class=\"ds-brand\"><span class=\"ds-brand-bar ds-brand-bar-light\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 18 18\" width=\"36\" height=\"36\"><g fill=\"currentColor\"><path fill-rule=\"evenodd\" d=\"M9,1.5 A7.5,7.5 0 1 1 9,16.5 A7.5,7.5 0 1 1 9,1.5 Z M9,3 A6,6 0 1 0 9,15 A6,6 0 1 0 9,3 Z\"/><rect x=\"5.250\" y=\"5.250\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.35\"/><rect x=\"8.000\" y=\"5.250\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.35\"/><rect x=\"10.750\" y=\"5.250\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.65\"/><rect x=\"5.250\" y=\"8.000\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.35\"/><rect x=\"8.000\" y=\"8.000\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.65\"/><rect x=\"10.750\" y=\"8.000\" width=\"2.0\" height=\"2.0\" rx=\"0.5\"/><rect x=\"5.250\" y=\"10.750\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.65\"/><rect x=\"8.000\" y=\"10.750\" width=\"2.0\" height=\"2.0\" rx=\"0.5\"/><rect x=\"10.750\" y=\"10.750\" width=\"2.0\" height=\"2.0\" rx=\"0.5\"/></g></svg></span><span class=\"ds-brand-bar ds-brand-bar-dark\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 18 18\" width=\"36\" height=\"36\"><g fill=\"currentColor\"><path fill-rule=\"evenodd\" d=\"M9,1.5 A7.5,7.5 0 1 1 9,16.5 A7.5,7.5 0 1 1 9,1.5 Z M9,3 A6,6 0 1 0 9,15 A6,6 0 1 0 9,3 Z\"/><rect x=\"5.250\" y=\"5.250\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.35\"/><rect x=\"8.000\" y=\"5.250\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.35\"/><rect x=\"10.750\" y=\"5.250\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.65\"/><rect x=\"5.250\" y=\"8.000\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.35\"/><rect x=\"8.000\" y=\"8.000\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.65\"/><rect x=\"10.750\" y=\"8.000\" width=\"2.0\" height=\"2.0\" rx=\"0.5\"/><rect x=\"5.250\" y=\"10.750\" width=\"2.0\" height=\"2.0\" rx=\"0.5\" fill-opacity=\"0.65\"/><rect x=\"8.000\" y=\"10.750\" width=\"2.0\" height=\"2.0\" rx=\"0.5\"/><rect x=\"10.750\" y=\"10.750\" width=\"2.0\" height=\"2.0\" rx=\"0.5\"/></g></svg></span><svg class=\"ds-brand-o\" viewBox=\"0 0 100 100\" width=\"72\" height=\"72\" role=\"img\" aria-label=\"The wordmark's O\"><defs><clipPath id=\"ds-brand-lens\"><circle cx=\"50\" cy=\"50\" r=\"30\"/></clipPath></defs><g clip-path=\"url(#ds-brand-lens)\"><rect width=\"100\" height=\"100\" fill=\"#DCEBFC\"/><rect x=\"25.5\" y=\"25.5\" width=\"15\" height=\"15\" rx=\"3.5\" fill=\"#FFFFFF\"/><rect x=\"42.5\" y=\"25.5\" width=\"15\" height=\"15\" rx=\"3.5\" fill=\"#FFFFFF\"/><rect x=\"59.5\" y=\"25.5\" width=\"15\" height=\"15\" rx=\"3.5\" fill=\"#9CC3F8\"/><rect x=\"25.5\" y=\"42.5\" width=\"15\" height=\"15\" rx=\"3.5\" fill=\"#FFFFFF\"/><rect x=\"42.5\" y=\"42.5\" width=\"15\" height=\"15\" rx=\"3.5\" fill=\"#9CC3F8\"/><rect x=\"59.5\" y=\"42.5\" width=\"15\" height=\"15\" rx=\"3.5\" fill=\"#3D7FEA\"/><rect x=\"25.5\" y=\"59.5\" width=\"15\" height=\"15\" rx=\"3.5\" fill=\"#9CC3F8\"/><rect x=\"42.5\" y=\"59.5\" width=\"15\" height=\"15\" rx=\"3.5\" fill=\"#3D7FEA\"/><rect x=\"59.5\" y=\"59.5\" width=\"15\" height=\"15\" rx=\"3.5\" fill=\"#3D7FEA\"/></g><path fill-rule=\"evenodd\" fill=\"#1D1D1F\" d=\"M50,0 A50,50 0 1 1 50,100 A50,50 0 1 1 50,0 Z M50,20 A30,30 0 1 0 50,80 A30,30 0 1 0 50,20 Z\"/></svg></div>",
+      "css": ".ds-brand{display:flex;align-items:center;gap:16px;} .ds-brand-bar{display:inline-flex;padding:6px 10px;border-radius:8px;} .ds-brand-bar-light{background:#ECECEE;color:#000000;} .ds-brand-bar-dark{background:#2B2B2E;color:#FFFFFF;}"
     }
   ],
   "narrative": {
@@ -830,7 +1057,7 @@
     "rules": [
       {
         "name": "The No Brand Hue Rule",
-        "body": "The accent is whatever the user chose in System Settings. Never hard-code a blue in chrome, never tint a surface toward a house color. Mark inks and background fills are the user's content and the one place fixed hues live.",
+        "body": "The accent is whatever the user chose in System Settings. Never hard-code a blue in chrome, never tint a surface toward a house color. Mark inks and background fills are the user's content and the one place fixed hues live. The one exception is the brand mark: the app icon's ground and pixel inks, and the wordmark's O, are the one place the brand carries fixed hues. Chrome still never takes them, and the menu bar glyph takes no hue.",
         "section": "colors"
       },
       {
@@ -882,7 +1109,8 @@
       "**Do** keep text-bearing controls opaque over captures; use glass for the rim, not the fill.",
       "**Do** answer accessibility settings specifically: Reduce Motion = instant; Reduce Transparency = solid window-colored capsule; Increase Contrast = 45% dimming, 0.7 outline, 1 pt contrast hairlines and button outlines, doubled chip fills, 2 pt ruler lines over a 4 pt solid white outline, 2 pt suggestion dashes over a 2 pt solid white line.",
       "**Do** use standard windows, toolbars, grouped Forms, and SwiftUI glass button styles inside windows.",
-      "**Do** build chips in floating controls (the All-In-One bar, the in-place toolbar, the tool rail, the style capsule) as borderless buttons with the chip fills, and hand-draw whole controls only where AppKit would render them dimmed (non-key floating panels), tracking presses like standard buttons."
+      "**Do** build chips in floating controls (the All-In-One bar, the in-place toolbar, the tool rail, the style capsule) as borderless buttons with the chip fills, and hand-draw whole controls only where AppKit would render them dimmed (non-key floating panels), tracking presses like standard buttons.",
+      "**Do** regenerate the app icon, the menu bar glyph, and the wordmark only from their generators (`Tools/logo/make_icon.py`, `Tools/logo/make_wordmark.py`); never hand-edit `App/AppIcon.icon` or the MenuBarIcon SVG."
     ],
     "donts": [
       "**Don't** bring back Contact Sheet: no frame numbers, no captures joined into a strip, no film-edge or darkroom motifs.",
@@ -890,10 +1118,11 @@
       "**Don't** put glass, blur, or a material over the full-screen overlay; the room is a flat 26% fill.",
       "**Don't** use hard offset shadows, glows, or halos; a thin overlay line's contrast outline (dark under white, white under the ruler's accent and a suggestion's dashes) is not one.",
       "**Don't** use the rounded face inside standard windows, or proportional digits in a changing number.",
-      "**Don't** invent a brand hue or tint chrome toward one; fixed hues belong to mark inks only.",
+      "**Don't** invent a brand hue or tint chrome toward one; fixed hues belong to mark inks, background fills, and the brand mark only.",
       "**Don't** animate anything that follows the pointer, or run any motion under Reduce Motion.",
       "**Don't** fill an outline around text the user is judging, or let its contrast line reach onto the glyphs; outlines that sit tight around text take a white line no wider than their own.",
-      "**Don't** give the editor a wide tool toolbar or a fixed option strip; tools live in the rail and a mark's style beside the mark."
+      "**Don't** give the editor a wide tool toolbar or a fixed option strip; tools live in the rail and a mark's style beside the mark.",
+      "**Don't** bring back viewfinder brackets, camera bodies, or scissors as the mark; the mark is the loupe."
     ]
   }
 }

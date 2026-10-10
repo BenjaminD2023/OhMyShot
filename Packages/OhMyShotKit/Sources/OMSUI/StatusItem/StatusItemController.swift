@@ -73,8 +73,7 @@ public final class StatusItemController {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
             item.autosaveName = "OhMyShotStatusItem"
             if let button = item.button {
-                button.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: appName)
-                button.image?.isTemplate = true
+                button.image = NSImage.statusItemIcon(accessibilityDescription: appName)
                 if let onDrop {
                     let dropView = StatusItemDropView(frame: button.bounds, button: button, onDrop: onDrop)
                     dropView.autoresizingMask = [.width, .height]
