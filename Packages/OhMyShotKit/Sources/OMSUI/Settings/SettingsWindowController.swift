@@ -5,6 +5,8 @@ import SwiftUI
 
 public enum SettingsTab: String, CaseIterable, Sendable {
     case general
+    case capture
+    case tools
     case shortcuts
     case permissions
     case automation
@@ -13,6 +15,8 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     var title: String {
         switch self {
         case .general: String(localized: "General", bundle: .module)
+        case .capture: String(localized: "Capture", bundle: .module)
+        case .tools: String(localized: "Tools", bundle: .module)
         case .shortcuts: String(localized: "Shortcuts", bundle: .module)
         case .permissions: String(localized: "Permissions", bundle: .module)
         case .automation: String(localized: "Automation", bundle: .module)
@@ -23,6 +27,8 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     var symbolName: String {
         switch self {
         case .general: "gearshape"
+        case .capture: "camera.viewfinder"
+        case .tools: "wrench.and.screwdriver"
         case .shortcuts: "command"
         case .permissions: "hand.raised"
         case .automation: "point.3.connected.trianglepath.dotted"
@@ -143,7 +149,11 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private static func makeContent(for tab: SettingsTab, dependencies: SettingsDependencies) -> NSViewController {
         switch tab {
         case .general:
-            host(GeneralSettingsView(settings: dependencies.settings, openHistory: dependencies.openHistory, expiredCount: dependencies.expiredCount, backgrounds: dependencies.backgrounds))
+            host(GeneralSettingsView(settings: dependencies.settings, openHistory: dependencies.openHistory, expiredCount: dependencies.expiredCount))
+        case .capture:
+            host(CaptureSettingsView(settings: dependencies.settings, backgrounds: dependencies.backgrounds))
+        case .tools:
+            host(ToolsSettingsView(settings: dependencies.settings))
         case .shortcuts:
             host(ShortcutsSettingsView())
         case .permissions:

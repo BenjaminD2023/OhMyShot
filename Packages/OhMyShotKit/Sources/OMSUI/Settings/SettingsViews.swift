@@ -7,17 +7,42 @@ import SwiftUI
 
 private let formWidth: CGFloat = 520
 
+extension View {
+    /// A settings pane: a grouped form as tall as its content, so the window fits each tab. A pane taller
+    /// than the screen allows stops at that height and scrolls.
+    fileprivate func settingsPane() -> some View {
+        modifier(SettingsPane())
+    }
+}
+
+private struct SettingsPane: ViewModifier {
+    @State private var contentHeight: CGFloat?
+
+    func body(content: Content) -> some View {
+        content
+            .formStyle(.grouped)
+            .scrollBounceBehavior(.basedOnSize)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom
+            } action: { _, height in
+                contentHeight = height.rounded(.up)
+            }
+            .frame(width: formWidth, height: contentHeight.map { min($0, Self.maxHeight) })
+    }
+
+    /// The screen's height less the window's title bar and toolbar, and a margin.
+    private static var maxHeight: CGFloat {
+        (NSScreen.main?.visibleFrame.height ?? 800) - 140
+    }
+}
+
 struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
     let openHistory: () -> Void
     let expiredCount: (HistoryRetention) -> Int
-    let backgrounds: SettingsDependencies.Backgrounds
-    @State private var backgroundPresets: [SettingsDependencies.Backgrounds.Choice] = []
-    @State private var automaticBackground: UUID?
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
-    @State private var translationTargets: [Locale.Language] = []
 
     var body: some View {
         Form {
@@ -40,12 +65,72 @@ struct GeneralSettingsView: View {
                         .font(.callout)
                         .foregroundStyle(.red)
                 }
+                Toggle(isOn: $settings.playSounds) {
+                    Text("Play sounds", bundle: .module)
+                }
                 Toggle(isOn: $settings.showMenuBarIcon) {
                     Text("Show icon in the menu bar", bundle: .module)
                 }
             } footer: {
                 Text("With the icon hidden, open OhMyShot again from Finder or Spotlight to come back here.", bundle: .module)
                     .foregroundStyle(.secondary)
+            }
+            Section {
+                Picker(selection: retentionSelection(settings: settings, expiredCount: expiredCount, request: $retentionRequest)) {
+                    ForEach(HistoryRetention.allCases, id: \.self) { retention in
+                        Text(retention.title).tag(retention)
+                    }
+                } label: {
+                    Text("Keep captures for", bundle: .module)
+                    Text(retentionDescription)
+                }
+                LabeledContent {
+                    Button(action: openHistory) {
+                        Text("Open Capture History…", bundle: .module)
+                    }
+                } label: {
+                    EmptyView()
+                }
+            } header: {
+                Text("Capture History", bundle: .module)
+            }
+        }
+        .settingsPane()
+        .confirmingRetentionChange($retentionRequest) { retention in
+            settings.historyRetention = retention
+        }
+    }
+
+    private var retentionDescription: String {
+        settings.historyRetention == .never
+            ? String(localized: "Captures are deleted when their Quick Access card closes, unless you saved them.", bundle: .module)
+            : String(localized: "Captures stay on this Mac until then, ready to restore to Quick Access. Choosing a shorter time, or Never, deletes older captures right away.", bundle: .module)
+    }
+}
+
+struct CaptureSettingsView: View {
+    @Bindable var settings: SettingsStore
+    let backgrounds: SettingsDependencies.Backgrounds
+    @State private var backgroundPresets: [SettingsDependencies.Backgrounds.Choice] = []
+    @State private var automaticBackground: UUID?
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(isOn: $settings.freezeScreen) {
+                    Text("Freeze the screen while selecting", bundle: .module)
+                    Text("Keeps hover states and open menus in place until the capture is taken.", bundle: .module)
+                }
+                Picker(selection: $settings.selfTimerDelay) {
+                    ForEach(SettingsStore.selfTimerDelays, id: \.self) { seconds in
+                        Text("\(seconds) seconds", bundle: .module).tag(seconds)
+                    }
+                } label: {
+                    Text("Self-Timer delay", bundle: .module)
+                    Text("Time to open a menu or hover over something before the capture is taken.", bundle: .module)
+                }
+            } header: {
+                Text("Before capturing", bundle: .module)
             }
             Section {
                 Toggle(isOn: $settings.copyAfterCapture) {
@@ -110,25 +195,39 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
                 }
             }
-            Section {
-                Picker(selection: retentionSelection(settings: settings, expiredCount: expiredCount, request: $retentionRequest)) {
-                    ForEach(HistoryRetention.allCases, id: \.self) { retention in
-                        Text(retention.title).tag(retention)
-                    }
-                } label: {
-                    Text("Keep captures for", bundle: .module)
-                    Text(retentionDescription)
-                }
-                LabeledContent {
-                    Button(action: openHistory) {
-                        Text("Open Capture History…", bundle: .module)
-                    }
-                } label: {
-                    EmptyView()
-                }
-            } header: {
-                Text("Capture History", bundle: .module)
-            }
+        }
+        .settingsPane()
+    }
+}
+
+extension CaptureSettingsView {
+    fileprivate var exportPath: String {
+        var path = settings.exportDirectory.path(percentEncoded: false)
+        if path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        let home = NSHomeDirectory()
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+    }
+
+    fileprivate func chooseExportDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = settings.exportDirectory
+        panel.prompt = String(localized: "Choose", bundle: .module)
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.exportDirectory = url
+        }
+    }
+}
+
+struct ToolsSettingsView: View {
+    @Bindable var settings: SettingsStore
+    @State private var translationTargets: [Locale.Language] = []
+
+    var body: some View {
+        Form {
             Section {
                 Toggle(isOn: $settings.showTextResult) {
                     Text("Show a preview after copying", bundle: .module)
@@ -159,21 +258,6 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
-                Toggle(isOn: $settings.freezeScreen) {
-                    Text("Freeze the screen while selecting", bundle: .module)
-                    Text("Keeps hover states and open menus in place until the capture is taken.", bundle: .module)
-                }
-                Picker(selection: $settings.selfTimerDelay) {
-                    ForEach(SettingsStore.selfTimerDelays, id: \.self) { seconds in
-                        Text("\(seconds) seconds", bundle: .module).tag(seconds)
-                    }
-                } label: {
-                    Text("Self-Timer delay", bundle: .module)
-                    Text("Time to open a menu or hover over something before the capture is taken.", bundle: .module)
-                }
-                Toggle(isOn: $settings.playSounds) {
-                    Text("Play sounds", bundle: .module)
-                }
                 Picker(selection: $settings.colorFormat) {
                     ForEach(ColorFormat.allCases, id: \.self) { format in
                         Text(verbatim: format.title).tag(format)
@@ -189,6 +273,8 @@ struct GeneralSettingsView: View {
                     Text("Measure in", bundle: .module)
                     Text("Tab switches between them while measuring.", bundle: .module)
                 }
+            } header: {
+                Text("Pick Color and Measure", bundle: .module)
             }
             Section {
                 LabeledContent {
@@ -223,49 +309,15 @@ struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(width: formWidth)
-        .fixedSize(horizontal: false, vertical: true)
-        .confirmingRetentionChange($retentionRequest) { retention in
-            settings.historyRetention = retention
-        }
+        .settingsPane()
     }
-}
 
-extension GeneralSettingsView {
     /// The languages to translate into, by identifier; the chosen one even before the list has loaded.
-    fileprivate var translationOptions: [String] {
+    private var translationOptions: [String] {
         var options = translationTargets.map(Translator.identifier(of:))
         let choice = settings.translationTarget
         if !choice.isEmpty, !options.contains(choice) { options.insert(choice, at: 0) }
         return options
-    }
-
-    fileprivate var retentionDescription: String {
-        settings.historyRetention == .never
-            ? String(localized: "Captures are deleted when their Quick Access card closes, unless you saved them.", bundle: .module)
-            : String(localized: "Captures stay on this Mac until then, ready to restore to Quick Access. Choosing a shorter time, or Never, deletes older captures right away.", bundle: .module)
-    }
-
-    fileprivate var exportPath: String {
-        var path = settings.exportDirectory.path(percentEncoded: false)
-        if path.count > 1, path.hasSuffix("/") { path.removeLast() }
-        let home = NSHomeDirectory()
-        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
-    }
-
-    fileprivate func chooseExportDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = settings.exportDirectory
-        panel.prompt = String(localized: "Choose", bundle: .module)
-        if panel.runModal() == .OK, let url = panel.url {
-            settings.exportDirectory = url
-        }
     }
 }
 
@@ -289,10 +341,7 @@ struct ShortcutsSettingsView: View {
                 }
             }
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(width: formWidth)
-        .fixedSize(horizontal: false, vertical: true)
+        .settingsPane()
     }
 }
 
@@ -324,10 +373,7 @@ struct PermissionsSettingsView: View {
                 Text("Asked for when a feature first needs it", bundle: .module)
             }
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(width: formWidth)
-        .fixedSize(horizontal: false, vertical: true)
+        .settingsPane()
         .onAppear {
             permissions.refresh()
         }
@@ -435,10 +481,7 @@ struct AutomationSettingsView: View {
                 Text("Approved apps", bundle: .module)
             }
         }
-        .formStyle(.grouped)
-        .scrollDisabled(true)
-        .frame(width: formWidth)
-        .fixedSize(horizontal: false, vertical: true)
+        .settingsPane()
     }
 
     /// The app's name for a bundle identifier.
