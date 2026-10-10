@@ -42,9 +42,10 @@ struct DebugHooks {
 
     /// Where `snapshot` writes window captures.
     static let snapshotDirectory = URL.cachesDirectory.appending(path: "\(Log.subsystem)/debug-snapshots", directoryHint: .isDirectory)
-    /// The real reader for redaction suggestions, while redact-slow stands in for it.
-    private static var unslowedFindRedactions: (@Sendable (CGImage) async -> [RedactionSuggestion])?
-    private static var unslowedFindTextLines: (@Sendable (CGImage) async -> [TextLine])?
+    /// The real reader of a capture's text, while redact-slow or textlines-slow stands in for it.
+    private static var unslowedReadText: (@Sendable (CGImage) -> CaptureReading)?
+    /// How many seconds longer the redaction suggestions and the highlighter's lines take to read.
+    private static var readingDelays = (redactions: 0, textLines: 0)
 
     func handle(_ url: URL) {
         let hook = url.pathComponents.dropFirst().first ?? ""
@@ -397,48 +398,42 @@ struct DebugHooks {
         case "redact-slow":
             // Reads for redaction suggestions take seconds= longer (0 puts them back), so the capsule's
             // finding state can be captured.
-            if Self.unslowedFindRedactions == nil { Self.unslowedFindRedactions = AnnotationSession.findRedactions }
-            let seconds = Self.intParameter("seconds", in: url) ?? 3
-            let original = Self.unslowedFindRedactions
-            if seconds == 0 {
-                AnnotationSession.findRedactions = original
-            } else {
-                AnnotationSession.findRedactions = { @Sendable image in
-                    try? await Task.sleep(for: .seconds(seconds))
-                    return await original?(image) ?? []
-                }
-            }
-            Log.app.notice("debug.redact-slow \(seconds, privacy: .public) s")
+            Self.readingDelays.redactions = Self.intParameter("seconds", in: url) ?? 3
+            Self.slowReadings()
+            Log.app.notice("debug.redact-slow \(Self.readingDelays.redactions, privacy: .public) s")
         case "textlines-slow":
             // Reads for the highlighter's lines of text take seconds= longer (0 puts them back), so the
             // capsule's finding state can be captured.
-            if Self.unslowedFindTextLines == nil { Self.unslowedFindTextLines = AnnotationSession.findTextLines }
-            let seconds = Self.intParameter("seconds", in: url) ?? 3
-            let original = Self.unslowedFindTextLines
-            if seconds == 0 {
-                AnnotationSession.findTextLines = original
-            } else {
-                AnnotationSession.findTextLines = { @Sendable image in
-                    try? await Task.sleep(for: .seconds(seconds))
-                    return await original?(image) ?? []
-                }
-            }
-            Log.app.notice("debug.textlines-slow \(seconds, privacy: .public) s")
+            Self.readingDelays.textLines = Self.intParameter("seconds", in: url) ?? 3
+            Self.slowReadings()
+            Log.app.notice("debug.textlines-slow \(Self.readingDelays.textLines, privacy: .public) s")
         case "redact-scan":
             // Reads the drawn demo page for redaction suggestions and logs them; nothing is shown.
-            if let image = DebugPanelDemo.image(), let find = AnnotationSession.findRedactions {
+            if let image = DebugPanelDemo.image(), let read = AnnotationSession.readText {
                 Task {
-                    let found = await find(image).map { "\($0.label)@\(NSStringFromRect($0.rect))" }
+                    let found = await read(image).redactionSuggestions().map { "\($0.label)@\(NSStringFromRect($0.rect))" }
                     Log.app.notice("debug.redact-scan \(found.joined(separator: "; "), privacy: .public)")
                 }
             }
         case "textlines-scan":
             // Reads the drawn demo page for the lines the highlighter snaps to and logs where they lie (each
             // line's rect and word count); nothing is shown.
-            if let image = DebugPanelDemo.image(), let find = AnnotationSession.findTextLines {
+            if let image = DebugPanelDemo.image(), let read = AnnotationSession.readText {
                 Task {
-                    let found = await find(image).map { "\(NSStringFromRect($0.rect))/\($0.words.count)" }
+                    let found = await read(image).textLines().map { "\(NSStringFromRect($0.rect))/\($0.words.count)" }
                     Log.app.notice("debug.textlines-scan \(found.count, privacy: .public): \(found.joined(separator: "; "), privacy: .public)")
+                }
+            }
+        case "reading-scan":
+            // Reads the drawn demo page for both tools from one reading, as an editor does when both are
+            // used: the redaction suggestions, then the lines, each with its latency probe. The lines come
+            // from the Chinese reading the suggestions made, so theirs is the fitting alone. Logs counts.
+            if let image = DebugPanelDemo.image(), let read = AnnotationSession.readText {
+                Task {
+                    let reading = read(image)
+                    let suggestions = await reading.redactionSuggestions().count
+                    let lines = await reading.textLines().count
+                    Log.app.notice("debug.reading-scan suggestions=\(suggestions, privacy: .public) lines=\(lines, privacy: .public)")
                 }
             }
         case "qa-demo":
@@ -1062,6 +1057,31 @@ struct DebugHooks {
     private func waitForOverlayFrames() async {
         for _ in 0..<40 where overlay.isActive && !overlay.hasFrames {
             try? await Task.sleep(for: .milliseconds(25))
+        }
+    }
+
+    /// Makes the tools' readings take `readingDelays` longer, the real reading still under them, or puts
+    /// the real one back when neither is slowed.
+    private static func slowReadings() {
+        if unslowedReadText == nil { unslowedReadText = AnnotationSession.readText }
+        let original = unslowedReadText
+        let delays = readingDelays
+        guard delays != (0, 0) else {
+            AnnotationSession.readText = original
+            return
+        }
+        AnnotationSession.readText = { @Sendable image in
+            let reading = original?(image) ?? CaptureReading()
+            return CaptureReading(
+                redactionSuggestions: {
+                    try? await Task.sleep(for: .seconds(delays.redactions))
+                    return await reading.redactionSuggestions()
+                },
+                textLines: {
+                    try? await Task.sleep(for: .seconds(delays.textLines))
+                    return await reading.textLines()
+                }
+            )
         }
     }
 

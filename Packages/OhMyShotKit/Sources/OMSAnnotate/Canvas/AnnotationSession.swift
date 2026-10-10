@@ -23,12 +23,10 @@ public final class AnnotationSession {
         case textLines
     }
 
-    /// Finds what in a capture is better covered, for the redaction tool's suggestions; set once by the app,
-    /// which reads text. Nil leaves the tool without suggestions.
-    public static var findRedactions: (@Sendable (CGImage) async -> [RedactionSuggestion])?
-    /// Finds the lines of text in a capture, for the highlighter to snap to; set once by the app, which reads
-    /// text. Nil leaves the highlighter drawing freely.
-    public static var findTextLines: (@Sendable (CGImage) async -> [TextLine])?
+    /// Reads a capture's text for the tools that use it: what the redaction tool suggests covering, and the
+    /// lines the highlighter snaps to. Set once by the app, which reads text. Nil leaves the redaction tool
+    /// without suggestions and the highlighter drawing freely.
+    public static var readText: (@Sendable (CGImage) -> CaptureReading)?
 
     /// The capture, as it was taken.
     public let base: CGImage
@@ -69,6 +67,12 @@ public final class AnnotationSession {
     /// describes a picture that is gone.
     @ObservationIgnored private var redactionsReadOver: [Annotation]?
     @ObservationIgnored private var textLinesReadOver: [Annotation]?
+    /// The capture's text as the tools read it, one reading for both: the part of the picture it looks at,
+    /// in the document, and the combined images it saw.
+    @ObservationIgnored private var reading: (text: CaptureReading, region: CGRect, images: [Annotation])?
+    /// Reads this session's capture in place of `readText`, so tests running side by side each read their
+    /// own way.
+    @ObservationIgnored var textReader: (@Sendable (CGImage) -> CaptureReading)?
 
     @ObservationIgnored public let undoManager = UndoManager()
     @ObservationIgnored private var settings: [AnnotationTool: ToolSettings]
@@ -335,21 +339,39 @@ public final class AnnotationSession {
         return (part, region.origin)
     }
 
+    /// The reading of the capture's text the tools share: the one begun for either of them, while the
+    /// combined images are as it saw them and it looks at all the canvas shows; else a new one.
+    private func sharedReading() -> (text: CaptureReading, origin: CGPoint)? {
+        guard let read = textReader ?? Self.readText else { return nil }
+        let images = self.images
+        let source = redactionSource ?? (base, .zero)
+        let shown = document.canvas.standardized.intersection(
+            CGRect(origin: source.origin, size: CGSize(width: source.image.width, height: source.image.height))
+        )
+        if let reading, reading.images == images, reading.region.contains(shown) {
+            return (reading.text, reading.region.origin)
+        }
+        let part = readingSource
+        let text = read(part.image)
+        reading = (text, CGRect(origin: part.origin, size: CGSize(width: part.image.width, height: part.image.height)), images)
+        return (text, part.origin)
+    }
+
     // MARK: Redaction suggestions
 
     /// Reads the capture for redaction suggestions, once per session: the first time the redaction tool is
-    /// in hand, so nothing is read for an editor that never covers anything.
+    /// in hand, so nothing is read for an editor that never covers anything. The reading is the one the
+    /// highlighter's lines come from, so what both need is read once.
     public func findRedactionsIfNeeded() {
-        guard !hasLookedForRedactions, let find = Self.findRedactions else { return }
+        guard !hasLookedForRedactions, let reading = sharedReading() else { return }
         hasLookedForRedactions = true
-        let source = readingSource
         redactionsReadOver = images
         isFindingRedactions = true
         notify(.suggestions)
         findTask = Task { [weak self] in
-            let found = await find(source.image)
+            let found = await reading.text.redactionSuggestions()
             guard let self, !Task.isCancelled else { return }
-            redactionSuggestions = found.map { RedactionSuggestion(rect: $0.rect.offsetBy(dx: source.origin.x, dy: source.origin.y), label: $0.label) }
+            redactionSuggestions = found.map { RedactionSuggestion(rect: $0.rect.offsetBy(dx: reading.origin.x, dy: reading.origin.y), label: $0.label) }
             isFindingRedactions = false
             findTask = nil
             notify(.suggestions)
@@ -390,6 +412,7 @@ public final class AnnotationSession {
     /// for the tool in hand.
     private func forgetReadingsOfChangedImages() {
         let images = self.images
+        if let reading, reading.images != images { self.reading = nil }
         if let read = redactionsReadOver, read != images {
             forgetRedactions()
             if tool == .redact { findRedactionsIfNeeded() } else { notify(.suggestions) }
@@ -465,19 +488,19 @@ public final class AnnotationSession {
     // MARK: Text lines
 
     /// Reads the capture for its lines of text, once per session: the first time the highlighter is in
-    /// hand, so nothing is read for an editor that never highlights. A stroke drawn before they come in is
-    /// drawn freely.
+    /// hand, so nothing is read for an editor that never highlights. The reading is the one the redaction
+    /// suggestions come from, so what both need is read once. A stroke drawn before they come in is drawn
+    /// freely.
     public func findTextLinesIfNeeded() {
-        guard !hasLookedForTextLines, let find = Self.findTextLines else { return }
+        guard !hasLookedForTextLines, let reading = sharedReading() else { return }
         hasLookedForTextLines = true
-        let source = readingSource
         textLinesReadOver = images
         isFindingTextLines = true
         notify(.textLines)
         textLinesTask = Task { [weak self] in
-            let found = await find(source.image)
+            let found = await reading.text.textLines()
             guard let self, !Task.isCancelled else { return }
-            textLines = found.filter { !$0.words.isEmpty }.map { $0.offsetBy(dx: source.origin.x, dy: source.origin.y) }
+            textLines = found.filter { !$0.words.isEmpty }.map { $0.offsetBy(dx: reading.origin.x, dy: reading.origin.y) }
             isFindingTextLines = false
             textLinesTask = nil
             notify(.textLines)

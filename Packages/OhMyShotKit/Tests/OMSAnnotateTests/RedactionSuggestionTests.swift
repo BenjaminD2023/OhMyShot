@@ -14,11 +14,6 @@ struct RedactionSuggestionTests {
     /// each read takes `delay`.
     private func makeSession(reads: ReadCounter, delay: Duration = .zero) -> AnnotationSession {
         let found = [Self.email, Self.phone]
-        AnnotationSession.findRedactions = { _ in
-            await reads.increment()
-            if delay > .zero { try? await Task.sleep(for: delay) }
-            return found
-        }
         let context = CGContext(
             data: nil, width: 400, height: 200, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
@@ -27,6 +22,13 @@ struct RedactionSuggestionTests {
         context.fill(CGRect(x: 0, y: 0, width: 400, height: 200))
         let session = AnnotationSession(image: context.makeImage()!, scale: 1, tool: .arrow)
         session.undoManager.groupsByEvent = false
+        session.textReader = { _ in
+            CaptureReading(redactionSuggestions: {
+                await reads.increment()
+                if delay > .zero { try? await Task.sleep(for: delay) }
+                return found
+            })
+        }
         return session
     }
 
@@ -57,7 +59,6 @@ struct RedactionSuggestionTests {
     @Test func theCaptureIsReadOnceTheRedactionToolIsInHand() async {
         let reads = ReadCounter()
         let session = makeSession(reads: reads)
-        defer { AnnotationSession.findRedactions = nil }
         #expect(session.redactionSuggestions.isEmpty)
         session.tool = .redact
         await waitForSuggestions(session)
@@ -70,7 +71,6 @@ struct RedactionSuggestionTests {
 
     @Test func aClickCoversOneAndUndoBringsItBack() async {
         let session = makeSession(reads: ReadCounter())
-        defer { AnnotationSession.findRedactions = nil }
         session.tool = .redact
         await waitForSuggestions(session)
         step(session) { #expect(session.acceptRedactionSuggestion(at: CGPoint(x: 150, y: 35))) }
@@ -91,7 +91,6 @@ struct RedactionSuggestionTests {
 
     @Test func redactAllIsOneStep() async {
         let session = makeSession(reads: ReadCounter())
-        defer { AnnotationSession.findRedactions = nil }
         session.tool = .redact
         await waitForSuggestions(session)
         step(session) { session.acceptAllRedactionSuggestions() }
@@ -104,7 +103,6 @@ struct RedactionSuggestionTests {
 
     @Test func aSuggestionCoveredByHandIsNotOffered() async {
         let session = makeSession(reads: ReadCounter())
-        defer { AnnotationSession.findRedactions = nil }
         session.tool = .redact
         await waitForSuggestions(session)
         step(session) {
@@ -117,7 +115,6 @@ struct RedactionSuggestionTests {
 
     @Test func aSuggestionCroppedAwayIsNotOffered() async {
         let session = makeSession(reads: ReadCounter())
-        defer { AnnotationSession.findRedactions = nil }
         session.tool = .redact
         await waitForSuggestions(session)
         step(session) {
@@ -135,7 +132,6 @@ struct RedactionSuggestionTests {
 extension RedactionSuggestionTests {
     @Test func aSuggestionPartlyCroppedIsCoveredOnlyWithinTheCrop() async {
         let session = makeSession(reads: ReadCounter())
-        defer { AnnotationSession.findRedactions = nil }
         session.tool = .redact
         await waitForSuggestions(session)
         step(session) {
@@ -156,7 +152,6 @@ extension RedactionSuggestionTests {
     @Test func aReadingDroppedMidwayReadsAgainTheNextTime() async {
         let reads = ReadCounter()
         let session = makeSession(reads: reads, delay: .milliseconds(150))
-        defer { AnnotationSession.findRedactions = nil }
         session.tool = .redact
         #expect(session.isFindingRedactions)
         session.cancelReading()
@@ -173,7 +168,6 @@ extension RedactionSuggestionTests {
 
     @Test func aCanvasLeavingItsWindowDropsTheReading() async {
         let session = makeSession(reads: ReadCounter(), delay: .milliseconds(150))
-        defer { AnnotationSession.findRedactions = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .redact
@@ -184,7 +178,6 @@ extension RedactionSuggestionTests {
 
     @Test func aSuggestionsHelpTagNamesItsKindAndWhatAClickDoes() async {
         let session = makeSession(reads: ReadCounter())
-        defer { AnnotationSession.findRedactions = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .redact
@@ -197,7 +190,6 @@ extension RedactionSuggestionTests {
 
     @Test func voiceOverFindsEachSuggestionAsAButtonThatCoversIt() async throws {
         let session = makeSession(reads: ReadCounter())
-        defer { AnnotationSession.findRedactions = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .redact

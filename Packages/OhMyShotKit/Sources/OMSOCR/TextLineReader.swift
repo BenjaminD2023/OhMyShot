@@ -3,8 +3,8 @@ import Foundation
 import Vision
 
 /// Where the lines of text in a picture lie, and the words in them, for the highlighter to snap to. It reads
-/// with the Chinese model, which places English as well as Chinese; only where the text lies is kept,
-/// never what it says. All of it stays on this Mac.
+/// with the Chinese model, which places English as well as Chinese, the reading the redaction suggestions
+/// use too; only where the text lies is kept, never what it says. All of it stays on this Mac.
 public struct TextLineReader: Sendable {
     /// A line of text, in the picture's pixels with the origin at the top left.
     public struct Line: Sendable, Equatable {
@@ -35,30 +35,25 @@ public struct TextLineReader: Sendable {
         var words: [ClosedRange<CGFloat>]
     }
 
-    /// A model's first use can take seconds.
-    public var timeout: Duration = .seconds(20)
-
     public init() {}
 
     public func read(_ image: CGImage) async throws -> [Line] {
-        Self.lines(try await placed(in: image), in: image)
+        try await read(TextRecognition(image))
+    }
+
+    /// The lines `recognition` reads: a reading it has made already, or is making for something else, is not
+    /// made again. Fitting them to the ink takes a moment, off the main thread.
+    @concurrent
+    public func read(_ recognition: TextRecognition) async throws -> [Line] {
+        let placed = try await placed(in: recognition)
+        try Task.checkCancellation()
+        return Self.lines(placed, in: recognition.image)
     }
 
     /// The lines as Vision places them.
-    func placed(in image: CGImage) async throws -> [Placed] {
-        var request = RecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        // Correction changes nothing about where the text is, and costs time.
-        request.usesLanguageCorrection = false
-        request.recognitionLanguages = [Locale.Language(identifier: "zh-Hans"), Locale.Language(identifier: "en-US")]
-        let configured = request
-        let timeout = timeout
-        let observations = try await RecognitionSlots.shared.run {
-            // Not started for a reading no longer wanted (one that waited for a slot).
-            try Task.checkCancellation()
-            return try await withTimeout(timeout) { try await configured.perform(on: image) }
-        }
-        try Task.checkCancellation()
+    func placed(in recognition: TextRecognition) async throws -> [Placed] {
+        let observations = try await recognition.lines(by: .chinese)
+        let image = recognition.image
         let size = CGSize(width: image.width, height: image.height)
         var placed: [Placed] = []
         for observation in observations {

@@ -267,6 +267,24 @@ Translation runs on the system's on-device models (the Translation framework): `
 
 On the ten real screenshots (2000–4112 px wide; Chinese pages translated into English, English pages into Chinese, as Automatic chose): 3–53 units translated per page, no spurious download prompt, a terminal and a code editor left alone apart from their prose (3–6 units), 0–15 units shortened per page; translating took 0.1–0.7 s and drawing 0.02–0.6 s. Still open: short labels translated alone keep the wrong sense when a page has no other short text to batch them with; Chinese into English roughly doubles the length, so dense interfaces shrink and shorten; a flat background patch shows on photos and gradients; vertical text is left as it is.
 
+## Annotation readings (`TextRecognition`, 2026-10-10)
+
+The redaction suggestions (`SensitiveTextScanner`) and the lines the highlighter snaps to
+(`TextLineReader`) read the capture with the same accurate request: `[zh-Hans, en-US]`, language
+correction off. The suggestions also read it with `[en-US]` alone. One `TextRecognition` per capture
+serves both, so the Chinese reading is made once (`SharedWork`): whoever asks first starts it, later
+askers wait for the same run or take what it kept, a failed run is forgotten so the next ask makes it
+again, and a run nobody waits for any more is cancelled (one still waiting for a `RecognitionSlots`
+slot never starts; one already inside Vision runs to its end or the timeout, as before). The editor's
+session keeps one reading for both tools while the combined images and the canvas allow
+(`AnnotationSession.sharedReading`).
+
+On the drawn demo page (Debug build, `debug/reading-scan`): suggestions 320–360 ms, then the lines
+61 ms (the ink fitting alone) instead of 400 ms read on their own; lines first, then the suggestions
+in 144 ms (the Latin reading alone). Both entry points are `@concurrent`: called from the session's
+main-actor task through the app's closures, the ink fitting (50–300 ms on the real screenshots) used to
+run on the main thread.
+
 ## L2 runtime (spike, 2026-10-09)
 
 The plan's L2 is a model pack for what Vision reads poorly: Chinese-heavy interfaces, vertical text, low

@@ -46,21 +46,27 @@ final class CompositionRoot {
     }
 
     func start() {
-        // The redaction tool's suggestions: what reading finds better covered, read on this Mac.
-        AnnotationSession.findRedactions = { image in
-            let probe = LatencyProbe("annotate.redactions")
-            let found = (try? await SensitiveTextScanner().scan(image)) ?? []
-            probe.end()
-            Log.app.notice("Redaction suggestions: \(found.count, privacy: .public) found")
-            return found.map { RedactionSuggestion(rect: $0.box, label: Self.label(for: $0.kind)) }
-        }
-        // The lines of text the highlighter snaps to: where they lie, never what they say.
-        AnnotationSession.findTextLines = { image in
-            let probe = LatencyProbe("annotate.textlines")
-            let lines = (try? await TextLineReader().read(image)) ?? []
-            probe.end()
-            Log.app.notice("Text lines: \(lines.count, privacy: .public) found")
-            return lines.map { TextLine(rect: $0.box, words: $0.words) }
+        // A capture's text, read on this Mac for the annotation tools, one reading for both: the redaction
+        // tool's suggestions, what reading finds better covered, and the lines of text the highlighter snaps
+        // to, where they lie, never what they say.
+        AnnotationSession.readText = { image in
+            let recognition = TextRecognition(image)
+            return CaptureReading(
+                redactionSuggestions: {
+                    let probe = LatencyProbe("annotate.redactions")
+                    let found = (try? await SensitiveTextScanner().scan(recognition)) ?? []
+                    probe.end()
+                    Log.app.notice("Redaction suggestions: \(found.count, privacy: .public) found")
+                    return found.map { RedactionSuggestion(rect: $0.box, label: Self.label(for: $0.kind)) }
+                },
+                textLines: {
+                    let probe = LatencyProbe("annotate.textlines")
+                    let lines = (try? await TextLineReader().read(recognition)) ?? []
+                    probe.end()
+                    Log.app.notice("Text lines: \(lines.count, privacy: .public) found")
+                    return lines.map { TextLine(rect: $0.box, words: $0.words) }
+                }
+            )
         }
         let statusItem = StatusItemController(
             captureEntries: [

@@ -4,17 +4,22 @@ import Vision
 
 /// Finds sensitive text in a picture, for redaction suggestions. It reads the picture twice at once: with
 /// the Latin model, which reads email addresses, keys, and numbers most faithfully, and with the Chinese
-/// one, for names and addresses written in Chinese. Each match gets its own box from Vision, so covering
-/// it leaves the rest of its line readable. All of it stays on this Mac.
+/// one, for names and addresses written in Chinese, the reading the highlighter's lines are found in too.
+/// Each match gets its own box from Vision, so covering it leaves the rest of its line readable. All of it
+/// stays on this Mac.
 public struct SensitiveTextScanner: Sendable {
-    /// A model's first use can take seconds.
-    public var timeout: Duration = .seconds(20)
-
     public init() {}
 
     public func scan(_ image: CGImage) async throws -> [SensitiveText] {
-        async let latin = try? read(image, languages: [Locale.Language(identifier: "en-US")])
-        async let chinese = try? read(image, languages: [Locale.Language(identifier: "zh-Hans"), Locale.Language(identifier: "en-US")])
+        try await scan(TextRecognition(image))
+    }
+
+    /// Scans what `recognition` reads: a reading it has made already, or is making for something else, is
+    /// not made again.
+    @concurrent
+    public func scan(_ recognition: TextRecognition) async throws -> [SensitiveText] {
+        async let latin = try? find(in: recognition, by: .latin)
+        async let chinese = try? find(in: recognition, by: .chinese)
         // One reading failing (a model's first use running past the timeout) still leaves the other's.
         let (latinFound, chineseFound) = await (latin, chinese)
         try Task.checkCancellation()
@@ -28,19 +33,9 @@ public struct SensitiveTextScanner: Sendable {
         merged(latin.filter { $0.kind != .name && $0.kind != .address } + chinese)
     }
 
-    private func read(_ image: CGImage, languages: [Locale.Language]) async throws -> [SensitiveText] {
-        var request = RecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        // Correction would "fix" keys and addresses into words.
-        request.usesLanguageCorrection = false
-        request.recognitionLanguages = languages
-        let configured = request
-        let timeout = timeout
-        let observations = try await RecognitionSlots.shared.run {
-            // Not started for a reading no longer wanted (one that waited for a slot).
-            try Task.checkCancellation()
-            return try await withTimeout(timeout) { try await configured.perform(on: image) }
-        }
+    private func find(in recognition: TextRecognition, by model: TextRecognition.Model) async throws -> [SensitiveText] {
+        let observations = try await recognition.lines(by: model)
+        let image = recognition.image
         let size = CGSize(width: image.width, height: image.height)
         var found: [SensitiveText] = []
         for observation in observations {

@@ -93,11 +93,6 @@ struct TextSnappingTests {
 struct TextHighlightCanvasTests {
     /// A session whose capture reads as holding `found`, counting each read; each read takes `delay`.
     private func makeSession(reads: ReadCounter = ReadCounter(), delay: Duration = .zero, found: [TextLine] = lines) -> AnnotationSession {
-        AnnotationSession.findTextLines = { _ in
-            await reads.increment()
-            if delay > .zero { try? await Task.sleep(for: delay) }
-            return found
-        }
         let context = CGContext(
             data: nil, width: 600, height: 300, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
@@ -106,6 +101,13 @@ struct TextHighlightCanvasTests {
         context.fill(CGRect(x: 0, y: 0, width: 600, height: 300))
         let session = AnnotationSession(image: context.makeImage()!, scale: 1, tool: .arrow)
         session.undoManager.groupsByEvent = false
+        session.textReader = { _ in
+            CaptureReading(textLines: {
+                await reads.increment()
+                if delay > .zero { try? await Task.sleep(for: delay) }
+                return found
+            })
+        }
         return session
     }
 
@@ -146,7 +148,6 @@ struct TextHighlightCanvasTests {
     @Test func theCaptureIsReadOnceTheHighlighterIsInHand() async {
         let reads = ReadCounter()
         let session = makeSession(reads: reads)
-        defer { AnnotationSession.findTextLines = nil }
         #expect(!session.isReadingForTool)
         session.tool = .highlighter
         #expect(session.isReadingForTool)
@@ -162,7 +163,6 @@ struct TextHighlightCanvasTests {
     @Test func aReadingDroppedMidwayReadsAgainTheNextTime() async {
         let reads = ReadCounter()
         let session = makeSession(reads: reads, delay: .milliseconds(150))
-        defer { AnnotationSession.findTextLines = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .highlighter
@@ -180,7 +180,6 @@ struct TextHighlightCanvasTests {
 
     @Test func aDragOnTextSnapsToIt() async throws {
         let session = makeSession()
-        defer { AnnotationSession.findTextLines = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .highlighter
@@ -198,7 +197,6 @@ struct TextHighlightCanvasTests {
 
     @Test func aWordHighlightedTwiceIsHighlightedOnce() async {
         let session = makeSession()
-        defer { AnnotationSession.findTextLines = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .highlighter
@@ -214,7 +212,6 @@ struct TextHighlightCanvasTests {
 
     @Test func highlightingOverAHighlightExtendsIt() async throws {
         let session = makeSession()
-        defer { AnnotationSession.findTextLines = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .highlighter
@@ -243,7 +240,6 @@ struct TextHighlightCanvasTests {
 
     @Test func highlightsJoinedAcrossAMarkKeepTheUppermostPlace() async throws {
         let session = makeSession()
-        defer { AnnotationSession.findTextLines = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .highlighter
@@ -268,7 +264,6 @@ struct TextHighlightCanvasTests {
     @Test func aPictureCombinedAfterReadingIsReadAgain() async {
         let reads = ReadCounter()
         let session = makeSession(reads: reads)
-        defer { AnnotationSession.findTextLines = nil }
         session.tool = .highlighter
         await waitForLines(session)
         var document = session.document
@@ -292,7 +287,6 @@ struct TextHighlightCanvasTests {
             TextLine(rect: CGRect(x: 100, y: 136, width: 300, height: 30), words: [100...200, 215...400]),
         ]
         let session = makeSession(found: tight)
-        defer { AnnotationSession.findTextLines = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .highlighter
@@ -313,7 +307,6 @@ struct TextHighlightCanvasTests {
 
     @Test func offTextOrWithCommandItDrawsFreely() async {
         let session = makeSession()
-        defer { AnnotationSession.findTextLines = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .highlighter
@@ -327,7 +320,6 @@ struct TextHighlightCanvasTests {
 
     @Test func commandFreesTheStrokeMidDrag() async throws {
         let session = makeSession()
-        defer { AnnotationSession.findTextLines = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .highlighter
@@ -356,7 +348,6 @@ struct TextHighlightCanvasTests {
 
     @Test func aStrokeBeforeTheLinesComeInIsDrawnFreely() async {
         let session = makeSession(delay: .milliseconds(200))
-        defer { AnnotationSession.findTextLines = nil }
         let (canvas, window) = makeCanvas(session)
         defer { window.close() }
         session.tool = .highlighter
@@ -414,8 +405,6 @@ extension TextHighlightCanvasTests {
     @Test func theHighlighterSnapsInPlaceToo() async throws {
         // A line inside the selection (80, 40, 100, 60) pt of a 400 × 300 pt display at 2×, in its pixels.
         let line = TextLine(rect: CGRect(x: 170, y: 100, width: 160, height: 24), words: [170...220, 232...280, 292...330])
-        AnnotationSession.findTextLines = { _ in [line] }
-        defer { AnnotationSession.findTextLines = nil }
         let context = CGContext(
             data: nil, width: 800, height: 600, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
@@ -432,6 +421,7 @@ extension TextHighlightCanvasTests {
         annotator.frame = window.contentView!.bounds
         window.contentView!.addSubview(annotator)
         annotator.layoutSubtreeIfNeeded()
+        annotator.session.textReader = { _ in CaptureReading(textLines: { [line] }) }
         annotator.session.tool = .highlighter
         for _ in 0..<100 where annotator.session.textLines.isEmpty {
             try? await Task.sleep(for: .milliseconds(10))
@@ -452,16 +442,17 @@ extension TextHighlightCanvasTests {
         // A 2000 × 1000 display with a 200 × 100 selection, as in place: read are the selection and 160 px
         // around it, and what is found there lands where it is in the whole picture.
         let sizes = SizeRecorder()
-        AnnotationSession.findTextLines = { image in
-            await sizes.record(CGSize(width: image.width, height: image.height))
-            return [TextLine(rect: CGRect(x: 170, y: 170, width: 100, height: 20), words: [170...270])]
-        }
-        defer { AnnotationSession.findTextLines = nil }
         let context = CGContext(
             data: nil, width: 2000, height: 1000, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )!
         let session = AnnotationSession(image: context.makeImage()!, scale: 2, tool: .arrow)
+        session.textReader = { image in
+            CaptureReading(textLines: {
+                await sizes.record(CGSize(width: image.width, height: image.height))
+                return [TextLine(rect: CGRect(x: 170, y: 170, width: 100, height: 20), words: [170...270])]
+            })
+        }
         var document = session.document
         document.canvas = CGRect(x: 1000, y: 500, width: 200, height: 100)
         session.commit(document, actionName: "Crop")
