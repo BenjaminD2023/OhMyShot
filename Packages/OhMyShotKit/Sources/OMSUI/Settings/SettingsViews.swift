@@ -5,29 +5,36 @@ import OMSCore
 import OMSOCR
 import SwiftUI
 
-private let formWidth: CGFloat = 520
+private let paneWidth: CGFloat = 520
 
-extension View {
-    /// A settings pane: a grouped form as tall as its content, so the window fits each tab. A pane taller
-    /// than the screen allows stops at that height and scrolls.
-    fileprivate func settingsPane() -> some View {
-        modifier(SettingsPane())
-    }
-}
-
-private struct SettingsPane: ViewModifier {
+/// A settings pane in the classic two-column layout: short labels right-aligned in the first column,
+/// controls in the second, and groups split by dividers. Explanations wait behind a help button rather
+/// than sitting under every row. The pane is as tall as its content, so the window fits each tab; a
+/// pane taller than the screen allows stops at that height and scrolls.
+private struct SettingsPane<Rows: View>: View {
+    /// How a row's label lines up with its controls: on the first line of text by default, or centered
+    /// for controls without text, such as shortcut recorders.
+    var alignment: Alignment = .leadingFirstTextBaseline
+    var spacing: CGFloat = 12
+    @ViewBuilder var rows: Rows
     @State private var contentHeight: CGFloat?
 
-    func body(content: Content) -> some View {
-        content
-            .formStyle(.grouped)
-            .scrollBounceBehavior(.basedOnSize)
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom
-            } action: { _, height in
-                contentHeight = height.rounded(.up)
+    var body: some View {
+        ScrollView {
+            Grid(alignment: alignment, horizontalSpacing: 10, verticalSpacing: spacing) {
+                rows
             }
-            .frame(width: formWidth, height: contentHeight.map { min($0, Self.maxHeight) })
+            .padding(.horizontal, 24)
+            .padding(.vertical, 22)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom
+        } action: { _, height in
+            contentHeight = height.rounded(.up)
+        }
+        .frame(width: paneWidth, height: contentHeight.map { min($0, Self.maxHeight) })
     }
 
     /// The screen's height less the window's title bar and toolbar, and a margin.
@@ -36,171 +43,219 @@ private struct SettingsPane: ViewModifier {
     }
 }
 
+/// A row of a settings pane: its label right-aligned in the first column, its controls in the second.
+private struct SettingsRow<Content: View>: View {
+    let label: Text?
+    @ViewBuilder var content: Content
+
+    init(_ label: Text? = nil, @ViewBuilder content: () -> Content) {
+        self.label = label
+        self.content = content()
+    }
+
+    var body: some View {
+        GridRow {
+            (label ?? Text(verbatim: ""))
+                .gridColumnAlignment(.trailing)
+            content
+        }
+    }
+}
+
+/// The line between groups of rows.
+private struct SettingsDivider: View {
+    var body: some View {
+        Divider()
+            .gridCellUnsizedAxes(.horizontal)
+            .padding(.vertical, 4)
+    }
+}
+
+/// The round help button beside a control, with a short explanation in a popover.
+private struct InfoButton: View {
+    let text: Text
+    @State private var isShown = false
+
+    init(_ text: Text) {
+        self.text = text
+    }
+
+    var body: some View {
+        HelpLink { isShown.toggle() }
+            .popover(isPresented: $isShown, arrowEdge: .bottom) {
+                text
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 260, alignment: .leading)
+                    .padding(14)
+            }
+            .accessibilityHint(text)
+    }
+}
+
 struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
+    let backgrounds: SettingsDependencies.Backgrounds
     let openHistory: () -> Void
     let expiredCount: (HistoryRetention) -> Int
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle(isOn: $launchAtLogin) {
-                    Text("Launch at login", bundle: .module)
-                }
-                .onChange(of: launchAtLogin) { _, enabled in
-                    guard enabled != LoginItem.isEnabled else { return }
-                    do {
-                        try LoginItem.setEnabled(enabled)
-                        loginItemError = nil
-                    } catch {
-                        loginItemError = error.localizedDescription
-                        launchAtLogin = LoginItem.isEnabled
-                    }
-                }
-                if let loginItemError {
-                    Text(loginItemError)
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                }
-                Toggle(isOn: $settings.playSounds) {
-                    Text("Play sounds", bundle: .module)
-                }
-                Toggle(isOn: $settings.showMenuBarIcon) {
-                    Text("Show icon in the menu bar", bundle: .module)
-                }
-            } footer: {
-                Text("With the icon hidden, open OhMyShot again from Finder or Spotlight to come back here.", bundle: .module)
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                Picker(selection: retentionSelection(settings: settings, expiredCount: expiredCount, request: $retentionRequest)) {
-                    ForEach(HistoryRetention.allCases, id: \.self) { retention in
-                        Text(retention.title).tag(retention)
-                    }
-                } label: {
-                    Text("Keep captures for", bundle: .module)
-                    Text(retentionDescription)
-                }
-                LabeledContent {
-                    Button(action: openHistory) {
-                        Text("Open Capture History…", bundle: .module)
-                    }
-                } label: {
-                    EmptyView()
-                }
-            } header: {
-                Text("Capture History", bundle: .module)
-            }
-        }
-        .settingsPane()
-        .confirmingRetentionChange($retentionRequest) { retention in
-            settings.historyRetention = retention
-        }
-    }
-
-    private var retentionDescription: String {
-        settings.historyRetention == .never
-            ? String(localized: "Captures are deleted when their Quick Access card closes, unless you saved them.", bundle: .module)
-            : String(localized: "Captures stay on this Mac until then, ready to restore to Quick Access. Choosing a shorter time, or Never, deletes older captures right away.", bundle: .module)
-    }
-}
-
-struct CaptureSettingsView: View {
-    @Bindable var settings: SettingsStore
-    let backgrounds: SettingsDependencies.Backgrounds
     @State private var backgroundPresets: [SettingsDependencies.Backgrounds.Choice] = []
     @State private var automaticBackground: UUID?
 
     var body: some View {
-        Form {
-            Section {
-                Toggle(isOn: $settings.freezeScreen) {
-                    Text("Freeze the screen while selecting", bundle: .module)
-                    Text("Keeps hover states and open menus in place until the capture is taken.", bundle: .module)
+        SettingsPane {
+            SettingsRow(Text("Startup", bundle: .module)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle(isOn: $launchAtLogin) {
+                        Text("Launch at login", bundle: .module)
+                    }
+                    if let loginItemError {
+                        Text(loginItemError)
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                    }
                 }
+            }
+            SettingsRow(Text("Menu bar", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Toggle(isOn: $settings.showMenuBarIcon) {
+                        Text("Show icon", bundle: .module)
+                    }
+                    InfoButton(Text("With the icon hidden, open OhMyShot again from Finder or Spotlight to come back here.", bundle: .module))
+                }
+            }
+            SettingsRow(Text("Sound", bundle: .module)) {
+                Toggle(isOn: $settings.playSounds) {
+                    Text("Play sounds", bundle: .module)
+                }
+            }
+
+            SettingsDivider()
+
+            SettingsRow(Text("Selecting", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Toggle(isOn: $settings.freezeScreen) {
+                        Text("Freeze the screen", bundle: .module)
+                    }
+                    InfoButton(Text("Hover states and open menus stay in place until the capture is taken.", bundle: .module))
+                }
+            }
+            SettingsRow(Text("Self-Timer", bundle: .module)) {
                 Picker(selection: $settings.selfTimerDelay) {
                     ForEach(SettingsStore.selfTimerDelays, id: \.self) { seconds in
                         Text("\(seconds) seconds", bundle: .module).tag(seconds)
                     }
                 } label: {
-                    Text("Self-Timer delay", bundle: .module)
-                    Text("Time to open a menu or hover over something before the capture is taken.", bundle: .module)
+                    Text("Self-Timer", bundle: .module)
                 }
-            } header: {
-                Text("Before capturing", bundle: .module)
+                .labelsHidden()
+                .fixedSize()
             }
-            Section {
-                Toggle(isOn: $settings.copyAfterCapture) {
-                    Text("Copy to the clipboard", bundle: .module)
+
+            SettingsDivider()
+
+            SettingsRow(Text("After capture", bundle: .module)) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        HStack(spacing: 14) {
+                            Toggle(isOn: $settings.copyAfterCapture) {
+                                Text("Copy", bundle: .module)
+                            }
+                            Toggle(isOn: $settings.showQuickAccess) {
+                                Text("Quick Access", bundle: .module)
+                            }
+                            Toggle(isOn: $settings.saveAfterCapture) {
+                                Text("Save", bundle: .module)
+                            }
+                        }
+                        InfoButton(Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below.", bundle: .module))
+                    }
+                    if !settings.copyAfterCapture, !settings.showQuickAccess, !settings.saveAfterCapture {
+                        Label {
+                            if settings.historyRetention == .never {
+                                Text("Captures won’t be kept anywhere.", bundle: .module)
+                            } else {
+                                Text("Captures go only to History.", bundle: .module)
+                            }
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    }
                 }
-                Toggle(isOn: $settings.showQuickAccess) {
-                    Text("Show Quick Access", bundle: .module)
-                    Text("A card in the corner of the screen to copy, save, or drag the capture into another app.", bundle: .module)
-                }
-                Toggle(isOn: $settings.saveAfterCapture) {
-                    Text("Save automatically", bundle: .module)
-                }
-                LabeledContent {
+            }
+            SettingsRow(Text("Save to", bundle: .module)) {
+                HStack(spacing: 8) {
+                    Text(exportPath)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 220, alignment: .leading)
+                        .fixedSize()
+                        .help(exportPath)
                     Button {
                         chooseExportDirectory()
                     } label: {
                         Text("Choose…", bundle: .module)
                     }
-                } label: {
-                    Text("Save to", bundle: .module)
-                    Text(exportPath)
                 }
-                Picker(selection: Binding(
-                    get: { automaticBackground },
-                    set: { choice in
-                        automaticBackground = choice
-                        backgrounds.setAutomatic(choice)
-                    }
-                )) {
-                    Text("None", bundle: .module).tag(UUID?.none)
-                    if !backgroundPresets.isEmpty { Divider() }
-                    ForEach(backgroundPresets) { preset in
-                        Text(preset.name).tag(Optional(preset.id))
-                    }
-                } label: {
-                    Text("Background", bundle: .module)
-                    if backgroundPresets.isEmpty {
-                        Text("Puts each new screenshot on a background. Save one as a preset in the editor’s Background tool first.", bundle: .module)
-                    } else {
-                        Text("Puts each new screenshot on a background preset saved in the editor.", bundle: .module)
-                    }
-                }
-                .disabled(backgroundPresets.isEmpty)
-                .onAppear {
-                    backgroundPresets = backgrounds.presets()
-                    automaticBackground = backgrounds.automatic()
-                }
-            } header: {
-                Text("After capturing", bundle: .module)
-            } footer: {
-                if !settings.copyAfterCapture, !settings.showQuickAccess, !settings.saveAfterCapture {
-                    Label {
-                        if settings.historyRetention == .never {
-                            Text("With all three off and history set to Never, captures are not kept anywhere.", bundle: .module)
-                        } else {
-                            Text("With all three off, captures go only to Capture History.", bundle: .module)
+            }
+            SettingsRow(Text("Background", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: Binding(
+                        get: { automaticBackground },
+                        set: { choice in
+                            automaticBackground = choice
+                            backgrounds.setAutomatic(choice)
                         }
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                    )) {
+                        Text("None", bundle: .module).tag(UUID?.none)
+                        if !backgroundPresets.isEmpty { Divider() }
+                        ForEach(backgroundPresets) { preset in
+                            Text(preset.name).tag(Optional(preset.id))
+                        }
+                    } label: {
+                        Text("Background", bundle: .module)
                     }
-                    .foregroundStyle(.secondary)
+                    .labelsHidden()
+                    .fixedSize()
+                    .disabled(backgroundPresets.isEmpty)
+                    .onAppear {
+                        backgroundPresets = backgrounds.presets()
+                        automaticBackground = backgrounds.automatic()
+                    }
+                    InfoButton(Text("Puts each new screenshot on a background. Save one as a preset with the editor’s Background tool.", bundle: .module))
+                }
+            }
+
+            SettingsDivider()
+
+            SettingsRow(Text("Keep captures", bundle: .module)) {
+                HStack(spacing: 8) {
+                    Picker(selection: retentionSelection(settings: settings, expiredCount: expiredCount, request: $retentionRequest)) {
+                        ForEach(HistoryRetention.allCases, id: \.self) { retention in
+                            Text(retention.title).tag(retention)
+                        }
+                    } label: {
+                        Text("Keep captures", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    Button(action: openHistory) {
+                        Text("Open History", bundle: .module)
+                    }
                 }
             }
         }
-        .settingsPane()
+        .confirmingRetentionChange($retentionRequest) { retention in
+            settings.historyRetention = retention
+        }
     }
 }
 
-extension CaptureSettingsView {
+extension GeneralSettingsView {
     fileprivate var exportPath: String {
         var path = settings.exportDirectory.path(percentEncoded: false)
         if path.count > 1, path.hasSuffix("/") { path.removeLast() }
@@ -226,8 +281,8 @@ struct RecordingSettingsView: View {
     @Bindable var settings: SettingsStore
 
     var body: some View {
-        Form {
-            Section {
+        SettingsPane {
+            SettingsRow(Text("Countdown", bundle: .module)) {
                 Picker(selection: $settings.recordingCountdown) {
                     ForEach(SettingsStore.recordingCountdowns, id: \.self) { seconds in
                         if seconds == 0 {
@@ -238,49 +293,57 @@ struct RecordingSettingsView: View {
                     }
                 } label: {
                     Text("Countdown", bundle: .module)
-                    Text("Time to get ready between pressing Record and recording.", bundle: .module)
                 }
-                Toggle(isOn: $settings.recordingShowsControls) {
-                    Text("Show controls while recording", bundle: .module)
-                    Text("A small bar by the recording with the time, Pause, Restart, Delete, and Stop. It stays out of the recording.", bundle: .module)
-                }
-                Toggle(isOn: $settings.recordingShowsCursor) {
-                    Text("Show the pointer", bundle: .module)
-                }
-            } header: {
-                Text("Recording", bundle: .module)
-            } footer: {
-                Text("Computer audio, the microphone, and clicks are chosen on the bar under what you are about to record. The menu bar shows the time while recording; click it to stop.", bundle: .module)
-                    .foregroundStyle(.secondary)
+                .labelsHidden()
+                .fixedSize()
             }
-            Section {
+            SettingsRow(Text("While recording", bundle: .module)) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Toggle(isOn: $settings.recordingShowsControls) {
+                            Text("Show controls", bundle: .module)
+                        }
+                        InfoButton(Text("A small bar by the recording with the time, Pause, Restart, Delete, and Stop. It stays out of the recording. The menu bar shows the time too; click it to stop.", bundle: .module))
+                    }
+                    Toggle(isOn: $settings.recordingShowsCursor) {
+                        Text("Show the pointer", bundle: .module)
+                    }
+                }
+            }
+            SettingsRow(Text("Audio", bundle: .module)) {
+                Text("Chosen on the bar before you record.", bundle: .module)
+                    .foregroundStyle(.secondary)
+                    .help(Text("Computer audio, the microphone, and clicks are chosen on the bar under what you are about to record.", bundle: .module))
+            }
+
+            SettingsDivider()
+
+            SettingsRow(Text("Frame rate", bundle: .module)) {
                 Picker(selection: $settings.recordingFrameRate) {
                     ForEach(SettingsStore.recordingFrameRates, id: \.self) { rate in
                         Text("\(rate) frames per second", bundle: .module).tag(rate)
                     }
                 } label: {
                     Text("Frame rate", bundle: .module)
-                    Text("Low Power Mode records at 30.", bundle: .module)
                 }
-                Picker(selection: $settings.recordingPrefersHEVC) {
-                    Text("H.264 when it fits", bundle: .module).tag(false)
-                    Text("HEVC", bundle: .module).tag(true)
-                } label: {
-                    Text("Video format", bundle: .module)
-                    if settings.recordingPrefersHEVC {
-                        Text("Smaller files. Some players, browsers, and upload forms can’t play HEVC.", bundle: .module)
-                    } else {
-                        Text("Plays everywhere. Recordings wider or taller than 4096 pixels use HEVC, which H.264 can’t encode in hardware.", bundle: .module)
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("Low Power Mode records at 30.", bundle: .module))
+            }
+            SettingsRow(Text("Video format", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.recordingPrefersHEVC) {
+                        Text("H.264 when it fits", bundle: .module).tag(false)
+                        Text("HEVC", bundle: .module).tag(true)
+                    } label: {
+                        Text("Video format", bundle: .module)
                     }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("Recordings are MP4 files at the screen’s own resolution. H.264 plays everywhere; recordings wider or taller than 4096 pixels use HEVC, which H.264 can’t encode in hardware. HEVC makes smaller files, but some players, browsers, and upload forms can’t play it.", bundle: .module))
                 }
-            } header: {
-                Text("Video", bundle: .module)
-            } footer: {
-                Text("Recordings are MP4 files at the screen’s own resolution, kept in Capture History like screenshots.", bundle: .module)
-                    .foregroundStyle(.secondary)
             }
         }
-        .settingsPane()
     }
 }
 
@@ -289,58 +352,66 @@ struct ToolsSettingsView: View {
     @State private var translationTargets: [Locale.Language] = []
 
     var body: some View {
-        Form {
-            Section {
+        SettingsPane {
+            SettingsRow(Text("Capture Text", bundle: .module)) {
                 Toggle(isOn: $settings.showTextResult) {
-                    Text("Show a preview after copying", bundle: .module)
-                    Text("A card by the selection with the copied text and a switch for its line breaks.", bundle: .module)
+                    Text("Show the copied text", bundle: .module)
                 }
-            } header: {
-                Text("Capture Text", bundle: .module)
-            } footer: {
-                Text("Languages follow your preferred languages in System Settings.", bundle: .module)
-                    .foregroundStyle(.secondary)
+                .help(Text("A card by the selection with the copied text and a switch for its line breaks.", bundle: .module))
             }
-            Section {
-                Picker(selection: $settings.translationTarget) {
-                    Text("Automatic", bundle: .module).tag("")
-                    Divider()
-                    ForEach(translationOptions, id: \.self) { identifier in
-                        Text(verbatim: Translator.name(of: Locale.Language(identifier: identifier))).tag(identifier)
+            SettingsRow(Text("Translate into", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.translationTarget) {
+                        Text("Automatic", bundle: .module).tag("")
+                        Divider()
+                        ForEach(translationOptions, id: \.self) { identifier in
+                            Text(verbatim: Translator.name(of: Locale.Language(identifier: identifier))).tag(identifier)
+                        }
+                    } label: {
+                        Text("Translate into", bundle: .module)
                     }
-                } label: {
-                    Text("Translate into", bundle: .module)
-                    Text("Automatic picks the first of your preferred languages that the text isn’t already in.", bundle: .module)
+                    .labelsHidden()
+                    .fixedSize()
+                    .task { translationTargets = await Translator.targets() }
+                    InfoButton(Text("Automatic picks the first of your preferred languages that the text isn’t already in. Translation runs on this Mac; a language is downloaded the first time it’s needed.", bundle: .module))
                 }
-                .task { translationTargets = await Translator.targets() }
-            } header: {
-                Text("Translation", bundle: .module)
-            } footer: {
-                Text("Translation runs on this Mac. A language is downloaded the first time it’s needed.", bundle: .module)
-                    .foregroundStyle(.secondary)
             }
-            Section {
+
+            SettingsDivider()
+
+            SettingsRow(Text("Copy colors as", bundle: .module)) {
                 Picker(selection: $settings.colorFormat) {
                     ForEach(ColorFormat.allCases, id: \.self) { format in
                         Text(verbatim: format.title).tag(format)
                     }
                 } label: {
                     Text("Copy colors as", bundle: .module)
-                    Text("For Pick Color, and C while capturing or measuring.", bundle: .module)
                 }
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("For Pick Color, and C while capturing or measuring.", bundle: .module))
+            }
+            SettingsRow(Text("Measure in", bundle: .module)) {
                 Picker(selection: $settings.measureUnit) {
                     Text("Points", bundle: .module).tag(MeasureUnit.points)
                     Text("Pixels", bundle: .module).tag(MeasureUnit.pixels)
                 } label: {
                     Text("Measure in", bundle: .module)
-                    Text("Tab switches between them while measuring.", bundle: .module)
                 }
-            } header: {
-                Text("Pick Color and Measure", bundle: .module)
+                .pickerStyle(.radioGroup)
+                .horizontalRadioGroupLayout()
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("Tab switches between them while measuring.", bundle: .module))
             }
-            Section {
-                LabeledContent {
-                    HStack(spacing: 10) {
+
+            SettingsDivider()
+
+            SettingsRow(Text("Pins", bundle: .module)) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Text("Corners", bundle: .module)
+                            .fixedSize()
                         // Rounded here rather than with `step:`, which hangs a row of tick marks under the
                         // slider and lifts it off the label's line.
                         Slider(
@@ -350,33 +421,27 @@ struct ToolsSettingsView: View {
                             Text("Corners", bundle: .module)
                         }
                         .labelsHidden()
+                        .frame(width: 150)
                         Text("\(Int(settings.pinCornerRadius)) pt", bundle: .module)
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
-                            .frame(width: 40, alignment: .trailing)
+                            .frame(width: 40, alignment: .leading)
                     }
-                } label: {
-                    Text("Corners", bundle: .module)
+                    HStack(spacing: 14) {
+                        Toggle(isOn: $settings.pinShadow) {
+                            Text("Shadow", bundle: .module)
+                        }
+                        Toggle(isOn: $settings.pinBorder) {
+                            Text("Border", bundle: .module)
+                        }
+                        .help(Text("A hairline, so a white picture still reads against a white window.", bundle: .module))
+                    }
+                    Toggle(isOn: $settings.pinsAppearInCaptures) {
+                        Text("Show in screenshots", bundle: .module)
+                    }
                 }
-                Toggle(isOn: $settings.pinShadow) {
-                    Text("Shadow", bundle: .module)
-                }
-                Toggle(isOn: $settings.pinBorder) {
-                    Text("Edge", bundle: .module)
-                    Text("A hairline, so a white picture still reads against a white window.", bundle: .module)
-                }
-                Toggle(isOn: $settings.pinsAppearInCaptures) {
-                    Text("Show pins in new screenshots", bundle: .module)
-                    Text("When off, pins stay out of captures, like the rest of OhMyShot.", bundle: .module)
-                }
-            } header: {
-                Text("Pins", bundle: .module)
-            } footer: {
-                Text("Pin a capture from its Quick Access card or Capture History; the clipboard's picture, color, or text, or a picture file, from the menu bar; or an area with Capture Area and Pin.", bundle: .module)
-                    .foregroundStyle(.secondary)
             }
         }
-        .settingsPane()
     }
 
     /// The languages to translate into, by identifier; the chosen one even before the list has loaded.
@@ -389,26 +454,50 @@ struct ToolsSettingsView: View {
 }
 
 struct ShortcutsSettingsView: View {
+    /// The shortcuts in the order of `CaptureShortcut`, split into the pane's groups.
+    private static let groups: [[CaptureShortcut]] = Dictionary(grouping: CaptureShortcut.allCases, by: \.group)
+        .sorted { $0.key < $1.key }
+        .map(\.value)
+
     var body: some View {
-        Form {
-            Section {
-                ForEach(CaptureShortcut.allCases, id: \.self) { shortcut in
-                    KeyboardShortcuts.Recorder(shortcut.title, name: shortcut.name)
+        SettingsPane(alignment: .leading, spacing: 8) {
+            ForEach(Self.groups.indices, id: \.self) { index in
+                if index > 0 {
+                    SettingsDivider()
                 }
-            } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("macOS keeps ⇧⌘3, ⇧⌘4, and ⇧⌘5 for its own screenshots. Turn those off under Keyboard › Keyboard Shortcuts › Screenshots to use them here.", bundle: .module)
-                        .foregroundStyle(.secondary)
-                    Button {
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
-                    } label: {
-                        Text("Open Keyboard Settings…", bundle: .module)
+                ForEach(Self.groups[index], id: \.self) { shortcut in
+                    SettingsRow(Text(shortcut.title)) {
+                        KeyboardShortcuts.Recorder(for: shortcut.name)
                     }
-                    .buttonStyle(.link)
                 }
             }
+            SettingsDivider()
+            VStack(alignment: .leading, spacing: 4) {
+                Text("macOS keeps ⇧⌘3, ⇧⌘4, and ⇧⌘5 until you turn them off in Keyboard Settings.", bundle: .module)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
+                } label: {
+                    Text("Open Keyboard Settings", bundle: .module)
+                }
+                .buttonStyle(.link)
+            }
+            .font(.callout)
+            .gridCellUnsizedAxes(.horizontal)
         }
-        .settingsPane()
+    }
+}
+
+extension CaptureShortcut {
+    /// Which group of the Shortcuts pane the shortcut is listed in.
+    fileprivate var group: Int {
+        switch self {
+        case .captureArea, .annotateArea, .pinArea, .captureFullscreen, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .recordScreen: 0
+        case .captureText, .captureTextJoined, .translateArea: 1
+        case .pickColor, .measure: 2
+        case .openHistory, .copyLatestCapture: 3
+        }
     }
 }
 
@@ -417,30 +506,28 @@ struct PermissionsSettingsView: View {
     let relaunch: () -> Void
 
     var body: some View {
-        Form {
-            Section {
-                PermissionRow(permission: .screenRecording, permissions: permissions)
-            } header: {
-                Text("Required", bundle: .module)
-            } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("macOS applies Screen Recording only after OhMyShot restarts. It also asks you to confirm about once a month; that reminder comes from macOS.", bundle: .module)
-                        .foregroundStyle(.secondary)
-                    Button(action: relaunch) {
-                        Text("Relaunch OhMyShot", bundle: .module)
+        SettingsPane {
+            PermissionRow(permission: .screenRecording, permissions: permissions)
+            if permissions.status(of: .screenRecording) != .granted {
+                SettingsRow {
+                    HStack(spacing: 6) {
+                        Text("macOS applies it after a relaunch.", bundle: .module)
+                            .foregroundStyle(.secondary)
+                        Button(action: relaunch) {
+                            Text("Relaunch Now", bundle: .module)
+                        }
+                        .buttonStyle(.link)
                     }
-                    .buttonStyle(.link)
+                    .font(.callout)
                 }
             }
-            Section {
-                ForEach([Permission.microphone, .camera, .accessibility, .inputMonitoring]) { permission in
-                    PermissionRow(permission: permission, permissions: permissions)
-                }
-            } header: {
-                Text("Asked for when a feature first needs it", bundle: .module)
+
+            SettingsDivider()
+
+            ForEach([Permission.microphone, .camera, .accessibility, .inputMonitoring]) { permission in
+                PermissionRow(permission: permission, permissions: permissions)
             }
         }
-        .settingsPane()
         .onAppear {
             permissions.refresh()
         }
@@ -450,42 +537,42 @@ struct PermissionsSettingsView: View {
     }
 }
 
-struct PermissionRow: View {
+private struct PermissionRow: View {
     let permission: Permission
     let permissions: PermissionCenter
 
     var body: some View {
-        LabeledContent {
-            switch permissions.status(of: permission) {
-            case .granted:
-                Label {
-                    Text("Allowed", bundle: .module)
-                } icon: {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                }
-                .foregroundStyle(.secondary)
-            case .notGranted:
-                Button {
-                    Task {
-                        await permissions.request(permission)
-                        if permissions.status(of: permission) != .granted {
-                            permissions.openSystemSettings(for: permission)
-                        }
+        SettingsRow(Text(permission.title)) {
+            Group {
+                switch permissions.status(of: permission) {
+                case .granted:
+                    Label {
+                        Text("Allowed", bundle: .module)
+                    } icon: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
                     }
-                } label: {
-                    Text("Allow…", bundle: .module)
-                }
-            case .denied:
-                Button {
-                    permissions.openSystemSettings(for: permission)
-                } label: {
-                    Text("Open System Settings…", bundle: .module)
+                    .foregroundStyle(.secondary)
+                case .notGranted:
+                    Button {
+                        Task {
+                            await permissions.request(permission)
+                            if permissions.status(of: permission) != .granted {
+                                permissions.openSystemSettings(for: permission)
+                            }
+                        }
+                    } label: {
+                        Text("Allow…", bundle: .module)
+                    }
+                case .denied:
+                    Button {
+                        permissions.openSystemSettings(for: permission)
+                    } label: {
+                        Text("Open System Settings…", bundle: .module)
+                    }
                 }
             }
-        } label: {
-            Text(permission.title)
-            Text(permission.purpose)
+            .help(permission.purpose)
         }
     }
 }
@@ -517,38 +604,37 @@ struct AutomationSettingsView: View {
     let urlScheme: String
 
     var body: some View {
-        Form {
-            Section {
-                Toggle(isOn: $settings.automationEnabled) {
-                    Text("Allow other apps to control OhMyShot", bundle: .module)
+        SettingsPane {
+            SettingsRow(Text("URL scheme", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Toggle(isOn: $settings.automationEnabled) {
+                        Text("Allow other apps to control OhMyShot", bundle: .module)
+                    }
+                    InfoButton(Text("Apps and scripts send commands such as \(urlScheme)://capture-area, with the same names and parameters as CleanShot X. Each app needs your approval the first time.", bundle: .module))
                 }
-            } footer: {
-                Text("Apps and scripts send commands such as \(urlScheme)://capture-area, with the same names and parameters as CleanShot X. Each app needs your approval the first time.", bundle: .module)
-                    .foregroundStyle(.secondary)
             }
-            Section {
+            SettingsRow(Text("Approved apps", bundle: .module)) {
                 if settings.approvedAutomationCallers.isEmpty {
-                    Text("No apps yet.", bundle: .module)
+                    Text("None yet", bundle: .module)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(settings.approvedAutomationCallers, id: \.self) { identifier in
-                        LabeledContent {
-                            Button {
-                                settings.approvedAutomationCallers.removeAll { $0 == identifier }
-                            } label: {
-                                Text("Remove", bundle: .module)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(settings.approvedAutomationCallers, id: \.self) { identifier in
+                            HStack(spacing: 8) {
+                                Text(Self.displayName(for: identifier))
+                                    .help(identifier)
+                                Button {
+                                    settings.approvedAutomationCallers.removeAll { $0 == identifier }
+                                } label: {
+                                    Text("Remove", bundle: .module)
+                                }
+                                .controlSize(.small)
                             }
-                        } label: {
-                            Text(Self.displayName(for: identifier))
-                            Text(identifier)
                         }
                     }
                 }
-            } header: {
-                Text("Approved apps", bundle: .module)
             }
         }
-        .settingsPane()
     }
 
     /// The app's name for a bundle identifier.
@@ -581,7 +667,7 @@ struct AboutSettingsView: View {
                 .padding(.top, 6)
         }
         .padding(28)
-        .frame(width: formWidth)
+        .frame(width: paneWidth)
     }
 
     private static func info(_ key: String) -> String? {

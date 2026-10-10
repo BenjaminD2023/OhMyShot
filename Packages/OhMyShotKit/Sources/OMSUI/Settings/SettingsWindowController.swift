@@ -5,7 +5,6 @@ import SwiftUI
 
 public enum SettingsTab: String, CaseIterable, Sendable {
     case general
-    case capture
     case recording
     case tools
     case shortcuts
@@ -16,7 +15,6 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     var title: String {
         switch self {
         case .general: String(localized: "General", bundle: .module)
-        case .capture: String(localized: "Capture", bundle: .module)
         case .recording: String(localized: "Recording", bundle: .module)
         case .tools: String(localized: "Tools", bundle: .module)
         case .shortcuts: String(localized: "Shortcuts", bundle: .module)
@@ -29,7 +27,6 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     var symbolName: String {
         switch self {
         case .general: "gearshape"
-        case .capture: "camera.viewfinder"
         case .recording: "record.circle"
         case .tools: "wrench.and.screwdriver"
         case .shortcuts: "command"
@@ -95,7 +92,7 @@ public struct SettingsDependencies {
     }
 }
 
-/// The settings window: AppKit toolbar tabs hosting SwiftUI forms. It is created when opened and
+/// The settings window: AppKit toolbar tabs hosting SwiftUI panes. It is created when opened and
 /// released when closed, so it costs no memory while hidden.
 public final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     public var onClose: (() -> Void)?
@@ -151,9 +148,12 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private static func makeContent(for tab: SettingsTab, dependencies: SettingsDependencies) -> NSViewController {
         switch tab {
         case .general:
-            host(GeneralSettingsView(settings: dependencies.settings, openHistory: dependencies.openHistory, expiredCount: dependencies.expiredCount))
-        case .capture:
-            host(CaptureSettingsView(settings: dependencies.settings, backgrounds: dependencies.backgrounds))
+            host(GeneralSettingsView(
+                settings: dependencies.settings,
+                backgrounds: dependencies.backgrounds,
+                openHistory: dependencies.openHistory,
+                expiredCount: dependencies.expiredCount
+            ))
         case .recording:
             host(RecordingSettingsView(settings: dependencies.settings))
         case .tools:

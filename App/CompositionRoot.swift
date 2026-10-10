@@ -919,7 +919,6 @@ private extension SettingsTab {
     /// Maps CleanShot's `open-settings?tab=` names onto ours.
     init(urlTab: String?) {
         switch urlTab?.lowercased() {
-        case "screenshots", "quickaccess": self = .capture
         case "recording": self = .recording
         case "shortcuts": self = .shortcuts
         case "advanced": self = .automation
