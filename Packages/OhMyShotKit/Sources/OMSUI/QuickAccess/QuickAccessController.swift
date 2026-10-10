@@ -159,6 +159,13 @@ public final class QuickAccessController {
         refresh()
     }
 
+    /// Puts the stack back in its corner after a display is attached, removed, or changes mode: on the
+    /// display it was on if that is still connected, otherwise on the main one.
+    public func displaysChanged() {
+        guard let displayID, !items.isEmpty else { return }
+        present(entering: nil, on: displayID)
+    }
+
     /// Brings back the most recently closed card whose capture still exists.
     public func restoreRecentlyClosed() {
         while let item = recentlyClosed.popLast() {
@@ -189,8 +196,8 @@ public final class QuickAccessController {
     /// cards when it would not fit. The panel grows before the cards move up, and shrinks only after
     /// they have moved down, so no card is clipped mid-motion.
     private func present(entering: UUID?, on displayID: CGDirectDisplayID) {
-        let screen = NSScreen.screens.first { $0.cgDirectDisplayID == displayID } ?? NSScreen.main
-        guard let visible = screen?.visibleFrame else { return }
+        guard let screen = NSScreen.screens.first(where: { $0.cgDirectDisplayID == displayID }) ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
         // Cards sit 26 pt from the screen's edges; the panel reaches past them by the shadow's margin.
         let edge: CGFloat = 26
         let margin = CardStackView.margin
@@ -213,7 +220,8 @@ public final class QuickAccessController {
                 panel?.setFrame(frame, display: true)
             }
         }
-        self.displayID = displayID
+        // The display actually used, so a stack moved off a removed display stays where it now is.
+        self.displayID = screen.cgDirectDisplayID ?? displayID
     }
 
     private func tearDown() {

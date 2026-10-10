@@ -267,6 +267,7 @@ final class CompositionRoot {
             overlay.cancel()
             captures.cancelSelfTimer()
             overlay.prepare()
+            quickAccess.displaysChanged()
         }
 
         logStartup()
