@@ -279,7 +279,12 @@ struct ToolsSettingsView: View {
             Section {
                 LabeledContent {
                     HStack(spacing: 10) {
-                        Slider(value: $settings.pinCornerRadius, in: SettingsStore.pinCornerRadii, step: 1) {
+                        // Rounded here rather than with `step:`, which hangs a row of tick marks under the
+                        // slider and lifts it off the label's line.
+                        Slider(
+                            value: Binding(get: { settings.pinCornerRadius }, set: { settings.pinCornerRadius = $0.rounded() }),
+                            in: SettingsStore.pinCornerRadii
+                        ) {
                             Text("Corners", bundle: .module)
                         }
                         .labelsHidden()
