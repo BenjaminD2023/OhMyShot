@@ -124,6 +124,77 @@ struct CaptureReadingTests {
     }
 }
 
+extension CaptureReadingTests {
+    /// A session whose readings fail their first `failures` asks, counting every ask; each takes `delay`.
+    private func makeFailingSession(attempts: ReadCounter, failures: Int = 1, delay: Duration = .zero) -> AnnotationSession {
+        let session = makeSession(asks: ReadingAsks())
+        session.textReader = { _ in
+            CaptureReading(
+                redactionSuggestions: {
+                    await attempts.increment()
+                    if delay > .zero { try await Task.sleep(for: delay) }
+                    if await attempts.value <= failures { throw CocoaError(.fileReadUnknown) }
+                    return [suggestion]
+                },
+                textLines: {
+                    await attempts.increment()
+                    if delay > .zero { try await Task.sleep(for: delay) }
+                    if await attempts.value <= failures { throw CocoaError(.fileReadUnknown) }
+                    return [line]
+                }
+            )
+        }
+        return session
+    }
+
+    private func waitWhileReading(_ session: AnnotationSession) async {
+        for _ in 0..<100 where session.isReadingForTool { try? await Task.sleep(for: .milliseconds(10)) }
+    }
+
+    @Test func aReadingThatFailedIsOfferedAgainAndReadOnRequest() async {
+        let attempts = ReadCounter()
+        let session = makeFailingSession(attempts: attempts)
+        session.tool = .highlighter
+        await waitWhileReading(session)
+        #expect(session.couldNotFindTextLines)
+        #expect(session.readingFailedForTool)
+        #expect(session.textLines.isEmpty)
+        session.retryReadingForTool()
+        #expect(session.isReadingForTool)
+        #expect(!session.readingFailedForTool)
+        await waitForReading(session)
+        #expect(session.textLines == [line])
+        #expect(!session.couldNotFindTextLines)
+        #expect(await attempts.value == 2)
+    }
+
+    @Test func aReadingThatFailedIsReadAgainTheNextTimeItsToolIsInHand() async {
+        let attempts = ReadCounter()
+        let session = makeFailingSession(attempts: attempts)
+        session.tool = .redact
+        await waitWhileReading(session)
+        #expect(session.couldNotFindRedactions)
+        session.tool = .arrow
+        #expect(!session.readingFailedForTool)
+        session.tool = .redact
+        await waitForReading(session)
+        #expect(session.redactionSuggestions == [suggestion])
+        #expect(!session.couldNotFindRedactions)
+        #expect(await attempts.value == 2)
+    }
+
+    @Test func aReadingDroppedMidwayHasNotFailed() async {
+        let attempts = ReadCounter()
+        let session = makeFailingSession(attempts: attempts, failures: 0, delay: .milliseconds(150))
+        session.tool = .highlighter
+        #expect(session.isReadingForTool)
+        session.cancelReading()
+        try? await Task.sleep(for: .milliseconds(250))
+        #expect(!session.couldNotFindTextLines)
+        #expect(!session.isReadingForTool)
+    }
+}
+
 /// Which tool asked which reading, and how large a picture each reading read, from any task.
 actor ReadingAsks {
     nonisolated enum Tool: Hashable, Sendable {

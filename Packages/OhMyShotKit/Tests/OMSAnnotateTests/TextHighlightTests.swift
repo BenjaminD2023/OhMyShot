@@ -401,6 +401,73 @@ struct TextHighlightMarkTests {
     }
 }
 
+extension TextHighlightMarkTests {
+    /// A 200 × 100 picture, black with a white bar standing for a glyph at x 40–49, y 25–44 from the top
+    /// left, or white with a black one.
+    private func picture(dark: Bool) -> CGImage {
+        let context = CGContext(
+            data: nil, width: 200, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.translateBy(x: 0, y: 100)
+        context.scaleBy(x: 1, y: -1)
+        context.setFillColor(CGColor(gray: dark ? 0 : 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 200, height: 100))
+        context.setFillColor(CGColor(gray: dark ? 1 : 0, alpha: 1))
+        context.fill(CGRect(x: 40, y: 25, width: 10, height: 20))
+        return context.makeImage()!
+    }
+
+    @Test func theGroundIsTheShadeThatCoversMostOfIt() {
+        #expect(HighlightGround.under(highlight, in: picture(dark: true), origin: .zero, scale: 1) == .dark)
+        #expect(HighlightGround.under(highlight, in: picture(dark: false), origin: .zero, scale: 1) == .light)
+        // A stroke reads the ground along its path, not its whole box: a diagonal over a dark band of a
+        // light picture.
+        let context = CGContext(
+            data: nil, width: 200, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 200, height: 100))
+        context.setFillColor(CGColor(gray: 0.1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 40, width: 200, height: 20))
+        let stroke = Annotation(shape: .highlighter(Stroke(points: [CGPoint(x: 10, y: 50), CGPoint(x: 190, y: 50)])), style: Style(color: .marker, lineWidth: 8, shadow: false))
+        #expect(HighlightGround.under(stroke, in: context.makeImage()!, origin: .zero, scale: 1) == .dark)
+        // Where the picture lies in the document counts: moved off the band, the stroke is on white.
+        #expect(HighlightGround.under(stroke, in: context.makeImage()!, origin: CGPoint(x: 0, y: 30), scale: 1) == .light)
+    }
+
+    @Test func onDarkGroundItLightensAndLightTextStaysLight() {
+        let document = AnnotationDocument(pixelSize: CGSize(width: 200, height: 100), scale: 1, items: [highlight])
+        let pixels = Pixels(AnnotationRenderer.flatten(document, base: picture(dark: true))!)
+        // The glyph stays white.
+        let glyph = pixels[45, 30]
+        #expect(glyph.r > 250 && glyph.g > 250 && glyph.b > 250, "\(glyph)")
+        // The ground takes a deep tint of the yellow: lighter than black, still yellow, dark enough under
+        // light text.
+        let ground = pixels[80, 30]
+        #expect(ground.r > 70 && ground.r < 130, "\(ground)")
+        #expect(ground.r > ground.b + 40 && ground.g > ground.b + 40, "\(ground)")
+        // Where the two lines' bands meet, the tint is no stronger.
+        let once = pixels[60, 30], twice = pixels[60, 47]
+        #expect(once.r == twice.r && once.g == twice.g && once.b == twice.b)
+        // On light ground the same highlight still multiplies: the glyph stays black.
+        let light = Pixels(AnnotationRenderer.flatten(document, base: picture(dark: false))!)
+        #expect(light[45, 30].r < 5 && light[80, 30].b < 120)
+    }
+
+    @Test func theDeepTintKeepsTheHueAtATenthOfWhitesLuminance() {
+        for color in [RGBA.marker, .red, .orange, .green, .blue, .purple, .white] {
+            let tint = color.deepTint
+            #expect(abs(tint.luminance - 0.1) < 0.002, "\(color) → \(tint)")
+            // The same hue: the channels keep their order.
+            #expect((color.red >= color.green) == (tint.red >= tint.green) && (color.green >= color.blue) == (tint.green >= tint.blue))
+        }
+        // A color darker than that already is kept.
+        #expect(RGBA.black.deepTint == .black)
+    }
+}
+
 extension TextHighlightCanvasTests {
     @Test func theHighlighterSnapsInPlaceToo() async throws {
         // A line inside the selection (80, 40, 100, 60) pt of a 400 × 300 pt display at 2×, in its pixels.
@@ -468,4 +535,32 @@ extension TextHighlightCanvasTests {
 actor SizeRecorder {
     private(set) var value: CGSize?
     func record(_ size: CGSize) { value = size }
+}
+
+struct HighlightCapsuleTests {
+    /// Five lines 20 pt tall, 10 pt apart, from y 100; the second one highlighted.
+    private let paragraph = (0..<5).map { CGRect(x: 50, y: 100 + CGFloat($0) * 30, width: 400, height: 20) }
+    private let selection = CGRect(x: 50, y: 128, width: 300, height: 24)
+    private let size = CGSize(width: 200, height: 38)
+
+    @Test func itStepsPastTheTextToTheNearerSide() {
+        // Under the selection lie three lines; over it one: clear of it, the capsule goes above.
+        #expect(EditorContentView.top(of: size, at: 100, beside: selection, clearOf: paragraph, within: 8...800) == 56)
+        // With the first line gone, the gap over the selection is nearer still.
+        #expect(EditorContentView.top(of: size, at: 100, beside: selection, clearOf: Array(paragraph.dropFirst()), within: 8...800) == 80)
+        // The last line highlighted: below it is clear.
+        let last = CGRect(x: 50, y: 218, width: 300, height: 24)
+        #expect(EditorContentView.top(of: size, at: 100, beside: last, clearOf: paragraph, within: 8...800) == 252)
+    }
+
+    @Test func textBesideTheCapsuleIsNotInTheWay() {
+        let column = paragraph.map { $0.offsetBy(dx: 600, dy: 0) }
+        #expect(EditorContentView.top(of: size, at: 100, beside: selection, clearOf: column, within: 8...800) == 162)
+        #expect(EditorContentView.top(of: size, at: 100, beside: selection, clearOf: [], within: 8...800) == 162)
+    }
+
+    @Test func withNoRoomEitherWayItIsLeftWhereItWas() {
+        let page = (0..<20).map { CGRect(x: 0, y: CGFloat($0) * 30, width: 800, height: 20) }
+        #expect(EditorContentView.top(of: size, at: 100, beside: selection, clearOf: page, within: 8...560) == nil)
+    }
 }

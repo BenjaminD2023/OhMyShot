@@ -21,7 +21,7 @@ OWN-WORLD: System colors and accent; toolbar: Undo/Redo (no menu bar shows), zoo
 
 STORY: Pick a tool, mark, restyle the mark where it sits, copy or drag out.
 
-FIRST VIEWPORT: Picture fitted, never above on-screen size; rail 12 pt from the left; capsule 10 pt below the selected mark, else at the rail's foot, following the selection with 0.12 s fades.
+FIRST VIEWPORT: Picture fitted, never above on-screen size; rail 12 pt from the left; capsule 10 pt below the selected mark (beside a highlight, clear of the lines of text around it), else at the rail's foot, following the selection with 0.12 s fades.
 
 FORM: Rail + contextual capsule, 5th of 7, seed b6cc82c6.
 
@@ -51,3 +51,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   the I-beam over text says a drag will snap, and "Finding text…" holds the capsule's place while
   reading. The same in the editor and in place, where only the selection and its surroundings are
   read. Its interface is specified in DESIGN.md's Canvas, Style Capsule, and Marks entries.
+- Highlighter follow-ups: built (2026-10-10). Over dark ground (a shade darker than mid-gray under
+  most of the mark) highlights screen a deep tint of their color instead of multiplying, so a dark
+  editor takes a visible band and its light text stays light. A selected highlight's capsule keeps
+  clear of the lines of text around it. A reading that fails (for suggestions or lines) shows
+  "Couldn't read text" and Try Again in the capsule, and the next pickup of the tool reads again.

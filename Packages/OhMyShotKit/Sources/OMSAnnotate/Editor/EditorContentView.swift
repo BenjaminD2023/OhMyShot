@@ -46,6 +46,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         }
         capsule.onDelete = { [weak self] in self?.session.deleteSelection() }
         capsule.onRedactAll = { [weak self] in self?.session.acceptAllRedactionSuggestions() }
+        capsule.onRetry = { [weak self] in self?.session.retryReadingForTool() }
         capsule.onCropReset = { [weak self] in self?.canvas.resetCrop() }
         capsule.onCropDone = { [weak self] in
             guard let self else { return }
@@ -100,7 +101,11 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         case .suggestions:
             if session.tool == .redact { refreshCapsule() }
         case .textLines:
-            if session.tool == .highlighter { refreshCapsule() }
+            if session.tool == .highlighter {
+                refreshCapsule()
+            } else if selectsTextHighlight {
+                placeCapsule()
+            }
         }
     }
 
@@ -121,7 +126,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             capsule.show(
                 kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
                 suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
-                finding: session.isReadingForTool, sized: session.sizeApplies
+                finding: session.isReadingForTool, failed: session.readingFailedForTool, sized: session.sizeApplies
             )
         }
         placeCapsule()
@@ -292,9 +297,14 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         placeCapsule()
     }
 
+    /// Whether a highlight snapped to text is among the selected marks.
+    private var selectsTextHighlight: Bool {
+        session.selectedItems.contains { if case .textHighlight = $0.shape { true } else { false } }
+    }
+
     /// Beside the selection: 10 pt below it, above it without room, inside the view's bottom when it
-    /// fills the view; with nothing selected, in the band at the rail's foot. Hidden while a mark is
-    /// dragged, so nothing trails the pointer.
+    /// fills the view; beside a highlight, clear of the text around it as well. With nothing selected, in
+    /// the band at the rail's foot. Hidden while a mark is dragged, so nothing trails the pointer.
     private func placeCapsule() {
         let hasContent = !(session.currentKind == .select && session.selection.isEmpty)
         let size = capsule.fittingSize
@@ -303,13 +313,18 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         let anchorKey = session.selection
         if let selection = canvas.selectionFrame, !session.selection.isEmpty {
             let minX = rail.frame.maxX + 8
-            let x = min(max(selection.midX - size.width / 2, minX), bounds.maxX - 8 - size.width)
+            let x = max(min(max(selection.midX - size.width / 2, minX), bounds.maxX - 8 - size.width), minX)
             var y = selection.maxY + 10
             if y + size.height > bounds.maxY - 8 {
                 y = selection.minY - 10 - size.height
                 if y < 8 { y = bounds.maxY - 8 - size.height }
             }
-            frame = CGRect(x: max(x, minX), y: y, width: size.width, height: size.height)
+            // A highlight's capsule would cover the line under it, the next one to highlight.
+            if selectsTextHighlight,
+               let clear = Self.top(of: size, at: x, beside: selection, clearOf: canvas.textLineFrames, within: 8...(bounds.maxY - 8)) {
+                y = clear
+            }
+            frame = CGRect(x: x, y: y, width: size.width, height: size.height)
         } else {
             frame = CGRect(x: Self.railInset, y: bounds.maxY - 12 - size.height, width: size.width, height: size.height)
         }
@@ -341,6 +356,42 @@ final class EditorContentView: NSView, NSPopoverDelegate {
 }
 
 extension EditorContentView {
+    /// The top of a capsule of `size` at `x` beside `selection` that covers none of `lines` (with 6 pt to
+    /// spare): 10 pt below the selection, or past the lines under it to the first gap that holds it; or as
+    /// much above, past the lines over it; whichever is nearer, below when they tie. Nil when neither fits
+    /// within `limits`, the room for its top and bottom.
+    static func top(of size: CGSize, at x: CGFloat, beside selection: CGRect, clearOf lines: [CGRect], within limits: ClosedRange<CGFloat>) -> CGFloat? {
+        let spare: CGFloat = 6
+        let inTheWay = lines.filter { $0.maxX > x && $0.minX < x + size.width }
+        func covered(at top: CGFloat) -> [CGRect] {
+            inTheWay.filter { $0.maxY + spare > top && $0.minY - spare < top + size.height }
+        }
+        var below: CGFloat?
+        var top = selection.maxY + 10
+        while top + size.height <= limits.upperBound {
+            guard let lowest = covered(at: top).map(\.maxY).max() else {
+                below = top
+                break
+            }
+            top = lowest + spare
+        }
+        var above: CGFloat?
+        top = selection.minY - 10 - size.height
+        while top >= limits.lowerBound {
+            guard let highest = covered(at: top).map(\.minY).min() else {
+                above = top
+                break
+            }
+            top = highest - spare - size.height
+        }
+        switch (below, above) {
+        case let (below?, above?): return below - selection.maxY <= selection.minY - (above + size.height) ? below : above
+        case let (below?, nil): return below
+        case let (nil, above?): return above
+        case (nil, nil): return nil
+        }
+    }
+
     func popoverDidClose(_ notification: Notification) {
         adjustments?.finish()
         adjustments = nil

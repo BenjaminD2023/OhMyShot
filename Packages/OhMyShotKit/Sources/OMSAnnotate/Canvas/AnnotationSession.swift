@@ -55,12 +55,17 @@ public final class AnnotationSession {
     public private(set) var redactionSuggestions: [RedactionSuggestion] = []
     /// Whether the capture is being read for them.
     public private(set) var isFindingRedactions = false
+    /// Whether the last reading for them failed, so the capture could not be read: it is read again on
+    /// request, or the next time the tool is in hand.
+    public private(set) var couldNotFindRedactions = false
     @ObservationIgnored private var hasLookedForRedactions = false
     @ObservationIgnored private var findTask: Task<Void, Never>?
     /// The capture's lines of text, once the highlighter has been in hand.
     public private(set) var textLines: [TextLine] = []
     /// Whether the capture is being read for them.
     public private(set) var isFindingTextLines = false
+    /// Whether the last reading for them failed, as for the suggestions.
+    public private(set) var couldNotFindTextLines = false
     @ObservationIgnored private var hasLookedForTextLines = false
     @ObservationIgnored private var textLinesTask: Task<Void, Never>?
     /// The combined images each reading saw: one made before an image was combined, moved, or removed
@@ -367,13 +372,21 @@ public final class AnnotationSession {
         hasLookedForRedactions = true
         redactionsReadOver = images
         isFindingRedactions = true
+        couldNotFindRedactions = false
         notify(.suggestions)
         findTask = Task { [weak self] in
-            let found = await reading.text.redactionSuggestions()
+            let found = try? await reading.text.redactionSuggestions()
+            // A reading dropped midway is no failure.
             guard let self, !Task.isCancelled else { return }
-            redactionSuggestions = found.map { RedactionSuggestion(rect: $0.rect.offsetBy(dx: reading.origin.x, dy: reading.origin.y), label: $0.label) }
             isFindingRedactions = false
             findTask = nil
+            if let found {
+                redactionSuggestions = found.map { RedactionSuggestion(rect: $0.rect.offsetBy(dx: reading.origin.x, dy: reading.origin.y), label: $0.label) }
+            } else {
+                hasLookedForRedactions = false
+                redactionsReadOver = nil
+                couldNotFindRedactions = true
+            }
             notify(.suggestions)
         }
     }
@@ -391,6 +404,7 @@ public final class AnnotationSession {
         redactionSuggestions = []
         hasLookedForRedactions = false
         isFindingRedactions = false
+        couldNotFindRedactions = false
         redactionsReadOver = nil
     }
 
@@ -400,6 +414,7 @@ public final class AnnotationSession {
         textLines = []
         hasLookedForTextLines = false
         isFindingTextLines = false
+        couldNotFindTextLines = false
         textLinesReadOver = nil
     }
 
@@ -496,13 +511,21 @@ public final class AnnotationSession {
         hasLookedForTextLines = true
         textLinesReadOver = images
         isFindingTextLines = true
+        couldNotFindTextLines = false
         notify(.textLines)
         textLinesTask = Task { [weak self] in
-            let found = await reading.text.textLines()
+            let found = try? await reading.text.textLines()
+            // A reading dropped midway is no failure.
             guard let self, !Task.isCancelled else { return }
-            textLines = found.filter { !$0.words.isEmpty }.map { $0.offsetBy(dx: reading.origin.x, dy: reading.origin.y) }
             isFindingTextLines = false
             textLinesTask = nil
+            if let found {
+                textLines = found.filter { !$0.words.isEmpty }.map { $0.offsetBy(dx: reading.origin.x, dy: reading.origin.y) }
+            } else {
+                hasLookedForTextLines = false
+                textLinesReadOver = nil
+                couldNotFindTextLines = true
+            }
             notify(.textLines)
         }
     }
@@ -514,6 +537,24 @@ public final class AnnotationSession {
         case .redact: isFindingRedactions
         case .highlighter: isFindingTextLines
         default: false
+        }
+    }
+
+    /// Whether the last reading for the tool in hand failed.
+    public var readingFailedForTool: Bool {
+        switch tool {
+        case .redact: couldNotFindRedactions
+        case .highlighter: couldNotFindTextLines
+        default: false
+        }
+    }
+
+    /// Reads the capture again for the tool in hand, after a reading that failed.
+    public func retryReadingForTool() {
+        switch tool {
+        case .redact: findRedactionsIfNeeded()
+        case .highlighter: findTextLinesIfNeeded()
+        default: break
         }
     }
 

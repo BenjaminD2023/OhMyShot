@@ -10,6 +10,8 @@ final class StyleCapsule: NSView {
     var onDelete: (() -> Void)?
     /// Redact All: covers every open redaction suggestion.
     var onRedactAll: (() -> Void)?
+    /// Try Again: reads the capture again for the tool, after a reading that failed.
+    var onRetry: (() -> Void)?
     var onCropReset: (() -> Void)?
     var onCropDone: (() -> Void)?
     /// A background fill was picked; nil takes the background away.
@@ -33,6 +35,8 @@ final class StyleCapsule: NSView {
     /// The redaction tool's open suggestions.
     private var suggestions = 0
     private var finding = false
+    /// The last reading for the tool failed.
+    private var failed = false
     /// Whether the size chips mean anything: not for highlights snapped to text.
     private var sized = true
     private var chips: [CapsuleChip] = []
@@ -146,13 +150,15 @@ final class StyleCapsule: NSView {
     ///   - suggestions: redaction suggestions not yet covered, for Redact All.
     ///   - finding: the capture is being read for the tool: for redaction suggestions, or the lines of text
     ///     the highlighter snaps to.
+    ///   - failed: the last reading for the tool failed, offered again with Try Again.
     ///   - sized: false leaves out the sizes, for highlights snapped to text.
-    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, finding: Bool = false, sized: Bool = true) {
+    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, finding: Bool = false, failed: Bool = false, sized: Bool = true) {
         self.kind = kind
         self.settings = settings
         self.hasSelection = hasSelection
         self.suggestions = suggestions
         self.finding = finding
+        self.failed = failed
         self.sized = sized
         background = nil
         rebuild()
@@ -210,6 +216,11 @@ final class StyleCapsule: NSView {
         // Kept beside Delete too: a redaction drawn by hand is selected, and the rest still wait.
         if kind == .redact || kind == .highlighter, finding {
             sections.append([CapsuleStatus(String(localized: "Finding text…", bundle: .module))])
+        } else if kind == .redact || kind == .highlighter, failed {
+            sections.append([
+                CapsuleStatus(String(localized: "Couldn’t read text", bundle: .module), busy: false),
+                textChip(String(localized: "Try Again", bundle: .module)) { [weak self] in self?.onRetry?() },
+            ])
         } else if kind == .redact, suggestions > 0 {
             sections.append([textChip(String(localized: "Redact All (\(suggestions))", bundle: .module)) { [weak self] in self?.onRedactAll?() }])
         }
@@ -819,22 +830,24 @@ final class StyleCapsule: NSView {
 }
 
 /// A quiet status in the capsule where a chip will come: a small spinner and a few words, as the text
-/// panel shows its reading.
+/// panel shows its reading; without the spinner once there is nothing to wait for.
 final class CapsuleStatus: NSStackView {
-    init(_ text: String) {
+    init(_ text: String, busy: Bool = true) {
         super.init(frame: .zero)
-        let spinner = NSProgressIndicator()
-        spinner.style = .spinning
-        spinner.controlSize = .small
-        spinner.isIndeterminate = true
-        spinner.startAnimation(nil)
         let label = NSTextField(labelWithString: text)
         label.font = NSFont.systemFont(ofSize: 12)
         label.textColor = .secondaryLabelColor
         orientation = .horizontal
         spacing = 6
-        edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 12)
-        addArrangedSubview(spinner)
+        edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: busy ? 12 : 4)
+        if busy {
+            let spinner = NSProgressIndicator()
+            spinner.style = .spinning
+            spinner.controlSize = .small
+            spinner.isIndeterminate = true
+            spinner.startAnimation(nil)
+            addArrangedSubview(spinner)
+        }
         addArrangedSubview(label)
         translatesAutoresizingMaskIntoConstraints = false
         heightAnchor.constraint(equalToConstant: 30).isActive = true

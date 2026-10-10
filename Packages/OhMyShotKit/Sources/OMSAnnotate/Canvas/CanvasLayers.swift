@@ -44,16 +44,20 @@ nonisolated final class MarkLayer: StillLayer {
     var redacted: (image: CGImage, rect: CGRect)? {
         didSet { setNeedsDisplay() }
     }
+    /// What a highlight lies on: light ground takes it multiplied, dark ground screened.
+    var ground = HighlightGround.light {
+        didSet {
+            guard ground != oldValue else { return }
+            blendIntoPicture()
+            setNeedsDisplay()
+        }
+    }
 
     init(mark: Annotation) {
         self.mark = mark
         super.init()
         needsDisplayOnBoundsChange = true
-        if mark.multiplies {
-            // Darkens what is under it, as the export's multiply does. A highlighter's mark stays one:
-            // while drawn it may turn from a stroke to a highlight snapped to text and back.
-            compositingFilter = "multiplyBlendMode"
-        }
+        blendIntoPicture()
     }
 
     override init(layer: Any) {
@@ -62,7 +66,15 @@ nonisolated final class MarkLayer: StillLayer {
         scale = other.scale
         mapping = other.mapping
         redacted = other.redacted
+        ground = other.ground
         super.init(layer: layer)
+    }
+
+    /// A highlight blends into what is under it, as the export's multiply or screen does. A highlighter's
+    /// mark stays one: while drawn it may turn from a stroke to a highlight snapped to text and back.
+    private func blendIntoPicture() {
+        guard mark.multiplies else { return }
+        compositingFilter = ground == .dark ? "screenBlendMode" : "multiplyBlendMode"
     }
 
     @available(*, unavailable)
@@ -72,7 +84,7 @@ nonisolated final class MarkLayer: StillLayer {
 
     override func draw(in context: CGContext) {
         let flipped = prepareDocumentSpace(context, mapping: mapping)
-        AnnotationRenderer.draw(mark, in: context, scale: scale, redacted: redacted, flippedBacking: flipped)
+        AnnotationRenderer.draw(mark, in: context, scale: scale, redacted: redacted, ground: ground, flippedBacking: flipped)
     }
 }
 

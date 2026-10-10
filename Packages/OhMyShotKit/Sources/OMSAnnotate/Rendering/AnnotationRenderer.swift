@@ -12,11 +12,14 @@ nonisolated public enum AnnotationRenderer {
     public static let spotlightDimming: CGFloat = 0.5
 
     /// Draws `item` into a context whose user space is the capture's pixels, y down. `redacted` is a
-    /// blur or pixelation's picture and where it goes, from `Redactor`; spots are drawn by
-    /// `drawSpotlight` instead.
+    /// blur or pixelation's picture and where it goes, from `Redactor`; `ground` is what a highlight lies
+    /// on, from `HighlightGround`; spots are drawn by `drawSpotlight` instead.
     /// `flippedBacking` says the context's pixels are shown upside down from Core Graphics' own y-up
     /// order, as a layer's are in a flipped view; shadows need to know which way is down.
-    public static func draw(_ item: Annotation, in context: CGContext, scale: CGFloat, redacted: (image: CGImage, rect: CGRect)? = nil, flippedBacking: Bool = false) {
+    public static func draw(
+        _ item: Annotation, in context: CGContext, scale: CGFloat, redacted: (image: CGImage, rect: CGRect)? = nil,
+        ground: HighlightGround = .light, flippedBacking: Bool = false
+    ) {
         let color = item.style.color.cgColor
         context.saveGState()
         defer { context.restoreGState() }
@@ -29,9 +32,16 @@ nonisolated public enum AnnotationRenderer {
             context.fillPath()
         case .highlighter, .textHighlight:
             guard let path = MarkPaths.outline(of: item, scale: scale) else { return }
-            // Darkens what is under it, as ink on paper does: text stays black, white turns yellow.
-            context.setBlendMode(.multiply)
-            context.setFillColor(color)
+            switch ground {
+            case .light:
+                // Darkens what is under it, as ink on paper does: text stays black, white turns yellow.
+                context.setBlendMode(.multiply)
+                context.setFillColor(color)
+            case .dark:
+                // Lightens what is under it with a deep tint: text stays white, black takes the tint.
+                context.setBlendMode(.screen)
+                context.setFillColor(item.style.color.deepTint.cgColor)
+            }
             context.addPath(path)
             context.fillPath()
         case .text(let block):
@@ -157,18 +167,21 @@ nonisolated public enum AnnotationRenderer {
             drawPicture(document, base: base, in: context)
             drawSpotlight(document.spots, canvas: canvas, in: context)
         }
-        // Blurs and pixelations show what lies under them, images included.
-        let blurs = document.items.contains { item in
+        // Blurs and pixelations show what lies under them, and highlights take to it, images included.
+        let readsPicture = document.items.contains { item in
             if case .redaction(let redaction) = item.shape { return redaction.method != .solid }
-            return false
+            return item.multiplies
         }
-        let source = blurs ? redactionSource(document, base: base) : nil
+        let source = readsPicture ? redactionSource(document, base: base) : nil
         for item in document.items where !item.isPicturePart {
             var redacted: (image: CGImage, rect: CGRect)?
+            var ground = HighlightGround.light
             if case .redaction(let redaction) = item.shape {
                 redacted = Redactor.image(for: redaction, id: item.id, base: source?.image ?? base, origin: source?.origin ?? .zero, scale: document.scale)
+            } else if item.multiplies {
+                ground = HighlightGround.under(item, in: source?.image ?? base, origin: source?.origin ?? .zero, scale: document.scale)
             }
-            draw(item, in: context, scale: document.scale, redacted: redacted)
+            draw(item, in: context, scale: document.scale, redacted: redacted, ground: ground)
         }
         return context.makeImage()
     }

@@ -87,6 +87,7 @@ public final class InPlaceAnnotationView: NSView {
         }
         capsule.onDelete = { [weak self] in self?.session.deleteSelection() }
         capsule.onRedactAll = { [weak self] in self?.session.acceptAllRedactionSuggestions() }
+        capsule.onRetry = { [weak self] in self?.session.retryReadingForTool() }
         canvas.onCopy = { [weak self] in self?.perform(.copy) }
         canvas.onSave = { [weak self] in self?.perform(.save) }
         canvas.onViewportChange = { [weak self] in self?.placeAccessories() }
@@ -249,7 +250,7 @@ public final class InPlaceAnnotationView: NSView {
         capsule.show(
             kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
             suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
-            finding: session.isReadingForTool, sized: session.sizeApplies
+            finding: session.isReadingForTool, failed: session.readingFailedForTool, sized: session.sizeApplies
         )
         placeAccessories()
     }
@@ -552,7 +553,7 @@ public final class InPlaceAnnotationView: NSView {
             if case .textHighlight(let highlight) = item.shape { return "textHighlight(\(highlight.rects.map { NSStringFromRect($0) }.joined(separator: "|")))" }
             return AnnotationSession.tool(for: item).rawValue
         }.joined(separator: ",")
-        return "selection=\(NSStringFromRect(selectionRect)) canvas=\(NSStringFromRect(session.document.canvas)) tool=\(session.tool.rawValue) marks=[\(marks)] toolbar=\(NSStringFromRect(toolbar.frame)) capsule=\(capsule.alphaValue > 0 ? NSStringFromRect(capsule.frame) : "hidden") undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") canvasZoom=\(canvas.zoom) canvasPicture=\(NSStringFromRect(canvas.pictureFrame)) suggestions=\(session.isFindingRedactions ? "finding" : "\(session.openRedactionSuggestions.count)") textlines=\(session.isFindingTextLines ? "finding" : "\(session.textLines.count)")"
+        return "selection=\(NSStringFromRect(selectionRect)) canvas=\(NSStringFromRect(session.document.canvas)) tool=\(session.tool.rawValue) marks=[\(marks)] toolbar=\(NSStringFromRect(toolbar.frame)) capsule=\(capsule.alphaValue > 0 ? NSStringFromRect(capsule.frame) : "hidden") undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") canvasZoom=\(canvas.zoom) canvasPicture=\(NSStringFromRect(canvas.pictureFrame)) suggestions=\(session.isFindingRedactions ? "finding" : session.couldNotFindRedactions ? "failed" : "\(session.openRedactionSuggestions.count)") textlines=\(session.isFindingTextLines ? "finding" : session.couldNotFindTextLines ? "failed" : "\(session.textLines.count)")"
     }
     #endif
 }

@@ -15,15 +15,24 @@ public struct SensitiveTextScanner: Sendable {
     }
 
     /// Scans what `recognition` reads: a reading it has made already, or is making for something else, is
-    /// not made again.
+    /// not made again. Throws when neither reading could be made.
     @concurrent
     public func scan(_ recognition: TextRecognition) async throws -> [SensitiveText] {
-        async let latin = try? find(in: recognition, by: .latin)
-        async let chinese = try? find(in: recognition, by: .chinese)
+        async let latin = attempt(in: recognition, by: .latin)
+        async let chinese = attempt(in: recognition, by: .chinese)
         // One reading failing (a model's first use running past the timeout) still leaves the other's.
         let (latinFound, chineseFound) = await (latin, chinese)
         try Task.checkCancellation()
-        return Self.combined(latin: latinFound ?? [], chinese: chineseFound ?? [])
+        if case .failure(let error) = latinFound, case .failure = chineseFound { throw error }
+        return Self.combined(latin: (try? latinFound.get()) ?? [], chinese: (try? chineseFound.get()) ?? [])
+    }
+
+    private func attempt(in recognition: TextRecognition, by model: TextRecognition.Model) async -> Result<[SensitiveText], any Error> {
+        do {
+            return .success(try await find(in: recognition, by: model))
+        } catch {
+            return .failure(error)
+        }
     }
 
     /// The two readings as one. Names and addresses come from the Chinese reading only: the Latin model

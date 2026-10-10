@@ -87,7 +87,8 @@ struct AnnotationRenderingTests {
     }
 
     @Test func theHighlighterDarkensLikeInk() {
-        let stroke = Annotation(shape: .highlighter(Stroke(points: [CGPoint(x: 10, y: 50), CGPoint(x: 110, y: 50)])), style: Style(color: .marker, lineWidth: 30, shadow: false))
+        // Wide enough that white is most of what it covers, as the ground around a line of text is.
+        let stroke = Annotation(shape: .highlighter(Stroke(points: [CGPoint(x: 10, y: 50), CGPoint(x: 110, y: 50)])), style: Style(color: .marker, lineWidth: 60, shadow: false))
         let pixels = render([stroke])
         // Over the black band it stays black; over white it turns marker yellow.
         let overBlack = pixels[60, 50]

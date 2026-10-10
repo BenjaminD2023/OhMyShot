@@ -178,6 +178,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// The picture's frame in view points.
     public var pictureFrame: CGRect { canvasFrame }
 
+    /// The capture's lines of text, as far as they are known, in view points: for controls to keep clear
+    /// of.
+    var textLineFrames: [CGRect] {
+        session.textLines.map { viewRect($0.rect) }
+    }
+
     /// What is on screen, in the document's pixels.
     private struct Frames: Equatable {
         /// The part of the document on screen: the canvas; the whole picture with its background; or
@@ -612,9 +618,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             updateAccessibility()
             let count = session.openRedactionSuggestions.count
             if finished, session.tool == .redact {
-                // VoiceOver hears the end of the reading even when it found nothing.
+                // VoiceOver hears the end of the reading even when it found nothing, or failed.
                 NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                    .announcement: count > 0
+                    .announcement: session.couldNotFindRedactions
+                        ? String(localized: "Couldn’t read text", bundle: .module)
+                        : count > 0
                         ? String(localized: "\(count) suggestions to redact", bundle: .module)
                         : String(localized: "No suggestions to redact", bundle: .module),
                     .priority: NSAccessibilityPriorityLevel.medium.rawValue,
@@ -627,10 +635,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 if bounds.contains(location) { updateCursor(at: location) }
             }
             if !session.isFindingTextLines, session.tool == .highlighter {
-                // VoiceOver hears whether highlights will snap, even when no text was found.
+                // VoiceOver hears whether highlights will snap, even when no text was found, or the reading
+                // failed.
                 let count = session.textLines.count
                 NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                    .announcement: count > 0
+                    .announcement: session.couldNotFindTextLines
+                        ? String(localized: "Couldn’t read text", bundle: .module)
+                        : count > 0
                         ? String(localized: "\(count) lines of text to highlight", bundle: .module)
                         : String(localized: "No text to highlight", bundle: .module),
                     .priority: NSAccessibilityPriorityLevel.medium.rawValue,
@@ -656,7 +667,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 if layer.mark != item {
                     let reshaped = layer.mark.shape != item.shape
                     layer.mark = item
-                    if reshaped { updateRedaction(layer) }
+                    if reshaped {
+                        updateRedaction(layer)
+                        updateGround(layer)
+                    }
                 }
             } else {
                 layer = MarkLayer(mark: item)
@@ -666,6 +680,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 // Images are part of the picture: in the kept part of the capture, under the spotlight.
                 if case .image = item.shape { keptLayer.addSublayer(layer) } else { canvasLayer.addSublayer(layer) }
                 updateRedaction(layer)
+                updateGround(layer)
             }
             layer.zPosition = CGFloat(index)
             layer.isHidden = editing?.id == item.id
@@ -690,14 +705,23 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         )
     }
 
-    /// Makes blurs and pixelations again over images that moved, once a drag has ended: remaking them
-    /// at every step of a drag would be slow, and they show the result on release.
+    /// What a highlight lies on, read from the picture blurs show, images included.
+    private func updateGround(_ layer: MarkLayer) {
+        guard layer.mark.multiplies else { return }
+        let source = session.redactionSource
+        layer.ground = HighlightGround.under(layer.mark, in: source?.image ?? session.base, origin: source?.origin ?? .zero, scale: session.document.scale)
+    }
+
+    /// Makes blurs and pixelations again over images that moved, once a drag has ended, and reads again
+    /// what highlights lie on: remaking them at every step of a drag would be slow, and they show the
+    /// result on release.
     private func refreshRedactionsIfNeeded() {
         let images = session.document.items.filter { if case .image = $0.shape { true } else { false } }
         guard images != redactionImages, !session.isInLiveChange else { return }
         redactionImages = images
         for layer in markLayers.values {
             if case .redaction = layer.mark.shape { updateRedaction(layer) }
+            updateGround(layer)
         }
     }
 

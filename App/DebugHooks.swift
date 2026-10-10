@@ -46,6 +46,8 @@ struct DebugHooks {
     private static var unslowedReadText: (@Sendable (CGImage) -> CaptureReading)?
     /// How many seconds longer the redaction suggestions and the highlighter's lines take to read.
     private static var readingDelays = (redactions: 0, textLines: 0)
+    /// How many of the next readings of each fail, as a reading the capture could not be made for does.
+    private static var readingFailures = (redactions: 0, textLines: 0)
 
     func handle(_ url: URL) {
         let hook = url.pathComponents.dropFirst().first ?? ""
@@ -399,19 +401,26 @@ struct DebugHooks {
             // Reads for redaction suggestions take seconds= longer (0 puts them back), so the capsule's
             // finding state can be captured.
             Self.readingDelays.redactions = Self.intParameter("seconds", in: url) ?? 3
-            Self.slowReadings()
+            Self.wrapReadings()
             Log.app.notice("debug.redact-slow \(Self.readingDelays.redactions, privacy: .public) s")
         case "textlines-slow":
             // Reads for the highlighter's lines of text take seconds= longer (0 puts them back), so the
             // capsule's finding state can be captured.
             Self.readingDelays.textLines = Self.intParameter("seconds", in: url) ?? 3
-            Self.slowReadings()
+            Self.wrapReadings()
             Log.app.notice("debug.textlines-slow \(Self.readingDelays.textLines, privacy: .public) s")
+        case "reading-fail":
+            // The next times= readings for redaction suggestions and for the highlighter's lines fail (0
+            // puts them back), so the capsule's "Couldn't read text" and Try Again can be captured.
+            let times = Self.intParameter("times", in: url) ?? 1
+            Self.readingFailures = (times, times)
+            Self.wrapReadings()
+            Log.app.notice("debug.reading-fail \(times, privacy: .public)")
         case "redact-scan":
             // Reads the drawn demo page for redaction suggestions and logs them; nothing is shown.
             if let image = DebugPanelDemo.image(), let read = AnnotationSession.readText {
                 Task {
-                    let found = await read(image).redactionSuggestions().map { "\($0.label)@\(NSStringFromRect($0.rect))" }
+                    let found = ((try? await read(image).redactionSuggestions()) ?? []).map { "\($0.label)@\(NSStringFromRect($0.rect))" }
                     Log.app.notice("debug.redact-scan \(found.joined(separator: "; "), privacy: .public)")
                 }
             }
@@ -420,7 +429,7 @@ struct DebugHooks {
             // line's rect and word count); nothing is shown.
             if let image = DebugPanelDemo.image(), let read = AnnotationSession.readText {
                 Task {
-                    let found = await read(image).textLines().map { "\(NSStringFromRect($0.rect))/\($0.words.count)" }
+                    let found = ((try? await read(image).textLines()) ?? []).map { "\(NSStringFromRect($0.rect))/\($0.words.count)" }
                     Log.app.notice("debug.textlines-scan \(found.count, privacy: .public): \(found.joined(separator: "; "), privacy: .public)")
                 }
             }
@@ -431,8 +440,8 @@ struct DebugHooks {
             if let image = DebugPanelDemo.image(), let read = AnnotationSession.readText {
                 Task {
                     let reading = read(image)
-                    let suggestions = await reading.redactionSuggestions().count
-                    let lines = await reading.textLines().count
+                    let suggestions = (try? await reading.redactionSuggestions())?.count ?? -1
+                    let lines = (try? await reading.textLines())?.count ?? -1
                     Log.app.notice("debug.reading-scan suggestions=\(suggestions, privacy: .public) lines=\(lines, privacy: .public)")
                 }
             }
@@ -1060,13 +1069,13 @@ struct DebugHooks {
         }
     }
 
-    /// Makes the tools' readings take `readingDelays` longer, the real reading still under them, or puts
-    /// the real one back when neither is slowed.
-    private static func slowReadings() {
+    /// Makes the tools' readings take `readingDelays` longer and fail `readingFailures` times, the real
+    /// reading still under them, or puts the real one back when they are neither slowed nor failing.
+    private static func wrapReadings() {
         if unslowedReadText == nil { unslowedReadText = AnnotationSession.readText }
         let original = unslowedReadText
         let delays = readingDelays
-        guard delays != (0, 0) else {
+        guard delays != (0, 0) || readingFailures != (0, 0) else {
             AnnotationSession.readText = original
             return
         }
@@ -1075,14 +1084,28 @@ struct DebugHooks {
             return CaptureReading(
                 redactionSuggestions: {
                     try? await Task.sleep(for: .seconds(delays.redactions))
-                    return await reading.redactionSuggestions()
+                    if await takeFailure(redactions: true) { throw CocoaError(.fileReadUnknown) }
+                    return try await reading.redactionSuggestions()
                 },
                 textLines: {
                     try? await Task.sleep(for: .seconds(delays.textLines))
-                    return await reading.textLines()
+                    if await takeFailure(redactions: false) { throw CocoaError(.fileReadUnknown) }
+                    return try await reading.textLines()
                 }
             )
         }
+    }
+
+    /// Whether this reading is one of the failures asked for, counting it.
+    private static func takeFailure(redactions: Bool) -> Bool {
+        if redactions {
+            guard readingFailures.redactions > 0 else { return false }
+            readingFailures.redactions -= 1
+        } else {
+            guard readingFailures.textLines > 0 else { return false }
+            readingFailures.textLines -= 1
+        }
+        return true
     }
 
     private static func intParameter(_ name: String, in url: URL) -> Int? {

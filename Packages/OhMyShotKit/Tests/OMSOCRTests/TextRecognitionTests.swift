@@ -136,3 +136,27 @@ struct TextRecognitionTests {
         #expect(await readings.counts == [.latin: 1, .chinese: 1])
     }
 }
+
+extension TextRecognitionTests {
+    @Test func suggestionsCarryOnWithOneReadingAndFailWithNeither() async throws {
+        let size = CGSize(width: 520, height: 80)
+        let picture = NSImage(size: size, flipped: true) { rect in
+            NSColor.white.setFill()
+            rect.fill()
+            ("Mail: hello@example.com" as NSString).draw(at: CGPoint(x: 30, y: 24), withAttributes: [.font: NSFont.systemFont(ofSize: 24), .foregroundColor: NSColor.black])
+            return true
+        }
+        var rect = CGRect(origin: .zero, size: size)
+        let image = try #require(picture.cgImage(forProposedRect: &rect, context: nil, hints: nil))
+        // The Chinese reading failing leaves the Latin one's matches.
+        let latinOnly = TextRecognition(image) { model in
+            if model == .chinese { throw CocoaError(.fileReadUnknown) }
+            return try await TextRecognition.recognize(image, by: model, timeout: .seconds(20))
+        }
+        #expect(try await SensitiveTextScanner().scan(latinOnly).contains { $0.kind == .email })
+        // Neither reading made: nothing was read, and the scan says so rather than finding nothing.
+        let unread = TextRecognition(image) { _ in throw CocoaError(.fileReadUnknown) }
+        await #expect(throws: CocoaError.self) { try await SensitiveTextScanner().scan(unread) }
+        await #expect(throws: CocoaError.self) { try await TextLineReader().read(unread) }
+    }
+}

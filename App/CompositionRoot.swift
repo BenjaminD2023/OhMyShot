@@ -54,17 +54,27 @@ final class CompositionRoot {
             return CaptureReading(
                 redactionSuggestions: {
                     let probe = LatencyProbe("annotate.redactions")
-                    let found = (try? await SensitiveTextScanner().scan(recognition)) ?? []
-                    probe.end()
-                    Log.app.notice("Redaction suggestions: \(found.count, privacy: .public) found")
-                    return found.map { RedactionSuggestion(rect: $0.box, label: Self.label(for: $0.kind)) }
+                    defer { probe.end() }
+                    do {
+                        let found = try await SensitiveTextScanner().scan(recognition)
+                        Log.app.notice("Redaction suggestions: \(found.count, privacy: .public) found")
+                        return found.map { RedactionSuggestion(rect: $0.box, label: Self.label(for: $0.kind)) }
+                    } catch {
+                        Self.logUnread("Redaction suggestions", error)
+                        throw error
+                    }
                 },
                 textLines: {
                     let probe = LatencyProbe("annotate.textlines")
-                    let lines = (try? await TextLineReader().read(recognition)) ?? []
-                    probe.end()
-                    Log.app.notice("Text lines: \(lines.count, privacy: .public) found")
-                    return lines.map { TextLine(rect: $0.box, words: $0.words) }
+                    defer { probe.end() }
+                    do {
+                        let lines = try await TextLineReader().read(recognition)
+                        Log.app.notice("Text lines: \(lines.count, privacy: .public) found")
+                        return lines.map { TextLine(rect: $0.box, words: $0.words) }
+                    } catch {
+                        Self.logUnread("Text lines", error)
+                        throw error
+                    }
                 }
             )
         }
@@ -452,6 +462,13 @@ final class CompositionRoot {
     }
 
     /// What a redaction suggestion's kind is called in its tooltip.
+    /// Notes a reading for the annotation tools that failed; one dropped because nobody waits for it is no
+    /// failure.
+    nonisolated private static func logUnread(_ what: StaticString, _ error: any Error) {
+        guard !(error is CancellationError) else { return }
+        Log.app.error("\(String(describing: what), privacy: .public): the capture could not be read (\(String(describing: error), privacy: .public))")
+    }
+
     nonisolated static func label(for kind: SensitiveText.Kind) -> String {
         switch kind {
         case .email: String(localized: "Email address")
