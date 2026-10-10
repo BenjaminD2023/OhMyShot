@@ -197,6 +197,10 @@ final class AllInOneBar: NSView {
 final class BarButton: NSButton {
     var onHover: ((Bool) -> Void)?
 
+    /// Its frame is the chip: no bezel margins, which made a symbol-only chip as tall as its symbol's own
+    /// alignment rect wanted rather than the chip's height.
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)

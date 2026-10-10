@@ -18,6 +18,7 @@ let package = Package(
         .library(name: "OMSUI", targets: ["OMSUI"]),
         .library(name: "OMSOCR", targets: ["OMSOCR"]),
         .library(name: "OMSAnnotate", targets: ["OMSAnnotate"]),
+        .library(name: "OMSRecording", targets: ["OMSRecording"]),
     ],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", .upToNextMinor(from: "3.1.0")),
@@ -56,6 +57,13 @@ let package = Package(
             resources: [.process("Resources")],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
+        // Screen recording: the stream, the movie writer, and what makes the kept file. Not tied to the main
+        // actor: samples are written on the stream's own queue; what the app drives is main-actor explicitly.
+        .target(
+            name: "OMSRecording",
+            dependencies: ["OMSCore"],
+            swiftSettings: swiftSettings
+        ),
         .testTarget(
             name: "OMSCoreTests",
             dependencies: ["OMSCore"],
@@ -75,6 +83,11 @@ let package = Package(
             name: "OMSCaptureTests",
             dependencies: ["OMSCapture"],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
+        ),
+        .testTarget(
+            name: "OMSRecordingTests",
+            dependencies: ["OMSRecording"],
+            swiftSettings: swiftSettings
         ),
         .testTarget(
             name: "OMSUITests",

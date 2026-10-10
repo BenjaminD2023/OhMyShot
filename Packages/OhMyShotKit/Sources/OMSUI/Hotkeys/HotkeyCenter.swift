@@ -23,6 +23,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case pickColor
     /// Measure the frozen screen.
     case measure
+    /// Choose an area, a window, or a display, and record it; pressed again while recording, stops.
+    case recordScreen
     case openHistory
     /// Copies the newest Quick Access card's capture, so it can be reached without the pointer.
     case copyLatestCapture
@@ -46,6 +48,7 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .translateArea: String(localized: "Translate Area", bundle: .module)
         case .pickColor: String(localized: "Pick Color", bundle: .module)
         case .measure: String(localized: "Measure", bundle: .module)
+        case .recordScreen: String(localized: "Record Screen", bundle: .module)
         case .openHistory: String(localized: "Open Capture History", bundle: .module)
         case .copyLatestCapture: String(localized: "Copy Latest Capture", bundle: .module)
         }
@@ -77,7 +80,7 @@ public final class HotkeyCenter {
         var installed = Set(defaults.stringArray(forKey: key) ?? [])
         if defaults.object(forKey: key) == nil, defaults.bool(forKey: "didInstallDefaultShortcuts") {
             // Installed before shortcuts were tracked one by one: every one that existed then.
-            installed = Set(CaptureShortcut.allCases.filter { ![.translateArea, .annotateArea, .pinArea, .pickColor, .measure].contains($0) }.map(\.rawValue))
+            installed = Set(CaptureShortcut.allCases.filter { ![.translateArea, .annotateArea, .pinArea, .pickColor, .measure, .recordScreen].contains($0) }.map(\.rawValue))
         }
         for shortcut in CaptureShortcut.allCases where !installed.contains(shortcut.rawValue) {
             let taken = CaptureShortcut.allCases.compactMap { KeyboardShortcuts.getShortcut(for: $0.name) }
@@ -121,6 +124,8 @@ public final class HotkeyCenter {
         case .pinArea: profile == .development ? KeyboardShortcuts.Shortcut(.seven, modifiers: modifiers) : nil
         case .pickColor: profile == .development ? KeyboardShortcuts.Shortcut(.eight, modifiers: modifiers) : nil
         case .measure: profile == .development ? KeyboardShortcuts.Shortcut(.nine, modifiers: modifiers) : nil
+        // ⇧⌘0 is ⌘= on German and other layouts, which zooms in many apps: the release build leaves it unset.
+        case .recordScreen: profile == .development ? KeyboardShortcuts.Shortcut(.zero, modifiers: modifiers) : nil
         case .captureWindow, .capturePreviousArea, .selfTimer, .captureTextJoined, .openHistory, .copyLatestCapture: nil
         }
     }

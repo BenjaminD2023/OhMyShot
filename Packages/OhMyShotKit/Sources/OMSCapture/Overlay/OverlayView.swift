@@ -157,6 +157,7 @@ final class OverlayView: NSView {
         case .screenshot: String(localized: "Drag to capture an area. Press Space to capture a window instead. Press Escape to cancel.")
         case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.")
         case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel.")
+        case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.")
         }
         setAccessibilityHelp(help)
         withoutAnimation {
@@ -361,7 +362,7 @@ final class OverlayView: NSView {
             break
         case .measure:
             measure?.beginBox(at: point)
-        case .screenshot, .text, .annotate:
+        case .screenshot, .text, .annotate, .record:
             delegate?.overlayView(self, didPressAt: global(point))
         }
     }
@@ -376,7 +377,7 @@ final class OverlayView: NSView {
             let inside = CGPoint(x: min(max(point.x, 0), bounds.maxX), y: min(max(point.y, 0), bounds.maxY))
             measure?.dragBox(to: inside)
             delegate?.overlayView(self, didMovePointerTo: global(inside))
-        case .screenshot, .text, .annotate:
+        case .screenshot, .text, .annotate, .record:
             delegate?.overlayView(self, didDragTo: global(point), modifiers: event.modifierFlags)
         }
     }
@@ -394,7 +395,7 @@ final class OverlayView: NSView {
             measure?.endBox()
             setAccessibilityValue(measure?.accessibilityValue)
             announceValue()
-        case .screenshot, .text, .annotate:
+        case .screenshot, .text, .annotate, .record:
             delegate?.overlayView(self, didReleaseWith: event.modifierFlags)
         }
     }
@@ -439,7 +440,7 @@ final class OverlayView: NSView {
         default:
             if character == "u", purpose == .measure, let measure {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
-            } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose != .text, let pointer, capturedFrame != nil {
+            } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose != .text, purpose != .record, let pointer, capturedFrame != nil {
                 // C takes the color under the crosshair, as in Snipaste: from the magnifier while capturing. With
                 // Option it opens the color card, as an Option-click does.
                 delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags.intersection(.option), keyboard: true)

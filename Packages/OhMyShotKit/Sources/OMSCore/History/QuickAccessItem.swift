@@ -14,6 +14,8 @@ public struct QuickAccessItem: Identifiable, Sendable {
     public let pixelHeight: Int
     public let displayID: CGDirectDisplayID
     public let createdAt: Date
+    /// A recording's length.
+    public let duration: TimeInterval?
     /// Where the user saved a copy, once they have.
     public var savedURL: URL?
 
@@ -26,6 +28,7 @@ public struct QuickAccessItem: Identifiable, Sendable {
         pixelHeight: Int,
         displayID: CGDirectDisplayID,
         createdAt: Date = .now,
+        duration: TimeInterval? = nil,
         savedURL: URL? = nil
     ) {
         self.id = id
@@ -36,6 +39,7 @@ public struct QuickAccessItem: Identifiable, Sendable {
         self.pixelHeight = pixelHeight
         self.displayID = displayID
         self.createdAt = createdAt
+        self.duration = duration
         self.savedURL = savedURL
     }
 }

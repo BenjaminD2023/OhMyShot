@@ -41,9 +41,8 @@ public final class OnboardingWindowController: NSWindowController, NSWindowDeleg
             windowLease = ActiveResources.shared.acquire(.window)
         }
         window?.center()
-        NSApp.activate()
         showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
+        AppActivation.bringForward(window)
     }
 
     public func windowWillClose(_ notification: Notification) {

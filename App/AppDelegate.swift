@@ -53,14 +53,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// After a permission changes, System Settings offers Quit & Reopen, but it only quits a menu bar
     /// app. When the quit comes from System Settings, start the new copy here before quitting.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let requester = Self.quitRequester() else { return .terminateNow }
-        Log.app.notice("Quit requested by \(requester, privacy: .public)")
-        guard requester.hasPrefix("com.apple.systempreferences") || requester.hasPrefix("com.apple.settings.") else {
-            return .terminateNow
+        let requester = Self.quitRequester()
+        if let requester { Log.app.notice("Quit requested by \(requester, privacy: .public)") }
+        let reopens = requester.map { $0.hasPrefix("com.apple.systempreferences") || $0.hasPrefix("com.apple.settings.") } ?? false
+        let quit = {
+            guard reopens else { return sender.reply(toApplicationShouldTerminate: true) }
+            Relauncher.startNewCopy { _ in sender.reply(toApplicationShouldTerminate: true) }
         }
-        Relauncher.startNewCopy { _ in
-            sender.reply(toApplicationShouldTerminate: true)
-        }
+        // A recording is stopped and kept first; quitting goes on once it is.
+        if let root, root.finishRecordingBeforeQuitting(quit) { return .terminateLater }
+        guard reopens else { return .terminateNow }
+        quit()
         return .terminateLater
     }
 

@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -158,6 +159,39 @@ public final class HistoryStore: Sendable {
         return (width, height)
     }
 
+    /// Moves a file into the history under `name` (made unique, its extension kept) and returns its record:
+    /// for recordings, which are written to disk while they run and are never loaded whole.
+    public func add(
+        movingFileAt source: URL,
+        name: String = "OhMyShot",
+        kind: HistoryItem.Kind,
+        pixelWidth: Int,
+        pixelHeight: Int,
+        appName: String?,
+        duration: TimeInterval? = nil,
+        date: Date = .now
+    ) throws -> HistoryItem {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let item = HistoryItem(
+            kind: kind, createdAt: date, pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: appName,
+            fileName: availableFileName(name, fileExtension: source.pathExtension), duration: duration
+        )
+        try FileManager.default.moveItem(at: source, to: fileURL(for: item))
+        try JSONEncoder.history.encode(item).write(to: sidecarURL(for: item.id, fileName: item.fileName), options: .atomic)
+        return item
+    }
+
+    /// `name.fileExtension`, or `name (2).fileExtension` and so on when that is taken.
+    private func availableFileName(_ name: String, fileExtension: String) -> String {
+        var fileName = "\(name).\(fileExtension)"
+        var counter = 2
+        while FileManager.default.fileExists(atPath: directory.appending(path: fileName).path(percentEncoded: false)) {
+            fileName = "\(name) (\(counter)).\(fileExtension)"
+            counter += 1
+        }
+        return fileName
+    }
+
     /// Stores encoded image data under `name` (made unique) and returns its record. The file keeps a
     /// readable name, so dragging it out or revealing it shows the same name a saved copy would have.
     public func add(
@@ -173,12 +207,7 @@ public final class HistoryStore: Sendable {
     ) throws -> HistoryItem {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let id = UUID()
-        var fileName = "\(name).\(fileExtension)"
-        var counter = 2
-        while FileManager.default.fileExists(atPath: directory.appending(path: fileName).path(percentEncoded: false)) {
-            fileName = "\(name) (\(counter)).\(fileExtension)"
-            counter += 1
-        }
+        let fileName = availableFileName(name, fileExtension: fileExtension)
         let item = HistoryItem(
             id: id,
             kind: kind,
@@ -255,15 +284,27 @@ public final class HistoryStore: Sendable {
         directory.appending(path: "\(fileName).json")
     }
 
-    /// A thumbnail at most `maxPixels` on its long side, decoded without loading the full image.
+    /// A thumbnail at most `maxPixels` on its long side, decoded without loading the full image; for a
+    /// recording, its first frame.
     @concurrent
     public static func thumbnail(of url: URL, maxPixels: Int) async -> CGImage? {
+        if isMovie(url) {
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: maxPixels, height: maxPixels)
+            return try? await generator.image(at: .zero).image
+        }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         return CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixels,
         ] as CFDictionary)
+    }
+
+    /// Whether a history file is a movie, by its extension.
+    public static func isMovie(_ url: URL) -> Bool {
+        ["mp4", "mov", "m4v"].contains(url.pathExtension.lowercased())
     }
 
     /// The same, from encoded data already in memory.

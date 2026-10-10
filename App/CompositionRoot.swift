@@ -27,6 +27,7 @@ final class CompositionRoot {
     private lazy var pins = PinController(settings: settings, actions: makePinActions())
     private lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
     private lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
+    private lazy var recordings = RecordingCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions)
     private let hotkeys: HotkeyCenter
     private let urlScheme: String
     private var statusItem: StatusItemController?
@@ -46,6 +47,11 @@ final class CompositionRoot {
     }
 
     func start() {
+        // As Finder draws it, at the largest size anything of the app shows it (About, alerts): AppKit keeps a
+        // snapshot of it at this size.
+        let icon = AppActivation.appIcon
+        icon.size = NSSize(width: 128, height: 128)
+        NSApp.applicationIconImage = icon
         // A capture's text, read on this Mac for the annotation tools, one reading for both: the redaction
         // tool's suggestions, what reading finds better covered, and the lines of text the highlighter snaps
         // to, where they lie, never what they say.
@@ -93,6 +99,18 @@ final class CompositionRoot {
                     }
                 ) { [weak self] in
                     self?.handle(.selfTimer)
+                },
+                .init(
+                    title: String(localized: "Record Screen"),
+                    shortcut: .recordScreen,
+                    currentTitle: { [weak self] in
+                        guard let self else { return String(localized: "Record Screen") }
+                        if recordings.isRecording { return String(localized: "Stop Recording") }
+                        if recordings.isCountingDown { return String(localized: "Cancel Recording") }
+                        return String(localized: "Record Screen")
+                    }
+                ) { [weak self] in
+                    self?.handle(.recordScreen)
                 },
                 .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
                 .init(title: String(localized: "Translate Area"), shortcut: .translateArea) { [weak self] in self?.handle(.translateArea) },
@@ -189,6 +207,23 @@ final class CompositionRoot {
         captures.onCaptured = { [weak self] item in
             self?.didCapture(item)
         }
+        recordings.onRecorded = { [weak self] item in
+            self?.didCapture(item)
+        }
+        recordings.onTick = { [weak self] elapsed, paused in
+            guard let self else { return }
+            if let elapsed {
+                self.statusItem?.showRecording(elapsed: elapsed, paused: paused) { [weak self] in self?.recordings.stop() }
+            } else {
+                self.statusItem?.endRecording()
+            }
+        }
+        recordings.save = { [weak self] url in
+            self?.captures.save(fileAt: url)
+        }
+        recordings.shortcutKeys = { [weak self] in
+            self?.hotkeys.keys(for: .recordScreen)
+        }
         captures.openInEditor = { [weak self] entry, scale in
             self?.annotations.annotate(entry, scale: scale)
         }
@@ -210,7 +245,9 @@ final class CompositionRoot {
         }
         // Pins are in new captures as they are on screen (Settings can leave them out); a pin just opened
         // is fetched into the capturable content at once, so the next capture has it.
-        capturer.includedWindowIDs = { [weak self] in self?.pins.capturedWindowIDs ?? [] }
+        capturer.includedWindowIDs = { [weak self] in
+            (self?.pins.capturedWindowIDs ?? []).union(Self.standardWindowIDs())
+        }
         pins.onChange = { [weak self] in self?.shareableContent.refresh() }
         annotations.onChange = { [weak self] entry, data in
             self?.pictureChanged(entry, data: data)
@@ -233,6 +270,8 @@ final class CompositionRoot {
         }
 
         logStartup()
+        // What a crash or a forced quit left of a recording is finished and kept.
+        recordings.recoverLeftovers()
         permissions.refresh([.screenRecording])
         if permissions.status(of: .screenRecording) == .granted {
             // Built and fetched once now so the first capture does not pay for them. The panels come
@@ -247,6 +286,12 @@ final class CompositionRoot {
     /// Keeps edits still open in the editor before the app quits.
     func prepareForTermination() {
         annotations.keepAll()
+    }
+
+    /// Stops a recording and keeps it before the app quits; `done` runs once it is kept. False when no
+    /// recording needed it.
+    func finishRecordingBeforeQuitting(_ done: @escaping () -> Void) -> Bool {
+        recordings.finishBeforeQuitting(done)
     }
 
     func handle(url: URL, senderPID: pid_t?) {
@@ -328,6 +373,9 @@ final class CompositionRoot {
         case .measure:
             captures.cancelSelfTimer()
             measurer.measure()
+        case .recordScreen:
+            captures.cancelSelfTimer()
+            recordings.recordScreen()
         default:
             Log.hotkeys.notice("Not available yet: \(shortcut.rawValue, privacy: .public)")
         }
@@ -366,6 +414,13 @@ final class CompositionRoot {
             }
             captures.cancelSelfTimer()
             textCapture.captureText(joinLines: lineBreaks == false)
+        case .recordScreen(let region) where region.rect == nil:
+            guard permissions.status(of: .screenRecording) == .granted else {
+                showOnboarding()
+                return
+            }
+            captures.cancelSelfTimer()
+            recordings.recordScreen()
         case .openHistory:
             showHistory()
         case .restoreRecentlyClosed:
@@ -433,6 +488,7 @@ final class CompositionRoot {
             guard response == .OK else { return }
             self?.open(chooser.urls)
         }
+        chooser.orderFrontRegardless()
     }
 
     private func annotateImage(at url: URL) async {
@@ -519,6 +575,13 @@ final class CompositionRoot {
         )
     }
 
+    /// The app's own standard windows on screen (Settings, Capture History, the editor, the OCR panel), which
+    /// captures and recordings take in as they would any app's. What floats over the screen to capture it
+    /// (the overlay, Quick Access, readings, the countdown, the recording's bar) is borderless and stays out.
+    private static func standardWindowIDs() -> Set<CGWindowID> {
+        Set(NSApp.windows.filter { $0.isVisible && $0.styleMask.contains(.titled) && $0.windowNumber > 0 }.map { CGWindowID($0.windowNumber) })
+    }
+
     /// Whether the clipboard may hold something to pin, judged by its types alone: reading the types
     /// never asks for clipboard access, reading the contents may.
     private static func clipboardMayHoldPin() -> Bool {
@@ -576,6 +639,7 @@ final class CompositionRoot {
             guard response == .OK else { return }
             for url in chooser.urls { self?.pin(fileAt: url) }
         }
+        chooser.orderFrontRegardless()
     }
 
     private func savePinAs(_ pin: PinController.Pin) {
@@ -624,18 +688,18 @@ final class CompositionRoot {
             saveAs: { [weak self] item in self?.captures.saveAs(item) },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
             annotate: { [weak self] item in
-                guard let self, let entry = history.item(id: item.id) else { return }
+                guard let self, item.kind == .screenshot, let entry = history.item(id: item.id) else { return }
                 annotate(entry, displayID: item.displayID)
             },
             reveal: { item in NSWorkspace.shared.activateFileViewerSelecting([item.savedURL ?? item.fileURL]) },
             recognizeText: { [weak self] item in
-                guard let self else { return }
+                guard let self, item.kind == .screenshot else { return }
                 // Captures are saved without a resolution, so the scale is their display's.
                 let scale = displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 1
                 Task { await self.textCapture.openPanel(forFileAt: item.fileURL, fallbackScale: scale) }
             },
             pin: { [weak self] item in
-                guard let self else { return }
+                guard let self, item.kind == .screenshot else { return }
                 let scale = displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
                 pin(fileAt: item.fileURL, origin: .capture(item.id), fallbackScale: scale)
             },
@@ -738,7 +802,8 @@ final class CompositionRoot {
             pixelWidth: entry.pixelWidth,
             pixelHeight: entry.pixelHeight,
             displayID: displayID,
-            createdAt: entry.createdAt
+            createdAt: entry.createdAt,
+            duration: entry.duration
         )
     }
 
@@ -836,6 +901,7 @@ final class CompositionRoot {
             pins: pins,
             colorPicker: colorPicker,
             measurer: measurer,
+            recordings: recordings,
             settings: settings
         )
     }
@@ -854,6 +920,7 @@ private extension SettingsTab {
     init(urlTab: String?) {
         switch urlTab?.lowercased() {
         case "screenshots", "quickaccess": self = .capture
+        case "recording": self = .recording
         case "shortcuts": self = .shortcuts
         case "advanced": self = .automation
         case "about": self = .about
@@ -865,8 +932,9 @@ private extension SettingsTab {
 /// File actions on captures.
 enum CaptureFiles {
     /// Copies a capture's image. Image only, no file: some apps paste a file reference instead of the
-    /// picture when both are offered.
+    /// picture when both are offered. A recording is copied as its file.
     static func copy(_ url: URL) {
+        if HistoryStore.isMovie(url) { return PasteboardWriter.write(fileURL: url) }
         guard
             let data = try? Data(contentsOf: url),
             let source = CGImageSourceCreateWithData(data as CFData, nil),

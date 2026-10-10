@@ -88,9 +88,8 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
             windowLease = ActiveResources.shared.acquire(.window)
         }
         if window?.isVisible == false { window?.center() }
-        NSApp.activate()
         showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
+        AppActivation.bringForward(window)
     }
 
     /// Picks up captures taken while the window is open.

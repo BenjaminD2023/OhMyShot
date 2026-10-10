@@ -25,21 +25,14 @@ public final class SelfTimerCountdown {
     public init() {}
 
     /// Outlines `area` (global points) and counts `seconds` down under it; `finish` runs at zero, once
-    /// the countdown has left the screen.
-    public func start(seconds: Int, area: CGRect, layout: DisplayLayout, finish: @escaping () -> Void) {
+    /// the countdown has left the screen. Without `outlinesArea`, only the disc shows: whoever started it
+    /// keeps an outline of their own up (a recording, from its countdown to its end).
+    public func start(seconds: Int, area: CGRect, layout: DisplayLayout, outlinesArea: Bool = true, finish: @escaping () -> Void) {
         close()
         let seconds = max(seconds, 1)
         isRunning = true
         leases = [ActiveResources.shared.acquire(.timer), ActiveResources.shared.acquire(.window)]
-        // A panel per display: with a Space per display, a window across two shows on only one.
-        for display in layout.displays where !display.frame.intersection(area).isEmpty {
-            let frame = area.insetBy(dx: -4, dy: -4).intersection(display.frame)
-            let panel = CountdownPanel(frame: frame)
-            let view = SelectionOutlineView(frame: CGRect(origin: .zero, size: frame.size))
-            view.outline = area.offsetBy(dx: -frame.minX, dy: -frame.minY)
-            panel.contentView = view
-            outlinePanels.append(panel)
-        }
+        if outlinesArea { outlinePanels = AreaOutline.panels(around: area, layout: layout) }
         let discFrame = Self.discFrame(for: area, diameter: Self.discDiameter, displays: layout.displays.map(\.frame))
         let panel = CountdownPanel(frame: discFrame.insetBy(dx: -Self.shadowRoom, dy: -Self.shadowRoom))
         let disc = CountdownDisc(seconds: seconds)
@@ -119,6 +112,44 @@ public final class SelfTimerCountdown {
         inside.origin.x = min(max(inside.minX, room.minX), room.maxX - diameter)
         inside.origin.y = min(max(inside.minY, room.minY), room.maxY - diameter)
         return inside
+    }
+}
+
+/// An area outlined where it lies, as Self-Timer's countdown and a recording show it: one click-through
+/// panel per display it reaches, over menus, on every Space, left out of every capture and recording.
+public final class AreaOutline {
+    private var panels: [CountdownPanel] = []
+    private var lease: ActiveResources.Lease?
+
+    public init() {}
+
+    public var isShowing: Bool { !panels.isEmpty }
+
+    /// Outlines `area` (global points), replacing what was outlined before.
+    public func show(_ area: CGRect, layout: DisplayLayout) {
+        hide()
+        panels = Self.panels(around: area, layout: layout)
+        panels.forEach { $0.orderFrontRegardless() }
+        lease = ActiveResources.shared.acquire(.window)
+    }
+
+    public func hide() {
+        panels.forEach { $0.orderOut(nil) }
+        panels = []
+        lease = nil
+    }
+
+    /// The panels for `area`, not yet on screen. A panel per display: with a Space per display, a window
+    /// across two shows on only one.
+    static func panels(around area: CGRect, layout: DisplayLayout) -> [CountdownPanel] {
+        layout.displays.filter { !$0.frame.intersection(area).isEmpty }.map { display in
+            let frame = area.insetBy(dx: -4, dy: -4).intersection(display.frame)
+            let panel = CountdownPanel(frame: frame)
+            let view = SelectionOutlineView(frame: CGRect(origin: .zero, size: frame.size))
+            view.outline = area.offsetBy(dx: -frame.minX, dy: -frame.minY)
+            panel.contentView = view
+            return panel
+        }
     }
 }
 

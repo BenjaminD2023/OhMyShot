@@ -83,9 +83,8 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }
-        NSApp.activate()
         showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
+        AppActivation.bringForward(window)
     }
 
     public func windowWillClose(_ notification: Notification) {

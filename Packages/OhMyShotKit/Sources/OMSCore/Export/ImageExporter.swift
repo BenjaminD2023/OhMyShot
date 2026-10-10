@@ -62,10 +62,15 @@ public enum ImageExporter {
 
     /// A file URL in `directory` named `name.ext` that does not exist yet: "name (2).ext" and so on.
     public static func availableURL(in directory: URL, name: String, format: Format) -> URL {
-        var candidate = directory.appending(path: "\(name).\(format.fileExtension)")
+        availableURL(in: directory, name: name, fileExtension: format.fileExtension)
+    }
+
+    /// The same for any kind of file, a recording's included.
+    public static func availableURL(in directory: URL, name: String, fileExtension: String) -> URL {
+        var candidate = directory.appending(path: "\(name).\(fileExtension)")
         var counter = 2
         while FileManager.default.fileExists(atPath: candidate.path(percentEncoded: false)) {
-            candidate = directory.appending(path: "\(name) (\(counter)).\(format.fileExtension)")
+            candidate = directory.appending(path: "\(name) (\(counter)).\(fileExtension)")
             counter += 1
         }
         return candidate

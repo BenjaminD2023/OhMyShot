@@ -36,6 +36,8 @@ targets:
         product: OMSOCR
       - package: OhMyShotKit
         product: OMSAnnotate
+      - package: OhMyShotKit
+        product: OMSRecording
 
 schemes:
   OhMyShot:

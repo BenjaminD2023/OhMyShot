@@ -137,7 +137,7 @@ final class CaptureCoordinator {
                 Task { await self?.pin(window: target) }
             case .color(let color, let point, _, let modifiers, let keyboard):
                 self?.onColor?(color, point, modifiers, keyboard)
-            case .annotated, .cancelled:
+            case .annotated, .record, .cancelled:
                 break
             }
         }
@@ -221,7 +221,7 @@ final class CaptureCoordinator {
                 self?.countDown(to: .window(target), seconds: seconds, copiesToClipboard: copiesToClipboard)
             case .color(let color, let point, _, let modifiers, let keyboard):
                 self?.onColor?(color, point, modifiers, keyboard)
-            case .annotated, .cancelled:
+            case .annotated, .record, .cancelled:
                 break
             }
         }
@@ -326,13 +326,13 @@ final class CaptureCoordinator {
         save(fileAt: item.fileURL)
     }
 
-    /// Saves a copy of a capture's file to the export location, under the file's name.
+    /// Saves a copy of a capture's file to the export location, under the file's name and kind.
     func save(fileAt url: URL) -> URL? {
         do {
             let directory = settings.exportDirectory
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let name = url.deletingPathExtension().lastPathComponent
-            let destination = ImageExporter.availableURL(in: directory, name: name, format: .png)
+            let destination = ImageExporter.availableURL(in: directory, name: name, fileExtension: url.pathExtension)
             try FileManager.default.copyItem(at: url, to: destination)
             Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
             return destination
@@ -348,7 +348,7 @@ final class CaptureCoordinator {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = item.fileURL.lastPathComponent
         panel.directoryURL = settings.exportDirectory
-        panel.allowedContentTypes = [.png]
+        panel.allowedContentTypes = [UTType(filenameExtension: item.fileURL.pathExtension) ?? .png]
         NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         do {
@@ -385,7 +385,7 @@ final class CaptureCoordinator {
                 Task { await self?.captureWindow(target, copiesToClipboard: copiesToClipboard) }
             case .color(let color, let point, _, let modifiers, let keyboard):
                 self?.onColor?(color, point, modifiers, keyboard)
-            case .annotated, .cancelled:
+            case .annotated, .record, .cancelled:
                 break
             }
         }

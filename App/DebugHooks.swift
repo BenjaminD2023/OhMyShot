@@ -7,6 +7,7 @@ import OMSAnnotate
 import OMSCapture
 import OMSCore
 import OMSOCR
+import OMSRecording
 import OMSUI
 import OSLog
 import ScreenCaptureKit
@@ -38,6 +39,7 @@ struct DebugHooks {
     let pins: PinController
     let colorPicker: ColorPickerCoordinator
     let measurer: MeasureCoordinator
+    let recordings: RecordingCoordinator
     let settings: SettingsStore
 
     /// Where `snapshot` writes window captures.
@@ -281,6 +283,104 @@ struct DebugHooks {
                 pins.pin(color: color)
             }
             Log.app.notice("debug.pin-color-demo \(self.pins.debugSummary, privacy: .public)")
+        case "record-demo":
+            // Records a window of scrolling text the app draws behind the desktop picture, through the real
+            // recorder, nothing shown and nothing of the user's read: seconds=, w=/h= (points), fps=, speed=
+            // (points per second; 0 = still), hevc=1, audio=1 (what the Mac plays), keep=0 (else record-demo.mov
+            // and .mp4 stay in the snapshot folder). Logs frames, drops, bitrate, CPU, and the finishing time.
+            let seconds = Self.intParameter("seconds", in: url) ?? 5
+            let size = CGSize(width: Self.intParameter("w", in: url) ?? 1280, height: Self.intParameter("h", in: url) ?? 720)
+            Task {
+                await DebugRecordingDemo.run(
+                    seconds: seconds, size: size, framesPerSecond: Self.intParameter("fps", in: url) ?? 60,
+                    speed: Double(Self.intParameter("speed", in: url) ?? 240), prefersHEVC: Self.intParameter("hevc", in: url) == 1,
+                    keeps: Self.intParameter("keep", in: url) != 0, systemAudio: Self.intParameter("audio", in: url) == 1
+                )
+            }
+        case "status-icon":
+            // Whether the menu bar's mark loads from the app's asset catalog (not the fallback symbol), drawn
+            // at 2× into status-icon.png in the snapshot folder: black for template ink.
+            Task {
+                let image = NSImage(named: "MenuBarIcon")
+                Log.app.notice("debug.status-icon catalog image \(image != nil, privacy: .public), size \(String(describing: image?.size), privacy: .public), template \(image?.isTemplate ?? false, privacy: .public)")
+                guard let image else { return }
+                let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 72, pixelsHigh: 72, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+                NSColor.white.setFill()
+                NSRect(x: 0, y: 0, width: 72, height: 72).fill()
+                image.draw(in: NSRect(x: 0, y: 0, width: 72, height: 72))
+                NSGraphicsContext.restoreGraphicsState()
+                let file = Self.snapshotDirectory.appending(path: "status-icon.png")
+                try? bitmap.representation(using: .png, properties: [:])?.write(to: file)
+                Log.app.notice("debug.status-icon \(file.path(percentEncoded: false), privacy: .public)")
+            }
+        case "own-window-check":
+            // Whether captures take the app's own standard windows in: a titled window filled with magenta opens
+            // at the center of the main display for about a second, the middle of it is captured as an area
+            // would be, and the capture's average color is logged (magenta = in). Nothing is kept.
+            Task { await checkOwnWindowInCapture() }
+        case "app-icon":
+            // The app's icon as the app itself sees it (`NSApp.applicationIconImage`), or with source=workspace as
+            // Finder shows it, drawn at 128 pt into app-icon.png in the snapshot folder.
+            let workspaceIcon = NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+            let icon = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "source" && $0.value == "workspace" } == true
+                ? workspaceIcon : NSApp.applicationIconImage
+            Log.app.notice("debug.app-icon size \(String(describing: icon?.size), privacy: .public), \(icon?.representations.count ?? 0, privacy: .public) representations: \(icon?.representations.map { "\(type(of: $0)) \($0.pixelsWide)x\($0.pixelsHigh)" }.joined(separator: ", ") ?? "none", privacy: .public)")
+            if let icon {
+                let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 256, pixelsHigh: 256, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+                NSGraphicsContext.saveGraphicsState()
+                NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+                icon.draw(in: NSRect(x: 0, y: 0, width: 256, height: 256))
+                NSGraphicsContext.restoreGraphicsState()
+                try? bitmap.representation(using: .png, properties: [:])?.write(to: Self.snapshotDirectory.appending(path: "app-icon.png"))
+            }
+        case "record-flow":
+            // The whole flow on a window of scrolling text the app draws behind the desktop picture (never
+            // the user's screen): countdown, recording with its control bar and menu bar time, Stop after
+            // seconds=, kept in the history with a card. The countdown and bar show on screen: ask first.
+            // Clean up with qa-dismiss-all and history-delete-latest.
+            let seconds = Self.intParameter("seconds", in: url) ?? 3
+            Task {
+                await DebugRecordingDemo.runFlow(
+                    recordings: recordings, displays: displays, seconds: seconds, countdown: settings.recordingCountdown,
+                    size: CGSize(width: Self.intParameter("w", in: url) ?? 800, height: Self.intParameter("h", in: url) ?? 500)
+                )
+            }
+        case "record-act":
+            // action=pause|resume|restart|delete|stop drives the running recording; anything else logs its state.
+            let action = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "action" }?.value
+            switch action {
+            case "pause": recordings.pause()
+            case "resume": recordings.resume()
+            case "restart": recordings.restart()
+            case "delete": recordings.delete()
+            case "stop": recordings.stop()
+            default: break
+            }
+            let recorder = recordings.debugRecorder
+            Log.app.notice("debug.record-act \(action ?? "state", privacy: .public): recording=\(recordings.isRecording, privacy: .public) countingDown=\(recordings.isCountingDown, privacy: .public) state=\(recorder.map { String(describing: $0.state) } ?? "none", privacy: .public) elapsed=\(recorder.map { $0.elapsed.description } ?? "-", privacy: .public) frames=\(recorder.map { "\($0.frameCounts.complete)" } ?? "-", privacy: .public)")
+        case "record-setup-demo":
+            // Choosing what to record over drawn screens (never the real one), with an area selected and the
+            // recording bar under it: x=, y=, w=, h= in display points from the top-left. Record only logs
+            // what it would record. Covers a display until record-setup-act?action=cancel: ask first.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let number = { (name: String, fallback: Int) in items.first { $0.name == name }?.value.flatMap(Int.init) ?? fallback }
+            Task { await runRecordingSetupDemo(CGRect(x: number("x", 240), y: number("y", 200), width: number("w", 800), height: number("h", 500))) }
+        case "record-setup-act":
+            // action=record|cancel|systemAudio|microphone|clicks, or none to log what is framed.
+            let action = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "action" }?.value
+            Log.app.notice("debug.record-setup \(action ?? "state", privacy: .public): \(overlay.debugRecordingSetup(action) ?? "nothing framed", privacy: .public)")
+        case "record-bar-render":
+            // The control bar alone behind the desktop picture, captured without showing anything:
+            // elapsed= (seconds), paused=1, mode=light|dark. Writes record-bar-<mode>[-paused].png.
+            let paused = Self.intParameter("paused", in: url) == 1
+            let dark = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "mode" }?.value == "dark"
+            let window = RecordingControlBar.debugHiddenWindow(elapsed: .seconds(Self.intParameter("elapsed", in: url) ?? 42), paused: paused, dark: dark)
+            Task {
+                await captureHiddenWindow(window, name: "record-bar-\(dark ? "dark" : "light")\(paused ? "-paused" : "")")
+                window.orderOut(nil)
+            }
         case "pin-render":
             // Draws a pin behind the desktop picture and captures its window alone, nothing shown:
             // kind=text|line|narrow|code|color|alpha|page (the drawn demo page as a picture),
@@ -669,6 +769,46 @@ struct DebugHooks {
         } catch {
             Log.app.error("debug.hidden-window failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Opens a magenta titled window, captures its middle as an area capture would, logs the average color.
+    func checkOwnWindowInCapture() async {
+        guard let screen = NSScreen.screens.first else { return }
+        let window = NSWindow(
+            contentRect: CGRect(x: screen.frame.midX - 200, y: screen.frame.midY - 150, width: 400, height: 300),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false
+        )
+        window.title = "Own Window Check"
+        window.isReleasedWhenClosed = false
+        let view = NSView()
+        view.wantsLayer = true
+        view.layer?.backgroundColor = CGColor(srgbRed: 1, green: 0, blue: 1, alpha: 1)
+        window.contentView = view
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        try? await Task.sleep(for: .milliseconds(400))
+        do {
+            let area = window.frame.insetBy(dx: 60, dy: 60)
+            let frame = try await capturer.captureArea(area, in: displays.layout)
+            let color = frame.color(atPixel: frame.image.width / 2, frame.image.height / 2)
+            Log.app.notice("debug.own-window-check captured \(frame.image.width, privacy: .public)x\(frame.image.height, privacy: .public), middle \(color?.hex ?? "none", privacy: .public) (magenta FF00FF means the window is in the capture)")
+        } catch {
+            Log.app.error("debug.own-window-check failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// The recording overlay over drawn screens with `rect` (display points from the top-left of the
+    /// pointer's display) chosen: the recording bar shows; Record logs the outcome and records nothing.
+    func runRecordingSetupDemo(_ rect: CGRect) async {
+        guard let display = injectToolsDemoFrames() else { return }
+        overlay.freezesScreen = false
+        overlay.recordingChoices = RecordingChoices(systemAudio: true, microphone: false, showsClicks: true)
+        overlay.begin(mode: .area, purpose: .record) { outcome in
+            Log.app.notice("debug.record-setup outcome \(String(describing: outcome), privacy: .public)")
+        }
+        await waitForOverlayFrames()
+        overlay.simulateSelection(CGRect(x: display.frame.minX + rect.minX, y: display.frame.maxY - rect.maxY, width: rect.width, height: rect.height))
+        Log.app.notice("debug.record-setup \(overlay.debugRecordingSetup(nil) ?? "nothing framed", privacy: .public)")
     }
 
     /// Frames of the drawn tools screen for every display, injected so nothing real is read.

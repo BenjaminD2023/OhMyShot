@@ -23,6 +23,15 @@ public enum PasteboardWriter {
         pasteboard.clearContents()
         pasteboard.writeObjects([item])
     }
+
+    /// Puts a file on the clipboard, as Finder's Copy does: a recording, which pastes into chats, mail,
+    /// and upload forms as the file.
+    @MainActor
+    public static func write(fileURL: URL) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects([fileURL as NSURL])
+    }
 }
 
 private final class LazyTIFFProvider: NSObject, NSPasteboardItemDataProvider {

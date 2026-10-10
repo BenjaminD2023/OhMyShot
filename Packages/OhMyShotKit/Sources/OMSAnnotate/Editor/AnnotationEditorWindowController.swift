@@ -93,9 +93,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }
-        NSApp.activate()
         showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
+        AppActivation.bringForward(window)
         window?.makeFirstResponder(content.canvas)
         updateZoomLabel()
     }

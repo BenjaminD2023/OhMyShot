@@ -6,6 +6,7 @@ import SwiftUI
 public enum SettingsTab: String, CaseIterable, Sendable {
     case general
     case capture
+    case recording
     case tools
     case shortcuts
     case permissions
@@ -16,6 +17,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         switch self {
         case .general: String(localized: "General", bundle: .module)
         case .capture: String(localized: "Capture", bundle: .module)
+        case .recording: String(localized: "Recording", bundle: .module)
         case .tools: String(localized: "Tools", bundle: .module)
         case .shortcuts: String(localized: "Shortcuts", bundle: .module)
         case .permissions: String(localized: "Permissions", bundle: .module)
@@ -28,6 +30,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         switch self {
         case .general: "gearshape"
         case .capture: "camera.viewfinder"
+        case .recording: "record.circle"
         case .tools: "wrench.and.screwdriver"
         case .shortcuts: "command"
         case .permissions: "hand.raised"
@@ -135,9 +138,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }
-        NSApp.activate()
         showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
+        AppActivation.bringForward(window)
     }
 
     public func windowWillClose(_ notification: Notification) {
@@ -152,6 +154,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             host(GeneralSettingsView(settings: dependencies.settings, openHistory: dependencies.openHistory, expiredCount: dependencies.expiredCount))
         case .capture:
             host(CaptureSettingsView(settings: dependencies.settings, backgrounds: dependencies.backgrounds))
+        case .recording:
+            host(RecordingSettingsView(settings: dependencies.settings))
         case .tools:
             host(ToolsSettingsView(settings: dependencies.settings))
         case .shortcuts:

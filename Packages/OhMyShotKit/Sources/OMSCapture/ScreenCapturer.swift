@@ -79,6 +79,62 @@ public final class ScreenCapturer {
         return CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: target.frame)
     }
 
+    /// What a recording streams: the content filter, the part of it, and the frame's size in pixels.
+    public struct RecordingSource {
+        public let filter: SCContentFilter
+        /// The recorded part of the display, in points from its top-left corner; nil for all of it, and for
+        /// a window, which is recorded whole.
+        public let sourceRect: CGRect?
+        /// The frame's size in pixels, both sides even: an area is trimmed by a pixel to make them so,
+        /// never scaled, so every pixel is recorded as it is.
+        public let pixelWidth: Int
+        public let pixelHeight: Int
+        /// Where the recorded part is, in AppKit's global space; a window's frame when recording began.
+        public let frame: CGRect
+        public let displayID: CGDirectDisplayID
+    }
+
+    /// The source for recording `target` on `display`. Areas and displays are recorded as the screen
+    /// shows them, without this app's windows except the pins (as captures take them) and `including`
+    /// (what a recording shows on purpose); a window is recorded on its own, without what covers it.
+    public func recordingSource(
+        for target: RecordingTarget, on display: DisplayInfo, including: Set<CGWindowID> = []
+    ) async throws -> RecordingSource {
+        switch target {
+        case .window(let window):
+            content.refresh()
+            guard let found = try await content.current().windows.first(where: { $0.windowID == window.id }) else {
+                throw CaptureError.windowNotFound(window.id)
+            }
+            let filter = SCContentFilter(desktopIndependentWindow: found)
+            let scale = CGFloat(filter.pointPixelScale)
+            let width = Int((filter.contentRect.width * scale).rounded()), height = Int((filter.contentRect.height * scale).rounded())
+            return RecordingSource(
+                filter: filter, sourceRect: nil, pixelWidth: max(2, width - width % 2), pixelHeight: max(2, height - height % 2),
+                frame: window.frame, displayID: display.id
+            )
+        case .area, .display:
+            let scDisplay = try await content.display(id: display.id)
+            let excluded = try await content.ownApplication().map { [$0] } ?? []
+            let included = (includedWindowIDs?() ?? []).union(including)
+            let excepted = included.isEmpty ? [] : try await content.windows(withIDs: included)
+            let filter = SCContentFilter(display: scDisplay, excludingApplications: excluded, exceptingWindows: excepted)
+            let scale = display.pixelsPerPoint
+            var area = display.frame
+            if case .area(let rect) = target { area = rect.intersection(display.frame) }
+            guard !area.isNull, area.width > 0, area.height > 0 else { throw CaptureError.emptyResult }
+            var width = Int((area.width * scale).rounded()), height = Int((area.height * scale).rounded())
+            // Even sides, by leaving out the last column or row of pixels.
+            if width % 2 == 1 { width -= 1; area.size.width = CGFloat(width) / scale }
+            if height % 2 == 1 { height -= 1; area.origin.y += 1 / scale; area.size.height = CGFloat(height) / scale }
+            let isWhole = area.size == display.frame.size
+            return RecordingSource(
+                filter: filter, sourceRect: isWhole ? nil : Self.displayLocalRect(area, on: display),
+                pixelWidth: max(2, width), pixelHeight: max(2, height), frame: area, displayID: display.id
+            )
+        }
+    }
+
     private func capture(
         display: DisplayInfo,
         region: CGRect?,

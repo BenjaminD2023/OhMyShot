@@ -1,14 +1,14 @@
 import AppKit
-import OMSCore
 import QuartzCore
 
-/// What in-place annotation draws around its selection, never taking a click: the screen dimmed around
-/// it, its frame as the capture overlay draws one (with the crop frame's thick corners, since it can be
-/// resized), thirds while it is adjusted, and its size in a reading capsule.
+/// What in-place annotation and the recording setup draw around their selection, never taking a click:
+/// the screen dimmed around it, its frame as the capture overlay draws one (with the crop frame's thick
+/// corners when it can be resized), thirds while it is adjusted, and its size in a reading capsule.
 ///
 /// Vector layers, as the overlay's own selection is: the view covers the whole display, and a drawn
 /// layer that size would hold tens of megabytes and redraw at every step of a drag.
-final class SelectionChromeView: NSView {
+@MainActor
+public final class SelectionChromeView: NSView {
     private let room = CAShapeLayer()
     private let outline = CAShapeLayer()
     private let edge = CAShapeLayer()
@@ -19,30 +19,34 @@ final class SelectionChromeView: NSView {
     private let readingText = CATextLayer()
     private var displayOptions: NSObjectProtocol?
 
-    var selection: CGRect = .zero {
+    public var selection: CGRect = .zero {
         didSet { if selection != oldValue { relayout() } }
     }
-    var reading = "" {
+    public var reading = "" {
         didSet { if reading != oldValue { relayout() } }
     }
-    var showsThirds = false {
+    public var showsThirds = false {
         didSet { if showsThirds != oldValue { relayout() } }
     }
+    /// The corners' thick arms, which say the frame can be resized.
+    public var showsHandles = true {
+        didSet { if showsHandles != oldValue { relayout() } }
+    }
     /// The toolbar and the capsule, which the reading must not cover.
-    var avoiding: CGRect = .null {
+    public var avoiding: CGRect = .null {
         didSet { if avoiding != oldValue { relayout() } }
     }
     /// The toolbar alone: a reading with no room at the selection sits on its row.
-    var toolbarFrame: CGRect = .null {
+    public var toolbarFrame: CGRect = .null {
         didSet { if toolbarFrame != oldValue { relayout() } }
     }
 
     /// How far the frame's corners reach past its edge, which stays on screen where the selection meets
     /// the display's edge.
-    static let reach: CGFloat = 4.5
+    public static let reach: CGFloat = 4.5
 
     /// The frame as drawn: the selection, stepped in by `reach` on every side that meets `bounds`.
-    static func drawnFrame(for selection: CGRect, in bounds: CGRect) -> CGRect {
+    public static func drawnFrame(for selection: CGRect, in bounds: CGRect) -> CGRect {
         var frame = selection
         if selection.minX - bounds.minX < reach { frame.origin.x += reach; frame.size.width -= reach }
         if bounds.maxX - selection.maxX < reach { frame.size.width -= reach }
@@ -51,7 +55,7 @@ final class SelectionChromeView: NSView {
         return frame
     }
 
-    override init(frame frameRect: NSRect) {
+    public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         room.fillRule = .evenOdd
@@ -94,10 +98,10 @@ final class SelectionChromeView: NSView {
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
     }
 
-    override var isFlipped: Bool { true }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    public override var isFlipped: Bool { true }
+    public override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    override func viewDidMoveToWindow() {
+    public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
         displayOptions = nil
@@ -111,12 +115,12 @@ final class SelectionChromeView: NSView {
         }
     }
 
-    override func viewDidChangeEffectiveAppearance() {
+    public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         applyAppearance()
     }
 
-    override func layout() {
+    public override func layout() {
         super.layout()
         relayout()
     }
@@ -149,7 +153,8 @@ final class SelectionChromeView: NSView {
             for layer in [room, outline, edge, thirds, armsOutline, arms, readingLayer] { layer.isHidden = true }
             return
         }
-        for layer in [room, outline, edge, armsOutline, arms] { layer.isHidden = false }
+        for layer in [room, outline, edge] { layer.isHidden = false }
+        for layer in [armsOutline, arms] { layer.isHidden = !showsHandles }
         let dimmed = CGMutablePath()
         dimmed.addRect(bounds)
         dimmed.addRect(rect)

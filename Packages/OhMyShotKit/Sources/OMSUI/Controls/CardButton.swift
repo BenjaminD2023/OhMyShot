@@ -14,12 +14,14 @@ final class CardButton: NSControl {
         case chip
         /// A tinted circle with a symbol, on a card.
         case chipIcon
+        /// A clear circle with a symbol, in a glass bar: filled only under the pointer or a press.
+        case barIcon
     }
 
     var title: String {
         didSet {
             setAccessibilityLabel(title)
-            if style == .chipIcon || style == .round { toolTip = title }
+            if style == .chipIcon || style == .round || style == .barIcon { toolTip = title }
             invalidateIntrinsicContentSize()
             needsDisplay = true
         }
@@ -34,6 +36,11 @@ final class CardButton: NSControl {
 
     /// What the button stands on, filled under it: over text, so the letters it covers don't show through.
     var backdrop: NSColor? {
+        didSet { needsDisplay = true }
+    }
+
+    /// The symbol's ink, in place of the label color (a bar's Stop in red).
+    var symbolTint: NSColor? {
         didSet { needsDisplay = true }
     }
 
@@ -54,7 +61,7 @@ final class CardButton: NSControl {
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel(title)
-        if style == .round || style == .chipIcon { toolTip = title }
+        if style == .round || style == .chipIcon || style == .barIcon { toolTip = title }
         if style == .pill {
             // A soft lift, so the capsule holds its edge on bright pictures.
             wantsLayer = true
@@ -83,6 +90,8 @@ final class CardButton: NSControl {
             NSSize(width: 112, height: 30)
         case .round, .chipIcon:
             NSSize(width: 24, height: 24)
+        case .barIcon:
+            NSSize(width: 30, height: 30)
         case .chip:
             NSSize(width: ceil((symbol(ink: .labelColor)?.size.width ?? 0) + 5 + label(ink: .labelColor).size().width + 22), height: 26)
         }
@@ -130,6 +139,11 @@ final class CardButton: NSControl {
             let strength: CGFloat = pressed ? 2.6 : hovering ? 1.7 : 1
             NSColor(white: dark ? 1 : 0, alpha: (dark ? 0.1 : 0.06) * strength).setFill()
             ink = .labelColor
+        case .barIcon:
+            // The bar's own hover and pressed fills, doubled under Increase Contrast.
+            let strength: CGFloat = (pressed ? 2 : hovering ? 1 : 0) * (increaseContrast ? 2 : 1)
+            NSColor(white: dark ? 1 : 0, alpha: (dark ? 0.09 : 0.045) * strength).setFill()
+            ink = .labelColor
         }
         NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
         if increaseContrast {
@@ -137,6 +151,7 @@ final class CardButton: NSControl {
             case .pill: NSColor(white: 0, alpha: 0.5)
             case .round: NSColor(white: 1, alpha: 0.7)
             case .chip, .chipIcon: dark ? NSColor(white: 1, alpha: 0.5) : NSColor(white: 0, alpha: 0.35)
+            case .barIcon: .clear
             }
             edge.setStroke()
             let outline = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: radius - 0.5, yRadius: radius - 0.5)
@@ -144,10 +159,10 @@ final class CardButton: NSControl {
             outline.stroke()
         }
 
-        let image = symbol(ink: ink)
+        let image = symbol(ink: symbolTint ?? ink)
         let symbolSize = image?.size ?? .zero
         switch style {
-        case .round, .chipIcon:
+        case .round, .chipIcon, .barIcon:
             image?.draw(in: CGRect(x: bounds.midX - symbolSize.width / 2, y: bounds.midY - symbolSize.height / 2, width: symbolSize.width, height: symbolSize.height))
         case .pill, .chip:
             let text = label(ink: ink)
@@ -166,9 +181,15 @@ final class CardButton: NSControl {
         case .round: 10.5
         case .chip: 11
         case .chipIcon: 9.5
+        case .barIcon: 14
+        }
+        let weight: NSFont.Weight = switch style {
+        case .chip: .semibold
+        case .barIcon: .medium
+        default: .bold
         }
         return NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: size, weight: style == .chip ? .semibold : .bold).applying(.init(paletteColors: [ink])))
+            .withSymbolConfiguration(.init(pointSize: size, weight: weight).applying(.init(paletteColors: [ink])))
     }
 
     private func label(ink: NSColor) -> NSAttributedString {

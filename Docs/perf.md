@@ -322,3 +322,79 @@ Debug build, the drawn demo page (1520×1120 px) pinned at 1:1 on the built-in d
   of the capturable content triggers one refetch in the next capture, and the content is fetched again
   in the background as soon as a pin opens, so that capture rarely pays for it.
 
+
+## M4 — recording spike (2026-10-10)
+
+Same machine, one display attached (the built-in XDR, 4112×2658 framebuffer); the ultrawide was not
+connected, so the stream from a real 6880×2880 display is still to be measured. Two halves:
+
+- **The encoders alone**, with no screen involved: `Tools/recording-spike/encode-bench.swift` feeds
+  synthetic 4:2:0 frames (glyph blocks, or real text drawn with Core Text at 2×, scrolling 8 px a frame)
+  through AVAssetWriter with the settings the recorder uses (hardware only, real time, constant quality
+  0.6, no B-frames, a key frame every 2 s). CPU is this process plus VideoToolbox's encoder service.
+- **The stream in the app**, Debug build: `ohmyshot-dev://debug/record-demo` records a window the app
+  draws behind the desktop picture (a page of text scrolling 240 pt/s, animated by Core Animation)
+  through the real `ScreenRecorder`, so nothing of the user's is read. CPU is per process over the run.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Largest frame the H.264 hardware encoder takes | 4096 on either side (4096×4096 encodes; 4098 or 4112 wide fails) | — |
+| Largest frame the HEVC hardware encoder takes | 8192×4320 and beyond | — |
+| Encoding as fast as accepted, H.264 1920×1080 / 4096×2304 | 191 / 94 fps | — |
+| Encoding as fast as accepted, HEVC 4112×2658 / 6880×2880 | 139 / 79 fps | 60 |
+| Encoding paced at 60 fps, CPU, 1920×1080 H.264 / 6880×2880 HEVC | 5.8–8.7% / 8.1–9.2% of a core, no frame dropped | — |
+| Bitrate at quality 0.6, text scrolling 8 px a frame at 60 fps, 1080p H.264 / 4112×2658 HEVC / 6K HEVC | 2.2 / 6.5 / 12.5 Mb/s | — |
+| Recording a still window, 60 fps (frames sent / idle notices) | 1 / 292 in 5 s; app 2.1%, encoder 0.3%, replayd 1.6% | — |
+| Recording 1920×1080 scrolling, 60 fps: frames written / dropped | 291 / 0 | — |
+| CPU for that: app, encoder service, replayd | 8.4%, 4.4%, 2.9% (15.7% together; the window server could not be read) | < 15% |
+| The same at 30 fps | 4.5%, 2.2%, 1.7% | — |
+| Recording 4112×2658 HEVC scrolling, 60 fps / 30 fps | 8.1 + 5.2 + 2.8% / 4.8 + 2.5 + 1.9% | — |
+| Finishing the movie into an MP4 (5 s at 2560×1440, video copied) | 6–13 ms | — |
+
+### Findings
+
+- **H.264 cannot record the built-in display's whole framebuffer.** Its scaled mode is 4112 pixels wide,
+  16 over the hardware encoder's limit, and AVAssetWriter has no software fallback that accepts the
+  settings. So the format is chosen per recording: H.264 while both sides fit (the default, for players
+  and sites without HEVC), HEVC beyond, or always when asked for. 4096×4096 encodes but only at 37–53
+  fps; no display or area that size is expected.
+- **The encoders are not the cost; the frames are.** Per frame, the app spends most of its time in the
+  frameworks: handing each pixel buffer back to ScreenCaptureKit (an XPC message per buffer) and the
+  VideoToolbox client. The writer's own work is small. CPU therefore follows the frame rate far more
+  than the size: 4112×2658 at 60 fps costs what 1920×1080 does, and 30 fps halves both.
+- **A still screen sends no frames, but the stream still wakes at the frame rate** with "idle" notices,
+  about 2% of a core in the app and 1.6% in replayd at 60 fps. Fine while recording; never left
+  running otherwise.
+- **Quality 0.6 keeps 2× text sharp while it scrolls** (stills at 0.4–0.9 look alike at 1:1; 0.6 is the
+  middle of the bitrate range). Frames are tagged BT.709 by the stream, as the system's own recordings
+  are.
+- **A movie cut short is readable**: the writer flushes a fragment every 2 s, and a copy taken while it
+  was still writing (as a crash would leave it) read back at least 2 s and finished into an MP4
+  (`RecordingRecoveryTests`).
+- **Ending the session alone does not stretch the last frame when there is audio**: the video track ended
+  at the last change while the audio ran on. The writer writes the last frame once more a frame before
+  the end, so the video always lasts as long as the recording.
+- Still to measure: a real 6880×2880 display stream (the ultrawide), the window server's share, and a
+  Release build.
+
+### The recording flow (2026-10-10)
+
+Debug build, the whole flow on the demo window (`ohmyshot-dev://debug/record-flow`): countdown, recording
+with the control bar and the menu bar's time, Stop, kept in the history with a card.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Record pressed (after the countdown) to the stream running (`recording.start`) | 235–268 ms | — |
+| Stop to the MP4 in the history with its thumbnail (`recording.keep`), 3–8 s at 1600×1000 | 36–119 ms | — |
+| Frames dropped over four runs (3.5–8 s each, 60 fps) | 0 | 0 |
+| Live resources once the card is closed | none | none when idle |
+
+- **A crash keeps everything but the last fragment.** The app was killed with `kill -9` about 8 s into a
+  recording; the next launch finished the draft into an 8.0 s MP4 and gave it a card, and a launch after
+  that found nothing left. Fragments are cut on the movie's own time every 2 s, so up to the last two
+  seconds can be lost, and a still screen at the end of them with them.
+- **Quitting keeps the recording first.** A quit Apple event in the middle of a recording stopped it, kept
+  it (3.7 s), and only then let the app exit; nothing was left in the drafts folder.
+- **Pausing costs the stream, not the file**: frames keep arriving while paused (they are counted and
+  dropped, the newest written when recording resumes), so a paused recording still costs what a recording
+  of a still screen does.

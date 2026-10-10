@@ -42,6 +42,10 @@ public final class StatusItemController {
 
     private var statusItem: NSStatusItem?
     private let menuTarget = MenuTarget()
+    /// Whether Settings wants the icon; a recording shows it regardless while it runs.
+    private var wantsVisible = false
+    /// Stops the recording when the item is clicked; set only while recording.
+    private var stopRecording: (() -> Void)?
     private let captureEntries: [Entry]
     private let textEntries: [Entry]
     private let pinEntries: [Entry]
@@ -69,23 +73,81 @@ public final class StatusItemController {
     }
 
     public func setVisible(_ visible: Bool) {
+        wantsVisible = visible
+        // While recording the item stays: it is how the recording is stopped. Settings applies afterwards.
+        guard stopRecording == nil else { return }
         if visible, statusItem == nil {
-            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-            item.autosaveName = "OhMyShotStatusItem"
-            if let button = item.button {
-                button.image = NSImage.statusItemIcon(accessibilityDescription: appName)
-                if let onDrop {
-                    let dropView = StatusItemDropView(frame: button.bounds, button: button, onDrop: onDrop)
-                    dropView.autoresizingMask = [.width, .height]
-                    button.addSubview(dropView)
-                }
-            }
-            item.menu = makeMenu()
-            statusItem = item
+            statusItem = makeItem()
         } else if !visible, let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
         }
+    }
+
+    private func makeItem() -> NSStatusItem {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.autosaveName = "OhMyShotStatusItem"
+        if let button = item.button {
+            button.image = NSImage.statusItemIcon(accessibilityDescription: appName)
+            if let onDrop {
+                let dropView = StatusItemDropView(frame: button.bounds, button: button, onDrop: onDrop)
+                dropView.autoresizingMask = [.width, .height]
+                button.addSubview(dropView)
+            }
+        }
+        item.menu = makeMenu()
+        return item
+    }
+
+    /// While recording: the icon gives way to a stop symbol and the time, and a click stops the recording.
+    /// Shown even when Settings hides the icon, since it is one of the ways to stop. Call again each second.
+    public func showRecording(elapsed: String, paused: Bool, stop: @escaping () -> Void) {
+        stopRecording = stop
+        let item = statusItem ?? makeItem()
+        statusItem = item
+        item.menu = nil
+        item.length = NSStatusItem.variableLength
+        guard let button = item.button else { return }
+        if button.action != #selector(MenuTarget.stopClicked(_:)) {
+            button.image = NSImage(systemSymbolName: "stop.circle", accessibilityDescription: nil)
+            button.image?.isTemplate = true
+            button.imagePosition = .imageLeading
+            button.target = menuTarget
+            button.action = #selector(MenuTarget.stopClicked(_:))
+            menuTarget.stop = { [weak self] in self?.stopRecording?() }
+        }
+        let title = paused ? String(localized: "Paused \(elapsed)", bundle: .module) : elapsed
+        if button.title != title {
+            button.attributedTitle = NSAttributedString(string: title, attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
+            ])
+        }
+        button.setAccessibilityLabel(paused
+            ? String(localized: "Stop Recording, paused at \(elapsed)", bundle: .module)
+            : String(localized: "Stop Recording, \(elapsed)", bundle: .module))
+    }
+
+    /// The recording ended: the icon and its menu come back, or the item goes if Settings hides it.
+    public func endRecording() {
+        guard stopRecording != nil else { return }
+        stopRecording = nil
+        menuTarget.stop = nil
+        guard let item = statusItem else { return }
+        guard wantsVisible else {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+            return
+        }
+        item.length = NSStatusItem.squareLength
+        if let button = item.button {
+            button.target = nil
+            button.action = nil
+            button.title = ""
+            button.setAccessibilityLabel(nil)
+            button.image = NSImage.statusItemIcon(accessibilityDescription: appName)
+            button.imagePosition = .imageOnly
+        }
+        item.menu = makeMenu()
     }
 
     private func makeMenu() -> NSMenu {
@@ -169,9 +231,14 @@ private final class StatusItemDropView: NSView {
     }
 }
 
-/// Runs the closure behind each menu item, found by the item's tag.
+/// Runs the closure behind each menu item, found by the item's tag, and the recording's Stop.
 private final class MenuTarget: NSObject, NSMenuItemValidation {
     private var entries: [StatusItemController.Entry] = []
+    var stop: (() -> Void)?
+
+    @objc func stopClicked(_ sender: Any?) {
+        stop?()
+    }
 
     func item(for entry: StatusItemController.Entry) -> NSMenuItem {
         let item = NSMenuItem(title: entry.title, action: #selector(run(_:)), keyEquivalent: entry.keyEquivalent)
@@ -194,6 +261,9 @@ private final class MenuTarget: NSObject, NSMenuItemValidation {
 
     @objc private func run(_ sender: NSMenuItem) {
         guard entries.indices.contains(sender.tag) else { return }
-        entries[sender.tag].perform()
+        let entry = entries[sender.tag]
+        // Once the menu has closed: a window opened while it was still up went behind the app in front
+        // again as the menu closed, and a capture began over the closing menu.
+        Task { @MainActor in entry.perform() }
     }
 }

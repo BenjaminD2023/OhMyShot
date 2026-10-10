@@ -15,6 +15,7 @@ public enum Log {
     public static let hotkeys = Logger(subsystem: subsystem, category: "hotkeys")
     public static let performance = Logger(subsystem: subsystem, category: "performance")
     public static let permissions = Logger(subsystem: subsystem, category: "permissions")
+    public static let recording = Logger(subsystem: subsystem, category: "recording")
     public static let resources = Logger(subsystem: subsystem, category: "resources")
 
     /// Points of interest for latency measurement (`Scripts/latency.sh`).

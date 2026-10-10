@@ -108,6 +108,59 @@ public final class SettingsStore {
         didSet { defaults.set(measureUnit.rawValue, forKey: Key.measureUnit) }
     }
 
+    // MARK: Recording
+
+    /// Frames per second recordings aim for; Low Power Mode records at 30 whatever this says.
+    public var recordingFrameRate: Int {
+        didSet { defaults.set(recordingFrameRate, forKey: Key.recordingFrameRate) }
+    }
+
+    /// The frame rates Settings offers.
+    public static let recordingFrameRates = [30, 60]
+
+    /// HEVC for every recording rather than only those too large for H.264: smaller files, fewer players.
+    public var recordingPrefersHEVC: Bool {
+        didSet { defaults.set(recordingPrefersHEVC, forKey: Key.recordingPrefersHEVC) }
+    }
+
+    /// Seconds counted down between choosing what to record and recording it; 0 starts at once.
+    public var recordingCountdown: Int {
+        didSet { defaults.set(recordingCountdown, forKey: Key.recordingCountdown) }
+    }
+
+    /// The countdowns Settings offers, in seconds.
+    public static let recordingCountdowns = [0, 3, 5]
+
+    /// Whether the pointer is in recordings.
+    public var recordingShowsCursor: Bool {
+        didSet { defaults.set(recordingShowsCursor, forKey: Key.recordingShowsCursor) }
+    }
+
+    /// Whether clicks show in recordings, as the system draws them. Toggled on the recording bar too.
+    public var recordingShowsClicks: Bool {
+        didSet { defaults.set(recordingShowsClicks, forKey: Key.recordingShowsClicks) }
+    }
+
+    /// Whether recordings take what the Mac plays. Toggled on the recording bar.
+    public var recordingSystemAudio: Bool {
+        didSet { defaults.set(recordingSystemAudio, forKey: Key.recordingSystemAudio) }
+    }
+
+    /// Whether recordings take the microphone. Toggled on the recording bar.
+    public var recordingMicrophone: Bool {
+        didSet { defaults.set(recordingMicrophone, forKey: Key.recordingMicrophone) }
+    }
+
+    /// The microphone recordings take, by its unique ID; empty for the system's default input.
+    public var recordingMicrophoneID: String {
+        didSet { defaults.set(recordingMicrophoneID, forKey: Key.recordingMicrophoneID) }
+    }
+
+    /// Whether the small bar with the time, Pause, Restart, Delete, and Stop shows by what is recorded.
+    public var recordingShowsControls: Bool {
+        didSet { defaults.set(recordingShowsControls, forKey: Key.recordingShowsControls) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -132,6 +185,15 @@ public final class SettingsStore {
             Key.pinsAppearInCaptures: true,
             Key.colorFormat: ColorFormat.hex.rawValue,
             Key.measureUnit: MeasureUnit.points.rawValue,
+            Key.recordingFrameRate: 60,
+            Key.recordingPrefersHEVC: false,
+            Key.recordingCountdown: 3,
+            Key.recordingShowsCursor: true,
+            Key.recordingShowsClicks: false,
+            Key.recordingSystemAudio: false,
+            Key.recordingMicrophone: false,
+            Key.recordingMicrophoneID: "",
+            Key.recordingShowsControls: true,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
@@ -148,6 +210,17 @@ public final class SettingsStore {
         pinsAppearInCaptures = defaults.bool(forKey: Key.pinsAppearInCaptures)
         colorFormat = defaults.string(forKey: Key.colorFormat).flatMap(ColorFormat.init(rawValue:)) ?? .hex
         measureUnit = defaults.string(forKey: Key.measureUnit).flatMap(MeasureUnit.init(rawValue:)) ?? .points
+        let frameRate = defaults.integer(forKey: Key.recordingFrameRate)
+        recordingFrameRate = Self.recordingFrameRates.contains(frameRate) ? frameRate : 60
+        recordingPrefersHEVC = defaults.bool(forKey: Key.recordingPrefersHEVC)
+        let countdown = defaults.integer(forKey: Key.recordingCountdown)
+        recordingCountdown = Self.recordingCountdowns.contains(countdown) ? countdown : 3
+        recordingShowsCursor = defaults.bool(forKey: Key.recordingShowsCursor)
+        recordingShowsClicks = defaults.bool(forKey: Key.recordingShowsClicks)
+        recordingSystemAudio = defaults.bool(forKey: Key.recordingSystemAudio)
+        recordingMicrophone = defaults.bool(forKey: Key.recordingMicrophone)
+        recordingMicrophoneID = defaults.string(forKey: Key.recordingMicrophoneID) ?? ""
+        recordingShowsControls = defaults.bool(forKey: Key.recordingShowsControls)
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
@@ -170,6 +243,15 @@ public final class SettingsStore {
         static let pinsAppearInCaptures = "pinsAppearInCaptures"
         static let colorFormat = "colorFormat"
         static let measureUnit = "measureUnit"
+        static let recordingFrameRate = "recordingFrameRate"
+        static let recordingPrefersHEVC = "recordingPrefersHEVC"
+        static let recordingCountdown = "recordingCountdown"
+        static let recordingShowsCursor = "recordingShowsCursor"
+        static let recordingShowsClicks = "recordingShowsClicks"
+        static let recordingSystemAudio = "recordingSystemAudio"
+        static let recordingMicrophone = "recordingMicrophone"
+        static let recordingMicrophoneID = "recordingMicrophoneID"
+        static let recordingShowsControls = "recordingShowsControls"
         static let copyAfterCapture = "copyAfterCapture"
         static let saveAfterCapture = "saveAfterCapture"
         static let showQuickAccess = "showQuickAccess"

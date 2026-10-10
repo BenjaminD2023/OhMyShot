@@ -150,6 +150,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
             if item.thumbnail !== oldValue.thumbnail {
                 picture.contents = item.thumbnail
             }
+            updateDuration()
             updateAccessibility()
         }
     }
@@ -162,6 +163,8 @@ final class CaptureCardView: NSView, NSDraggingSource {
     private let closeButton = CardButton(style: .round, title: String(localized: "Close", bundle: .module), symbolName: "xmark")
     private let moreButton = CardButton(style: .round, title: String(localized: "More", bundle: .module), symbolName: "ellipsis")
     private let savedBadge = NSImageView()
+    /// A recording's length and a play mark, in a small capsule in the corner.
+    private let durationBadge = DurationBadge()
     private var mouseDownPoint: CGPoint?
     private var swipeDistance: CGFloat = 0
     private var copiedReset: Task<Void, Never>?
@@ -213,19 +216,23 @@ final class CaptureCardView: NSView, NSDraggingSource {
             .withSymbolConfiguration(.init(pointSize: 15, weight: .semibold).applying(.init(paletteColors: [.white, .systemGreen])))
         savedBadge.isHidden = item.savedURL == nil
         addSubview(savedBadge)
+        addSubview(durationBadge)
 
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
+        // A recording is played, saved, or sent on; marking up, reading text, and pinning are for pictures.
+        let isPicture = item.kind == .screenshot
         setAccessibilityCustomActions([
             NSAccessibilityCustomAction(name: String(localized: "Copy", bundle: .module)) { [weak self] in self?.onCopy?(); return true },
             NSAccessibilityCustomAction(name: String(localized: "Save", bundle: .module)) { [weak self] in self?.onSave?(); return true },
-            NSAccessibilityCustomAction(name: String(localized: "Annotate", bundle: .module)) { [weak self] in self?.onAnnotate?(); return true },
+            isPicture ? NSAccessibilityCustomAction(name: String(localized: "Annotate", bundle: .module)) { [weak self] in self?.onAnnotate?(); return true } : nil,
             NSAccessibilityCustomAction(name: String(localized: "Open", bundle: .module)) { [weak self] in self?.onOpen?(); return true },
-            NSAccessibilityCustomAction(name: String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onRecognizeText?(); return true },
-            NSAccessibilityCustomAction(name: String(localized: "Pin to Screen", bundle: .module)) { [weak self] in self?.onPin?(); return true },
+            isPicture ? NSAccessibilityCustomAction(name: String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onRecognizeText?(); return true } : nil,
+            isPicture ? NSAccessibilityCustomAction(name: String(localized: "Pin to Screen", bundle: .module)) { [weak self] in self?.onPin?(); return true } : nil,
             NSAccessibilityCustomAction(name: String(localized: "Move to Trash", bundle: .module)) { [weak self] in self?.onMoveToTrash?(); return true },
             NSAccessibilityCustomAction(name: String(localized: "Close", bundle: .module)) { [weak self] in self?.onClose?(); return true },
-        ])
+        ].compactMap(\.self))
+        updateDuration()
         updateAccessibility()
         applyAppearance()
     }
@@ -258,6 +265,26 @@ final class CaptureCardView: NSView, NSDraggingSource {
         closeButton.frame = CGRect(x: 8, y: 8, width: 24, height: 24)
         moreButton.frame = CGRect(x: bounds.width - 32, y: 8, width: 24, height: 24)
         savedBadge.frame = CGRect(x: bounds.width - 26, y: bounds.height - 26, width: 18, height: 18)
+        let badge = durationBadge.fittingSize
+        durationBadge.frame = CGRect(x: 8, y: bounds.height - 8 - badge.height, width: badge.width, height: badge.height)
+    }
+
+    /// A recording shows its length in the bottom-left corner.
+    private func updateDuration() {
+        guard item.kind == .recording, let duration = item.duration else {
+            durationBadge.isHidden = true
+            return
+        }
+        durationBadge.text = Self.format(duration)
+        durationBadge.isHidden = false
+        needsLayout = true
+    }
+
+    /// A recording's length as cards show it: 0:42, 12:05, 1:02:09.
+    static func format(_ duration: TimeInterval) -> String {
+        let total = max(0, Int(duration.rounded()))
+        let hours = total / 3600, minutes = total / 60 % 60, seconds = total % 60
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, seconds) : String(format: "%d:%02d", minutes, seconds)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -273,7 +300,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
 
     private func updateAccessibility() {
         setAccessibilityLabel(item.kind == .recording
-            ? String(localized: "Recording, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+            ? String(localized: "Recording, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
             : String(localized: "Screenshot, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module))
         setAccessibilityValue(item.savedURL == nil ? nil : String(localized: "Saved", bundle: .module))
     }
@@ -369,7 +396,8 @@ final class CaptureCardView: NSView, NSDraggingSource {
         // Clicking a card must not pull this app in front of the one being worked in.
         NSApp.preventWindowOrdering()
         mouseDownPoint = convert(event.locationInWindow, from: nil)
-        if event.clickCount == 2 { onAnnotate?() }
+        // A picture opens in the editor; a recording plays.
+        if event.clickCount == 2 { item.kind == .recording ? onOpen?() : onAnnotate?() }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -420,10 +448,14 @@ final class CaptureCardView: NSView, NSDraggingSource {
         add(String(localized: "Save", bundle: .module), "square.and.arrow.down", #selector(saveClicked))
         add(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", #selector(saveAsClicked))
         menu.addItem(.separator())
-        add(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle", #selector(annotateClicked))
-        add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked))
-        add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked))
-        add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked))
+        if item.kind == .recording {
+            add(String(localized: "Play", bundle: .module), "play", #selector(openClicked))
+        } else {
+            add(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle", #selector(annotateClicked))
+            add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked))
+            add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked))
+            add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked))
+        }
         add(String(localized: "Show in Finder", bundle: .module), "folder", #selector(revealClicked))
         menu.addItem(.separator())
         add(String(localized: "Move to Trash", bundle: .module), "trash", #selector(trashClicked))
@@ -444,5 +476,73 @@ final class CaptureCardView: NSView, NSDraggingSource {
 
     @objc private func moreClicked(_ sender: NSView) {
         makeMenu().popUp(positioning: nil, at: CGPoint(x: 0, y: sender.bounds.maxY + 4), in: sender)
+    }
+}
+
+/// A recording's length on its card: a play mark and the time in the reading face, small, in a capsule of
+/// the reading capsule's materials.
+private final class DurationBadge: NSView {
+    private let mark = NSImageView()
+    private let label = NSTextField(labelWithString: "")
+
+    var text: String {
+        get { label.stringValue }
+        set {
+            label.stringValue = newValue
+            invalidateIntrinsicContentSize()
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.shadowOpacity = 0.18
+        layer?.shadowRadius = 4
+        layer?.shadowOffset = CGSize(width: 0, height: 1)
+        mark.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 7, weight: .bold))
+        label.font = Theme.Typeface.reading(size: 10.5, weight: .semibold)
+        addSubview(mark)
+        addSubview(label)
+        setAccessibilityElement(false)
+        applyAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override var isFlipped: Bool { true }
+
+    override var fittingSize: NSSize {
+        NSSize(width: ceil(label.intrinsicContentSize.width) + 7 + 4 + 7 + 7, height: 18)
+    }
+
+    override func layout() {
+        super.layout()
+        let height = bounds.height
+        mark.frame = CGRect(x: 7, y: (height - 8) / 2, width: 7, height: 8)
+        let size = label.intrinsicContentSize
+        label.frame = CGRect(x: 7 + 7 + 4, y: ((height - size.height) / 2).rounded(), width: ceil(size.width), height: size.height)
+        layer?.cornerRadius = height / 2
+        layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: height / 2, cornerHeight: height / 2, transform: nil)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyAppearance()
+    }
+
+    /// The reading capsule's materials: white (a dark gray in Dark), the hairline, dark ink.
+    private func applyAppearance() {
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        layer?.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.94) : CGColor(gray: 1, alpha: 0.96)
+        layer?.borderWidth = contrast ? 1 : 0.5
+        layer?.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
+        let ink = dark ? NSColor(white: 1, alpha: 0.92) : NSColor(white: 0, alpha: 0.85)
+        label.textColor = ink
+        mark.contentTintColor = ink
     }
 }

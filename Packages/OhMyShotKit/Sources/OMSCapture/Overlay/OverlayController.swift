@@ -26,6 +26,8 @@ public final class OverlayController {
         /// it was, the keys held as it was taken (Option asks for the color card), and whether a key took it,
         /// so what follows can take the keyboard too.
         case color(ScreenColor, at: CGPoint, display: DisplayInfo, modifiers: NSEvent.ModifierFlags, keyboard: Bool)
+        /// What to record and what to record with it, set on the recording bar; Record was pressed.
+        case record(RecordingTarget, display: DisplayInfo, choices: RecordingChoices)
         case cancelled
     }
 
@@ -42,6 +44,10 @@ public final class OverlayController {
         /// Measure the frozen screen: from the pointer out to the nearest edges, or a box snapped to what it
         /// holds.
         case measure
+        /// Choose what to record on the live screen: an area of one display, a window, or a click for the
+        /// whole display. The overlay then stays, the choice framed with the recording bar under it, until
+        /// Record or Escape.
+        case record
     }
 
     /// What in-place annotation is given once its area is chosen: the view to host its interface (the
@@ -56,6 +62,11 @@ public final class OverlayController {
 
     /// Starts in-place annotation over the overlay; set by whoever owns the annotation interface.
     public var onAnnotate: ((AnnotationRequest) -> Void)?
+
+    /// What the recording bar starts with; it changes as the bar is used.
+    public var recordingChoices = RecordingChoices()
+    /// A choice on the recording bar changed, to be remembered.
+    public var onRecordingChoicesChange: ((RecordingChoices) -> Void)?
 
     public enum Mode: Sendable {
         case area
@@ -82,7 +93,7 @@ public final class OverlayController {
     /// Whether this session shows the screen as it was when it began; in-place annotation, picking a
     /// color, and measuring always do: they read the frozen frame's pixels.
     private var holdsStill: Bool {
-        freezesScreen || purpose == .annotate || purpose == .color || purpose == .measure
+        (freezesScreen && purpose != .record) || purpose == .annotate || purpose == .color || purpose == .measure
     }
 
     private struct Entry {
@@ -176,7 +187,7 @@ public final class OverlayController {
             entry.panel.level = OverlayPanel.selectionLevel
             entry.view.reset(
                 pointer: pointer, mode: viewMode, windows: windows,
-                showsToolbar: id == pointerDisplay?.id && (purpose == .screenshot || purpose == .annotate),
+                showsToolbar: id == pointerDisplay?.id && (purpose == .screenshot || purpose == .annotate || purpose == .record),
                 showsPointer: !holdsStill,
                 purpose: purpose,
                 colorFormat: colorFormat,
@@ -251,6 +262,7 @@ public final class OverlayController {
             case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.")
             case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.")
             case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.")
+            case .record: String(localized: "Drag over an area to record it, click to record the whole screen, or press Space to choose a window.")
             }
             NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
                 .announcement: announcement,
@@ -289,6 +301,12 @@ public final class OverlayController {
         isActive && entries.values.contains { $0.view.isAnnotating }
     }
 
+    /// The recording bar's view while a choice is framed, for scripted checks.
+    var recordingSetup: RecordingSetupView? {
+        guard isActive else { return nil }
+        return entries.values.lazy.compactMap { entry in entry.view.subviews.lazy.compactMap { $0 as? RecordingSetupView }.first }.first
+    }
+
     /// Draws a selection and pointer without mouse input, for scripted checks of the rendering.
     public func simulate(selection rect: CGRect, pointer: CGPoint) {
         guard isActive, let display = startDisplay(of: rect) else { return }
@@ -304,6 +322,23 @@ public final class OverlayController {
         place(rect, startingOn: display)
         guard let placed = selection.rect else { return }
         select(placed, startingOn: display, modifiers: [])
+    }
+
+    /// Drives the recording bar while a choice is framed, for scripted checks: "record", "cancel", or a
+    /// choice to toggle ("systemAudio", "microphone", "clicks"); nil only reads. Returns what is framed and
+    /// the choices, or nil when no choice is framed.
+    public func debugRecordingSetup(_ action: String?) -> String? {
+        guard let setup = recordingSetup else { return nil }
+        let summary = "target=\(setup.target) choices=\(setup.choices)"
+        switch action {
+        case "record": setup.debugRecord()
+        case "cancel": cancel()
+        case "systemAudio": setup.debugToggle(.systemAudio)
+        case "microphone": setup.debugToggle(.microphone)
+        case "clicks": setup.debugToggle(.clicks)
+        default: break
+        }
+        return summary
     }
 
     /// Puts the crosshair at a point in global space without the mouse, for scripted checks; the real
@@ -409,6 +444,35 @@ public final class OverlayController {
         end(.cancelled)
     }
 
+    /// Frames what is to be recorded on its display, with the recording bar under it: the other displays'
+    /// panels go, the overlay's own selection, readings, crosshair, and bar step aside, and the pointer is
+    /// the system's again, for the frame's resize cursors.
+    private func startRecordingSetup(on display: DisplayInfo, target: RecordingTarget) {
+        guard let entry = entries[display.id] else { return }
+        if hidesCursor { NSCursor.unhide() }
+        hidesCursor = false
+        for (id, other) in entries where id != display.id {
+            other.panel.orderOut(nil)
+            other.view.clear()
+        }
+        entry.view.enterAnnotation()
+        entry.panel.level = OverlayPanel.annotationLevel
+        entry.panel.makeKey()
+        let setup = RecordingSetupView(display: display, target: target, choices: recordingChoices)
+        setup.frame = entry.view.bounds
+        setup.onChoicesChange = { [weak self] choices in
+            self?.recordingChoices = choices
+            self?.onRecordingChoicesChange?(choices)
+        }
+        setup.onRecord = { [weak self] target, choices in
+            self?.end(.record(target, display: display, choices: choices))
+        }
+        setup.onCancel = { [weak self] in self?.cancel() }
+        entry.view.addSubview(setup)
+        entry.panel.makeFirstResponder(setup)
+        setup.begin()
+    }
+
     /// Hands the chosen area to in-place annotation, once its display's frozen frame is there.
     private func startAnnotating(on displayID: CGDirectDisplayID, area: CGRect) {
         guard let entry = entries[displayID] else { return }
@@ -470,7 +534,7 @@ extension OverlayController {
     /// A fresh selection for a drag that begins on `display`: free to cross onto every display, at the
     /// sharpest one's pixels, except in place, where it stays on its own display.
     private func startSelection(on display: DisplayInfo) {
-        let displays = purpose == .annotate ? [display] : topology.layout.displays
+        let displays = purpose == .annotate || purpose == .record ? [display] : topology.layout.displays
         selection = SelectionModel(
             bounds: displays.reduce(CGRect.null) { $0.union($1.frame) },
             pixelsPerPoint: displays.map(\.pixelsPerPoint).max() ?? display.pixelsPerPoint
@@ -521,6 +585,10 @@ extension OverlayController {
     private func select(_ rect: CGRect, startingOn display: DisplayInfo, modifiers: NSEvent.ModifierFlags) {
         if purpose == .annotate {
             startAnnotating(on: display.id, area: rect)
+            return
+        }
+        if purpose == .record {
+            startRecordingSetup(on: display, target: rect == display.frame ? .display : .area(rect))
             return
         }
         let involved = topology.layout.displays.filter { !$0.frame.intersection(rect).isEmpty }
@@ -600,6 +668,8 @@ extension OverlayController: OverlayViewDelegate {
         guard let rect = selection.rect, !selection.isTooSmall else {
             selection.reset()
             showSelection()
+            // A click, not a drag: recording takes the whole display.
+            if purpose == .record { startRecordingSetup(on: display, target: .display) }
             return
         }
         logSelection(rect, from: display, endingAt: last)
@@ -685,6 +755,10 @@ extension OverlayController: OverlayViewDelegate {
     }
 
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {
+        if purpose == .record {
+            startRecordingSetup(on: view.display, target: .window(target))
+            return
+        }
         if purpose == .annotate {
             // A window is annotated where it is on the frozen screen.
             let area = target.frame.intersection(view.display.frame)

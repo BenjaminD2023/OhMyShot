@@ -222,6 +222,68 @@ extension CaptureSettingsView {
     }
 }
 
+struct RecordingSettingsView: View {
+    @Bindable var settings: SettingsStore
+
+    var body: some View {
+        Form {
+            Section {
+                Picker(selection: $settings.recordingCountdown) {
+                    ForEach(SettingsStore.recordingCountdowns, id: \.self) { seconds in
+                        if seconds == 0 {
+                            Text("None", bundle: .module).tag(seconds)
+                        } else {
+                            Text("\(seconds) seconds", bundle: .module).tag(seconds)
+                        }
+                    }
+                } label: {
+                    Text("Countdown", bundle: .module)
+                    Text("Time to get ready between pressing Record and recording.", bundle: .module)
+                }
+                Toggle(isOn: $settings.recordingShowsControls) {
+                    Text("Show controls while recording", bundle: .module)
+                    Text("A small bar by the recording with the time, Pause, Restart, Delete, and Stop. It stays out of the recording.", bundle: .module)
+                }
+                Toggle(isOn: $settings.recordingShowsCursor) {
+                    Text("Show the pointer", bundle: .module)
+                }
+            } header: {
+                Text("Recording", bundle: .module)
+            } footer: {
+                Text("Computer audio, the microphone, and clicks are chosen on the bar under what you are about to record. The menu bar shows the time while recording; click it to stop.", bundle: .module)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Picker(selection: $settings.recordingFrameRate) {
+                    ForEach(SettingsStore.recordingFrameRates, id: \.self) { rate in
+                        Text("\(rate) frames per second", bundle: .module).tag(rate)
+                    }
+                } label: {
+                    Text("Frame rate", bundle: .module)
+                    Text("Low Power Mode records at 30.", bundle: .module)
+                }
+                Picker(selection: $settings.recordingPrefersHEVC) {
+                    Text("H.264 when it fits", bundle: .module).tag(false)
+                    Text("HEVC", bundle: .module).tag(true)
+                } label: {
+                    Text("Video format", bundle: .module)
+                    if settings.recordingPrefersHEVC {
+                        Text("Smaller files. Some players, browsers, and upload forms can’t play HEVC.", bundle: .module)
+                    } else {
+                        Text("Plays everywhere. Recordings wider or taller than 4096 pixels use HEVC, which H.264 can’t encode in hardware.", bundle: .module)
+                    }
+                }
+            } header: {
+                Text("Video", bundle: .module)
+            } footer: {
+                Text("Recordings are MP4 files at the screen’s own resolution, kept in Capture History like screenshots.", bundle: .module)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .settingsPane()
+    }
+}
+
 struct ToolsSettingsView: View {
     @Bindable var settings: SettingsStore
     @State private var translationTargets: [Locale.Language] = []
