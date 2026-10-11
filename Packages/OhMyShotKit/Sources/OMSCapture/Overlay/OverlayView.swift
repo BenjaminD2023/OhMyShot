@@ -421,8 +421,12 @@ final class OverlayView: NSView {
             // While dragging, Space moves the selection; before a drag it switches between capturing a
             // region and capturing a window, as in macOS's own screenshot tool.
             delegate?.overlayView(self, didPressSpace: event.isARepeat)
-        case 123, 124, 125, 126 where picks:
-            // The arrows move the crosshair a pixel at a time, ten with Shift.
+        // A case's `where` binds only its last pattern, so these test the purpose inside: as `case 36, 76 where
+        // purpose == .color`, Return picked a color in every overlay (Measure's Return copied a color, a frozen
+        // screenshot ended on one), and ←, →, ↓ moved the crosshair while capturing.
+        case 123, 124, 125, 126:
+            // While picking a color or measuring, the arrows move the crosshair a pixel at a time, ten with Shift.
+            guard picks else { return super.keyDown(with: event) }
             let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
             let direction: CGVector = switch event.keyCode {
             case 123: CGVector(dx: -1, dy: 0)
@@ -431,10 +435,15 @@ final class OverlayView: NSView {
             default: CGVector(dx: 0, dy: -1)
             }
             delegate?.overlayView(self, didNudge: CGVector(dx: direction.dx * step, dy: direction.dy * step))
-        case 36, 76 where purpose == .color:
-            if let pointer { delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags, keyboard: true) }
-        case 36, 76 where purpose == .measure:
-            if let text = measure?.measurement { delegate?.overlayView(self, didCopyMeasurement: text, ending: true) }
+        case 36, 76: // Return, and Enter on the keypad
+            switch purpose {
+            case .color:
+                if let pointer { delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags, keyboard: true) }
+            case .measure:
+                if let text = measure?.measurement { delegate?.overlayView(self, didCopyMeasurement: text, ending: true) }
+            case .screenshot, .text, .annotate, .record:
+                super.keyDown(with: event)
+            }
         case 48 where purpose == .measure:
             if let measure { delegate?.overlayView(self, didChangeUnit: measure.unit.toggled) }
         default:
