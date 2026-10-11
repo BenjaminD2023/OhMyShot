@@ -474,3 +474,70 @@ Footprints are `footprint -p`; the app is 22 MB idle.
   APFS) when the window first opens it; an exported movie takes its place in the history beside it. Before
   this, the first export moved the recording into the project while the window still filmed its old path,
   and the next edit would have filmed the exported movie again.
+
+Camera, motion blur, and the cursor hidden while typing (2026-10-11, same build and hooks; the camera is a
+made-up 640×480 movie from `studio-window?camera=1` / `studio-render?camera=1`, never a real one):
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Export, 8.04 s of 6400×2600 → 3840×1698: no blur / motion blur / motion blur and a camera | 3.87–3.94 s (2.0–2.1×) / 3.79–4.96 s (1.6–2.1×) / 4.74 s (1.7×) | faster than real time |
+| Peak footprint during that export: no blur / blur, every exposure drawn from the recording / blur from one drawing | 570–826 MB / 2.95–3.34 GB / 776–786 MB | — |
+| The Studio window playing that recording with blur and a camera (preview 1792×792) | 319–432 MB; 85 MB paused; 423 of 423 frames drawn | — |
+
+- **A composition a 6000th of a second longer than its instruction draws nothing in a player, while an
+  export reads it.** `CMTime(seconds:preferredTimescale:)` rounds down (1.78 s came out as 10679/6000), so
+  a camera track inserted at 0.3 s for 3.72 s ended at 24120 while the movie's instruction ended at 24119;
+  `AVVideoComposition.isValid` says no, AVPlayer asks the compositor for no frame at all (the preview stayed
+  empty, `isReadyForDisplay` false even after playing to the end), and `AVAssetReader` exports it without a
+  word. Times are now rounded to the nearest, each part goes in where the one before ended, the camera is
+  cut to the screen's end, and the one instruction runs to the composition's own end
+  (`StudioExportTests.aMovieWithTheCameraIsOneAPlayerCanDraw`). Where the camera's movie has nothing (before
+  it began, after it ended) its nearest frame is held, so its track has no empty stretch either.
+- **Motion blur drawn from the recording for every exposure took the export to 3 GB.** Each of up to 32
+  exposures turned the 6400×2600 4:2:0 frame into color again (130 MB apiece), and `insertingIntermediate`
+  on the source did not stop it. The frame is now drawn once as the middle exposure sees it, with room
+  around the frame for what the others reach, and each exposure is that drawing moved: +200 MB at 4K.
+- **CIColorMatrix works on colors unpremultiplied**: weighting an exposure's color and alpha both squared
+  its weight (32 exposures came out black); weighting the alpha alone, as a fade does, weighs the
+  premultiplied color with it (`StudioMotionTests.motionBlurOnlyWhileTheCameraMoves` checks the average).
+
+### Replay spike (macOS 27, 2026-10-11)
+
+`SCClipBufferingOutput` keeps a rolling buffer of a stream's last 15 seconds in replayd and exports any part
+of it as a movie. Measured through `ohmyshot-dev://debug/replay-demo` on the scrolling demo window behind the
+desktop picture (nothing of the user's read), Debug build, the screen awake and unlocked (a locked screen
+composites nothing: every stream delivered one frame).
+
+| Measurement | Result |
+| --- | --- |
+| Buffering 1600×1000 at 60 fps, the page scrolling at 240 pt/s (1200 frames in 20 s): CPU of the app / encoder service / replayd | 2.9–3.2% / 3.1–3.3% / 4.9–5.2% |
+| The same with nothing changing | 0.3% / 0.0% / 0.1% |
+| Footprint while buffering: the app / replayd | unchanged (60 MB) / 10–11 MB |
+| Exporting 15 s | 0.03–0.05 s: 15.00 s of 1600×1000 H.264, 15 MB (8 Mb/s) |
+
+- **The stream must deliver its frames to the app too**: with no screen output added, the buffer held no
+  video and the export failed ("failure to process first sample buffer", -5822). The app's 3% is those frames
+  arriving and being dropped.
+- **No frame wider than 4096**: the buffer encodes H.264 at the stream's size with no choice of codec; at
+  6272×2550 (a window as wide as the ultrawide) it held no video. A display has to be buffered at 1× or
+  otherwise within 4096 (the ultrawide is 6880 wide at 2×, the built-in display 4112).
+- **Only what changed in the last 15 seconds is there**: ScreenCaptureKit sends a frame only when something
+  changes, and the buffer keeps samples by time, so after 15 still seconds it holds nothing and the export
+  fails (replayd: "No video samples found").
+- **The export refuses a file that is already there** (AVFoundation -11823, "file already exists"), though
+  its header says it overwrites.
+- **In the App target, a stream's or the buffer's delegate must be `nonisolated`**: the target's default
+  main-actor isolation made the sample callback assert off the main thread ("Block was expected to execute
+  on queue [com.apple.main-thread]") and the app crashed on the first frame.
+- **Sound needs no output of the app's own**: with sound asked for but no `.audio` output added, the clip
+  still had its audio track. The system's sound comes as silence when nothing plays (an 8 s clip, its track
+  at −∞ dBFS); a stream that hears nothing at all (one of this app's own windows with this app's sound left
+  out) made a clip a few frames long, so the replay's own check hears the app's sound.
+- **The microphone is a track of its own, after the system's** (two 3 s runs on the demo window with the
+  user's word, the clips deleted at once, only their levels read): track 2 at −∞ dBFS (the silence this app
+  played, so the system's sound), track 3 at −26.7 dBFS (the room, so the microphone), both 44.1 kHz stereo
+  AAC. A saved clip keeps either, both mixed into one track, or neither.
+
+The replay as built (`ReplayBuffer`, `ReplayCoordinator`), through `debug/replay` on the demo window: saving
+takes 110–120 ms for 15 s of 1600×1000 (export and finishing to MP4), and the capture lease is released when
+the replay is turned off (`debug/resources` idle).

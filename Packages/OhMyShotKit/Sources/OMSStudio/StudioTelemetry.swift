@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import OMSCore
@@ -94,6 +95,33 @@ nonisolated public struct StudioTelemetry: Codable, Equatable, Sendable {
 
         /// No key has this code: the code of a press kept only as a press.
         public static let unrecordedKeyCode: UInt16 = 0xFFFF
+
+        /// A press that types, rather than a shortcut: held with none of Command, Control, and Option, and not
+        /// a function key. Presses kept only as presses were typing.
+        public var isTyping: Bool {
+            !KeystrokeCaption.isShortcut(Keystroke(
+                keyCode: keyCode, modifiers: NSEvent.ModifierFlags(rawValue: modifiers), characters: characters,
+                keyCharacters: keyCharacters, isRepeat: isRepeat
+            ))
+        }
+    }
+
+    /// The camera, recorded beside the recording in a movie of its own (`StudioFiles.camera`): where that
+    /// movie begins, when the camera filled what was recorded, and how its bubble looked.
+    public struct Camera: Codable, Equatable, Sendable {
+        /// Where the camera's movie begins: host seconds while recording; once retimed, the recording's
+        /// seconds, negative when the camera's began first.
+        public var start: Double
+        /// When the camera filled what was recorded, in place of its bubble.
+        public var fills: [ClosedRange<Double>]
+        /// The bubble as it was while recording, for Studio to begin with: its shape, side, corner, mirror.
+        public var bubble: StudioProject.Camera
+
+        public init(start: Double, fills: [ClosedRange<Double>] = [], bubble: StudioProject.Camera) {
+            self.start = start
+            self.fills = fills
+            self.bubble = bubble
+        }
     }
 
     /// The recording's size in points, and its pixels per point.
@@ -108,10 +136,15 @@ nonisolated public struct StudioTelemetry: Codable, Equatable, Sendable {
     /// key typed alone is kept only as a press (`Key.unrecorded`), so no typing is written down. Nil when
     /// keys weren't written down at all.
     public var keystrokeMode: KeystrokeMode?
+    /// The camera recorded beside the recording; nil when none was.
+    public var camera: Camera?
+    /// The camera's bubble showed while recording, but no movie of it could be kept: Studio says so where its
+    /// settings would be.
+    public var cameraFailed: Bool?
 
     public init(
         width: Double, height: Double, pixelsPerPoint: Double, samples: [Sample] = [], cursors: [Cursor] = [], clicks: [Click] = [],
-        keys: [Key] = [], keystrokeMode: KeystrokeMode? = nil
+        keys: [Key] = [], keystrokeMode: KeystrokeMode? = nil, camera: Camera? = nil
     ) {
         self.width = width
         self.height = height
@@ -121,11 +154,13 @@ nonisolated public struct StudioTelemetry: Codable, Equatable, Sendable {
         self.clicks = clicks
         self.keys = keys
         self.keystrokeMode = keystrokeMode
+        self.camera = camera
     }
 
     /// The same, on the movie's timeline: seconds from `start` (the movie's first frame, host seconds), with
     /// what happened during `pauses` left out and what came after each pause moved earlier by its length.
-    /// The pointer's last place before the start begins the movie.
+    /// The pointer's last place before the start begins the movie. The camera's times, which span the
+    /// pauses, take the movie's time where each pause was cut out.
     public func retimed(start: Double, pauses: [ClosedRange<Double>]) -> StudioTelemetry {
         let pauses = pauses.sorted { $0.lowerBound < $1.lowerBound }
         func movieTime(_ time: Double) -> Double? {
@@ -133,6 +168,15 @@ nonisolated public struct StudioTelemetry: Codable, Equatable, Sendable {
             for pause in pauses {
                 if time < pause.lowerBound { break }
                 if time < pause.upperBound { return nil }
+                offset += pause.upperBound - pause.lowerBound
+            }
+            return time - start - offset
+        }
+        func spanningTime(_ time: Double) -> Double {
+            var offset = 0.0
+            for pause in pauses {
+                if time < pause.lowerBound { break }
+                if time < pause.upperBound { return pause.lowerBound - start - offset }
                 offset += pause.upperBound - pause.lowerBound
             }
             return time - start - offset
@@ -163,6 +207,15 @@ nonisolated public struct StudioTelemetry: Codable, Equatable, Sendable {
             guard let time = movieTime(key.time), time >= 0 else { return nil }
             var moved = key
             moved.time = time
+            return moved
+        }
+        moved.camera = camera.map { camera in
+            var moved = camera
+            moved.start = spanningTime(camera.start)
+            moved.fills = camera.fills.compactMap { fill in
+                let range = max(0, spanningTime(fill.lowerBound))...max(0, spanningTime(fill.upperBound))
+                return range.upperBound > range.lowerBound ? range : nil
+            }
             return moved
         }
         return moved

@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import OMSCore
 import Testing
 @testable import OMSRecording
 
@@ -66,6 +67,27 @@ struct RecordingFinisherTests {
         #expect(abs(range.duration.seconds - 2) < 0.1)
         let format = try #require(try await audio.load(.formatDescriptions).first)
         #expect(CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee.mChannelsPerFrame == 2)
+    }
+
+    @Test func aReplaysClipKeepsTheSoundChosen() async throws {
+        // As a replay's clip has them: the system's sound (stereo here) first, then the microphone (mono).
+        let source = try await record(audio: RecordingAudio(system: true, microphone: .systemDefault))
+        defer { try? FileManager.default.removeItem(at: source) }
+        let cases: [(ReplaySound, Int, UInt32?)] = [(.system, 1, 2), (.microphone, 1, 1), (.none, 0, nil), (.all, 1, 2)]
+        for (sound, tracks, channels) in cases {
+            let destination = source.deletingLastPathComponent().appending(path: "\(UUID().uuidString).mp4")
+            defer { try? FileManager.default.removeItem(at: destination) }
+            let movie = try await RecordingFinisher.finish(source, to: destination, audio: .keeping(sound, of: [.systemAudio, .microphone]))
+            try await check(movie, audioTracks: tracks)
+            if let channels {
+                let audio = try #require(try await AVURLAsset(url: destination).loadTracks(withMediaType: .audio).first)
+                let format = try #require(try await audio.load(.formatDescriptions).first)
+                #expect(CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee.mChannelsPerFrame == channels, "\(sound)")
+            }
+        }
+        // Without the microphone buffered, there is none to keep.
+        #expect(RecordingFinisher.AudioTracks.keeping(.microphone, of: [.systemAudio]) == .none)
+        #expect(RecordingFinisher.AudioTracks.keeping(.system, of: [.systemAudio]) == .all)
     }
 
     @Test func thePosterIsTheFirstFrame() async throws {

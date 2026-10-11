@@ -17,6 +17,8 @@ public final class StudioDocument {
     public let recordingSize: CGSize
     /// Where the project is kept: its settings are saved here after each change.
     public let folder: URL
+    /// The camera's movie, recorded beside the recording; nil when none was.
+    public let cameraMovie: URL?
 
     public var project: StudioProject {
         didSet {
@@ -78,7 +80,19 @@ public final class StudioDocument {
         self.recordingSize = recordingSize
         self.folder = folder
         self.background = background
+        let camera = folder.appending(path: StudioFiles.camera)
+        cameraMovie = telemetry.camera != nil && FileManager.default.fileExists(atPath: camera.path(percentEncoded: false)) ? camera : nil
         hasUnexportedChanges = !hasBeenExported
+    }
+
+    /// Whether a camera was recorded beside the recording, so it can be shown.
+    public var hasCamera: Bool {
+        cameraMovie != nil
+    }
+
+    /// Whether the camera showed while recording but couldn't be recorded, or its movie is gone since.
+    public var cameraFailed: Bool {
+        !hasCamera && (telemetry.cameraFailed == true || telemetry.camera != nil)
     }
 
     /// Whether keys were written down while recording, so they can be shown.
@@ -134,6 +148,8 @@ public final class StudioDocument {
         }
         let picture = backdrop
         let source = source
+        let cameraMovie = cameraMovie
+        let cameraStart = telemetry.camera?.start ?? 0
         // The user's accent, as the rings shown while recording take it.
         let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB)
         let ringColor = accent.map { StudioRenderer.RingColor(red: $0.redComponent, green: $0.greenComponent, blue: $0.blueComponent) } ?? .systemBlue
@@ -142,7 +158,8 @@ public final class StudioDocument {
                 telemetry: telemetry, project: project, duration: duration, recordingSize: size, background: picture, largestSide: largestSide,
                 ringColor: ringColor
             )
-            return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts)
+            let camera = cameraMovie.map { StudioComposition.CameraSource(asset: AVURLAsset(url: $0), start: cameraStart) }
+            return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, camera: camera)
         }.value
     }
 
@@ -355,4 +372,6 @@ public final class StudioDocument {
 nonisolated public enum StudioFiles {
     public static let telemetry = "telemetry.json"
     public static let project = "project.json"
+    /// The camera, recorded in a movie of its own while the screen was.
+    public static let camera = "camera.mov"
 }

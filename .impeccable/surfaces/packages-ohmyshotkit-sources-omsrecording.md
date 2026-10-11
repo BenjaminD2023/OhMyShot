@@ -88,3 +88,35 @@ FINISH: unreviewed and undocumented is unfinished; the build ends with the finis
 - Window recordings show no outline (a window moves) and keep their size from the start; a whole display
   shows none either. The control bar goes under the area, above it without room, inside its bottom edge on
   a whole display.
+
+## Replay (2026-10-11)
+
+The plan's last M4 item (P2, macOS 27's `SCClipBufferingOutput`). Measured first (Docs/perf.md › Replay
+spike), then decided by the user the same day: turned on by hand in the menu bar and off when the app quits;
+the user chooses which displays are kept, one checkmark each; the system's sound and the microphone are both
+kept, and each saved clip keeps both, one, or neither, as the menu's Sound in Saved Clips says (a remembered
+setting, since a shortcut can't ask); a saved clip is kept as a recording is (history, clipboard, card). Two
+calls made and said: Save keeps every display kept, one clip and card each; the orange microphone dot stays
+on while the replay keeps the microphone.
+
+Built: OMSRecording `ReplayBuffer` (one per display: the recording filter's own-window rules, frames scaled to
+fit 4096, a frame-dropping screen output the buffer needs, the export into a fresh file, `nothingChanged` for
+replayd's empty buffer), `RecordingFinisher.AudioTracks` (which tracks a finished file keeps; the clip's
+system track comes before the microphone's, as measured by level with the user's word), OMSCore
+`ReplaySound` + `SettingsStore.replaySound`, `CaptureShortcut.saveReplay` (dev ⌃⌥⌘-, release none; hidden
+below macOS 27), status menu entries with checkmarks and a submenu made each time it opens, App
+`ReplayCoordinator` (microphone access asked before keeping starts, one save per display through
+`RecordingCoordinator.keepReplay`, quitting waits for saves, then stops the buffers). Specs in DESIGN.md ›
+Replay.
+
+Finish review (disposition fix), all applied: a buffer that failed left its stream running (now stopped, with
+a beep; `ReplayBuffer.Ending`), unchecking a display during a save or while it started (now deferred or
+cancelled), a second Save over the first (now one at a time, the menu item dims), the start-failure wording
+and a non-localized fallback; and the nice-to-haves: an announcement for Save with nothing kept, one
+announcement for all displays saved, and the microphone choices stepping back without access.
+
+Verified behind the desktop picture on the app's own scrolling window (`debug/replay`): keeping, saving with
+each sound choice (tracks kept as chosen), and turning off with the capture lease released. Not tried live
+(it keeps the user's screen, so it waits for their word): a real display kept, a save with its card, the
+microphone kept while saving each way, a display unplugged while kept, Low Power Mode.
+

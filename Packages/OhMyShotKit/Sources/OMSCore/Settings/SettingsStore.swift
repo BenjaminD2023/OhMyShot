@@ -208,6 +208,12 @@ public final class SettingsStore {
     /// The GIF frame rates Settings offers.
     public static let recordingGIFFrameRates = [10, 15, 20, 30]
 
+    /// What clips saved from the replay keep of the sound buffered with them. Chosen in the menu bar's replay
+    /// menu; remembered, though the replay itself stops when the app quits.
+    public var replaySound: ReplaySound {
+        didSet { defaults.set(replaySound.rawValue, forKey: Key.replaySound) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -251,6 +257,7 @@ public final class SettingsStore {
             Key.recordingKeystrokeMode: KeystrokeMode.all.rawValue,
             Key.recordingOutput: RecordingOutput.video.rawValue,
             Key.recordingGIFFrameRate: 15,
+            Key.replaySound: ReplaySound.all.rawValue,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
@@ -291,6 +298,7 @@ public final class SettingsStore {
         recordingOutput = defaults.string(forKey: Key.recordingOutput).flatMap(RecordingOutput.init(rawValue:)) ?? .video
         let gifFrameRate = defaults.integer(forKey: Key.recordingGIFFrameRate)
         recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : 15
+        replaySound = defaults.string(forKey: Key.replaySound).flatMap(ReplaySound.init(rawValue:)) ?? .all
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
@@ -332,6 +340,7 @@ public final class SettingsStore {
         static let recordingKeystrokeMode = "recordingKeystrokeMode"
         static let recordingOutput = "recordingOutput"
         static let recordingGIFFrameRate = "recordingGIFFrameRate"
+        static let replaySound = "replaySound"
         static let copyAfterCapture = "copyAfterCapture"
         static let saveAfterCapture = "saveAfterCapture"
         static let showQuickAccess = "showQuickAccess"

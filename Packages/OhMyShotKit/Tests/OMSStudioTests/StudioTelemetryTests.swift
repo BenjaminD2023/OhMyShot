@@ -46,4 +46,30 @@ struct StudioTelemetryTests {
         let data = try JSONEncoder().encode(original)
         #expect(try JSONDecoder().decode(StudioTelemetry.self, from: data) == original)
     }
+
+    @Test func theCamerasTimesSpanThePauses() {
+        // The camera's movie began 0.2 s before the screen's; it filled what was recorded from inside the
+        // pause to the end, and once before the movie began.
+        var raw = telemetry()
+        raw.camera = .init(start: 99.8, fills: [99.0...99.5, 101.0...103.0], bubble: StudioProject.Camera())
+        let moved = raw.retimed(start: 100, pauses: [100.8...101.5])
+        let camera = try! #require(moved.camera)
+        #expect(abs(camera.start + 0.2) < 1e-9)
+        // A time within the pause takes the movie's time where the pause was cut out; nothing before 0.
+        #expect(camera.fills.count == 1)
+        #expect(abs(camera.fills[0].lowerBound - 0.8) < 1e-9 && abs(camera.fills[0].upperBound - 2.3) < 1e-9, "\(camera.fills)")
+    }
+
+    @Test func theCamerasPartsFollowTheKeptOnes() {
+        // Kept: 0–2 and 2.5–4 of the recording; the camera began at 1 s and lasts 2.5 s.
+        let segments = StudioComposition.keptSegments(duration: 4, cuts: [2...2.5])
+        let ranges = StudioComposition.cameraRanges(segments: segments, cameraStart: 1, cameraDuration: 2.5)
+        #expect(ranges.count == 2)
+        // 1–2 of the recording is the camera's 0–1, at the movie's 1–2; 2.5–3.5 is its 1.5–2.5, at 2–3.
+        #expect(abs(ranges[0].cameraStart) < 1e-9 && abs(ranges[0].movieStart - 1) < 1e-9 && abs(ranges[0].duration - 1) < 1e-9)
+        #expect(abs(ranges[1].cameraStart - 1.5) < 1e-9 && abs(ranges[1].movieStart - 2) < 1e-9 && abs(ranges[1].duration - 1) < 1e-9)
+        // A camera that began first starts inside its own movie.
+        let early = StudioComposition.cameraRanges(segments: segments, cameraStart: -0.5, cameraDuration: 10)
+        #expect(abs(early[0].cameraStart - 0.5) < 1e-9 && early[0].movieStart == 0)
+    }
 }

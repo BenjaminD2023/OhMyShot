@@ -44,6 +44,8 @@ struct DebugHooks {
     let measurer: MeasureCoordinator
     let recordings: RecordingCoordinator
     let settings: SettingsStore
+    /// The replay's coordinator on macOS 27, as any object.
+    let replay: () -> AnyObject?
 
     /// Where `snapshot` writes window captures.
     static let snapshotDirectory = URL.cachesDirectory.appending(path: "\(Log.subsystem)/debug-snapshots", directoryHint: .isDirectory)
@@ -465,8 +467,12 @@ struct DebugHooks {
             // card, clipboard, or saved copy; action=reopen (mode=, at=) closes the window without exporting
             // and opens the demo again as Edit… would; action=play plays or pauses; action=export-edit
             // exports and changes the padding meanwhile; action=undo sends Undo down the responder chain;
-            // action=export-cancel changes the padding and cancels an export 0.2 s in; action=state logs the
-            // demo's record; action=remove
+            // action=export-cancel changes the padding and cancels an export 0.2 s in; action=render renders the
+            // open window as it is (wait=<ms> first) to studio-window-now.png; action=state logs the
+            // demo's record; open takes height=<points> for a taller window, camera=1 for a made-up camera
+            // beside it (never a real one) from 0.3 s,
+            // with fill=<from>-<to> when it filled the recording and corner=/shape=/size= for its bubble;
+            // action=remove
             // deletes the demo and its project (always finish with it: the demo is a real history entry).
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in items.first { $0.name == name }?.value }
@@ -484,18 +490,33 @@ struct DebugHooks {
                     let written = value("telemetry") == "real"
                         ? (try? Data(contentsOf: Self.snapshotDirectory.appending(path: "studio-demo.json"))).flatMap { try? JSONDecoder().decode(StudioTelemetry.self, from: $0) }
                         : nil
-                    let telemetry = written ?? DebugRecordingDemo.syntheticTelemetry(size: CGSize(width: size.width / 2, height: size.height / 2), duration: duration)
-                    if let window = await recordings.debugOpenStudioDemo(movie: movie, telemetry: telemetry, dark: dark) {
+                    var telemetry = written ?? DebugRecordingDemo.syntheticTelemetry(size: CGSize(width: size.width / 2, height: size.height / 2), duration: duration)
+                    // cut=<from>-<to> leaves a stretch out; choose=<from>-<to> chooses one on the clip.
+                    let range = { (name: String) -> ClosedRange<Double>? in
+                        let ends = (value(name) ?? "").split(separator: "-").compactMap { Double($0) }
+                        return ends.count == 2 && ends[0] < ends[1] ? ends[0]...ends[1] : nil
+                    }
+                    var camera: URL?
+                    // camerafailed=1: the bubble showed but no movie of it was kept.
+                    if value("camerafailed") == "1" { telemetry.cameraFailed = true }
+                    if value("camera") == "1" {
+                        camera = await DebugRecordingDemo.syntheticCamera(seconds: duration)
+                        var bubble = StudioProject.Camera()
+                        if let corner = value("corner").flatMap(StudioProject.Camera.Corner.init(rawValue:)) { bubble.corner = corner }
+                        if let shape = value("shape").flatMap(StudioProject.Camera.Shape.init(rawValue:)) { bubble.shape = shape }
+                        if let side = value("size").flatMap(Double.init) { bubble.size = side }
+                        telemetry.camera = StudioTelemetry.Camera(start: 0.3, fills: range("fill").map { [$0] } ?? [], bubble: bubble)
+                    }
+                    if let window = await recordings.debugOpenStudioDemo(movie: movie, telemetry: telemetry, dark: dark, camera: camera) {
                         let studio = recordings.debugStudioDemoWindow
                         if value("select") != "0" { studio?.debugSelectFirstZoom() }
-                        // cut=<from>-<to> leaves a stretch out; choose=<from>-<to> chooses one on the clip.
-                        let range = { (name: String) -> ClosedRange<Double>? in
-                            let ends = (value(name) ?? "").split(separator: "-").compactMap { Double($0) }
-                            return ends.count == 2 && ends[0] < ends[1] ? ends[0]...ends[1] : nil
-                        }
                         if let cut = range("cut") { studio?.debugCut(cut) }
                         if let chosen = range("choose") { studio?.debugChoose(chosen) }
                         studio?.debugSeek(to: Double(value("at") ?? "1") ?? 1)
+                        // height=<points> makes the window taller, to see all of the inspector.
+                        if let height = value("height").flatMap(Double.init) {
+                            window.setContentSize(CGSize(width: window.contentLayoutRect.width, height: height))
+                        }
                         try? await Task.sleep(for: .milliseconds(Int(value("wait") ?? "1500") ?? 1500))
                         await captureHiddenWindow(window, name: dark ? "studio-window-dark" : "studio-window")
                     }
@@ -509,6 +530,10 @@ struct DebugHooks {
                     }
                 case "play":
                     recordings.debugStudioDemoWindow?.debugTogglePlay()
+                case "render":
+                    // The open demo's window as it is now (wait=<ms> first), to studio-window-now.png.
+                    try? await Task.sleep(for: .milliseconds(Int(value("wait") ?? "0") ?? 0))
+                    if let window = recordings.debugStudioDemoWindow?.window { await captureHiddenWindow(window, name: "studio-window-now") }
                 case "undo":
                     // Undo as Edit › Undo sends it, down the window's responder chain.
                     guard let studio = recordings.debugStudioDemoWindow else { break }
@@ -540,10 +565,78 @@ struct DebugHooks {
                 }
                 Log.app.notice("debug.studio-window \(action, privacy: .public): \(recordings.debugStudioDemoState, privacy: .public)")
             }
+        case "replay":
+            // The replay through the app's own coordinator, on the scrolling window behind the desktop picture
+            // kept as if it were a display (nothing of the user's read): action=on (w=/h= points), save (writes
+            // replay-saved.mp4 to the snapshot folder instead of the history; sound=all|system|microphone|none
+            // sets the replay's sound first, a real setting: put it back), off, state.
+            if #available(macOS 27, *) {
+                let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                let value = { (name: String) in items.first { $0.name == name }?.value }
+                let action = value("action") ?? "state"
+                Task {
+                    guard let replay = replay() as? ReplayCoordinator else { return }
+                    switch action {
+                    case "on":
+                        let size = CGSize(width: Self.intParameter("w", in: url) ?? 800, height: Self.intParameter("h", in: url) ?? 500)
+                        if let window = await DebugRecordingDemo.openReplayWindow(size: size) {
+                            do {
+                                try await replay.debugKeep(filter: window.filter, width: window.width, height: window.height, as: 0)
+                            } catch {
+                                Log.app.error("debug.replay couldn't start: \(String(describing: error), privacy: .public)")
+                            }
+                        }
+                    case "save":
+                        if let sound = value("sound").flatMap(ReplaySound.init(rawValue:)) { settings.replaySound = sound }
+                        replay.debugSaveFolder = Self.snapshotDirectory
+                        replay.save()
+                    case "off":
+                        await replay.debugStopAll()
+                        replay.debugSaveFolder = nil
+                        DebugRecordingDemo.closeReplayWindow()
+                    default:
+                        break
+                    }
+                    Log.app.notice("debug.replay \(action, privacy: .public): \(replay.debugState, privacy: .public)")
+                }
+            } else {
+                Log.app.notice("debug.replay needs macOS 27")
+            }
+        case "replay-demo":
+            // The replay spike (macOS 27): the last-15-seconds buffer on the scrolling window behind the
+            // desktop picture, nothing shown: seconds= of buffering (20 unless given), w=/h= points, fps=, speed=,
+            // clip= seconds to export (15), keep=1 keeps replay-demo.mov in the snapshot folder, frames=0 asks
+            // the stream for no frames of its own (only the buffer).
+            if #available(macOS 27, *) {
+                let seconds = Self.intParameter("seconds", in: url) ?? 20
+                let size = CGSize(width: Self.intParameter("w", in: url) ?? 800, height: Self.intParameter("h", in: url) ?? 500)
+                let fps = Self.intParameter("fps", in: url) ?? 60
+                let speed = Double(Self.intParameter("speed", in: url) ?? 240)
+                let clip = Double(Self.intParameter("clip", in: url) ?? 15)
+                let keeps = Self.intParameter("keep", in: url) == 1
+                let takesFrames = Self.intParameter("frames", in: url) != 0
+                let audio = Self.intParameter("audio", in: url) == 1
+                let takesAudio = Self.intParameter("audiooutput", in: url) != 0
+                // mic=1 buffers the user's microphone: only with their word; the clip is never kept then.
+                let microphone = Self.intParameter("mic", in: url) == 1
+                // silence=0: sound asked for, but none played.
+                let playsSilence = Self.intParameter("silence", in: url) != 0
+                Task {
+                    await DebugRecordingDemo.runReplaySpike(
+                        seconds: seconds, size: size, framesPerSecond: fps, speed: speed, clip: clip, keeps: keeps && !microphone,
+                        takesFrames: takesFrames, audio: audio, takesAudio: takesAudio, microphone: microphone, playsSilence: playsSilence
+                    )
+                }
+            } else {
+                Log.app.notice("debug.replay-demo needs macOS 27")
+            }
         case "studio-render":
             // Films studio-demo.mp4 as the Studio window would export it, from a made-up pointer, over the sky
-            // gradient with automatic zooms: writes studio-render.mp4 and logs the time it took.
-            Task { await DebugRecordingDemo.renderStudio() }
+            // gradient with automatic zooms: writes studio-render.mp4 and logs the time it took and the most
+            // memory used. blur=0 films it without motion blur; camera=1 with a made-up camera beside it.
+            let blur = Self.intParameter("blur", in: url) != 0
+            let camera = Self.intParameter("camera", in: url) == 1
+            Task { await DebugRecordingDemo.renderStudio(motionBlur: blur, camera: camera) }
         case "gif-demo":
             // Makes a GIF of record-demo.mov in the snapshot folder (record it first with record-demo?keep=1):
             // fps=, scale= (percent of the recording's pixels). Logs frames, size, time, and the most memory

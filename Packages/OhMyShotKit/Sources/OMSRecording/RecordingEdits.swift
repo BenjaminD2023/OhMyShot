@@ -39,7 +39,7 @@ extension RecordingFinisher {
         let scale = min(max(edits.scale, 0.05), 1)
         let natural = try await videoTrack.load(.naturalSize)
         guard range != whole || scale < 1 else {
-            return try await finish(source, to: destination, includingAudio: edits.keepsAudio)
+            return try await finish(source, to: destination, audio: edits.keepsAudio ? .all : .none)
         }
 
         let description = try await videoTrack.load(.formatDescriptions).first

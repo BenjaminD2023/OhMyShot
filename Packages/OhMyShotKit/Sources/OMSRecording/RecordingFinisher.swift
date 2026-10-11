@@ -26,14 +26,38 @@ public enum RecordingFinisher {
         case writingFailed(String)
     }
 
+    /// Which of a movie's audio tracks the finished file keeps, by their place among its audio tracks; more
+    /// than one are mixed into one.
+    public enum AudioTracks: Equatable, Sendable {
+        case all
+        case none
+        case only([Int])
+
+        /// The tracks a clip saved from the replay keeps for `sound`, when its tracks hold `buffered`, in order.
+        public static func keeping(_ sound: ReplaySound, of buffered: [RecordingWriter.Track]) -> AudioTracks {
+            let kept = buffered.indices.filter { index in
+                switch buffered[index] {
+                case .systemAudio: sound.keepsSystem
+                case .microphone: sound.keepsMicrophone
+                }
+            }
+            return kept.count == buffered.count ? .all : kept.isEmpty ? .none : .only(kept)
+        }
+    }
+
     /// Writes the movie at `source` as an MP4 at `destination` (replacing anything there), its index first so
-    /// it starts playing before it has all loaded; without `includingAudio`, without its sound. `source` is
-    /// left as it is.
+    /// it starts playing before it has all loaded, with the audio tracks `audio` keeps. `source` is left as it
+    /// is.
     @concurrent
-    public static func finish(_ source: URL, to destination: URL, includingAudio: Bool = true) async throws -> Movie {
+    public static func finish(_ source: URL, to destination: URL, audio: AudioTracks = .all) async throws -> Movie {
         let asset = AVURLAsset(url: source)
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { throw FinishError.noVideo }
-        let audioTracks = includingAudio ? try await asset.loadTracks(withMediaType: .audio) : []
+        let allAudio = try await asset.loadTracks(withMediaType: .audio)
+        let audioTracks: [AVAssetTrack] = switch audio {
+        case .all: allAudio
+        case .none: []
+        case .only(let indices): indices.filter(allAudio.indices.contains).map { allAudio[$0] }
+        }
         let duration = try await asset.load(.duration)
         let size = try await videoTrack.load(.naturalSize)
 

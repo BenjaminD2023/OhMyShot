@@ -8,9 +8,10 @@ import Foundation
 ///
 /// The cursor follows the pointer through a critically damped spring (none at smoothing 0), so a shaky hand
 /// draws a calm line; over the last `clickApproach` before a click it closes on the pointer, so it presses
-/// where the pointer did and the click's ring lands under its tip, and the click starts it afresh there. The camera eases into each zoom toward the pointer and,
-/// fully zoomed, moves only when the cursor nears the edge of what it shows, through a slower spring, never
-/// past the recording's edges.
+/// where the pointer did and the click's ring lands under its tip, and the click starts it afresh there. It
+/// fades when the pointer rests and, as the system hides it, while typing, until the pointer moves or clicks.
+/// The camera eases into each zoom toward the pointer and, fully zoomed, moves only when the cursor nears the
+/// edge of what it shows, through a slower spring, never past the recording's edges.
 nonisolated public struct StudioTrack: Sendable {
     public struct Frame: Equatable, Sendable {
         /// 1 shows the whole recording.
@@ -38,6 +39,10 @@ nonisolated public struct StudioTrack: Sendable {
     public static let idleDelay = 1.6
     /// How long before a click the cursor gives up its smoothing.
     public static let clickApproach = 0.15
+    /// How long the cursor takes to fade when the pointer rests, when typing hides it, and to come back.
+    static let idleFade = 0.3
+    static let typingFade = 0.15
+    static let returnFade = 0.12
 
     public init(telemetry: StudioTelemetry, project: StudioProject, duration: Double, rate: Double = 120) {
         self.rate = rate
@@ -66,6 +71,10 @@ nonisolated public struct StudioTrack: Sendable {
         var opacity = 1.0
         var clickIndex = 0
         let clicks = telemetry.clicks.map(\.time).sorted()
+        // Typing, shortcuts left out: ⌘S doesn't hide the cursor, as it doesn't on screen.
+        let typing = project.cursor.hidesWhileTyping ? telemetry.keys.filter(\.isTyping).map(\.time).sorted() : []
+        var typingIndex = 0
+        var lastTyped = -Double.infinity
 
         for frameIndex in 0..<count {
             let time = Double(frameIndex) * step
@@ -99,12 +108,18 @@ nonisolated public struct StudioTrack: Sendable {
                 drawn = (cursor.x + (raw.x - cursor.x) * eased, cursor.y + (raw.y - cursor.y) * eased)
             }
 
-            // Fading when the pointer rests: out over 0.3 s, back in over 0.12 s.
-            if project.cursor.hidesWhenIdle {
-                let resting = time - lastMove > Self.idleDelay
-                opacity = resting ? max(0, opacity - step / 0.3) : min(1, opacity + step / 0.12)
+            // Fading while typing, until the pointer moves or clicks after the last key typed, and when the
+            // pointer rests.
+            while typingIndex < typing.count, typing[typingIndex] <= time {
+                lastTyped = typing[typingIndex]
+                typingIndex += 1
+            }
+            if lastTyped > lastMove {
+                opacity = max(0, opacity - step / Self.typingFade)
+            } else if project.cursor.hidesWhenIdle, time - lastMove > Self.idleDelay {
+                opacity = max(0, opacity - step / Self.idleFade)
             } else {
-                opacity = 1
+                opacity = min(1, opacity + step / Self.returnFade)
             }
 
             // The camera: how far into a zoom, and where it looks.

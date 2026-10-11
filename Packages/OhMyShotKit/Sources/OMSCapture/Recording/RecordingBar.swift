@@ -147,10 +147,10 @@ final class RecordingBar: NSView {
             ])
         }
         // A GIF has no sound: the sound chips show off and can't be pressed, and keep their state.
-        // Studio draws the keys itself, so a window recorded for it can show them; it has no camera yet.
+        // Studio draws the keys itself, so a window recorded for it can show them.
         let studio = choices.output == .studio
         let keysApply = !recordsWindow || studio
-        let cameraApplies = !recordsWindow && !studio
+        let cameraApplies = !recordsWindow
         states = [
             .systemAudio: choices.recordsSystemAudio, .microphone: choices.recordsMicrophone, .clicks: choices.showsClicks,
             .keystrokes: choices.showsKeystrokes && keysApply && keysAllowed,
@@ -171,7 +171,7 @@ final class RecordingBar: NSView {
             button.contentTintColor = on ? .controlAccentColor : enabled && !blocked ? .labelColor : .tertiaryLabelColor
             button.toolTip = !enabled
                 ? toggle == .keystrokes ? String(localized: "A window is recorded on its own, without keys shown over it")
-                : toggle == .camera && studio ? String(localized: "Studio recordings don't show the camera yet")
+                : toggle == .camera && studio ? String(localized: "Studio doesn’t add the camera to a window recorded on its own yet")
                 : toggle == .camera ? String(localized: "A window is recorded on its own, without the camera over it")
                 : String(localized: "GIFs have no sound")
                 : blocked

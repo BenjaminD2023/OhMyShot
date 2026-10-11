@@ -15,6 +15,8 @@ struct RecordingRecoveryTests {
         for draft in [newer, older, running] {
             try Data([0]).write(to: draft.movieURL)
         }
+        // A Studio recording's camera, beside its draft.
+        try Data([0]).write(to: newer.cameraURL)
         // A movie whose record is gone still holds a recording.
         let orphan = drafts.directory.appending(path: "\(UUID().uuidString).mov")
         try Data([0]).write(to: orphan)
@@ -26,6 +28,9 @@ struct RecordingRecoveryTests {
         #expect(!drafts.leftovers().contains { $0.id == neverWritten.id })
         drafts.remove(newer)
         #expect(!drafts.leftovers().contains { $0.id == newer.id })
+        // The camera's movie is no recording of its own, and goes with its draft.
+        #expect(newer.cameraURL.lastPathComponent == "\(newer.id.uuidString).camera.mov")
+        #expect(!FileManager.default.fileExists(atPath: newer.cameraURL.path(percentEncoded: false)))
     }
 
     @Test func aMovieCutShortIsReadableUpToItsLastFragment() async throws {

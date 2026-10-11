@@ -5,11 +5,13 @@ import CoreImage.CIFilterBuiltins
 import Foundation
 import ImageIO
 import OMSCore
+import SwiftUI
 
 /// Films one frame of a Studio recording: the background, the recording framed on it with its shadow and
-/// rounded corners, zoomed where the camera looks, the cursor drawn again over it, a ring at each click, and
-/// the keys pressed at the foot. Core Image, so frames are drawn on the GPU; what does not change from frame
-/// to frame (the background, the shadow, the cursors, each caption) is made once.
+/// rounded corners, zoomed where the camera looks, the cursor drawn again over it, a ring at each click, the
+/// camera's bubble in a corner (never zoomed), and the keys pressed at the foot. Core Image, so frames are
+/// drawn on the GPU; what does not change from frame to frame (the background, the shadows, the cursors, the
+/// bubble's ring, each caption) is made once.
 ///
 /// Sizes: the recording is framed at its own pixels where it can be, the background around it, so its text
 /// stays as sharp as it was; a movie that would be larger than `largestSide` is filmed smaller to fit.
@@ -38,6 +40,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     private let captions: [Caption]
     /// The ring for the main button's clicks, and the dimmer one for the others'.
     private let rings: (primary: CIImage, secondary: CIImage)
+    /// The camera's bubble; nil without a camera, or with it hidden.
+    let camera: CameraLook?
     private let lock = NSLock()
     /// Caption pictures by their text, made the first time each shows.
     private var captionImages: [String: CIImage] = [:]
@@ -51,6 +55,21 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     static let ringStart = 18.0 / 54
     /// Room around a caption's capsule for its shadow, in points.
     static let captionRoom = 12.0
+
+    /// How long the camera takes to fill the recording, or to go back to its bubble.
+    static let cameraFade = 0.25
+
+    /// The camera's bubble, made once: where it sits (in the movie's pixels, y up), its shape, the shadow
+    /// under it, and the white ring over it, as the bubble on screen draws them.
+    struct CameraLook {
+        let bubble: CGRect
+        let mask: CIImage
+        let shadow: CIImage
+        let ring: CIImage
+        let mirrored: Bool
+        /// When it fills the recording, in the recording's seconds.
+        let fills: [ClosedRange<Double>]
+    }
 
     /// A caption of keys and when it shows.
     struct Caption: Equatable {
@@ -103,6 +122,11 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         clicks = telemetry.clicks.sorted { $0.time < $1.time }
         captions = project.showsKeys ? Self.captions(for: telemetry.keys, mode: project.keystrokeMode) : []
         rings = (Self.ringImage(color: ringColor, strokeAlpha: 0.9), Self.ringImage(color: ringColor, strokeAlpha: 0.55))
+        let unit = pixelsPerPoint * layout.scale
+        let recording = CGSize(width: telemetry.width, height: telemetry.height)
+        camera = project.camera.isShown ? telemetry.camera.map { take in
+            Self.cameraLook(take: take, settings: project.camera, layout: layout, recording: recording, unit: unit)
+        } : nil
     }
 
     /// Where everything goes for a recording `recordingSize` pixels with `project`'s padding and shape.
@@ -128,67 +152,283 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         return Layout(canvas: size, frame: frame, scale: scale)
     }
 
-    /// The movie's frame at `time` (the recording's seconds) from the recording's frame `source`.
-    public func image(source: CIImage, at time: Double) -> CIImage {
+    /// The movie's frame at `time` (the recording's seconds) from the recording's frame `source` and, when
+    /// there is one, the camera's frame then.
+    public func image(source: CIImage, camera cameraFrame: CIImage? = nil, at time: Double) -> CIImage {
         let state = track.frame(at: time)
-        let width = Double(recordingSize.width), height = Double(recordingSize.height)
+        let height = Double(recordingSize.height)
         let frame = layout.frame
         // What the camera shows, in the recording's pixels, y up as the source image is.
-        let visibleWidth = width / state.zoom, visibleHeight = height / state.zoom
-        let visibleX = state.centerX * pixelsPerPoint - visibleWidth / 2
-        let visibleY = height - state.centerY * pixelsPerPoint - visibleHeight / 2
-        let k = frame.width / visibleWidth
+        let shown = view(state)
+        let k = shown.scale
         /// A point in the recording's points (y down) on the movie.
         func onMovie(_ x: Double, _ y: Double) -> CGPoint {
-            CGPoint(x: frame.minX + (x * pixelsPerPoint - visibleX) * k, y: frame.minY + (height - y * pixelsPerPoint - visibleY) * k)
+            CGPoint(x: frame.minX + (x * pixelsPerPoint - shown.x) * k, y: frame.minY + (height - y * pixelsPerPoint - shown.y) * k)
         }
 
-        let screen = source
-            .transformed(by: CGAffineTransform(translationX: -visibleX, y: -visibleY))
-            .transformed(by: CGAffineTransform(scaleX: k, y: k))
-            .transformed(by: CGAffineTransform(translationX: frame.minX, y: frame.minY))
-            .cropped(to: frame)
-            .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputMaskImageKey: mask, kCIInputBackgroundImageKey: CIImage.empty()])
+        // The camera, in its bubble or filling the frame. From one to the other, the bubble fades out over the
+        // first half of the change and the frame fills over the second, as the bubble on screen fades out and
+        // in: the person is never shown twice.
+        let picture = camera.flatMap { look in cameraFrame.map { Self.oriented($0, mirrored: look.mirrored) } }
+        let filling = camera.map { Self.fillLevel($0.fills, at: time) } ?? 0
+        let bubbleOpacity = picture == nil ? 0 : max(0, 1 - 2 * filling)
+        let fillOpacity = picture == nil ? 0 : max(0, 2 * filling - 1)
 
-        var scene = screen
-        // Rings under the cursor, at each click still showing.
-        if project.cursor.showsClicks {
-            for click in clicks where click.time <= time && time - click.time < Self.ringDuration {
-                // Easing out, as Core Animation's ease-out does for the rings shown while recording.
-                let progress = (time - click.time) / Self.ringDuration
-                let eased = 1 - (1 - progress) * (1 - progress)
-                let diameter = Self.ringSize * pixelsPerPoint * k * (Self.ringStart + (1 - Self.ringStart) * eased)
-                let point = onMovie(click.x, click.y)
-                let ring = click.button == .primary ? rings.primary : rings.secondary
-                let scaled = ring.transformed(by: CGAffineTransform(scaleX: diameter / ring.extent.width, y: diameter / ring.extent.height))
-                let placed = scaled.transformed(by: CGAffineTransform(translationX: point.x - diameter / 2, y: point.y - diameter / 2))
-                scene = Self.faded(placed, opacity: 1 - eased).composited(over: scene)
+        var scene: CIImage
+        if let picture, fillOpacity > 0.999 {
+            // Covered by the camera: nothing under it is drawn.
+            scene = Self.filling(picture, into: frame)
+        } else {
+            // The recording as the camera shows it, exposed over the shutter while the camera moves.
+            let views = project.motionBlur ? exposures(at: time) : [shown]
+            let exposed = views.count > 1 ? blurred(source, over: views, around: shown) : screen(source, shown)
+            scene = exposed.cropped(to: frame)
+            // Rings under the cursor, at each click still showing.
+            if project.cursor.showsClicks {
+                for click in clicks where click.time <= time && time - click.time < Self.ringDuration {
+                    // Easing out, as Core Animation's ease-out does for the rings shown while recording.
+                    let progress = (time - click.time) / Self.ringDuration
+                    let eased = 1 - (1 - progress) * (1 - progress)
+                    let diameter = Self.ringSize * pixelsPerPoint * k * (Self.ringStart + (1 - Self.ringStart) * eased)
+                    let point = onMovie(click.x, click.y)
+                    let ring = click.button == .primary ? rings.primary : rings.secondary
+                    let scaled = ring.transformed(by: CGAffineTransform(scaleX: diameter / ring.extent.width, y: diameter / ring.extent.height))
+                    let placed = scaled.transformed(by: CGAffineTransform(translationX: point.x - diameter / 2, y: point.y - diameter / 2))
+                    scene = Self.faded(placed, opacity: 1 - eased).composited(over: scene)
+                }
+            }
+            // The cursor, its hot spot on the pointer's place.
+            if state.cursorOpacity > 0.01, state.cursor < cursors.count, let cursor = cursors[state.cursor] {
+                let imageScale = cursor.image.extent.width / cursor.telemetry.width
+                let size = project.cursor.size * pixelsPerPoint * k / imageScale
+                let hotSpot = CGPoint(
+                    x: cursor.telemetry.hotSpotX * imageScale * size,
+                    y: (cursor.telemetry.height - cursor.telemetry.hotSpotY) * imageScale * size
+                )
+                let point = onMovie(state.cursorX, state.cursorY)
+                let placed = cursor.image
+                    .transformed(by: CGAffineTransform(scaleX: size, y: size))
+                    .transformed(by: CGAffineTransform(translationX: point.x - hotSpot.x, y: point.y - hotSpot.y))
+                scene = Self.faded(placed, opacity: state.cursorOpacity).composited(over: scene)
+            }
+            // The camera filling the frame goes over everything in it before the frame's shape is cut: cut apart,
+            // the recording showed through along the soft edges.
+            if let picture, fillOpacity > 0.001 {
+                scene = Self.faded(Self.filling(picture, into: frame), opacity: fillOpacity).composited(over: scene)
             }
         }
-        // The cursor, its hot spot on the pointer's place.
-        if state.cursorOpacity > 0.01, state.cursor < cursors.count, let cursor = cursors[state.cursor] {
-            let imageScale = cursor.image.extent.width / cursor.telemetry.width
-            let size = project.cursor.size * pixelsPerPoint * k / imageScale
-            let hotSpot = CGPoint(
-                x: cursor.telemetry.hotSpotX * imageScale * size,
-                y: (cursor.telemetry.height - cursor.telemetry.hotSpotY) * imageScale * size
-            )
-            let point = onMovie(state.cursorX, state.cursorY)
-            let placed = cursor.image
-                .transformed(by: CGAffineTransform(scaleX: size, y: size))
-                .transformed(by: CGAffineTransform(translationX: point.x - hotSpot.x, y: point.y - hotSpot.y))
-            scene = Self.faded(placed, opacity: state.cursorOpacity).composited(over: scene)
-        }
-        scene = scene.cropped(to: frame)
+        scene = scene
+            .cropped(to: frame)
+            .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputMaskImageKey: mask, kCIInputBackgroundImageKey: CIImage.empty()])
 
         var movie = background
         if let shadow { movie = shadow.composited(over: movie) }
         movie = scene.composited(over: movie)
+        if let look = camera, let picture, bubbleOpacity > 0.001 { movie = bubble(look, picture: picture, opacity: bubbleOpacity, over: movie) }
         if let caption = caption(at: time) { movie = caption.composited(over: movie) }
         return movie.cropped(to: CGRect(origin: .zero, size: layout.canvas))
     }
 
+    // MARK: Motion
+
+    /// What the camera shows at `state`: the corner of what it shows, in the recording's pixels (y up), and
+    /// how much larger it draws them.
+    struct View: Equatable {
+        let x: Double
+        let y: Double
+        let scale: Double
+    }
+
+    /// How long each frame is exposed while the camera moves: half a frame of the movie's 60, as a film
+    /// camera's half-open shutter.
+    static let shutter = 0.5 / 60
+    /// The longest blur, as a fraction of the movie's longer side; and the farthest one exposure lies from
+    /// the next at the frame's edges, in the movie's pixels, so the copies read as one smear.
+    static let longestBlur = 0.01
+    static let exposureSpacing = 1.5
+    static let mostExposures = 32
+
+    func view(_ state: StudioTrack.Frame) -> View {
+        let width = Double(recordingSize.width), height = Double(recordingSize.height)
+        let visibleWidth = width / state.zoom, visibleHeight = height / state.zoom
+        return View(
+            x: state.centerX * pixelsPerPoint - visibleWidth / 2, y: height - state.centerY * pixelsPerPoint - visibleHeight / 2,
+            scale: layout.frame.width / visibleWidth
+        )
+    }
+
+    /// The recording drawn as the camera shows it in `view`, cut to `rect` (the frame unless given), its edge
+    /// pixels reaching past it so the frame's edge stays solid.
+    private func screen(_ source: CIImage, _ view: View, cutTo rect: CGRect? = nil) -> CIImage {
+        source
+            .clampedToExtent()
+            .transformed(by: CGAffineTransform(translationX: -view.x, y: -view.y))
+            .transformed(by: CGAffineTransform(scaleX: view.scale, y: view.scale))
+            .transformed(by: CGAffineTransform(translationX: layout.frame.minX, y: layout.frame.minY))
+            .cropped(to: rect ?? layout.frame)
+    }
+
+    /// The recording as `views` show it, averaged: drawn once as `center` shows it, with room around the
+    /// frame for what the others reach, and each exposure moved from there. Drawing every exposure from the
+    /// recording turned its 4:2:0 frame into color at full size each time, and a 4K export peaked at 3 GB.
+    private func blurred(_ source: CIImage, over views: [View], around center: View) -> CIImage {
+        let frame = layout.frame
+        // Where each exposure's view of the frame lies in the center's drawing.
+        func moving(to view: View) -> CGAffineTransform {
+            // A point m of the center's drawing is drawn at fmin + (m − fmin)·(view/center) + (center − view)·view.
+            let scale = view.scale / center.scale
+            return CGAffineTransform(translationX: -frame.minX, y: -frame.minY)
+                .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+                .concatenating(CGAffineTransform(translationX: frame.minX + (center.x - view.x) * view.scale, y: frame.minY + (center.y - view.y) * view.scale))
+        }
+        let reach = views.reduce(frame) { union, view in union.union(frame.applying(moving(to: view).inverted())) }
+        let drawn = screen(source, center, cutTo: reach.integral).insertingIntermediate(cache: false)
+        let weight = 1 / Double(views.count)
+        // Each weighted as a fade weighs it: CIColorMatrix works on colors unpremultiplied, so weighting the
+        // alpha alone weighs the premultiplied color with it (weighting both too squared the weight, and the
+        // average came out black).
+        return views.map { Self.faded(drawn.transformed(by: moving(to: $0)).cropped(to: frame), opacity: weight) }
+            .reduce(CIImage.empty()) { sum, part in part.applyingFilter("CIAdditionCompositing", parameters: [kCIInputBackgroundImageKey: sum]) }
+    }
+
+    /// The views the frame at `time` is exposed over: the one at `time` while the camera holds still (or
+    /// moves less than a pixel and a half at the frame's edges over the shutter), so text stays sharp;
+    /// while it moves, enough across the shutter that each lies within `exposureSpacing` of the next, the
+    /// shutter shortened so no blur is longer than `longestBlur`.
+    func exposures(at time: Double) -> [View] {
+        let center = view(track.frame(at: time))
+        let travel = Self.travel(from: view(track.frame(at: time - Self.shutter / 2)), to: view(track.frame(at: time + Self.shutter / 2)), across: layout.frame.size)
+        guard travel > Self.exposureSpacing else { return [center] }
+        let longest = Self.longestBlur * max(layout.canvas.width, layout.canvas.height)
+        let shutter = Self.shutter * min(1, longest / travel)
+        let count = min(Self.mostExposures, Int((min(travel, longest) / Self.exposureSpacing).rounded(.up)) + 1)
+        return (0..<count).map { index in
+            view(track.frame(at: time + shutter * (Double(index) / Double(count - 1) - 0.5)))
+        }
+    }
+
+    /// How far the picture moves on the movie from `a` to `b`, at the frame's corners, where a zoom moves it
+    /// most: a point drawn at offset m from the frame's corner in `a` is drawn at m·(b/a) + (a − b)·b's scale
+    /// in `b`.
+    static func travel(from a: View, to b: View, across frame: CGSize) -> Double {
+        let ratio = b.scale / a.scale - 1
+        let shiftX = (a.x - b.x) * b.scale, shiftY = (a.y - b.y) * b.scale
+        return [(0.0, 0.0), (Double(frame.width), 0.0), (0.0, Double(frame.height)), (Double(frame.width), Double(frame.height))].map { corner in
+            hypot(corner.0 * ratio + shiftX, corner.1 * ratio + shiftY)
+        }.max() ?? 0
+    }
+
     // MARK: Pieces
+
+    /// The camera's frame as it is shown: mirrored when the project says so.
+    static func oriented(_ frame: CIImage, mirrored: Bool) -> CIImage {
+        guard mirrored else { return frame }
+        return frame
+            .transformed(by: CGAffineTransform(scaleX: -1, y: 1))
+            .transformed(by: CGAffineTransform(translationX: frame.extent.minX + frame.extent.maxX, y: 0))
+    }
+
+    /// The camera in its bubble over `movie`, at `opacity`: its shadow, the picture cut to its shape, its ring.
+    private func bubble(_ look: CameraLook, picture: CIImage, opacity: Double, over movie: CIImage) -> CIImage {
+        let inBubble = Self.filling(picture, into: look.bubble)
+            .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputMaskImageKey: look.mask, kCIInputBackgroundImageKey: CIImage.empty()])
+        var movie = Self.faded(look.shadow, opacity: opacity).composited(over: movie)
+        movie = Self.faded(inBubble, opacity: opacity).composited(over: movie)
+        return Self.faded(look.ring, opacity: opacity).composited(over: movie)
+    }
+
+    /// How far the camera fills the recording at `time`, from 0 (its bubble) to 1, easing over `cameraFade`
+    /// after each change.
+    static func fillLevel(_ fills: [ClosedRange<Double>], at time: Double) -> Double {
+        var level = 0.0
+        for fill in fills where time >= fill.lowerBound {
+            let rising = min(1, (time - fill.lowerBound) / cameraFade)
+            let falling = min(1, max(0, (time - fill.upperBound) / cameraFade))
+            level = max(level, rising - falling)
+        }
+        return min(max(level, 0), 1)
+    }
+
+    /// `image` scaled to cover `rect`, centered, and cut to it. Its edge pixels reach past it first: scaled
+    /// as it is, its outermost pixels blend with the clear beyond them, and what is under them shows through.
+    static func filling(_ image: CIImage, into rect: CGRect) -> CIImage {
+        let extent = image.extent
+        guard extent.width > 0, extent.height > 0 else { return CIImage.empty() }
+        let scale = max(rect.width / extent.width, rect.height / extent.height)
+        return image
+            .clampedToExtent()
+            .transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
+            .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            .transformed(by: CGAffineTransform(translationX: rect.midX - extent.width * scale / 2, y: rect.midY - extent.height * scale / 2))
+            .cropped(to: rect)
+    }
+
+    /// The bubble's outline in `rect`: a circle, or a square whose continuous corners take a fifth of its
+    /// side, as the bubble on screen clips its picture.
+    static func bubblePath(_ rect: CGRect, shape: StudioProject.Camera.Shape) -> CGPath {
+        switch shape {
+        case .circle: CGPath(ellipseIn: rect, transform: nil)
+        case .roundedSquare: RoundedRectangle(cornerRadius: rect.width * 0.2, style: .continuous).path(in: rect).cgPath
+        }
+    }
+
+    /// The camera's bubble for `settings`: its side in the recording's points as on screen (never more than
+    /// half the recording's shorter side), 24 points in from the chosen corner of the recording's frame;
+    /// circular or a rounded square (continuous corners, a fifth of its side); a white ring 3 points wide just
+    /// inside its edge and a soft shadow (black 0.28, 12 points, 4 down), as the bubble on screen has.
+    static func cameraLook(take: StudioTelemetry.Camera, settings: StudioProject.Camera, layout: Layout, recording: CGSize, unit: Double) -> CameraLook {
+        let shorter = Double(min(recording.width, recording.height))
+        let sidePoints = min(settings.size, max(shorter / 2, 60))
+        let insetPoints = min(24, max(shorter - sidePoints, 0) / 2)
+        let side = max(2, (sidePoints * unit).rounded())
+        let inset = (insetPoints * unit).rounded()
+        let frame = layout.frame
+        let left = settings.corner == .bottomLeft || settings.corner == .topLeft
+        let bottom = settings.corner == .bottomLeft || settings.corner == .bottomRight
+        let bubble = CGRect(
+            x: (left ? frame.minX + inset : frame.maxX - inset - side).rounded(),
+            y: (bottom ? frame.minY + inset : frame.maxY - inset - side).rounded(),
+            width: side, height: side
+        )
+        // The mask, the shadow, and the ring, drawn once around the bubble with room for the shadow.
+        let room = (28 * unit).rounded(.up)
+        let width = Int(side + room * 2)
+        let outline = CGRect(x: room, y: room, width: side, height: side)
+        func drawn(_ draw: (CGContext) -> Void) -> CIImage {
+            guard let context = CGContext(
+                data: nil, width: width, height: width, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return CIImage.empty() }
+            draw(context)
+            return context.makeImage().map {
+                CIImage(cgImage: $0).transformed(by: CGAffineTransform(translationX: bubble.minX - room, y: bubble.minY - room))
+            } ?? CIImage.empty()
+        }
+        let mask = drawn { context in
+            context.addPath(bubblePath(outline, shape: settings.shape))
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fillPath()
+        }.cropped(to: bubble)
+        let shadow = drawn { context in
+            context.setShadow(offset: CGSize(width: 0, height: -4 * unit), blur: 12 * unit, color: CGColor(gray: 0, alpha: 0.28))
+            context.addPath(bubblePath(outline, shape: settings.shape))
+            context.setFillColor(CGColor(gray: 0, alpha: 1))
+            context.fillPath()
+            // Only what falls outside the bubble: the camera covers the rest.
+            context.setShadow(offset: .zero, blur: 0, color: nil)
+            context.setBlendMode(.clear)
+            context.addPath(bubblePath(outline, shape: settings.shape))
+            context.fillPath()
+        }
+        let ring = drawn { context in
+            let line = 3 * unit
+            context.addPath(bubblePath(outline.insetBy(dx: line / 2, dy: line / 2), shape: settings.shape))
+            context.setStrokeColor(CGColor(gray: 1, alpha: 0.95))
+            context.setLineWidth(line)
+            context.strokePath()
+        }
+        return CameraLook(bubble: bubble, mask: mask, shadow: shadow, ring: ring, mirrored: settings.mirrored, fills: take.fills)
+    }
 
     /// The keys pressed as captions: each press shows the caption as it stands then, until the next press, or
     /// for a while after the last one.

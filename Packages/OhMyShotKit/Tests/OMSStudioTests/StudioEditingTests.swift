@@ -32,6 +32,8 @@ struct StudioEditingTests {
         let project = try JSONDecoder().decode(StudioProject.self, from: Data(old.utf8))
         #expect(project.padding == 0.1 && project.shadow == 0.6)
         #expect(project.keystrokeMode == .all && project.automaticZooms)
+        #expect(project.cursor.hidesWhileTyping && project.cursor.size == 1.5)
+        #expect(project.camera == StudioProject.Camera())
         var changed = project
         changed.keystrokeMode = .shortcuts
         changed.automaticZooms = false
@@ -49,6 +51,62 @@ struct StudioEditingTests {
         #expect(1300 - 600 * 0.5 - track.frame(at: 1.5).cursorX > 20)
         #expect(abs(track.frame(at: 2).cursorX - 1300) < 2)
         #expect(abs(track.frame(at: 2.01).cursorX - (100 + 600 * 2.01)) < 4)
+    }
+
+    @Test func typingHidesTheCursorUntilThePointerMoves() {
+        // Still until 2 s, then moving right; idle hiding off, so only typing hides it.
+        let samples = stride(from: 0.0, through: 3, by: 1.0 / 60).map { time in
+            StudioTelemetry.Sample(time: time, x: time < 2 ? 800 : 800 + 400 * (time - 2), y: 500, cursor: 0)
+        }
+        func opacity(at time: Double, keys: [StudioTelemetry.Key], hides: Bool = true) -> Double {
+            let telemetry = StudioTelemetry(width: 1600, height: 1000, pixelsPerPoint: 2, samples: samples, keys: keys, keystrokeMode: .all)
+            var project = StudioProject()
+            project.cursor.hidesWhenIdle = false
+            project.cursor.hidesWhileTyping = hides
+            return StudioTrack(telemetry: telemetry, project: project, duration: 3).frame(at: time).cursorOpacity
+        }
+        let typed = [Self.key(1, "h", keyCode: 4), Self.key(1.2, "i", keyCode: 34)]
+        #expect(opacity(at: 0.9, keys: typed) > 0.99)
+        #expect(opacity(at: 1.3, keys: typed) < 0.01)
+        #expect(opacity(at: 1.9, keys: typed) < 0.01)
+        #expect(opacity(at: 2.3, keys: typed) > 0.99)
+        // Presses kept only as presses are typing too; a shortcut is not; and the setting turns it off.
+        #expect(opacity(at: 1.3, keys: [.unrecorded(time: 1, isRepeat: false)]) < 0.01)
+        #expect(opacity(at: 1.3, keys: [Self.key(1, "s", keyCode: 1, modifiers: .command)]) > 0.99)
+        #expect(opacity(at: 1.3, keys: typed, hides: false) > 0.99)
+    }
+
+    @Test func aClickBringsBackTheCursorTypingHid() {
+        let samples = [StudioTelemetry.Sample(time: 0, x: 800, y: 500, cursor: 0)]
+        let telemetry = StudioTelemetry(
+            width: 1600, height: 1000, pixelsPerPoint: 2, samples: samples, clicks: [.init(time: 2, x: 800, y: 500, button: .primary)],
+            keys: [Self.key(1, "h", keyCode: 4)], keystrokeMode: .all
+        )
+        var project = StudioProject()
+        project.cursor.hidesWhenIdle = false
+        let track = StudioTrack(telemetry: telemetry, project: project, duration: 3)
+        #expect(track.frame(at: 1.5).cursorOpacity < 0.01)
+        #expect(track.frame(at: 2.2).cursorOpacity > 0.99)
+    }
+
+    @Test func aCameraThatWasNotKeptIsSaidSo() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "OMSStudioTests-\(UUID().uuidString)")
+        func document(_ telemetry: StudioTelemetry) -> StudioDocument {
+            StudioDocument(
+                source: folder.appending(path: "none.mp4"), telemetry: telemetry, project: StudioProject(), duration: 4,
+                recordingSize: CGSize(width: 320, height: 200), folder: folder, hasBeenExported: false, background: { _, _ in nil }
+            )
+        }
+        var telemetry = StudioTelemetry(width: 160, height: 100, pixelsPerPoint: 2)
+        // No camera at all: nothing to say.
+        #expect(!document(telemetry).hasCamera && !document(telemetry).cameraFailed)
+        // The bubble showed, but no movie came.
+        telemetry.cameraFailed = true
+        #expect(document(telemetry).cameraFailed)
+        // A camera written down whose movie is gone.
+        telemetry.cameraFailed = nil
+        telemetry.camera = .init(start: 0, bubble: StudioProject.Camera())
+        #expect(!document(telemetry).hasCamera && document(telemetry).cameraFailed)
     }
 
     private func document() throws -> StudioDocument {

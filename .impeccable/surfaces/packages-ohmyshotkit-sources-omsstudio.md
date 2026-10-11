@@ -56,7 +56,8 @@ Studio components.
   shadow, a 2x zoom, and a cursor with Core Image exported 10 s of 2000x1280 at 60 fps to 1080p in 1.7 s
   (6x real time, 70 MB).
 - First version leaves out: the camera in Studio (it would be zoomed with the screen; it needs a track of its
-  own), motion blur, speed changes, and redaction in the movie.
+  own), motion blur, speed changes, and redaction in the movie. The camera and motion blur came in the
+  second cut (below).
 
 ## Built (2026-10-11)
 
@@ -97,3 +98,50 @@ returns nothing, leaves the change waiting, no alert, no progress. Verified only
 (renders, exports, memory); not yet tried live: the real
 record → stop → Studio flow on screen, timeline drags and key routing with a real pointer and keyboard,
 the menu bar's progress and Cancel after closing, quitting with an export pending.
+
+## Second cut (2026-10-11)
+
+What the plan's Studio row still listed (摄像头布局, 动态模糊, 打字隐藏), with conventional defaults rather
+than new decisions:
+
+- The camera: chosen on the bar as for Video, its bubble shown on screen but kept out of the stream; a
+  `CameraRecorder` (OMSRecording) adds an `AVCaptureVideoDataOutput` to the bubble's session and writes the
+  camera's frames, unmirrored, into `<draft>.camera.mov` through a second `RecordingWriter` given the same
+  pauses, so the two movies stay in step on the host clock; it finishes where the screen's movie ended.
+  Telemetry keeps where the camera's movie begins on the recording's timeline, when the bubble was
+  double-clicked to fill what was recorded, and the bubble's look (shape, size, mirror, nearest corner),
+  which the project starts from. The composition takes the camera as a second video track, cut as the
+  recording is, its nearest frame held where it has none; the renderer draws it in its bubble 24 pt in from
+  a corner of the recording's frame, never zoomed, with the bubble's continuous corners, ring, and shadow,
+  or filling the frame while it did (composited into the frame's contents before its shape is cut, so
+  nothing under it shows at the soft edges), crossfading 0.25 s. Inspector: Camera (Show, Shape, Size, Corner, Mirror).
+- Motion blur, on by default: while the camera zooms or pans, each frame is exposed over half a frame of
+  the movie's 60 from up to 32 positions (1.5 pixels apart at the frame's edges, the blur at most 1% of the
+  movie's longer side); still, one exposure. The cursor and everything over the recording stay crisp.
+  Inspector: Zoom › Motion blur.
+- The cursor fades while typing (keys without ⌘⌃⌥, never function keys) and comes back on a move or
+  click. Inspector: Cursor › Hide while typing, when keys were written down.
+
+Finish review (impeccable-finish-reviewer): first pass asked for recaptures (the renders predated the last
+edits) and flagged two real faults, both fixed: circular-arc corners on the rounded-square bubble (now
+continuous, from SwiftUI's continuous rounded rectangle) and the recording showing through along a filled
+frame's edges (the camera now goes in before the frame's shape is cut, and scaled images are clamped to
+their extent first, since a scaled image's outermost pixels blend with clear;
+`aFilledCameraLeavesNothingOfTheRecordingAtItsEdges`). Second pass on fresh captures (disposition fix), all
+applied: the change between bubble and full frame showed the person twice (now the bubble fades out over the
+first half and the frame fills over the second, as the live bubble fades out and in;
+`theCameraIsNeverShownTwice`); a camera that showed but couldn't be recorded was dropped silently (now
+`StudioTelemetry.cameraFailed` and a callout, "The camera couldn’t be recorded.", in the Camera section);
+DESIGN.md's Future Surfaces still listed the camera and motion blur; and, of the nice-to-haves, the Motion
+blur tooltip's wording, VoiceOver names Camera shape / Camera size, the camera chip's reason for a window
+recorded for Studio, and nothing drawn under a camera that covers the frame.
+
+Verified behind the desktop picture with a made-up camera (never the user's): renders light and dark,
+rounded square and circle, every corner, a filled stretch; 4K exports with blur and camera (Docs/perf.md ›
+Studio); the camera kept in step around a cut and before it began (`theCameraKeepsInStepAroundCuts`), and
+compositions a player can draw (`aMovieWithTheCameraIsOneAPlayerCanDraw`, after an empty preview: a track a
+6000th of a second past the instruction). Not tried: recording with the real camera (it records the user,
+so it waits for their word), the bubble double-clicked while recording, a camera unplugged mid-recording.
+
+Left for later: editing when the camera fills the frame (it follows the recording), the camera for windows
+recorded alone, speed changes, redaction in the movie, a GIF from Studio, zooming the timeline.

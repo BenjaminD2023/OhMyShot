@@ -1,3 +1,4 @@
+import CoreImage
 import Foundation
 import Testing
 @testable import OMSStudio
@@ -95,5 +96,51 @@ struct StudioMotionTests {
         #expect(track.frame(at: 0.5).cursorOpacity == 1)
         #expect(track.frame(at: 3.5).cursorOpacity == 0)
         #expect(track.frame(at: 4.3).cursorOpacity == 1)
+    }
+
+    @Test func thePictureTravelsMostAtTheCornersWhenZooming() {
+        // A pan of 10 recording pixels at twice the size moves everything 20 movie pixels.
+        let frame = CGSize(width: 1000, height: 600)
+        #expect(abs(StudioRenderer.travel(from: .init(x: 100, y: 50, scale: 2), to: .init(x: 110, y: 50, scale: 2), across: frame) - 20) < 1e-9)
+        // Zooming about the frame's corner moves its far corner by a tenth of the diagonal.
+        let zoom = StudioRenderer.travel(from: .init(x: 0, y: 0, scale: 1), to: .init(x: 0, y: 0, scale: 1.1), across: frame)
+        #expect(abs(zoom - 0.1 * hypot(1000, 600)) < 1e-6)
+    }
+
+    @Test func motionBlurOnlyWhileTheCameraMoves() throws {
+        // A zoom from 1 s to 3 s: still before it, moving through its first half second.
+        var project = StudioProject(background: .color(red: 1, green: 1, blue: 1), padding: 0, zooms: [.init(start: 1, end: 3, scale: 2, isAutomatic: false)])
+        project.shadow = 0
+        project.cornerRadius = 0
+        project.cursor.hidesWhenIdle = false
+        let telemetry = StudioTelemetry(width: 400, height: 250, pixelsPerPoint: 2, samples: [.init(time: 0, x: 120, y: 125, cursor: 0)])
+        let renderer = StudioRenderer(telemetry: telemetry, project: project, duration: 4, recordingSize: CGSize(width: 800, height: 500), background: nil)
+        #expect(renderer.exposures(at: 0.5).count == 1)
+        #expect(renderer.exposures(at: 2).count == 1)
+        let moving = renderer.exposures(at: 1.25)
+        #expect(moving.count > 4 && moving.count <= StudioRenderer.mostExposures, "\(moving.count)")
+
+        // Black and white stripes 40 pixels wide: still, a stripe's edge stays crisp, blurred or not; while
+        // zooming in, edges near the frame's edge smear only with the blur on.
+        let stripes = CIFilter(name: "CIStripesGenerator", parameters: [
+            "inputColor0": CIColor.black, "inputColor1": CIColor.white, "inputWidth": 40, "inputSharpness": 1,
+        ])!.outputImage!.cropped(to: CGRect(x: 0, y: 0, width: 800, height: 500))
+        var still = project
+        still.motionBlur = false
+        let sharp = StudioRenderer(telemetry: telemetry, project: still, duration: 4, recordingSize: CGSize(width: 800, height: 500), background: nil)
+        let context = CIContext()
+        func row(_ renderer: StudioRenderer, at time: Double) throws -> [Double] {
+            let image = try #require(context.createCGImage(renderer.image(source: stripes, at: time), from: CGRect(x: 0, y: 0, width: 800, height: 500)))
+            let data = try #require(image.dataProvider?.data as Data?)
+            // The row through the middle, the right part where a zoom moves things most: gray levels.
+            return (600..<800).map { Double(data[250 * image.bytesPerRow + $0 * 4 + 1]) }
+        }
+        let grays = { (values: [Double]) in values.filter { $0 > 40 && $0 < 215 }.count }
+        #expect(try row(renderer, at: 0.5) == row(sharp, at: 0.5))
+        let blurredRow = try row(renderer, at: 1.25), crispRow = try row(sharp, at: 1.25)
+        #expect(grays(blurredRow) >= grays(crispRow) + 10, "\(grays(blurredRow)) vs \(grays(crispRow))")
+        // Smeared, not darkened: the stripes average the same gray either way.
+        let mean = { (values: [Double]) in values.reduce(0, +) / Double(values.count) }
+        #expect(abs(mean(blurredRow) - mean(crispRow)) < 12, "\(mean(blurredRow)) vs \(mean(crispRow))")
     }
 }

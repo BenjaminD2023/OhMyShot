@@ -30,6 +30,11 @@ public struct RecordingDrafts: Sendable {
         public let id: UUID
         public let movieURL: URL
         public let info: Info?
+
+        /// Where a Studio recording's camera is written beside it, in a movie of its own.
+        public var cameraURL: URL {
+            movieURL.deletingPathExtension().appendingPathExtension("camera.mov")
+        }
     }
 
     public let directory: URL
@@ -52,9 +57,10 @@ public struct RecordingDrafts: Sendable {
         return draft
     }
 
-    /// Removes a draft, its movie and its record.
+    /// Removes a draft, its movies and its record.
     public func remove(_ draft: Draft) {
         try? FileManager.default.removeItem(at: draft.movieURL)
+        try? FileManager.default.removeItem(at: draft.cameraURL)
         try? FileManager.default.removeItem(at: infoURL(for: draft.id))
     }
 

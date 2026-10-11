@@ -25,12 +25,21 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case measure
     /// Choose an area, a window, or a display, and record it; pressed again while recording, stops.
     case recordScreen
+    /// Saves the last 15 seconds of each display the replay keeps (macOS 27).
+    case saveReplay
     case openHistory
     /// Copies the newest Quick Access card's capture, so it can be reached without the pointer.
     case copyLatestCapture
 
     public var name: KeyboardShortcuts.Name {
         KeyboardShortcuts.Name(rawValue)
+    }
+
+    /// Whether this Mac has what the shortcut does: the replay needs macOS 27.
+    public var isAvailable: Bool {
+        guard self == .saveReplay else { return true }
+        if #available(macOS 27, *) { return true }
+        return false
     }
 
     public var title: String {
@@ -49,6 +58,7 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .pickColor: String(localized: "Pick Color", bundle: .module)
         case .measure: String(localized: "Measure", bundle: .module)
         case .recordScreen: String(localized: "Record Screen", bundle: .module)
+        case .saveReplay: String(localized: "Save Last 15 Seconds", bundle: .module)
         case .openHistory: String(localized: "Open Capture History", bundle: .module)
         case .copyLatestCapture: String(localized: "Copy Latest Capture", bundle: .module)
         }
@@ -82,7 +92,7 @@ public final class HotkeyCenter {
             // Installed before shortcuts were tracked one by one: every one that existed then.
             installed = Set(CaptureShortcut.allCases.filter { ![.translateArea, .annotateArea, .pinArea, .pickColor, .measure, .recordScreen].contains($0) }.map(\.rawValue))
         }
-        for shortcut in CaptureShortcut.allCases where !installed.contains(shortcut.rawValue) {
+        for shortcut in CaptureShortcut.allCases where shortcut.isAvailable && !installed.contains(shortcut.rawValue) {
             let taken = CaptureShortcut.allCases.compactMap { KeyboardShortcuts.getShortcut(for: $0.name) }
             if let candidate = defaultShortcut(for: shortcut), !taken.contains(candidate) {
                 KeyboardShortcuts.setShortcut(candidate, for: shortcut.name)
@@ -100,7 +110,7 @@ public final class HotkeyCenter {
     /// Starts listening. The handler runs on key down, so the overlay can appear before the keys are
     /// released.
     public func activate(_ handler: @escaping (CaptureShortcut) -> Void) {
-        for shortcut in CaptureShortcut.allCases {
+        for shortcut in CaptureShortcut.allCases where shortcut.isAvailable {
             KeyboardShortcuts.onKeyDown(for: shortcut.name) {
                 handler(shortcut)
             }
@@ -126,6 +136,8 @@ public final class HotkeyCenter {
         case .measure: profile == .development ? KeyboardShortcuts.Shortcut(.nine, modifiers: modifiers) : nil
         // ⇧⌘0 is ⌘= on German and other layouts, which zooms in many apps: the release build leaves it unset.
         case .recordScreen: profile == .development ? KeyboardShortcuts.Shortcut(.zero, modifiers: modifiers) : nil
+        // The digits are taken; the release build leaves it for the user to choose.
+        case .saveReplay: profile == .development ? KeyboardShortcuts.Shortcut(.minus, modifiers: modifiers) : nil
         case .captureWindow, .capturePreviousArea, .selfTimer, .captureTextJoined, .openHistory, .copyLatestCapture: nil
         }
     }

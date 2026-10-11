@@ -3,6 +3,7 @@ import AVFoundation
 import AVKit
 import Observation
 import OMSCore
+import OSLog
 import SwiftUI
 
 /// The Studio window: the recording filmed again in the preview, its timeline along the bottom, and the
@@ -58,6 +59,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     private let player: AVPlayer
     private let playerView: PlayerLayerView
     private var timeObserver: Any?
+    private var itemStatus: NSKeyValueObservation?
     private var observation: Task<Void, Never>?
     private var windowLease: ActiveResources.Lease?
     /// The newest exported movie in the history, while the project hasn't changed since.
@@ -166,6 +168,11 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         guard let composition = studio.composition else { return }
         let item = AVPlayerItem(asset: composition.asset)
         item.videoComposition = composition.videoComposition
+        // A preview that can't play says why in the log; the window shows its last frame meanwhile.
+        itemStatus = item.observe(\.status) { item, _ in
+            guard item.status == .failed else { return }
+            Log.studio.error("The Studio preview couldn't play: \(String(describing: item.error), privacy: .public)")
+        }
         let wasPlaying = player.rate > 0
         player.replaceCurrentItem(with: item)
         player.seek(to: CMTime(seconds: studio.movieTime(studio.time), preferredTimescale: 6_000), toleranceBefore: .zero, toleranceAfter: .zero)
@@ -364,6 +371,13 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         togglePlay()
     }
 
+    /// The preview's player, for scripted checks: its item's status, whether its layer has a frame to show,
+    /// and where it is.
+    public var debugPlayerState: String {
+        let item = player.currentItem
+        return "item \(item.map { "\($0.status.rawValue)" } ?? "none"), size \(item.map { "\(Int($0.presentationSize.width))x\(Int($0.presentationSize.height))" } ?? "-"), time \(String(format: "%.2f", player.currentTime().seconds)), rate \(player.rate), ready \(playerView.isReadyForDisplay)"
+    }
+
     /// Chooses the first zoom, as a click on the timeline would, for scripted renders.
     public func debugSelectFirstZoom() {
         studio.selectedZoom = studio.project.zooms.first?.id
@@ -459,6 +473,11 @@ final class PlayerLayerView: NSView {
     /// Hears the view's size in pixels when it settles: after a live resize rather than all through it.
     var onPixelSizeChange: ((CGSize) -> Void)?
     private let playerLayer = AVPlayerLayer()
+
+    /// Whether the layer has a frame to show.
+    var isReadyForDisplay: Bool {
+        playerLayer.isReadyForDisplay
+    }
     /// The picture border around the movie, so a pale background holds against the window's ground.
     private let edge = CALayer()
     private var reportedSize: CGSize?

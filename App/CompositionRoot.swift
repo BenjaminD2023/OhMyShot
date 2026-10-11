@@ -6,6 +6,7 @@ import OMSAnnotate
 import OMSCapture
 import OMSCore
 import OMSOCR
+import OMSRecording
 import OMSUI
 import OSLog
 import UniformTypeIdentifiers
@@ -28,6 +29,8 @@ final class CompositionRoot {
     private lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
     private lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
     private lazy var recordings = RecordingCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions)
+    /// The replay (macOS 27), kept as any object: a stored property can't be of a type this macOS may lack.
+    private var replayStorage: AnyObject?
     private let hotkeys: HotkeyCenter
     private let urlScheme: String
     private var statusItem: StatusItemController?
@@ -84,6 +87,9 @@ final class CompositionRoot {
                 }
             )
         }
+        if #available(macOS 27, *) {
+            replayStorage = ReplayCoordinator(settings: settings, displays: displays, capturer: capturer, permissions: permissions, recordings: recordings)
+        }
         let statusItem = StatusItemController(
             captureEntries: [
                 .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
@@ -119,6 +125,7 @@ final class CompositionRoot {
                 ) { [weak self] in
                     self?.recordings.cancelStudioExports()
                 },
+            ] + replayEntries() + [
                 .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
                 .init(title: String(localized: "Translate Area"), shortcut: .translateArea) { [weak self] in self?.handle(.translateArea) },
                 .init(title: String(localized: "Pick Color"), shortcut: .pickColor) { [weak self] in self?.handle(.pickColor) },
@@ -307,10 +314,76 @@ final class CompositionRoot {
         annotations.keepAll()
     }
 
-    /// Stops a recording and keeps it before the app quits; `done` runs once it is kept. False when no
-    /// recording needed it.
+    /// Stops a recording and keeps it before the app quits, and the replay's buffers once the clips being
+    /// saved are kept; `done` runs once all of it is. False when nothing needed waiting for.
     func finishRecordingBeforeQuitting(_ done: @escaping () -> Void) -> Bool {
-        recordings.finishBeforeQuitting(done)
+        var waiting = 1
+        let finished = {
+            waiting -= 1
+            if waiting == 0 { done() }
+        }
+        if recordings.finishBeforeQuitting(finished) { waiting += 1 }
+        if #available(macOS 27, *), replay?.finishBeforeQuitting(finished) == true { waiting += 1 }
+        // The count's own share: what still waits calls `done` when it ends.
+        waiting -= 1
+        return waiting > 0
+    }
+
+    @available(macOS 27, *)
+    private var replay: ReplayCoordinator? {
+        replayStorage as? ReplayCoordinator
+    }
+
+    /// The replay's menu bar entries: the displays to keep (with how saved clips sound), and Save.
+    private func replayEntries() -> [StatusItemController.Entry] {
+        guard #available(macOS 27, *), replay != nil else { return [] }
+        return [
+            .init(title: String(localized: "Keep Last 15 Seconds")) { [weak self] in self?.replayMenu() ?? [] },
+            .init(
+                title: String(localized: "Save Last 15 Seconds"), shortcut: .saveReplay,
+                isEnabled: { [weak self] in self?.replay?.canSave == true }
+            ) { [weak self] in
+                self?.handle(.saveReplay)
+            },
+        ]
+    }
+
+    /// The replay's submenu, made each time it opens: a checkmark for each display kept, then the sound
+    /// saved clips keep.
+    @available(macOS 27, *)
+    private func replayMenu() -> [StatusItemController.Entry] {
+        guard let replay else { return [] }
+        var entries: [StatusItemController.Entry] = [.header(String(localized: "Displays"))]
+        for display in displays.layout.displays {
+            entries.append(.init(title: display.name, isChecked: { [weak replay] in replay?.isKeeping(display.id) == true }) { [weak self, weak replay] in
+                guard self?.permissions.status(of: .screenRecording) == .granted else {
+                    self?.showOnboarding()
+                    return
+                }
+                replay?.toggle(display)
+            })
+        }
+        entries.append(.separator)
+        entries.append(.header(String(localized: "Sound in Saved Clips")))
+        for sound in ReplaySound.allCases {
+            let title = switch sound {
+            case .all: String(localized: "System and Microphone")
+            case .system: String(localized: "System Only")
+            case .microphone: String(localized: "Microphone Only")
+            case .none: String(localized: "No Sound")
+            }
+            // Without microphone access only the system's sound is kept: the choices with the microphone
+            // step back, their check kept for when access comes back.
+            let needsMicrophone = sound.keepsMicrophone
+            entries.append(.init(
+                title: title,
+                isEnabled: { [weak self] in !needsMicrophone || self?.permissions.status(of: .microphone) != .denied },
+                isChecked: { [weak self] in self?.settings.replaySound == sound }
+            ) { [weak self] in
+                self?.settings.replaySound = sound
+            })
+        }
+        return entries
     }
 
     func handle(url: URL, senderPID: pid_t?) {
@@ -395,6 +468,8 @@ final class CompositionRoot {
         case .recordScreen:
             captures.cancelSelfTimer()
             recordings.recordScreen()
+        case .saveReplay:
+            if #available(macOS 27, *) { replay?.save() }
         default:
             Log.hotkeys.notice("Not available yet: \(shortcut.rawValue, privacy: .public)")
         }
@@ -940,7 +1015,8 @@ final class CompositionRoot {
             colorPicker: colorPicker,
             measurer: measurer,
             recordings: recordings,
-            settings: settings
+            settings: settings,
+            replay: { [weak self] in self?.replayStorage }
         )
     }
     #endif

@@ -196,7 +196,7 @@ struct TransportBar: View {
     }
 }
 
-/// The inspector: the background, the frame, the cursor, zooms, and keys.
+/// The inspector: the background, the frame, the cursor, the camera, zooms, and keys.
 struct StudioInspector: View {
     @Bindable var document: StudioDocument
     let swatches: [StudioWindowController.Swatch]
@@ -265,15 +265,66 @@ struct StudioInspector: View {
                 LabeledSlider(title: Text("Size", bundle: .module), value: $document.project.cursor.size, range: 1...3, reading: { String(format: "%.1f×", $0) }, document: document)
                 LabeledSlider(title: Text("Smoothing", bundle: .module), value: $document.project.cursor.smoothing, range: 0...1, reading: Self.percent, document: document)
                 Toggle(isOn: $document.project.cursor.hidesWhenIdle) { Text("Hide when still", bundle: .module) }
+                // Typing is known only when the keys were written down.
+                if document.hasKeyPresses {
+                    Toggle(isOn: $document.project.cursor.hidesWhileTyping) { Text("Hide while typing", bundle: .module) }
+                }
                 Toggle(isOn: $document.project.cursor.showsClicks) { Text("Show clicks", bundle: .module) }
             } header: {
                 Text("Cursor", bundle: .module)
+            }
+
+            if document.hasCamera {
+                Section {
+                    Toggle(isOn: $document.project.camera.isShown) { Text("Show the camera", bundle: .module) }
+                    Group {
+                        // Named apart from the frame's Shape and the cursor's Size for VoiceOver.
+                        Picker(selection: $document.project.camera.shape) {
+                            Text("Circle", bundle: .module).tag(StudioProject.Camera.Shape.circle)
+                            Text("Rounded square", bundle: .module).tag(StudioProject.Camera.Shape.roundedSquare)
+                        } label: {
+                            Text("Shape", bundle: .module)
+                        }
+                        .accessibilityLabel(Text("Camera shape", bundle: .module))
+                        // The recording bar's sizes.
+                        Picker(selection: $document.project.camera.size) {
+                            Text("Small", bundle: .module).tag(120.0)
+                            Text("Medium", bundle: .module).tag(180.0)
+                            Text("Large", bundle: .module).tag(260.0)
+                        } label: {
+                            Text("Size", bundle: .module)
+                        }
+                        .accessibilityLabel(Text("Camera size", bundle: .module))
+                        Picker(selection: $document.project.camera.corner) {
+                            Text("Bottom left", bundle: .module).tag(StudioProject.Camera.Corner.bottomLeft)
+                            Text("Bottom right", bundle: .module).tag(StudioProject.Camera.Corner.bottomRight)
+                            Text("Top left", bundle: .module).tag(StudioProject.Camera.Corner.topLeft)
+                            Text("Top right", bundle: .module).tag(StudioProject.Camera.Corner.topRight)
+                        } label: {
+                            Text("Corner", bundle: .module)
+                        }
+                        Toggle(isOn: $document.project.camera.mirrored) { Text("Mirror", bundle: .module) }
+                    }
+                    .disabled(!document.project.camera.isShown)
+                } header: {
+                    Text("Camera", bundle: .module)
+                }
+            } else if document.cameraFailed {
+                Section {
+                    Text("The camera couldn’t be recorded.", bundle: .module)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Camera", bundle: .module)
+                }
             }
 
             Section {
                 Toggle(isOn: Binding(get: { document.project.automaticZooms }, set: { document.setAutomaticZooms($0) })) {
                     document.hasKeyPresses ? Text("Zoom on clicks and typing", bundle: .module) : Text("Zoom on clicks", bundle: .module)
                 }
+                Toggle(isOn: $document.project.motionBlur) { Text("Motion blur", bundle: .module) }
+                    .help(Text("Blurs the picture while the view zooms or pans, as a camera would. Still frames stay sharp.", bundle: .module))
                 if document.project.automaticZooms, document.automaticZooms.isEmpty {
                     (document.hasKeyPresses
                         ? Text("No clicks or typing to follow, so no zooms were placed.", bundle: .module)

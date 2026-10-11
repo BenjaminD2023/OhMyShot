@@ -43,6 +43,40 @@ public final class CameraBubble {
         panel != nil
     }
 
+    /// Hears each change between filling what is recorded (true) and the bubble (false).
+    public var onFillChange: ((Bool) -> Void)?
+
+    /// Whether the camera fills what is recorded rather than sitting in its bubble.
+    public var isFilling: Bool {
+        fills
+    }
+
+    /// Where the bubble is, in global points; nil while hidden.
+    public var bubbleFrame: CGRect? {
+        panel == nil ? nil : bubble
+    }
+
+    /// The camera's frames' size in pixels, once it runs.
+    public var cameraDimensions: CMVideoDimensions? {
+        camera.dimensions
+    }
+
+    /// The clock the camera's frames are stamped with.
+    public var cameraClock: CMClock? {
+        camera.session.synchronizationClock
+    }
+
+    /// Adds `output` to the camera's session, so its frames reach it as the bubble shows them; returns once
+    /// the session takes it, false when it can't.
+    public func attach(_ output: AVCaptureOutput) async -> Bool {
+        await camera.attach(output)
+    }
+
+    /// Takes `output` off the camera's session again.
+    public func detach(_ output: AVCaptureOutput) {
+        camera.detach(output)
+    }
+
     /// Shows camera `id` (empty for the system's default) in a bubble at the bottom-left of `area`, or moves
     /// it there and changes its camera and look. Access to the camera must be granted already.
     public func show(camera id: String, style: CameraStyle, in area: CGRect) {
@@ -153,6 +187,7 @@ public final class CameraBubble {
     private func toggleFill() {
         guard let panel else { return }
         fills.toggle()
+        onFillChange?(fills)
         if !fills {
             bubble = Self.corner(of: area, side: side)
             wasMoved = false
@@ -233,6 +268,38 @@ nonisolated private final class CameraSession: @unchecked Sendable {
         queue.async { [self] in
             session.stopRunning()
             for input in session.inputs { session.removeInput(input) }
+            for output in session.outputs { session.removeOutput(output) }
+        }
+    }
+
+    /// The running camera's frames' size, read on the session's queue.
+    var dimensions: CMVideoDimensions? {
+        queue.sync {
+            (session.inputs.first as? AVCaptureDeviceInput).map { $0.device.activeFormat.formatDescription.dimensions }
+        }
+    }
+
+    func attach(_ output: AVCaptureOutput) async -> Bool {
+        // Handed to the session's queue, which alone touches it from then on.
+        nonisolated(unsafe) let output = output
+        return await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                session.beginConfiguration()
+                let added = session.canAddOutput(output)
+                if added { session.addOutput(output) }
+                session.commitConfiguration()
+                continuation.resume(returning: added)
+            }
+        }
+    }
+
+    func detach(_ output: AVCaptureOutput) {
+        nonisolated(unsafe) let output = output
+        queue.async { [self] in
+            guard session.outputs.contains(output) else { return }
+            session.beginConfiguration()
+            session.removeOutput(output)
+            session.commitConfiguration()
         }
     }
 }

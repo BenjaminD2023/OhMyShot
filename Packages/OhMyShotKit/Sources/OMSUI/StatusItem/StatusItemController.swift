@@ -10,6 +10,15 @@ import OMSCore
 public final class StatusItemController {
     /// A menu entry with its own action.
     public struct Entry {
+        public enum Kind: Sendable {
+            case item
+            /// A line between groups, in a submenu.
+            case separator
+            /// A group's title, in a submenu.
+            case header
+        }
+
+        public let kind: Kind
         public let title: String
         public let keyEquivalent: String
         /// A global shortcut to show beside the title.
@@ -20,6 +29,10 @@ public final class StatusItemController {
         public let currentTitle: (() -> String)?
         /// Asked each time the menu opens, for an entry shown only while it applies.
         public let isHidden: (() -> Bool)?
+        /// Asked each time the menu opens, for an entry with a checkmark while it is on.
+        public let isChecked: (() -> Bool)?
+        /// The entries of a submenu, asked for each time it opens, for a list that changes (the displays).
+        public let children: (() -> [Entry])?
         public let perform: () -> Void
 
         public init(
@@ -29,15 +42,54 @@ public final class StatusItemController {
             isEnabled: (() -> Bool)? = nil,
             currentTitle: (() -> String)? = nil,
             isHidden: (() -> Bool)? = nil,
+            isChecked: (() -> Bool)? = nil,
             perform: @escaping () -> Void
         ) {
+            kind = .item
             self.title = title
             self.keyEquivalent = keyEquivalent
             self.shortcut = shortcut
             self.isEnabled = isEnabled
             self.currentTitle = currentTitle
             self.isHidden = isHidden
+            self.isChecked = isChecked
+            children = nil
             self.perform = perform
+        }
+
+        /// An entry that opens a submenu of `children`, made each time it opens.
+        public init(title: String, children: @escaping () -> [Entry]) {
+            kind = .item
+            self.title = title
+            keyEquivalent = ""
+            shortcut = nil
+            isEnabled = nil
+            currentTitle = nil
+            isHidden = nil
+            isChecked = nil
+            self.children = children
+            perform = {}
+        }
+
+        private init(kind: Kind, title: String) {
+            self.kind = kind
+            self.title = title
+            keyEquivalent = ""
+            shortcut = nil
+            isEnabled = nil
+            currentTitle = nil
+            isHidden = nil
+            isChecked = nil
+            children = nil
+            perform = {}
+        }
+
+        public static var separator: Entry {
+            Entry(kind: .separator, title: "")
+        }
+
+        public static func header(_ title: String) -> Entry {
+            Entry(kind: .header, title: title)
         }
     }
 
@@ -274,40 +326,99 @@ private final class StatusItemDropView: NSView {
     }
 }
 
-/// Runs the closure behind each menu item, found by the item's tag, and the recording's Stop.
-private final class MenuTarget: NSObject, NSMenuItemValidation {
+/// Runs the closure behind each menu item, found by the item's tag (or, in a submenu made as it opens, the
+/// entry it holds), and the recording's Stop.
+private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
     private var entries: [StatusItemController.Entry] = []
+    /// The submenus made again each time they open, and what makes their entries.
+    private var submenus: [ObjectIdentifier: () -> [StatusItemController.Entry]] = [:]
     var stop: (() -> Void)?
+
+    /// A submenu's entry, held by its item.
+    private final class Held {
+        let entry: StatusItemController.Entry
+
+        init(_ entry: StatusItemController.Entry) {
+            self.entry = entry
+        }
+    }
 
     @objc func stopClicked(_ sender: Any?) {
         stop?()
     }
 
     func item(for entry: StatusItemController.Entry) -> NSMenuItem {
-        let item = NSMenuItem(title: entry.title, action: #selector(run(_:)), keyEquivalent: entry.keyEquivalent)
+        if let special = Self.special(entry) { return special }
+        let item = NSMenuItem(title: entry.title, action: entry.children == nil ? #selector(run(_:)) : nil, keyEquivalent: entry.keyEquivalent)
         item.target = self
         item.tag = entries.count
         entries.append(entry)
+        if let children = entry.children {
+            let submenu = NSMenu(title: entry.title)
+            submenu.delegate = self
+            submenus[ObjectIdentifier(submenu)] = children
+            item.submenu = submenu
+        }
         return item
     }
 
     func removeAll() {
         entries.removeAll()
+        submenus.removeAll()
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let children = submenus[ObjectIdentifier(menu)] else { return }
+        menu.removeAllItems()
+        for entry in children() {
+            if let special = Self.special(entry) {
+                menu.addItem(special)
+                continue
+            }
+            let item = NSMenuItem(title: entry.title, action: #selector(runHeld(_:)), keyEquivalent: entry.keyEquivalent)
+            item.target = self
+            item.representedObject = Held(entry)
+            menu.addItem(item)
+        }
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        guard entries.indices.contains(menuItem.tag) else { return true }
-        let entry = entries[menuItem.tag]
+        let entry: StatusItemController.Entry
+        if let held = menuItem.representedObject as? Held {
+            entry = held.entry
+        } else if entries.indices.contains(menuItem.tag) {
+            entry = entries[menuItem.tag]
+        } else {
+            return true
+        }
         if let title = entry.currentTitle?() { menuItem.title = title }
         if let isHidden = entry.isHidden { menuItem.isHidden = isHidden() }
+        if let isChecked = entry.isChecked { menuItem.state = isChecked() ? .on : .off }
         return entry.isEnabled?() ?? true
     }
 
     @objc private func run(_ sender: NSMenuItem) {
         guard entries.indices.contains(sender.tag) else { return }
-        let entry = entries[sender.tag]
+        perform(entries[sender.tag])
+    }
+
+    @objc private func runHeld(_ sender: NSMenuItem) {
+        guard let held = sender.representedObject as? Held else { return }
+        perform(held.entry)
+    }
+
+    private func perform(_ entry: StatusItemController.Entry) {
         // Once the menu has closed: a window opened while it was still up went behind the app in front
         // again as the menu closed, and a capture began over the closing menu.
         Task { @MainActor in entry.perform() }
+    }
+
+    /// The item for a separator or a group's title.
+    private static func special(_ entry: StatusItemController.Entry) -> NSMenuItem? {
+        switch entry.kind {
+        case .item: nil
+        case .separator: .separator()
+        case .header: .sectionHeader(title: entry.title)
+        }
     }
 }

@@ -495,7 +495,7 @@ struct ToolsSettingsView: View {
 
 struct ShortcutsSettingsView: View {
     /// The shortcuts in the order of `CaptureShortcut`, split into the pane's groups.
-    private static let groups: [[CaptureShortcut]] = Dictionary(grouping: CaptureShortcut.allCases, by: \.group)
+    private static let groups: [[CaptureShortcut]] = Dictionary(grouping: CaptureShortcut.allCases.filter(\.isAvailable), by: \.group)
         .sorted { $0.key < $1.key }
         .map(\.value)
 
@@ -533,7 +533,7 @@ extension CaptureShortcut {
     /// Which group of the Shortcuts pane the shortcut is listed in.
     fileprivate var group: Int {
         switch self {
-        case .captureArea, .annotateArea, .pinArea, .captureFullscreen, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .recordScreen: 0
+        case .captureArea, .annotateArea, .pinArea, .captureFullscreen, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .recordScreen, .saveReplay: 0
         case .captureText, .captureTextJoined, .translateArea: 1
         case .pickColor, .measure: 2
         case .openHistory, .copyLatestCapture: 3
