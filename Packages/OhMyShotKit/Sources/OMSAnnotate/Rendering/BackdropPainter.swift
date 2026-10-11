@@ -261,6 +261,38 @@ nonisolated extension BackdropGradient {
         }
     }
 
+    /// The gradient as a picture `width` × `height` pixels in sRGB, for renderers outside the editor: Studio
+    /// films its recordings over the same backgrounds.
+    public func image(width: Int, height: Int) -> CGImage? {
+        guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              )
+        else { return nil }
+        // Recipes are drawn y down, as the canvas draws them.
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
+        recipe.draw(in: CGRect(x: 0, y: 0, width: width, height: height), context: context)
+        return context.makeImage()
+    }
+
+    /// The gradient's name, as the editor's chips and Studio's inspector say it.
+    public var title: String {
+        switch self {
+        case .sky: String(localized: "Sky", bundle: .module)
+        case .lilac: String(localized: "Lilac", bundle: .module)
+        case .rose: String(localized: "Rose", bundle: .module)
+        case .peach: String(localized: "Peach", bundle: .module)
+        case .citrus: String(localized: "Citrus", bundle: .module)
+        case .mint: String(localized: "Mint", bundle: .module)
+        case .ocean: String(localized: "Ocean", bundle: .module)
+        case .dusk: String(localized: "Dusk", bundle: .module)
+        case .graphite: String(localized: "Graphite", bundle: .module)
+        case .paper: String(localized: "Paper", bundle: .module)
+        }
+    }
+
     /// Whether the gradient is dark, so what is drawn over it should be light.
     public var isDark: Bool {
         switch self {

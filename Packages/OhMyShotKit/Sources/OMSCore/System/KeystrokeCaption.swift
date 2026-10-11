@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 
 /// Which keys a recording shows.
-public enum KeystrokeMode: String, CaseIterable, Sendable {
+public enum KeystrokeMode: String, CaseIterable, Codable, Sendable {
     /// Every key: typing runs on as it is typed, shortcuts and special keys by name.
     case all
     /// Shortcuts only (keys held with Command, Control, or Option) and function keys.
@@ -27,10 +27,8 @@ public struct KeystrokeCaption: Equatable, Sendable {
     /// once.
     public mutating func add(_ press: Keystroke) -> Bool {
         guard !press.isRepeat else { return false }
-        let isShortcut = !press.modifiers.isDisjoint(with: [.command, .control, .option])
         let special = Self.specialName(press.keyCode)
-        let isFunctionKey = Self.functionKeys.contains(Int(press.keyCode))
-        if isShortcut || isFunctionKey {
+        if Self.isShortcut(press) {
             text = Self.modifierSymbols(press.modifiers) + (special ?? press.keyCharacters.uppercased())
             isTyping = false
             return !text.isEmpty
@@ -54,6 +52,11 @@ public struct KeystrokeCaption: Equatable, Sendable {
         if text.count > Self.longest { text = "…" + text.suffix(Self.longest - 1) }
         isTyping = true
         return true
+    }
+
+    /// Whether a press shows in Shortcuts only: held with Command, Control, or Option, or a function key.
+    public static func isShortcut(_ press: Keystroke) -> Bool {
+        !press.modifiers.isDisjoint(with: [.command, .control, .option]) || functionKeys.contains(Int(press.keyCode))
     }
 
     /// The caption shown has faded: what comes next starts afresh.

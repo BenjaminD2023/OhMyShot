@@ -38,10 +38,10 @@ public final class RecordingControlBar {
 
     /// Shows the bar by `area` (global points): centered under it, above it without room there, inside its
     /// bottom edge when neither has room (a whole display), above `clearing` points at its foot. Always on a
-    /// display.
-    public func show(by area: CGRect, displays: [CGRect], clearing: CGFloat = 0) {
+    /// display. With `microphone`, a meter after the time shows how loud the microphone is.
+    public func show(by area: CGRect, displays: [CGRect], clearing: CGFloat = 0, microphone: Bool = false) {
         hide()
-        let view = ControlBarView(actions: actions)
+        let view = ControlBarView(actions: actions, showsMicrophone: microphone)
         let size = view.fittingSize
         let frame = Self.frame(for: size, by: area, inset: max(32, clearing + 12), displays: displays)
         let panel = ControlBarPanel(frame: frame.insetBy(dx: -Self.shadowRoom, dy: -Self.shadowRoom))
@@ -66,6 +66,11 @@ public final class RecordingControlBar {
         panel = nil
         bar = nil
         lease = nil
+    }
+
+    /// How loud the microphone has been lately, from 0 to 1 on a meter's scale; call about ten times a second.
+    public func update(microphoneLevel: Double) {
+        bar?.updateMicrophone(level: microphoneLevel)
     }
 
     /// The time so far and whether recording is paused. The bar grows when the time does (an hour in),
@@ -103,9 +108,10 @@ public final class RecordingControlBar {
 
     #if DEBUG
     /// The bar alone in a window behind the desktop picture, for scripted renders that show nothing.
-    public static func debugHiddenWindow(elapsed: Duration, paused: Bool, dark: Bool) -> NSWindow {
-        let view = ControlBarView(actions: Actions(pause: {}, resume: {}, restart: {}, delete: {}, stop: {}))
+    public static func debugHiddenWindow(elapsed: Duration, paused: Bool, dark: Bool, microphoneLevel: Double? = nil) -> NSWindow {
+        let view = ControlBarView(actions: Actions(pause: {}, resume: {}, restart: {}, delete: {}, stop: {}), showsMicrophone: microphoneLevel != nil)
         view.update(elapsed: elapsed, paused: paused)
+        if let microphoneLevel { view.updateMicrophone(level: microphoneLevel) }
         let size = view.fittingSize
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: size.width + shadowRoom * 2, height: size.height + shadowRoom * 2),
@@ -163,8 +169,9 @@ private final class ControlBarPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// The capsule: a red dot and the time in the reading face, then the four buttons. Glass over an opaque
-/// window-colored backing, as the All-In-One bar is; a solid capsule with Reduce Transparency.
+/// The capsule: a red dot and the time in the reading face, the microphone's meter when it is recorded,
+/// then the four buttons. Glass over an opaque window-colored backing, as the All-In-One bar is; a solid
+/// capsule with Reduce Transparency.
 private final class ControlBarView: NSView {
     private let actions: RecordingControlBar.Actions
     private let container: NSView
@@ -174,6 +181,13 @@ private final class ControlBarView: NSView {
     private let stack = NSStackView()
     private let dot = NSView()
     private let time = NSTextField(labelWithString: "0:00")
+    /// The system's microphone-with-meter symbol, its dots lit by how loud the microphone is.
+    private let meter = NSImageView()
+    private let showsMicrophone: Bool
+    /// What the meter shows: it rises at once and falls back gently, as meters do.
+    private var shownLevel = 0.0
+    /// The meter's lit dots, in fifths, so the symbol is drawn again only when they change.
+    private var litSteps = -1
     private let pauseButton = CardButton(style: .barIcon, title: String(localized: "Pause", bundle: .module), symbolName: "pause.fill")
     private let restartButton = CardButton(style: .barIcon, title: String(localized: "Restart", bundle: .module), symbolName: "arrow.counterclockwise")
     private let deleteButton = CardButton(style: .barIcon, title: String(localized: "Delete", bundle: .module), symbolName: "trash")
@@ -181,8 +195,9 @@ private final class ControlBarView: NSView {
     private var paused = false
     private static let height: CGFloat = 42
 
-    init(actions: RecordingControlBar.Actions) {
+    init(actions: RecordingControlBar.Actions, showsMicrophone: Bool = false) {
         self.actions = actions
+        self.showsMicrophone = showsMicrophone
         container = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency ? NSView() : NSGlassEffectView()
         super.init(frame: .zero)
         wantsLayer = true
@@ -209,6 +224,17 @@ private final class ControlBarView: NSView {
         stack.addArrangedSubview(time)
         stack.setCustomSpacing(6, after: dot)
         stack.setCustomSpacing(10, after: time)
+        if showsMicrophone {
+            meter.contentTintColor = .labelColor
+            meter.setAccessibilityElement(false)
+            meter.toolTip = String(localized: "Microphone level", bundle: .module)
+            meter.translatesAutoresizingMaskIntoConstraints = false
+            meter.widthAnchor.constraint(equalToConstant: 18).isActive = true
+            meter.heightAnchor.constraint(equalToConstant: 18).isActive = true
+            stack.addArrangedSubview(meter)
+            stack.setCustomSpacing(8, after: meter)
+            updateMicrophone(level: 0)
+        }
         for (button, action) in [(pauseButton, #selector(pauseClicked)), (restartButton, #selector(restartClicked)), (deleteButton, #selector(deleteClicked)), (stopButton, #selector(stopClicked))] {
             button.target = self
             button.action = action
@@ -284,6 +310,17 @@ private final class ControlBarView: NSView {
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         rim.contentsScale = window?.backingScaleFactor ?? 2
+    }
+
+    func updateMicrophone(level: Double) {
+        guard showsMicrophone else { return }
+        // Up at once, down by a fifth of the scale in about 0.3 s.
+        shownLevel = max(min(level, 1), shownLevel - 0.07)
+        let steps = Int((shownLevel * 5).rounded())
+        guard steps != litSteps else { return }
+        litSteps = steps
+        meter.image = NSImage(systemSymbolName: "mic.and.signal.meter.fill", variableValue: Double(steps) / 5, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
     }
 
     func update(elapsed: Duration, paused: Bool) {

@@ -2,9 +2,11 @@ import AppKit
 import AVFoundation
 import CoreGraphics
 import Foundation
+import OMSAnnotate
 import OMSCapture
 import OMSCore
 import OMSRecording
+import OMSStudio
 import OMSUI
 import OSLog
 
@@ -40,6 +42,8 @@ final class RecordingCoordinator {
         case recording(time: String, paused: Bool)
         /// A stopped recording being made into a GIF, from 0 to 1.
         case makingGIF(progress: Double)
+        /// A Studio movie being exported after its window closed, from 0 to 1.
+        case exportingStudio(progress: Double)
         case idle
     }
 
@@ -66,11 +70,15 @@ final class RecordingCoordinator {
         let recorder: ScreenRecorder
         let source: ScreenCapturer.RecordingSource
         let startedAt: Date
+        /// For a Studio recording: what the pointer and the keyboard do meanwhile.
+        let telemetry: TelemetryRecorder?
     }
 
     /// The keys pressed, shown over what is recorded while it records.
     private var keyMonitor: KeyMonitor?
     private var keystrokes: KeystrokeDisplay?
+    /// Clicks drawn as accent rings over what is recorded, when Settings says so.
+    private var clickRings: ClickHighlights?
     /// The camera in its bubble, from the moment it is chosen on the bar until the recording ends.
     private let camera = CameraBubble()
 
@@ -79,6 +87,9 @@ final class RecordingCoordinator {
     private var pending: Plan?
     private var ticker: Task<Void, Never>?
     private var tickerLease: ActiveResources.Lease?
+    /// Ten times a second while the microphone is recorded: the control bar's meter.
+    private var meter: Task<Void, Never>?
+    private var meterLease: ActiveResources.Lease?
     /// Recordings being finished; the app waits for them before quitting.
     private var finishing = 0
     private var finishingDone: [() -> Void] = []
@@ -154,7 +165,8 @@ final class RecordingCoordinator {
     /// Asks for the microphone if it is wanted, then counts down (or not) and starts.
     private func prepare(_ plan: Plan) {
         pending = plan
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             var plan = plan
             if plan.choices.recordsMicrophone, !(await microphoneAllowed()) {
                 Log.recording.notice("Recording without the microphone: access is off")
@@ -218,11 +230,15 @@ final class RecordingCoordinator {
         let probe = LatencyProbe("recording.start")
         var draft: RecordingDrafts.Draft?
         do {
-            // The keystroke display's window is on screen before the filter is made, so the filter takes it in.
+            // The keystrokes' and the click rings' windows are on screen before the filter is made, so the
+            // filter takes them in.
             let keys = Self.showsKeystrokes(plan) ? KeystrokeDisplay(mode: settings.recordingKeystrokeMode) : nil
             keys?.show(in: Self.area(of: plan))
             keystrokes = keys
-            let shown = Set([keys?.windowID, camera.windowID].compactMap(\.self))
+            let rings = drawsClickRings(plan) ? ClickHighlights() : nil
+            rings?.show(over: Self.area(of: plan))
+            clickRings = rings
+            let shown = Set([keys?.windowID, rings?.windowID, camera.windowID].compactMap(\.self))
             let source = try await capturer.recordingSource(for: plan.target, on: plan.display, including: shown)
             let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
             let format = RecordingFormat.choose(
@@ -234,15 +250,31 @@ final class RecordingCoordinator {
                 pixelsPerPoint: source.frame.width > 0 ? Double(source.pixelWidth) / source.frame.width : nil
             ))
             draft = created
+            // Studio draws the cursor and the clicks again from what the pointer did, so neither is in the picture.
+            let studio = plan.choices.output == .studio
             let recorder = try ScreenRecorder(ScreenRecorder.Request(
                 filter: source.filter, sourceRect: source.sourceRect, format: format,
                 audio: RecordingAudio(system: plan.choices.recordsSystemAudio, microphone: microphone(for: plan.choices)),
-                showsCursor: settings.recordingShowsCursor, showsClicks: plan.choices.showsClicks, movieURL: created.movieURL
+                // Rings in place of the system's circles, never both.
+                showsCursor: settings.recordingShowsCursor && !studio, showsClicks: plan.choices.showsClicks && rings == nil && !studio,
+                movieURL: created.movieURL
             ))
             recorder.onStreamStopped = { [weak self] error in self?.streamStopped(error) }
-            try await recorder.start()
+            // The pointer is written down from before the first frame, so the movie begins with its place.
+            let telemetry = studio ? TelemetryRecorder() : nil
+            // Keys as Settings › Recording › Keystrokes chose: under Shortcuts only, no typing is written down.
+            telemetry?.start(
+                area: source.frame, pixelsPerPoint: source.frame.width > 0 ? Double(source.pixelWidth) / source.frame.width : 1,
+                keys: plan.choices.showsKeystrokes && KeyMonitor.isAllowed ? settings.recordingKeystrokeMode : nil
+            )
+            do {
+                try await recorder.start()
+            } catch {
+                telemetry?.stop()
+                throw error
+            }
             probe.end()
-            session = Session(plan: plan, draft: created, recorder: recorder, source: source, startedAt: .now)
+            session = Session(plan: plan, draft: created, recorder: recorder, source: source, startedAt: .now, telemetry: telemetry)
             showChrome(for: plan, source: source)
             camera.setRecording(true)
             if let keys {
@@ -260,6 +292,8 @@ final class RecordingCoordinator {
             outline.hide()
             keystrokes?.hide()
             keystrokes = nil
+            clickRings?.hide()
+            clickRings = nil
             camera.hide()
             showStatusAfterRecording()
             NSSound.beep()
@@ -274,7 +308,10 @@ final class RecordingCoordinator {
             return camera.hide()
         }
         // Without access or a camera, nothing shows: a bubble with no picture would be recorded as a blank disc.
-        guard plan.choices.camera, AVCaptureDevice.authorizationStatus(for: .video) == .authorized else { return camera.hide() }
+        // Studio has no camera yet: a bubble in the picture would be zoomed with the screen.
+        guard plan.choices.camera, plan.choices.output != .studio, AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
+            return camera.hide()
+        }
         if !camera.isShowing, Cameras.available().devices.isEmpty {
             Log.recording.notice("No camera to show")
             return camera.hide()
@@ -282,9 +319,18 @@ final class RecordingCoordinator {
         camera.show(camera: plan.choices.cameraID, style: plan.choices.cameraStyle, in: Self.area(of: plan))
     }
 
+    /// Whether clicks are drawn as rings: shown, rings chosen in Settings, and not of a window, which is
+    /// recorded alone and so keeps the system's circles.
+    private func drawsClickRings(_ plan: Plan) -> Bool {
+        guard plan.choices.showsClicks, settings.recordingClickStyle == .ring, plan.choices.output != .studio else { return false }
+        if case .window = plan.target { return false }
+        return true
+    }
+
     /// Whether a recording shows the keys pressed: chosen, and not of a window, which is recorded alone.
     private static func showsKeystrokes(_ plan: Plan) -> Bool {
-        guard plan.choices.showsKeystrokes else { return false }
+        // Studio draws the keys itself, from what it wrote down.
+        guard plan.choices.showsKeystrokes, plan.choices.output != .studio else { return false }
         if case .window = plan.target { return false }
         return true
     }
@@ -335,6 +381,7 @@ final class RecordingCoordinator {
     }
 
     private func discard(_ session: Session) {
+        session.telemetry?.stop()
         Task {
             await session.recorder.cancel()
             drafts.remove(session.draft)
@@ -354,9 +401,14 @@ final class RecordingCoordinator {
                 if makesGIF { madeGIF() }
                 finished()
             }
+            let raw = session.telemetry?.stop()
             do {
                 let statistics = try await session.recorder.stop()
-                await keep(session.draft, plan: session.plan, displayID: session.plan.display.id, writer: statistics)
+                // What the pointer did, moved onto the movie's timeline: from its first frame, pauses cut out.
+                let telemetry = raw.map { raw in
+                    raw.retimed(start: statistics.start?.seconds ?? 0, pauses: statistics.pauses.map { $0.start.seconds...$0.end.seconds })
+                }
+                await keep(session.draft, plan: session.plan, displayID: session.plan.display.id, writer: statistics, telemetry: telemetry)
             } catch RecordingWriter.WriterError.noFrames {
                 Log.recording.notice("Nothing was recorded")
                 drafts.remove(session.draft)
@@ -389,12 +441,34 @@ final class RecordingCoordinator {
 
     /// Finishes a draft into an MP4, or makes it into a GIF, and keeps it: history, clipboard, card. A draft
     /// that cannot be finished stays in the drafts folder, where the next launch tries again.
-    private func keep(_ draft: RecordingDrafts.Draft, plan: Plan?, displayID: CGDirectDisplayID, writer: RecordingWriter.Statistics?) async {
+    private func keep(
+        _ draft: RecordingDrafts.Draft, plan: Plan?, displayID: CGDirectDisplayID, writer: RecordingWriter.Statistics?,
+        telemetry: StudioTelemetry? = nil
+    ) async {
         let probe = LatencyProbe("recording.keep")
         let output = draft.info?.output ?? .video
         let destination = draft.movieURL.deletingPathExtension().appendingPathExtension(output == .gif ? "gif" : "mp4")
         do {
             let file = try await makeFile(of: draft, as: output, at: destination)
+            if let telemetry {
+                // Studio: no card or clipboard yet; they come with the first movie exported from its window.
+                let entry = try history.add(
+                    movingFileAt: file.url, name: FilenameTemplate.standard.name(date: draft.info?.startedAt ?? .now, appName: draft.info?.appName ?? plan?.appName),
+                    kind: .recording, pixelWidth: file.pixelWidth, pixelHeight: file.pixelHeight, appName: draft.info?.appName ?? plan?.appName,
+                    duration: file.duration, pixelsPerPoint: draft.info?.pixelsPerPoint
+                )
+                drafts.remove(draft)
+                var project = StudioProject(zooms: AutoZoom.zooms(for: telemetry, duration: file.duration))
+                project.cursor.showsClicks = plan?.choices.showsClicks ?? true
+                project.showsKeys = plan?.choices.showsKeystrokes ?? true
+                project.keystrokeMode = telemetry.keystrokeMode ?? .all
+                saveStudioProject(telemetry, project: project, for: entry)
+                studioDisplays[entry.id] = displayID
+                probe.end()
+                announce(String(localized: "Recording stopped. Opening Studio."))
+                await openStudio(entry)
+                return
+            }
             let entry = try await deliver(
                 file, startedAt: draft.info?.startedAt ?? .now, appName: draft.info?.appName ?? plan?.appName,
                 pixelsPerPoint: draft.info?.pixelsPerPoint, displayID: displayID
@@ -411,6 +485,19 @@ final class RecordingCoordinator {
         }
     }
 
+    /// Keeps what the pointer did beside a Studio recording, in its project folder, for the Studio window.
+    private func saveStudioProject(_ telemetry: StudioTelemetry, project: StudioProject, for entry: HistoryItem) {
+        let folder = history.studioURL(for: entry)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try JSONEncoder().encode(telemetry).write(to: folder.appending(path: StudioFiles.telemetry), options: .atomic)
+            try JSONEncoder().encode(project).write(to: folder.appending(path: StudioFiles.project), options: .atomic)
+            Log.recording.notice("Kept a Studio project: \(telemetry.samples.count, privacy: .public) pointer readings, \(telemetry.cursors.count, privacy: .public) cursor(s), \(telemetry.clicks.count, privacy: .public) click(s), \(telemetry.keys.count, privacy: .public) key(s)")
+        } catch {
+            Log.recording.error("Keeping the Studio project failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
     /// Moves a made file into the history and hands it on as a capture is: copied, saved when Settings
     /// says so, and given a card.
     private func deliver(
@@ -421,21 +508,26 @@ final class RecordingCoordinator {
             movingFileAt: file.url, name: name, kind: .recording, pixelWidth: file.pixelWidth, pixelHeight: file.pixelHeight,
             appName: appName, duration: file.duration, pixelsPerPoint: pixelsPerPoint
         )
+        await present(entry, displayID: displayID)
+        return entry
+    }
+
+    /// Hands a kept recording on as a capture is: copied, saved when Settings says so, and given a card.
+    private func present(_ entry: HistoryItem, displayID: CGDirectDisplayID) async {
         let url = history.fileURL(for: entry)
         if settings.copyAfterCapture, !leavesClipboard { PasteboardWriter.write(fileURL: url) }
         let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: 560) ?? Self.blankThumbnail
         var item = QuickAccessItem(
-            id: entry.id, kind: .recording, fileURL: url, thumbnail: thumbnail, pixelWidth: file.pixelWidth,
-            pixelHeight: file.pixelHeight, displayID: displayID, createdAt: entry.createdAt, duration: file.duration
+            id: entry.id, kind: .recording, fileURL: url, thumbnail: thumbnail, pixelWidth: entry.pixelWidth,
+            pixelHeight: entry.pixelHeight, displayID: displayID, createdAt: entry.createdAt, duration: entry.duration
         )
         if settings.saveAfterCapture { item.savedURL = save?(url) }
         onRecorded?(item)
-        return entry
     }
 
     private func makeFile(of draft: RecordingDrafts.Draft, as output: RecordingOutput, at destination: URL) async throws -> KeptFile {
         switch output {
-        case .video:
+        case .video, .studio:
             let movie = try await RecordingFinisher.finish(draft.movieURL, to: destination)
             return KeptFile(url: movie.url, pixelWidth: movie.pixelWidth, pixelHeight: movie.pixelHeight, duration: movie.duration, byteCount: movie.byteCount)
         case .gif:
@@ -486,6 +578,10 @@ final class RecordingCoordinator {
             finishing += 1
             window.close { [weak self] in self?.finished() }
         }
+        for window in studioWindows.values where window.hasUnexportedChanges {
+            finishing += 1
+            window.close { [weak self] in self?.finished() }
+        }
         guard finishing > 0 else { return false }
         finishingDone.append(done)
         return true
@@ -512,8 +608,133 @@ final class RecordingCoordinator {
     /// Opens a kept recording in the recording window: to play, trim, leave the sound out, make smaller, or
     /// make a GIF of; a GIF only plays.
     func open(_ entry: HistoryItem) {
+        // A Studio recording opens in the Studio window, to be filmed again.
+        if history.hasStudioProject(entry) {
+            Task { await openStudio(entry) }
+            return
+        }
         if let window = windows[entry.id] { return window.show() }
         makeWindow(for: entry).show()
+    }
+
+    // MARK: Studio
+
+    /// Open Studio windows, by the recording's place in the history.
+    private var studioWindows: [UUID: StudioWindowController] = [:]
+    /// The display each Studio recording was made on, for the card its first movie brings.
+    private var studioDisplays: [UUID: CGDirectDisplayID] = [:]
+
+    /// Opens a Studio recording in the Studio window: its telemetry and project from beside it, the recording
+    /// as it was made (in the project once a movie has taken its place in the history). `shows` false makes
+    /// the window without showing it, for scripted checks.
+    func openStudio(_ entry: HistoryItem, shows: Bool = true) async {
+        if let window = studioWindows[entry.id] {
+            if shows { window.show() }
+            return
+        }
+        let folder = history.studioURL(for: entry)
+        guard
+            let data = try? Data(contentsOf: folder.appending(path: StudioFiles.telemetry)),
+            let telemetry = try? JSONDecoder().decode(StudioTelemetry.self, from: data)
+        else {
+            Log.recording.error("The Studio project has no telemetry; opening the recording window")
+            return makeWindow(for: entry).show()
+        }
+        let saved = (try? Data(contentsOf: folder.appending(path: StudioFiles.project))).flatMap { try? JSONDecoder().decode(StudioProject.self, from: $0) }
+        let source: URL
+        do {
+            source = try history.studioSource(for: entry)
+        } catch {
+            Log.recording.error("The Studio project has lost the recording as it was made; opening the recording window: \(String(describing: error), privacy: .public)")
+            return makeWindow(for: entry).show()
+        }
+        let asset = AVURLAsset(url: source)
+        guard
+            let duration = try? await asset.load(.duration).seconds,
+            let size = try? await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize)
+        else {
+            NSSound.beep()
+            return
+        }
+        let project = saved ?? StudioProject(zooms: AutoZoom.zooms(for: telemetry, duration: duration))
+        // The movie in the history is the project's own while it was made with the project as it is: a change
+        // made while the last one was being made, then closed on, isn't in it.
+        let made = history.studioMovieProject(of: entry).flatMap { try? JSONDecoder().decode(StudioProject.self, from: $0) }
+        let hasBeenExported = made == project
+        let document = StudioDocument(
+            source: source, telemetry: telemetry, project: project, duration: duration, recordingSize: size, folder: folder,
+            hasBeenExported: hasBeenExported,
+            background: { name, size in BackdropGradient(rawValue: name)?.image(width: Int(size.width), height: Int(size.height)) }
+        )
+        let swatches = BackdropGradient.allCases.compactMap { gradient in
+            gradient.image(width: 88, height: 60).map { StudioWindowController.Swatch(name: gradient.rawValue, title: gradient.title, picture: $0) }
+        }
+        let id = entry.id
+        let controller = StudioWindowController(
+            document: document, title: (entry.fileName as NSString).deletingPathExtension, swatches: swatches,
+            movie: hasBeenExported ? history.fileURL(for: entry) : nil,
+            actions: .init(
+                keep: { [weak self] movie, project in
+                    guard let self else { throw CocoaError(.userCancelled) }
+                    return try keepStudioMovie(movie, madeWith: project, of: id)
+                },
+                copy: { [weak self] url in self?.copyFile?(url) },
+                save: { [weak self] url in self?.save?(url) },
+                progress: { [weak self] fraction in self?.showStudioExport(fraction) }
+            )
+        )
+        controller.onClose = { [weak self] in
+            Task { @MainActor in
+                self?.studioWindows[id] = nil
+                MemoryRelief.returnFreedPages()
+            }
+        }
+        studioWindows[id] = controller
+        if shows { controller.show() }
+    }
+
+    /// Keeps a movie exported from Studio in the recording's place. The first one brings the recording's
+    /// card and goes to the clipboard, as a stopped recording would; later ones refresh the card.
+    private func keepStudioMovie(_ movie: StudioExporter.Movie, madeWith project: StudioProject, of id: UUID) throws -> URL {
+        guard let entry = history.item(id: id) else { throw CocoaError(.fileNoSuchFile) }
+        var first = !history.hasStudioMovie(entry)
+        #if DEBUG
+        // The demo's movie brings no card, and so nothing on the clipboard and no saved copy.
+        if id == debugStudioDemoID { first = false }
+        #endif
+        let updated = try history.replaceStudioMovie(
+            of: entry, withFileAt: movie.url, pixelWidth: movie.pixelWidth, pixelHeight: movie.pixelHeight, duration: movie.duration,
+            project: try JSONEncoder().encode(project)
+        )
+        Log.recording.notice("Kept a Studio movie: \(movie.duration, format: .fixed(precision: 2), privacy: .public) s, \(movie.pixelWidth, privacy: .public)x\(movie.pixelHeight, privacy: .public), \(movie.byteCount, privacy: .public) bytes")
+        if first {
+            let layout = displays.layout
+            let displayID = studioDisplays[id] ?? layout.display(at: NSEvent.mouseLocation)?.id ?? layout.primary?.id ?? 0
+            Task { await present(updated, displayID: displayID) }
+        } else {
+            onChanged?(updated)
+        }
+        return history.fileURL(for: updated)
+    }
+
+    /// Whether a Studio movie is being exported after its window closed.
+    var isExportingStudio: Bool {
+        studioWindows.values.contains { $0.isExportingAfterClosing }
+    }
+
+    /// Stops the Studio exports running after their windows closed: the history keeps the movies it had.
+    func cancelStudioExports() {
+        for window in studioWindows.values where window.isExportingAfterClosing {
+            window.cancelExport()
+        }
+        announce(String(localized: "Studio export cancelled."))
+    }
+
+    /// How far along a Studio export is while its window is gone, in the menu bar; nil when it is done.
+    private func showStudioExport(_ fraction: Double?) {
+        guard session == nil, pending == nil else { return }
+        guard let fraction else { return showStatusAfterRecording() }
+        report(.exportingStudio(progress: fraction))
     }
 
     private func makeWindow(for entry: HistoryItem) -> RecordingWindowController {
@@ -646,6 +867,67 @@ final class RecordingCoordinator {
         return "\(entry.pixelWidth)x\(entry.pixelHeight), \(String(format: "%.2f", entry.duration ?? 0)) s, original kept \(history.hasOriginal(entry)), window open \(windows[id] != nil)"
     }
 
+    /// The Studio demo in the history while the Studio window is checked.
+    private var debugStudioDemoID: UUID?
+
+    /// Puts a copy of `movie` in the history as a Studio recording with `telemetry` and opens it in the Studio
+    /// window behind the desktop picture, nothing shown. Returns the window.
+    func debugOpenStudioDemo(movie: URL, telemetry: StudioTelemetry, dark: Bool) async -> NSWindow? {
+        debugRemoveStudioDemo()
+        let copy = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).mp4")
+        do {
+            try FileManager.default.copyItem(at: movie, to: copy)
+            let asset = AVURLAsset(url: copy)
+            let duration = try await asset.load(.duration).seconds
+            let size = try await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize) ?? .zero
+            let entry = try history.add(
+                movingFileAt: copy, name: "Demo Studio Recording", kind: .recording, pixelWidth: Int(size.width), pixelHeight: Int(size.height),
+                appName: "Demo", duration: duration, pixelsPerPoint: 2
+            )
+            debugStudioDemoID = entry.id
+            saveStudioProject(telemetry, project: StudioProject(zooms: AutoZoom.zooms(for: telemetry, duration: duration)), for: entry)
+            await openStudio(entry, shows: false)
+            guard let controller = studioWindows[entry.id] else { return nil }
+            controller.window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            controller.showBehindWallpaper()
+            return controller.window
+        } catch {
+            Log.app.error("debug.studio-window could not open the demo: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }
+
+    /// Closes the Studio demo's window without exporting and opens the demo again, as Edit… on its card
+    /// would, behind the desktop picture. Returns the window.
+    func debugReopenStudioDemo(dark: Bool) async -> NSWindow? {
+        guard let id = debugStudioDemoID, let entry = history.item(id: id) else { return nil }
+        studioWindows[id]?.debugCloseWithoutExporting()
+        studioWindows[id] = nil
+        await openStudio(entry, shows: false)
+        guard let controller = studioWindows[id] else { return nil }
+        controller.window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        controller.showBehindWallpaper()
+        return controller.window
+    }
+
+    var debugStudioDemoWindow: StudioWindowController? {
+        debugStudioDemoID.flatMap { studioWindows[$0] }
+    }
+
+    var debugStudioDemoState: String {
+        guard let id = debugStudioDemoID, let entry = history.item(id: id) else { return "no demo" }
+        return "\(entry.pixelWidth)x\(entry.pixelHeight), \(String(format: "%.2f", entry.duration ?? 0)) s, movie kept \(history.hasStudioMovie(entry)), source kept \(FileManager.default.fileExists(atPath: history.studioSourceURL(for: entry).path(percentEncoded: false))), window open \(studioWindows[id] != nil), preview \(studioWindows[id]?.studio.composition.map { "\(Int($0.renderer.layout.canvas.width))x\(Int($0.renderer.layout.canvas.height))" } ?? "none")"
+    }
+
+    /// Closes the Studio demo's window and removes the demo, its project too, from the history.
+    func debugRemoveStudioDemo() {
+        guard let id = debugStudioDemoID else { return }
+        debugStudioDemoID = nil
+        studioWindows[id]?.debugCloseWithoutExporting()
+        studioWindows[id] = nil
+        if let entry = history.item(id: id) { history.delete(entry) }
+    }
+
     /// Closes the demo's window without keeping edits and removes the demo from the history.
     func debugRemoveDemo() {
         guard let id = debugDemoID else { return }
@@ -668,7 +950,11 @@ final class RecordingCoordinator {
         }
         if settings.recordingShowsControls {
             // Inside a whole display, the bar keeps clear of the keys shown at its foot.
-            controls.show(by: area, displays: displays.layout.displays.map(\.frame), clearing: keystrokes == nil ? 0 : KeystrokeDisplay.reservedHeight)
+            controls.show(
+                by: area, displays: displays.layout.displays.map(\.frame), clearing: keystrokes == nil ? 0 : KeystrokeDisplay.reservedHeight,
+                microphone: plan.choices.recordsMicrophone
+            )
+            if plan.choices.recordsMicrophone { startMeter() }
         }
         startTicking()
     }
@@ -677,12 +963,17 @@ final class RecordingCoordinator {
         ticker?.cancel()
         ticker = nil
         tickerLease = nil
+        meter?.cancel()
+        meter = nil
+        meterLease = nil
         outline.hide()
         controls.hide()
         keyMonitor?.stop()
         keyMonitor = nil
         keystrokes?.hide()
         keystrokes = nil
+        clickRings?.hide()
+        clickRings = nil
         camera.hide()
         showStatusAfterRecording()
     }
@@ -700,6 +991,7 @@ final class RecordingCoordinator {
         let kind = switch status {
         case .recording: "recording"
         case .makingGIF: "making a GIF"
+        case .exportingStudio: "exporting a Studio movie"
         case .idle: "idle"
         }
         if kind != debugStatusKind {
@@ -738,6 +1030,24 @@ final class RecordingCoordinator {
                     return
                 }
                 self?.tick()
+            }
+        }
+    }
+
+    /// The control bar's microphone meter, read ten times a second from the stream; still while paused.
+    private func startMeter() {
+        meter?.cancel()
+        meterLease = ActiveResources.shared.acquire(.timer)
+        meter = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .milliseconds(100), tolerance: .milliseconds(20))
+                } catch {
+                    return
+                }
+                guard let self, let recorder = session?.recorder else { return }
+                let level = recorder.takeMicrophoneLevel() ?? 0
+                controls.update(microphoneLevel: recorder.state == .recording ? level : 0)
             }
         }
     }

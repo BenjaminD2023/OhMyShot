@@ -141,6 +141,11 @@ public final class SettingsStore {
         didSet { defaults.set(recordingShowsClicks, forKey: Key.recordingShowsClicks) }
     }
 
+    /// How clicks show when Show Clicks is on: the system's circles, or accent rings.
+    public var recordingClickStyle: ClickStyle {
+        didSet { defaults.set(recordingClickStyle.rawValue, forKey: Key.recordingClickStyle) }
+    }
+
     /// Whether recordings take what the Mac plays. Toggled on the recording bar.
     public var recordingSystemAudio: Bool {
         didSet { defaults.set(recordingSystemAudio, forKey: Key.recordingSystemAudio) }
@@ -232,6 +237,7 @@ public final class SettingsStore {
             Key.recordingCountdown: 3,
             Key.recordingShowsCursor: true,
             Key.recordingShowsClicks: false,
+            Key.recordingClickStyle: ClickStyle.system.rawValue,
             Key.recordingSystemAudio: false,
             Key.recordingMicrophone: false,
             Key.recordingMicrophoneID: "",
@@ -268,6 +274,7 @@ public final class SettingsStore {
         recordingCountdown = Self.recordingCountdowns.contains(countdown) ? countdown : 3
         recordingShowsCursor = defaults.bool(forKey: Key.recordingShowsCursor)
         recordingShowsClicks = defaults.bool(forKey: Key.recordingShowsClicks)
+        recordingClickStyle = defaults.string(forKey: Key.recordingClickStyle).flatMap(ClickStyle.init(rawValue:)) ?? .system
         recordingSystemAudio = defaults.bool(forKey: Key.recordingSystemAudio)
         recordingMicrophone = defaults.bool(forKey: Key.recordingMicrophone)
         recordingMicrophoneID = defaults.string(forKey: Key.recordingMicrophoneID) ?? ""
@@ -311,6 +318,7 @@ public final class SettingsStore {
         static let recordingCountdown = "recordingCountdown"
         static let recordingShowsCursor = "recordingShowsCursor"
         static let recordingShowsClicks = "recordingShowsClicks"
+        static let recordingClickStyle = "recordingClickStyle"
         static let recordingSystemAudio = "recordingSystemAudio"
         static let recordingMicrophone = "recordingMicrophone"
         static let recordingMicrophoneID = "recordingMicrophoneID"

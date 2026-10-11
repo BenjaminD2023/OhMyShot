@@ -19,6 +19,7 @@ let package = Package(
         .library(name: "OMSOCR", targets: ["OMSOCR"]),
         .library(name: "OMSAnnotate", targets: ["OMSAnnotate"]),
         .library(name: "OMSRecording", targets: ["OMSRecording"]),
+        .library(name: "OMSStudio", targets: ["OMSStudio"]),
     ],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", .upToNextMinor(from: "3.1.0")),
@@ -64,6 +65,15 @@ let package = Package(
             dependencies: ["OMSCore"],
             swiftSettings: swiftSettings
         ),
+        // Studio recordings: what the pointer did while recording, the zooms and the cursor drawn from it,
+        // the compositor that films the recording again, and the Studio window. Main-actor by default; the
+        // project and the compositor are nonisolated, so exports render off the main actor.
+        .target(
+            name: "OMSStudio",
+            dependencies: ["OMSCore"],
+            resources: [.process("Resources")],
+            swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
+        ),
         .testTarget(
             name: "OMSCoreTests",
             dependencies: ["OMSCore"],
@@ -88,6 +98,11 @@ let package = Package(
             name: "OMSRecordingTests",
             dependencies: ["OMSRecording"],
             swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "OMSStudioTests",
+            dependencies: ["OMSStudio"],
+            swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
         .testTarget(
             name: "OMSUITests",

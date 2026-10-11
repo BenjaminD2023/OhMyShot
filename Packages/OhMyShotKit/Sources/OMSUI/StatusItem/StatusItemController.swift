@@ -18,6 +18,8 @@ public final class StatusItemController {
         public let isEnabled: (() -> Bool)?
         /// Asked each time the menu opens, for an entry whose title follows what is going on.
         public let currentTitle: (() -> String)?
+        /// Asked each time the menu opens, for an entry shown only while it applies.
+        public let isHidden: (() -> Bool)?
         public let perform: () -> Void
 
         public init(
@@ -26,6 +28,7 @@ public final class StatusItemController {
             shortcut: CaptureShortcut? = nil,
             isEnabled: (() -> Bool)? = nil,
             currentTitle: (() -> String)? = nil,
+            isHidden: (() -> Bool)? = nil,
             perform: @escaping () -> Void
         ) {
             self.title = title
@@ -33,6 +36,7 @@ public final class StatusItemController {
             self.shortcut = shortcut
             self.isEnabled = isEnabled
             self.currentTitle = currentTitle
+            self.isHidden = isHidden
             self.perform = perform
         }
     }
@@ -48,6 +52,8 @@ public final class StatusItemController {
     private var stopRecording: (() -> Void)?
     /// While recording or making a GIF, the item shows that in place of the icon and its menu.
     private var showsActivity = false
+    /// The symbol a progress shows, so a change of what is being made changes it.
+    private var shownSymbol: String?
     private let captureEntries: [Entry]
     private let textEntries: [Entry]
     private let pinEntries: [Entry]
@@ -133,7 +139,7 @@ public final class StatusItemController {
     /// While a recording is made into a GIF: its mark and how far along it is, `fraction` from 0 to 1, with
     /// the menu still there; the card comes when it is done. Shown even when Settings hides the icon, as while
     /// recording, since it says the recording isn't kept yet.
-    public func showProgress(_ fraction: Double) {
+    public func showProgress(_ fraction: Double, symbolName: String = "photo.stack") {
         stopRecording = nil
         menuTarget.stop = nil
         showsActivity = true
@@ -142,10 +148,11 @@ public final class StatusItemController {
         if item.menu == nil { item.menu = makeMenu() }
         item.length = NSStatusItem.variableLength
         guard let button = item.button else { return }
-        if button.action != nil || button.title.isEmpty {
+        if button.action != nil || button.title.isEmpty || shownSymbol != symbolName {
+            shownSymbol = symbolName
             button.target = nil
             button.action = nil
-            button.image = NSImage(systemSymbolName: "photo.stack", accessibilityDescription: nil)
+            button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
             button.image?.isTemplate = true
             button.imagePosition = .imageLeading
         }
@@ -156,7 +163,9 @@ public final class StatusItemController {
                 .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
             ])
         }
-        button.setAccessibilityLabel(String(localized: "Making the GIF, \(percent) percent", bundle: .module))
+        button.setAccessibilityLabel(symbolName == "photo.stack"
+            ? String(localized: "Making the GIF, \(percent) percent", bundle: .module)
+            : String(localized: "Exporting the Studio movie, \(percent) percent", bundle: .module))
     }
 
     /// The recording ended, or its GIF is made: the icon and its menu come back, or the item goes if
@@ -290,6 +299,7 @@ private final class MenuTarget: NSObject, NSMenuItemValidation {
         guard entries.indices.contains(menuItem.tag) else { return true }
         let entry = entries[menuItem.tag]
         if let title = entry.currentTitle?() { menuItem.title = title }
+        if let isHidden = entry.isHidden { menuItem.isHidden = isHidden() }
         return entry.isEnabled?() ?? true
     }
 

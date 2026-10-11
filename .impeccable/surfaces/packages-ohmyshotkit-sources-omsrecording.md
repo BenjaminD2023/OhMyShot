@@ -78,8 +78,13 @@ FINISH: unreviewed and undocumented is unfinished; the build ends with the finis
   gets an alert of its own, and Revert to Original also forgets unkept edits; the menu bar keeps its menu
   while a GIF is made; the keystrokes fade over 0.12 s; mode chips are 84 pt as the All-In-One bar's.
 - DESIGN.md records the recording components (Screen Recording, Recording Window) as of the second cut.
-- Not built yet: a microphone level meter, a virtual camera, clicks drawn other than the system's way, Do Not
-  Disturb (macOS has no public way to turn on a Focus), and Studio mode.
+- Built after the second cut (2026-10-11, the user said to go on): the microphone's meter on the control bar
+  (the system's mic-and-meter symbol, fed by the stream's own microphone buffers, ten times a second, never a
+  second capture), and accent click rings as Settings' other click style (a clear window over what is
+  recorded, taken in by the filter like the keystrokes; the stream's own circles off meanwhile).
+- Not built, and why: a virtual camera (a Core Media I/O extension, out of proportion), Do Not Disturb (macOS
+  has no public way to turn on a Focus), the 6K power gate (the ultrawide is not attached), Release-build
+  measurements (the hooks are Debug-only); Studio mode is next, in a brief of its own.
 - Window recordings show no outline (a window moves) and keep their size from the start; a whole display
   shows none either. The control bar goes under the area, above it without room, inside its bottom edge on
   a whole display.

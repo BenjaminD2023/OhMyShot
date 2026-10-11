@@ -340,6 +340,7 @@ public final class OverlayController {
         case "keystrokes": setup.debugToggle(.keystrokes)
         case "video": setup.debugChoose(.video)
         case "gif": setup.debugChoose(.gif)
+        case "studio": setup.debugChoose(.studio)
         default: break
         }
         return summary

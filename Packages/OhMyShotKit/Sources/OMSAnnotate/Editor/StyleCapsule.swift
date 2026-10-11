@@ -505,18 +505,7 @@ final class StyleCapsule: NSView {
     }
 
     static func name(of gradient: BackdropGradient) -> String {
-        switch gradient {
-        case .sky: String(localized: "Sky", bundle: .module)
-        case .lilac: String(localized: "Lilac", bundle: .module)
-        case .rose: String(localized: "Rose", bundle: .module)
-        case .peach: String(localized: "Peach", bundle: .module)
-        case .citrus: String(localized: "Citrus", bundle: .module)
-        case .mint: String(localized: "Mint", bundle: .module)
-        case .ocean: String(localized: "Ocean", bundle: .module)
-        case .dusk: String(localized: "Dusk", bundle: .module)
-        case .graphite: String(localized: "Graphite", bundle: .module)
-        case .paper: String(localized: "Paper", bundle: .module)
-        }
+        gradient.title
     }
 
     /// The disc a fill chip shows, 14 pt across, with the edge every swatch has.

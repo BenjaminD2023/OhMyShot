@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import AVFoundation
 import CoreMedia
 import CoreGraphics
 import Foundation
@@ -9,6 +10,7 @@ import OMSCapture
 import OMSCore
 import OMSOCR
 import OMSRecording
+import OMSStudio
 import OMSUI
 import OSLog
 import ScreenCaptureKit
@@ -412,6 +414,19 @@ struct DebugHooks {
                 await captureHiddenWindow(window, name: "camera-\(style.shape.rawValue)-\(style.size.rawValue)")
                 window.orderOut(nil)
             }
+        case "click-render":
+            // A click ring held at its middle, behind the desktop picture: writes click-ring.png.
+            let rings = ClickHighlights()
+            let screen = NSScreen.screens.first?.frame ?? .zero
+            let area = CGRect(x: screen.midX - 60, y: screen.midY - 60, width: 120, height: 120)
+            if let window = rings.debugShowBehindWallpaper(over: area) {
+                rings.debugRing(at: CGPoint(x: area.midX, y: area.midY), hold: true)
+                Task {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    await captureHiddenWindow(window, name: "click-ring")
+                    rings.hide()
+                }
+            }
         case "keystroke-render":
             // The keystroke display behind the desktop picture, captured without showing anything:
             // keys=shortcut (⇧⌘4), keys=typing ("Hello↩"), or keys=long. Writes keystroke-<keys>.png.
@@ -434,6 +449,101 @@ struct DebugHooks {
                     display.hide()
                 }
             }
+        case "studio-demo":
+            // A Studio recording of the demo window behind the desktop picture, nothing shown: seconds=, w=, h=
+            // (points; 800x500 unless given), with a pause in the middle. Writes studio-demo.mp4 and
+            // studio-demo.json (telemetry) to the snapshot folder.
+            let seconds = Self.intParameter("seconds", in: url) ?? 4
+            let size = CGSize(width: Self.intParameter("w", in: url) ?? 800, height: Self.intParameter("h", in: url) ?? 500)
+            Task { await DebugRecordingDemo.runStudio(seconds: seconds, size: size) }
+        case "studio-window":
+            // The Studio window on a copy of studio-demo.mp4 with a made-up pointer, put in the history as
+            // "Demo Studio Recording", behind the desktop picture, nothing shown. action=open (mode=dark,
+            // at=<seconds> for the preview, select=0 to choose no zoom, cut=/choose=<from>-<to>, wait=<ms>
+            // before the render, 1500 unless given, telemetry=real for studio-demo.json's) renders
+            // studio-window[-dark].png; action=export keeps its movie in the history as Copy would, without
+            // card, clipboard, or saved copy; action=reopen (mode=, at=) closes the window without exporting
+            // and opens the demo again as Edit… would; action=play plays or pauses; action=export-edit
+            // exports and changes the padding meanwhile; action=undo sends Undo down the responder chain;
+            // action=export-cancel changes the padding and cancels an export 0.2 s in; action=state logs the
+            // demo's record; action=remove
+            // deletes the demo and its project (always finish with it: the demo is a real history entry).
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in items.first { $0.name == name }?.value }
+            let action = value("action") ?? "state"
+            Task {
+                switch action {
+                case "open":
+                    let dark = value("mode") == "dark"
+                    let movie = Self.snapshotDirectory.appending(path: "studio-demo.mp4")
+                    let asset = AVURLAsset(url: movie)
+                    let duration = (try? await asset.load(.duration).seconds) ?? 4
+                    let size = (try? await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize)) ?? CGSize(width: 1600, height: 1000)
+                    // telemetry=real takes what the demo wrote down (the user's pointer, wherever it was, and the
+                    // demo's own clicks) instead of a made-up pointer.
+                    let written = value("telemetry") == "real"
+                        ? (try? Data(contentsOf: Self.snapshotDirectory.appending(path: "studio-demo.json"))).flatMap { try? JSONDecoder().decode(StudioTelemetry.self, from: $0) }
+                        : nil
+                    let telemetry = written ?? DebugRecordingDemo.syntheticTelemetry(size: CGSize(width: size.width / 2, height: size.height / 2), duration: duration)
+                    if let window = await recordings.debugOpenStudioDemo(movie: movie, telemetry: telemetry, dark: dark) {
+                        let studio = recordings.debugStudioDemoWindow
+                        if value("select") != "0" { studio?.debugSelectFirstZoom() }
+                        // cut=<from>-<to> leaves a stretch out; choose=<from>-<to> chooses one on the clip.
+                        let range = { (name: String) -> ClosedRange<Double>? in
+                            let ends = (value(name) ?? "").split(separator: "-").compactMap { Double($0) }
+                            return ends.count == 2 && ends[0] < ends[1] ? ends[0]...ends[1] : nil
+                        }
+                        if let cut = range("cut") { studio?.debugCut(cut) }
+                        if let chosen = range("choose") { studio?.debugChoose(chosen) }
+                        studio?.debugSeek(to: Double(value("at") ?? "1") ?? 1)
+                        try? await Task.sleep(for: .milliseconds(Int(value("wait") ?? "1500") ?? 1500))
+                        await captureHiddenWindow(window, name: dark ? "studio-window-dark" : "studio-window")
+                    }
+                case "reopen":
+                    let dark = value("mode") == "dark"
+                    if let window = await recordings.debugReopenStudioDemo(dark: dark) {
+                        recordings.debugStudioDemoWindow?.debugSeek(to: Double(value("at") ?? "1") ?? 1)
+                        try? await Task.sleep(for: .milliseconds(1500))
+                        await captureHiddenWindow(window, name: dark ? "studio-window-dark" : "studio-window")
+                        Log.app.notice("debug.studio-window reopened, changes waiting to export \(recordings.debugStudioDemoWindow?.hasUnexportedChanges == true, privacy: .public)")
+                    }
+                case "play":
+                    recordings.debugStudioDemoWindow?.debugTogglePlay()
+                case "undo":
+                    // Undo as Edit › Undo sends it, down the window's responder chain.
+                    guard let studio = recordings.debugStudioDemoWindow else { break }
+                    let before = studio.studio.project.padding
+                    let route = studio.debugUndo()
+                    Log.app.notice("debug.studio-window undo: padding \(before, privacy: .public) → \(studio.studio.project.padding, privacy: .public); \(route, privacy: .public)")
+                case "export-cancel":
+                    // A change, then an export cancelled 0.2 s in: nothing kept, the change still waiting.
+                    guard let studio = recordings.debugStudioDemoWindow else { break }
+                    studio.debugSetPadding(0.2)
+                    let left = await studio.debugExportAndCancel(after: .milliseconds(200))
+                    Log.app.notice("debug.studio-window export-cancel: \(left, privacy: .public)")
+                case "export-edit":
+                    // Exports, and changes the padding while the movie is being made: the change must be
+                    // exported after it.
+                    guard let studio = recordings.debugStudioDemoWindow else { break }
+                    let exporting = Task { await studio.debugExport() }
+                    try? await Task.sleep(for: .milliseconds(300))
+                    studio.debugSetPadding(0.15)
+                    let url = await exporting.value
+                    Log.app.notice("debug.studio-window exported \(url?.lastPathComponent ?? "nothing", privacy: .public) with a change made meanwhile; changes waiting \(studio.hasUnexportedChanges, privacy: .public)")
+                case "export":
+                    let url = await recordings.debugStudioDemoWindow?.debugExport()
+                    Log.app.notice("debug.studio-window exported \(url?.lastPathComponent ?? "nothing", privacy: .public)")
+                case "remove":
+                    recordings.debugRemoveStudioDemo()
+                default:
+                    break
+                }
+                Log.app.notice("debug.studio-window \(action, privacy: .public): \(recordings.debugStudioDemoState, privacy: .public)")
+            }
+        case "studio-render":
+            // Films studio-demo.mp4 as the Studio window would export it, from a made-up pointer, over the sky
+            // gradient with automatic zooms: writes studio-render.mp4 and logs the time it took.
+            Task { await DebugRecordingDemo.renderStudio() }
         case "gif-demo":
             // Makes a GIF of record-demo.mov in the snapshot folder (record it first with record-demo?keep=1):
             // fps=, scale= (percent of the recording's pixels). Logs frames, size, time, and the most memory
@@ -488,10 +598,14 @@ struct DebugHooks {
             }
         case "record-bar-render":
             // The control bar alone behind the desktop picture, captured without showing anything:
-            // elapsed= (seconds), paused=1, mode=light|dark. Writes record-bar-<mode>[-paused].png.
+            // elapsed= (seconds), paused=1, mode=light|dark, mic=<percent> for the microphone's meter. Writes
+            // record-bar-<mode>[-paused].png.
             let paused = Self.intParameter("paused", in: url) == 1
             let dark = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "mode" }?.value == "dark"
-            let window = RecordingControlBar.debugHiddenWindow(elapsed: .seconds(Self.intParameter("elapsed", in: url) ?? 42), paused: paused, dark: dark)
+            let window = RecordingControlBar.debugHiddenWindow(
+                elapsed: .seconds(Self.intParameter("elapsed", in: url) ?? 42), paused: paused, dark: dark,
+                microphoneLevel: Self.intParameter("mic", in: url).map { Double($0) / 100 }
+            )
             Task {
                 await captureHiddenWindow(window, name: "record-bar-\(dark ? "dark" : "light")\(paused ? "-paused" : "")")
                 window.orderOut(nil)

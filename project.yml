@@ -38,6 +38,8 @@ targets:
         product: OMSAnnotate
       - package: OhMyShotKit
         product: OMSRecording
+      - package: OhMyShotKit
+        product: OMSStudio
 
 schemes:
   OhMyShot:

@@ -112,6 +112,13 @@ final class CompositionRoot {
                 ) { [weak self] in
                     self?.handle(.recordScreen)
                 },
+                // While a Studio movie is exported after its window closed, it can be stopped from here.
+                .init(
+                    title: String(localized: "Cancel Studio Export"),
+                    isHidden: { [weak self] in self?.recordings.isExportingStudio != true }
+                ) { [weak self] in
+                    self?.recordings.cancelStudioExports()
+                },
                 .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
                 .init(title: String(localized: "Translate Area"), shortcut: .translateArea) { [weak self] in self?.handle(.translateArea) },
                 .init(title: String(localized: "Pick Color"), shortcut: .pickColor) { [weak self] in self?.handle(.pickColor) },
@@ -217,6 +224,8 @@ final class CompositionRoot {
                 self.statusItem?.showRecording(elapsed: time, paused: paused) { [weak self] in self?.recordings.stop() }
             case .makingGIF(let progress):
                 self.statusItem?.showProgress(progress)
+            case .exportingStudio(let progress):
+                self.statusItem?.showProgress(progress, symbolName: "wand.and.sparkles")
             case .idle:
                 self.statusItem?.endRecording()
             }

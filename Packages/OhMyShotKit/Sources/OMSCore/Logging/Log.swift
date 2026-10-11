@@ -17,6 +17,7 @@ public enum Log {
     public static let permissions = Logger(subsystem: subsystem, category: "permissions")
     public static let recording = Logger(subsystem: subsystem, category: "recording")
     public static let resources = Logger(subsystem: subsystem, category: "resources")
+    public static let studio = Logger(subsystem: subsystem, category: "studio")
 
     /// Points of interest for latency measurement (`Scripts/latency.sh`).
     public static let signposter = OSSignposter(subsystem: subsystem, category: .pointsOfInterest)

@@ -129,4 +129,43 @@ struct HistoryStoreTests {
         #expect(FileManager.default.contents(atPath: store.originalURL(for: item).path(percentEncoded: false)) == Data([1]))
         #expect(store.items().count == 1)
     }
+
+    @Test func studioFilmsACopyThatStaysPutWhenItsMovieTakesTheRecordingsPlace() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "mp4", kind: .recording, pixelWidth: 1600, pixelHeight: 1000, appName: nil, duration: 4)
+        let source = try store.studioSource(for: item)
+        #expect(FileManager.default.contents(atPath: source.path(percentEncoded: false)) == Data([1]))
+        #expect(!store.hasStudioMovie(item))
+        let exported = FileManager.default.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString).mp4")
+        try Data([2]).write(to: exported)
+        let movie = try store.replaceStudioMovie(of: item, withFileAt: exported, pixelWidth: 1760, pixelHeight: 1160, duration: 4, project: Data([7]))
+        #expect((movie.pixelWidth, movie.pixelHeight) == (1760, 1160))
+        #expect(store.hasStudioMovie(item))
+        #expect(store.studioMovieProject(of: item) == Data([7]))
+        #expect(FileManager.default.contents(atPath: store.fileURL(for: item).path(percentEncoded: false)) == Data([2]))
+        // The copy Studio films is where it was, as it was.
+        #expect(try store.studioSource(for: item) == source)
+        #expect(FileManager.default.contents(atPath: source.path(percentEncoded: false)) == Data([1]))
+        // A second movie replaces the first and leaves the copy alone.
+        try Data([3]).write(to: exported)
+        try store.replaceStudioMovie(of: movie, withFileAt: exported, pixelWidth: 1760, pixelHeight: 1160, duration: 3, project: Data([8]))
+        #expect(FileManager.default.contents(atPath: store.fileURL(for: item).path(percentEncoded: false)) == Data([3]))
+        #expect(store.studioMovieProject(of: item) == Data([8]))
+        #expect(FileManager.default.contents(atPath: source.path(percentEncoded: false)) == Data([1]))
+        #expect(store.items().count == 1)
+        store.delete(movie)
+        #expect(!store.hasStudioProject(item))
+    }
+
+    @Test func aStudioProjectThatLostItsRecordingIsNotGivenTheMovieInstead() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "mp4", kind: .recording, pixelWidth: 10, pixelHeight: 10, appName: nil, duration: 1)
+        let exported = FileManager.default.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString).mp4")
+        try Data([2]).write(to: exported)
+        try store.replaceStudioMovie(of: item, withFileAt: exported, pixelWidth: 10, pixelHeight: 10, duration: 1, project: Data())
+        try FileManager.default.removeItem(at: store.studioSourceURL(for: item))
+        #expect(throws: CocoaError.self) { try store.studioSource(for: item) }
+    }
 }

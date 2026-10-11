@@ -315,6 +315,19 @@ struct RecordingSettingsView: View {
                     .foregroundStyle(.secondary)
                     .help(Text("Video or GIF, computer audio, the microphone, clicks, and keystrokes are chosen on the bar under what you are about to record.", bundle: .module))
             }
+            SettingsRow(Text("Clicks", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.recordingClickStyle) {
+                        Text("As the system shows them", bundle: .module).tag(ClickStyle.system)
+                        Text("Accent rings", bundle: .module).tag(ClickStyle.ring)
+                    } label: {
+                        Text("Clicks", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("With Show Clicks on the recording bar, each click shows in the recording: as the system's dark circles, or as a ring in your accent color that widens and fades. A window recorded on its own always gets the system's circles.", bundle: .module))
+                }
+            }
             SettingsRow(Text("Keystrokes", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.recordingKeystrokeMode) {

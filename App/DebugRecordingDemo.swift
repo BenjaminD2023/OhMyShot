@@ -1,5 +1,7 @@
 #if DEBUG
 import AppKit
+import AVFoundation
+import OMSAnnotate
 import CoreMedia
 import CoreText
 import Darwin
@@ -7,6 +9,7 @@ import Foundation
 import OMSCapture
 import OMSCore
 import OMSRecording
+import OMSStudio
 import OSLog
 import QuartzCore
 import ScreenCaptureKit
@@ -84,6 +87,118 @@ enum DebugRecordingDemo {
 }
 
 extension DebugRecordingDemo {
+    /// A Studio recording of the scrolling window behind the desktop picture, nothing shown: the stream without
+    /// the cursor, the pointer written down meanwhile and moved onto the movie's timeline. Writes
+    /// studio-demo.mp4 and studio-demo.json (the telemetry) to the snapshot folder and logs counts only: the
+    /// pointer is the user's, so its places are never logged.
+    static func runStudio(seconds: Int, size: CGSize) async {
+        let window = DemoScrollWindow(size: size, speed: 240)
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        try? await Task.sleep(for: .milliseconds(300))
+        do {
+            let shareable = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            guard let target = shareable.windows.first(where: { $0.windowID == CGWindowID(window.windowNumber) }) else { return }
+            let filter = SCContentFilter(desktopIndependentWindow: target)
+            let scale = CGFloat(filter.pointPixelScale)
+            let format = RecordingFormat.choose(
+                width: Int((filter.contentRect.width * scale).rounded()), height: Int((filter.contentRect.height * scale).rounded()),
+                framesPerSecond: 60
+            )
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let movie = directory.appending(path: "studio-demo.mov")
+            let recorder = try ScreenRecorder(ScreenRecorder.Request(
+                filter: filter, sourceRect: nil, format: format, audio: .none, showsCursor: false, showsClicks: false, movieURL: movie
+            ))
+            let telemetry = TelemetryRecorder()
+            telemetry.start(area: window.frame, pixelsPerPoint: Double(scale), keys: nil)
+            try await recorder.start()
+            try await Task.sleep(for: .seconds(Double(seconds) / 2))
+            // A pause in the middle, cut out of the movie and of the telemetry alike.
+            recorder.pause()
+            telemetry.debugClick(at: CGPoint(x: window.frame.midX, y: window.frame.midY))
+            try await Task.sleep(for: .milliseconds(700))
+            recorder.resume()
+            telemetry.debugClick(at: CGPoint(x: window.frame.midX + 40, y: window.frame.midY - 20))
+            try await Task.sleep(for: .seconds(Double(seconds) / 2))
+            let raw = telemetry.stop()
+            let statistics = try await recorder.stop()
+            let moved = raw.retimed(start: statistics.start?.seconds ?? 0, pauses: statistics.pauses.map { $0.start.seconds...$0.end.seconds })
+            let finished = try await RecordingFinisher.finish(movie, to: directory.appending(path: "studio-demo.mp4"))
+            try? FileManager.default.removeItem(at: movie)
+            try JSONEncoder().encode(moved).write(to: directory.appending(path: "studio-demo.json"))
+            let times = moved.samples.map(\.time)
+            Log.app.notice("debug.studio-demo \(finished.pixelWidth, privacy: .public)x\(finished.pixelHeight, privacy: .public), \(finished.duration, format: .fixed(precision: 2), privacy: .public) s, \(statistics.pauses.count, privacy: .public) pause(s); telemetry \(raw.samples.count, privacy: .public) reading(s) taken, \(moved.samples.count, privacy: .public) kept from \(times.first ?? -1, format: .fixed(precision: 2), privacy: .public) to \(times.last ?? -1, format: .fixed(precision: 2), privacy: .public) s, \(moved.cursors.count, privacy: .public) cursor(s), clicks at \(moved.clicks.map { String(format: "%.2f", $0.time) }.joined(separator: ", "), privacy: .public) s (one fell in the pause)")
+        } catch {
+            Log.app.error("debug.studio-demo failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Films studio-demo.mp4 (made by runStudio) as the Studio window would export it, over the sky gradient,
+    /// with automatic zooms, from a made-up pointer that wanders and clicks (the demo's own telemetry holds
+    /// the user's pointer, which barely moves): writes studio-render.mp4 and logs how fast it went.
+    static func renderStudio() async {
+        let source = directory.appending(path: "studio-demo.mp4")
+        let output = directory.appending(path: "studio-render.mp4")
+        let asset = AVURLAsset(url: source)
+        do {
+            let duration = try await asset.load(.duration).seconds
+            guard let track = try await asset.loadTracks(withMediaType: .video).first else { return }
+            let size = try await track.load(.naturalSize)
+            let telemetry = syntheticTelemetry(size: CGSize(width: size.width / 2, height: size.height / 2), duration: duration)
+            var project = StudioProject()
+            project.zooms = AutoZoom.zooms(for: telemetry, duration: duration)
+            let layout = StudioRenderer.layout(recordingSize: size, project: project)
+            let background = BackdropGradient.sky.image(width: Int(layout.canvas.width), height: Int(layout.canvas.height))
+            let renderer = StudioRenderer(telemetry: telemetry, project: project, duration: duration, recordingSize: size, background: background)
+            let started = ContinuousClock.now
+            let composition = try await StudioComposition.make(source: asset, renderer: renderer, cuts: [])
+            let movie = try await StudioExporter.export(composition, to: output)
+            let wall = (ContinuousClock.now - started) / .seconds(1)
+            Log.app.notice("debug.studio-render \(movie.pixelWidth, privacy: .public)x\(movie.pixelHeight, privacy: .public), \(movie.duration, format: .fixed(precision: 2), privacy: .public) s in \(wall, format: .fixed(precision: 2), privacy: .public) s (\(movie.duration / wall, format: .fixed(precision: 1), privacy: .public)x real time), \(movie.byteCount, privacy: .public) bytes; zooms \(project.zooms.map { String(format: "%.2f-%.2f@%.1f", $0.start, $0.end, $0.scale) }.joined(separator: ", "), privacy: .public)")
+        } catch {
+            Log.app.error("debug.studio-render failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// A made-up pointer over a recording `size` points large: drifting across in loops, clicking twice close
+    /// together, then once more later, with the arrow cursor; "Hello" typed and ⌘S pressed near the end.
+    static func syntheticTelemetry(size points: CGSize, duration: Double) -> StudioTelemetry {
+        let samples = stride(from: 0.0, through: duration, by: 1.0 / 60).map { time in
+            StudioTelemetry.Sample(
+                time: time, x: points.width * (0.25 + 0.5 * time / max(duration, 1)) + 60 * sin(time * 2.2),
+                y: points.height * 0.55 + 40 * cos(time * 1.7), cursor: 0
+            )
+        }
+        let arrow = NSCursor.arrow
+        var telemetry = StudioTelemetry(
+            width: points.width, height: points.height, pixelsPerPoint: 2, samples: samples,
+            cursors: [.init(
+                png: TelemetryRecorder.png(of: arrow.image, scale: 4) ?? Data(), scale: 4, width: arrow.image.size.width,
+                height: arrow.image.size.height, hotSpotX: arrow.hotSpot.x, hotSpotY: arrow.hotSpot.y
+            )]
+        )
+        for time in [0.8, 1.4, max(duration - 1.2, 2.5)] where time < duration {
+            let place = AutoZoom.pointer(at: time, in: samples)
+            telemetry.clicks.append(.init(time: time, x: place.x, y: place.y, button: .primary))
+        }
+        let typing: [(String, UInt16)] = [("H", 4), ("e", 14), ("l", 37), ("l", 37), ("o", 31)]
+        let typed = max(duration - 1.6, 0.5)
+        for (index, (character, code)) in typing.enumerated() where typed + Double(index) * 0.12 < duration {
+            telemetry.keys.append(.init(
+                time: typed + Double(index) * 0.12, keyCode: code, modifiers: character == "H" ? NSEvent.ModifierFlags.shift.rawValue : 0,
+                characters: character, keyCharacters: character.lowercased(), isRepeat: false
+            ))
+        }
+        if typed + 0.9 < duration {
+            telemetry.keys.append(.init(
+                time: typed + 0.9, keyCode: 1, modifiers: NSEvent.ModifierFlags.command.rawValue, characters: "s", keyCharacters: "s", isRepeat: false
+            ))
+        }
+        telemetry.keystrokeMode = .all
+        return telemetry
+    }
+
     /// The whole recording flow on the scrolling window behind the desktop picture: the countdown (as
     /// Settings has it), recording with the control bar and the menu bar's time, Stop after `seconds`, and
     /// the recording kept in the history with a card. The countdown and the bar show on screen.

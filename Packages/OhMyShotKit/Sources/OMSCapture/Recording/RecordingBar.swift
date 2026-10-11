@@ -147,17 +147,22 @@ final class RecordingBar: NSView {
             ])
         }
         // A GIF has no sound: the sound chips show off and can't be pressed, and keep their state.
+        // Studio draws the keys itself, so a window recorded for it can show them; it has no camera yet.
+        let studio = choices.output == .studio
+        let keysApply = !recordsWindow || studio
+        let cameraApplies = !recordsWindow && !studio
         states = [
             .systemAudio: choices.recordsSystemAudio, .microphone: choices.recordsMicrophone, .clicks: choices.showsClicks,
-            .keystrokes: choices.showsKeystrokes && !recordsWindow && keysAllowed,
-            .camera: choices.camera && !recordsWindow && cameraAllowed(choices),
+            .keystrokes: choices.showsKeystrokes && keysApply && keysAllowed,
+            .camera: choices.camera && cameraApplies && cameraAllowed(choices),
         ]
         for (toggle, button) in toggles {
             let on = states[toggle] ?? false
             let enabled = switch toggle {
             case .systemAudio, .microphone: choices.output.hasAudio
             case .clicks: true
-            case .keystrokes, .camera: !recordsWindow
+            case .keystrokes: keysApply
+            case .camera: cameraApplies
             }
             // Without access, the chip steps back but can still be pressed: it asks, or says where to turn it on.
             let blocked = (toggle == .keystrokes && !keysAllowed) || (toggle == .camera && !cameraAllowed(choices))
@@ -166,6 +171,7 @@ final class RecordingBar: NSView {
             button.contentTintColor = on ? .controlAccentColor : enabled && !blocked ? .labelColor : .tertiaryLabelColor
             button.toolTip = !enabled
                 ? toggle == .keystrokes ? String(localized: "A window is recorded on its own, without keys shown over it")
+                : toggle == .camera && studio ? String(localized: "Studio recordings don't show the camera yet")
                 : toggle == .camera ? String(localized: "A window is recorded on its own, without the camera over it")
                 : String(localized: "GIFs have no sound")
                 : blocked
@@ -219,6 +225,8 @@ final class RecordingBar: NSView {
             ("video", String(localized: "Video"), String(localized: "Keep the recording as an MP4 movie"))
         case .gif:
             ("photo.stack", String(localized: "GIF"), String(localized: "Keep the recording as an animated GIF, without sound"))
+        case .studio:
+            ("wand.and.sparkles", String(localized: "Studio"), String(localized: "Record for the Studio window: zooms that follow the pointer, a smooth cursor, and a background"))
         }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))

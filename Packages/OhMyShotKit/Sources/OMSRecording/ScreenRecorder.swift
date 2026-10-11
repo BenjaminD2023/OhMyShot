@@ -194,6 +194,13 @@ public final class ScreenRecorder {
         activity = nil
     }
 
+    /// How loud the microphone has been since this was last read, from 0 to 1 on a meter's scale; nil when
+    /// the microphone isn't recorded.
+    public func takeMicrophoneLevel() -> Double? {
+        guard request.audio.microphone != nil else { return nil }
+        return AudioLevel.meterValue(rms: output.takeMicrophoneLevel())
+    }
+
     /// The host clock's time now, which stream samples are stamped with.
     nonisolated static func hostTime() -> CMTime {
         CMClockGetTime(CMClockGetHostTimeClock())
@@ -208,6 +215,8 @@ private final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @u
     private let lock = NSLock()
     private var complete = 0
     private var idle = 0
+    /// The loudest microphone buffer since the meter last read it.
+    private var microphoneLevel: Float = 0
 
     init(writer: RecordingWriter) {
         self.writer = writer
@@ -215,6 +224,15 @@ private final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @u
 
     var counts: (complete: Int, idle: Int) {
         lock.withLock { (complete, idle) }
+    }
+
+    /// The loudest microphone buffer since the last call, as an RMS fraction of full scale.
+    func takeMicrophoneLevel() -> Float {
+        lock.withLock {
+            let level = microphoneLevel
+            microphoneLevel = 0
+            return level
+        }
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
@@ -233,6 +251,9 @@ private final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @u
         case .audio:
             writer.assumeIsolated { $0.appendAudio(sample, to: .systemAudio) }
         case .microphone:
+            if let level = AudioLevel.rms(of: sample) {
+                lock.withLock { microphoneLevel = max(microphoneLevel, level) }
+            }
             writer.assumeIsolated { $0.appendAudio(sample, to: .microphone) }
         @unknown default:
             break

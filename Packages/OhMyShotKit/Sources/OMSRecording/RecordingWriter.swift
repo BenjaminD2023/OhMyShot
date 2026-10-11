@@ -34,6 +34,10 @@ public actor RecordingWriter {
         public var audioBuffersDropped = 0
         /// The movie's length: from the first frame to the end, pauses left out.
         public var duration: CMTime = .zero
+        /// Where the movie began on the host clock (its first frame), and the pauses cut out of it, so what
+        /// happened while recording can be placed in the movie's time.
+        public var start: CMTime?
+        public var pauses: [CMTimeRange] = []
     }
 
     public enum WriterError: Error, Equatable {
@@ -237,6 +241,8 @@ public actor RecordingWriter {
         microphone?.markAsFinished()
         await writer.finishWriting()
         statistics.duration = end - start
+        statistics.start = start
+        statistics.pauses = pauses.compactMap { pause in pause.end.map { CMTimeRange(start: pause.start, end: $0) } }
         guard writer.status == .completed else {
             throw WriterError.writerFailed(writer.error.map { "\($0)" } ?? "status \(writer.status.rawValue)")
         }

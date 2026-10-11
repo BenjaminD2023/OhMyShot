@@ -436,3 +436,41 @@ the worst case for a GIF, since every frame changes everywhere.
   made took 0.58 s (`recording.gif`: 66 frames at 15 fps, 800×500, 7.5 MB for scrolling text), and to the card
   0.61 s (`recording.keep`). The menu bar went from the time to the GIF's progress to the icon; the clipboard
   was left alone.
+
+### Studio (2026-10-11)
+
+Debug build, in the app, through `ohmyshot-dev://debug/studio-demo` (a Studio recording of the demo window
+behind the desktop picture), `studio-render` (filmed as the export would, from a made-up pointer, with
+automatic zooms over the sky gradient), and `studio-window` (the Studio window behind the desktop picture).
+Footprints are `footprint -p`; the app is 22 MB idle.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Export, 4.03 s of 1600×1000 at 60 fps → 1760×1160 H.264 | 0.74–0.87 s (4.6–5.5× real time), 5.3 MB | faster than real time |
+| Export, 8.02 s of 6400×2600 HEVC at 60 fps (a window as wide as the ultrawide) → 3840×1698 H.264 | 4.0 s (2.0× real time), 88 MB | faster than real time |
+| Peak footprint during that export: BGRA in and out / 4:2:0 in / 4:2:0 in and out | 1.09 GB / 910 MB / 575 MB (41 MB after) | — |
+| The Studio window playing that recording: preview filmed at the export's 3840 / at the view's pixels (1792×792) | 620–670 MB / 330–610 MB; 80–100 MB paused | — |
+| A gray of 111 and an orange (233, 131, 45) through the export, untagged / tagged as the recording | 121 and (239, 141, 51) / 111 and (233, 131, 45) | as recorded |
+| The timeline's 24 pictures of the 6400×2600 recording, each from its own stretch / from the nearest key frames | 3.71 s / 0.80 s (5 different frames) | — |
+
+- **A custom compositor asking for BGRA source frames gets every decoded frame converted first**: 66 MB a
+  frame at 6400×2600, with a dozen read ahead. Asking for 4:2:0 (what the decoder makes, which Core Image
+  reads as it is) took the export from 1.09 GB to 910 MB; drawing the movie's frames in 4:2:0 too (a third
+  of BGRA, and nothing left for the encoder to convert) took it to 575 MB, with the colors still exact and
+  the speed unchanged. `alwaysCopiesSampleData = false` on the reader's output saves a copy of each frame.
+- **The preview is filmed no larger than it shows.** At the export's 4K, the frames AVPlayer plays ahead
+  (14–16 of them) held some 400 MB; at the view's backing pixels, rounded up in steps of 128 so a small
+  resize films nothing again, they hold 30 MB. The export makes its own composition at full size. What
+  remains while a full-screen recording plays is AVPlayer's 19 decoded source frames (24 MB each at
+  6400×2600), which no API bounds; paused, it drops to 80–100 MB.
+- **An untagged video composition played lighter than the recording**: the compositor drew in sRGB into
+  frames the writer tagged Rec. 709's transfer, and left the YCbCr matrix out. The composition now takes the
+  recording's primaries, transfer function, and matrix, draws in the color space they make, and the writer
+  tags the movie the same way (`StudioExportTests.theRecordingsColorsComeThroughAsTheyWere`).
+- **Reading the timeline's pictures exactly is slow on a short, large recording**: with key frames every
+  2 s, each picture decoded up to two seconds of 6400×2600 frames. The pictures come from the nearest key
+  frames first (0.8 s) and, where those repeat, are read again from each stretch.
+- **The recording Studio films never moves.** It is cloned into the project (`source.mp4`, no extra room on
+  APFS) when the window first opens it; an exported movie takes its place in the history beside it. Before
+  this, the first export moved the recording into the project while the window still filmed its old path,
+  and the next edit would have filmed the exported movie again.
