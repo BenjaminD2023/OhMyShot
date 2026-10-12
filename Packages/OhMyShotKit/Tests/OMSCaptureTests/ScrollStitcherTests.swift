@@ -1164,6 +1164,40 @@ struct ScrollStitcherTests {
         #expect(holes == 0, "\(holes) pixels of the picture are something else: \(stitcher.summary)")
     }
 
+    @Test func somethingPlayingAtThePageEndIsKept() throws {
+        // The last screen holds a banner that changes in every view (a GIF, a ticker), then a footer of text: the
+        // picture must end as the page does, the banner as some view showed it and the text under it whole.
+        let page = Page(width: 800, height: 1400)
+        let banner = 1300..<1400
+        var frame = 0
+        func view(at offset: Int) -> [UInt32] {
+            frame += 1
+            return Self.view(page, at: offset, size: 500) { pixels, width, height in
+                for y in 0..<height where banner.contains(offset + y) {
+                    for x in 40..<760 {
+                        pixels[y * width + x] = 0xFF00_0000 | UInt32(truncatingIfNeeded: ((x / 24 + (offset + y) / 12 + frame) % 7) &* 0x24_1E_30 + 0x30_30_30)
+                    }
+                }
+            }
+        }
+        let stitcher = Self.stitcher(width: 800, height: 500)
+        var offset = 0
+        Self.add(view(at: offset), to: stitcher)
+        // Slowing down at the end, as scrolling does.
+        for step in Array(repeating: 20, count: 43) + [14, 10, 8, 4, 2, 2] {
+            offset += step
+            Self.add(view(at: offset), to: stitcher)
+        }
+        for _ in 0..<6 { Self.add(view(at: 900), to: stitcher) }
+        let picture = try #require(stitcher.picture())
+        #expect(picture.height == 1400, "\(stitcher.summary)")
+        let rows = Self.differingRows(Self.pixels(of: picture), page.pixels, width: 800).filter { !banner.contains($0) }
+        #expect(rows.isEmpty, "\(rows.count) rows from \(rows.first ?? -1): \(stitcher.summary)")
+        let pixels = Self.pixels(of: picture)
+        let blank = banner.filter { y in (40..<760).allSatisfy { pixels[y * 800 + $0] == pixels[y * 800 + 40] } }
+        #expect(blank.isEmpty, "\(blank.count) banner rows blank from \(blank.first ?? -1)")
+    }
+
     @Test func aCarouselSlidingDoesNotTurnThePageSideways() throws {
         // Before the page first scrolls, a hero half the view tall slides to its next picture.
         let page = Page(width: 800, height: 2000)

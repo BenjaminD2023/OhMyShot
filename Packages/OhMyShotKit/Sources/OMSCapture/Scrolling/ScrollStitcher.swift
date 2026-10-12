@@ -99,6 +99,8 @@ nonisolated public final class ScrollStitcher {
     /// that view's part that scrolls did.
     private var head = Ends()
     private var tail = Ends()
+    /// Where in the content the tail's first line would be: the content's end when it was kept.
+    private var tailFrom = 0
     /// Where the view the head was kept from was in the content.
     private var headPosition = 0
     /// While the content may be pulled past its end (or start) in elastic overscroll: that end, and whether it is
@@ -596,6 +598,7 @@ nonisolated public final class ScrollStitcher {
             head.keep(old, lines: 0 ..< band.lowerBound)
             headPosition = 0
             tail.keep(old, lines: band.upperBound ..< old.count)
+            tailFrom = band.upperBound
         }
         guard let canvas, let span = canvas.range else { return .lost }
         // Elastic overscroll: the content creeps a pixel or so past its end (or start), what comes into view one plain
@@ -671,7 +674,24 @@ nonisolated public final class ScrollStitcher {
         // short by plain lines, what it shows past that part still follows the content.
         if overscroll?.springing != true {
             if position + band.lowerBound <= before.lowerBound { keepHead(view, lines: 0 ..< band.lowerBound) }
-            if position + band.upperBound >= before.upperBound { tail.keep(view, lines: band.upperBound ..< view.count) }
+            if let end = canvas.range?.upperBound {
+                // The content grown into what the tail held: those lines are the content's now (and cut short, the
+                // content has the tail follow it).
+                if end > tailFrom { tail.dropFirst(end - tailFrom) }
+                tailFrom = end
+                // A view reaching as far as the picture does keeps what it shows past the content: past its part
+                // that scrolls, or past where earlier views took the content to when that part fell short of it
+                // (something playing at the page's end, a GIF or a ticker, that no two views agree on), unless all
+                // it showed further is one color (the page's background pulled a pixel or two into view at its end).
+                if position + view.count >= end + tail.lines {
+                    let from = min(max(band.upperBound, end - position), view.count)
+                    let further = max(from, end + tail.lines - position) ..< view.count
+                    let says = further.contains { line in view.bands.indices.contains { !view.plain[$0 * view.count + line] } }
+                    if position + band.upperBound >= end || says {
+                        tail.keep(view, lines: from ..< view.count)
+                    }
+                }
+            }
         }
         // A bar is what several views in a row showed staying put, as tall each time, while the content scrolled
         // under it; tiles a frame late stay put too, for a view or two, shrinking as they catch up.
@@ -777,6 +797,8 @@ nonisolated public final class ScrollStitcher {
 nonisolated private struct Ends {
     private var buffer: PageBuffer?
     private var lineBytes = 0
+    /// The buffer's first line that is still kept.
+    private var first = 0
     private(set) var lines = 0
 
     mutating func keep(_ view: Lines, lines range: Range<Int>) {
@@ -788,11 +810,20 @@ nonisolated private struct Ends {
         }
         memcpy(buffer.baseAddress, view.line(range.lowerBound), range.count * view.lineBytes)
         self.buffer = buffer
+        first = 0
         lines = range.count
     }
 
     func line(_ index: Int) -> UnsafeRawPointer? {
-        buffer.map { UnsafeRawPointer($0.baseAddress + index * lineBytes) }
+        buffer.map { UnsafeRawPointer($0.baseAddress + (first + index) * lineBytes) }
+    }
+
+    /// Lets go of the first `count` lines (as many as there are at most).
+    mutating func dropFirst(_ count: Int) {
+        let dropped = min(max(0, count), lines)
+        first += dropped
+        lines -= dropped
+        if lines == 0 { buffer = nil; first = 0 }
     }
 }
 
