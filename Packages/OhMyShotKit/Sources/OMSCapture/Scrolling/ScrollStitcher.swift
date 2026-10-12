@@ -558,8 +558,10 @@ nonisolated public final class ScrollStitcher {
 
     /// A view where nothing scrolled still counts for the ends of the lines it shows, where they are: those whose
     /// ends changed since `reference`, the last view that scrolled (an overlay knob fading once the scrolling stops).
+    /// Only where a line between the ends tells it did not scroll: over rows alike at any offset (a sheet's empty
+    /// cells) a view that scrolled shows between the ends what the last one did, and the ends it shows are other rows'.
     private func count(_ view: Lines, reference: Lines) {
-        guard let canvas, let band else { return }
+        guard let canvas, let band, Lines.placed(view, by: reference, within: band) else { return }
         for line in band where !canvas.endsAlike(view.line(line), reference.line(line)) {
             canvas.count(view.line(line), at: position + line)
         }
@@ -966,6 +968,18 @@ nonisolated final class Lines {
             indexes = bands.indices.map { band in LineIndex(hashes: hashes + band * count, plain: plain + band * count, count: count) }
         }
         return indexes?[band].line(of: hash)
+    }
+
+    /// Whether one of `lines` of `new` says it is where it was in `old`: a part of it, not plain, that only that
+    /// line of `old` shows.
+    static func placed(_ new: Lines, by old: Lines, within lines: Range<Int>) -> Bool {
+        let count = new.count
+        for band in 0..<new.bands.count {
+            for index in lines where !new.plain[band * count + index] {
+                if old.line(band: band, hash: new.hashes[band * count + index]) == index { return true }
+            }
+        }
+        return false
     }
 
     /// How a new view lines up with an old one of the same size; `why` says what was found when it lines up

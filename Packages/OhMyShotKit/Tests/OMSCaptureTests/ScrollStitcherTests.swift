@@ -870,6 +870,30 @@ struct ScrollStitcherTests {
         #expect(rows.isEmpty, "\(rows.count) rows with the knob, from \(rows.first ?? -1): \(stitcher.summary)")
     }
 
+    @Test func rowNumbersStayWithTheirRowsWhereTheCellsAreAlike() throws {
+        // A sheet: words down its first rows, then empty cells alike every 20 rows; down the line's left end, each
+        // row's number. Among the empty cells a view 40 rows on shows between the ends just what the last one did.
+        let width = 400, height = 300
+        var page = Page(width: width, height: 2400, seed: 19)
+        for y in 0..<page.height {
+            for x in 0..<width {
+                if y >= 700 { page.pixels[y * width + x] = y % 20 == 0 || x % 50 == 25 ? 0xFFD0_D4D8 : Self.white }
+                if x < 16 { page.pixels[y * width + x] = (2..<14).contains(x) ? 0xFF00_0000 | UInt32(y & 0xFF) << 8 | UInt32(y >> 8) : Self.white }
+            }
+        }
+        let stitcher = Self.stitcher(width: width, height: height)
+        Self.add(Self.view(page, at: 0, size: height), to: stitcher)
+        for offset in stride(from: 40, through: 1400, by: 40) {
+            Self.add(Self.view(page, at: offset, size: height), to: stitcher)
+        }
+        // However far the picture got, what it has is the page's, numbers and all.
+        let picture = try #require(stitcher.picture())
+        #expect(picture.height > 700)
+        let expected = Array(page.pixels[0 ..< picture.height * width])
+        let rows = Self.differingRows(Self.pixels(of: picture), expected, width: width)
+        #expect(rows.isEmpty, "\(rows.count) rows from \(rows.first ?? -1): \(stitcher.summary)")
+    }
+
     // MARK: - Lost and still
 
     @Test func scrollingTooFarAtOnceIsLostUntilTheViewComesBack() throws {
