@@ -670,6 +670,7 @@ nonisolated public final class ScrollStitcher {
                 canvas.write(view.line(line), at: position + line, as: .arrived(sameRow: old.line(line), inward: nil))
             }
         }
+        canvas.endView(fewestLines: 3 * margin)
         // A view reaching as far as the content does keeps its ends too: when its part that scrolls was cut
         // short by plain lines, what it shows past that part still follows the content.
         if overscroll?.springing != true {
@@ -1347,6 +1348,10 @@ nonisolated private final class Canvas {
         var endHashes = [UInt32](repeating: 0, count: Canvas.chunkLines * Canvas.variants)
         var endCounts = [UInt16](repeating: 0, count: Canvas.chunkLines * Canvas.variants)
         var shown = [UInt8](repeating: 0, count: Canvas.chunkLines)
+        /// Per line, views in a row whose line, where it showed something else than the line holds, showed what the
+        /// view before did there: nothing on it changing; and views whose line showed it changing.
+        var calm = [UInt8](repeating: 0, count: Canvas.chunkLines)
+        var restless = [UInt8](repeating: 0, count: Canvas.chunkLines)
         /// Per line and segment, how much the views back what it holds.
         let support: UnsafeMutablePointer<UInt8>
         /// Distance from an occluding edge of the clearest observation at a verified page position.
@@ -1413,6 +1418,11 @@ nonisolated private final class Canvas {
     private var views = 0
     /// The lines the first view gave, whose columns that stay put are as it showed them.
     private var firstLines: Range<Int>?
+    /// The segments of the line being weighed where the first view's out-of-date picture is to give way, and those of
+    /// the lines of the view being taken in, each with the view's line and how clear it was there: taken over when the
+    /// view is all in, where enough lines in a row have them.
+    private var stale: [Int] = []
+    private var pendingStale: [(index: Int, source: UnsafeRawPointer, quality: UInt8, starts: [Int])] = []
     /// Restore fixed columns from a coherent first view without freezing the scrolling content forever.
     private var firstSnapshot: PageBuffer?
     private var currentView: Lines?
@@ -1681,6 +1691,35 @@ nonisolated private final class Canvas {
         }
     }
 
+    /// The view being taken in is all in: where at least `fewestLines` lines in a row hold the first view's out-of-date
+    /// picture (`weigh`), what the view shows takes its place, backed as the first view's was, and the first view's
+    /// ends there count as one view's.
+    func endView(fewestLines: Int) {
+        defer { pendingStale.removeAll(keepingCapacity: true) }
+        guard !pendingStale.isEmpty else { return }
+        pendingStale.sort { $0.index < $1.index }
+        var runStart = 0
+        for end in 1...pendingStale.count where end == pendingStale.count || pendingStale[end].index != pendingStale[end - 1].index + 1 {
+            defer { runStart = end }
+            guard end - runStart >= fewestLines else { continue }
+            for item in pendingStale[runStart..<end] {
+                let number = Self.chunkNumber(of: item.index)
+                guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { continue }
+                let slot = item.index - number * Self.chunkLines
+                let target = chunk.pixels.baseAddress + slot * lineBytes
+                for start in item.starts {
+                    let segment = start / Self.segmentBytes, length = min(Self.segmentBytes * (segment + 1), lineBytes) - start
+                    memcpy(target + start, item.source + start, length)
+                    chunk.support[slot * segments + segment] = Self.firstSupport
+                    chunk.quality[slot * segments + segment] = item.quality
+                }
+                rehash(target, chunk: chunk, slot: slot)
+                let shown = slot * Self.variants + Int(chunk.shown[slot])
+                chunk.endCounts[shown] = min(chunk.endCounts[shown], 1)
+            }
+        }
+    }
+
     /// Writes `source` as line `index`, as `writing` says. A line not there yet takes `source`, but the ground
     /// where what is on screen stayed put; one there is weighed segment by segment. The ends are counted, and the
     /// ends seen most are the ones kept. `still`: seen while nothing scrolled. A line there is no memory for is
@@ -1756,13 +1795,19 @@ nonisolated private final class Canvas {
                 source, into: target, support: support, qualities: chunk.quality + slot * segments,
                 quality: quality, previous: previous, sameRow: sameRow
             )
+            let firstRow = firstSnapshot.flatMap { snapshot in
+                firstLines.flatMap { $0.contains(index) ? UnsafeRawPointer(snapshot.baseAddress + (index - $0.lowerBound) * lineBytes) : nil }
+            }
+            stale.removeAll(keepingCapacity: true)
             let weighed = weigh(
                 source, into: target, support: support, previous: previous, sameRow: sameRow, formerRow: formerRow,
-                held: state == 2, atEdge: atEdge, belowStart: belowStart, qualities: chunk.quality + slot * segments, quality: quality
+                held: state == 2, atEdge: atEdge, belowStart: belowStart, qualities: chunk.quality + slot * segments, quality: quality,
+                firstRow: firstRow, calm: &chunk.calm[slot], restless: &chunk.restless[slot]
             )
             if preferred || weighed {
                 rehash(target, chunk: chunk, slot: slot)
             }
+            if !stale.isEmpty { pendingStale.append((index, source, quality, stale)) }
             if confirmed { chunk.states[slot] = 2 }
         }
         count(source, into: target, chunk: chunk, slot: slot, still: still)
@@ -1891,7 +1936,8 @@ nonisolated private final class Canvas {
     private func weigh(
         _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
         previous: UnsafeRawPointer, sameRow: UnsafeRawPointer, formerRow: UnsafeRawPointer, held: Bool, atEdge: Bool, belowStart: Bool,
-        qualities: UnsafeMutablePointer<UInt8>, quality: UInt8
+        qualities: UnsafeMutablePointer<UInt8>, quality: UInt8, firstRow: UnsafeRawPointer?, calm: UnsafeMutablePointer<UInt8>,
+        restless: UnsafeMutablePointer<UInt8>
     ) -> Bool {
         for run in stayingMiddle {
             var from = run.lowerBound
@@ -1922,6 +1968,21 @@ nonisolated private final class Canvas {
             break
         }
         guard differs else { return false }
+        // Whether all the line shows otherwise than it holds moved with the content since the last view, and for how
+        // many views in a row: nothing on it changing any more (a video playing changes, or rests a view at most).
+        var settled = true
+        for run in scrollingMiddle where settled {
+            var start = run.lowerBound
+            while start < run.upperBound, settled {
+                let end = min((start / Self.segmentBytes + 1) * Self.segmentBytes, run.upperBound)
+                if memcmp(source + start, target + start, end - start) != 0, !Self.nearlyAlike(source + start, previous + start, end - start) {
+                    settled = false
+                }
+                start = end
+            }
+        }
+        calm.pointee = settled ? calm.pointee &+ (calm.pointee < .max ? 1 : 0) : 0
+        if !settled, restless.pointee < .max { restless.pointee += 1 }
         var changed = false
         for run in scrollingMiddle {
             var from = run.lowerBound
@@ -1942,8 +2003,23 @@ nonisolated private final class Canvas {
                     defer { start = end }
                     guard memcmp(source + start, target + start, length) != 0 else { continue }
                     support[segment] -= min(support[segment], step)
-                    // Repeated passes close to a sticky edge cannot overrule a clearer interior observation.
-                    guard quality >= qualities[segment] else { continue }
+                    // Repeated passes close to a sticky edge cannot overrule a clearer interior observation; but where
+                    // the line still holds what the first view showed, changed once or twice since, and three views in
+                    // a row now show it alike and otherwise, the page changed there after the first view (a picture
+                    // loaded, a skeleton filled in, a highlight gone). Away from the bars, what they show takes its
+                    // place, once the view is all in and where lines enough in a row give way (`endView`): a video or
+                    // an animation that follows the scrolling, changing on and on, keeps its first frame, and nothing
+                    // changes a line or two at a time.
+                    if quality < qualities[segment] {
+                        guard calm.pointee >= 2, restless.pointee <= 2, !atEdge, !belowStart, Self.nearlyAlike(source + start, previous + start, length),
+                              let firstRow, memcmp(target + start, firstRow + start, length) == 0,
+                              // What stayed where it was on screen is over the content; but a plain stretch over one (a
+                              // placeholder's color, a blank row of the picture that replaced it) looks alike everywhere.
+                              memcmp(source + start, sameRow + start, length) != 0
+                                  || Self.isPlain(source + start, length) && Self.isPlain(target + start, length) else { continue }
+                        stale.append(start)
+                        continue
+                    }
                     if Self.nearlyAlike(source + start, previous + start, length) {
                         let plain = Self.isPlain(source + start, length)
                         if (plain && atEdge) || belowStart, support[segment] > Self.seenOnce { continue }

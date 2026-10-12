@@ -1198,6 +1198,40 @@ struct ScrollStitcherTests {
         #expect(blank.isEmpty, "\(blank.count) banner rows blank from \(blank.first ?? -1)")
     }
 
+    @Test func aPictureThatLoadsOnceScrollingStartsIsTakenEndsAndAll() throws {
+        // A hero across the whole width shows a placeholder until the page first scrolls, then its picture: every
+        // row of it is seen loaded in many views after that, away from where bars stick, so it must come out loaded
+        // to its very ends. (Rows seen loaded only right below the view's top, where sticky things are pushed out,
+        // keep what the first view showed.)
+        let page = Page(width: 800, height: 2400)
+        let hero = Page(width: 800, height: 300, seed: 51)
+        let rows = 120..<420
+        func view(at offset: Int, loaded: Bool) -> [UInt32] {
+            Self.view(page, at: offset, size: 500) { pixels, width, height in
+                for y in 0..<height where rows.contains(offset + y) {
+                    for x in 0..<width {
+                        pixels[y * width + x] = loaded ? hero.pixels[(offset + y - rows.lowerBound) * 800 + x] | 0xFF20_0000 : 0xFFE5_E7EB
+                    }
+                }
+            }
+        }
+        let stitcher = Self.stitcher(width: 800, height: 500)
+        Self.add(view(at: 0, loaded: false), to: stitcher)
+        var offset = 0
+        while offset < 1200 {
+            offset += 20
+            Self.add(view(at: offset, loaded: true), to: stitcher)
+        }
+        let picture = try #require(stitcher.picture())
+        #expect(picture.height == offset + 500, "\(stitcher.summary)")
+        let pixels = Self.pixels(of: picture)
+        var placeholder = 0
+        for y in rows {
+            for x in 0..<800 where pixels[y * 800 + x] == 0xFFE5_E7EB { placeholder += 1 }
+        }
+        #expect(placeholder == 0, "\(placeholder) pixels of the placeholder left: \(stitcher.summary)")
+    }
+
     @Test func aCarouselSlidingDoesNotTurnThePageSideways() throws {
         // Before the page first scrolls, a hero half the view tall slides to its next picture.
         let page = Page(width: 800, height: 2000)
