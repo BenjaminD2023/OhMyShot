@@ -51,5 +51,19 @@ struct ScrollStitcherSpeedTests {
             #expect(result == .scrolled(offset: step))
         }
         print("Stitched \(views) views of \(width) × \(height) pixels, \(spent / views) each; \(stitcher.summary)")
+        // Then the page stops but for a video playing in it: a part of the view changes, nothing scrolls.
+        let still = view(offset)
+        spent = .zero
+        for frame in 0..<30 {
+            var pixels = still
+            for y in 900..<1260 {
+                for x in 1400..<2040 { pixels[y * width + x] = 0xFF00_0000 | UInt32((x * 5 + frame * 37) & 0xFF) * 0x010101 }
+            }
+            let started = ContinuousClock.now
+            let result = pixels.withUnsafeBytes { stitcher.add($0.baseAddress!, bytesPerRow: width * 4) }
+            spent += ContinuousClock.now - started
+            #expect(result == .unchanged)
+        }
+        print("Then 30 views where only a video played, \(spent / 30) each")
     }
 }

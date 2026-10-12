@@ -894,6 +894,10 @@ nonisolated final class Lines {
     let plain: UnsafeMutablePointer<Bool>
     /// Each band's lines by hash, made when first asked for.
     private var indexes: [LineIndex]?
+    /// Whether each line is what the buffer held before the last fill, its hashes as they were; and whether there
+    /// was a fill before.
+    private let kept: UnsafeMutablePointer<Bool>
+    private var filled = false
 
     var lineBytes: Int { length * 4 }
 
@@ -906,11 +910,13 @@ nonisolated final class Lines {
         bands = Self.bands(length: length, margin: margin)
         hashes = .allocate(capacity: bands.count * count)
         plain = .allocate(capacity: bands.count * count)
+        kept = .allocate(capacity: count)
     }
 
     deinit {
         hashes.deallocate()
         plain.deallocate()
+        kept.deallocate()
     }
 
     static func make(_ pixels: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int, turned: Bool, margin: Int) -> Lines? {
@@ -946,14 +952,20 @@ nonisolated final class Lines {
             var to = vImage_Buffer(data: pixels.baseAddress, height: vImagePixelCount(count), width: vImagePixelCount(length), rowBytes: lineBytes)
             var clear: [UInt8] = [0, 0, 0, 0]
             vImageRotate90_ARGB8888(&from, &to, UInt8(kRotate90DegreesClockwise), &clear, vImage_Flags(kvImageNoFlags))
+            kept.update(repeating: false, count: count)
         } else {
+            // A line the same as the buffer held keeps its hashes: a view where only a little changed since (a
+            // spinner, a video) costs a comparison, not a copy and a hash.
             for row in 0..<count {
-                memcpy(line(row), source + row * bytesPerRow, lineBytes)
+                let from = source + row * bytesPerRow
+                kept[row] = filled && memcmp(line(row), from, lineBytes) == 0
+                if !kept[row] { memcpy(line(row), from, lineBytes) }
             }
         }
+        filled = true
         for (band, range) in bands.enumerated() {
             let bytes = range.count * 4
-            for index in 0..<count {
+            for index in 0..<count where !kept[index] {
                 let start = line(index) + range.lowerBound * 4
                 hashes[band * count + index] = UInt32(truncatingIfNeeded: crc32(0, start.assumingMemoryBound(to: UInt8.self), uInt(bytes)))
                 plain[band * count + index] = bytes <= 4 || memcmp(start, start + 4, bytes - 4) == 0
