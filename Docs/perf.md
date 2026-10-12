@@ -803,3 +803,49 @@ were taken for something fixed on screen, a little more than before (5999 dark p
 stitcher had 5154 on one image); fixed floating buttons bite into the last rows; pages that re-render as
 they scroll (apple.com) lose track; a fixed page background, content that changes after it was taken
 (skeletons), and the very end of a page showing something new still behave as before.
+
+### Complex pages, a second round (2026-10-13)
+
+The rest of the hunt's problems that lie in the stitcher. Each change was replayed over the same 206 frame
+sets (heights, and pixels against pictures rebuilt from the frames' true offsets, every changed picture
+looked at) and the 120 forum walks. Debug build unless said.
+
+| Check | Before | After |
+| --- | --- | --- |
+| A news page whose section list is a sticky card, three live recordings replayed | a white strip beside the list down the picture | the page's gray |
+| A fixed panel over a scrolling column (made up), 1400 rows | 414 rows off | 0 |
+| A README ending in a GIF, apple.com, a page whose last screen starts playing, a carousel | each ended short (84 rows of the GIF missing) | each ends where the page does |
+| A lazy hero and a lazy illustration | their placeholders, notched where the line ends updated alone | what loaded |
+| Shop grids with blank stretches, row numbers down the edge | the numbers jumped back and forth by 1800 px, 14 times | in order, but for the blank stretch left out |
+| The 206 frame sets replayed twice, in two processes | a picture could come out either of two ways (136 pixels of a news page) | byte for byte the same |
+| 3500 × 2400 px views, a video playing and nothing scrolling, optimized build | 5.2 ms | 2.0 ms |
+| The same views scrolling, optimized build | 10.2 ms | 9.4–9.6 ms |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+- **A sticky card's blank inside** (right of its labels) said nothing either way and, wider than three
+  segments, was taken as content: below the first view it showed the card's white down the whole picture.
+  A gap between columns that stay put now stays put however wide when views told it stayed put at least
+  four times as often as moved, or told nothing; the page's color past the card is found column by column,
+  since a pixel a shade off at the view's edge made no line of the whole run one color.
+- **What the page shows after the first view** (a picture loading once scrolling starts, a skeleton filled
+  in) takes the first view's place where three views in a row show it alike, at least three margins of lines
+  together, away from the bars. Something that keeps changing (a video, a scroll-driven animation) keeps the
+  frame first taken.
+- **The page's end** is kept from any view that reaches as far as the picture does, its part that scrolls
+  cut short by something playing there or not.
+- **A view taken while nothing scrolls counts for the line ends** only where a line between the ends is
+  unique and where it was: over rows alike at any offset, a view that scrolled looked still and wrote other
+  rows' numbers.
+- **The same frames make the same picture.** A column's background and the order of offsets tried when no
+  line was unique were left to Swift's per-process hash seed; ties now go to whichever got there first.
+- **A view where only a little changed** (a video, a spinner) costs a comparison per line rather than a copy
+  and a hash: a line the same as the buffer held keeps its hashes, so every picture is byte for byte what it
+  was.
+
+Of what the last round left: content changing after it was taken and the end of a page showing something new
+are handled; dark dashes on an image whose rows are all alike now allow for dither (3 levels), though the live
+dashes did not reproduce offline. Left as they are: fixed floating buttons (back to top, a chat bubble) still
+bite into the last rows, and moving them out of the picture needs tracking what stays put on screen rather
+than in the page; carousels that slide while in view can still come out in strips; a fixed page background
+and pages that re-render as they scroll (apple.com) still lose track; a blank stretch taller than the view
+cannot be measured, so it is left out.
