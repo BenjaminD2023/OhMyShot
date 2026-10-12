@@ -29,6 +29,7 @@ final class CompositionRoot {
     private lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
     private lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
     private lazy var recordings = RecordingCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions)
+    private lazy var scrolling = ScrollingCaptureCoordinator(displays: displays, capturer: capturer, overlay: overlay, permissions: permissions, captures: captures)
     /// The replay (macOS 27), kept as any object: a stored property can't be of a type this macOS may lack.
     private var replayStorage: AnyObject?
     private let hotkeys: HotkeyCenter
@@ -105,6 +106,19 @@ final class CompositionRoot {
                     }
                 ) { [weak self] in
                     self?.handle(.selfTimer)
+                },
+                .init(
+                    title: String(localized: "Scrolling Capture"),
+                    shortcut: .scrollingCapture,
+                    currentTitle: { [weak self] in self?.scrolling.menuTitle ?? String(localized: "Scrolling Capture") }
+                ) { [weak self] in
+                    self?.handle(.scrollingCapture)
+                },
+                .init(
+                    title: String(localized: "Cancel Scrolling Capture"),
+                    isHidden: { [weak self] in self?.scrolling.isCapturing != true }
+                ) { [weak self] in
+                    self?.scrolling.cancel()
                 },
                 .init(
                     title: String(localized: "Record Screen"),
@@ -258,6 +272,9 @@ final class CompositionRoot {
         colorPicker.pin = { [weak self] color in
             guard let pinned = PinColor(color.cgColor) else { return NSSound.beep() }
             self?.pins.pin(color: pinned)
+        }
+        scrolling.doneKeys = { [weak self] in
+            self?.hotkeys.keys(for: .scrollingCapture)
         }
         captures.selfTimerKeys = { [weak self] in
             self?.hotkeys.keys(for: .selfTimer)
@@ -470,6 +487,8 @@ final class CompositionRoot {
             recordings.recordScreen()
         case .saveReplay:
             if #available(macOS 27, *) { replay?.save() }
+        case .scrollingCapture:
+            scrolling.begin()
         default:
             Log.hotkeys.notice("Not available yet: \(shortcut.rawValue, privacy: .public)")
         }
@@ -508,6 +527,12 @@ final class CompositionRoot {
             }
             captures.cancelSelfTimer()
             textCapture.captureText(joinLines: lineBreaks == false)
+        case .scrollingCapture(let region, _, let autoScrolls) where region.rect == nil:
+            guard permissions.status(of: .screenRecording) == .granted else {
+                showOnboarding()
+                return
+            }
+            scrolling.begin(autoScrolls: autoScrolls)
         case .recordScreen(let region) where region.rect == nil:
             guard permissions.status(of: .screenRecording) == .granted else {
                 showOnboarding()
@@ -539,7 +564,7 @@ final class CompositionRoot {
     /// A capture's picture changed in the editor: its card and its History thumbnail follow.
     private func pictureChanged(_ entry: HistoryItem, data: Data) {
         Task {
-            if let card = quickAccess.item(entry.id), let thumbnail = await HistoryStore.thumbnail(of: data, maxPixels: 560) {
+            if let card = quickAccess.item(entry.id), let thumbnail = await HistoryStore.cardThumbnail(of: data, maxPixels: 560) {
                 quickAccess.update(QuickAccessItem(
                     id: entry.id,
                     kind: entry.kind,
@@ -887,7 +912,7 @@ final class CompositionRoot {
         guard let card = quickAccess.item(entry.id) else { return }
         Task {
             let url = history.fileURL(for: entry)
-            guard let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: 560) else { return }
+            guard let thumbnail = await HistoryStore.cardThumbnail(of: url, maxPixels: 560) else { return }
             quickAccess.update(QuickAccessItem(
                 id: entry.id, kind: entry.kind, fileURL: url, thumbnail: thumbnail, pixelWidth: entry.pixelWidth,
                 pixelHeight: entry.pixelHeight, displayID: card.displayID, createdAt: entry.createdAt, duration: entry.duration,
@@ -904,7 +929,7 @@ final class CompositionRoot {
 
     private func quickAccessItem(for entry: HistoryItem) async -> QuickAccessItem? {
         let url = history.fileURL(for: entry)
-        guard let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: 560) else { return nil }
+        guard let thumbnail = await HistoryStore.cardThumbnail(of: url, maxPixels: 560) else { return nil }
         let layout = displays.layout
         let displayID = layout.display(at: NSEvent.mouseLocation)?.id ?? layout.primary?.id ?? 0
         return QuickAccessItem(
@@ -1015,6 +1040,7 @@ final class CompositionRoot {
             colorPicker: colorPicker,
             measurer: measurer,
             recordings: recordings,
+            scrolling: scrolling,
             settings: settings,
             replay: { [weak self] in self?.replayStorage }
         )

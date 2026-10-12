@@ -572,3 +572,234 @@ rounding of a single wake, not something that repeats.
   still dirty after the film (`vmmap`: 32 MB of small-block regions dirty after the tour). Two more films
   and another GIF took it to 63 and then 65 MB, the second film adding nothing: it settles a little over the
   budget after heavy use. Not chased further for now; the small-block regions are where to look next.
+
+## M5 — Scrolling capture (2026-10-11)
+
+Debug build. Stitching was timed with a test probe on made-up pages (views 60 px apart), the whole path
+with `ohmyshot-dev://debug/scroll-demo` and `debug/scroll-flow`: a window of made-up text the app draws
+behind the desktop picture, scrolled 37 pt every 40 ms while the real stream (60 fps at most, frames only
+on change) and stitcher take it in, nothing of the user's read. The picture came out the same as the
+window's own drawing of the page, line for line (the largest difference 3–4 levels, color conversion), in
+every variation: down, down and back up, a jump too far and back, sideways, larger windows, other steps.
+
+| Measurement | Result |
+| --- | --- |
+| Taking in a view, median (most): 1600×1200 / 2560×1440 / 3440×2000 px | 5.7 (10.7) / 7.9 (13.8) / 12.7 (23.7) ms |
+| Putting the picture together: 1600×4740 / 2560×5700 / 3440×7940 px | 7.5 / 5.1 / 10.4 ms |
+| A preview (312 px across) | 5–10 ms |
+| In the app, a 640×480 pt window (1280×960 px): views / time each | 77 / 11–13 ms |
+| CPU while scrolling: the app / replayd | 35–38% / 1.3–1.6% |
+| Live resources after it | none |
+
+- **An Objective-C exception inside a Swift task breaks the main thread's executor checks later.** The
+  first progress came before the panel had an area to stand beside, so its frame was infinite, and AppKit's
+  assertion in `-[NSWindow _reallySetFrame:]` was thrown inside the main-actor task that delivered the
+  progress and caught by AppKit. The task never restored the thread's record of the executor it ran on, and
+  seconds later the next `@objc` override with a main-actor check (the card's `layout()`) crashed in
+  `swift_task_isMainExecutorImpl` reading an executor of 0x0 or 0x40. The crash names an innocent method;
+  the log has the assertion two seconds earlier. The panel now waits until it is shown.
+- **A window behind the desktop picture draws nothing that scrolls into view.** AppKit leaves an occluded
+  window's newly exposed parts undrawn, so the demo's page showed blank stretches in the stream and the
+  first runs read the wrong direction; the page is now one picture in its layer.
+- **Dithered fills repeat every 64 rows.** The capture of a plain blue bar holds a dither pattern, the same
+  every 64 rows, so at a scroll of exactly 64 pixels the bar's lines agreed with themselves further down and
+  were taken for content (the bar once more in the middle of the picture). A line that says something and
+  is also where it was in the last view now never counts as scrolling.
+- **Overlay scroll bars never fade in a window behind the desktop picture**, so the demo shows its knob and
+  track in every view; the made-up tests show the knob is left out when, as on screen, it comes and goes.
+- **The picture's own memory goes with it**: the stitcher's pages are mapped and unmapped (`PageBuffer`),
+  and nothing of it is left once the picture is kept. Encoding a 1280×6548 PNG leaves about 31 MB in the
+  allocator's cache of large blocks, as encoding a GIF did.
+
+### Forums: sidebars, timelines, sticky avatars (2026-10-11, second cut)
+
+Two live tests on a LINUX DO (Discourse) topic broke the first cut. The first smeared the sidebar, the
+timeline, and the posts' avatars down the picture. The fix for that decided per column of 8 pixels whether
+it stays put, and grounded those columns; the second test then showed the banner's top and the first
+avatar's top half white in 8-pixel notches, and faint pieces of the avatar down the post. Discourse avatars
+stick below the header while their post scrolls, so the avatar column was still most of the time and yet
+every post's avatar moved through it: the column flipped between staying and not, and each flip grounded
+what was written meanwhile. Auto-scroll stopped about 20 ms after every start: macOS hands scroll events
+posted at the HID level back as a gesture's (phase began, the source's state 0, the user data gone), so the
+scroller took its own first step for the user's.
+
+Now each line is held in 8-pixel segments, each with how much the views back it: a view backs what moved
+there with the page by about an eighth of how far it moved, and a view that shows a segment otherwise wears
+that down and replaces it when nothing backs it more. Only a column never seen moving and seen still over at
+least a quarter of the view's height (a sidebar, a timeline) is left out and keeps its ground below the first
+view. Auto-scroll tells its own steps by size and time.
+
+The demo gained a forum (`scroll-demo?forum=1&timeline=<percent>`): a sidebar, a banner, six posts whose
+avatars (pictures and letter discs) move with the post, stick below the header and are pushed out, and a
+timeline whose handle creeps as the page scrolls. Every run below came out the same as the window's own
+drawing of the page, avatars where their posts begin, line for line (largest difference 2–4 levels).
+
+| Measurement (Debug) | Result |
+| --- | --- |
+| Forum, 640×480 pt (1280×960 px), timeline 20% / 35% of the view | 0 / 0 lines off, 11.0–11.3 ms a view, CPU 40% |
+| Forum, 1750×1200 pt (3500×2400 px), timeline 30% | 0 lines off, 28.0 ms a view, CPU 87% |
+| Sidebar demo, 3500×2400 px (24 ms a view before this cut) | 0 lines off, 28.4 ms a view, CPU 89% |
+| Made-up 3500×2400 views, `OMS_STITCH_SPEED=1` test | 27.7 ms a view |
+| The earlier demos (plain, scroll bars with a jump and back) | 0 lines off, 12.7–14.3 ms a view |
+| 120 walks going back four times in ten, `OMS_STITCH_SWEEP=1` | 6 leave 1–25 rows off |
+
+- **Debug Swift loops cost what the stitching does.** The first version of the segment weighing took 43 ms
+  a view at 3500×2400 px: taking in a line that just came into view went segment by segment through
+  `Range` iteration, closures, and a one-element array made for every line. Loops over byte runs with one
+  `memcmp` a segment and `update(repeating:count:)` brought it to 28 ms; matching the views (hashing and
+  voting, as before) is now most of what is left.
+- **Evenly spaced sample rows fall in step with a sidebar.** The ground of each column was the color most
+  of 24 evenly spaced rows of the first view showed; in the 35% forum their spacing matched the sidebar's
+  36-point items, every sample hit an icon, and the icon's color became the sidebar's ground down the whole
+  picture. Sample rows now go a golden ratio of the range apart.
+- **Something alike top to bottom matches wherever it is.** The timeline's handle, creeping down by itself,
+  matched "where the page moved" along its bar, so its column counted as moving and the timeline was never
+  left out; its track line, still, then outvoted the first view's blank rows passing under it. A match the
+  view itself also shows as far on no longer counts as moving, and such alike-both-ways observations only fill
+  segments nothing backs.
+- **Where an avatar sticks, plain says nothing.** Right below the header the post's blank margin shows where a
+  stuck avatar would be, and the avatar is pushed out moving with the page: plain observations there neither
+  back nor wear down what a segment holds, and nothing there replaces what something else backs.
+- **What is left:** going back and forth a lot right where an avatar sticks and comes loose, a few walks
+  leave some rows of it a little off (its edge, or a piece where it was pushed out). Views narrower than about
+  550 px (275 pt on a Retina display) have only two bands to line up by, and a sidebar filling one of them
+  stops them lining up, as before.
+- **The 256 MB cap was about seven screens at full width.** 3346 px wide, a picture reached 256 MB at about
+  16,800 px: the first live test stopped there. The user chose a larger cap over half resolution: see below.
+
+### A longer picture: 1 GB (2026-10-12)
+
+The cap is now 1 GB, and the content may be as long as 50,000 px less a view's worth for the header and
+footer, counted along the way it scrolls. `ohmyshot-dev://debug/scroll-long?mb=&length=` stitches a page made
+up in memory (3346×2404 px views beside a sidebar, nothing shown or read), then makes the picture, its PNG and
+the card's thumbnail as a capture's delivery does, and logs the time and the app's highest footprint for each.
+
+| 3346×2404 px views, Debug | 256 MB, before | 1 GB, now |
+| --- | --- | --- |
+| Picture | 3346×16,600 (128 views) | 3346×47,530 (404 views) |
+| Stitching: a view / footprint at most | 33.8 ms / 396 MB | 29.5 ms / 807 MB |
+| Making the picture: time / footprint at most | 23 ms / 608 MB | 79 ms / 808 MB |
+| PNG / card thumbnail: footprint at most | 338 / 342 MB | 755 / 753 MB |
+| Footprint before / after it all | 24 / 129 MB | 23 / 57 MB |
+
+- **Making the picture no longer needs its memory twice.** `picture()` copied the content into a picture of
+  its own while the stitcher still held it: at 1 GB that would have been 1.3 GB at once. Captures now take
+  the picture with `takePicture()`, which moves the content's lines into it a 256-line chunk at a time and
+  unmaps each chunk as it empties; nothing is taken in after it.
+- **The picture has to be in one piece.** A picture read straight from the stitcher's chunks through a direct
+  data provider cost no copy to make, but ImageIO's PNG encoder then copied all of it (1,344 MB at the peak)
+  into memory the allocator kept dirty after: 745 MB footprint once it was all let go. From one mapped buffer
+  it streams (12 MB more), and unmapping it gives everything back.
+- **The card's thumbnail of a long picture was its whole length shrunk to 560 px, then its top cropped**: 37
+  by 29 pixels for a 50,000 px picture, blown up to fill the card. Card thumbnails are now made from the part
+  the card shows (`HistoryStore.cardThumbnail`), from the picture itself when it is in memory, and from a file
+  decoded only as large as that part needs. 7 ms for the 47,530 px picture.
+- The "after" figures count the check's own buffers out (they are mapped and unmapped too); the earlier
+  129 MB was mostly them, kept by the allocator.
+
+### Direct Auto-scroll and stitching repairs (2026-10-12)
+
+Auto-scroll starts after the first captured frame. Its panel has a native 0.25×–2× speed slider,
+initially 1×, and explicit Pause/Resume. Speed remains set while paused. There is no pointer marker or
+arming step. At 1× the rate is 35% of the viewport per second, bounded to 60–320 pt/s; the final rate
+never exceeds 80% of the viewport per second. Fractional motion accumulates, and delayed timer ticks
+never send a catch-up jump. A page boundary keeps the capture open. Two unmatched views or the length
+limit pause the driver for recovery or Done.
+
+The transport resolves the original window, sends phased pixel-wheel events to its process, and never
+posts pointer movement or warps the cursor. This machine's Droppy smoother had rewritten unphased
+scrolls and removed their source markers. Hardware cancellation now observes wheel input before that
+transformation. Window-directed delivery uses a small dynamically resolved SkyLight shim; unavailable
+symbols or an unrecognized event layout cause Auto-scroll to remain off with a manual-scroll hint.
+Private field numbers are not interchangeable with CGEventField values, so the window field is found
+from two unposted AppKit event templates. No Droppy settings were changed.
+
+The production transport was exercised against a separate synthetic NSScrollView process with the
+pointer outside its window. Eighteen steps delivered exactly 18 wheel events and moved the view
+0 → 192 → 96 pt. The pointer was not snapped to the target. A 6.33 pt displacement coincided with six
+hardware mouse movements. This is an input-delivery check, separate from image stitching. The probe is
+reproducible with `Scripts/scroll-input-check.sh` after `Scripts/run.sh`; it closes itself after the check.
+Hardware wheel input during the probe makes the check inconclusive.
+
+Stitching repairs:
+
+- A moving image inside stationary text must not move the inferred position of the entire page.
+- Partly repainted browser tiles must agree before becoming the next scroll reference.
+- Per-segment quality favors confirmed observations farther inside the viewport. It prevents repeated
+  passes over sticky avatars from overwriting their correct position with a less clear edge view.
+- The first view's scrolling content can now be repaired by clearer later observations. Fixed columns
+  retain a separate coherent first snapshot. This removes transient shadows captured at the initial edge.
+- Thin, flat borders surrounded by the column background count as fixed features; large white images
+  on dark pages do not. This removes repeated sidebar rules without cutting black notches into images.
+
+The new shadow and image-loading regressions reproduced 45 and 24 incorrect rows before the repair,
+and zero afterward. The fixed-sidebar-border case also passes. The 120 randomized forum walks now
+require zero differing content rows; all pass, including six formerly failing seeds.
+
+Final verification of this implementation:
+
+| Check | Result |
+| --- | --- |
+| Optimized targeted tests, including the speed check | 39 tests in 3 suites passed |
+| 120 randomized forum walks with reversals | 0 walks with differing rows |
+| 3500×2400 synthetic views, optimized | 90 views, 10.7 ms per view, no gaps |
+| Real ScreenCaptureKit forum demo, forward and backward | 3500×6488 output; page/sidebar and timeline both had 0 rows beyond the 24-level tolerance (largest differences 8 and 4); no lost frames |
+| Same real-stream demo, Debug build | 80 views, 42.6 ms per view; finish 49 ms |
+| Final light and dark panel renders | Speed slider and Pause/Resume fit without clipping |
+| Final cross-process input probe | Exactly 18 delivered steps, 0 → 192 → 96 pt; 0 hardware wheel events; 68 real mouse movements during the check |
+| Debug app | Built and relaunched successfully |
+
+Validation commands: `OMS_STITCH_SWEEP=1 OMS_STITCH_SPEED=1 Scripts/test.sh -c release -Xswiftc -DDEBUG
+--filter 'ScrollStitcher|AutoScrollerTests'` and
+`ohmyshot-dev://debug/scroll-demo?forum=1&back=1&timeline=35&w=1750&h=1200`.
+The DEBUG define exposes existing UI test helpers while retaining optimization. The real stream demo
+uses synthetic content. Light and dark panel renders verify the direct controls. The user's existing X
+capture was inspected to shape the regressions; a fresh capture of the live X page was not verified.
+
+### Complex pages and Auto-scroll (2026-10-12, later)
+
+A hunt on real pages found 31 problems, most of them Auto-scroll pasting over one view or never stopping.
+It replayed frames of real and made-up pages (headless Chrome) through the stitcher, and ran the app itself
+driving a throwaway Chrome window, the panel behind the desktop picture, nothing kept but under
+debug-snapshots. Debug build unless said.
+
+| Check | Before | After |
+| --- | --- | --- |
+| 206 replayed frame sets: real pages, made-up pages, live recordings | — | 52 closer to the page's true length, 2 further (near-duplicate cards; ten carousels switching at once), the rest the same |
+| X-like timeline replayed at 3534×2394 px | 8290 rows of 11612 | 11612 |
+| bbc.com, live recording replayed | 11 views lost | 0 |
+| A page that cannot scroll, live | Auto-scroll never stopped; 329 views of 1 px, the picture growing blank | stopped in 1.5 s; one view |
+| A code block under Auto-scroll's gesture, live | 113 px too long: text above the block twice, blank below the end | 13927 px, the page's own length |
+| bbc.com/news, live | — | 600 scrolls, 0 lost, stopped by itself at the end in 20.5 s |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+| A view taken in, live, 2200×1626 px | — | 13–15 ms |
+
+- **Chrome pulls the page past its end while it is pushed**, about a pixel a frame, fixed bars staying and
+  the rest moving with the pull, then springs back once the push ends. Each pulled view lines up, its
+  arrivals blank, so the picture grew blank for as long as Auto-scroll pushed. Two such views in a row while
+  driven now start an overscroll: what comes past the end is kept provisionally and goes when the content
+  springs back or Auto-scroll stops. Once trimmed it is springing back, never pulled again: a view lagging
+  behind the pull (the reference held while a sticky header moved) once brought 135 px of the background
+  back.
+- **Auto-scroll watches what it gets.** Every quarter second: once it has pushed four tenths of the area
+  since a moment at least 750 ms back and the capture got less than 15% of that, it stops (the content was
+  pulled: the end) or moves its gesture, at most twice, then stops and says so.
+- **A wheel gesture belongs to whatever was under it first.** On a code block, the block scrolled alone and
+  each of its steps was taken for the page's, so once the gesture moved off it the text above it came twice.
+  Such a part (under three quarters of the space between the bars, around the gesture, beside content that
+  stays put) is now left out and the gesture moves beside it; the block's last steps after the move, and
+  its seeming to move further than the page against the view before it scrolled, are left out too; the
+  picture starts from the block as it was left. The bars do not count as content around it: on bbc.com the
+  sticky header beside a blank advertisement made the page look like a scroller inside itself.
+- **What changes in place (video, fading images, ads loading) no longer votes against an offset**, and
+  offsets are chosen from several candidates by the rows that testify, not by raw votes; a view found again
+  is placed near where it is expected, by what scrolls, never by sidebars.
+- **Long pictures and memory:** a scrolling capture is never framed by the automatic background (3534 ×
+  47000 px framed took about 1 GB more, 5–16 GB with an aspect preset); the clipboard gets the PNG, TIFF
+  only when an app asks, and none past 24 million pixels.
+
+Left as they are: an image whose rows are all alike (a sideways gradient) gets dark dashes where segments
+were taken for something fixed on screen, a little more than before (5999 dark pixels where the earlier
+stitcher had 5154 on one image); fixed floating buttons bite into the last rows; pages that re-render as
+they scroll (apple.com) lose track; a fixed page background, content that changes after it was taken
+(skeletons), and the very end of a page showing something new still behave as before.

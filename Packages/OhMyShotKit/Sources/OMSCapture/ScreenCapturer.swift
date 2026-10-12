@@ -135,6 +135,22 @@ public final class ScreenCapturer {
         }
     }
 
+    /// What scrolling capture streams for `area` (global points) on `display`: the screen as it shows it,
+    /// with none of this app's windows, pins included, which would stay put over what scrolls.
+    public func scrollingSource(for area: CGRect, on display: DisplayInfo) async throws -> ScrollingCapture.Source {
+        let scDisplay = try await content.display(id: display.id)
+        let excluded = try await content.ownApplication().map { [$0] } ?? []
+        let filter = SCContentFilter(display: scDisplay, excludingApplications: excluded, exceptingWindows: [])
+        let rect = area.intersection(display.frame)
+        let scale = display.pixelsPerPoint
+        let width = Int((rect.width * scale).rounded()), height = Int((rect.height * scale).rounded())
+        guard !rect.isNull, width >= 8, height >= 8 else { throw CaptureError.emptyResult }
+        return ScrollingCapture.Source(
+            filter: filter, sourceRect: Self.displayLocalRect(rect, on: display), pixelWidth: width, pixelHeight: height,
+            pixelsPerPoint: scale, frame: rect, displayID: display.id
+        )
+    }
+
     private func capture(
         display: DisplayInfo,
         region: CGRect?,

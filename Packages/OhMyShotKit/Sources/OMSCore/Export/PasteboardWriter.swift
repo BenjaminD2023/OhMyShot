@@ -6,8 +6,13 @@ import UniformTypeIdentifiers
 /// Puts captures on the clipboard.
 ///
 /// PNG goes on eagerly; TIFF, which some older apps read instead, is produced only if an app asks for
-/// it, because a full-display TIFF is tens of megabytes.
+/// it, because a full-display TIFF is tens of megabytes. Until then only the PNG is held, never the picture's
+/// pixels, which for a long scrolling capture are hundreds of megabytes; past `largestTIFF` pixels no TIFF is
+/// offered at all.
 public enum PasteboardWriter {
+    /// The most pixels a picture offered as TIFF may have: about a 6K display's.
+    static let largestTIFF = 24_000_000
+
     /// - Parameters:
     ///   - png: the capture, already encoded.
     ///   - fileURL: also offered as a file when given, for apps that paste files rather than images.
@@ -15,7 +20,9 @@ public enum PasteboardWriter {
     public static func write(png: Data, image: CGImage, fileURL: URL? = nil) {
         let item = NSPasteboardItem()
         item.setData(png, forType: .png)
-        item.setDataProvider(LazyTIFFProvider(image: image), forTypes: [.tiff])
+        if image.width * image.height <= largestTIFF {
+            item.setDataProvider(LazyTIFFProvider(png: png), forTypes: [.tiff])
+        }
         if let fileURL {
             item.setString(fileURL.absoluteString, forType: .fileURL)
         }
@@ -35,14 +42,15 @@ public enum PasteboardWriter {
 }
 
 private final class LazyTIFFProvider: NSObject, NSPasteboardItemDataProvider {
-    private let image: CGImage
+    private let png: Data
 
-    init(image: CGImage) {
-        self.image = image
+    init(png: Data) {
+        self.png = png
     }
 
     func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
-        guard type == .tiff else { return }
+        guard type == .tiff, let source = CGImageSourceCreateWithData(png as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.tiff.identifier as CFString, 1, nil) else { return }
         CGImageDestinationAddImage(destination, image, nil)

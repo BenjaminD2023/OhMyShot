@@ -28,6 +28,9 @@ public final class OverlayController {
         case color(ScreenColor, at: CGPoint, display: DisplayInfo, modifiers: NSEvent.ModifierFlags, keyboard: Bool)
         /// What to record and what to record with it, set on the recording bar; Record was pressed.
         case record(RecordingTarget, display: DisplayInfo, choices: RecordingChoices)
+        /// The area of a scrolling capture, in global points, set on the scrolling bar; Start (or Auto-scroll,
+        /// `autoScrolls`) was pressed.
+        case scroll(CGRect, display: DisplayInfo, autoScrolls: Bool)
         case cancelled
     }
 
@@ -48,6 +51,10 @@ public final class OverlayController {
         /// whole display. The overlay then stays, the choice framed with the recording bar under it, until
         /// Record or Escape.
         case record
+        /// Choose the part of the live screen that scrolls, an area of one display or a window's frame, for a
+        /// scrolling capture. The overlay then stays, the area framed with the scrolling bar under it, until
+        /// Start or Escape.
+        case scroll
     }
 
     /// What in-place annotation is given once its area is chosen: the view to host its interface (the
@@ -94,7 +101,7 @@ public final class OverlayController {
     /// Whether this session shows the screen as it was when it began; in-place annotation, picking a
     /// color, and measuring always do: they read the frozen frame's pixels.
     private var holdsStill: Bool {
-        (freezesScreen && purpose != .record) || purpose == .annotate || purpose == .color || purpose == .measure
+        (freezesScreen && purpose != .record && purpose != .scroll) || purpose == .annotate || purpose == .color || purpose == .measure
     }
 
     private struct Entry {
@@ -113,6 +120,9 @@ public final class OverlayController {
     private var windowLease: ActiveResources.Lease?
     private var windows: [WindowTarget] = []
     private var purpose: Purpose = .screenshot
+    /// This app's windows are no window to scroll: a scrolling capture's stream never sees them, and Auto-scroll
+    /// would scroll what is behind them.
+    private var windowsExcluded: pid_t? { purpose == .scroll ? getpid() : nil }
     /// An area chosen for annotation before its display's frame arrived.
     private var pendingAnnotation: (display: CGDirectDisplayID, area: CGRect)?
     /// The selection being dragged out: one for every display, since a drag may carry it onto another.
@@ -181,7 +191,7 @@ public final class OverlayController {
         let pointerDisplay = layout.display(at: pointer) ?? layout.primary
 
         // The window list is read only when windows are the target; area capture never pays for it.
-        windows = mode == .window ? WindowCatalog.snapshot(layout: layout) : []
+        windows = mode == .window ? WindowCatalog.snapshot(layout: layout, excludingPID: windowsExcluded) : []
         let viewMode: OverlayView.Mode = mode == .window ? .window : .area
         let holdsStill = holdsStill
         for (id, entry) in entries {
@@ -264,6 +274,7 @@ public final class OverlayController {
             case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.")
             case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.")
             case .record: String(localized: "Drag over an area to record it, click to record the whole screen, or press Space to choose a window.")
+            case .scroll: String(localized: "Drag over the part that scrolls, or press Space to choose a window.")
             }
             NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
                 .announcement: announcement,
@@ -308,6 +319,12 @@ public final class OverlayController {
         return entries.values.lazy.compactMap { entry in entry.view.subviews.lazy.compactMap { $0 as? RecordingSetupView }.first }.first
     }
 
+    /// The scrolling bar's view while an area is framed, for scripted checks.
+    var scrollingSetup: ScrollingSetupView? {
+        guard isActive else { return nil }
+        return entries.values.lazy.compactMap { entry in entry.view.subviews.lazy.compactMap { $0 as? ScrollingSetupView }.first }.first
+    }
+
     /// Draws a selection and pointer without mouse input, for scripted checks of the rendering.
     public func simulate(selection rect: CGRect, pointer: CGPoint) {
         guard isActive, let display = startDisplay(of: rect) else { return }
@@ -341,6 +358,20 @@ public final class OverlayController {
         case "video": setup.debugChoose(.video)
         case "gif": setup.debugChoose(.gif)
         case "studio": setup.debugChoose(.studio)
+        default: break
+        }
+        return summary
+    }
+
+    /// Drives the scrolling bar while an area is framed, for scripted checks: "start", "auto", or "cancel"; nil
+    /// only reads. Returns the area, or nil when none is framed.
+    public func debugScrollingSetup(_ action: String?) -> String? {
+        guard let setup = scrollingSetup else { return nil }
+        let summary = "area=\(NSStringFromRect(setup.area))"
+        switch action {
+        case "start": setup.debugStart(autoScrolls: false)
+        case "auto": setup.debugStart(autoScrolls: true)
+        case "cancel": cancel()
         default: break
         }
         return summary
@@ -478,6 +509,32 @@ public final class OverlayController {
         setup.begin()
     }
 
+    /// Frames the area of a scrolling capture on its display, with the scrolling bar under it, as a recording's
+    /// choice is framed.
+    private func startScrollingSetup(on display: DisplayInfo, area: CGRect) {
+        guard let entry = entries[display.id] else { return }
+        let area = area.intersection(display.frame)
+        guard !area.isNull, area.width >= AreaFrame.smallest, area.height >= AreaFrame.smallest else { return }
+        if hidesCursor { NSCursor.unhide() }
+        hidesCursor = false
+        for (id, other) in entries where id != display.id {
+            other.panel.orderOut(nil)
+            other.view.clear()
+        }
+        entry.view.enterAnnotation()
+        entry.panel.level = OverlayPanel.annotationLevel
+        entry.panel.makeKey()
+        let setup = ScrollingSetupView(display: display, area: area)
+        setup.frame = entry.view.bounds
+        setup.onStart = { [weak self] area, autoScrolls in
+            self?.end(.scroll(area, display: display, autoScrolls: autoScrolls))
+        }
+        setup.onCancel = { [weak self] in self?.cancel() }
+        entry.view.addSubview(setup)
+        entry.panel.makeFirstResponder(setup)
+        setup.begin()
+    }
+
     /// Hands the chosen area to in-place annotation, once its display's frozen frame is there.
     private func startAnnotating(on displayID: CGDirectDisplayID, area: CGRect) {
         guard let entry = entries[displayID] else { return }
@@ -539,7 +596,7 @@ extension OverlayController {
     /// A fresh selection for a drag that begins on `display`: free to cross onto every display, at the
     /// sharpest one's pixels, except in place, where it stays on its own display.
     private func startSelection(on display: DisplayInfo) {
-        let displays = purpose == .annotate || purpose == .record ? [display] : topology.layout.displays
+        let displays = purpose == .annotate || purpose == .record || purpose == .scroll ? [display] : topology.layout.displays
         selection = SelectionModel(
             bounds: displays.reduce(CGRect.null) { $0.union($1.frame) },
             pixelsPerPoint: displays.map(\.pixelsPerPoint).max() ?? display.pixelsPerPoint
@@ -594,6 +651,10 @@ extension OverlayController {
         }
         if purpose == .record {
             startRecordingSetup(on: display, target: rect == display.frame ? .display : .area(rect))
+            return
+        }
+        if purpose == .scroll {
+            startScrollingSetup(on: display, area: rect)
             return
         }
         let involved = topology.layout.displays.filter { !$0.frame.intersection(rect).isEmpty }
@@ -764,6 +825,11 @@ extension OverlayController: OverlayViewDelegate {
             startRecordingSetup(on: view.display, target: .window(target))
             return
         }
+        if purpose == .scroll {
+            // A window's frame where it is on screen: its title bar and toolbar stay put, as a header does.
+            startScrollingSetup(on: view.display, area: target.frame)
+            return
+        }
         if purpose == .annotate {
             // A window is annotated where it is on the frozen screen.
             let area = target.frame.intersection(view.display.frame)
@@ -780,7 +846,7 @@ extension OverlayController: OverlayViewDelegate {
         dragPoint = nil
         spaceHeld = false
         if mode == .window, windows.isEmpty {
-            windows = WindowCatalog.snapshot(layout: topology.layout)
+            windows = WindowCatalog.snapshot(layout: topology.layout, excludingPID: windowsExcluded)
         }
         for entry in entries.values {
             entry.view.switchMode(to: mode, windows: windows)

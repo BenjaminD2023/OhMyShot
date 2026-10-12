@@ -62,7 +62,7 @@ struct OverlayKeyTests {
     private static let returns: [UInt16] = [36, 76]
 
     @Test func whileCapturingTheArrowsAndReturnArePassedOn() throws {
-        for purpose in [OverlayController.Purpose.screenshot, .text, .annotate, .record] {
+        for purpose in [OverlayController.Purpose.screenshot, .text, .annotate, .record, .scroll] {
             for key in Self.arrows + Self.returns {
                 let result = try press(key, in: purpose)
                 #expect(result.heard.isEmpty && result.passedOn, "key \(key) in \(purpose): \(result.heard)")

@@ -132,7 +132,7 @@ final class CardStackView: NSView {
 /// One capture: the picture with rounded corners and a soft shadow; on hover, buttons to copy or save
 /// it, close it, or reach the rest of its actions.
 final class CaptureCardView: NSView, NSDraggingSource {
-    static let width: CGFloat = 220
+    static let width = CardPicture.width
 
     var onCopy: (() -> Void)?
     var onSave: (() -> Void)?
@@ -148,7 +148,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
     var item: QuickAccessItem {
         didSet {
             if item.thumbnail !== oldValue.thumbnail {
-                picture.contents = item.thumbnail
+                picture.contents = Self.shownPart(of: item.thumbnail)
             }
             updateDuration()
             updateAccessibility()
@@ -182,7 +182,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
         // The view is flipped, so a positive offset falls downward.
         layer.shadowOffset = CGSize(width: 0, height: Theme.Shadow.drop)
 
-        picture.contents = item.thumbnail
+        picture.contents = Self.shownPart(of: item.thumbnail)
         picture.contentsGravity = .resizeAspect
         picture.cornerRadius = Theme.Radius.card
         picture.cornerCurve = .continuous
@@ -247,7 +247,13 @@ final class CaptureCardView: NSView, NSDraggingSource {
     /// The picture keeps its proportions within sensible bounds; extreme shapes are letterboxed.
     static func preferredHeight(for item: QuickAccessItem) -> CGFloat {
         let aspect = CGFloat(item.pixelHeight) / CGFloat(max(item.pixelWidth, 1))
-        return min(max(width * aspect, 100), 172)
+        return min(max(width * aspect, 100), CardPicture.tallest)
+    }
+
+    /// The part of a capture the card shows (`CardPicture`). Thumbnails made for cards are that part already.
+    static func shownPart(of image: CGImage?) -> CGImage? {
+        guard let image else { return nil }
+        return CardPicture.shownPart(of: image)
     }
 
     private var hoverControls: [NSView] { [actions, closeButton, moreButton] }

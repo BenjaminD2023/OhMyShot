@@ -533,7 +533,7 @@ extension CaptureShortcut {
     /// Which group of the Shortcuts pane the shortcut is listed in.
     fileprivate var group: Int {
         switch self {
-        case .captureArea, .annotateArea, .pinArea, .captureFullscreen, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .recordScreen, .saveReplay: 0
+        case .captureArea, .annotateArea, .pinArea, .captureFullscreen, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .scrollingCapture, .recordScreen, .saveReplay: 0
         case .captureText, .captureTextJoined, .translateArea: 1
         case .pickColor, .measure: 2
         case .openHistory, .copyLatestCapture: 3

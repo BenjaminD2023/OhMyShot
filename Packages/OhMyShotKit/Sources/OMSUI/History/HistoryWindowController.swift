@@ -169,7 +169,7 @@ final class HistoryModel {
     func refreshThumbnails(for ids: Set<UUID>) {
         for item in items where ids.contains(item.id) {
             Task {
-                if let image = await HistoryStore.thumbnail(of: store.fileURL(for: item), maxPixels: 520) {
+                if let image = await HistoryStore.cardThumbnail(of: store.fileURL(for: item), maxPixels: 520) {
                     thumbnails[item.id] = image
                 }
             }
@@ -178,7 +178,7 @@ final class HistoryModel {
 
     func loadThumbnail(for item: HistoryItem) async {
         guard thumbnails[item.id] == nil else { return }
-        if let image = await HistoryStore.thumbnail(of: store.fileURL(for: item), maxPixels: 520) {
+        if let image = await HistoryStore.cardThumbnail(of: store.fileURL(for: item), maxPixels: 520) {
             thumbnails[item.id] = image
         }
     }

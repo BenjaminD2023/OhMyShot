@@ -14,6 +14,9 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case capturePreviousArea
     case allInOne
     case selfTimer
+    /// Choose the part that scrolls and capture all of it as one long picture; pressed again while capturing,
+    /// finishes.
+    case scrollingCapture
     case captureText
     /// Capture Text with the lines of each paragraph joined.
     case captureTextJoined
@@ -52,6 +55,7 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .capturePreviousArea: String(localized: "Capture Previous Area", bundle: .module)
         case .allInOne: String(localized: "All-In-One", bundle: .module)
         case .selfTimer: String(localized: "Self-Timer", bundle: .module)
+        case .scrollingCapture: String(localized: "Scrolling Capture", bundle: .module)
         case .captureText: String(localized: "Capture Text", bundle: .module)
         case .captureTextJoined: String(localized: "Capture Text, Joining Lines", bundle: .module)
         case .translateArea: String(localized: "Translate Area", bundle: .module)
@@ -138,6 +142,7 @@ public final class HotkeyCenter {
         case .recordScreen: profile == .development ? KeyboardShortcuts.Shortcut(.zero, modifiers: modifiers) : nil
         // The digits are taken; the release build leaves it for the user to choose.
         case .saveReplay: profile == .development ? KeyboardShortcuts.Shortcut(.minus, modifiers: modifiers) : nil
+        case .scrollingCapture: profile == .development ? KeyboardShortcuts.Shortcut(.equal, modifiers: modifiers) : nil
         case .captureWindow, .capturePreviousArea, .selfTimer, .captureTextJoined, .openHistory, .copyLatestCapture: nil
         }
     }

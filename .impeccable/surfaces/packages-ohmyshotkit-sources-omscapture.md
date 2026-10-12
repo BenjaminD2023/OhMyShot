@@ -75,3 +75,29 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   color on hover, plus a dragged box that snaps to what it holds. It reads in points by default, and Tab
   switches to pixels, remembered. C over the magnifier copies the color as in Snipaste, also while
   capturing. In the shipped code Return also copies (and closes Measure), and U also switches units.
+
+## Scrolling capture (2026-10-11)
+
+The user's decisions, all the recommended options: CleanShot's form, with auto-scroll in the first cut, a
+live preview of the stitched picture beside the area, and both directions.
+
+- Flow: the Scrolling Capture shortcut (no default in the release build), the menu bar, or
+  `scrolling-capture` opens the overlay on the live screen (never frozen: what scrolls has to be seen).
+  Drag an area, or press Space and click a window to take its frame. The area is then framed as a
+  recording's is, with corners and edges to adjust it and a bar under it: Start Capture (Return), Auto-scroll,
+  and Cancel (Escape).
+- Capturing: the overlay goes; the user scrolls the app under the area with their own wheel or trackpad,
+  or the app scrolls for them (Auto-scroll asks for Accessibility the first time). The area keeps its
+  outline, click-through, as a recording's does. Beside it, a narrow panel shows the stitched picture
+  growing (its newest part in view), its size, and a hint when needed (scroll to begin, scrolled too far at
+  once, as long as it can be), with Done and Cancel. The shortcut again is Done; the menu bar has Done and
+  Cancel. Escape cannot be ours here: the user's app has the keyboard.
+- Direction: the first scroll that is recognized sets it, down or up, left or right; the picture grows at
+  whichever end is new. A header or footer that stays put (a site's bar, a cookie banner) appears once, at
+  the top and bottom, as the first and last views showed them.
+- Done: the picture is kept as a screenshot is (History, the clipboard as Settings say, a card); the card
+  shows the top of a tall picture rather than a thin strip.
+
+- Auto-scroll revision (2026-10-12): the user chose one click to start, with direct speed control in the panel. No pointer marker or arming step. A native 0.25×–2× slider begins at 1×; Pause/Resume preserves the speed and capture. Short Scrolling/Paused status replaces pointer instructions. The original target window receives scrolling while the pointer stays free. Done remains explicit.
+
+- Bug-fix round (2026-10-12, later): the user asked for complex pages and Auto-scroll to be fixed. Auto-scroll now stops by itself when nothing more comes into view and says so ("Auto-scroll stopped: nothing more came into view. Click Done, or scroll on by hand."), the capture staying open; it moves off a scroller inside the page that took its gesture; the Auto chip shows the way it will scroll (`arrowtriangle.*.fill`, the tooltip naming it). A scrolling capture is never framed by the automatic background.

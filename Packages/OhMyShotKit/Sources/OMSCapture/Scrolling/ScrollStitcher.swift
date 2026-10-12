@@ -1,0 +1,2178 @@
+import Accelerate
+import CoreGraphics
+import Foundation
+import ImageIO
+import OMSCore
+import zlib
+
+/// Puts the views of a scrolled area together into one long picture: scrolled down or up, right or left.
+///
+/// Each new view is compared with the last one taken in. Its lines (rows, or columns when it scrolls
+/// sideways) are hashed in a few bands across the line, and every line that is not one plain color looks
+/// itself up among the last view's: the offset most of them agree on is how far the content moved. The offset
+/// holds when most of the lines it lines up agree in most bands, so something animating inside the view (a
+/// caret, a spinner) costs it only those lines. The lines that agree are the part that scrolls; what stays
+/// put before and after it is a header or a footer (a site's bar, a cookie banner), kept once: the header
+/// of the view that reached furthest toward the content's start, the footer of the one that reached furthest
+/// toward its end, each meeting the content where that view's part that scrolls did.
+///
+/// The ends of each line are left out of the hashes: overlay scroll bars come and go there. Each line keeps
+/// the ends it was seen with most often, so a scroll bar's knob, which covers a line in only a view or two as
+/// the line passes it, is left out of the picture. A view taken while nothing scrolls shows no overlay knob:
+/// the first view's ends count for several, and the latest still view's (the knob fading once the scrolling
+/// stops) for more than any seen before.
+///
+/// The picture is kept by where its lines are in the content, in chunks of lines, and each line in segments
+/// of 8 pixels. A segment holds what the views back most: a view backs what it shows where it moved there with
+/// the content, by about as far as the content moved, so the page, which moves with itself all the way across
+/// the view, outweighs what is over it for a while as it passes (a post's avatar stuck while the post
+/// scrolls, a chat button in a corner, a banner that pops up). On revisits, a clearer observation farther
+/// from the viewport's edges takes precedence over repeated occluded views near those edges.
+/// What stays where it is on screen while the
+/// content moves (a sidebar, a timeline) backs nothing: a line coming into view takes the ground there, the
+/// color the first view showed in that column, and the first view's lines keep it as that view showed it.
+///
+/// Not thread-safe: one queue adds views and reads the picture.
+nonisolated public final class ScrollStitcher {
+    public enum Axis: Sendable, Equatable {
+        case vertical
+        case horizontal
+    }
+
+    /// What adding a view did.
+    public enum Step: Sendable, Equatable {
+        /// The first view: the picture starts as it.
+        case started
+        /// Nothing scrolled: the view is the same, or what changed in it did not move.
+        case unchanged
+        /// The content scrolled `offset` pixels along the axis: positive when what follows came into view
+        /// (scrolled down or right), negative when what goes before did.
+        case scrolled(offset: Int)
+        /// The view changed but lines up with nothing: scrolled too far at once, or the content changed.
+        case lost
+        /// The picture is as long as it may be; nothing more is taken in.
+        case full
+    }
+
+    /// The views' size in pixels.
+    public let width: Int
+    public let height: Int
+    /// The direction the content scrolls in, known from the first scroll.
+    public private(set) var axis: Axis?
+    /// The picture is as long as it may be: what scrolls into view now is left out.
+    public private(set) var isFull = false
+    /// The direction the content is being made to scroll in (Auto-scroll), before the first scroll says: the other
+    /// one is never tried, so a carousel's slide cannot turn a page on its side.
+    public var preferredAxis: Axis?
+    /// The app is being made to scroll (Auto-scroll), on and on: only then is content creeping past its end the
+    /// app pushing it on in elastic overscroll; by hand it is as likely slow scrolling through blank rows.
+    public var isDriven = false
+    /// Where the gesture making the app scroll lands, in fractions of the view as `movingPart` gives them: a part
+    /// around it that scrolls alone, beside content that stays put, is a scroller inside the page (a code block, a
+    /// map) that took the gesture, and is not taken in. Nil takes in whatever scrolls.
+    public var drivenAt: CGPoint? {
+        didSet { if drivenAt != oldValue { viewsSinceMoved = 0 } }
+    }
+    /// The part of the view that scrolled alone around `drivenAt` in the view just added, which was not taken in.
+    public private(set) var innerPart: CGRect?
+    /// Views added since the gesture last moved to where it lands now.
+    private var viewsSinceMoved = 0
+    /// The scroller inside the page last left out, where it is in the view as the page scrolls on: compared with a
+    /// view from before it last scrolled, it seems to move however far it scrolled, the page around it moving otherwise.
+    private var heldInner: CGRect?
+
+    private let margin: Int
+    private let colorSpace: CGColorSpace
+    /// The most lines the content may hold, scrolling down or up and sideways: as many as the bytes allow at a
+    /// line's size that way, and the picture's length allows with a view's worth of header and footer.
+    private let maxLines: (vertical: Int, horizontal: Int)
+    /// The content's lines and the gaps in them, once `takePicture()` has moved them out, for the log.
+    private var taken: (lines: Int, gaps: Int)?
+    /// Each direction's views, both until the first scroll says which it is.
+    private var vertical: Track?
+    private var horizontal: Track?
+    /// Where the reference view's first line is in the content.
+    private var position = 0
+    private var canvas: Canvas?
+    /// The lines before the part that scrolls, of the view that reached furthest toward the content's start;
+    /// and the lines after it, of the view that reached furthest toward its end. Each meets the content where
+    /// that view's part that scrolls did.
+    private var head = Ends()
+    private var tail = Ends()
+    /// Where the view the head was kept from was in the content.
+    private var headPosition = 0
+    /// While the content may be pulled past its end (or start) in elastic overscroll: that end, and whether it is
+    /// springing back. Pulled, what comes into view past the end is kept for now, as slow scrolling through blank
+    /// rows looks just the same; springing back, it goes, and nothing past the end is taken until the content is back.
+    private var overscroll: (line: Int, towardEnd: Bool, springing: Bool)?
+    /// Views in a row that crept past the content's end while driven, and where that end was before the first.
+    private var creeping: (views: Int, line: Int)?
+    /// How far the bars at the view's ends reach, and in how many views in a row that scrolled they stayed put.
+    private var barsSeen = (head: (views: 0, lines: Int.max), tail: (views: 0, lines: Int.max))
+    private var bars: (head: Int, tail: Int) {
+        (barsSeen.head.views >= 3 ? barsSeen.head.lines : 0, barsSeen.tail.views >= 3 ? barsSeen.tail.lines : 0)
+    }
+    /// The reference view's part that scrolls, in its own lines.
+    private var band: Range<Int>?
+    /// Whether the content last moved toward its start (scrolled up or left).
+    private var movedTowardStart = false
+    /// What the last view that lined up with nothing was found to do, for the log.
+    public private(set) var lostBecause = ""
+
+    /// - Parameters:
+    ///   - width: The views' width in pixels.
+    ///   - height: Their height in pixels.
+    ///   - pixelsPerPoint: The display's scale, which sizes the ends of lines left out of the hashes.
+    ///   - colorSpace: The views' color space.
+    ///   - maxBytes: The most the picture may hold; past it, it stops growing. A gigabyte takes a capture the
+    ///     width of a Retina display's window to its longest, and a 5K display's nearly.
+    ///   - maxLength: The most pixels the picture may be long.
+    public init(
+        width: Int, height: Int, pixelsPerPoint: CGFloat, colorSpace: CGColorSpace,
+        maxBytes: Int = 1 << 30, maxLength: Int = 50_000
+    ) {
+        self.width = max(1, width)
+        self.height = max(1, height)
+        // An overlay scroll bar's knob, its widest while the pointer is over it, with its edge.
+        margin = Int((18 * pixelsPerPoint).rounded())
+        self.colorSpace = colorSpace
+        // The views' ends come on top of the content.
+        maxLines = (
+            max(1, min(maxLength, maxBytes / (self.width * 4)) - self.height),
+            max(1, min(maxLength, maxBytes / (self.height * 4)) - self.width)
+        )
+    }
+
+    /// Takes in a view: BGRA pixels, `width` × `height`, rows `bytesPerRow` apart.
+    public func add(_ pixels: UnsafeRawPointer, bytesPerRow: Int) -> Step {
+        innerPart = nil
+        viewsSinceMoved += 1
+        guard !isFull, taken == nil else { return .full }
+        guard vertical != nil || horizontal != nil else {
+            vertical = Track(Lines.make(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: false, margin: margin))
+            horizontal = Track(Lines.make(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: true, margin: margin))
+            return .started
+        }
+        var verticalReason: String?
+        if axis != .horizontal, preferredAxis != .horizontal, var track = vertical {
+            guard let view = track.take(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: false, margin: margin) else { return .lost }
+            var why = ""
+            let reference = track.reference
+            switch Lines.compare(
+                view, with: reference, movingBands: track.movingBands, content: band, expected: track.lastOffset,
+                avoiding: isDriven && drivenAt != nil ? { [unowned self] in innerScroller($0, view: view, old: reference, turned: false) != nil } : nil,
+                why: &why
+            ) {
+            case .same:
+                count(view, reference: track.reference)
+                track.spare = view
+                vertical = track
+                return .unchanged
+            case .scrolled(let match):
+                if axis != nil, overscrolled(match, view: view, old: track.reference) {
+                    track.spare = view
+                    vertical = track
+                    return .unchanged
+                }
+                if let inner = innerScroller(match, view: view, old: track.reference, turned: false) {
+                    innerPart = inner.part
+                    if inner.underGesture { heldInner = inner.part }
+                    track.spare = view
+                    vertical = track
+                    return .unchanged
+                }
+                axis = .vertical
+                horizontal = nil
+                let step = accept(match, view: view, track: &track)
+                vertical = track
+                return step
+            case .lost:
+                if axis != nil, let step = relocate(view, track: &track) {
+                    vertical = track
+                    return step
+                }
+                track.spare = view
+                vertical = track
+                lostBecause = why
+                guard axis == nil else { return .lost }
+                verticalReason = why
+            }
+        }
+        guard preferredAxis != .vertical, var track = horizontal else { return .lost }
+        guard let view = track.take(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: true, margin: margin) else { return .lost }
+        var why = ""
+        let reference = track.reference
+        switch Lines.compare(
+            view, with: reference, movingBands: track.movingBands, content: band, expected: track.lastOffset,
+            avoiding: isDriven && drivenAt != nil ? { [unowned self] in innerScroller($0, view: view, old: reference, turned: true) != nil } : nil,
+            why: &why
+        ) {
+        case .same:
+            count(view, reference: track.reference)
+            track.spare = view
+            horizontal = track
+            return .unchanged
+        case .scrolled(let match):
+            if axis != nil, overscrolled(match, view: view, old: track.reference) {
+                track.spare = view
+                horizontal = track
+                return .unchanged
+            }
+            if let inner = innerScroller(match, view: view, old: track.reference, turned: true) {
+                innerPart = inner.part
+                if inner.underGesture { heldInner = inner.part }
+                track.spare = view
+                horizontal = track
+                return .unchanged
+            }
+            // Before the axis is known, only the whole view moving sideways says the content scrolls sideways: a
+            // carousel's slide, or a hero's, moves only some of it, and must never turn a page on its side.
+            let bands = track.reference.bands.count
+            if axis == nil, match.movingBands.count < max(1, bands - 1, (bands * 3 + 3) / 4) {
+                track.spare = view
+                horizontal = track
+                lostBecause = "\(verticalReason ?? why); sideways only \(match.movingBands.count) of \(bands) bands moved"
+                return .lost
+            }
+            axis = .horizontal
+            vertical = nil
+            let step = accept(match, view: view, track: &track)
+            horizontal = track
+            return step
+        case .lost:
+            if axis != nil, let step = relocate(view, track: &track) {
+                horizontal = track
+                return step
+            }
+            track.spare = view
+            horizontal = track
+            // Before the axis is known the vertical comparison's reason is the one that tells most.
+            lostBecause = verticalReason.map { "\($0); sideways: \(why)" } ?? why
+            return .lost
+        }
+    }
+
+    /// The picture's size in pixels if it were made now.
+    public var pictureSize: (width: Int, height: Int) {
+        let length = pictureLength
+        return axis == .horizontal ? (length, height) : (width, length)
+    }
+
+    /// The picture's length along the axis but for what an elastic overscroll may have pulled into view past the
+    /// content's end (or start), which goes again when the content springs back: how far the capture got.
+    public var settledLength: Int {
+        guard let edge = overscroll, !edge.springing, let range = canvas?.range else { return pictureLength }
+        return pictureLength - (edge.towardEnd ? max(0, range.upperBound - edge.line) : max(0, edge.line - range.lowerBound))
+    }
+
+    /// The content is pulled past its end (or start), as far as the views tell: elastic overscroll.
+    public var isPulled: Bool { overscroll.map { !$0.springing } ?? false }
+
+    /// The part of the view that moved with the content when it last scrolled, in fractions of the view (x across, y
+    /// along the rows as they are on screen): its lines, and the bands across them that moved.
+    public var movingPart: CGRect? {
+        guard let band, let axis, let track = axis == .horizontal ? horizontal : vertical, !track.movingBands.isEmpty else { return nil }
+        return Self.part(lines: band, bands: track.movingBands, of: track.reference, turned: axis == .horizontal)
+    }
+
+    /// `lines` of `view` across `bands`, in fractions of the view as `movingPart` gives them.
+    private static func part(lines: Range<Int>, bands: [Int], of view: Lines, turned: Bool) -> CGRect {
+        let count = CGFloat(view.count), length = CGFloat(view.length)
+        let across = bands.map { view.bands[$0] }
+        let low = CGFloat(across.map(\.lowerBound).min() ?? 0) / length, high = CGFloat(across.map(\.upperBound).max() ?? 0) / length
+        let start = CGFloat(lines.lowerBound) / count, end = CGFloat(lines.upperBound) / count
+        // Columns turned a quarter clockwise into lines: line 0 is the view's leftmost column, band positions run
+        // from the view's bottom up.
+        return turned
+            ? CGRect(x: start, y: 1 - high, width: end - start, height: high - low)
+            : CGRect(x: low, y: start, width: high - low, height: end - start)
+    }
+
+    /// Where `match` moves the view when that is a scroller inside the page that took the gesture making the app
+    /// scroll: short of three quarters of the view along the axis (a pane nearly filling it is what there is to
+    /// capture), around where the gesture lands, beside content that stayed put. Taken in, the picture would scroll
+    /// that content along with the scroller, and repeat it once the page itself scrolls. Once the gesture has moved
+    /// off it, its last moves may still scroll it alone for a view or two; and as the page scrolls, compared with a
+    /// view from before it last scrolled, it seems to move on its own, where it was, the page around it moving
+    /// otherwise.
+    private func innerScroller(_ match: Lines.Match, view: Lines, old: Lines, turned: Bool) -> (part: CGRect, underGesture: Bool)? {
+        guard isDriven, let point = drivenAt, !match.movingBands.isEmpty else { return nil }
+        let lines = match.band
+        // Between the bars the content has scrolled under (a header that stays put says nothing of a scroller).
+        let top = min(bars.head, lines.lowerBound), bottom = max(view.count - bars.tail, lines.upperBound)
+        guard lines.count * 4 < (bottom - top) * 3 else { return nil }
+        // Blank rows beside it say nothing: a short page's content alone scrolls just the same.
+        let around = Self.staysPut(view, old, lines: top ..< lines.lowerBound) || Self.staysPut(view, old, lines: lines.upperBound ..< bottom)
+        if around {
+            // Along the axis only: what it shows may not reach across it (code is short lines on the left).
+            let part = Self.part(lines: lines, bands: match.movingBands, of: view, turned: turned)
+            if turned ? (part.minX ..< part.maxX).contains(point.x) : (part.minY ..< part.maxY).contains(point.y) { return (part, true) }
+        }
+        // Where it was, by the lines that agree: what came into view past them reaches beyond it, as far as it
+        // scrolled since that view. Alone, the page around it still, past the gesture's last moves, it is what
+        // scrolls after all (a page between bars that stay put, its middle short).
+        guard let held = heldInner, match.end > match.first, !around || viewsSinceMoved <= 6 else { return nil }
+        let part = Self.part(lines: match.first ..< match.end, bands: match.movingBands, of: view, turned: turned)
+        let (along, was) = turned ? (part.minX ..< part.maxX, held.minX ..< held.maxX) : (part.minY ..< part.maxY, held.minY ..< held.maxY)
+        let common = max(0, min(along.upperBound, was.upperBound) - max(along.lowerBound, was.lowerBound))
+        return common * 5 >= (along.upperBound - along.lowerBound) * 4 ? (part, false) : nil
+    }
+
+    /// Lets go of what an elastic overscroll pulled into view past the content's end (or start): the content was
+    /// only pulled there, as Auto-scroll finds when it pushes on and nothing more comes. It springs back from
+    /// there, and nothing past the end is taken in on the way.
+    public func trimOverscroll() {
+        guard let edge = overscroll, !edge.springing else { return }
+        overscroll = (edge.line, edge.towardEnd, true)
+        canvas?.truncate(at: edge.line, towardEnd: edge.towardEnd)
+    }
+
+    /// The picture's length along the axis, in pixels.
+    private var pictureLength: Int {
+        guard let range = canvas?.range else { return axis == .horizontal ? width : height }
+        return head.lines + range.count + tail.lines
+    }
+
+    /// The picture as it stands: the header, the content, and the footer, in a copy of its own.
+    public func picture() -> CGImage? {
+        guard let track = axis == .horizontal ? horizontal : vertical else { return nil }
+        let lines = segments(of: track.reference)
+        let length = lines.reduce(0) { $0 + $1.count }
+        let lineBytes = track.reference.lineBytes
+        guard length > 0, let buffer = PageBuffer(byteCount: length * lineBytes) else { return nil }
+        var at = 0
+        for segment in lines {
+            for index in 0..<segment.count {
+                if let line = segment.line(index) { memcpy(buffer.baseAddress + (at + index) * lineBytes, line, lineBytes) }
+            }
+            at += segment.count
+        }
+        return Self.image(buffer, lines: length, length: track.reference.length, turned: axis == .horizontal, colorSpace: colorSpace)
+    }
+
+    /// The picture once the views are all in, as `picture()` makes it, but the content's lines move into it a chunk
+    /// at a time, each chunk let go as it is emptied: a long picture never needs its memory twice. Nothing more is
+    /// taken in after it (`add` answers `.full`).
+    public func takePicture() -> CGImage? {
+        guard let track = axis == .horizontal ? horizontal : vertical else { return nil }
+        let reference = track.reference
+        let lineBytes = reference.lineBytes
+        let content = canvas?.range
+        let length = head.lines + (content?.count ?? reference.count) + tail.lines
+        defer { canvas = nil }
+        guard length > 0, let buffer = PageBuffer(byteCount: length * lineBytes) else { return nil }
+        var at = 0
+        for index in 0..<head.lines {
+            if let line = head.line(index) { memcpy(buffer.baseAddress + (at + index) * lineBytes, line, lineBytes) }
+        }
+        at += head.lines
+        if let canvas, let content {
+            taken = (content.count, canvas.gaps)
+            canvas.move(content, into: buffer.baseAddress + at * lineBytes)
+            at += content.count
+        } else {
+            taken = (reference.count, 0)
+            memcpy(buffer.baseAddress + at * lineBytes, reference.line(0), reference.count * lineBytes)
+            at += reference.count
+        }
+        for index in 0..<tail.lines {
+            if let line = tail.line(index) { memcpy(buffer.baseAddress + (at + index) * lineBytes, line, lineBytes) }
+        }
+        return Self.image(buffer, lines: length, length: reference.length, turned: axis == .horizontal, colorSpace: colorSpace)
+    }
+
+    /// The picture where the view is, scaled to `across` pixels across the axis and at most `along` pixels along
+    /// it: all of it when it fits, else as much as fits with the last view taken in at the end it moved toward
+    /// (its bottom at the preview's bottom while the content scrolls down, its top at the top while it scrolls
+    /// up), so what just came into view is always in the preview.
+    public func preview(across: Int, along: Int) -> CGImage? {
+        guard let track = axis == .horizontal ? horizontal : vertical, across > 0, along > 0 else { return nil }
+        let reference = track.reference
+        let scale = Double(across) / Double(reference.length)
+        let lines = segments(of: reference)
+        let length = lines.reduce(0) { $0 + $1.count }
+        let shown = min(length, Int(Double(along) / scale))
+        let height = max(1, Int((Double(shown) * scale).rounded()))
+        // Drawn in line space, a line a row, then turned back for a sideways picture.
+        guard let buffer = PageBuffer(byteCount: across * height * 4), let context = CGContext(
+            data: buffer.baseAddress, width: across, height: height, bitsPerComponent: 8, bytesPerRow: across * 4, space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .medium
+        var at = 0
+        let skip = previewStart(length: length, shown: shown, reference: reference)
+        for segment in lines {
+            defer { at += segment.count }
+            let from = max(skip - at, 0), to = min(segment.count, skip + shown - at)
+            guard from < to else { continue }
+            // Runs of lines that are there, each drawn as one picture of the lines' own memory.
+            var start = from
+            while start < to {
+                guard let first = segment.line(start) else { start += 1; continue }
+                var end = start + 1
+                while end < to, let line = segment.line(end), line == first + (end - start) * reference.lineBytes { end += 1 }
+                if let image = Self.borrowedImage(first, lines: end - start, length: reference.length, colorSpace: colorSpace) {
+                    // Context space is y up: line 0 of what is shown at the top. Edges on whole pixels, so runs
+                    // drawn apart meet without a seam.
+                    let top = (Double(at + start - skip) * scale).rounded()
+                    let bottom = (Double(at + end - skip) * scale).rounded()
+                    let rect = CGRect(x: 0, y: Double(height) - bottom, width: Double(across), height: bottom - top)
+                    context.draw(image, in: rect)
+                }
+                start = end
+            }
+        }
+        context.flush()
+        return Self.image(buffer, lines: height, length: across, turned: axis == .horizontal, colorSpace: colorSpace)
+    }
+
+    /// Where the preview's first line is in the picture: the view's moving end kept in it.
+    private func previewStart(length: Int, shown: Int, reference: Lines) -> Int {
+        guard let range = canvas?.range else { return 0 }
+        let band = self.band ?? 0 ..< reference.count
+        let viewStart = head.lines + position + band.lowerBound - range.lowerBound
+        let viewEnd = head.lines + position + band.upperBound - range.lowerBound
+        let start = movedTowardStart ? viewStart : viewEnd - shown
+        return min(max(start, 0), length - shown)
+    }
+
+    #if DEBUG
+    /// Writes the last view taken in and the last that lined up with nothing, as they were hashed, for checks.
+    public func debugDump(to folder: URL) {
+        guard let track = axis == .horizontal ? horizontal : vertical else { return }
+        for (name, lines) in [("reference", track.reference), ("lost", track.spare)] {
+            guard let lines, let image = Self.image(lines.pixels, width: lines.length, height: lines.count, colorSpace: colorSpace),
+                  let destination = CGImageDestinationCreateWithURL(folder.appending(path: "dump-\(name).png") as CFURL, "public.png" as CFString, 1, nil)
+            else { continue }
+            CGImageDestinationAddImage(destination, image, nil)
+            CGImageDestinationFinalize(destination)
+        }
+    }
+    #endif
+
+    /// The lines after the content at the picture's end: a footer, or what the view that reached furthest
+    /// showed past its part that scrolls.
+    var tailLines: Int { tail.lines }
+
+    /// How the views went, for the log.
+    public var summary: String {
+        let content = canvas?.range?.count ?? taken?.lines ?? 0, gaps = canvas?.gaps ?? taken?.gaps ?? 0
+        return "axis \(axis.map { "\($0)" } ?? "none"), head \(head.lines), content \(content), tail \(tail.lines), gaps \(gaps)\(isFull ? ", full" : "")"
+    }
+
+    // MARK: - Taking views in
+
+    /// A view that lines up with nothing in the last one taken in, found in the picture so far instead: the last
+    /// view may have caught a passing state, or the user scrolled back past it. It becomes the view the next
+    /// one is lined up with; what it shows past the content's end (or before its start) is taken in as just come
+    /// into view, so views found this way one after another still record what scrolls by. Found where it was: it
+    /// only changed in place, and nothing scrolled.
+    private func relocate(_ view: Lines, track: inout Track) -> Step? {
+        guard let canvas, let found = canvas.locate(view, reference: track.reference, near: position + (track.lastOffset ?? 0)) else { return nil }
+        let offset = found.position - position
+        let old = track.reference
+        position = found.position
+        band = found.lines
+        if offset != 0 { movedTowardStart = offset < 0 }
+        track.spare = old
+        track.reference = view
+        track.movingBands = []
+        guard offset != 0 else { return .unchanged }
+        extend(with: view, sameRows: old)
+        return .scrolled(offset: offset)
+    }
+
+    /// Takes in what `view`, placed at `position`, shows past the content's end (or before its start), but what the
+    /// bar at that end covers, as just come into view.
+    private func extend(with view: Lines, sameRows old: Lines) {
+        guard let canvas, let range = canvas.range else { return }
+        let count = view.count
+        let footer = min(tail.lines, count / 3)
+        let header = min(head.lines, count / 3)
+        if position + count - footer > range.upperBound {
+            for line in max(range.upperBound - position, header) ..< count - footer {
+                canvas.write(view.line(line), at: position + line, as: .arrived(sameRow: old.line(line), inward: nil))
+            }
+        }
+        if position + header < range.lowerBound {
+            for line in header ..< min(range.lowerBound - position, count - footer) {
+                canvas.write(view.line(line), at: position + line, as: .arrived(sameRow: old.line(line), inward: nil))
+            }
+        }
+    }
+
+    /// Whether `line` of `view` is one color between its ends but for what `old` showed there too (a button fixed
+    /// on screen): nothing on it that scrolls.
+    private static func isBlank(_ view: Lines, line: Int, besides old: Lines) -> Bool {
+        let pixels = UnsafeRawPointer(view.line(line)).assumingMemoryBound(to: UInt32.self)
+        let same = UnsafeRawPointer(old.line(line)).assumingMemoryBound(to: UInt32.self)
+        let range = view.inset ..< view.length - view.inset
+        guard let color = range.first.map({ pixels[$0] }) else { return true }
+        return range.allSatisfy { pixels[$0] == color || pixels[$0] == same[$0] }
+    }
+
+    /// Whether `lines` of `view` say something and stayed where `old` showed them: a bar the content scrolls under.
+    private static func staysPut(_ view: Lines, _ old: Lines, lines: Range<Int>) -> Bool {
+        var telling = 0
+        var kept = 0
+        for band in 0..<view.bands.count {
+            for index in lines where !view.plain[band * view.count + index] {
+                telling += 1
+                if view.hashes[band * view.count + index] == old.hashes[band * view.count + index] { kept += 1 }
+            }
+        }
+        return telling >= 8 && kept * 5 >= telling * 4
+    }
+
+    /// Whether the bars at the view's ends, which stayed put while the content scrolled, moved with it this time:
+    /// the whole view pulled past the content's end (or start) and springing back, elastic overscroll, which shows
+    /// nothing new and must not stretch the picture.
+    private func overscrolled(_ match: Lines.Match, view: Lines, old: Lines) -> Bool {
+        let count = view.count
+        let offset = match.offset
+        // Pulled past the end the content creeps a pixel or so at a time; a header hiding as the page scrolls down
+        // moves with it as far as it scrolls.
+        guard abs(offset) <= 3 || overscroll != nil else { return false }
+        let ends = [0 ..< min(bars.head, count / 4), max(0, count - min(bars.tail, count / 4)) ..< count]
+        for rows in ends where rows.count >= 8 {
+            var moved = 0
+            var stayed = 0
+            for band in 0..<view.bands.count {
+                for index in rows where !view.plain[band * count + index] {
+                    let target = index + offset
+                    guard target >= 0, target < count else { continue }
+                    let hash = view.hashes[band * count + index]
+                    let carried = hash == old.hashes[band * count + target]
+                    let kept = hash == old.hashes[band * count + index]
+                    // Pulled past the end, everything moves together: what stayed, or changed otherwise (a button
+                    // fixed beside content that scrolled), says this is no bar pulled along.
+                    if carried, !kept { moved += 1 } else if !carried { stayed += 1 }
+                }
+            }
+            if moved >= 8, moved > stayed * 4 { return true }
+        }
+        return false
+    }
+
+    /// A view where nothing scrolled still counts for the ends of the lines it shows, where they are: those whose
+    /// ends changed since `reference`, the last view that scrolled (an overlay knob fading once the scrolling stops).
+    private func count(_ view: Lines, reference: Lines) {
+        guard let canvas, let band else { return }
+        for line in band where !canvas.endsAlike(view.line(line), reference.line(line)) {
+            canvas.count(view.line(line), at: position + line)
+        }
+    }
+
+    /// Takes in a view that scrolled: the content it confirms and the lines it brought into view. When those
+    /// would make the picture longer than its limit, nothing is taken and the picture stays as it was.
+    private func accept(_ match: Lines.Match, view: Lines, track: inout Track) -> Step {
+        let old = track.reference
+        let arrived = match.arrived
+        let band = match.band
+        let next = position + match.offset
+        if let range = canvas?.range {
+            let grown = min(range.lowerBound, next + band.lowerBound) ..< max(range.upperBound, next + band.upperBound)
+            guard grown.count <= (axis == .horizontal ? maxLines.horizontal : maxLines.vertical) else {
+                isFull = true
+                track.spare = view
+                return .full
+            }
+        }
+        if canvas == nil {
+            // The first scroll: the first view's part that scrolls starts the content, between its ends. What
+            // stays put stays where it is, so that part is where this view's is.
+            let canvas = Canvas(lineBytes: old.lineBytes, endBytes: old.inset * 4, bands: old.bands)
+            self.canvas = canvas
+            canvas.takeGround(from: old, lines: band)
+            // A scroller inside the page left out since: this view shows it as it was left, not that one.
+            let held = heldInner.map { held in
+                let along = axis == .horizontal || preferredAxis == .horizontal ? held.minX ..< held.maxX : held.minY ..< held.maxY
+                return Int((along.lowerBound * CGFloat(old.count)).rounded(.down)) ..< Int((along.upperBound * CGFloat(old.count)).rounded(.up))
+            }
+            for line in band where !(held?.contains(line) == true && band.contains(line - match.offset)) {
+                canvas.write(old.line(line), at: line, as: .first, still: true,
+                    quality: UInt8(clamping: min(line - band.lowerBound, band.upperBound - 1 - line) + 1))
+            }
+            head.keep(old, lines: 0 ..< band.lowerBound)
+            headPosition = 0
+            tail.keep(old, lines: band.upperBound ..< old.count)
+        }
+        guard let canvas, let span = canvas.range else { return .lost }
+        // Elastic overscroll: the content creeps a pixel or so past its end (or start), what comes into view one plain
+        // color, the page's background pulled out; then springs back. None of it is content.
+        let blank = !arrived.isEmpty && arrived.allSatisfy { Self.isBlank(view, line: $0, besides: old) }
+        let pastEnd = match.offset > 0 ? next + band.upperBound > span.upperBound : next + band.lowerBound < span.lowerBound
+        // Pushed on, it creeps view after view: two in a row tell it from a slow step through blank rows.
+        if isDriven, abs(match.offset) <= 3, blank, pastEnd {
+            creeping = (views: (creeping?.views ?? 0) + 1, line: creeping?.line ?? (match.offset > 0 ? span.upperBound : span.lowerBound))
+        } else {
+            creeping = nil
+        }
+        if let edge = overscroll {
+            let backward = edge.towardEnd ? match.offset < 0 : match.offset > 0
+            let back = edge.towardEnd ? next + band.upperBound <= edge.line : next + band.lowerBound >= edge.line
+            if backward, !edge.springing {
+                // Springing back: what only the pull showed goes again.
+                trimOverscroll()
+                if back { overscroll = nil }
+            } else if back || !backward && !blank {
+                // Back at the end; or something come into view past it: it scrolls on for real (slowly, through
+                // blank rows), and what came before it stays. Still pulled on, a view that lags behind the pull
+                // shows only more of the background.
+                overscroll = nil
+            }
+        } else if let creeping, creeping.views >= 2 {
+            overscroll = (creeping.line, match.offset > 0, false)
+        }
+        // Whether line `index` of the content lies past the end the content is springing back to.
+        func pulledOut(_ index: Int) -> Bool {
+            guard let edge = overscroll, edge.springing else { return false }
+            return edge.towardEnd ? index >= edge.line : index < edge.line
+        }
+        guard let before = canvas.range else { return .lost }
+        canvas.noteColumns(new: view, old: old, offset: match.offset, lines: match.first ..< match.end)
+        position = next
+        // The lines both views show back, segment by segment, what moved with the content; what just came into
+        // view is taken in but for what stays where it is on screen. A sidebar that never moves and an avatar
+        // stuck while its post scrolls back nothing, so they never spread down the picture.
+        canvas.beginView(travel: abs(match.offset), lines: position + match.from ..< position + match.to)
+        for line in match.from..<match.to where !pulledOut(position + line) {
+            let confirmed = line >= match.first && line < match.end
+            let atEdge = line - band.lowerBound < margin || band.upperBound - 1 - line < margin
+            canvas.write(
+                view.line(line), at: position + line,
+                as: .agreeing(
+                    previous: old.line(line + match.offset), sameRow: old.line(line), formerRow: view.line(line + match.offset),
+                    confirmed: confirmed, atEdge: atEdge, belowStart: line - band.lowerBound < 3 * margin
+                ), quality: UInt8(clamping: min(line - band.lowerBound, band.upperBound - 1 - line) + 1)
+            )
+        }
+        for line in arrived where !pulledOut(position + line) {
+            let inward = line - match.offset
+            canvas.write(
+                view.line(line), at: position + line,
+                as: .arrived(sameRow: old.line(line), inward: inward >= 0 && inward < view.count ? view.line(inward) : nil)
+            )
+        }
+        // What the view shows between the content's end and where its lines that agree begin (or, scrolling back,
+        // between where they end and the content's start) followed something that did not line up: a video playing,
+        // views found in the picture. It is taken in as just come into view, never left a hole.
+        let bar = min(self.band?.lowerBound ?? 0, view.count / 3)
+        if match.offset > 0, position + match.from > before.upperBound {
+            for line in stride(from: max(before.upperBound - position, bar), to: match.from, by: 1) where !pulledOut(position + line) {
+                canvas.write(view.line(line), at: position + line, as: .arrived(sameRow: old.line(line), inward: nil))
+            }
+        } else if match.offset < 0, position + match.to < before.lowerBound {
+            for line in stride(from: match.to, to: min(before.lowerBound - position, view.count), by: 1) where !pulledOut(position + line) {
+                canvas.write(view.line(line), at: position + line, as: .arrived(sameRow: old.line(line), inward: nil))
+            }
+        }
+        // A view reaching as far as the content does keeps its ends too: when its part that scrolls was cut
+        // short by plain lines, what it shows past that part still follows the content.
+        if overscroll?.springing != true {
+            if position + band.lowerBound <= before.lowerBound { keepHead(view, lines: 0 ..< band.lowerBound) }
+            if position + band.upperBound >= before.upperBound { tail.keep(view, lines: band.upperBound ..< view.count) }
+        }
+        // A bar is what several views in a row showed staying put, as tall each time, while the content scrolled
+        // under it; tiles a frame late stay put too, for a view or two, shrinking as they catch up.
+        func seen(_ lines: Int, _ before: (views: Int, lines: Int)) -> (views: Int, lines: Int) {
+            guard lines > 0 else { return (0, .max) }
+            return abs(lines - before.lines) <= 2 ? (before.views + 1, min(before.lines, lines)) : (1, lines)
+        }
+        barsSeen = (
+            seen(Self.staysPut(view, old, lines: 0 ..< band.lowerBound) ? band.lowerBound : 0, barsSeen.head),
+            seen(Self.staysPut(view, old, lines: band.upperBound ..< view.count) ? view.count - band.upperBound : 0, barsSeen.tail)
+        )
+        self.band = band
+        // The scroller left out moves on with the page; the gesture's last moves may still scroll it a little.
+        if let held = heldInner {
+            let by = CGFloat(match.offset) / CGFloat(view.count)
+            let moved = axis == .horizontal ? held.offsetBy(dx: -by, dy: 0) : held.offsetBy(dx: 0, dy: -by)
+            heldInner = moved.intersects(CGRect(x: 0, y: 0, width: 1, height: 1)) ? moved : nil
+        }
+        movedTowardStart = match.offset < 0
+        track.spare = old
+        track.reference = view
+        track.movingBands = match.movingBands
+        track.lastOffset = match.offset
+        return .scrolled(offset: match.offset)
+    }
+
+    /// Makes `view`'s `lines` before its part that scrolls the head. The old head's lines below them showed content no
+    /// view since showed (a hero still loading when the first scroll came, a bar that turned out shorter): they go
+    /// into the content first, where nothing else was written, so the picture's top keeps them.
+    private func keepHead(_ view: Lines, lines: Range<Int>) {
+        if let canvas, head.lines > lines.upperBound {
+            for index in lines.upperBound ..< head.lines {
+                if let line = head.line(index) { canvas.write(line, at: headPosition + index, as: .recovered) }
+            }
+        }
+        head.keep(view, lines: lines)
+        headPosition = position
+    }
+
+    /// The picture's lines in order: head, content, tail.
+    private func segments(of reference: Lines) -> [Segment] {
+        guard let canvas, let range = canvas.range else {
+            return [Segment(count: reference.count) { UnsafeRawPointer(reference.line($0)) }]
+        }
+        let head = self.head, tail = self.tail
+        return [
+            Segment(count: head.lines) { head.line($0) },
+            Segment(count: range.count) { canvas.line(range.lowerBound + $0) },
+            Segment(count: tail.lines) { tail.line($0) },
+        ]
+    }
+
+    private struct Segment {
+        let count: Int
+        let line: (Int) -> UnsafeRawPointer?
+    }
+
+    /// A picture of `lines` lines of `length` pixels in `buffer`, which it keeps alive: as they are, or, for
+    /// columns that were turned a quarter clockwise into lines, turned back.
+    private static func image(_ buffer: PageBuffer, lines: Int, length: Int, turned: Bool, colorSpace: CGColorSpace) -> CGImage? {
+        guard turned else { return image(buffer, width: length, height: lines, colorSpace: colorSpace) }
+        guard let back = PageBuffer(byteCount: lines * length * 4) else { return nil }
+        var from = vImage_Buffer(data: buffer.baseAddress, height: vImagePixelCount(lines), width: vImagePixelCount(length), rowBytes: length * 4)
+        var to = vImage_Buffer(data: back.baseAddress, height: vImagePixelCount(length), width: vImagePixelCount(lines), rowBytes: lines * 4)
+        var clear: [UInt8] = [0, 0, 0, 0]
+        vImageRotate90_ARGB8888(&from, &to, UInt8(kRotate90DegreesCounterClockwise), &clear, vImage_Flags(kvImageNoFlags))
+        return image(back, width: lines, height: length, colorSpace: colorSpace)
+    }
+
+    /// A picture of the pixels in `buffer`, which it keeps alive.
+    private static func image(_ buffer: PageBuffer, width: Int, height: Int, colorSpace: CGColorSpace) -> CGImage? {
+        let retained = Unmanaged.passRetained(buffer)
+        guard let provider = CGDataProvider(
+            dataInfo: retained.toOpaque(), data: buffer.baseAddress, size: width * height * 4,
+            releaseData: { info, _, _ in
+                if let info { Unmanaged<PageBuffer>.fromOpaque(info).release() }
+            }
+        ) else {
+            retained.release()
+            return nil
+        }
+        return CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4, space: colorSpace,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        )
+    }
+
+    /// A picture of `lines` lines at `base`, which must outlive drawing it.
+    private static func borrowedImage(_ base: UnsafeRawPointer, lines: Int, length: Int, colorSpace: CGColorSpace) -> CGImage? {
+        guard let provider = CGDataProvider(dataInfo: nil, data: base, size: lines * length * 4, releaseData: { _, _, _ in }) else { return nil }
+        return CGImage(
+            width: length, height: lines, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: length * 4, space: colorSpace,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent
+        )
+    }
+}
+
+// MARK: - Views in line space
+
+/// Lines kept from one view: the part before or after what scrolls.
+nonisolated private struct Ends {
+    private var buffer: PageBuffer?
+    private var lineBytes = 0
+    private(set) var lines = 0
+
+    mutating func keep(_ view: Lines, lines range: Range<Int>) {
+        lineBytes = view.lineBytes
+        guard !range.isEmpty, let buffer = PageBuffer(byteCount: range.count * view.lineBytes) else {
+            buffer = nil
+            lines = 0
+            return
+        }
+        memcpy(buffer.baseAddress, view.line(range.lowerBound), range.count * view.lineBytes)
+        self.buffer = buffer
+        lines = range.count
+    }
+
+    func line(_ index: Int) -> UnsafeRawPointer? {
+        buffer.map { UnsafeRawPointer($0.baseAddress + index * lineBytes) }
+    }
+}
+
+/// One direction's last view taken in, and a buffer for the next.
+nonisolated private struct Track {
+    var reference: Lines
+    var spare: Lines?
+    /// Bands known to have moved together in the last accepted view.
+    var movingBands: [Int] = []
+    /// How far the content moved when the last view was accepted.
+    var lastOffset: Int?
+
+    init?(_ reference: Lines?) {
+        guard let reference else { return nil }
+        self.reference = reference
+    }
+
+    /// The next view in this direction, in the spare buffer when there is one; nil when there is no memory
+    /// for it.
+    mutating func take(_ pixels: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int, turned: Bool, margin: Int) -> Lines? {
+        guard let view = spare ?? Lines(count: reference.count, length: reference.length, margin: margin) else { return nil }
+        spare = nil
+        view.fill(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: turned)
+        return view
+    }
+}
+
+/// A view in line space: its lines along the axis (rows, or columns turned a quarter clockwise), each `length`
+/// BGRA pixels, packed; hashed in bands across the line.
+nonisolated final class Lines {
+    struct Match: Equatable {
+        /// How far the content moved: line `i` of the new view is line `i + offset` of the old.
+        var offset: Int
+        /// The new view's lines that agree with the old one's, from the first that says something to the last:
+        /// the part that surely scrolls.
+        var first: Int
+        var end: Int
+        /// The same, reaching on through the plain lines that agree next to it: blank content, most likely,
+        /// though a plain part of a bar would agree as well.
+        var from: Int
+        var to: Int
+        var movingBands: [Int]
+
+        /// The lines that came into view: after those that agree, or before them scrolling back.
+        var arrived: Range<Int> { offset > 0 ? to ..< to + offset : from + offset ..< from }
+        /// The view's part that scrolls: what agrees, and what came into view before or after it.
+        var band: Range<Int> { min(arrived.lowerBound, from) ..< max(arrived.upperBound, to) }
+    }
+
+    enum Comparison: Equatable {
+        case same
+        case scrolled(Match)
+        case lost
+    }
+
+    let count: Int
+    let length: Int
+    let bands: [Range<Int>]
+    /// The pixels at each end of a line left out of the bands.
+    let inset: Int
+    let pixels: PageBuffer
+    /// Each band's hash of each line's part: `hashes[band * count + line]`.
+    let hashes: UnsafeMutablePointer<UInt32>
+    /// Whether that part is one color throughout: it says nothing about where it is.
+    let plain: UnsafeMutablePointer<Bool>
+    /// Each band's lines by hash, made when first asked for.
+    private var indexes: [LineIndex]?
+
+    var lineBytes: Int { length * 4 }
+
+    init?(count: Int, length: Int, margin: Int) {
+        guard count > 0, length > 0, let pixels = PageBuffer(byteCount: count * length * 4) else { return nil }
+        self.count = count
+        self.length = length
+        self.pixels = pixels
+        inset = Self.inset(length: length, margin: margin)
+        bands = Self.bands(length: length, margin: margin)
+        hashes = .allocate(capacity: bands.count * count)
+        plain = .allocate(capacity: bands.count * count)
+    }
+
+    deinit {
+        hashes.deallocate()
+        plain.deallocate()
+    }
+
+    static func make(_ pixels: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int, turned: Bool, margin: Int) -> Lines? {
+        guard let lines = Lines(count: turned ? width : height, length: turned ? height : width, margin: margin) else { return nil }
+        lines.fill(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: turned)
+        return lines
+    }
+
+    /// The pixels left out at each end of a line: `margin`, where there is room.
+    static func inset(length: Int, margin: Int) -> Int {
+        length - 2 * margin >= 32 ? margin : 0
+    }
+
+    /// The parts of a line hashed apart: up to six, leaving out `margin` pixels at each end where there is room.
+    static func bands(length: Int, margin: Int) -> [Range<Int>] {
+        let inset = inset(length: length, margin: margin)
+        let usable = length - 2 * inset
+        let number = max(1, min(6, usable / 160))
+        return (0..<number).map { band in
+            inset + usable * band / number ..< inset + usable * (band + 1) / number
+        }
+    }
+
+    func line(_ index: Int) -> UnsafeMutableRawPointer {
+        pixels.baseAddress + index * lineBytes
+    }
+
+    /// Takes a view of `width` × `height` pixels as these lines: its rows, or its columns turned a quarter
+    /// clockwise (each column then reads from the bottom up).
+    func fill(_ source: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int, turned: Bool) {
+        if turned {
+            var from = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: source), height: vImagePixelCount(height), width: vImagePixelCount(width), rowBytes: bytesPerRow)
+            var to = vImage_Buffer(data: pixels.baseAddress, height: vImagePixelCount(count), width: vImagePixelCount(length), rowBytes: lineBytes)
+            var clear: [UInt8] = [0, 0, 0, 0]
+            vImageRotate90_ARGB8888(&from, &to, UInt8(kRotate90DegreesClockwise), &clear, vImage_Flags(kvImageNoFlags))
+        } else {
+            for row in 0..<count {
+                memcpy(line(row), source + row * bytesPerRow, lineBytes)
+            }
+        }
+        for (band, range) in bands.enumerated() {
+            let bytes = range.count * 4
+            for index in 0..<count {
+                let start = line(index) + range.lowerBound * 4
+                hashes[band * count + index] = UInt32(truncatingIfNeeded: crc32(0, start.assumingMemoryBound(to: UInt8.self), uInt(bytes)))
+                plain[band * count + index] = bytes <= 4 || memcmp(start, start + 4, bytes - 4) == 0
+            }
+        }
+        indexes = nil
+    }
+
+    /// The line of `band` with `hash`, when exactly one line that is not plain has it.
+    func line(band: Int, hash: UInt32) -> Int? {
+        if indexes == nil {
+            indexes = bands.indices.map { band in LineIndex(hashes: hashes + band * count, plain: plain + band * count, count: count) }
+        }
+        return indexes?[band].line(of: hash)
+    }
+
+    /// How a new view lines up with an old one of the same size; `why` says what was found when it lines up
+    /// with nothing, for the log. `expected`: how far the content moved the last time, which an offset nearly as
+    /// good as the best wins with (content repeating down the page lines up a period off as well).
+    static func compare(
+        _ new: Lines, with old: Lines, movingBands: [Int] = [], content: Range<Int>? = nil, expected: Int? = nil,
+        avoiding: ((Match) -> Bool)? = nil, why: inout String
+    ) -> Comparison {
+        let count = new.count
+        let bandCount = new.bands.count
+        if memcmp(new.hashes, old.hashes, bandCount * count * 4) == 0 { return .same }
+        // Each line that is not plain votes for the offset it is found at.
+        let reach = count - minimumOverlap(count)
+        guard reach > 0 else { return still(new, old, offset: 0) ? .same : .lost }
+        var votes = [Int32](repeating: 0, count: 2 * count + 1)
+        // Votes for moving at all: lines that stayed put (bars, a sidebar) say nothing about how far.
+        var moved = 0
+        for band in 0..<bandCount {
+            for index in 0..<count where !new.plain[band * count + index] {
+                guard let found = old.line(band: band, hash: new.hashes[band * count + index]) else { continue }
+                votes[found - index + count] += 1
+                if found != index { moved += 1 }
+            }
+        }
+        var best = 0
+        var most: Int32 = 0
+        for offset in -reach...reach where offset != 0 && votes[offset + count] > most {
+            best = offset
+            most = votes[offset + count]
+        }
+        // The offsets worth verifying: the best voted; a runner-up nearly as well voted (a sidebar that starts to
+        // stick moves otherwise than the page, and can outvote it); and the voted one nearest the last offset.
+        var candidates: [Int] = []
+        if best != 0, most >= 6, Int(most) * 10 >= moved {
+            candidates.append(best)
+            var runnerUp = 0
+            var second: Int32 = 0
+            for offset in -reach...reach where offset != 0 && abs(offset - best) > 8 && votes[offset + count] > second {
+                runnerUp = offset
+                second = votes[offset + count]
+            }
+            if second >= 6, second * 2 >= most { candidates.append(runnerUp) }
+            if let expected, expected != 0, abs(expected) <= reach {
+                let window = max(8, abs(expected) / 2)
+                var near = 0
+                var nearVotes: Int32 = 0
+                for offset in max(-reach, expected - window)...min(reach, expected + window) where offset != 0 && votes[offset + count] > nearVotes {
+                    near = offset
+                    nearVotes = votes[offset + count]
+                }
+                if nearVotes >= 6, nearVotes * 4 >= most, !candidates.contains(where: { abs($0 - near) <= 2 }) { candidates.append(near) }
+            }
+        }
+        var held: [(match: Match, score: Int)] = []
+        var failure: String?
+        var behind: String?
+        for candidate in candidates {
+            switch verify(new, old, offset: candidate, previouslyMoving: movingBands, content: content, expected: expected) {
+            case .holds(let match, let score): held.append((match, score))
+            case .failed(let reason): failure = failure ?? "offset \(candidate) \(reason)"
+            case .behind(let reason): behind = behind ?? "offset \(candidate) \(reason)"
+            case .unmoved: break
+            }
+        }
+        // Nothing voted for (content repeating down the view, a grid of cards alike, leaves no line unique): offsets
+        // near the last one are tried as they are, nearest first.
+        if held.isEmpty, failure == nil, behind == nil, let expected, expected != 0, most < 6 {
+            let window = max(4, abs(expected) / 4)
+            for distance in 0...window {
+                for offset in Set([expected - distance, expected + distance]) where offset != 0 && abs(offset) <= reach {
+                    if case .holds(let match, _) = verify(new, old, offset: offset, previouslyMoving: movingBands, content: content, expected: expected) {
+                        return .scrolled(match)
+                    }
+                }
+            }
+        }
+        // A scroller inside the page that took the gesture making the app scroll moves on its own: the page around
+        // it is chosen before it whenever that lines up too.
+        if let avoiding, let chosen = choose(held.filter { !avoiding($0.match) }, expected: expected) { return .scrolled(chosen) }
+        if let chosen = choose(held, expected: expected) { return .scrolled(chosen) }
+        let isStill = still(new, old, offset: best)
+        let tellingNew = (0..<bandCount * count).count { !new.plain[$0] }
+        let tellingOld = (0..<bandCount * count).count { !old.plain[$0] }
+        why = "best offset \(best) with \(most) votes of \(moved) for moving, \(failure ?? behind ?? "verified false"), still \(isStill); telling line parts \(tellingNew) new, \(tellingOld) old"
+        // Bands moved by an offset that then failed to line up: something scrolled, which is never still.
+        if failure != nil { return .lost }
+        return isStill ? .same : .lost
+    }
+
+    /// The offset that holds best, by how many lines that say something agree in how many bands; or one nearly as
+    /// good nearer the last offset.
+    private static func choose(_ held: [(match: Match, score: Int)], expected: Int?) -> Match? {
+        guard let top = held.max(by: { $0.score < $1.score }) else { return nil }
+        guard let expected else { return top.match }
+        let near = held.filter { $0.score * 5 >= top.score * 4 }.min { abs($0.match.offset - expected) < abs($1.match.offset - expected) }
+        return (near ?? top).match
+    }
+
+    /// The fewest lines two views must share for their offset to be trusted.
+    static func minimumOverlap(_ count: Int) -> Int {
+        min(count, max(16, count / 10))
+    }
+
+    /// Whether what changed did not move: more of the lines that say anything are where they were than where
+    /// `offset` (the best voted) or any other offset would have them, and a good share are where they were. Lines
+    /// alike both ways (a rule through blank rows) say nothing; lines new to the view (something changed in place)
+    /// count only against a view where little stayed where it was, which scrolled too far to tell.
+    private static func still(_ new: Lines, _ old: Lines, offset: Int) -> Bool {
+        let count = new.count
+        var telling = 0
+        var kept = 0
+        var moved = 0
+        for band in 0..<new.bands.count {
+            for index in 0..<count where !new.plain[band * count + index] || !old.plain[band * count + index] {
+                let hash = new.hashes[band * count + index]
+                let isKept = hash == old.hashes[band * count + index]
+                let target = index + offset
+                let carried = offset != 0 && target >= 0 && target < count && hash == old.hashes[band * count + target]
+                if isKept, carried { continue }
+                telling += 1
+                if isKept {
+                    kept += 1
+                } else if carried {
+                    moved += 1
+                } else if !new.plain[band * count + index], let found = old.line(band: band, hash: hash), found != index {
+                    moved += 1
+                }
+            }
+        }
+        return telling == 0 || (kept >= moved && kept * 5 >= telling)
+    }
+
+    /// What verifying an offset found.
+    enum Verification {
+        /// It holds: the lines that agree, and how many of them say something times the square of the bands that
+        /// moved, for weighing offsets against each other.
+        case holds(Match, score: Int)
+        /// No band moved by it: nothing says the content moved that way.
+        case unmoved
+        /// Bands moved by it, but too little of the view lined up: something scrolled.
+        case failed(String)
+        /// Some bands moved by it while bands that moved before, or lines at an end, stayed where they were: a
+        /// view partly repainted, or something moving inside a still one. Whether it is still tells which.
+        case behind(String)
+    }
+
+    /// The lines that agree at `offset`, when enough do: the bands that move with it (a good share of their lines
+    /// that testify agree), then the lines that agree in most of those bands, from the first run of them that says
+    /// something to the last. Lines that changed in place (a playing video, an image loading, a band straddling a
+    /// column that stays put and one that scrolls) say nothing either way; lines that stayed where they were, or
+    /// moved otherwise, speak against it.
+    private static func verify(
+        _ new: Lines, _ old: Lines, offset: Int, previouslyMoving: [Int], content: Range<Int>?, expected: Int? = nil
+    ) -> Verification {
+        let count = new.count
+        let lower = max(0, -offset)
+        let upper = min(count, count - offset)
+        guard upper - lower >= minimumOverlap(count) else { return .unmoved }
+        var moving: [Int] = []
+        var conflicts = 0
+        for band in 0..<new.bands.count {
+            var agree = 0
+            var stationary = 0
+            var otherwise = 0
+            for index in lower..<upper where !new.plain[band * count + index] {
+                let hash = new.hashes[band * count + index]
+                let carried = hash == old.hashes[band * count + index + offset]
+                let kept = hash == old.hashes[band * count + index]
+                // Repeating stationary patterns do not support either motion hypothesis.
+                if carried, !kept {
+                    agree += 1
+                } else if kept, !carried {
+                    if content?.contains(index) ?? true { stationary += 1 }
+                } else if !carried, !kept, let found = old.line(band: band, hash: hash), found != index {
+                    otherwise += 1
+                }
+            }
+            // A small animation surrounded by unmoving text must not become the page's motion.
+            if agree >= 4, agree * 5 >= agree + stationary + otherwise, agree > stationary { moving.append(band) }
+            if previouslyMoving.contains(band), stationary >= max(16, (upper - lower) / 8), stationary > agree * 2 {
+                conflicts += 1
+            }
+        }
+        guard !moving.isEmpty else { return .unmoved }
+        // A jump far from the last offset, after which what would have come into view is mostly just where it was:
+        // nothing moved that far, something in the view changed to look like what was further on (a carousel's next
+        // slide, the same picture elsewhere on the page).
+        let jump = abs(offset) * 4 >= count && expected.map { abs(offset - $0) > max(8, abs($0) / 2) } ?? true
+        var arriving = 0
+        var stayed = 0
+        for index in jump ? (offset > 0 ? upper ..< count : 0 ..< lower) : 0 ..< 0 where content?.contains(index) ?? true {
+            for band in moving where !new.plain[band * count + index] {
+                arriving += 1
+                if new.hashes[band * count + index] == old.hashes[band * count + index] { stayed += 1 }
+            }
+        }
+        if arriving >= 16, stayed * 2 >= arriving { return .unmoved }
+        // Browser tiles can arrive at different offsets. Once several bands have moved together, do not
+        // accept a frame in which half of them still show the previous offset. Wait for the repaint.
+        guard conflicts < 2 || conflicts * 2 < previouslyMoving.count else { return .behind("left bands behind") }
+        let needed = (moving.count * 2 + 2) / 3
+        // 0: disagrees, 1: agrees, 2: agrees and says something, 3: says nothing either way.
+        var agreement = [UInt8](repeating: 0, count: count)
+        // Lines that stayed where they were in most bands that moved: tiles a frame late, from either end of the
+        // part that scrolled before.
+        var behind = [Bool](repeating: false, count: count)
+        for index in lower..<upper {
+            var agreeing = 0
+            var telling = false
+            var carriedTelling = 0
+            var alikeTelling = 0
+            var keptOnly = 0
+            var against = 0
+            var changed = 0
+            for band in moving {
+                let slot = band * count + index
+                let hash = new.hashes[slot]
+                let carried = hash == old.hashes[slot + offset]
+                let isKept = hash == old.hashes[slot]
+                if carried {
+                    agreeing += 1
+                    if !new.plain[slot] {
+                        telling = true
+                        carriedTelling += 1
+                        if isKept { alikeTelling += 1 }
+                    }
+                } else if new.plain[slot], !old.plain[slot + offset] {
+                    // Blank where the content would have moved to: it did not move there.
+                    against += 1
+                }
+                if isKept {
+                    if !carried, !new.plain[slot] { keptOnly += 1 }
+                } else if !carried, !new.plain[slot] {
+                    if let found = old.line(band: band, hash: hash), found != index { against += 1 } else { changed += 1 }
+                }
+            }
+            behind[index] = keptOnly >= needed
+            // Parts that changed in place (a crossfading image beside tiles that scrolled) testify to nothing: the
+            // line agrees when most of the rest does.
+            let testifying = moving.count - changed
+            let neededHere = (testifying * 2 + 2) / 3
+            if telling, alikeTelling == carriedTelling {
+                // What it shows is alike where it was and where it moved to: a rule through blank rows, or a bar
+                // whose pattern repeats at the scroll's distance. It says nothing, and is no part of what surely
+                // scrolls.
+                agreement[index] = 3
+            } else if testifying > 0, agreeing >= neededHere {
+                agreement[index] = telling ? 2 : 1
+            } else if keptOnly == 0, against == 0 {
+                // Changed in place, as far as anything here tells.
+                agreement[index] = 3
+            }
+        }
+        if let content {
+            let limit = max(16, (upper - lower) / 8)
+            var top = max(lower, content.lowerBound)
+            while top < min(upper, content.upperBound), behind[top] { top += 1 }
+            var bottom = min(upper, content.upperBound)
+            while bottom > max(lower, content.lowerBound), behind[bottom - 1] { bottom -= 1 }
+            if top - max(lower, content.lowerBound) >= limit || min(upper, content.upperBound) - bottom >= limit { return .behind("tiles left behind") }
+        }
+        func agrees(_ index: Int) -> Bool { agreement[index] == 1 || agreement[index] == 2 }
+        // A run begins where a window of lines mostly agrees, some of them saying something.
+        let window = min(8, max(2, (upper - lower) / 8))
+        func solid(_ start: Int) -> Bool {
+            var agreeing = 0
+            var telling = 0
+            for index in start..<start + window {
+                if agrees(index) { agreeing += 1 }
+                if agreement[index] == 2 { telling += 1 }
+            }
+            return agreeing * 4 >= window * 3 && telling >= min(2, window)
+        }
+        var first: Int?
+        var start = lower
+        while start + window <= upper {
+            if solid(start) { first = start; break }
+            start += 1
+        }
+        guard var begin = first else { return .failed("no run lines up") }
+        while agreement[begin] != 2 { begin += 1 }
+        var last: Int?
+        var end = upper - window
+        while end >= begin {
+            if solid(end) { last = end + window; break }
+            end -= 1
+        }
+        guard var finish = last else { return .failed("no run lines up") }
+        while finish > begin, agreement[finish - 1] != 2 { finish -= 1 }
+        var agreeing = 0
+        var silent = 0
+        for index in begin..<finish {
+            if agrees(index) { agreeing += 1 } else if agreement[index] == 3 { silent += 1 }
+        }
+        guard finish - begin >= window, agreeing * 2 >= finish - begin - silent else { return .failed("too few lines agree") }
+        var from = begin
+        while from > lower, agrees(from - 1) { from -= 1 }
+        var to = finish
+        while to < upper, agrees(to) { to += 1 }
+        guard to - from >= minimumOverlap(count) else { return .failed("too short a run agrees") }
+        // The page scrolls across more of the view than a sidebar that sticks, however dense the sidebar's text.
+        let telling = (from..<to).count { agreement[$0] == 2 }
+        return .holds(Match(offset: offset, first: begin, end: finish, from: from, to: to, movingBands: moving), score: telling * moving.count * moving.count)
+    }
+}
+
+/// One band's lines by hash, for the lines that are not plain; a hash more than one line has finds none.
+nonisolated private struct LineIndex {
+    private var keys: [UInt32]
+    /// The line, -1 for an empty slot, -2 for a hash several lines share.
+    private var lines: [Int32]
+    private let mask: Int
+
+    init(hashes: UnsafePointer<UInt32>, plain: UnsafePointer<Bool>, count: Int) {
+        var size = 16
+        while size < count * 2 { size <<= 1 }
+        mask = size - 1
+        keys = [UInt32](repeating: 0, count: size)
+        lines = [Int32](repeating: -1, count: size)
+        for index in 0..<count where !plain[index] {
+            let hash = hashes[index]
+            var slot = Int(hash) & mask
+            while lines[slot] != -1, keys[slot] != hash { slot = (slot + 1) & mask }
+            if lines[slot] == -1 {
+                keys[slot] = hash
+                lines[slot] = Int32(index)
+            } else {
+                lines[slot] = -2
+            }
+        }
+    }
+
+    func line(of hash: UInt32) -> Int? {
+        var slot = Int(hash) & mask
+        while lines[slot] != -1 {
+            if keys[slot] == hash { return lines[slot] >= 0 ? Int(lines[slot]) : nil }
+            slot = (slot + 1) & mask
+        }
+        return nil
+    }
+}
+
+// MARK: - The picture's lines
+
+/// The content's lines by where they are, in chunks of pages that come and go with it.
+///
+/// Between the ends, each line is held in segments of 8 pixels, each with how much the views back what it
+/// holds. A view backs a segment by about as far as the content moved when the segment moved with the content
+/// into where the view shows it: the page outweighs what is over it only while the page passes, and what stays
+/// where it is on screen while the content moves backs nothing. A view that shows a segment otherwise than it
+/// is held takes back that much, and replaces it when the segment holds no more than that.
+///
+/// Columns without consistent scrolling motion, staying put over a good part of the view's height (a
+/// sidebar, a timeline), are left out of all of it: below the first view's lines they keep the ground, however
+/// their pattern repeats. Something stuck over a small part of a column (an avatar while its post scrolls) is
+/// weighed with the rest.
+nonisolated private final class Canvas {
+    private static let chunkLines = 256
+    /// Different ends a line keeps count of.
+    private static let variants = 4
+    /// A line's columns are looked at in segments of 8 pixels, a block of them at a time first.
+    private static let segmentBytes = 32
+    private static let blockSegments = 16
+    /// How much the first view backs its lines: as a few views would.
+    private static let firstSupport: UInt8 = 32
+    /// The most one view backs a segment by.
+    private static let largestStep = 16
+    /// What a segment one view showed, and none backed since, holds.
+    private static let seenOnce: UInt8 = 1
+
+    private final class Chunk {
+        let pixels: PageBuffer
+        /// Per line: 0 never written, 1 seen, 2 among the lines that surely agreed between two views.
+        var states = [UInt8](repeating: 0, count: Canvas.chunkLines)
+        /// Per line, its hash in each band and whether that part is plain, as views have them.
+        var hashes: [UInt32]
+        var plain: [Bool]
+        /// Per line, the ends it was seen with, by hash, and how often each; and which one it holds.
+        var endHashes = [UInt32](repeating: 0, count: Canvas.chunkLines * Canvas.variants)
+        var endCounts = [UInt16](repeating: 0, count: Canvas.chunkLines * Canvas.variants)
+        var shown = [UInt8](repeating: 0, count: Canvas.chunkLines)
+        /// Per line and segment, how much the views back what it holds.
+        let support: UnsafeMutablePointer<UInt8>
+        /// Distance from an occluding edge of the clearest observation at a verified page position.
+        let quality: UnsafeMutablePointer<UInt8>
+
+        init?(lineBytes: Int, bands: Int, segments: Int) {
+            guard let pixels = PageBuffer(byteCount: Canvas.chunkLines * lineBytes) else { return nil }
+            self.pixels = pixels
+            hashes = [UInt32](repeating: 0, count: Canvas.chunkLines * bands)
+            plain = [Bool](repeating: true, count: Canvas.chunkLines * bands)
+            support = .allocate(capacity: Canvas.chunkLines * segments)
+            support.initialize(repeating: 0, count: Canvas.chunkLines * segments)
+            quality = .allocate(capacity: Canvas.chunkLines * segments)
+            quality.initialize(repeating: 0, count: Canvas.chunkLines * segments)
+        }
+
+        deinit {
+            support.deallocate()
+            quality.deallocate()
+        }
+    }
+
+    /// How a line is written in.
+    enum Writing {
+        /// The first view's own line: all of it, as the first view showed it, backed more than any one view backs.
+        case first
+        /// A line the last view showed too, as `previous`. `sameRow`, the last view's line at the same place on
+        /// screen, and `formerRow`, this view's line where the line was in the last view, tell what stayed where
+        /// it was on screen. `confirmed`: among the lines that surely agree. `atEdge`: next to a bar; `belowStart`:
+        /// within reach of the bar at the start, where what sticks while the content scrolls sticks and is pushed out.
+        case agreeing(previous: UnsafeRawPointer, sameRow: UnsafeRawPointer, formerRow: UnsafeRawPointer, confirmed: Bool, atEdge: Bool, belowStart: Bool)
+        /// A line just come into view. `sameRow`: the last view's line at the same place on screen; `inward`: this
+        /// view's line as many lines further in as the content moved, when there is one.
+        case arrived(sameRow: UnsafeRawPointer, inward: UnsafeRawPointer?)
+        /// A line only an earlier view showed, kept where nothing else was written: never over a line there.
+        case recovered
+    }
+
+    let lineBytes: Int
+    /// The bytes at each end of a line that are not compared, only counted.
+    let endBytes: Int
+    /// The parts of a line hashed apart, as views hash them.
+    let bands: [Range<Int>]
+    private let segments: Int
+    private var chunks: [Chunk?] = []
+    /// Per segment, how often the views showed it where it was the view before (still) and how often moved
+    /// with the content, among the lines that agree and say something there.
+    private var stillSeen: [Int]
+    private var movingSeen: [Int]
+    /// Per segment, the first and last line of a view where it was seen still.
+    private var stillFrom: [Int]
+    private var stillTo: [Int]
+    /// The segments that stay put while the content scrolls (a sidebar, a timeline).
+    private(set) var stays: [Bool]
+    /// The bytes between the ends, and of the ends, not in segments that stay put: what is weighed, and what
+    /// is counted and kept of a line's ends.
+    private var scrollingMiddle: [Range<Int>]
+    private var scrollingEnds: [Range<Int>]
+    /// The bytes between the ends in segments that stay put, and the runs of segments that stay put.
+    private var stayingMiddle: [Range<Int>] = []
+    private var stayingSegments: [Range<Int>] = []
+    /// Views taken in so far: the first is looked at whole for what stays put, so it is known before anything
+    /// comes into view.
+    private var views = 0
+    /// The lines the first view gave, whose columns that stay put are as it showed them.
+    private var firstLines: Range<Int>?
+    /// Restore fixed columns from a coherent first view without freezing the scrolling content forever.
+    private var firstSnapshot: PageBuffer?
+    private var currentView: Lines?
+    /// A line in the ground of each column as the first view showed it, which lines show where what was on
+    /// screen stayed put.
+    private var ground: PageBuffer?
+    /// How much the view being taken in backs a segment by: about an eighth of how far the content moved.
+    private var step: UInt8 = 1
+    /// The lines by hash, band by band, for finding a view in the picture: made when first asked for and
+    /// kept until a line changes.
+    private var located: (range: Range<Int>, indexes: [LineIndex], hashes: [UInt32], plain: [Bool])?
+    /// The chunk number of `chunks[0]`.
+    private var base = 0
+    /// The lines written so far.
+    private(set) var range: Range<Int>?
+
+    init(lineBytes: Int, endBytes: Int, bands: [Range<Int>]) {
+        self.lineBytes = lineBytes
+        self.endBytes = min(endBytes, lineBytes / 4)
+        self.bands = bands
+        segments = (lineBytes + Self.segmentBytes - 1) / Self.segmentBytes
+        stillSeen = [Int](repeating: 0, count: segments)
+        movingSeen = [Int](repeating: 0, count: segments)
+        stillFrom = [Int](repeating: .max, count: segments)
+        stillTo = [Int](repeating: -1, count: segments)
+        stays = [Bool](repeating: false, count: segments)
+        scrollingMiddle = [self.endBytes ..< lineBytes - self.endBytes]
+        scrollingEnds = self.endBytes > 0 ? [0 ..< self.endBytes, lineBytes - self.endBytes ..< lineBytes] : []
+    }
+
+    // MARK: What stays put
+
+    /// Takes each column's ground from the first view's `lines`: the color its segment shows most often
+    /// where it is one color throughout, else its first pixel.
+    func takeGround(from view: Lines, lines: Range<Int>) {
+        guard !lines.isEmpty, let ground = PageBuffer(byteCount: lineBytes) else { return }
+        if let snapshot = PageBuffer(byteCount: lines.count * lineBytes) {
+            memcpy(snapshot.baseAddress, view.line(lines.lowerBound), lines.count * lineBytes)
+            firstSnapshot = snapshot
+        }
+        let samples = Self.samples(of: lines, count: 64)
+        for segment in 0..<segments {
+            let start = segment * Self.segmentBytes, bytes = min(Self.segmentBytes, lineBytes - start)
+            var colors: [UInt32: Int] = [:]
+            for line in samples {
+                let pixels = view.line(line) + start
+                guard Self.isPlain(pixels, bytes) else { continue }
+                colors[pixels.load(as: UInt32.self), default: 0] += 1
+            }
+            let color = colors.max { $0.value < $1.value }?.key ?? (view.line(lines.lowerBound) + start).load(as: UInt32.self)
+            let target = (ground.baseAddress + start).bindMemory(to: UInt32.self, capacity: bytes / 4)
+            for pixel in 0..<bytes / 4 { target[pixel] = color }
+        }
+        self.ground = ground
+    }
+
+    /// Weighs which columns stay put, from lines of `new` that agree with `old` at `offset`: a segment the new
+    /// view shows where the old one showed it, and not where the content moved, was still; one shown where the
+    /// content moved, and not where it was, moved, unless this view shows it as far on too (a bar alike top to
+    /// bottom, such as a timeline's handle creeping down by itself, matches there whether it moves or not). Plain
+    /// backgrounds, and segments alike both ways (a pattern repeating at the scroll's distance), say nothing. Thin
+    /// colored rules count as features; large flat images do not. A column stays put once seen still a few times, over at
+    /// least a sixth of the view's height, without consistent movement: a sidebar, a timeline, but not an avatar stuck
+    /// while its post scrolls. The first view is looked at line by line, the rest at some lines.
+    func noteColumns(new: Lines, old: Lines, offset: Int, lines: Range<Int>) {
+        currentView = new
+        views += 1
+        for line in views == 1 ? Array(lines) : Self.samples(of: lines, count: 32, turn: views) where line + offset >= 0 && line + offset < old.count {
+            let shown = new.line(line), before = old.line(line), moved = old.line(line + offset)
+            let further = line + offset < new.count ? new.line(line + offset) : nil
+            for segment in 0..<segments {
+                let start = segment * Self.segmentBytes, bytes = min(Self.segmentBytes, lineBytes - start)
+                // A flat card border is informative too when it differs from the column's background.
+                // Ignoring all single-color runs leaves thin fixed rules repeated down dark timelines.
+                guard !Self.isPlain(shown + start, bytes) || ground.map({ memcmp(shown + start, $0.baseAddress + start, bytes) != 0 }) == true else { continue }
+                let kept = memcmp(shown + start, before + start, bytes) == 0
+                let carried = memcmp(shown + start, moved + start, bytes) == 0
+                if kept, !carried, isFixedFeature(shown, start, bytes) {
+                    stillSeen[segment] += 1
+                    stillFrom[segment] = min(stillFrom[segment], line)
+                    stillTo[segment] = max(stillTo[segment], line)
+                }
+                if carried, !kept, further.map({ memcmp(shown + start, $0 + start, bytes) != 0 }) ?? true { movingSeen[segment] += 1 }
+            }
+        }
+        // A moving handle can supply a few accidental matches along an otherwise fixed track. Require
+        // consistent movement, not a single matching edge, before treating the whole column as content.
+        let moves = (0..<segments).map { movingSeen[$0] > 0 && movingSeen[$0] * 16 > stillSeen[$0] }
+        // What a column did lately counts most: one that scrolled with the page at first and then stuck (a sidebar
+        // under a banner, a table of contents) stays put once it has stayed put a while. The counts fade an eighth
+        // each view.
+        for segment in 0..<segments {
+            movingSeen[segment] -= movingSeen[segment] / 8
+            stillSeen[segment] -= stillSeen[segment] / 8
+        }
+        var stays = (0..<segments).map { stillSeen[$0] >= 4 && !moves[$0] && (stillTo[$0] - stillFrom[$0] + 1) * 6 >= new.count }
+        // Short gaps between segments that stay put, which never moved, stay put too: a sidebar's blank stretch;
+        // and so do short ones between them and the line's end: its margin by the edge of the view, and plain icons in
+        // it, which no view tells stay put.
+        var segment = 0
+        while segment < segments {
+            guard !stays[segment] else { segment += 1; continue }
+            var end = segment
+            while end < segments, !stays[end] { end += 1 }
+            let between = segment > 0 && end < segments && end - segment <= 3
+            let byTheEdge = (segment == 0) != (end == segments) && end - segment <= 8
+            if between || byTheEdge, (segment..<end).allSatisfy({ !moves[$0] }) {
+                for gap in segment..<end { stays[gap] = true }
+            }
+            segment = end
+        }
+        guard stays != self.stays else { return }
+        let newly = (0..<segments).filter { stays[$0] && !self.stays[$0] }
+        self.stays = stays
+        scrollingMiddle = runs(within: endBytes ..< lineBytes - endBytes)
+        scrollingEnds = endBytes > 0 ? runs(within: 0 ..< endBytes) + runs(within: lineBytes - endBytes ..< lineBytes) : []
+        var staying: [Range<Int>] = []
+        var from = endBytes
+        for run in scrollingMiddle + [lineBytes - endBytes ..< lineBytes - endBytes] {
+            if run.lowerBound > from { staying.append(from ..< run.lowerBound) }
+            from = run.upperBound
+        }
+        stayingMiddle = staying
+        var runs: [Range<Int>] = []
+        var start: Int?
+        for segment in 0...segments {
+            if segment < segments, stays[segment] {
+                if start == nil { start = segment }
+            } else if let open = start {
+                runs.append(open ..< segment)
+                start = nil
+            }
+        }
+        stayingSegments = runs
+        groundOutsideStill(newly)
+        groundNewlyStaying(newly)
+    }
+
+    /// A column that stays put takes as its ground the plain color the first view showed in it past what was seen
+    /// still there, when it showed one: the page's background under a sticky card shorter than the view, which
+    /// the card's own color outnumbered in the first view.
+    private func groundOutsideStill(_ segments: [Int]) {
+        guard let ground, let firstSnapshot, let firstLines else { return }
+        // The whole of what stays put, run by run of columns: its labels end at different lines, its card at one.
+        for run in stayingSegments where segments.contains(where: run.contains) {
+            let from = run.map { stillFrom[$0] }.min() ?? 0, to = run.map { stillTo[$0] }.max() ?? 0
+            guard from <= to else { continue }
+            let still = from...to
+            let lines = Self.samples(of: firstLines, count: 96).filter { !still.contains($0) }
+            var colors: [UInt32: Int] = [:]
+            for line in lines {
+                let row = UnsafeRawPointer(firstSnapshot.baseAddress + (line - firstLines.lowerBound) * lineBytes)
+                let start = run.lowerBound * Self.segmentBytes, bytes = min(run.count * Self.segmentBytes, lineBytes - start)
+                guard Self.isPlain(row + start, bytes) else { continue }
+                colors[(row + start).load(as: UInt32.self), default: 0] += 1
+            }
+            guard let (color, seen) = colors.max(by: { $0.value < $1.value }), seen >= 8 else { continue }
+            let start = run.lowerBound * Self.segmentBytes, bytes = min(run.count * Self.segmentBytes, lineBytes - start)
+            let target = (ground.baseAddress + start).bindMemory(to: UInt32.self, capacity: bytes / 4)
+            for pixel in 0..<bytes / 4 { target[pixel] = color }
+        }
+    }
+
+    /// Lines that came into view before their columns were seen to stay put took those columns as they came, when
+    /// they looked like content (a pattern repeating at the scroll's distance does). Nothing ever moved there, so
+    /// they take the ground now, all but the first view's.
+    private func groundNewlyStaying(_ segments: [Int]) {
+        guard !segments.isEmpty, let ground, let range else { return }
+        for index in range {
+            let number = Self.chunkNumber(of: index)
+            guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { continue }
+            let slot = index - number * Self.chunkLines
+            guard chunk.states[slot] > 0 else { continue }
+            let target = chunk.pixels.baseAddress + slot * lineBytes
+            let original: UnsafeRawPointer?
+            if let firstLines, firstLines.contains(index) {
+                guard let firstSnapshot else { continue }
+                original = UnsafeRawPointer(firstSnapshot.baseAddress + (index - firstLines.lowerBound) * lineBytes)
+            } else { original = nil }
+            for segment in segments {
+                let start = segment * Self.segmentBytes
+                memcpy(target + start, (original ?? UnsafeRawPointer(ground.baseAddress)) + start, min(Self.segmentBytes, lineBytes - start))
+                chunk.support[slot * self.segments + segment] = 0
+                chunk.quality[slot * self.segments + segment] = 0
+            }
+            rehash(target, chunk: chunk, slot: slot)
+        }
+    }
+
+    /// The byte ranges within `bounds` not in segments that stay put.
+    private func runs(within bounds: Range<Int>) -> [Range<Int>] {
+        var runs: [Range<Int>] = []
+        var start: Int?
+        var byte = bounds.lowerBound
+        while byte < bounds.upperBound {
+            let segment = byte / Self.segmentBytes
+            let end = min((segment + 1) * Self.segmentBytes, bounds.upperBound)
+            if stays[segment] {
+                if let open = start { runs.append(open ..< byte) }
+                start = nil
+            } else if start == nil {
+                start = byte
+            }
+            byte = end
+        }
+        if let open = start { runs.append(open ..< bounds.upperBound) }
+        return runs
+    }
+
+    /// Up to `count` lines spread over `lines` unevenly, each a golden ratio of the range on from the last, so
+    /// they never fall in step with what repeats down the view (a sidebar's items, a dithered fill); `turn` starts
+    /// them elsewhere each time.
+    private static func samples(of lines: Range<Int>, count: Int, turn: Int = 0) -> [Int] {
+        guard lines.count > count else { return Array(lines) }
+        return (0..<count).map { index in
+            let fraction = (Double(index + turn * count) * 0.618_033_988_75).truncatingRemainder(dividingBy: 1)
+            return lines.lowerBound + Int(fraction * Double(lines.count))
+        }
+    }
+
+    /// Whether `length` bytes of pixels are one color throughout.
+    private static func isPlain(_ bytes: UnsafeRawPointer, _ length: Int) -> Bool {
+        length <= 4 || memcmp(bytes, bytes + 4, length - 4) == 0
+    }
+
+    // MARK: Taking views in
+
+    /// Lines within the range never written.
+    var gaps: Int {
+        guard let range else { return 0 }
+        return range.filter { line($0) == nil }.count
+    }
+
+    /// Ends seen in a still view count for this many seen while scrolling, at least.
+    private static let stillCount: UInt16 = 8
+
+    /// Starts taking in a view the content moved `travel` pixels for, whose lines `lines` it showed before too:
+    /// each of their segments the canvas holds is backed by this view, as far as the content moved; writing a
+    /// line takes that back where the view shows something else.
+    func beginView(travel: Int, lines: Range<Int>) {
+        step = UInt8(min(Self.largestStep, max(1, travel / 8)))
+        var table = [UInt8](repeating: 0, count: 256)
+        for value in 0..<256 { table[value] = UInt8(min(255, value + Int(step))) }
+        var line = lines.lowerBound
+        while line < lines.upperBound {
+            let number = Self.chunkNumber(of: line)
+            let start = number * Self.chunkLines
+            let end = min(lines.upperBound, start + Self.chunkLines)
+            defer { line = end }
+            guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { continue }
+            var from = vImage_Buffer(
+                data: chunk.support + (line - start) * segments, height: vImagePixelCount(end - line), width: vImagePixelCount(segments), rowBytes: segments
+            )
+            var to = from
+            vImageTableLookUp_Planar8(&from, &to, table, vImage_Flags(kvImageDoNotTile))
+        }
+    }
+
+    /// Writes `source` as line `index`, as `writing` says. A line not there yet takes `source`, but the ground
+    /// where what is on screen stayed put; one there is weighed segment by segment. The ends are counted, and the
+    /// ends seen most are the ones kept. `still`: seen while nothing scrolled. A line there is no memory for is
+    /// left out, a gap in the picture.
+    func write(_ source: UnsafeRawPointer, at index: Int, as writing: Writing, still: Bool = false, quality: UInt8 = 0) {
+        let grown = range.map { min($0.lowerBound, index) ..< max($0.upperBound, index + 1) } ?? index ..< index + 1
+        let number = Self.chunkNumber(of: index)
+        if chunks.isEmpty {
+            base = number
+        }
+        if number < base {
+            chunks.insert(contentsOf: [Chunk?](repeating: nil, count: base - number), at: 0)
+            base = number
+        }
+        while number - base >= chunks.count { chunks.append(nil) }
+        if chunks[number - base] == nil { chunks[number - base] = Chunk(lineBytes: lineBytes, bands: bands.count, segments: segments) }
+        guard let chunk = chunks[number - base] else { return }
+        let slot = index - number * Self.chunkLines
+        let target = chunk.pixels.baseAddress + slot * lineBytes
+        let support = chunk.support + slot * segments
+        let state = chunk.states[slot]
+        if state == 0 {
+            memcpy(target, source, lineBytes)
+            switch writing {
+            case .first:
+                for segment in 0..<segments { support[segment] = Self.firstSupport }
+                (chunk.quality + slot * segments).update(repeating: quality, count: segments)
+                firstLines = firstLines.map { min($0.lowerBound, index) ..< max($0.upperBound, index + 1) } ?? index ..< index + 1
+            case .arrived(let sameRow, let inward):
+                takeIn(source, into: target, support: support, sameRow: sameRow, alike: inward)
+            case .agreeing(let previous, let sameRow, _, _, _, _):
+                // Not there yet though the last view showed it (the part that scrolls grew): as just come into view.
+                takeIn(source, into: target, support: support, sameRow: sameRow, alike: previous)
+            case .recovered:
+                support.update(repeating: Self.seenOnce, count: segments)
+            }
+            let confirmed = if case .agreeing(_, _, _, true, _, _) = writing { true } else { false }
+            chunk.states[slot] = confirmed ? 2 : 1
+            rehash(target, chunk: chunk, slot: slot)
+            let first = slot * Self.variants
+            for variant in 0..<Self.variants { chunk.endCounts[first + variant] = 0 }
+            chunk.endHashes[first] = endsHash(source)
+            chunk.endCounts[first] = still ? Self.stillCount : 1
+            chunk.shown[slot] = 0
+            range = grown
+            return
+        }
+        // Under allocation pressure keep the initial snapshot intact. Normally, fixed columns have
+        // their own original copy while clearer later views may repair the content near viewport edges.
+        if firstSnapshot == nil, firstLines?.contains(index) == true {
+            count(source, into: target, chunk: chunk, slot: slot, still: still)
+            return
+        }
+        switch writing {
+        case .first, .recovered:
+            return
+        case .arrived(let sameRow, let inward):
+            if reconsider(source, into: target, support: support, qualities: chunk.quality + slot * segments, quality: quality, sameRow: sameRow, alike: inward) {
+                rehash(target, chunk: chunk, slot: slot)
+                // Seen only once, and something else then (a banner that was over it): its ends as well.
+                if state < 2 {
+                    for part in scrollingEnds { memcpy(target + part.lowerBound, source + part.lowerBound, part.count) }
+                    let first = slot * Self.variants
+                    for variant in 0..<Self.variants { chunk.endCounts[first + variant] = 0 }
+                    chunk.endHashes[first] = endsHash(source)
+                    chunk.endCounts[first] = still ? Self.stillCount : 1
+                    chunk.shown[slot] = 0
+                    return
+                }
+            }
+        case .agreeing(let previous, let sameRow, let formerRow, let confirmed, let atEdge, let belowStart):
+            let preferred = preferUnobscured(
+                source, into: target, support: support, qualities: chunk.quality + slot * segments,
+                quality: quality, previous: previous, sameRow: sameRow
+            )
+            let weighed = weigh(
+                source, into: target, support: support, previous: previous, sameRow: sameRow, formerRow: formerRow,
+                held: state == 2, atEdge: atEdge, belowStart: belowStart, qualities: chunk.quality + slot * segments, quality: quality
+            )
+            if preferred || weighed {
+                rehash(target, chunk: chunk, slot: slot)
+            }
+            if confirmed { chunk.states[slot] = 2 }
+        }
+        count(source, into: target, chunk: chunk, slot: slot, still: still)
+    }
+
+    /// Votes alone favor whichever direction was traversed most often. Near a sticky edge that can be a
+    /// displaced avatar, or the blank margin hiding its real position. Prefer a view whose page position
+    /// is confirmed farther inside the viewport, even when visited only once. Fixed columns keep their first view.
+    private func preferUnobscured(
+        _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
+        qualities: UnsafeMutablePointer<UInt8>, quality: UInt8, previous: UnsafeRawPointer, sameRow: UnsafeRawPointer
+    ) -> Bool {
+        var changed = false
+        for run in scrollingMiddle {
+            var start = run.lowerBound
+            while start < run.upperBound {
+                let segment = start / Self.segmentBytes
+                let end = min((segment + 1) * Self.segmentBytes, run.upperBound)
+                defer { start = end }
+                guard quality > qualities[segment],
+                      !staysPut(source, start, end - start, sameRow: sameRow, alike: previous) else { continue }
+                // What stayed where it was on screen while the content moved on is over the content (a sticky
+                // sidebar's flat strokes, a highlighted item's bar), no clearer observation of it; and a table's or
+                // timeline's stroke, alike top to bottom, matches both positions without saying anything.
+                if !Self.isPlain(source + start, end - start), memcmp(source + start, sameRow + start, end - start) == 0 { continue }
+                qualities[segment] = quality
+                if memcmp(source + start, target + start, end - start) != 0 {
+                    memcpy(target + start, source + start, end - start)
+                    support[segment] = max(Self.firstSupport, support[segment])
+                    changed = true
+                }
+            }
+        }
+        return changed
+    }
+
+    /// Whether `length` bytes of `source` at `start` are something over the content: they are what the last view
+    /// showed at the same place on screen, they say something, and they are unlike `alike` (a line that shows them
+    /// where they would be had they moved with the content, or further along a stretch alike top to bottom, such as
+    /// a table's edge).
+    private func staysPut(_ source: UnsafeRawPointer, _ start: Int, _ length: Int, sameRow: UnsafeRawPointer, alike: UnsafeRawPointer?) -> Bool {
+        guard memcmp(source + start, sameRow + start, length) == 0, isFixedFeature(source, start, length) else { return false }
+        guard let alike else { return true }
+        return memcmp(source + start, alike + start, length) != 0
+    }
+
+    /// A colored flat run is a fixed-rule candidate only when surrounded by background along the scroll
+    /// axis. Large white images on dark pages must not be mistaken for fixed borders while they load.
+    private func isFixedFeature(_ source: UnsafeRawPointer, _ start: Int, _ length: Int) -> Bool {
+        if !Self.isPlain(source + start, length) { return true }
+        guard let ground, let view = currentView,
+              memcmp(source + start, ground.baseAddress + start, length) != 0 else { return false }
+        let offset = UnsafeRawPointer(view.pixels.baseAddress).distance(to: source)
+        guard offset >= 0, offset.isMultiple(of: lineBytes) else { return false }
+        let row = offset / lineBytes
+        let reach = max(2, min(8, endBytes / 24))
+        guard row >= reach, row + reach < view.count else { return false }
+        return memcmp(view.line(row - reach) + start, ground.baseAddress + start, length) == 0
+            && memcmp(view.line(row + reach) + start, ground.baseAddress + start, length) == 0
+    }
+
+    /// A line new to the canvas, `source` already copied to `target`: each segment seen once, but what stays put
+    /// on screen, which takes the ground.
+    private func takeIn(
+        _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>, sameRow: UnsafeRawPointer, alike: UnsafeRawPointer?
+    ) {
+        support.update(repeating: Self.seenOnce, count: segments)
+        guard let ground else { return }
+        // The columns that stay put, ends and all; between the ends, what stays put on screen this time.
+        for run in stayingSegments {
+            let start = run.lowerBound * Self.segmentBytes
+            memcpy(target + start, ground.baseAddress + start, min(run.upperBound * Self.segmentBytes, lineBytes) - start)
+            (support + run.lowerBound).update(repeating: 0, count: run.count)
+        }
+        for run in scrollingMiddle {
+            var start = run.lowerBound
+            while start < run.upperBound {
+                let end = min((start / Self.segmentBytes + 1) * Self.segmentBytes, run.upperBound)
+                if staysPut(source, start, end - start, sameRow: sameRow, alike: alike) {
+                    memcpy(target + start, ground.baseAddress + start, end - start)
+                    support[start / Self.segmentBytes] = 0
+                }
+                start = end
+            }
+        }
+    }
+
+    /// A line come into view again: each segment that shows something else says so once against what it
+    /// holds, but what stays put on screen. Whether the line changed.
+    private func reconsider(
+        _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
+        qualities: UnsafeMutablePointer<UInt8>, quality: UInt8, sameRow: UnsafeRawPointer, alike: UnsafeRawPointer?
+    ) -> Bool {
+        var changed = false
+        for run in scrollingMiddle {
+            var start = run.lowerBound
+            while start < run.upperBound {
+                let end = min((start / Self.segmentBytes + 1) * Self.segmentBytes, run.upperBound), segment = start / Self.segmentBytes
+                defer { start = end }
+                guard quality >= qualities[segment], memcmp(source + start, target + start, end - start) != 0,
+                      !staysPut(source, start, end - start, sameRow: sameRow, alike: alike) else { continue }
+                if support[segment] > step {
+                    support[segment] -= step
+                } else {
+                    memcpy(target + start, source + start, end - start)
+                    support[segment] = Self.seenOnce
+                    changed = true
+                }
+            }
+        }
+        return changed
+    }
+
+    /// A line the last view showed too, already backed by this view: segment by segment where it shows
+    /// something else, that backing is taken back; what moved with the content there says so against what the
+    /// segment holds (twice as much when it says something and stayed nowhere on screen); and what the line
+    /// held from the last view alone, which stayed where it was on screen while the line moved on, was over the
+    /// content and gives way to the ground. `held`: among the lines that agreed before, whose blocks that stay
+    /// put on screen are passed over. `atEdge`: next to a bar, where a plain stretch says nothing: an avatar
+    /// stuck below a header leaves its post's blank margin where it was, which must neither back the margin nor
+    /// wear the avatar away there. `belowStart`: where an avatar stuck below a header is pushed out by its post's
+    /// end, moving with the content as it goes: what moves there says nothing against what a segment holds, though
+    /// it may fill one that holds nothing. Columns that stay put are only backed where they show what they hold:
+    /// should one turn out to move after all (an avatar stuck from the start, until the next one moves through),
+    /// what was over it backs nothing there. Whether the line changed.
+    private func weigh(
+        _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
+        previous: UnsafeRawPointer, sameRow: UnsafeRawPointer, formerRow: UnsafeRawPointer, held: Bool, atEdge: Bool, belowStart: Bool,
+        qualities: UnsafeMutablePointer<UInt8>, quality: UInt8
+    ) -> Bool {
+        for run in stayingMiddle {
+            var from = run.lowerBound
+            while from < run.upperBound {
+                let to = min(run.upperBound, (from / Self.segmentBytes + Self.blockSegments) * Self.segmentBytes)
+                if memcmp(source + from, target + from, to - from) != 0 {
+                    for segment in from / Self.segmentBytes ..< (to + Self.segmentBytes - 1) / Self.segmentBytes { support[segment] -= min(support[segment], step) }
+                }
+                from = to
+            }
+        }
+        if atEdge {
+            for run in scrollingMiddle {
+                var start = run.lowerBound
+                while start < run.upperBound {
+                    let end = min((start / Self.segmentBytes + 1) * Self.segmentBytes, run.upperBound)
+                    let segment = start / Self.segmentBytes
+                    if Self.isPlain(source + start, end - start), memcmp(source + start, target + start, end - start) == 0 {
+                        support[segment] -= min(support[segment], step)
+                    }
+                    start = end
+                }
+            }
+        }
+        var differs = false
+        for run in scrollingMiddle where memcmp(source + run.lowerBound, target + run.lowerBound, run.count) != 0 {
+            differs = true
+            break
+        }
+        guard differs else { return false }
+        var changed = false
+        for run in scrollingMiddle {
+            var from = run.lowerBound
+            while from < run.upperBound {
+                let to = min(run.upperBound, (from / Self.segmentBytes + Self.blockSegments) * Self.segmentBytes)
+                defer { from = to }
+                guard memcmp(source + from, target + from, to - from) != 0 else { continue }
+                // What stays put on screen, over a line the views agreed on: nothing in it moved, nothing to weigh,
+                // and what the line holds under it is not backed by this view.
+                if held, !Self.isPlain(source + from, to - from), memcmp(source + from, sameRow + from, to - from) == 0 {
+                    for segment in from / Self.segmentBytes ..< (to + Self.segmentBytes - 1) / Self.segmentBytes { support[segment] -= min(support[segment], step) }
+                    continue
+                }
+                var start = from
+                while start < to {
+                    let segment = start / Self.segmentBytes
+                    let end = min((segment + 1) * Self.segmentBytes, to), length = end - start
+                    defer { start = end }
+                    guard memcmp(source + start, target + start, length) != 0 else { continue }
+                    support[segment] -= min(support[segment], step)
+                    // Repeated passes close to a sticky edge cannot overrule a clearer interior observation.
+                    guard quality >= qualities[segment] else { continue }
+                    if memcmp(source + start, previous + start, length) == 0 {
+                        let plain = Self.isPlain(source + start, length)
+                        if (plain && atEdge) || belowStart, support[segment] > Self.seenOnce { continue }
+                        // Below the bar at the start, plain and just where it was on screen: a stuck avatar's blank
+                        // edge as much as the content's margin.
+                        if plain, belowStart, memcmp(source + start, sameRow + start, length) == 0 { continue }
+                        let still = !plain && memcmp(source + start, sameRow + start, length) == 0
+                        // Alike where it was on screen too: a line alike top to bottom, moving or not (a table's edge,
+                        // a timeline's track). It fills what holds nothing, never what something backs.
+                        if still, support[segment] > Self.seenOnce { continue }
+                        let against = Int(step) * (plain || still ? 1 : 2)
+                        if Int(support[segment]) > against {
+                            support[segment] -= UInt8(against)
+                        } else {
+                            memcpy(target + start, source + start, length)
+                            support[segment] = step + 1
+                            changed = true
+                        }
+                    } else if support[segment] <= step, let ground,
+                              memcmp(target + start, previous + start, length) == 0,
+                              memcmp(previous + start, formerRow + start, length) == 0,
+                              memcmp(target + start, ground.baseAddress + start, length) != 0 {
+                        memcpy(target + start, ground.baseAddress + start, length)
+                        support[segment] = 0
+                        changed = true
+                    } else if support[segment] <= Self.seenOnce, memcmp(source + start, sameRow + start, length) != 0 {
+                        // Nothing held but what one view showed, or the ground where something stayed put over the
+                        // content, and now something that does not stay put (the content come out from under it):
+                        // taken instead, until a view backs something.
+                        memcpy(target + start, source + start, length)
+                        support[segment] = Self.seenOnce
+                        changed = true
+                    }
+                }
+            }
+        }
+        return changed
+    }
+
+    /// The line's hash in each band, for finding views in the picture, after it changed.
+    private func rehash(_ line: UnsafeMutableRawPointer, chunk: Chunk, slot: Int) {
+        for (band, part) in bands.enumerated() {
+            let start = line + part.lowerBound * 4, bytes = part.count * 4
+            chunk.hashes[slot * bands.count + band] = UInt32(truncatingIfNeeded: crc32(0, start.assumingMemoryBound(to: UInt8.self), uInt(bytes)))
+            chunk.plain[slot * bands.count + band] = Self.isPlain(start, bytes)
+        }
+        located = nil
+    }
+
+    /// Whether two lines' ends are alike.
+    func endsAlike(_ a: UnsafeRawPointer, _ b: UnsafeRawPointer) -> Bool {
+        guard endBytes > 0 else { return true }
+        return memcmp(a, b, endBytes) == 0 && memcmp(a + lineBytes - endBytes, b + lineBytes - endBytes, endBytes) == 0
+    }
+
+    /// Counts the ends `source`, a still view's line, shows for line `index`, when the line is there and the same
+    /// between them.
+    func count(_ source: UnsafeRawPointer, at index: Int) {
+        let number = Self.chunkNumber(of: index)
+        guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { return }
+        let slot = index - number * Self.chunkLines
+        let target = chunk.pixels.baseAddress + slot * lineBytes
+        guard chunk.states[slot] > 0, same(target, source) else { return }
+        count(source, into: target, chunk: chunk, slot: slot, still: true)
+    }
+
+    /// Forgets the lines past `index` (before it, `towardEnd` false): what only an overscroll showed.
+    func truncate(at index: Int, towardEnd: Bool) {
+        guard let range else { return }
+        let cut = min(max(index, range.lowerBound), range.upperBound)
+        let gone = towardEnd ? cut ..< range.upperBound : range.lowerBound ..< cut
+        guard !gone.isEmpty, gone.count < range.count else { return }
+        for line in gone {
+            let number = Self.chunkNumber(of: line)
+            guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { continue }
+            chunk.states[line - number * Self.chunkLines] = 0
+        }
+        self.range = towardEnd ? range.lowerBound ..< gone.lowerBound : gone.upperBound ..< range.upperBound
+        located = nil
+    }
+
+    /// Moves the lines in `range` into `target`, one after another, a chunk at a time, letting each chunk go once
+    /// its lines are out; a line never written takes the ground. Nothing is left in the canvas after.
+    func move(_ range: Range<Int>, into target: UnsafeMutableRawPointer) {
+        var line = range.lowerBound
+        while line < range.upperBound {
+            let number = Self.chunkNumber(of: line)
+            let end = min(range.upperBound, (number + 1) * Self.chunkLines)
+            if number >= base, number - base < chunks.count, let chunk = chunks[number - base] {
+                let slot = line - number * Self.chunkLines
+                memcpy(target + (line - range.lowerBound) * lineBytes, chunk.pixels.baseAddress + slot * lineBytes, (end - line) * lineBytes)
+                // A line never written takes the ground, never a clear stripe across the picture.
+                if let ground {
+                    for index in line..<end where chunk.states[index - number * Self.chunkLines] == 0 {
+                        memcpy(target + (index - range.lowerBound) * lineBytes, ground.baseAddress, lineBytes)
+                    }
+                }
+                chunks[number - base] = nil
+            } else if let ground {
+                for index in line..<end { memcpy(target + (index - range.lowerBound) * lineBytes, ground.baseAddress, lineBytes) }
+            }
+            line = end
+        }
+        chunks = []
+        located = nil
+        self.range = nil
+    }
+
+    func line(_ index: Int) -> UnsafeRawPointer? {
+        let number = Self.chunkNumber(of: index)
+        guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { return nil }
+        let slot = index - number * Self.chunkLines
+        guard chunk.states[slot] > 0 else { return nil }
+        return UnsafeRawPointer(chunk.pixels.baseAddress + slot * lineBytes)
+    }
+
+    /// Where `view` lies in the content, when enough of its lines that say something are there, at one offset,
+    /// in most bands: its first line's position, and its lines that agree, from the first that says something
+    /// to the last. In columns that stay put (a sidebar, a timeline, kept as the first view showed them), what
+    /// `reference`, the last view placed, showed at the same place on screen neither votes nor need agree. A place
+    /// well ahead of any other wins, or one nearly as good near `expected`; two as good, neither near, tell nothing.
+    func locate(_ view: Lines, reference: Lines, near expected: Int) -> (position: Int, lines: Range<Int>)? {
+        guard let range, range.count >= 16, view.bands == bands else { return nil }
+        let bandCount = bands.count
+        if located?.range != range {
+            // The content's lines in one run, band by band, as a view's are.
+            var hashes = [UInt32](repeating: 0, count: range.count * bandCount)
+            var plain = [Bool](repeating: true, count: range.count * bandCount)
+            for (index, line) in range.enumerated() {
+                let number = Self.chunkNumber(of: line)
+                guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { continue }
+                let slot = line - number * Self.chunkLines
+                guard chunk.states[slot] > 0 else { continue }
+                for band in 0..<bandCount {
+                    hashes[band * range.count + index] = chunk.hashes[slot * bandCount + band]
+                    plain[band * range.count + index] = chunk.plain[slot * bandCount + band]
+                }
+            }
+            let indexes = hashes.withUnsafeBufferPointer { hashBuffer in
+                plain.withUnsafeBufferPointer { plainBuffer in
+                    (0..<bandCount).map { band in
+                        LineIndex(hashes: hashBuffer.baseAddress! + band * range.count, plain: plainBuffer.baseAddress! + band * range.count, count: range.count)
+                    }
+                }
+            }
+            located = (range, indexes, hashes, plain)
+        }
+        guard let located else { return nil }
+        let count = view.count
+        func stayed(_ band: Int, _ index: Int) -> Bool { view.hashes[band * count + index] == reference.hashes[band * count + index] }
+        // Bands mostly over columns that stay put (a sidebar, a timeline): what they show where the reference did is
+        // no part of the content there. Elsewhere it must agree like the rest: tiles a frame late are content.
+        let staying = bands.map { band in
+            let segments = band.lowerBound * 4 / Self.segmentBytes ..< max(band.lowerBound * 4 / Self.segmentBytes + 1, band.upperBound * 4 / Self.segmentBytes)
+            return segments.count { $0 < stays.count && stays[$0] } * 2 >= segments.count
+        }
+        // Each line of the view that says something votes for where the view begins, but in columns that stay put
+        // what the reference showed there too: kept as the first view showed them, it would vote for that.
+        let lowest = range.lowerBound - count
+        var votes = [Int32](repeating: 0, count: range.count + count)
+        var cast = 0
+        for band in 0..<bandCount {
+            for index in 0..<count where !view.plain[band * count + index] && !(staying[band] && stayed(band, index)) {
+                guard let found = located.indexes[band].line(of: view.hashes[band * count + index]) else { continue }
+                votes[range.lowerBound + found - index - lowest] += 1
+                cast += 1
+            }
+        }
+        guard let most = votes.max(), most >= 12, Int(most) * 10 >= cast else { return nil }
+        let expectedSlot = expected - lowest
+        var best = -1
+        for slot in votes.indices where votes[slot] == most && (best < 0 || abs(slot - expectedSlot) < abs(best - expectedSlot)) { best = slot }
+        var elsewhere: Int32 = 0
+        for slot in votes.indices where abs(slot - best) > 16 { elsewhere = max(elsewhere, votes[slot]) }
+        // Content repeating down the page lines up a period off as well: near where the view should be wins.
+        var near = -1
+        var nearVotes: Int32 = 0
+        for slot in stride(from: max(0, expectedSlot - count / 4), to: min(votes.count, expectedSlot + count / 4 + 1), by: 1) where votes[slot] > nearVotes {
+            near = slot
+            nearVotes = votes[slot]
+        }
+        let slot: Int
+        if near >= 0, nearVotes >= 12, nearVotes * 2 >= most {
+            slot = near
+        } else if elsewhere * 3 < most * 2 {
+            slot = best
+        } else {
+            return nil
+        }
+        let position = slot + lowest
+        // The lines that agree in most bands where the view shows something other than the reference did there,
+        // and those of them that say something.
+        var first: Int?
+        var end = 0
+        var telling = 0
+        for index in 0..<count {
+            let line = position + index - range.lowerBound
+            guard line >= 0, line < range.count else { continue }
+            var testable = 0
+            var agreeing = 0
+            var says = false
+            for band in 0..<bandCount where !(staying[band] && stayed(band, index)) {
+                testable += 1
+                if located.hashes[band * range.count + line] == view.hashes[band * count + index] {
+                    agreeing += 1
+                    if !view.plain[band * count + index] { says = true }
+                }
+            }
+            guard testable > 0, agreeing * 3 >= testable * 2, says else { continue }
+            if first == nil { first = index }
+            end = index + 1
+            telling += 1
+        }
+        guard let first, telling >= max(16, count / 10) else { return nil }
+        return (position, first ..< end)
+    }
+
+    /// Whether `source` shows what line `target` holds between the ends, but where it holds the ground, where
+    /// something over the content stayed put.
+    private func same(_ target: UnsafeRawPointer, _ source: UnsafeRawPointer) -> Bool {
+        let differing = scrollingMiddle.filter { memcmp(target + $0.lowerBound, source + $0.lowerBound, $0.count) != 0 }
+        guard !differing.isEmpty else { return true }
+        guard let ground else { return false }
+        for run in differing {
+            var start = run.lowerBound
+            while start < run.upperBound {
+                let end = min((start / Self.segmentBytes + 1) * Self.segmentBytes, run.upperBound)
+                if memcmp(target + start, source + start, end - start) != 0, memcmp(target + start, ground.baseAddress + start, end - start) != 0 { return false }
+                start = end
+            }
+        }
+        return true
+    }
+
+    /// The hash of a line's ends, but what of them stays put.
+    private func endsHash(_ line: UnsafeRawPointer) -> UInt32 {
+        var hash: uLong = 0
+        for part in scrollingEnds {
+            hash = crc32(hash, (line + part.lowerBound).assumingMemoryBound(to: UInt8.self), uInt(part.count))
+        }
+        return UInt32(truncatingIfNeeded: hash)
+    }
+
+    private func count(_ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, chunk: Chunk, slot: Int, still: Bool) {
+        guard endBytes > 0 else { return }
+        let hash = endsHash(source)
+        let first = slot * Self.variants
+        let shown = Int(chunk.shown[slot])
+        var variant = (0..<Self.variants).first { chunk.endCounts[first + $0] > 0 && chunk.endHashes[first + $0] == hash }
+        if variant == nil {
+            // A new one takes the place of the one seen least, never of the one the line holds.
+            let place = (0..<Self.variants).filter { $0 != shown }.min { chunk.endCounts[first + $0] < chunk.endCounts[first + $1] } ?? 0
+            chunk.endHashes[first + place] = hash
+            chunk.endCounts[first + place] = 0
+            variant = place
+        }
+        guard let variant else { return }
+        if still {
+            // The latest still view outweighs everything seen before it.
+            let most = (0..<Self.variants).map { chunk.endCounts[first + $0] }.max() ?? 0
+            chunk.endCounts[first + variant] = max(Self.stillCount, most < .max ? most + 1 : most)
+        } else if chunk.endCounts[first + variant] < .max {
+            chunk.endCounts[first + variant] += 1
+        }
+        guard variant != shown, chunk.endCounts[first + variant] > chunk.endCounts[first + shown] else { return }
+        for part in scrollingEnds { memcpy(target + part.lowerBound, source + part.lowerBound, part.count) }
+        chunk.shown[slot] = UInt8(variant)
+    }
+
+    private static func chunkNumber(of index: Int) -> Int {
+        index >= 0 ? index / chunkLines : -((-index + chunkLines - 1) / chunkLines)
+    }
+}

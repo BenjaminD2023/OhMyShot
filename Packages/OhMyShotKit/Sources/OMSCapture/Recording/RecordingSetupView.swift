@@ -14,13 +14,9 @@ final class RecordingSetupView: NSView {
     var onRecord: ((RecordingTarget, RecordingChoices) -> Void)?
     var onCancel: (() -> Void)?
 
-    private enum Handle {
-        case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
-    }
-
     private enum Adjustment {
         case moving(start: CGPoint, original: CGRect)
-        case resizing(Handle, original: CGRect)
+        case resizing(AreaFrame.Handle, original: CGRect)
         case selecting(start: CGPoint)
     }
 
@@ -30,12 +26,6 @@ final class RecordingSetupView: NSView {
     private let chrome = SelectionChromeView()
     private let bar: RecordingBar
     private var adjustment: Adjustment?
-
-    /// Corners reach this far for a press, edges this far, shrinking on small frames.
-    private static let cornerReach: CGFloat = 12
-    private static let edgeReach: CGFloat = 6
-    /// The smallest area that can be recorded, in points.
-    private static let smallest: CGFloat = 16
 
     init(display: DisplayInfo, target: RecordingTarget, choices: RecordingChoices) {
         self.display = display
@@ -82,8 +72,8 @@ final class RecordingSetupView: NSView {
     /// The frame of what is chosen, in this view's points from the top-left corner.
     private var frameRect: CGRect {
         switch target {
-        case .area(let rect): local(rect)
-        case .window(let window): local(window.frame).intersection(bounds)
+        case .area(let rect): AreaFrame.local(rect, on: display)
+        case .window(let window): AreaFrame.local(window.frame, on: display).intersection(bounds)
         case .display: bounds
         }
     }
@@ -111,20 +101,9 @@ final class RecordingSetupView: NSView {
         setAccessibilityValue(pixelReading)
     }
 
-    /// Under the frame, centered on it; above it when there is no room below; inside its bottom edge when
-    /// neither has room (a whole display, a window filling the screen). Always on the display.
+    /// Under the frame, as `AreaFrame.barFrame` places it.
     private func placeBar() {
-        let size = bar.fittingSize
-        let frame = SelectionChromeView.drawnFrame(for: frameRect, in: bounds)
-        let margin: CGFloat = 8
-        let room = bounds.insetBy(dx: margin, dy: margin)
-        let below = CGRect(x: frame.midX - size.width / 2, y: frame.maxY + 12, width: size.width, height: size.height)
-        let above = CGRect(x: below.minX, y: frame.minY - 12 - size.height, width: size.width, height: size.height)
-        let inside = CGRect(x: below.minX, y: frame.maxY - 40 - size.height, width: size.width, height: size.height)
-        var placed = [below, above].first { room.contains($0) } ?? inside
-        placed.origin.x = min(max(placed.minX, room.minX), room.maxX - size.width)
-        placed.origin.y = min(max(placed.minY, room.minY), room.maxY - size.height)
-        bar.frame = placed.integral
+        bar.frame = AreaFrame.barFrame(size: bar.fittingSize, for: frameRect, in: bounds)
         bar.isHidden = adjustment != nil
         chrome.avoiding = bar.isHidden ? .null : bar.frame
         chrome.toolbarFrame = bar.isHidden ? .null : bar.frame
@@ -209,7 +188,7 @@ final class RecordingSetupView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         if bar.frame.contains(point) { return NSCursor.arrow.set() }
         guard case .area = target else { return (frameRect.contains(point) ? NSCursor.arrow : NSCursor.crosshair).set() }
-        if let handle = handle(at: point) { return Self.cursor(for: handle).set() }
+        if let handle = AreaFrame.handle(at: point, of: frameRect, in: bounds) { return AreaFrame.cursor(for: handle).set() }
         (frameRect.contains(point) ? NSCursor.openHand : NSCursor.crosshair).set()
     }
 
@@ -217,13 +196,14 @@ final class RecordingSetupView: NSView {
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         if case .area(let rect) = target {
-            if let handle = handle(at: point) {
-                begin(.resizing(handle, original: local(rect)))
+            let area = AreaFrame.local(rect, on: display)
+            if let handle = AreaFrame.handle(at: point, of: frameRect, in: bounds) {
+                begin(.resizing(handle, original: area))
                 return
             }
-            if local(rect).contains(point) {
+            if area.contains(point) {
                 if event.clickCount == 2 { return record() }
-                begin(.moving(start: point, original: local(rect)))
+                begin(.moving(start: point, original: area))
                 NSCursor.closedHand.set()
                 return
             }
@@ -253,13 +233,13 @@ final class RecordingSetupView: NSView {
             rect.origin.x = min(max(rect.minX, limits.minX), limits.maxX - rect.width)
             rect.origin.y = min(max(rect.minY, limits.minY), limits.maxY - rect.height)
         case .resizing(let handle, let original):
-            rect = Self.resized(original, dragging: handle, to: clamped)
+            rect = AreaFrame.resized(original, dragging: handle, to: clamped)
         case .selecting(let start):
             rect = CGRect(x: min(start.x, clamped.x), y: min(start.y, clamped.y), width: abs(clamped.x - start.x), height: abs(clamped.y - start.y))
         }
         rect = rect.intersection(limits)
-        guard !rect.isNull, rect.width >= Self.smallest, rect.height >= Self.smallest else { return }
-        target = .area(global(snapped(rect)))
+        guard !rect.isNull, rect.width >= AreaFrame.smallest, rect.height >= AreaFrame.smallest else { return }
+        target = .area(AreaFrame.global(AreaFrame.snapped(rect, pixelsPerPoint: display.pixelsPerPoint), on: display))
         update()
     }
 
@@ -288,74 +268,6 @@ final class RecordingSetupView: NSView {
         default:
             super.keyDown(with: event)
         }
-    }
-
-    // MARK: Geometry
-
-    /// The frame's handle under a point: its corners and edges, measured from the frame as drawn.
-    private func handle(at point: CGPoint) -> Handle? {
-        let rect = SelectionChromeView.drawnFrame(for: frameRect, in: bounds)
-        let cornerReach = max(min(Self.cornerReach, rect.width / 4, rect.height / 4), 4)
-        let corners: [(Handle, CGPoint)] = [
-            (.topLeft, CGPoint(x: rect.minX, y: rect.minY)), (.topRight, CGPoint(x: rect.maxX, y: rect.minY)),
-            (.bottomRight, CGPoint(x: rect.maxX, y: rect.maxY)), (.bottomLeft, CGPoint(x: rect.minX, y: rect.maxY)),
-        ]
-        if let corner = corners.first(where: { hypot($0.1.x - point.x, $0.1.y - point.y) <= cornerReach }) {
-            return corner.0
-        }
-        let reach = max(min(Self.edgeReach, rect.width / 6, rect.height / 6), 3)
-        let insideX = point.x > rect.minX && point.x < rect.maxX
-        let insideY = point.y > rect.minY && point.y < rect.maxY
-        if insideX, abs(point.y - rect.minY) <= reach { return .top }
-        if insideX, abs(point.y - rect.maxY) <= reach { return .bottom }
-        if insideY, abs(point.x - rect.minX) <= reach { return .left }
-        if insideY, abs(point.x - rect.maxX) <= reach { return .right }
-        return nil
-    }
-
-    private static func resized(_ rect: CGRect, dragging handle: Handle, to point: CGPoint) -> CGRect {
-        var minX = rect.minX, maxX = rect.maxX, minY = rect.minY, maxY = rect.maxY
-        switch handle {
-        case .topLeft: minX = point.x; minY = point.y
-        case .top: minY = point.y
-        case .topRight: maxX = point.x; minY = point.y
-        case .right: maxX = point.x
-        case .bottomRight: maxX = point.x; maxY = point.y
-        case .bottom: maxY = point.y
-        case .bottomLeft: minX = point.x; maxY = point.y
-        case .left: minX = point.x
-        }
-        return CGRect(x: min(minX, maxX), y: min(minY, maxY), width: abs(maxX - minX), height: abs(maxY - minY))
-    }
-
-    private static func cursor(for handle: Handle) -> NSCursor {
-        switch handle {
-        case .topLeft: NSCursor.frameResize(position: .topLeft, directions: .all)
-        case .top: NSCursor.frameResize(position: .top, directions: .all)
-        case .topRight: NSCursor.frameResize(position: .topRight, directions: .all)
-        case .right: NSCursor.frameResize(position: .right, directions: .all)
-        case .bottomRight: NSCursor.frameResize(position: .bottomRight, directions: .all)
-        case .bottom: NSCursor.frameResize(position: .bottom, directions: .all)
-        case .bottomLeft: NSCursor.frameResize(position: .bottomLeft, directions: .all)
-        case .left: NSCursor.frameResize(position: .left, directions: .all)
-        }
-    }
-
-    /// Edges on the display's pixels, as the overlay's selection keeps them.
-    private func snapped(_ rect: CGRect) -> CGRect {
-        let scale = display.pixelsPerPoint
-        func snap(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
-        let minX = snap(rect.minX), maxX = snap(rect.maxX), minY = snap(rect.minY), maxY = snap(rect.maxY)
-        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-    }
-
-    /// Global (y up) to this view's points from the display's top-left corner, and back.
-    private func local(_ rect: CGRect) -> CGRect {
-        CGRect(x: rect.minX - display.frame.minX, y: display.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
-    }
-
-    private func global(_ rect: CGRect) -> CGRect {
-        CGRect(x: display.frame.minX + rect.minX, y: display.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
     }
 
     #if DEBUG

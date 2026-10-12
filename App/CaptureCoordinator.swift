@@ -137,7 +137,7 @@ final class CaptureCoordinator {
                 Task { await self?.pin(window: target) }
             case .color(let color, let point, _, let modifiers, let keyboard):
                 self?.onColor?(color, point, modifiers, keyboard)
-            case .annotated, .record, .cancelled:
+            case .annotated, .record, .scroll, .cancelled:
                 break
             }
         }
@@ -221,7 +221,7 @@ final class CaptureCoordinator {
                 self?.countDown(to: .window(target), seconds: seconds, copiesToClipboard: copiesToClipboard)
             case .color(let color, let point, _, let modifiers, let keyboard):
                 self?.onColor?(color, point, modifiers, keyboard)
-            case .annotated, .record, .cancelled:
+            case .annotated, .record, .scroll, .cancelled:
                 break
             }
         }
@@ -310,6 +310,22 @@ final class CaptureCoordinator {
         }
     }
 
+    /// Keeps a scrolling capture's picture as a screenshot is kept: History, the clipboard as the settings say,
+    /// a card, the shutter. `area` is where the capture began (global points), `pixelsPerPoint` its display's.
+    @discardableResult
+    func deliverScrollingCapture(
+        _ image: CGImage, area: CGRect, pixelsPerPoint: CGFloat, displayID: CGDirectDisplayID, appName: String?, copiesToClipboard: Bool = true
+    ) async -> HistoryItem? {
+        let size = CGSize(width: CGFloat(image.width) / pixelsPerPoint, height: CGFloat(image.height) / pixelsPerPoint)
+        let frame = CapturedFrame(
+            image: image, hdrImage: nil, displayID: displayID,
+            frame: CGRect(x: area.minX, y: area.maxY - size.height, width: size.width, height: size.height)
+        )
+        // Kept as captured: the background chosen for every screenshot pads by the picture's size and grows it to its
+        // shape, which for a picture tens of thousands of pixels long is gigabytes; the editor still adds one.
+        return await deliver(frame, appName: appName, copiesToClipboard: copiesToClipboard, setsBackground: false)
+    }
+
     #if DEBUG
     /// Delivers a drawn picture as if it were a capture (history and a card), never touching the
     /// clipboard: for scripted checks that must not read the screen.
@@ -385,7 +401,7 @@ final class CaptureCoordinator {
                 Task { await self?.captureWindow(target, copiesToClipboard: copiesToClipboard) }
             case .color(let color, let point, _, let modifiers, let keyboard):
                 self?.onColor?(color, point, modifiers, keyboard)
-            case .annotated, .record, .cancelled:
+            case .annotated, .record, .scroll, .cancelled:
                 break
             }
         }
@@ -416,7 +432,8 @@ final class CaptureCoordinator {
     @discardableResult
     private func deliver(
         _ frame: CapturedFrame, appName: String?, copiesToClipboard: Bool = true,
-        marks: AnnotationDocument? = nil, copy: Copy = .asSet, savesCopy: Bool = false, showsCard: Bool = true, playsSound: Bool = true
+        marks: AnnotationDocument? = nil, copy: Copy = .asSet, savesCopy: Bool = false, showsCard: Bool = true, playsSound: Bool = true,
+        setsBackground: Bool = true
     ) async -> HistoryItem? {
         if settings.playSounds, playsSound { shutter?.play() }
         let probe = LatencyProbe("capture.deliver")
@@ -428,7 +445,8 @@ final class CaptureCoordinator {
             var shown = (image: frame.image, png: png)
             var document: Data?
             let scale = frame.frame.width > 0 ? CGFloat(frame.image.width) / frame.frame.width : 1
-            if let composed = await composed(frame.image, scale: scale, marks: marks), let composedPNG = try? await ImageExporter.encode(composed.image, as: .png) {
+            if let composed = await composed(frame.image, scale: scale, marks: marks, setsBackground: setsBackground),
+               let composedPNG = try? await ImageExporter.encode(composed.image, as: .png) {
                 shown = (composed.image, composedPNG)
                 document = composed.document
             }
@@ -459,7 +477,7 @@ final class CaptureCoordinator {
             var item = QuickAccessItem(
                 id: entry.id,
                 fileURL: history.fileURL(for: entry),
-                thumbnail: await HistoryStore.thumbnail(of: shown.png, maxPixels: 560) ?? shown.image,
+                thumbnail: await HistoryStore.cardThumbnail(of: shown.image, maxPixels: 560) ?? shown.image,
                 pixelWidth: shown.image.width,
                 pixelHeight: shown.image.height,
                 displayID: frame.displayID,
@@ -485,9 +503,9 @@ final class CaptureCoordinator {
 
     /// The capture as it is kept: with marks drawn in place and the background chosen for every new
     /// screenshot set under them, and the document that recreates it; nil when it is kept as captured.
-    private func composed(_ image: CGImage, scale: CGFloat, marks: AnnotationDocument?) async -> (image: CGImage, document: Data)? {
+    private func composed(_ image: CGImage, scale: CGFloat, marks: AnnotationDocument?, setsBackground: Bool = true) async -> (image: CGImage, document: Data)? {
         var document = marks ?? AnnotationDocument(pixelSize: CGSize(width: image.width, height: image.height), scale: scale)
-        if document.backdrop == nil { document.backdrop = BackdropPresets.shared.automatic?.backdrop }
+        if setsBackground, document.backdrop == nil { document.backdrop = BackdropPresets.shared.automatic?.backdrop }
         guard !document.isEmpty, let rendered = await AnnotationRenderer.render(document, base: image), let data = try? JSONEncoder().encode(document) else { return nil }
         return (rendered, data)
     }
