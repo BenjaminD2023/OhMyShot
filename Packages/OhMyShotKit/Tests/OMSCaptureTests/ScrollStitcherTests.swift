@@ -312,6 +312,46 @@ struct ScrollStitcherTests {
         #expect(rows.isEmpty, "\(rows.count) rows from \(rows.first ?? -1): \(stitcher.summary)")
     }
 
+    @Test func aStickyCardWithABlankInsideLeavesNoStripDownThePicture() throws {
+        // A white card stuck over a gray sidebar, most of the view tall: labels down its left, a border around it,
+        // nothing between the labels and its right edge; at the view's left edge a pixel a shade off the gray. Below
+        // the first view the sidebar is the page's gray.
+        let page = Page(width: 400, height: 2400, seed: 17)
+        let sidebar = 120, width = 520, height = 300
+        let gray: UInt32 = 0xFFF4_F5F7, border: UInt32 = 0xFFE3_E5E8
+        func view(at offset: Int) -> [UInt32] {
+            var pixels = [UInt32](repeating: gray, count: width * height)
+            for y in 0..<height { pixels[y * width] = 0xFFF5_F6F8 }
+            for y in 12...239 {
+                for x in 8..<sidebar {
+                    pixels[y * width + x] = y == 12 || y == 239 || x == 8 || x == sidebar - 1 ? border : Self.white
+                }
+                guard y >= 24, y < 228, (y - 24) % 18 < 10 else { continue }
+                for x in 20..<(48 + (y - 24) / 18 % 3 * 7) where (x * 3 + y) % 5 < 3 { pixels[y * width + x] = 0xFF3A_3F47 }
+            }
+            for y in 0..<height {
+                for x in 0..<page.width { pixels[y * width + sidebar + x] = page.pixels[(offset + y) * page.width + x] }
+            }
+            return pixels
+        }
+        let stitcher = Self.stitcher(width: width, height: height)
+        var offset = 0
+        let first = view(at: offset)
+        Self.add(first, to: stitcher)
+        for step in [31, 44, 18, 52, 27, 39, 23, 46, 35, 21, 58, 30] {
+            offset += step
+            #expect(Self.add(view(at: offset), to: stitcher) == .scrolled(offset: step), "step \(step)")
+        }
+        let picture = try #require(stitcher.picture())
+        var expected = first
+        for y in height..<offset + height {
+            expected += [UInt32](repeating: gray, count: sidebar)
+            expected += page.row(y)
+        }
+        let rows = Self.differingRows(Self.pixels(of: picture), expected, width: width, skipping: 0..<8)
+        #expect(rows.isEmpty, "\(rows.count) rows from \(rows.first ?? -1): \(stitcher.summary)")
+    }
+
     @Test func aBannerThatPopsUpLaterEndsUpOnlyAtTheEnd() throws {
         let page = Page(width: 400, height: 2400)
         let stitcher = Self.stitcher(width: 400, height: 300)

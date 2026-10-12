@@ -1521,15 +1521,18 @@ nonisolated private final class Canvas {
         var stays = (0..<segments).map { stillSeen[$0] >= 4 && !moves[$0] && (stillTo[$0] - stillFrom[$0] + 1) * 6 >= new.count }
         // Short gaps between segments that stay put, which never moved, stay put too: a sidebar's blank stretch;
         // and so do short ones between them and the line's end: its margin by the edge of the view, and plain icons in
-        // it, which no view tells stay put.
+        // it, which no view tells stay put. A wider gap between them stays put too where views told it stayed put
+        // far more than moved, or told nothing at all: a sticky card's blank inside, one color like the page around it.
         var segment = 0
         while segment < segments {
             guard !stays[segment] else { segment += 1; continue }
             var end = segment
             while end < segments, !stays[end] { end += 1 }
-            let between = segment > 0 && end < segments && end - segment <= 3
+            let enclosed = segment > 0 && end < segments
+            let between = enclosed && end - segment <= 3
             let byTheEdge = (segment == 0) != (end == segments) && end - segment <= 8
-            if between || byTheEdge, (segment..<end).allSatisfy({ !moves[$0] }) {
+            let quiet = enclosed && (segment..<end).allSatisfy { stillSeen[$0] >= movingSeen[$0] * 4 }
+            if quiet || (between || byTheEdge) && (segment..<end).allSatisfy({ !moves[$0] }) {
                 for gap in segment..<end { stays[gap] = true }
             }
             segment = end
@@ -1567,22 +1570,24 @@ nonisolated private final class Canvas {
     private func groundOutsideStill(_ segments: [Int]) {
         guard let ground, let firstSnapshot, let firstLines else { return }
         // The whole of what stays put, run by run of columns: its labels end at different lines, its card at one.
+        // The color, though, column by column: a pixel a shade off at the view's edge leaves the rest one color.
         for run in stayingSegments where segments.contains(where: run.contains) {
             let from = run.map { stillFrom[$0] }.min() ?? 0, to = run.map { stillTo[$0] }.max() ?? 0
             guard from <= to else { continue }
             let still = from...to
             let lines = Self.samples(of: firstLines, count: 96).filter { !still.contains($0) }
-            var colors: [UInt32: Int] = [:]
-            for line in lines {
-                let row = UnsafeRawPointer(firstSnapshot.baseAddress + (line - firstLines.lowerBound) * lineBytes)
-                let start = run.lowerBound * Self.segmentBytes, bytes = min(run.count * Self.segmentBytes, lineBytes - start)
-                guard Self.isPlain(row + start, bytes) else { continue }
-                colors[(row + start).load(as: UInt32.self), default: 0] += 1
+            for segment in run {
+                let start = segment * Self.segmentBytes, bytes = min(Self.segmentBytes, lineBytes - start)
+                var colors: [UInt32: Int] = [:]
+                for line in lines {
+                    let pixels = UnsafeRawPointer(firstSnapshot.baseAddress + (line - firstLines.lowerBound) * lineBytes) + start
+                    guard Self.isPlain(pixels, bytes) else { continue }
+                    colors[pixels.load(as: UInt32.self), default: 0] += 1
+                }
+                guard let (color, seen) = colors.max(by: { $0.value < $1.value }), seen >= 8 else { continue }
+                let target = (ground.baseAddress + start).bindMemory(to: UInt32.self, capacity: bytes / 4)
+                for pixel in 0..<bytes / 4 { target[pixel] = color }
             }
-            guard let (color, seen) = colors.max(by: { $0.value < $1.value }), seen >= 8 else { continue }
-            let start = run.lowerBound * Self.segmentBytes, bytes = min(run.count * Self.segmentBytes, lineBytes - start)
-            let target = (ground.baseAddress + start).bindMemory(to: UInt32.self, capacity: bytes / 4)
-            for pixel in 0..<bytes / 4 { target[pixel] = color }
         }
     }
 
