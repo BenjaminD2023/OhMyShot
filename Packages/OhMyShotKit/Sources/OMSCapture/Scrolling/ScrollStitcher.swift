@@ -1050,7 +1050,7 @@ nonisolated final class Lines {
         if held.isEmpty, failure == nil, behind == nil, let expected, expected != 0, most < 6 {
             let window = max(4, abs(expected) / 4)
             for distance in 0...window {
-                for offset in Set([expected - distance, expected + distance]) where offset != 0 && abs(offset) <= reach {
+                for offset in distance == 0 ? [expected] : [expected - distance, expected + distance] where offset != 0 && abs(offset) <= reach {
                     if case .holds(let match, _) = verify(new, old, offset: offset, previouslyMoving: movingBands, content: content, expected: expected) {
                         return .scrolled(match)
                     }
@@ -1480,13 +1480,12 @@ nonisolated private final class Canvas {
         let samples = Self.samples(of: lines, count: 64)
         for segment in 0..<segments {
             let start = segment * Self.segmentBytes, bytes = min(Self.segmentBytes, lineBytes - start)
-            var colors: [UInt32: Int] = [:]
+            var plain: [UInt32] = []
             for line in samples {
                 let pixels = view.line(line) + start
-                guard Self.isPlain(pixels, bytes) else { continue }
-                colors[pixels.load(as: UInt32.self), default: 0] += 1
+                if Self.isPlain(pixels, bytes) { plain.append(pixels.load(as: UInt32.self)) }
             }
-            let color = colors.max { $0.value < $1.value }?.key ?? (view.line(lines.lowerBound) + start).load(as: UInt32.self)
+            let color = Self.mostSeen(plain)?.color ?? (view.line(lines.lowerBound) + start).load(as: UInt32.self)
             let target = (ground.baseAddress + start).bindMemory(to: UInt32.self, capacity: bytes / 4)
             for pixel in 0..<bytes / 4 { target[pixel] = color }
         }
@@ -1592,17 +1591,29 @@ nonisolated private final class Canvas {
             let lines = Self.samples(of: firstLines, count: 96).filter { !still.contains($0) }
             for segment in run {
                 let start = segment * Self.segmentBytes, bytes = min(Self.segmentBytes, lineBytes - start)
-                var colors: [UInt32: Int] = [:]
+                var plain: [UInt32] = []
                 for line in lines {
                     let pixels = UnsafeRawPointer(firstSnapshot.baseAddress + (line - firstLines.lowerBound) * lineBytes) + start
-                    guard Self.isPlain(pixels, bytes) else { continue }
-                    colors[pixels.load(as: UInt32.self), default: 0] += 1
+                    if Self.isPlain(pixels, bytes) { plain.append(pixels.load(as: UInt32.self)) }
                 }
-                guard let (color, seen) = colors.max(by: { $0.value < $1.value }), seen >= 8 else { continue }
+                guard let (color, seen) = Self.mostSeen(plain), seen >= 8 else { continue }
                 let target = (ground.baseAddress + start).bindMemory(to: UInt32.self, capacity: bytes / 4)
                 for pixel in 0..<bytes / 4 { target[pixel] = color }
             }
         }
+    }
+
+    /// The color seen most among `colors`, and how often: of two seen as often, the one that got there first, so a
+    /// tie never goes either way by chance.
+    private static func mostSeen(_ colors: [UInt32]) -> (color: UInt32, seen: Int)? {
+        var counts: [UInt32: Int] = [:]
+        var most: (color: UInt32, seen: Int)?
+        for color in colors {
+            let seen = counts[color, default: 0] + 1
+            counts[color] = seen
+            if seen > most?.seen ?? 0 { most = (color, seen) }
+        }
+        return most
     }
 
     /// Lines that came into view before their columns were seen to stay put took those columns as they came, when
