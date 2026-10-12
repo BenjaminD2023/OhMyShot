@@ -30,7 +30,7 @@ enum DebugRecordingDemo {
     static func run(seconds: Int, size: CGSize, framesPerSecond: Int, speed: Double, prefersHEVC: Bool, keeps: Bool, systemAudio: Bool = false) async {
         let window = DemoScrollWindow(size: size, speed: speed)
         window.orderFront(nil)
-        defer { window.orderOut(nil) }
+        defer { window.close() }
         // Long enough for the window server to have the window's first frame.
         try? await Task.sleep(for: .milliseconds(300))
         do {
@@ -94,7 +94,7 @@ extension DebugRecordingDemo {
     static func runStudio(seconds: Int, size: CGSize) async {
         let window = DemoScrollWindow(size: size, speed: 240)
         window.orderFront(nil)
-        defer { window.orderOut(nil) }
+        defer { window.close() }
         try? await Task.sleep(for: .milliseconds(300))
         do {
             let shareable = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -282,7 +282,7 @@ extension DebugRecordingDemo {
     ) async {
         let window = DemoScrollWindow(size: size, speed: 240)
         window.orderFront(nil)
-        defer { window.orderOut(nil) }
+        defer { window.close() }
         try? await Task.sleep(for: .milliseconds(300))
         guard let display = displays.layout.primary else { return }
         let target = WindowTarget(id: CGWindowID(window.windowNumber), frame: window.frame, ownerName: "Demo", title: nil)
@@ -337,7 +337,7 @@ extension DebugRecordingDemo {
 }
 
 /// The app's memory as Activity Monitor counts it.
-private enum Memory {
+nonisolated enum Memory {
     static func footprint() -> UInt64 {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
@@ -361,7 +361,7 @@ extension DebugRecordingDemo {
     ) async {
         let window = DemoScrollWindow(size: size, speed: speed)
         window.orderFront(nil)
-        defer { window.orderOut(nil) }
+        defer { window.close() }
         try? await Task.sleep(for: .milliseconds(300))
         do {
             let shareable = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -514,7 +514,7 @@ extension DebugRecordingDemo {
     }
 
     static func closeReplayWindow() {
-        replayWindow?.orderOut(nil)
+        replayWindow?.close()
         replayWindow = nil
     }
 }

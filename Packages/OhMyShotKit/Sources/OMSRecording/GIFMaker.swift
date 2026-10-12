@@ -4,6 +4,7 @@ import CoreGraphics
 import CoreMedia
 import CoreVideo
 import Foundation
+import OMSCore
 
 /// Makes an animated GIF from a recording, for the chats, issues, and documents that show pictures but
 /// not movies.
@@ -77,7 +78,7 @@ public enum GIFMaker {
 
         let writer = try GIFFileWriter(url: destination, width: size.width, height: size.height)
         let timeline = Timeline(framesPerSecond: options.framesPerSecond, length: range.duration.seconds)
-        let assembler = Assembler(writer: writer, width: size.width, height: size.height, timeline: timeline)
+        let assembler = try Assembler(writer: writer, width: size.width, height: size.height, timeline: timeline)
         do {
             // The newest frame read and its number: what shows from its time until the next one's.
             var shown: (pixels: CVPixelBuffer, number: Int)?
@@ -161,22 +162,30 @@ private final class Assembler {
     private let height: Int
     private let timeline: Timeline
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
-    /// The picture the GIF shows now, and the one being made, as BGRA pixels at the GIF's size.
-    private var previous: [UInt32]
-    private var current: [UInt32]
+    /// The picture the GIF shows now, and the one being made, as BGRA pixels at the GIF's size; and room for
+    /// the part of it a frame holds. Pages of their own, given back when the GIF is made: freed heap blocks
+    /// this size stayed in the app's footprint.
+    private var previous: PageBuffer
+    private var current: PageBuffer
+    private let part: PageBuffer
+    /// Scratch room for scaling, made for the recording's frame size at the first frame.
+    private var scaling: PageBuffer?
     private var hasPrevious = false
     /// The recording's frame shown last, by its number: the reader reuses pixel buffers, so they can't tell.
     private var lastNumber = -1
     /// The newest GIF frame, held until the next one says how long it shows.
     private var pending: (frame: GIFFileWriter.Frame, tick: Int)?
 
-    init(writer: GIFFileWriter, width: Int, height: Int, timeline: Timeline) {
+    init(writer: GIFFileWriter, width: Int, height: Int, timeline: Timeline) throws {
         self.writer = writer
         self.width = width
         self.height = height
         self.timeline = timeline
-        previous = [UInt32](repeating: 0, count: width * height)
-        current = previous
+        guard let previous = PageBuffer(byteCount: width * height * 4), let current = PageBuffer(byteCount: width * height * 4),
+              let part = PageBuffer(byteCount: width * height * 4) else { throw GIFMaker.GIFError.encodingFailed }
+        self.previous = previous
+        self.current = current
+        self.part = part
     }
 
     /// Shows the recording's frame `number` (in `pixels`) from `tick`.
@@ -213,14 +222,18 @@ private final class Assembler {
             data: CVPixelBufferGetBaseAddress(pixels), height: vImagePixelCount(CVPixelBufferGetHeight(pixels)),
             width: vImagePixelCount(CVPixelBufferGetWidth(pixels)), rowBytes: CVPixelBufferGetBytesPerRow(pixels)
         )
-        current.withUnsafeMutableBytes { bytes in
-            var target = vImage_Buffer(data: bytes.baseAddress, height: vImagePixelCount(height), width: vImagePixelCount(width), rowBytes: width * 4)
-            if source.width == target.width, source.height == target.height {
-                vImageCopyBuffer(&source, &target, 4, vImage_Flags(kvImageNoFlags))
-            } else {
-                vImageScale_ARGB8888(&source, &target, nil, vImage_Flags(kvImageHighQualityResampling))
-            }
+        var target = vImage_Buffer(data: current.baseAddress, height: vImagePixelCount(height), width: vImagePixelCount(width), rowBytes: width * 4)
+        if source.width == target.width, source.height == target.height {
+            vImageCopyBuffer(&source, &target, 4, vImage_Flags(kvImageNoFlags))
+            return
         }
+        let flags = vImage_Flags(kvImageHighQualityResampling)
+        if scaling == nil {
+            // Without scratch room of its own, vImage takes and frees some for every frame.
+            let size = vImageScale_ARGB8888(&source, &target, nil, flags | vImage_Flags(kvImageGetTempBufferSize))
+            scaling = size > 0 ? PageBuffer(byteCount: size) : nil
+        }
+        vImageScale_ARGB8888(&source, &target, scaling?.baseAddress, flags)
     }
 
     /// The GIF frame for the picture now made: all of it the first time, then the part that differs from
@@ -256,73 +269,65 @@ private final class Assembler {
     /// The smallest box holding every pixel that differs from the picture before, and how many runs of
     /// pixels differ.
     private func difference() -> (x: Int, y: Int, width: Int, height: Int, changedRuns: Int)? {
-        previous.withUnsafeBufferPointer { before in
-            current.withUnsafeBufferPointer { now in
-                guard let before = before.baseAddress, let now = now.baseAddress else { return nil }
-                var minX = width, minY = height, maxX = -1, maxY = -1, changedRuns = 0
-                for y in 0..<height {
-                    let row = y * width
-                    guard memcmp(before + row, now + row, width * 4) != 0 else { continue }
-                    minY = min(minY, y)
-                    maxY = y
-                    var x = 0
-                    while x < width {
-                        let count = min(Self.run, width - x)
-                        if memcmp(before + row + x, now + row + x, count * 4) != 0 {
-                            changedRuns += 1
-                            if x < minX {
-                                var first = x
-                                while before[row + first] == now[row + first] { first += 1 }
-                                minX = min(minX, first)
-                            }
-                            if x + count - 1 > maxX {
-                                var last = x + count - 1
-                                while before[row + last] == now[row + last] { last -= 1 }
-                                maxX = max(maxX, last)
-                            }
-                        }
-                        x += count
+        let before = previous.bound(to: UInt32.self, count: width * height)
+        let now = current.bound(to: UInt32.self, count: width * height)
+        var minX = width, minY = height, maxX = -1, maxY = -1, changedRuns = 0
+        for y in 0..<height {
+            let row = y * width
+            guard memcmp(before + row, now + row, width * 4) != 0 else { continue }
+            minY = min(minY, y)
+            maxY = y
+            var x = 0
+            while x < width {
+                let count = min(Self.run, width - x)
+                if memcmp(before + row + x, now + row + x, count * 4) != 0 {
+                    changedRuns += 1
+                    if x < minX {
+                        var first = x
+                        while before[row + first] == now[row + first] { first += 1 }
+                        minX = min(minX, first)
+                    }
+                    if x + count - 1 > maxX {
+                        var last = x + count - 1
+                        while before[row + last] == now[row + last] { last -= 1 }
+                        maxX = max(maxX, last)
                     }
                 }
-                guard maxX >= 0 else { return nil }
-                return (minX, minY, maxX - minX + 1, maxY - minY + 1, changedRuns)
+                x += count
             }
         }
+        guard maxX >= 0 else { return nil }
+        return (minX, minY, maxX - minX + 1, maxY - minY + 1, changedRuns)
     }
 
     /// The part `box` of the picture now made, opaque; with `transparent`, the pixels the same as before
     /// are clear.
     private func picture(_ box: (x: Int, y: Int, width: Int, height: Int), transparent: Bool) -> CGImage? {
-        guard
-            let context = CGContext(
-                data: nil, width: box.width, height: box.height, bitsPerComponent: 8, bytesPerRow: box.width * 4, space: colorSpace,
-                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-            ),
-            let data = context.data
-        else { return nil }
-        let target = data.bindMemory(to: UInt32.self, capacity: box.width * box.height)
-        previous.withUnsafeBufferPointer { before in
-            current.withUnsafeBufferPointer { now in
-                guard let before = before.baseAddress, let now = now.baseAddress else { return }
-                for row in 0..<box.height {
-                    let source = (box.y + row) * width + box.x
-                    let destination = target + row * box.width
-                    // The decoder's pixels are opaque already.
-                    memcpy(destination, now + source, box.width * 4)
-                    guard transparent else { continue }
-                    var x = 0
-                    while x < box.width {
-                        let count = min(Self.run, box.width - x)
-                        if memcmp(before + source + x, now + source + x, count * 4) == 0 {
-                            memset(destination + x, 0, count * 4)
-                        } else {
-                            for column in x..<x + count where before[source + column] == now[source + column] {
-                                destination[column] = 0
-                            }
-                        }
-                        x += count
+        // Drawn into `part`; the image made from it is a copy.
+        guard let context = CGContext(
+            data: part.baseAddress, width: box.width, height: box.height, bitsPerComponent: 8, bytesPerRow: box.width * 4, space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return nil }
+        let target = part.bound(to: UInt32.self, count: box.width * box.height)
+        let before = previous.bound(to: UInt32.self, count: width * height)
+        let now = current.bound(to: UInt32.self, count: width * height)
+        for row in 0..<box.height {
+            let source = (box.y + row) * width + box.x
+            let destination = target + row * box.width
+            // The decoder's pixels are opaque already.
+            memcpy(destination, now + source, box.width * 4)
+            guard transparent else { continue }
+            var x = 0
+            while x < box.width {
+                let count = min(Self.run, box.width - x)
+                if memcmp(before + source + x, now + source + x, count * 4) == 0 {
+                    memset(destination + x, 0, count * 4)
+                } else {
+                    for column in x..<x + count where before[source + column] == now[source + column] {
+                        destination[column] = 0
                     }
                 }
+                x += count
             }
         }
         return context.makeImage()

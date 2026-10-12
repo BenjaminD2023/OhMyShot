@@ -541,3 +541,34 @@ composites nothing: every stream delivered one frame).
 The replay as built (`ReplayBuffer`, `ReplayCoordinator`), through `debug/replay` on the demo window: saving
 takes 110–120 ms for 15 s of 1600×1000 (export and finishing to MP4), and the capture lease is released when
 the replay is turned off (`debug/resources` idle).
+
+### M4 power gate (2026-10-11)
+
+Debug build, the same machine and displays, a fresh launch, nothing of the user's read: every step ran on
+the app's own demo windows behind the desktop picture. The tour after launch was a 5 s recording
+(`debug/record-demo`), a GIF of it (`debug/gif-demo`), a Studio film of it with motion blur
+(`debug/studio-render`), and the replay turned on, saved, and turned off (`debug/replay`); then 30 s of
+nothing before a 60 s `Scripts/power-sample.sh`.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Idle after launch, 60 s | 0.00% CPU, 0 wakeups, 23 MB | 0.0%, < 60, < 30 MB |
+| Footprint after each step: recording / GIF / Studio film / replay | 28 / 46 / 61 / 57 MB | — |
+| Idle after the tour, 60 s | 0.01% CPU (one 0.1% second), 0 wakeups, 57 MB | 0.0%, < 60, < 60 MB |
+| Live resources after the tour | none | none when idle |
+
+A 20 s `sample` of the idle app after the tour found every thread waiting, so the 0.1% second is `top`'s
+rounding of a single wake, not something that repeats.
+
+- **The allocator keeps the large blocks it frees, dirty.** Before this gate, one GIF left the footprint 33 MB
+  higher for good (28 → 61 MB; a 1920×1080 GIF another 30 MB), and the tour ended at 72 MB. None of it was
+  live: `vmmap` showed 44 MB of empty large-block regions and 14 MB of empty small ones still dirty, and
+  `malloc_zone_pressure_relief` returned none of it. Launched with `MallocLargeCache=0`, the same GIF left
+  nothing (27 → 27 MB). The GIF's frame buffers were Swift arrays and vImage's per-frame scratch room; they
+  now come from `PageBuffer` (OMSCore: pages from `mmap`, unmapped when let go), and the scratch room is made
+  once per GIF: 46 MB after the GIF. What is left after it is ImageIO's own encoding, which the app cannot
+  steer. Core Graphics' bitmaps were never part of it: they are mapped pages already.
+- **A Studio film keeps about 15 MB** (46 → 61 MB, then 57 after the replay), most of it small heap blocks
+  still dirty after the film (`vmmap`: 32 MB of small-block regions dirty after the tour). Two more films
+  and another GIF took it to 63 and then 65 MB, the second film adding nothing: it settles a little over the
+  budget after heavy use. Not chased further for now; the small-block regions are where to look next.
