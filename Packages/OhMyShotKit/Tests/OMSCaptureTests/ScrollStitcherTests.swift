@@ -1124,6 +1124,46 @@ struct ScrollStitcherTests {
         #expect(stitcher.innerPart == nil)
     }
 
+    @Test func aGradientDitheredOnScreenIsNotTakenForSomethingFixed() throws {
+        // A picture shaded left to right, every row alike but for the GPU's dither, which belongs to the screen, not
+        // the page: at the same place on screen it is the same in every view. It must come out whole, never with
+        // pieces of the background where it looked fixed.
+        let page = Page(width: 800, height: 2400)
+        let image = 800..<1000
+        func shade(_ x: Int) -> UInt32 { UInt32(0x30 + x * 0x90 / 800) }
+        func view(at offset: Int) -> [UInt32] {
+            Self.view(page, at: offset, size: 500) { pixels, width, height in
+                for y in 0..<height where image.contains(offset + y) {
+                    for x in 60..<740 {
+                        // A pattern of the screen's own, 64 rows tall, as the GPU's dither is.
+                        let dither = UInt32(truncatingIfNeeded: ((x &* 2_654_435_761) ^ ((y % 64) &* 40_503)) >> 7) % 3
+                        let level = shade(x) + dither
+                        pixels[y * width + x] = 0xFF00_0000 | level << 16 | (level / 2 + 0x40) << 8 | (0xC0 - level / 2)
+                    }
+                }
+            }
+        }
+        let stitcher = Self.stitcher(width: 800, height: 500)
+        stitcher.isDriven = true
+        var offset = 0
+        Self.add(view(at: offset), to: stitcher)
+        while offset < 1500 {
+            offset += 18
+            #expect(Self.add(view(at: offset), to: stitcher) == .scrolled(offset: 18), "at \(offset)")
+        }
+        let picture = try #require(stitcher.picture())
+        #expect(picture.height == offset + 500, "\(stitcher.summary)")
+        let pixels = Self.pixels(of: picture)
+        var holes = 0
+        for y in image {
+            for x in 60..<740 {
+                let red = (pixels[y * 800 + x] >> 16) & 0xFF
+                if red + 4 < shade(x) || red > shade(x) + 6 { holes += 1 }
+            }
+        }
+        #expect(holes == 0, "\(holes) pixels of the picture are something else: \(stitcher.summary)")
+    }
+
     @Test func aCarouselSlidingDoesNotTurnThePageSideways() throws {
         // Before the page first scrolls, a hero half the view tall slides to its next picture.
         let page = Page(width: 800, height: 2000)

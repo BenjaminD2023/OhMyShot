@@ -1607,6 +1607,16 @@ nonisolated private final class Canvas {
         length <= 4 || memcmp(bytes, bytes + 4, length - 4) == 0
     }
 
+    /// Whether `length` bytes of `a` and `b` are the same but for the display's dither: no channel more than 3 levels
+    /// apart. The dither belongs to the screen, not the page, so a shade alike top to bottom (a gradient left to
+    /// right) is the same at the same place on screen view after view, and only nearly the same where it moved to.
+    private static func nearlyAlike(_ a: UnsafeRawPointer, _ b: UnsafeRawPointer, _ length: Int) -> Bool {
+        if memcmp(a, b, length) == 0 { return true }
+        let x = a.assumingMemoryBound(to: UInt8.self), y = b.assumingMemoryBound(to: UInt8.self)
+        for index in 0..<length where abs(Int(x[index]) - Int(y[index])) > 3 { return false }
+        return true
+    }
+
     // MARK: Taking views in
 
     /// Lines within the range never written.
@@ -1765,7 +1775,7 @@ nonisolated private final class Canvas {
     private func staysPut(_ source: UnsafeRawPointer, _ start: Int, _ length: Int, sameRow: UnsafeRawPointer, alike: UnsafeRawPointer?) -> Bool {
         guard memcmp(source + start, sameRow + start, length) == 0, isFixedFeature(source, start, length) else { return false }
         guard let alike else { return true }
-        return memcmp(source + start, alike + start, length) != 0
+        return !Self.nearlyAlike(source + start, alike + start, length)
     }
 
     /// A colored flat run is a fixed-rule candidate only when surrounded by background along the scroll
@@ -1903,7 +1913,7 @@ nonisolated private final class Canvas {
                     support[segment] -= min(support[segment], step)
                     // Repeated passes close to a sticky edge cannot overrule a clearer interior observation.
                     guard quality >= qualities[segment] else { continue }
-                    if memcmp(source + start, previous + start, length) == 0 {
+                    if Self.nearlyAlike(source + start, previous + start, length) {
                         let plain = Self.isPlain(source + start, length)
                         if (plain && atEdge) || belowStart, support[segment] > Self.seenOnce { continue }
                         // Below the bar at the start, plain and just where it was on screen: a stuck avatar's blank
