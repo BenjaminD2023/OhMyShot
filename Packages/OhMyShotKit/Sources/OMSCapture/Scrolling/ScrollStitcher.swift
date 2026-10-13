@@ -1620,6 +1620,17 @@ nonisolated private final class Canvas {
             }
             gap = end
         }
+        // And so are those beside them that the view saw not move at all as often as move: the ragged edge of a
+        // sidebar's names, a line or two of them looked at.
+        for segment in 0..<segments where adriftNow[segment] {
+            for direction in [-1, 1] {
+                var next = segment + direction
+                while next >= 0, next < segments, !adriftNow[next], still[next] + drifted[next] >= 1, moving[next] <= still[next] + drifted[next] {
+                    adriftNow[next] = true
+                    next += direction
+                }
+            }
+        }
         // A view that sees little of a column (a sidebar's blank foot, a line or two of small print) says nothing
         // against what the views before it saw.
         for segment in 0..<segments {
@@ -1649,9 +1660,21 @@ nonisolated private final class Canvas {
             }
         }
         // What a view showed of a column it saw mostly not move is not as the page has it, a line or two that moved
-        // with the content by chance aside.
+        // with the content by chance aside. Short gaps between columns it saw move, where it saw nothing at all (the
+        // space between two letters of small print, on the lines looked at), moved with them.
+        var carriedOver = (0..<segments).map { seenMoving[$0] && moves[$0] && !adrift[$0] }
+        var quiet = 0
+        while quiet < segments {
+            guard !carriedOver[quiet] else { quiet += 1; continue }
+            var end = quiet
+            while end < segments, !carriedOver[end] { end += 1 }
+            if quiet > 0, end < segments, end - quiet <= 3, (quiet..<end).allSatisfy({ still[$0] + moving[$0] + drifted[$0] == 0 }) {
+                for segment in quiet..<end { carriedOver[segment] = true }
+            }
+            quiet = end
+        }
         let shown = position ..< position + new.count
-        for segment in 0..<segments where seenMoving[segment] && moves[segment] && !adrift[segment] {
+        for segment in 0..<segments where carriedOver[segment] {
             movedOver[segment] = movedOver[segment].map { min($0.lowerBound, shown.lowerBound) ..< max($0.upperBound, shown.upperBound) } ?? shown
         }
         // What a column did lately counts most: one that scrolled with the page at first and then stuck (a sidebar

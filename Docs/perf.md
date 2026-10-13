@@ -929,3 +929,30 @@ moved part of the way counts (a docs sidebar stopping partway through the one sc
 
 25 frame sets came out otherwise, each looked at: besides the button, a line of Apple Developer's contents and the
 last number of a docs list come out whole, and a chat's channel names no longer stop short.
+
+### Seams where a sidebar stopped partway (2026-10-13, later still)
+
+Two places where a view looks at too few lines of a column (32 a view) and leaves one of it out.
+
+- **The ragged edge of what stopped partway.** In the view where a sidebar stops partway through a scroll, a
+  column at the right end of its names, with one line that moved with the content by chance and two that moved
+  part of the way, was not adrift (that takes two to one), and was not between columns that were: the last letters
+  of a name came from that view, a few pixels off. Now a column beside adrift ones that the view saw not move with
+  the content at least once, and no less often than move, is adrift too.
+- **A letter's gap in small print.** A column coming to stay put takes the ground on the lines no view saw it move
+  over. A view whose line looked at in one column fell between two letters, while the columns either side saw the
+  small print move, left that column's lines out: 8 px of "Accessibility" at a sidebar's foot went dark. Now a gap of
+  up to three columns between ones a view saw move, where it saw nothing at all, moved with them.
+
+| Check | Before | After |
+| --- | --- | --- |
+| A made-up X-like timeline, the last name in its follow list | "Dana Ose" and an "i" a few pixels off | whole |
+| A made-up dark X-like sidebar's footer | "Acce ssibility", the separators and the card's bottom border broken | whole |
+| GitHub's file tree, nature.com's and Apple Developer's contents | a name's end, a link's last letter, a highlight's end off | whole |
+| The 206 frame sets, pixels against pictures rebuilt from the frames' offsets | 192,409 rows off | 192,399 |
+| 3500 × 2400 px views scrolling, optimized build (two runs each) | 8.88–9.19 ms | 8.85–9.09 ms |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+30 frame sets came out otherwise, each looked at; two specks appear on a dark MDN page. Still visible: the X-like
+timelines' footers keep a seam where two views' halves of a line meet a few pixels apart, moved along it rather
+than gone.
