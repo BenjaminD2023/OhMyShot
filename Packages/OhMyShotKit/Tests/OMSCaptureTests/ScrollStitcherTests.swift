@@ -352,6 +352,50 @@ struct ScrollStitcherTests {
         #expect(rows.isEmpty, "\(rows.count) rows from \(rows.first ?? -1): \(stitcher.summary)")
     }
 
+    @Test func aSidebarHeldByItsFootLeavesNothingDownThePicture() throws {
+        // A sidebar taller than the view, beside the posts, scrolls with them until its foot meets the view's, then
+        // stays there, as a timeline's does: cards down it, a flat avatar on each, one color inside. Below its foot
+        // the picture shows the page's white beside the posts, not pieces of the last avatars again and again.
+        let page = Page(width: 400, height: 3000, seed: 23)
+        let sidebar = 160, width = 560, height = 300, sidebarHeight = 520
+        var panel = [UInt32](repeating: Self.white, count: sidebar * sidebarHeight)
+        for card in 0..<8 {
+            let top = 12 + card * 63
+            for y in top ..< top + 40 {
+                for x in 12..<44 where (x - 28) * (x - 28) + (y - top - 20) * (y - top - 20) <= 256 { panel[y * sidebar + x] = 0xFF33_33CC &+ UInt32(card * 0x1100) }
+                guard y < top + 30, (y - top) % 10 < 7 else { continue }
+                for x in 56..<(120 + card * 3) where (x * 7 + y * 3 + card) % 5 < 3 { panel[y * sidebar + x] = 0xFF22_2833 }
+            }
+        }
+        func view(at offset: Int) -> [UInt32] {
+            let top = min(offset, sidebarHeight - height)
+            var pixels = [UInt32](repeating: Self.white, count: width * height)
+            for y in 0..<height {
+                for x in 0..<page.width { pixels[y * width + x] = page.pixels[(offset + y) * page.width + x] }
+                for x in 0..<sidebar { pixels[y * width + page.width + x] = panel[(top + y) * sidebar + x] }
+            }
+            return pixels
+        }
+        let stitcher = Self.stitcher(width: width, height: height)
+        var offset = 0
+        let first = view(at: offset)
+        Self.add(first, to: stitcher)
+        for step in Array(repeating: [17, 23, 19, 26, 21], count: 21).joined() where offset < 2200 {
+            offset += step
+            #expect(Self.add(view(at: offset), to: stitcher) == .scrolled(offset: step), "step \(step) to \(offset)")
+        }
+        let picture = try #require(stitcher.picture())
+        #expect(picture.height == offset + height)
+        let pixels = Self.pixels(of: picture)
+        // The posts are the page's throughout; the first view is as it was.
+        let posts = (0..<picture.height).filter { y in (0..<page.width).contains { pixels[y * width + $0] != page.pixels[y * page.width + $0] } }
+        #expect(posts.isEmpty, "\(posts.count) rows of posts off, from \(posts.first ?? -1)")
+        #expect(Array(pixels[0 ..< height * width]) == first)
+        // Below the sidebar's foot, nothing of it.
+        let below = (sidebarHeight..<picture.height).filter { y in (page.width..<width).contains { pixels[y * width + $0] != Self.white } }
+        #expect(below.isEmpty, "\(below.count) rows below the sidebar show some of it, from \(below.first ?? -1): \(stitcher.summary)")
+    }
+
     @Test func aBannerThatPopsUpLaterEndsUpOnlyAtTheEnd() throws {
         let page = Page(width: 400, height: 2400)
         let stitcher = Self.stitcher(width: 400, height: 300)
