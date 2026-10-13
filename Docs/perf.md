@@ -849,3 +849,18 @@ bite into the last rows, and moving them out of the picture needs tracking what 
 than in the page; carousels that slide while in view can still come out in strips; a fixed page background
 and pages that re-render as they scroll (apple.com) still lose track; a blank stretch taller than the view
 cannot be measured, so it is left out.
+
+Then a live run in the app, with the user's OK: a throwaway Chrome window, Auto-scroll on six pages (a made-up
+news page with a sticky section list, an X-like timeline, a sparse sheet, bbc.com/news, theverge.com,
+apple.com/iphone), the picture kept under debug-snapshots only. 417 to 853 scrolls a page, none lost;
+Auto-scroll stopped by itself at bbc.com's end, the others ran to the 25–30 s limit. apple.com, which lost track
+before, went 795 scrolls without losing it. The X-like timeline showed a sidebar held by its foot at the view's
+never staying put (its last entries in fragments down the whole picture): fixed in the stitcher, its counts of
+what moved now fading away once it stays still; the six captures replay to their live pictures but for the
+last few dozen rows, and the fix changes only the timeline among them.
+
+Still visible on real pages: what changes while in view is taken 8 px at a time, so a headline whose hover
+style comes and goes under the pointer (theverge.com), links sliding in as they appear (apple.com's footer) and
+animated advertisements (bbc.com) come out as a mosaic of their states; and between a sidebar sticking and being
+taken to stay put, flat parts of it still overwrite a few lines below it.
+
