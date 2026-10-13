@@ -475,6 +475,7 @@ nonisolated public final class ScrollStitcher {
         let old = track.reference
         position = found.position
         band = found.lines
+        canvas.settleTentative(view, at: position)
         if offset != 0 { movedTowardStart = offset < 0 }
         track.spare = old
         track.reference = view
@@ -1991,13 +1992,17 @@ nonisolated private final class Canvas {
         // come in under or past what stays put (a page's footer below a sticky contents list): it is taken until the
         // next view tells whether it moved with the content (or stayed on screen where it was: a floating button
         // fading in).
-        let row = currentView.map { UnsafeRawPointer($0.pixels.baseAddress).distance(to: source) / lineBytes }
+        // Only a line of the view the columns were last weighed on can say so (not one a view found again shows).
+        let row = currentView.flatMap { view -> Int? in
+            let offset = UnsafeRawPointer(view.pixels.baseAddress).distance(to: source)
+            return offset >= 0 && offset.isMultiple(of: lineBytes) && offset / lineBytes < view.count ? offset / lineBytes : nil
+        }
         var taken: [Int] = []
         for run in stayingSegments {
             for segment in run {
                 let start = segment * Self.segmentBytes, bytes = min(Self.segmentBytes, lineBytes - start)
                 let beyond = row.map { $0 < stillFrom[segment] || $0 > stillTo[segment] } ?? false
-                if isBetweenEnds(segment), movingNow[segment] || beyond, memcmp(source + start, sameRow + start, bytes) != 0 {
+                if row != nil, isBetweenEnds(segment), movingNow[segment] || beyond, memcmp(source + start, sameRow + start, bytes) != 0 {
                     taken.append(segment)
                     continue
                 }
