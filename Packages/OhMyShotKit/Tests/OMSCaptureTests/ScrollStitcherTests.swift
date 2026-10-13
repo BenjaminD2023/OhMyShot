@@ -391,6 +391,10 @@ struct ScrollStitcherTests {
         let posts = (0..<picture.height).filter { y in (0..<page.width).contains { pixels[y * width + $0] != page.pixels[y * page.width + $0] } }
         #expect(posts.isEmpty, "\(posts.count) rows of posts off, from \(posts.first ?? -1)")
         #expect(Array(pixels[0 ..< height * width]) == first)
+        // The sidebar as it scrolled, once: the view where it stopped partway through the scroll and the views it stayed
+        // put in leave no avatar or name of it a little off where it was, nor down its cards.
+        let sidebarOff = (0..<sidebarHeight).filter { y in (0..<sidebar).contains { pixels[y * width + page.width + $0] != panel[y * sidebar + $0] } }
+        #expect(sidebarOff.isEmpty, "\(sidebarOff.count) rows of the sidebar off, from \(sidebarOff.first ?? -1)")
         // Below the sidebar's foot, nothing of it.
         let below = (sidebarHeight..<picture.height).filter { y in (page.width..<width).contains { pixels[y * width + $0] != Self.white } }
         #expect(below.isEmpty, "\(below.count) rows below the sidebar show some of it, from \(below.first ?? -1): \(stitcher.summary)")

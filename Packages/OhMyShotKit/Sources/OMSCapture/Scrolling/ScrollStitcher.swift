@@ -1374,6 +1374,10 @@ nonisolated private final class Canvas {
         let support: UnsafeMutablePointer<UInt8>
         /// Distance from an occluding edge of the clearest observation at a verified page position.
         let quality: UnsafeMutablePointer<UInt8>
+        /// Per line and segment, 1 where what it holds is loose: the ground, or what a view showed that saw the
+        /// column not move with the content. What such a view shows may take the place of what is loose only, never
+        /// of what a view showed that saw the column move with it.
+        let loose: UnsafeMutablePointer<UInt8>
 
         init?(lineBytes: Int, bands: Int, segments: Int) {
             guard let pixels = PageBuffer(byteCount: Canvas.chunkLines * lineBytes) else { return nil }
@@ -1384,11 +1388,14 @@ nonisolated private final class Canvas {
             support.initialize(repeating: 0, count: Canvas.chunkLines * segments)
             quality = .allocate(capacity: Canvas.chunkLines * segments)
             quality.initialize(repeating: 0, count: Canvas.chunkLines * segments)
+            loose = .allocate(capacity: Canvas.chunkLines * segments)
+            loose.initialize(repeating: 0, count: Canvas.chunkLines * segments)
         }
 
         deinit {
             support.deallocate()
             quality.deallocate()
+            loose.deallocate()
         }
     }
 
@@ -1432,6 +1439,9 @@ nonisolated private final class Canvas {
     private var idleFor: [Int]
     /// Per segment, whether the last view saw it move with the content.
     private var movingNow: [Bool]
+    /// Per segment, whether a view saw it mostly not move with the content, it stayed put or moved otherwise (a
+    /// sidebar held by its foot that stopped partway through the scroll), and none saw it mostly move since.
+    private var adrift: [Bool]
     /// Lines that took what came in under columns that stay put, and in which of them, until the next view tells
     /// whether it moved with the content.
     private var tentative: [(index: Int, segments: [Int])] = []
@@ -1483,6 +1493,7 @@ nonisolated private final class Canvas {
         stuckFor = [Int](repeating: 0, count: segments)
         idleFor = [Int](repeating: 0, count: segments)
         movingNow = [Bool](repeating: false, count: segments)
+        adrift = [Bool](repeating: false, count: segments)
         stays = [Bool](repeating: false, count: segments)
         scrollingMiddle = [self.endBytes ..< lineBytes - self.endBytes]
         scrollingEnds = self.endBytes > 0 ? [0 ..< self.endBytes, lineBytes - self.endBytes ..< lineBytes] : []
@@ -1526,6 +1537,33 @@ nonisolated private final class Canvas {
         views += 1
         var seenStill = [Bool](repeating: false, count: segments)
         var seenMoving = [Bool](repeating: false, count: segments)
+        // The lines that showed each segment still, moving with the content, and moved otherwise: part of the way (a
+        // sidebar held by its foot stopping partway through the scroll), not changed (a video playing, a picture
+        // coming in); and the first and the last that showed it still.
+        var still = [Int](repeating: 0, count: segments), moving = still, drifted = still
+        var firstStill = [Int](repeating: .max, count: segments), lastStill = [Int](repeating: -1, count: segments)
+        // Whether the `length` bytes at `start` of `shown`, line `line`, are where the view before showed them part of
+        // the way the content moved: further along than had they stayed put, not as far as had they moved with it.
+        // What moves part of the way moves as one (a sidebar), so the distances found are tried first; others are
+        // tried a few thousand times a view at most, so a carousel or a video changing in place costs little.
+        var partway: [Int] = [], budget = 16_384
+        func movedPartway(_ shown: UnsafeRawPointer, _ start: Int, _ length: Int, line: Int) -> Bool {
+            guard abs(offset) >= 2 else { return false }
+            for shift in partway where line + shift >= 0 && line + shift < old.count {
+                if memcmp(shown + start, old.line(line + shift) + start, length) == 0 { return true }
+            }
+            var shift = offset.signum()
+            while shift != offset, budget > 0 {
+                defer { shift += offset.signum() }
+                guard line + shift >= 0, line + shift < old.count, !partway.contains(shift) else { continue }
+                budget -= 1
+                if memcmp(shown + start, old.line(line + shift) + start, length) == 0 {
+                    partway.append(shift)
+                    return true
+                }
+            }
+            return false
+        }
         for line in views == 1 ? Array(lines) : Self.samples(of: lines, count: 32, turn: views) where line + offset >= 0 && line + offset < old.count {
             let shown = new.line(line), before = old.line(line), moved = old.line(line + offset)
             let further = line + offset < new.count ? new.line(line + offset) : nil
@@ -1539,12 +1577,27 @@ nonisolated private final class Canvas {
                 if kept, !carried, isFixedFeature(shown, start, bytes) {
                     stillSeen[segment] += 1
                     seenStill[segment] = true
+                    still[segment] += 1
+                    firstStill[segment] = min(firstStill[segment], line)
+                    lastStill[segment] = max(lastStill[segment], line)
                     stillFrom[segment] = min(stillFrom[segment], line)
                     stillTo[segment] = max(stillTo[segment], line)
                 }
                 if carried, !kept, further.map({ memcmp(shown + start, $0 + start, bytes) != 0 }) ?? true {
                     movingSeen[segment] += 1
                     seenMoving[segment] = true
+                    moving[segment] += 1
+                }
+                if !kept, !carried, movedPartway(shown, start, bytes, line: line) { drifted[segment] += 1 }
+            }
+        }
+        // The first view's lines where the next showed something stay put on screen (a floating button at the view's
+        // foot, an avatar stuck below a header) hold it over the line, loose for any view to show what is there; and
+        // so do a few lines around them, its soft edge, its shadow.
+        if views == 1, let firstLines {
+            for segment in 0..<segments where lastStill[segment] >= 0 {
+                for index in max(firstLines.lowerBound, firstStill[segment] - 16) ..< min(firstLines.upperBound, lastStill[segment] + 17) {
+                    loosen(index, segment: segment)
                 }
             }
         }
@@ -1552,8 +1605,31 @@ nonisolated private final class Canvas {
         // consistent movement, not a single matching edge, before treating the whole column as content.
         let moves = (0..<segments).map { movingSeen[$0] > 0 && movingSeen[$0] * 16 > stillSeen[$0] }
         movingNow = seenMoving
+        // A segment the lines looked at showed mostly not move with the content, staying put or moving part of the way,
+        // two of them at least, is adrift: what the view shows there is over the lines, not of them.
+        var adriftNow = (0..<segments).map { still[$0] + drifted[$0] >= 2 && still[$0] + drifted[$0] > moving[$0] * 2 }
+        // And so are gaps between such segments that the view did not see mostly move: a flat avatar's middle, one
+        // color all down the lines the view looked at there, says nothing either way, nor does a sidebar's small
+        // print, a line or two of it moving with the content by chance.
+        var gap = 0
+        while gap < segments {
+            guard !adriftNow[gap] else { gap += 1; continue }
+            var end = gap
+            while end < segments, !adriftNow[end] { end += 1 }
+            if gap > 0, end < segments, (gap..<end).allSatisfy({ moving[$0] <= still[$0] + drifted[$0] }) {
+                for segment in gap..<end { adriftNow[segment] = true }
+            }
+            gap = end
+        }
+        // A view that sees little of a column (a sidebar's blank foot, a line or two of small print) says nothing
+        // against what the views before it saw.
+        for segment in 0..<segments {
+            adrift[segment] = adriftNow[segment] || adrift[segment] && moving[segment] <= still[segment] + drifted[segment]
+        }
+        // What a view showed of a column it saw mostly not move is not as the page has it, a line or two that moved
+        // with the content by chance aside.
         let shown = position ..< position + new.count
-        for segment in 0..<segments where seenMoving[segment] && moves[segment] {
+        for segment in 0..<segments where seenMoving[segment] && moves[segment] && !adrift[segment] {
             movedOver[segment] = movedOver[segment].map { min($0.lowerBound, shown.lowerBound) ..< max($0.upperBound, shown.upperBound) } ?? shown
         }
         // What a column did lately counts most: one that scrolled with the page at first and then stuck (a sidebar
@@ -1687,6 +1763,7 @@ nonisolated private final class Canvas {
                 memcpy(target + start, (original ?? UnsafeRawPointer(ground.baseAddress)) + start, min(Self.segmentBytes, lineBytes - start))
                 chunk.support[slot * self.segments + segment] = 0
                 chunk.quality[slot * self.segments + segment] = 0
+                chunk.loose[slot * self.segments + segment] = original == nil ? 1 : 0
             }
             rehash(target, chunk: chunk, slot: slot)
         }
@@ -1755,6 +1832,13 @@ nonisolated private final class Canvas {
         return start >= endBytes && start + Self.segmentBytes <= lineBytes - endBytes
     }
 
+    /// Lets what line `index` holds in `segment` give way to what any view shows there, if the line is there.
+    private func loosen(_ index: Int, segment: Int) {
+        let number = Self.chunkNumber(of: index)
+        guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { return }
+        chunk.loose[(index - number * Self.chunkLines) * segments + segment] = 1
+    }
+
     /// Settles the lines taken in under columns that stay put, now that `view` shows the content from `position`
     /// on: what moved with it stands; what it no longer shows where it went takes the ground.
     func settleTentative(_ view: Lines, at position: Int) {
@@ -1772,6 +1856,7 @@ nonisolated private final class Canvas {
                 guard memcmp(target + start, view.line(row) + start, bytes) != 0 else { continue }
                 memcpy(target + start, ground.baseAddress + start, bytes)
                 chunk.support[slot * self.segments + segment] = 0
+                chunk.loose[slot * self.segments + segment] = 1
                 changed = true
             }
             if changed { rehash(target, chunk: chunk, slot: slot) }
@@ -1821,6 +1906,7 @@ nonisolated private final class Canvas {
                     memcpy(target + start, item.source + start, length)
                     chunk.support[slot * segments + segment] = Self.firstSupport
                     chunk.quality[slot * segments + segment] = item.quality
+                    chunk.loose[slot * segments + segment] = adrift[segment] ? 1 : 0
                 }
                 rehash(target, chunk: chunk, slot: slot)
                 let shown = slot * Self.variants + Int(chunk.shown[slot])
@@ -1849,19 +1935,21 @@ nonisolated private final class Canvas {
         let slot = index - number * Self.chunkLines
         let target = chunk.pixels.baseAddress + slot * lineBytes
         let support = chunk.support + slot * segments
+        let loose = chunk.loose + slot * segments
         let state = chunk.states[slot]
         if state == 0 {
             memcpy(target, source, lineBytes)
+            loose.update(repeating: 0, count: segments)
             switch writing {
             case .first:
                 for segment in 0..<segments { support[segment] = Self.firstSupport }
                 (chunk.quality + slot * segments).update(repeating: quality, count: segments)
                 firstLines = firstLines.map { min($0.lowerBound, index) ..< max($0.upperBound, index + 1) } ?? index ..< index + 1
             case .arrived(let sameRow, let inward):
-                takeIn(source, into: target, at: index, support: support, sameRow: sameRow, alike: inward)
+                takeIn(source, into: target, at: index, support: support, loose: loose, sameRow: sameRow, alike: inward)
             case .agreeing(let previous, let sameRow, _, _, _, _):
                 // Not there yet though the last view showed it (the part that scrolls grew): as just come into view.
-                takeIn(source, into: target, at: index, support: support, sameRow: sameRow, alike: previous)
+                takeIn(source, into: target, at: index, support: support, loose: loose, sameRow: sameRow, alike: previous)
             case .recovered:
                 support.update(repeating: Self.seenOnce, count: segments)
             }
@@ -1886,7 +1974,10 @@ nonisolated private final class Canvas {
         case .first, .recovered:
             return
         case .arrived(let sameRow, let inward):
-            if reconsider(source, into: target, support: support, qualities: chunk.quality + slot * segments, quality: quality, sameRow: sameRow, alike: inward) {
+            if reconsider(
+                source, into: target, support: support, qualities: chunk.quality + slot * segments, loose: loose, quality: quality, sameRow: sameRow,
+                alike: inward
+            ) {
                 rehash(target, chunk: chunk, slot: slot)
                 // Seen only once, and something else then (a banner that was over it): its ends as well.
                 if state < 2 {
@@ -1901,7 +1992,7 @@ nonisolated private final class Canvas {
             }
         case .agreeing(let previous, let sameRow, let formerRow, let confirmed, let atEdge, let belowStart):
             let preferred = preferUnobscured(
-                source, into: target, support: support, qualities: chunk.quality + slot * segments,
+                source, into: target, support: support, qualities: chunk.quality + slot * segments, loose: loose,
                 quality: quality, previous: previous, sameRow: sameRow
             )
             let firstRow = firstSnapshot.flatMap { snapshot in
@@ -1910,7 +2001,7 @@ nonisolated private final class Canvas {
             stale.removeAll(keepingCapacity: true)
             let weighed = weigh(
                 source, into: target, support: support, previous: previous, sameRow: sameRow, formerRow: formerRow,
-                held: state == 2, atEdge: atEdge, belowStart: belowStart, qualities: chunk.quality + slot * segments, quality: quality,
+                held: state == 2, atEdge: atEdge, belowStart: belowStart, qualities: chunk.quality + slot * segments, loose: loose, quality: quality,
                 firstRow: firstRow, calm: &chunk.calm[slot], restless: &chunk.restless[slot]
             )
             if preferred || weighed {
@@ -1927,7 +2018,8 @@ nonisolated private final class Canvas {
     /// is confirmed farther inside the viewport, even when visited only once. Fixed columns keep their first view.
     private func preferUnobscured(
         _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
-        qualities: UnsafeMutablePointer<UInt8>, quality: UInt8, previous: UnsafeRawPointer, sameRow: UnsafeRawPointer
+        qualities: UnsafeMutablePointer<UInt8>, loose: UnsafeMutablePointer<UInt8>, quality: UInt8, previous: UnsafeRawPointer,
+        sameRow: UnsafeRawPointer
     ) -> Bool {
         var changed = false
         for run in scrollingMiddle {
@@ -1944,6 +2036,12 @@ nonisolated private final class Canvas {
                     qualities[segment] = quality
                     continue
                 }
+                // What a column shows in a view that saw it mostly not move with the content, staying put or moving
+                // part of the way (a sidebar held by its foot, stopped partway through the scroll and stuck from then
+                // on, before the views tell it stays put), is over the line: no clearer view of what a view that saw
+                // the column move showed there. Of what is loose it may be (an avatar stuck below a header come to
+                // rest where its post begins, moving part of the way as it does).
+                if adrift[segment], loose[segment] == 0 { continue }
                 guard !staysPut(source, start, end - start, sameRow: sameRow, alike: previous) else { continue }
                 // What stayed where it was on screen while the content moved on is over the content (a sticky
                 // sidebar's flat strokes, a highlighted item's bar), no clearer observation of it; and a table's or
@@ -1953,6 +2051,7 @@ nonisolated private final class Canvas {
                 if memcmp(source + start, target + start, end - start) != 0 {
                     memcpy(target + start, source + start, end - start)
                     support[segment] = max(Self.firstSupport, support[segment])
+                    loose[segment] = adrift[segment] ? 1 : 0
                     changed = true
                 }
             }
@@ -1986,10 +2085,11 @@ nonisolated private final class Canvas {
     }
 
     /// A line new to the canvas, `source` already copied to `target`: each segment seen once, but what stays put
-    /// on screen, which takes the ground.
+    /// on screen, which takes the ground. Loose, what took the ground and what the view showed where it saw the
+    /// column not move with the content.
     private func takeIn(
-        _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, at index: Int, support: UnsafeMutablePointer<UInt8>, sameRow: UnsafeRawPointer,
-        alike: UnsafeRawPointer?
+        _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, at index: Int, support: UnsafeMutablePointer<UInt8>,
+        loose: UnsafeMutablePointer<UInt8>, sameRow: UnsafeRawPointer, alike: UnsafeRawPointer?
     ) {
         support.update(repeating: Self.seenOnce, count: segments)
         guard let ground else { return }
@@ -2029,13 +2129,15 @@ nonisolated private final class Canvas {
                 start = end
             }
         }
+        for segment in 0..<segments where support[segment] == 0 || row != nil && adrift[segment] { loose[segment] = 1 }
     }
 
     /// A line come into view again: each segment that shows something else says so once against what it
     /// holds, but what stays put on screen. Whether the line changed.
     private func reconsider(
         _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
-        qualities: UnsafeMutablePointer<UInt8>, quality: UInt8, sameRow: UnsafeRawPointer, alike: UnsafeRawPointer?
+        qualities: UnsafeMutablePointer<UInt8>, loose: UnsafeMutablePointer<UInt8>, quality: UInt8, sameRow: UnsafeRawPointer,
+        alike: UnsafeRawPointer?
     ) -> Bool {
         var changed = false
         for run in scrollingMiddle {
@@ -2044,12 +2146,14 @@ nonisolated private final class Canvas {
                 let end = min((start / Self.segmentBytes + 1) * Self.segmentBytes, run.upperBound), segment = start / Self.segmentBytes
                 defer { start = end }
                 guard quality >= qualities[segment], memcmp(source + start, target + start, end - start) != 0,
-                      !staysPut(source, start, end - start, sameRow: sameRow, alike: alike) else { continue }
+                      !staysPut(source, start, end - start, sameRow: sameRow, alike: alike),
+                      !adrift[segment] || loose[segment] != 0 else { continue }
                 if support[segment] > step {
                     support[segment] -= step
                 } else {
                     memcpy(target + start, source + start, end - start)
                     support[segment] = Self.seenOnce
+                    loose[segment] = adrift[segment] ? 1 : 0
                     changed = true
                 }
             }
@@ -2068,12 +2172,13 @@ nonisolated private final class Canvas {
     /// end, moving with the content as it goes: what moves there says nothing against what a segment holds, though
     /// it may fill one that holds nothing. Columns that stay put are only backed where they show what they hold:
     /// should one turn out to move after all (an avatar stuck from the start, until the next one moves through),
-    /// what was over it backs nothing there. Whether the line changed.
+    /// what was over it backs nothing there. `loose`: per segment, whether what the line holds may give way to what a
+    /// view shows that saw the column not move with the content. Whether the line changed.
     private func weigh(
         _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
         previous: UnsafeRawPointer, sameRow: UnsafeRawPointer, formerRow: UnsafeRawPointer, held: Bool, atEdge: Bool, belowStart: Bool,
-        qualities: UnsafeMutablePointer<UInt8>, quality: UInt8, firstRow: UnsafeRawPointer?, calm: UnsafeMutablePointer<UInt8>,
-        restless: UnsafeMutablePointer<UInt8>
+        qualities: UnsafeMutablePointer<UInt8>, loose: UnsafeMutablePointer<UInt8>, quality: UInt8, firstRow: UnsafeRawPointer?,
+        calm: UnsafeMutablePointer<UInt8>, restless: UnsafeMutablePointer<UInt8>
     ) -> Bool {
         for run in stayingMiddle {
             var from = run.lowerBound
@@ -2139,6 +2244,9 @@ nonisolated private final class Canvas {
                     defer { start = end }
                     guard memcmp(source + start, target + start, length) != 0 else { continue }
                     support[segment] -= min(support[segment], step)
+                    // Against what a view showed that saw the column move with the content, a view that saw it mostly
+                    // not move says nothing: what it shows there stayed put or moved otherwise.
+                    if adrift[segment], loose[segment] == 0 { continue }
                     // Repeated passes close to a sticky edge cannot overrule a clearer interior observation; but where
                     // the line still holds what the first view showed, changed once or twice since, and three views in
                     // a row now show it alike and otherwise, the page changed there after the first view (a picture
@@ -2172,6 +2280,7 @@ nonisolated private final class Canvas {
                         } else {
                             memcpy(target + start, source + start, length)
                             support[segment] = step + 1
+                            loose[segment] = adrift[segment] ? 1 : 0
                             changed = true
                         }
                     } else if support[segment] <= step, let ground,
@@ -2180,6 +2289,7 @@ nonisolated private final class Canvas {
                               memcmp(target + start, ground.baseAddress + start, length) != 0 {
                         memcpy(target + start, ground.baseAddress + start, length)
                         support[segment] = 0
+                        loose[segment] = 1
                         changed = true
                     } else if support[segment] <= Self.seenOnce, memcmp(source + start, sameRow + start, length) != 0 {
                         // Nothing held but what one view showed, or the ground where something stayed put over the
@@ -2187,6 +2297,7 @@ nonisolated private final class Canvas {
                         // taken instead, until a view backs something.
                         memcpy(target + start, source + start, length)
                         support[segment] = Self.seenOnce
+                        loose[segment] = adrift[segment] ? 1 : 0
                         changed = true
                     }
                 }

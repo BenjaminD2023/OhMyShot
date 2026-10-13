@@ -864,3 +864,44 @@ style comes and goes under the pointer (theverge.com), links sliding in as they 
 animated advertisements (bbc.com) come out as a mosaic of their states; and between a sidebar sticking and being
 taken to stay put, flat parts of it still overwrite a few lines below it.
 
+### What sticks over the content (2026-10-13, later)
+
+What a column shows while it does not move with the content, chiefly a sidebar held by its foot at the view's.
+Replayed over the six live captures, the 206 frame sets and the 120 forum walks. 76 frame sets came out
+otherwise; each was looked at where it changed most, one run of a page standing for its other runs where they
+changed alike. Debug build unless said.
+
+| Check | Before | After |
+| --- | --- | --- |
+| The live X-like timeline, its sidebar's foot (the last card, its footer) | the last avatar in slices down some 290 rows, the name twice, the footer missing | once, as it scrolled, the footer whole |
+| The 206 frame sets, pixels against pictures rebuilt from the frames' offsets | 191,604 rows off | 192,403 rows off (8 sets better, 35 worse; see below) |
+| A sidebar held by its foot (made up), the sidebar's own rows | 86 rows off | 0 |
+| 3500 × 2400 px views scrolling, optimized build (two runs each) | 8.73–8.89 ms | 8.84 ms |
+| Frame sets with a video or a carousel in view, replayed one at a time, optimized | 0.73–4.63 ms a frame | within 3% of before (a carousel scrolled 200 px a step: 4.63 → 4.76 ms) |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+- **A view that saw a column mostly not move with the content** (its sampled lines showing it stay put, or move
+  part of the way: a sidebar held by its foot stops partway through a scroll, then stays put for a dozen views
+  before the counts say it stays put) shows what is over the lines there, not the lines. Each line now keeps,
+  segment by segment, whether what it holds came from a view that saw the column move; such a view's picture
+  there gives way only to another such view's. Before, the clearer-view rule wrote the stuck sidebar's flat
+  avatar into every line passing under it, and the view that stopped partway wrote its name a little low.
+- **Moving part of the way** is told from changing by finding the segment in the view before at a smaller offset
+  than the content's. What moves part of the way moves as one, so the distances found are tried first and others
+  16,384 times a view at most: unbounded, a carousel scrolled 200 px a step took 42% longer a frame. A video
+  playing changes in place, so it keeps the earlier behavior (a mosaic of its frames where it was taken a little
+  at a time).
+- **The first view's lines** under something the second view showed staying put (a floating button at its foot,
+  an avatar stuck below the header) can still be replaced, as before.
+- **What it costs:** a byte for every 8 pixels of each line, a 32nd of the picture (32 MB at the gigabyte limit).
+- **The 35 sets that score worse** are sticky sidebars and navigation: the rebuilt reference has no sidebar as it
+  scrolled (it repeats one line of it down the picture), and the pictures that now differ from it show the
+  sidebar whole where they showed fragments: GitHub's file tree and an issue's participants, MDN's and Apple
+  Developer's contents, X-like timelines' follow lists and footers, a made-up forum's avatars. A bun.sh docs
+  list repeats three entries, as it repeated three others before.
+
+Still visible: where a view that stopped partway wrote nothing, two views' halves of a name or a footer can meet a
+pixel or two apart; GitHub's file tree shows one entry twice where the rest of it was fragments; a fixed button
+on a made-up page comes out twice rather than three times; a line cut off at the foot of a card on theverge.com
+now has a smear over part of it; a navigation's button stuck from the first view can come out cut (as before);
+videos and animated advertisements still come out as a mosaic of their frames.
