@@ -558,11 +558,13 @@ nonisolated public final class ScrollStitcher {
 
     /// A view where nothing scrolled still counts for the ends of the lines it shows, where they are: those whose
     /// ends changed since `reference`, the last view that scrolled (an overlay knob fading once the scrolling stops).
-    /// Only where a line between the ends tells it did not scroll: over rows alike at any offset (a sheet's empty
+    /// Only where a line of what scrolls tells it did not scroll: over rows alike at any offset (a sheet's empty
     /// cells) a view that scrolled shows between the ends what the last one did, and the ends it shows are other rows'.
     private func count(_ view: Lines, reference: Lines) {
-        guard let canvas, let band, Lines.placed(view, by: reference, within: band) else { return }
-        for line in band where !canvas.endsAlike(view.line(line), reference.line(line)) {
+        guard let canvas, let band else { return }
+        let changed = band.filter { !canvas.endsAlike(view.line($0), reference.line($0)) }
+        guard !changed.isEmpty, canvas.placed(view, by: reference, within: band) else { return }
+        for line in changed {
             canvas.count(view.line(line), at: position + line)
         }
     }
@@ -980,18 +982,6 @@ nonisolated final class Lines {
             indexes = bands.indices.map { band in LineIndex(hashes: hashes + band * count, plain: plain + band * count, count: count) }
         }
         return indexes?[band].line(of: hash)
-    }
-
-    /// Whether one of `lines` of `new` says it is where it was in `old`: a part of it, not plain, that only that
-    /// line of `old` shows.
-    static func placed(_ new: Lines, by old: Lines, within lines: Range<Int>) -> Bool {
-        let count = new.count
-        for band in 0..<new.bands.count {
-            for index in lines where !new.plain[band * count + index] {
-                if old.line(band: band, hash: new.hashes[band * count + index]) == index { return true }
-            }
-        }
-        return false
     }
 
     /// How a new view lines up with an old one of the same size; `why` says what was found when it lines up
@@ -2115,6 +2105,30 @@ nonisolated private final class Canvas {
     func endsAlike(_ a: UnsafeRawPointer, _ b: UnsafeRawPointer) -> Bool {
         guard endBytes > 0 else { return true }
         return memcmp(a, b, endBytes) == 0 && memcmp(a + lineBytes - endBytes, b + lineBytes - endBytes, endBytes) == 0
+    }
+
+    /// Whether a line of `view` among `lines` says the view is where `reference` was: what it shows between the ends
+    /// and outside the columns that stay put (a sidebar's text is where it was however the content moved), not
+    /// plain, is where `reference` showed it, and no other line of `reference` shows it.
+    func placed(_ view: Lines, by reference: Lines, within lines: Range<Int>) -> Bool {
+        let parts = scrollingMiddle
+        guard !parts.isEmpty else { return false }
+        func hash(_ line: UnsafeRawPointer) -> UInt32? {
+            let color = (line + parts[0].lowerBound).load(as: UInt32.self)
+            var plain = true
+            var hash: uLong = 0
+            for part in parts {
+                hash = crc32(hash, (line + part.lowerBound).assumingMemoryBound(to: UInt8.self), uInt(part.count))
+                if plain { plain = Self.isPlain(line + part.lowerBound, part.count) && (line + part.lowerBound).load(as: UInt32.self) == color }
+            }
+            return plain ? nil : UInt32(truncatingIfNeeded: hash)
+        }
+        var shown: [UInt32: Int] = [:]
+        for line in lines {
+            guard let hash = hash(reference.line(line)) else { continue }
+            shown[hash] = shown[hash] == nil ? line : -1
+        }
+        return lines.contains { line in hash(view.line(line)).map { shown[$0] == line } ?? false }
     }
 
     /// Counts the ends `source`, a still view's line, shows for line `index`, when the line is there and the same

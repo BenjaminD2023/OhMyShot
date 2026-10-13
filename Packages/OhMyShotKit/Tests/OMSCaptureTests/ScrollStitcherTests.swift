@@ -870,9 +870,10 @@ struct ScrollStitcherTests {
         #expect(rows.isEmpty, "\(rows.count) rows with the knob, from \(rows.first ?? -1): \(stitcher.summary)")
     }
 
-    @Test func rowNumbersStayWithTheirRowsWhereTheCellsAreAlike() throws {
+    @Test(arguments: [false, true]) func rowNumbersStayWithTheirRowsWhereTheCellsAreAlike(besideASidebar: Bool) throws {
         // A sheet: words down its first rows, then empty cells alike every 20 rows; down the line's left end, each
-        // row's number. Among the empty cells a view 40 rows on shows between the ends just what the last one did.
+        // row's number. Among the empty cells a view 40 rows on shows between the ends just what the last one did,
+        // and beside a sidebar that stays put, a line of its own on every row, so does the whole of it there.
         let width = 400, height = 300
         var page = Page(width: width, height: 2400, seed: 19)
         for y in 0..<page.height {
@@ -881,16 +882,24 @@ struct ScrollStitcherTests {
                 if x < 16 { page.pixels[y * width + x] = (2..<14).contains(x) ? 0xFF00_0000 | UInt32(y & 0xFF) << 8 | UInt32(y >> 8) : Self.white }
             }
         }
-        let stitcher = Self.stitcher(width: width, height: height)
-        Self.add(Self.view(page, at: 0, size: height), to: stitcher)
-        for offset in stride(from: 40, through: 1400, by: 40) {
-            Self.add(Self.view(page, at: offset, size: height), to: stitcher)
+        func view(at offset: Int) -> [UInt32] {
+            Self.view(page, at: offset, size: height) { pixels, width, height in
+                guard besideASidebar else { return }
+                for y in 0..<height {
+                    for x in 24..<104 { pixels[y * width + x] = (x + y) % 3 == 0 ? 0xFF40_0000 | UInt32(y) : 0xFFF2_F3F5 }
+                }
+            }
         }
-        // However far the picture got, what it has is the page's, numbers and all.
+        let stitcher = Self.stitcher(width: width, height: height)
+        Self.add(view(at: 0), to: stitcher)
+        for offset in stride(from: 40, through: 1400, by: 40) {
+            Self.add(view(at: offset), to: stitcher)
+        }
+        // However far the picture got, what it has is the page's, numbers and all (the sidebar aside).
         let picture = try #require(stitcher.picture())
         #expect(picture.height > 700)
         let expected = Array(page.pixels[0 ..< picture.height * width])
-        let rows = Self.differingRows(Self.pixels(of: picture), expected, width: width)
+        let rows = Self.differingRows(Self.pixels(of: picture), expected, width: width, skipping: besideASidebar ? 16..<width : nil)
         #expect(rows.isEmpty, "\(rows.count) rows from \(rows.first ?? -1): \(stitcher.summary)")
     }
 
