@@ -729,6 +729,71 @@ struct ScrollStitcherTests {
         #expect(rows.isEmpty, "\(rows.count) rows: \(rows.prefix(4)) … \(rows.suffix(4)): \(stitcher.summary)")
     }
 
+    @Test(arguments: [(40, 136), (37, 141)]) func aFlatButtonFixedMidViewIsNotStampedDownThePicture(left: Int, right: Int) throws {
+        // A flat button with a mark, fixed a little above the middle of the view, where a line is clearer than any view
+        // shows it again as it moves on: each view shows the lines under it as they never are. The content moves more
+        // than the button is tall. The picture shows the page there, the button only where the first view had it.
+        let page = Page(width: 400, height: 2400, seed: 13)
+        let stitcher = Self.stitcher(width: 400, height: 300)
+        let blue: UInt32 = 0xFF1F_8BE6
+        func button(_ pixels: inout [UInt32], _ width: Int, _ height: Int) {
+            for y in 112..<144 {
+                for x in left..<right { pixels[y * width + x] = (125..<131).contains(y) && (70..<110).contains(x) ? ScrollStitcherTests.white : blue }
+            }
+        }
+        var offset = 0
+        Self.add(Self.view(page, at: offset, size: 300, draw: button), to: stitcher)
+        for step in [37, 41, 53, 46, 38, 45, 49, 61, 36, 47, 51, 55, 42, 34, 58, 39] {
+            offset += step
+            #expect(Self.add(Self.view(page, at: offset, size: 300, draw: button), to: stitcher) == .scrolled(offset: step), "step \(step)")
+        }
+        let picture = try #require(stitcher.picture())
+        #expect(picture.height == offset + 300, "\(stitcher.summary)")
+        let pixels = Self.pixels(of: picture)
+        let rows = Self.differingRows(pixels, Array(page.pixels[0 ..< (offset + 300) * 400]), width: 400).filter { $0 >= 300 }
+        // Nothing of the button itself, its edges on the segments' grid or across them.
+        let blueRows = rows.filter { y in (0..<400).contains { pixels[y * 400 + $0] == blue } }
+        #expect(blueRows.isEmpty, "\(blueRows.count) rows show some of the button: \(blueRows.prefix(4)) … \(blueRows.suffix(4)): \(stitcher.summary)")
+        // Its mark is the page's own color, which is also the page come out from under what was over it: where a line
+        // passes under the mark nearer the view's middle than any view shows it again, the mark takes its place.
+        withKnownIssue("A mark of the page's color inside a button fixed mid-view is stamped down the picture") {
+            #expect(rows.isEmpty, "\(rows.count) rows: \(rows.prefix(4)) … \(rows.suffix(4)): \(stitcher.summary)")
+        }
+    }
+
+    @Test(arguments: [false, true]) func aButtonFixedAtTheFootLeavesNothingOfItInTheLastRows(bigSteps: Bool) throws {
+        // The chat button in the corner, where the last view brings in lines no view shows again: nothing of it there,
+        // no blob of its inside with its edge and mark taken away.
+        let page = Page(width: 400, height: 2400, seed: 9)
+        let stitcher = Self.stitcher(width: 400, height: 300)
+        let green: UInt32 = 0xFF1F_A35C
+        func button(_ pixels: inout [UInt32], _ width: Int, _ height: Int) {
+            for y in height - 64 ..< height - 16 {
+                for x in width - 72 ..< width - 24 {
+                    let dx = Double(x - (width - 48)) + 0.5, dy = Double(y - (height - 40)) + 0.5
+                    guard dx * dx + dy * dy <= 24 * 24 else { continue }
+                    pixels[y * width + x] = abs(dx) < 8 && abs(dy) < 3 ? ScrollStitcherTests.white : green
+                }
+            }
+        }
+        var offset = 0
+        Self.add(Self.view(page, at: offset, size: 300, draw: button), to: stitcher)
+        let steps = bigSteps ? [61, 74, 57, 68, 59, 77, 63, 70, 55, 66] : [21, 34, 47, 18, 29, 55, 26, 38, 13, 44, 31, 60, 23, 36, 49, 27, 17, 42]
+        for step in steps {
+            offset += step
+            #expect(Self.add(Self.view(page, at: offset, size: 300, draw: button), to: stitcher) == .scrolled(offset: step), "step \(step)")
+        }
+        let picture = try #require(stitcher.picture())
+        let pixels = Self.pixels(of: picture)
+        let left = (300 ..< picture.height).filter { y in (0..<400).contains { pixels[y * 400 + $0] == green } }
+        // Over the page's text, the segments its round edge crosses never stay put on screen as a whole, so nothing beside
+        // its flat inside says it is over the line when the line comes in; lines no later view shows keep it. (Over a
+        // blank margin it leaves nothing.)
+        withKnownIssue("A round button fixed over text at the foot leaves its inside in the last lines") {
+            #expect(left.isEmpty, "\(left.count) rows show some of the button, from \(left.first ?? -1): \(stitcher.summary)")
+        }
+    }
+
     @Test(arguments: 1...12) func forumScrolledEveryWhichWay(seed: Int) throws {
         let off = try Self.scrollAround(seed: seed, backAndForth: false)
         #expect(off == 0, "seed \(seed): \(off) rows off")

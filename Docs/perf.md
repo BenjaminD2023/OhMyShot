@@ -992,3 +992,50 @@ it costs besides: a byte for every 8 pixels of each line (32 MB at the gigabyte 
 Still visible: a carousel caught mid-slide shows parts of two slides; a made-up page's diagonal streak sliding across
 leaves a few more fragments; a stray glyph by a logo in a sliding row of logos (vimeo.com); a faint bar under a button
 fading in at a page's end; a video taller than the view still comes out line by line, as before.
+
+### Buttons fixed over the page (2026-10-13, night)
+
+A button fixed over the page (a back-to-top button, an X-like Post button, the pills floating over theverge.com's
+feed) was stamped down the picture: where a line passes under it nearer the view's middle than any view shows the line
+again, the clearer-view rule took the button's flat inside for the line, as it left out only what stays put and says
+something, not one color. Where the last view's lines were seen only under such a button, its edges and mark took the
+ground and its flat inside stayed, a blocky blob at the picture's end.
+
+- **The clearer view.** One color where it was on screen that the line did not show in the last view, other than the
+  column's own ground, is over the content: no clearer view of the line. Nor is a segment the button's edge crosses:
+  two of its pixels at least as the last view showed them on screen, unlike the column's ground and unlike the line as
+  the last view showed it but for the display's dither, beside such a flat segment or a mark that stays put.
+- **A line come into view.** One color where it was on screen, unlike the line as many lines further in as the content
+  moved, takes the ground beside what stays put there (the button's edge or mark), as that does.
+
+| Check | Before | After |
+| --- | --- | --- |
+| The six live captures | two specks at the foot of the X-like timeline's sidebar | gone; the other five byte for byte |
+| The 206 frame sets, each picture's size and steps | as committed | the same |
+| The 206 frame sets, pixels against pictures rebuilt from the frames' offsets | 191,580 rows off | 186,830 (51 sets changed, each looked at; 11 better, 8 worse, see below) |
+| A flat button fixed mid-view over made-up text, its edges on the 8 px grid or across it | 219 rows show it | none |
+| Its white mark, the page's own color | stamped | stamped (33 rows) |
+| A round button at a made-up page's foot, over text | 47–48 rows show it | 39–40 |
+| 3500 × 2400 px views scrolling, optimized build, alternating, two runs each (a load average of 4 to 9) | 11.4–11.7 ms | 10.5–10.7 ms |
+| The same views, a video playing and nothing scrolling | 2.20–2.35 ms | 2.26–2.33 ms |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+What changed, looked at: on made-up pages, a chat's highlighted channel stamped down its sidebar, a flat button
+stamped 16 times down a margin, the X-like timelines' Post button (light, dark, loading late) and the last avatars of
+sidebars that stick, stamped down their columns, now show once; theverge.com's two floating pills are gone from its
+feed, and its pinned feature card, whose title was stamped six times down its column, leaves faint fragments there;
+small stamps on Apple Developer, Wikipedia and the dark made-up sequences (a gray box, ticks along a rule, short bars)
+are gone; the back-to-top button at a made-up feed's foot and a late-sticking sidebar's last avatar leave the page's
+background. Of the 8 sets that score worse, the rebuilt references of the two sticky sidebars repeat them and that of
+the feed has its button at the foot, which the pictures now leave out; bun.sh's Ask AI button leaves a stretch of its
+border where it left its outline; vimeo.com and the VHS terminal recorder's page are within a row of before; the X-like
+timelines' footers are below.
+
+Still visible: the X-like timelines' sidebar footer, where two views' halves of its small print met a few pixels apart,
+now shows them over each other: the flat card a view shows there, the sidebar stopping partway, is taken for something
+over the line and no longer written over what an earlier view left; apple.com's MacBook Pro page keeps the pause glyph
+of the media control at its foot in pieces, for the same reason; samsung.com's cookie dialog, garbled before, is
+garbled otherwise; a mark of the page's own color inside a button fixed mid-view is still stamped; a round button over
+text at a page's foot leaves its flat inside in the last lines; a page whose background stays put while the text
+scrolls (a made-up landing page) is as broken as before, as long and in the same steps, its fragments elsewhere; a short
+white line under a dark panel on atlassian.com and a notch in a glyph of a made-up sequence are new.

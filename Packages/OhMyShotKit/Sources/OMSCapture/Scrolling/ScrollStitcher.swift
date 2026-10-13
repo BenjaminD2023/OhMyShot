@@ -1470,6 +1470,8 @@ nonisolated private final class Canvas {
     /// Lines that took what came in under columns that stay put, and in which of them, until the next view tells
     /// whether it moved with the content.
     private var tentative: [(index: Int, segments: [Int])] = []
+    /// Per segment of the line being taken in: grounded as over the content (1), or one color where it was on screen (2).
+    private var overlay: [UInt8] = []
     /// The rows of the view being taken in whose lines `noteChanges` looked at, which of them show something that
     /// keeps changing, and per row and segment what it saw there (`changedNow`, `keepsChanging`).
     private var noted: [Bool] = []
@@ -2405,6 +2407,15 @@ nonisolated private final class Canvas {
                 // sidebar's flat strokes, a highlighted item's bar), no clearer observation of it; and a table's or
                 // timeline's stroke, alike top to bottom, matches both positions without saying anything.
                 if !Self.isPlain(source + start, end - start), memcmp(source + start, sameRow + start, end - start) == 0 { continue }
+                // So is one color where it was on screen that the line did not show in the last view, but for the
+                // column's own ground (the page come out from under what was over it): a flat button fixed over the
+                // page, which shows the line as it never is when the line passes under it nearer the view's middle
+                // than any view showed it since.
+                if memcmp(source + start, sameRow + start, end - start) == 0, !Self.nearlyAlike(source + start, previous + start, end - start),
+                   let ground, memcmp(source + start, ground.baseAddress + start, end - start) != 0 { continue }
+                // Nor is a segment the edge of such a button crosses, beside its flat inside or its mark.
+                if partlyOver(source, start, end - start, sameRow: sameRow, alike: previous),
+                   besideOver(source, segment: segment, run: run, sameRow: sameRow, alike: previous) { continue }
                 qualities[segment] = quality
                 if memcmp(source + start, target + start, end - start) != 0 {
                     memcpy(target + start, source + start, end - start)
@@ -2415,6 +2426,42 @@ nonisolated private final class Canvas {
             }
         }
         return changed
+    }
+
+    /// Whether some of the `length` bytes of `source` at `start`, two pixels at least, are something over the content:
+    /// what the last view showed at the same place on screen (`sameRow`), unlike the column's ground and unlike `alike`
+    /// but for the display's dither, the rest of them showing the content beside it (the edge of a button fixed over
+    /// the page, across a segment).
+    private func partlyOver(_ source: UnsafeRawPointer, _ start: Int, _ length: Int, sameRow: UnsafeRawPointer, alike: UnsafeRawPointer?) -> Bool {
+        guard let ground else { return false }
+        let pixels = (source + start).assumingMemoryBound(to: UInt32.self), same = (sameRow + start).assumingMemoryBound(to: UInt32.self)
+        let floor = UnsafeRawPointer(ground.baseAddress + start).assumingMemoryBound(to: UInt32.self)
+        var over = 0
+        for pixel in 0 ..< length / 4 where pixels[pixel] == same[pixel] && pixels[pixel] != floor[pixel] {
+            if let alike, Self.nearlyAlike(source + start + pixel * 4, alike + start + pixel * 4, 4) { continue }
+            over += 1
+            if over >= 2 { return true }
+        }
+        return false
+    }
+
+    /// Whether a segment beside `segment` in `run` is all over the content: one color where it was on screen that the
+    /// line did not show in the last view, but for the column's own ground (a button's flat inside), or what stays put
+    /// (its mark).
+    private func besideOver(_ source: UnsafeRawPointer, segment: Int, run: Range<Int>, sameRow: UnsafeRawPointer, alike: UnsafeRawPointer?) -> Bool {
+        guard let ground else { return false }
+        for next in [segment - 1, segment + 1] {
+            let lower = max(next * Self.segmentBytes, run.lowerBound), upper = min((next + 1) * Self.segmentBytes, run.upperBound)
+            guard lower < upper else { continue }
+            let length = upper - lower
+            if Self.isPlain(source + lower, length) {
+                if memcmp(source + lower, sameRow + lower, length) == 0, memcmp(source + lower, ground.baseAddress + lower, length) != 0,
+                   alike.map({ !Self.nearlyAlike(source + lower, $0 + lower, length) }) ?? true { return true }
+            } else if staysPut(source, lower, length, sameRow: sameRow, alike: alike) {
+                return true
+            }
+        }
+        return false
     }
 
     /// Whether `length` bytes of `source` at `start` are something over the content: they are what the last view
@@ -2443,8 +2490,8 @@ nonisolated private final class Canvas {
     }
 
     /// A line new to the canvas, `source` already copied to `target`: each segment seen once, but what stays put
-    /// on screen, which takes the ground. Loose, what took the ground and what the view showed where it saw the
-    /// column not move with the content.
+    /// on screen and one color beside it where it was on screen too (a button's flat inside), which take the ground.
+    /// Loose, what took the ground and what the view showed where it saw the column not move with the content.
     private func takeIn(
         _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, at index: Int, support: UnsafeMutablePointer<UInt8>,
         loose: UnsafeMutablePointer<UInt8>, sameRow: UnsafeRawPointer, alike: UnsafeRawPointer?
@@ -2476,15 +2523,43 @@ nonisolated private final class Canvas {
             }
         }
         if !taken.isEmpty { tentative.append((index, taken)) }
+        if overlay.count != segments { overlay = [UInt8](repeating: 0, count: segments) }
         for run in scrollingMiddle {
             var start = run.lowerBound
             while start < run.upperBound {
-                let end = min((start / Self.segmentBytes + 1) * Self.segmentBytes, run.upperBound)
+                let segment = start / Self.segmentBytes, end = min((segment + 1) * Self.segmentBytes, run.upperBound)
+                overlay[segment] = 0
                 if staysPut(source, start, end - start, sameRow: sameRow, alike: alike) {
                     memcpy(target + start, ground.baseAddress + start, end - start)
-                    support[start / Self.segmentBytes] = 0
+                    support[segment] = 0
+                    overlay[segment] = 1
+                } else if Self.isPlain(source + start, end - start), memcmp(source + start, sameRow + start, end - start) == 0,
+                          memcmp(source + start, ground.baseAddress + start, end - start) != 0,
+                          alike.map({ !Self.nearlyAlike(source + start, $0 + start, end - start) }) ?? true {
+                    overlay[segment] = 2
                 }
                 start = end
+            }
+        }
+        // One color where it was on screen, held between or beside what is over the content in the line, is over it
+        // too: the inside of a button fixed over the page, whose edge and mark are. A stretch of the page that looks
+        // the same where it was on screen (the inside of a white picture whose text just loaded) has no such edge: the
+        // picture's sides are alike all down, so they are not over the content.
+        for run in scrollingMiddle {
+            let first = run.lowerBound / Self.segmentBytes, last = (run.upperBound - 1) / Self.segmentBytes
+            var segment = first
+            while segment <= last {
+                guard overlay[segment] == 2 else { segment += 1; continue }
+                var end = segment
+                while end <= last, overlay[end] == 2 { end += 1 }
+                if segment > first && overlay[segment - 1] == 1 || end <= last && overlay[end] == 1 {
+                    for flat in segment..<end {
+                        let start = max(flat * Self.segmentBytes, run.lowerBound), stop = min((flat + 1) * Self.segmentBytes, run.upperBound)
+                        memcpy(target + start, ground.baseAddress + start, stop - start)
+                        support[flat] = 0
+                    }
+                }
+                segment = end
             }
         }
         for segment in 0..<segments where support[segment] == 0 || row != nil && adrift[segment] { loose[segment] = 1 }
