@@ -1188,3 +1188,63 @@ Left as they are:
 - On a page without a bar that stays put, the views of the blank are still reported lost, so the panel asks to scroll
   back while they go by.
 - A grid of cards alike with no blank between (made up) still skips 371 px where it lines up a row off.
+
+### Views further on than the view reaches (2026-10-14, later still)
+
+Made-up frame sets of a docs page and a thread jump further than a view between two views, as following an anchor,
+pressing End, or dropping frames would. The stitcher took each jump at an offset where something the page repeats lined
+up, with blank lines around it, while most of the view said otherwise or nothing: a sentence the docs page has twice, a
+thread's reply links. Three things went wrong:
+
+- what followed was written over what had been taken in;
+- or it was added after it, with the jump's content missing;
+- or, on the docs page with sidebars, the views were taken as unchanged and the picture stopped growing for good.
+
+To find a rule, every verified candidate offset over the 183 frame sets with true offsets was labelled by the true move
+since the reference view: 25,734 candidates, 24,395 picked, 980 of those wrong. Most of the wrong ones are pages whose
+frames' offsets do not tell the content's move: an inner scroller, parallax, a fixed background.
+
+No share of agreeing lines separates right from wrong on its own: a full-view video or a carousel leaves as little
+agreeing as a jump does. What does separate them is the votes. A view where the best offset gets under an eighth of the
+votes the last offset taken got (from at least 64) shows mostly something else. Among such views, right offsets had at
+most a fifth as many lines against them as agreeing and saying something; wrong ones had at least as many.
+
+Now two rules apply:
+
+- In such a view, an offset with at least half as many lines against it as agreeing and saying something does not
+  hold.
+- A view found again in the picture, after lining up with nothing, needs at least half of its lines that say something
+  to agree there. This does not apply where it was found where it was, or where it would have scrolled to.
+
+| Check | Before | After |
+| --- | --- | --- |
+| A docs page with sidebars (MDN), jumps of 761, 899, 1036 and 1243 px in an 800 px view | taken at 14 and 152 px, written over at −1291, then views alike taken in at the wrong place | the picture as it was before the jump; the views after it lost, or unchanged where the sidebars outweigh the rest |
+| A thread (Hacker News), a jump of 1064 px | taken at −465 px, what followed written over the picture: 340 rows off before the jump | 34 views lost, then picked up 6 px on, the jump's content missing, and what followed laid over the last rows before the jump: 241 rows off |
+| Made up: down, on past the view, a few views, back up into what was taken in (two sets) | rows from far down the page among the first (1518 rows out of order) | the page in order |
+| A made-up page with a heading it repeats, a jump of 1000 rows in a view of 300 (new tests) | written over what was taken in | lost, the picture byte for byte as before the jump |
+| spacex.com under Auto-scroll | a view taken as 14 px on while the page stood still | left out, 14 rows shorter |
+| The other frame sets | as committed | byte for byte, but a landing page's two sets (2 levels at most) and Atlassian's (14 rows at an animation's edge, no better or worse) |
+| The six live captures | as committed | byte for byte |
+| The live sheet and verge captures, cnn and a made-up timeline under Auto-scroll, a shop grid, optimized, alternating, five runs each | 0.84–5.43 ms a frame | within 1% |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+Tried and left out:
+
+- Taking views as still only by the bands that moved with the content, between the bars, so sidebars could not keep a
+  jumped view unchanged. It turned the views of blank stretches under a header, and of two made-up pages with sidebars,
+  from unchanged into lost, the pictures the same: the panel would have asked to scroll back where nothing was wrong.
+- Choosing among offsets that hold by how consistently their lines agree rather than by score. It picked worse on grids
+  of cards alike: 113 of 150 right, against 130.
+
+Left as they are:
+
+- A jump with a small overlap, on a page that repeats a block, is still taken at the repeat: 385 px for a jump of 624
+  in 800, both offsets lining up about as well, so what follows lies over 239 rows taken in before it.
+- Views that line up again a few pixels from where the content would have scrolled to are taken there. After the
+  thread's jump, the place where the repeated reply links line up drifted to 6 px from it, 34 views on. A landing page
+  recovers the same way from its parallax hero, there exactly where expected and with as little of its view agreeing
+  (a sixth), so the two cannot be told apart.
+- On a page with sidebars, views after a jump are mostly taken as unchanged, so the panel does not say the views no
+  longer line up; the picture keeps what came before the jump.
+- A page whose background, a texture repeating every 480 px, stays fixed under its text still comes out wrong: now
+  5400 px too long rather than 1080.

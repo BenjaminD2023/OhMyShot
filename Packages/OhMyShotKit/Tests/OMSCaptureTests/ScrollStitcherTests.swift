@@ -1292,6 +1292,58 @@ struct ScrollStitcherTests {
         #expect(Self.add(Self.view(page, at: block + blank - 200, size: size), to: stitcher) == .lost)
     }
 
+    // MARK: - Jumps
+
+    /// A page of text with one heading it repeats (as a document repeats a phrase, a thread its reply links), blank
+    /// rows around each, at `rows`.
+    private static func repeatingHeading(width: Int, height: Int, rows: [Int]) -> Page {
+        var page = Page(width: width, height: height, seed: 21)
+        let heading = Page(width: width, height: 40, seed: 22)
+        for top in rows {
+            for y in top - 30 ..< top + 42 {
+                let inHeading = y >= top && y < top + 12
+                for x in 0..<width { page.pixels[y * width + x] = inHeading ? heading.pixels[(y - top + 6) * width + x] : white }
+            }
+        }
+        return page
+    }
+
+    @Test func aJumpFurtherThanTheViewIsLostRatherThanLinedUpWithWhatRepeats() throws {
+        // Scrolled 20 rows at a time, then on 1000 at once (an anchor followed, a key pressed): the view shows nothing it
+        // showed before but the heading the page repeats, which lines up with its other copy. Taken in there, what comes
+        // after would be written over what was taken in. Lost instead, and the picture as it was.
+        let page = Self.repeatingHeading(width: 400, height: 3000, rows: [400, 1300])
+        let stitcher = Self.stitcher(width: 400, height: 300)
+        var offset = 0
+        Self.add(Self.view(page, at: offset, size: 300), to: stitcher)
+        while offset < 260 {
+            offset += 20
+            #expect(Self.add(Self.view(page, at: offset, size: 300), to: stitcher) == .scrolled(offset: 20))
+        }
+        let before = Self.pixels(of: try #require(stitcher.picture()))
+        for at in [1260, 1280, 1300] {
+            #expect(Self.add(Self.view(page, at: at, size: 300), to: stitcher) == .lost, "at \(at)")
+        }
+        #expect(Self.pixels(of: try #require(stitcher.picture())) == before)
+    }
+
+    @Test func aJumpAndBackComesOutInOrder() throws {
+        // On past the view at once, a few views there, then back up to where the views overlap what was taken in: the
+        // picture is the page, in order, from its start to the furthest view that lined up.
+        let page = Self.repeatingHeading(width: 400, height: 3000, rows: [400, 1300])
+        let stitcher = Self.stitcher(width: 400, height: 300)
+        var offset = 0
+        Self.add(Self.view(page, at: offset, size: 300), to: stitcher)
+        while offset < 260 {
+            offset += 20
+            Self.add(Self.view(page, at: offset, size: 300), to: stitcher)
+        }
+        for at in [1260, 1280, 1300, 1100, 900, 700, 500, 450] { Self.add(Self.view(page, at: at, size: 300), to: stitcher) }
+        let picture = try #require(stitcher.picture())
+        let rows = Self.differingRows(Self.pixels(of: picture), Array(page.pixels[0 ..< picture.height * 400]), width: 400)
+        #expect(rows.isEmpty, "\(rows.count) rows off, from \(rows.first ?? -1): \(picture.height) rows, \(stitcher.summary)")
+    }
+
     // MARK: - Pages that move on their own
 
     @Test func aPlayingVideoDoesNotStopTheCapture() throws {

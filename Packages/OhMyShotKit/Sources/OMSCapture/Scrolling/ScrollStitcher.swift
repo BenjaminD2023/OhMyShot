@@ -166,7 +166,7 @@ nonisolated public final class ScrollStitcher {
             var why = ""
             let reference = track.reference
             switch Lines.compare(
-                view, with: reference, movingBands: track.movingBands, content: band, expected: track.lastOffset,
+                view, with: reference, movingBands: track.movingBands, content: band, expected: track.lastOffset, previousVotes: track.lastVotes,
                 avoiding: isDriven && drivenAt != nil ? { [unowned self] in innerScroller($0, view: view, old: reference, turned: false) != nil } : nil,
                 why: &why
             ) {
@@ -211,7 +211,7 @@ nonisolated public final class ScrollStitcher {
         var why = ""
         let reference = track.reference
         switch Lines.compare(
-            view, with: reference, movingBands: track.movingBands, content: band, expected: track.lastOffset,
+            view, with: reference, movingBands: track.movingBands, content: band, expected: track.lastOffset, previousVotes: track.lastVotes,
             avoiding: isDriven && drivenAt != nil ? { [unowned self] in innerScroller($0, view: view, old: reference, turned: true) != nil } : nil,
             why: &why
         ) {
@@ -475,9 +475,13 @@ nonisolated public final class ScrollStitcher {
     /// view may have caught a passing state, or the user scrolled back past it. It becomes the view the next
     /// one is lined up with; what it shows past the content's end (or before its start) is taken in as just come
     /// into view, so views found this way one after another still record what scrolls by. Found where it was: it
-    /// only changed in place, and nothing scrolled.
+    /// only changed in place, and nothing scrolled. Found far from where it was or would have scrolled on to, most of
+    /// what it shows must be there: a phrase or a pattern a page repeats lines up in many places, around what does not.
     private func relocate(_ view: Lines, track: inout Track) -> Step? {
-        guard let canvas, let found = canvas.locate(view, reference: track.reference, near: position + (track.lastOffset ?? 0)) else { return nil }
+        let last = track.lastOffset ?? 0
+        guard let canvas, let found = canvas.locate(view, reference: track.reference, near: position + last),
+              found.position == position || abs(found.position - position - last) <= max(8, abs(last) / 2) || found.agreeing * 2 >= found.saying
+        else { return nil }
         let offset = found.position - position
         let old = track.reference
         position = found.position
@@ -487,6 +491,7 @@ nonisolated public final class ScrollStitcher {
         track.spare = old
         track.reference = view
         track.movingBands = []
+        track.lastVotes = nil
         sinceReference = (false, false, nil)
         guard offset != 0 else { return .unchanged }
         extend(with: view, sameRows: old)
@@ -539,6 +544,7 @@ nonisolated public final class ScrollStitcher {
         track.spare = reference
         track.reference = view
         track.movingBands = []
+        track.lastVotes = nil
         sinceReference = (false, false, nil)
         return .scrolled(offset: offset)
     }
@@ -836,6 +842,7 @@ nonisolated public final class ScrollStitcher {
         track.reference = view
         track.movingBands = match.movingBands
         track.lastOffset = match.offset
+        track.lastVotes = match.votes
         sinceReference = (false, false, nil)
         return .scrolled(offset: match.offset)
     }
@@ -957,6 +964,9 @@ nonisolated private struct Track {
     var movingBands: [Int] = []
     /// How far the content moved when the last view was accepted.
     var lastOffset: Int?
+    /// How many line parts found in the view before voted for that offset: a view where far fewer find themselves at
+    /// any offset shows mostly something else.
+    var lastVotes: Int?
 
     init?(_ reference: Lines?) {
         guard let reference else { return nil }
@@ -988,6 +998,8 @@ nonisolated final class Lines {
         var from: Int
         var to: Int
         var movingBands: [Int]
+        /// How many line parts voted for the offset.
+        var votes = 0
 
         /// The lines that came into view: after those that agree, or before them scrolling back.
         var arrived: Range<Int> { offset > 0 ? to ..< to + offset : from + offset ..< from }
@@ -1132,10 +1144,11 @@ nonisolated final class Lines {
 
     /// How a new view lines up with an old one of the same size; `why` says what was found when it lines up
     /// with nothing, for the log. `expected`: how far the content moved the last time, which an offset nearly as
-    /// good as the best wins with (content repeating down the page lines up a period off as well).
+    /// good as the best wins with (content repeating down the page lines up a period off as well); `previousVotes`:
+    /// how many line parts voted for it.
     static func compare(
         _ new: Lines, with old: Lines, movingBands: [Int] = [], content: Range<Int>? = nil, expected: Int? = nil,
-        avoiding: ((Match) -> Bool)? = nil, why: inout String
+        previousVotes: Int? = nil, avoiding: ((Match) -> Bool)? = nil, why: inout String
     ) -> Comparison {
         let count = new.count
         let bandCount = new.bands.count
@@ -1159,6 +1172,9 @@ nonisolated final class Lines {
             best = offset
             most = votes[offset + count]
         }
+        // Far fewer line parts find themselves at any offset than did when the content last scrolled: the view shows
+        // mostly something else, jumped further than the view or changed.
+        let collapsed = previousVotes.map { $0 >= 64 && Int(most) * 8 < $0 } ?? false
         // The offsets worth verifying: the best voted; a runner-up nearly as well voted (a sidebar that starts to
         // stick moves otherwise than the page, and can outvote it); and the voted one nearest the last offset.
         var candidates: [Int] = []
@@ -1186,7 +1202,7 @@ nonisolated final class Lines {
         var failure: String?
         var behind: String?
         for candidate in candidates {
-            switch verify(new, old, offset: candidate, previouslyMoving: movingBands, content: content, expected: expected) {
+            switch verify(new, old, offset: candidate, previouslyMoving: movingBands, content: content, expected: expected, collapsed: collapsed) {
             case .holds(let match, let score): held.append((match, score))
             case .failed(let reason): failure = failure ?? "offset \(candidate) \(reason)"
             case .behind(let reason): behind = behind ?? "offset \(candidate) \(reason)"
@@ -1199,7 +1215,10 @@ nonisolated final class Lines {
             let window = max(4, abs(expected) / 4)
             for distance in 0...window {
                 for offset in distance == 0 ? [expected] : [expected - distance, expected + distance] where offset != 0 && abs(offset) <= reach {
-                    if case .holds(let match, _) = verify(new, old, offset: offset, previouslyMoving: movingBands, content: content, expected: expected) {
+                    if case .holds(var match, _) = verify(
+                        new, old, offset: offset, previouslyMoving: movingBands, content: content, expected: expected, collapsed: collapsed
+                    ) {
+                        match.votes = Int(votes[offset + count])
                         return .scrolled(match)
                     }
                 }
@@ -1207,8 +1226,14 @@ nonisolated final class Lines {
         }
         // A scroller inside the page that took the gesture making the app scroll moves on its own: the page around
         // it is chosen before it whenever that lines up too.
-        if let avoiding, let chosen = choose(held.filter { !avoiding($0.match) }, expected: expected) { return .scrolled(chosen) }
-        if let chosen = choose(held, expected: expected) { return .scrolled(chosen) }
+        if let avoiding, var chosen = choose(held.filter { !avoiding($0.match) }, expected: expected) {
+            chosen.votes = Int(votes[chosen.offset + count])
+            return .scrolled(chosen)
+        }
+        if var chosen = choose(held, expected: expected) {
+            chosen.votes = Int(votes[chosen.offset + count])
+            return .scrolled(chosen)
+        }
         let isStill = still(new, old, offset: best)
         let tellingNew = (0..<bandCount * count).count { !new.plain[$0] }
         let tellingOld = (0..<bandCount * count).count { !old.plain[$0] }
@@ -1279,9 +1304,11 @@ nonisolated final class Lines {
     /// that testify agree), then the lines that agree in most of those bands, from the first run of them that says
     /// something to the last. Lines that changed in place (a playing video, an image loading, a band straddling a
     /// column that stays put and one that scrolls) say nothing either way; lines that stayed where they were, or
-    /// moved otherwise, speak against it.
+    /// moved otherwise, speak against it. `collapsed`: far fewer line parts found themselves than when the content
+    /// last scrolled.
     private static func verify(
-        _ new: Lines, _ old: Lines, offset: Int, previouslyMoving: [Int], content: Range<Int>?, expected: Int? = nil
+        _ new: Lines, _ old: Lines, offset: Int, previouslyMoving: [Int], content: Range<Int>?, expected: Int? = nil,
+        collapsed: Bool = false
     ) -> Verification {
         let count = new.count
         let lower = max(0, -offset)
@@ -1381,6 +1408,17 @@ nonisolated final class Lines {
                 // Changed in place, as far as anything here tells.
                 agreement[index] = 3
             }
+        }
+        // Where the view shows mostly something else, what repeats on a page (a phrase, a reply link, the cards of a
+        // grid) still lines up somewhere, with blank lines around it. An offset that half as many lines speak against
+        // as say something for it is no scroll (where the content scrolled, a fifth as many at most).
+        if collapsed {
+            var against = 0
+            var telling = 0
+            for index in lower..<upper {
+                if agreement[index] == 0 { against += 1 } else if agreement[index] == 2 { telling += 1 }
+            }
+            if against * 2 >= telling { return .failed("too little agrees for the votes lost") }
         }
         if let content {
             let limit = max(16, (upper - lower) / 8)
@@ -3230,7 +3268,8 @@ nonisolated private final class Canvas {
     /// to the last. In columns that stay put (a sidebar, a timeline, kept as the first view showed them), what
     /// `reference`, the last view placed, showed at the same place on screen neither votes nor need agree. A place
     /// well ahead of any other wins, or one nearly as good near `expected`; two as good, neither near, tell nothing.
-    func locate(_ view: Lines, reference: Lines, near expected: Int) -> (position: Int, lines: Range<Int>)? {
+    /// With the place: how many of the view's lines there agree and say something, and how many say something at all.
+    func locate(_ view: Lines, reference: Lines, near expected: Int) -> (position: Int, lines: Range<Int>, agreeing: Int, saying: Int)? {
         guard let range, range.count >= 16, view.bands == bands else { return nil }
         let bandCount = bands.count
         if located?.range != range {
@@ -3300,30 +3339,34 @@ nonisolated private final class Canvas {
         }
         let position = slot + lowest
         // The lines that agree in most bands where the view shows something other than the reference did there,
-        // and those of them that say something.
+        // and those of them that say something; and how many of the view's lines there say something at all.
         var first: Int?
         var end = 0
         var telling = 0
+        var saying = 0
         for index in 0..<count {
             let line = position + index - range.lowerBound
             guard line >= 0, line < range.count else { continue }
             var testable = 0
             var agreeing = 0
             var says = false
+            var anything = false
             for band in 0..<bandCount where !(staying[band] && stayed(band, index)) {
                 testable += 1
+                if !view.plain[band * count + index] { anything = true }
                 if located.hashes[band * range.count + line] == view.hashes[band * count + index] {
                     agreeing += 1
                     if !view.plain[band * count + index] { says = true }
                 }
             }
+            if anything { saying += 1 }
             guard testable > 0, agreeing * 3 >= testable * 2, says else { continue }
             if first == nil { first = index }
             end = index + 1
             telling += 1
         }
         guard let first, telling >= max(16, count / 10) else { return nil }
-        return (position, first ..< end)
+        return (position, first ..< end, telling, saying)
     }
 
     /// Whether `source` shows what line `target` holds between the ends, but where it holds the ground, where
