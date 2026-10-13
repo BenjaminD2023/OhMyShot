@@ -905,3 +905,27 @@ pixel or two apart; GitHub's file tree shows one entry twice where the rest of i
 on a made-up page comes out twice rather than three times; a line cut off at the foot of a card on theverge.com
 now has a smear over part of it; a navigation's button stuck from the first view can come out cut (as before);
 videos and animated advertisements still come out as a mosaic of their frames.
+
+### A navigation's button (2026-10-13, later still)
+
+The X-like timelines' navigation column has a flat, pill-shaped Post button that every view shows whole, yet the
+picture showed it cut, square at one end or missing a stretch of its middle, before the last change and after. The
+first view's lines where the next view showed something stay put were loosened, so that a floating button over them
+gives way to the page, and the button's rounded end counted as such; the views that followed, the navigation
+stuck, then wrote its dark gaps over the button's lines. Now only what does not move with the content (stays put or
+moves part of the way) within less than half the view is loosened: a floating button at the view's foot, an avatar
+stuck below a header. It is taken together across what the column shows between (a button's flat middle), but not
+across columns showing nothing but the ground (the dark margin between a sidebar and a floating button), and what
+moved part of the way counts (a docs sidebar stopping partway through the one scroll of its capture).
+
+| Check | Before | After |
+| --- | --- | --- |
+| The live X-like timeline's Post button | cut square at its right end | whole |
+| The same button in 18 X-like frame sets (made up, light and dark) | cut, or missing a stretch of its middle | whole |
+| A navigation column with a pill-shaped button (made up) | 32 rows of the button off | 0 |
+| Floating buttons at the foot of the X-like frame sets | left out | left out |
+| The 206 frame sets, pixels against pictures rebuilt from the frames' offsets | 192,403 rows off | 192,409 (the rebuilt pictures show no button there) |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+25 frame sets came out otherwise, each looked at: besides the button, a line of Apple Developer's contents and the
+last number of a docs list come out whole, and a chat's channel names no longer stop short.

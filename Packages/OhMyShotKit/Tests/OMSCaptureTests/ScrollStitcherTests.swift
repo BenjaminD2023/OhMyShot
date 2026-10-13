@@ -400,6 +400,48 @@ struct ScrollStitcherTests {
         #expect(below.isEmpty, "\(below.count) rows below the sidebar show some of it, from \(below.first ?? -1): \(stitcher.summary)")
     }
 
+    @Test func aNavigationColumnKeepsItsButtonAsTheFirstViewShowedIt() throws {
+        // A navigation column down the whole view beside the posts, as an X-like site has: dark, its labels never moving,
+        // a flat pill-shaped button low among them. It is no button floating over the page: the picture shows it whole,
+        // as the first view did, however many lines scrolled past it.
+        let page = Page(width: 400, height: 2400, seed: 31)
+        let left = 40, nav = 160, width = 600, height = 300
+        let light: UInt32 = 0xFFEF_F3F4
+        var column = [UInt32](repeating: 0xFF00_0000, count: nav * height)
+        for item in 0..<6 {
+            let top = 12 + item * 36
+            for y in top ..< top + 14 {
+                for x in 24 ..< 70 + item * 9 where (x * 7 + y * 3 + item) % 5 < 3 { column[y * nav + x] = 0xFFE7_E9EA }
+            }
+        }
+        for y in 236..<268 {
+            for x in 12..<150 {
+                let dx = max(0, x - 134), dy = abs(2 * y - 503) / 2
+                if dx * dx + dy * dy <= 16 * 16 { column[y * nav + x] = light }
+            }
+        }
+        func view(at offset: Int) -> [UInt32] {
+            var pixels = [UInt32](repeating: Self.white, count: width * height)
+            for y in 0..<height {
+                for x in 0..<nav { pixels[y * width + left + x] = column[y * nav + x] }
+                for x in 0..<page.width { pixels[y * width + left + nav + x] = page.pixels[(offset + y) * page.width + x] }
+            }
+            return pixels
+        }
+        let stitcher = Self.stitcher(width: width, height: height)
+        var offset = 0
+        let first = view(at: offset)
+        Self.add(first, to: stitcher)
+        for step in Array(repeating: [11, 13, 9, 12], count: 30).joined() where offset < 1200 {
+            offset += step
+            #expect(Self.add(view(at: offset), to: stitcher) == .scrolled(offset: step), "step \(step) to \(offset)")
+        }
+        let picture = try #require(stitcher.picture())
+        let pixels = Self.pixels(of: picture)
+        let button = (236..<268).filter { y in (left ..< left + nav).contains { pixels[y * width + $0] != first[y * width + $0] } }
+        #expect(button.isEmpty, "\(button.count) rows of the button off, from \(button.first ?? -1): \(stitcher.summary)")
+    }
+
     @Test func aStuckTabIsNeverTakenIntoAStretchAlikeAllDownPassingUnderIt() throws {
         // A gray block, shaded left to right and alike all down (a stretch of a photo), in a page of text; above it a
         // purple tab, part of the page until it sticks a little below the view's top, as a site's tab bar does.

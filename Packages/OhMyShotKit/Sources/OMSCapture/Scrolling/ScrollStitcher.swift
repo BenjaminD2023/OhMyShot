@@ -1542,6 +1542,8 @@ nonisolated private final class Canvas {
         // coming in); and the first and the last that showed it still.
         var still = [Int](repeating: 0, count: segments), moving = still, drifted = still
         var firstStill = [Int](repeating: .max, count: segments), lastStill = [Int](repeating: -1, count: segments)
+        var firstAdrift = firstStill, lastAdrift = lastStill
+        var informative = [Bool](repeating: false, count: segments)
         // Whether the `length` bytes at `start` of `shown`, line `line`, are where the view before showed them part of
         // the way the content moved: further along than had they stayed put, not as far as had they moved with it.
         // What moves part of the way moves as one (a sidebar), so the distances found are tried first; others are
@@ -1572,6 +1574,7 @@ nonisolated private final class Canvas {
                 // A flat card border is informative too when it differs from the column's background.
                 // Ignoring all single-color runs leaves thin fixed rules repeated down dark timelines.
                 guard !Self.isPlain(shown + start, bytes) || ground.map({ memcmp(shown + start, $0.baseAddress + start, bytes) != 0 }) == true else { continue }
+                informative[segment] = true
                 let kept = memcmp(shown + start, before + start, bytes) == 0
                 let carried = memcmp(shown + start, moved + start, bytes) == 0
                 if kept, !carried, isFixedFeature(shown, start, bytes) {
@@ -1580,6 +1583,8 @@ nonisolated private final class Canvas {
                     still[segment] += 1
                     firstStill[segment] = min(firstStill[segment], line)
                     lastStill[segment] = max(lastStill[segment], line)
+                    firstAdrift[segment] = min(firstAdrift[segment], line)
+                    lastAdrift[segment] = max(lastAdrift[segment], line)
                     stillFrom[segment] = min(stillFrom[segment], line)
                     stillTo[segment] = max(stillTo[segment], line)
                 }
@@ -1588,16 +1593,10 @@ nonisolated private final class Canvas {
                     seenMoving[segment] = true
                     moving[segment] += 1
                 }
-                if !kept, !carried, movedPartway(shown, start, bytes, line: line) { drifted[segment] += 1 }
-            }
-        }
-        // The first view's lines where the next showed something stay put on screen (a floating button at the view's
-        // foot, an avatar stuck below a header) hold it over the line, loose for any view to show what is there; and
-        // so do a few lines around them, its soft edge, its shadow.
-        if views == 1, let firstLines {
-            for segment in 0..<segments where lastStill[segment] >= 0 {
-                for index in max(firstLines.lowerBound, firstStill[segment] - 16) ..< min(firstLines.upperBound, lastStill[segment] + 17) {
-                    loosen(index, segment: segment)
+                if !kept, !carried, movedPartway(shown, start, bytes, line: line) {
+                    drifted[segment] += 1
+                    firstAdrift[segment] = min(firstAdrift[segment], line)
+                    lastAdrift[segment] = max(lastAdrift[segment], line)
                 }
             }
         }
@@ -1625,6 +1624,29 @@ nonisolated private final class Canvas {
         // against what the views before it saw.
         for segment in 0..<segments {
             adrift[segment] = adriftNow[segment] || adrift[segment] && moving[segment] <= still[segment] + drifted[segment]
+        }
+        // The first view's lines where the next showed something stay put on screen hold it over the line, loose for
+        // any view to show what is there, and so do a few lines around it, its soft edge, its shadow: where what did
+        // not move with the content (stayed put or moved part of the way) lies within less than half the view (a
+        // floating button at the view's foot, an avatar stuck below a header). What does not move down most of the
+        // view is a column of its own (a site's navigation, a sidebar stopping partway), which the picture shows as
+        // the first view did: taken together across what it shows between (a button's flat middle), not across columns
+        // of nothing but the ground (the page's dark margin between a sidebar and a floating button).
+        if views == 1, let firstLines {
+            let together = (0..<segments).map { adriftNow[$0] && (lastStill[$0] >= 0 || informative[$0]) }
+            var run = 0
+            while run < segments {
+                guard together[run] else { run += 1; continue }
+                var end = run
+                while end < segments, together[end] { end += 1 }
+                defer { run = end }
+                let reach = ((run..<end).map { lastAdrift[$0] }.max() ?? -1) - ((run..<end).map { firstAdrift[$0] }.min() ?? .max)
+                let top = (run..<end).map { firstStill[$0] }.min() ?? .max, bottom = (run..<end).map { lastStill[$0] }.max() ?? -1
+                guard bottom >= top, (reach + 1) * 2 < new.count else { continue }
+                for segment in run..<end {
+                    for index in max(firstLines.lowerBound, top - 16) ..< min(firstLines.upperBound, bottom + 17) { loosen(index, segment: segment) }
+                }
+            }
         }
         // What a view showed of a column it saw mostly not move is not as the page has it, a line or two that moved
         // with the content by chance aside.
