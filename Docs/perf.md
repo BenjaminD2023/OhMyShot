@@ -1074,3 +1074,44 @@ Still visible: in the fast auto-scrolled timeline the footer's second line, whic
 scrolls only once the sidebar has stopped (the bar at the view's foot goes then), still comes out doubled; apple.com's
 MacBook Pro page keeps the pause glyph of the media control at its foot in pieces (the change above), as the lines there
 are only ever seen under it.
+
+### The page's background below a sidebar held by its foot (2026-10-13, night, later still)
+
+On X-like timelines the picture showed, below the sidebar's foot, a column in its cards' color down to the end of the
+picture (on the live capture some 13,000 rows of light gray down the right of the page), where the page is white. Two
+causes:
+
+- A column that comes to stay put took as its ground what the first view showed in it most: under a sticky card shorter
+  than the view, the page's background past it; but a sidebar taller than the view shows nothing past it in the first
+  view, and its cards' color outnumbers the white between them. What came in under it once it stayed put took that.
+- Where its columns were found adrift but not to stay put (by the view's edge, seen moving as it scrolled), the lines
+  below its foot came in white and then took its cards' gray from clearer views that showed it stuck over them, as
+  what is loose may.
+
+Now a column that comes to stay put, when the first view showed nothing past it, takes for what comes in past it, and
+for the lines past the last one any view saw it move over, the color the view it came to stay put in shows across it
+past what was seen still: the page's white below the sidebar's foot, when the first view showed that color across it
+too (between its cards), not something else at the view's foot. What was not seen moving inside the sidebar keeps its
+cards' color. And a run of columns adrift that nothing in moves any more takes from no view what it shows past the last
+line any view saw the run move over, loose or not (what stayed put there may still give way to the ground); text
+moving over a background that stays put keeps the earlier rules.
+
+| Check | Before | After |
+| --- | --- | --- |
+| The made-up X-like timelines (light and dark, stepped and auto-scrolled), below the sidebar's foot | its cards' color down to the end | the page's white (black) |
+| The live X-like timeline, the same | light gray down some 13,000 rows | white, but for a 14 px strip by the scroll bar and faint streaks |
+| A sidebar of gray cards held by its foot (made up) | 1,945 rows below it not the page's white | none |
+| theverge.com, the column of its pinned feature card | faint fragments of the card's title | its gray |
+| The other five live captures | as committed | byte for byte |
+| The 206 frame sets, each picture's size and steps | as committed | the same |
+| The 206 frame sets, pixels against pictures rebuilt from the frames' offsets | 186,817 rows off | 186,818 (16 sets changed, each looked at; the rebuilt pictures repeat the stuck sidebar below its foot) |
+| Frame sets with the timelines, a video or a carousel, one at a time, optimized, alternating, five runs each | 1.3–9.5 ms a frame | within 2.5% either way |
+| 3500 × 2400 px views scrolling, optimized build, alternating, two runs each (a load average of 5 to 7) | 11.4–11.5 ms | 11.4 ms |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+Besides the timelines and theverge.com, what changed is a highlight stamped on MDN pages, smaller or gone, and a few
+pixels on Wikipedia pages.
+
+Still visible: a strip 14 px wide by the scroll bar, at the line's end, which is counted rather than weighed, keeps the
+cards' color; faint streaks of it where a card's edge came in under the stuck sidebar; a sidebar whose first view
+shows no line of the page's color across it between its cards keeps its cards' color below.

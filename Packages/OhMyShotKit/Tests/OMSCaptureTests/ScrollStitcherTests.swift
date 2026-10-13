@@ -400,6 +400,46 @@ struct ScrollStitcherTests {
         #expect(below.isEmpty, "\(below.count) rows below the sidebar show some of it, from \(below.first ?? -1): \(stitcher.summary)")
     }
 
+    @Test func aSidebarOfCardsHeldByItsFootLeavesThePagesBackgroundBelowIt() throws {
+        // A sidebar of gray cards taller than the view, as a timeline's is, scrolls with the posts until its foot meets
+        // the view's, then stays there. Its cards outnumber the page's white between them in every view, yet below its
+        // foot the picture shows the page's white beside the posts, not a gray column down to the end.
+        let page = Page(width: 400, height: 3000, seed: 31)
+        let sidebar = 160, width = 560, height = 300, sidebarHeight = 560
+        let card: UInt32 = 0xFFF7_F9F9
+        var panel = [UInt32](repeating: Self.white, count: sidebar * sidebarHeight)
+        for index in 0..<4 {
+            let top = 10 + index * 125
+            for y in top ..< top + 115 {
+                for x in 4..<156 { panel[y * sidebar + x] = card }
+                guard (top + 12 ..< top + 44).contains(y) else { continue }
+                for x in 14..<46 where (x - 30) * (x - 30) + (y - top - 28) * (y - top - 28) <= 256 { panel[y * sidebar + x] = 0xFF33_33CC &+ UInt32(index * 0x1100) }
+                guard y < top + 40, (y - top) % 9 < 6 else { continue }
+                for x in 56..<(120 + index * 5) where (x * 7 + y * 3 + index) % 5 < 3 { panel[y * sidebar + x] = 0xFF22_2833 }
+            }
+        }
+        func view(at offset: Int) -> [UInt32] {
+            let top = min(offset, sidebarHeight - height)
+            var pixels = [UInt32](repeating: Self.white, count: width * height)
+            for y in 0..<height {
+                for x in 0..<page.width { pixels[y * width + x] = page.pixels[(offset + y) * page.width + x] }
+                for x in 0..<sidebar { pixels[y * width + page.width + x] = panel[(top + y) * sidebar + x] }
+            }
+            return pixels
+        }
+        let stitcher = Self.stitcher(width: width, height: height)
+        var offset = 0
+        Self.add(view(at: offset), to: stitcher)
+        for step in Array(repeating: [17, 23, 19, 26, 21], count: 21).joined() where offset < 2200 {
+            offset += step
+            #expect(Self.add(view(at: offset), to: stitcher) == .scrolled(offset: step), "step \(step) to \(offset)")
+        }
+        let picture = try #require(stitcher.picture())
+        let pixels = Self.pixels(of: picture)
+        let below = (sidebarHeight..<picture.height).filter { y in (page.width..<width).contains { pixels[y * width + $0] != Self.white } }
+        #expect(below.isEmpty, "\(below.count) rows below the sidebar show something, from \(below.first ?? -1): \(stitcher.summary)")
+    }
+
     @Test func aNavigationColumnKeepsItsButtonAsTheFirstViewShowedIt() throws {
         // A navigation column down the whole view beside the posts, as an X-like site has: dark, its labels never moving,
         // a flat pill-shaped button low among them. It is no button floating over the page: the picture shows it whole,

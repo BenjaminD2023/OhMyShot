@@ -1481,6 +1481,11 @@ nonisolated private final class Canvas {
     private var anyDrifted = false
     /// The row of `driftedRows` of the line being weighed, when any of it moved part of the way.
     private var driftedLine: Int?
+    /// Per segment of a run of columns adrift, the last line any view saw one of them move over with the content (its
+    /// reach): past it, below a sidebar held by its foot, what the run shows stuck there is never the line's. And the
+    /// line being weighed.
+    private var driftReach: [Int] = []
+    private var weighedIndex = 0
     /// Per segment of the line being taken in: grounded as over the content (1), or one color where it was on screen (2).
     private var overlay: [UInt8] = []
     /// The rows of the view being taken in whose lines `noteChanges` looked at, which of them show something that
@@ -1525,6 +1530,9 @@ nonisolated private final class Canvas {
     /// A line in the ground of each column as the first view showed it, which lines show where what was on
     /// screen stayed put.
     private var ground: PageBuffer?
+    /// A line in the color past what stays put in each column: the ground, but under a sidebar held by its foot,
+    /// taller than the first view, the page's background below its foot rather than its cards' color.
+    private var past: PageBuffer?
     /// How much the view being taken in backs a segment by: about an eighth of how far the content moved.
     private var step: UInt8 = 1
     /// The lines by hash, band by band, for finding a view in the picture: made when first asked for and
@@ -1577,6 +1585,10 @@ nonisolated private final class Canvas {
             for pixel in 0..<bytes / 4 { target[pixel] = color }
         }
         self.ground = ground
+        if let past = PageBuffer(byteCount: lineBytes) {
+            memcpy(past.baseAddress, ground.baseAddress, lineBytes)
+            self.past = past
+        }
     }
 
     /// Weighs which columns stay put, from lines of `new` that agree with `old` at `offset`: a segment the new
@@ -1733,6 +1745,18 @@ nonisolated private final class Canvas {
         for segment in 0..<segments where carriedOver[segment] {
             movedOver[segment] = movedOver[segment].map { min($0.lowerBound, shown.lowerBound) ..< max($0.upperBound, shown.upperBound) } ?? shown
         }
+        driftReach = [Int](repeating: .max, count: segments)
+        var adriftRun = 0
+        while adriftRun < segments {
+            guard adrift[adriftRun] else { adriftRun += 1; continue }
+            var end = adriftRun
+            while end < segments, adrift[end] { end += 1 }
+            // Only a run nothing in moves with the content any more (not text moving over a background that stays put).
+            if !(adriftRun..<end).contains(where: { seenMoving[$0] }), let reach = (adriftRun..<end).compactMap({ movedOver[$0]?.upperBound }).max() {
+                for segment in adriftRun..<end { driftReach[segment] = reach }
+            }
+            adriftRun = end
+        }
         // What a column did lately counts most: one that scrolled with the page at first and then stuck (a sidebar
         // under a banner, a table of contents, one held by its foot at the view's) stays put once it has stayed put a
         // while. The counts fade an eighth each view; what a column moved fades away altogether once it was seen
@@ -1797,7 +1821,9 @@ nonisolated private final class Canvas {
     /// A column that stays put takes as its ground the plain color the first view showed in it past what was seen
     /// still there, when it showed one: the page's background under a sticky card shorter than the view, which
     /// the card's own color outnumbered in the first view. Not what it showed before it: that scrolled away (a site's
-    /// header above a sticky file tree) and is no background of the column's.
+    /// header above a sticky file tree) and is no background of the column's. When the first view showed nothing past
+    /// it (a sidebar held by its foot, taller than the view), what comes in past it (`past`) takes the color the view it
+    /// came to stay put in shows there instead, its ground still filling what of it was not seen moving.
     private func groundOutsideStill(_ segments: [Int]) {
         guard let ground, let firstSnapshot, let firstLines else { return }
         // The whole of what stays put, run by run of columns: its labels end at different lines, its card at one.
@@ -1807,20 +1833,34 @@ nonisolated private final class Canvas {
         for run in stayingSegments where segments.contains(where: run.contains) {
             let from = run.map { stillFrom[$0] }.min() ?? 0, to = run.map { stillTo[$0] }.max() ?? 0
             guard from <= to else { continue }
-            var colors: [UInt32] = []
-            for line in Self.samples(of: firstLines, count: 96) where line > to {
-                let row = UnsafeRawPointer(firstSnapshot.baseAddress + (line - firstLines.lowerBound) * lineBytes)
+            // The one color a line shows across nearly all of the run, if it does.
+            func across(_ row: UnsafeRawPointer) -> UInt32? {
                 let plain = run.compactMap { segment -> UInt32? in
                     let start = segment * Self.segmentBytes, bytes = min(Self.segmentBytes, lineBytes - start)
                     return Self.isPlain(row + start, bytes) ? (row + start).load(as: UInt32.self) : nil
                 }
-                guard let (color, seen) = Self.mostSeen(plain), seen * 10 >= run.count * 9 || seen + 1 >= run.count else { continue }
-                colors.append(color)
+                guard let (color, seen) = Self.mostSeen(plain), seen * 10 >= run.count * 9 || seen + 1 >= run.count else { return nil }
+                return color
             }
-            guard let (color, seen) = Self.mostSeen(colors), seen >= 8 else { continue }
+            func first(_ line: Int) -> UnsafeRawPointer { UnsafeRawPointer(firstSnapshot.baseAddress + (line - firstLines.lowerBound) * lineBytes) }
             let start = run.lowerBound * Self.segmentBytes, bytes = min(run.count * Self.segmentBytes, lineBytes - start)
-            let target = (ground.baseAddress + start).bindMemory(to: UInt32.self, capacity: bytes / 4)
-            for pixel in 0..<bytes / 4 { target[pixel] = color }
+            func fill(_ buffer: PageBuffer?, with color: UInt32) {
+                guard let buffer else { return }
+                let target = (buffer.baseAddress + start).bindMemory(to: UInt32.self, capacity: bytes / 4)
+                for pixel in 0..<bytes / 4 { target[pixel] = color }
+            }
+            if let (color, seen) = Self.mostSeen(Self.samples(of: firstLines, count: 96).filter { $0 > to }.compactMap { across(first($0)) }), seen >= 8 {
+                fill(ground, with: color)
+                fill(past, with: color)
+                continue
+            }
+            // What came to stay put after the first view, taller than it (a sidebar held by its foot), shows what is past
+            // its foot in the view it came to stay put in: the page's background there, when the first view showed it
+            // across the run too (between the sidebar's cards), not something else at the view's foot (a banner).
+            guard let view = currentView, to + 1 < view.count,
+                  let (color, seen) = Self.mostSeen((to + 1 ..< view.count).compactMap { across(view.line($0)) }), seen >= 8,
+                  Self.samples(of: firstLines, count: 96).contains(where: { $0 >= from && $0 <= to && across(first($0)) == color }) else { continue }
+            fill(past, with: color)
         }
     }
 
@@ -1846,6 +1886,15 @@ nonisolated private final class Canvas {
     /// can hold what came and went on screen there (an overlay scroll bar's knob).
     private func groundNewlyStaying(_ segments: [Int]) {
         guard !segments.isEmpty, let ground, let range else { return }
+        // The last line views saw the run of each segment move over (its reach): past it, what stays put held by its
+        // foot shows the page's background below it (`past`), not the color of its cards, which fills what of it was
+        // not seen moving.
+        var reach = [Int](repeating: .max, count: self.segments)
+        for run in stayingSegments where segments.contains(where: run.contains) {
+            let end = run.compactMap { movedOver[$0]?.upperBound }.max() ?? .max
+            for segment in run { reach[segment] = end }
+        }
+        let past = past ?? ground
         for index in range {
             let number = Self.chunkNumber(of: index)
             guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { continue }
@@ -1861,7 +1910,7 @@ nonisolated private final class Canvas {
                 let start = segment * Self.segmentBytes
                 if original == nil, movedOver[segment]?.contains(index) == true { continue }
                 if original != nil, views > 8, isBetweenEnds(segment) { continue }
-                memcpy(target + start, (original ?? UnsafeRawPointer(ground.baseAddress)) + start, min(Self.segmentBytes, lineBytes - start))
+                memcpy(target + start, (original ?? UnsafeRawPointer((index >= reach[segment] ? past : ground).baseAddress)) + start, min(Self.segmentBytes, lineBytes - start))
                 chunk.support[slot * self.segments + segment] = 0
                 chunk.quality[slot * self.segments + segment] = 0
                 chunk.loose[slot * self.segments + segment] = original == nil ? 1 : 0
@@ -1955,7 +2004,7 @@ nonisolated private final class Canvas {
             for segment in segments {
                 let start = segment * Self.segmentBytes, bytes = min(Self.segmentBytes, lineBytes - start)
                 guard memcmp(target + start, view.line(row) + start, bytes) != 0 else { continue }
-                memcpy(target + start, ground.baseAddress + start, bytes)
+                memcpy(target + start, (past ?? ground).baseAddress + start, bytes)
                 chunk.support[slot * self.segments + segment] = 0
                 chunk.loose[slot * self.segments + segment] = 1
                 changed = true
@@ -2095,6 +2144,7 @@ nonisolated private final class Canvas {
             }
         case .agreeing(let previous, let sameRow, let formerRow, let confirmed, let atEdge, let belowStart):
             driftedLine = driftedRow(of: sameRow)
+            weighedIndex = index
             let preferred = preferUnobscured(
                 source, into: target, support: support, qualities: chunk.quality + slot * segments, loose: loose, changes: changes,
                 quality: quality, previous: previous, sameRow: sameRow
@@ -2463,6 +2513,12 @@ nonisolated private final class Canvas {
         adrift[segment] || driftedLine.map { driftedRows[$0 * segments + segment] } ?? false
     }
 
+    /// Whether the line being weighed lies past the reach of the run of columns adrift that `segment` is in: what the
+    /// view shows there stuck over the line, loose or not.
+    private func pastReach(_ segment: Int) -> Bool {
+        adrift[segment] && segment < driftReach.count && weighedIndex >= driftReach[segment]
+    }
+
     /// Votes alone favor whichever direction was traversed most often. Near a sticky edge that can be a
     /// displaced avatar, or the blank margin hiding its real position. Prefer a view whose page position
     /// is confirmed farther inside the viewport, even when visited only once. Fixed columns keep their first view.
@@ -2490,8 +2546,10 @@ nonisolated private final class Canvas {
                 // part of the way (a sidebar held by its foot, stopped partway through the scroll and stuck from then
                 // on, before the views tell it stays put), is over the line: no clearer view of what a view that saw
                 // the column move showed there. Of what is loose it may be (an avatar stuck below a header come to
-                // rest where its post begins, moving part of the way as it does).
-                if drifting(segment), loose[segment] == 0 { continue }
+                // rest where its post begins, moving part of the way as it does); not past the last line any view saw
+                // the column move over, though, where what stuck there is never the line's (a sidebar held by its foot,
+                // below its foot).
+                if drifting(segment), loose[segment] == 0 || pastReach(segment) { continue }
                 // Nor is anything of a block that keeps changing where it is (a video): only a view that shows all of it
                 // writes it, one frame (`writeRestless`).
                 if changes[segment] & Self.video != 0 { continue }
@@ -2611,7 +2669,7 @@ nonisolated private final class Canvas {
                     taken.append(segment)
                     continue
                 }
-                memcpy(target + start, ground.baseAddress + start, bytes)
+                memcpy(target + start, (past ?? ground).baseAddress + start, bytes)
                 support[segment] = 0
             }
         }
@@ -2793,6 +2851,8 @@ nonisolated private final class Canvas {
                         continue
                     }
                     if Self.nearlyAlike(source + start, previous + start, length) {
+                        // What a column stuck there shows past the last line it was seen to move over is not the line's.
+                        if drifted, pastReach(segment) { continue }
                         let plain = Self.isPlain(source + start, length)
                         if (plain && atEdge) || belowStart, support[segment] > Self.seenOnce { continue }
                         // Below the bar at the start, plain and just where it was on screen: a stuck avatar's blank
@@ -2820,6 +2880,8 @@ nonisolated private final class Canvas {
                         loose[segment] = 1
                         changed = true
                     } else if support[segment] <= Self.seenOnce, changes[segment] & Self.video == 0,
+                              // Not what a column stuck there shows past the last line it was seen to move over, either.
+                              !(drifted && pastReach(segment)),
                               memcmp(source + start, sameRow + start, length) != 0 {
                         // Nothing held but what one view showed, or the ground where something stayed put over the
                         // content, and now something that does not stay put (the content come out from under it):
