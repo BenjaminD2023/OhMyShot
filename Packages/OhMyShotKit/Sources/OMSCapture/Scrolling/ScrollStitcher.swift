@@ -645,7 +645,9 @@ nonisolated public final class ScrollStitcher {
         // stuck while its post scrolls back nothing, so they never spread down the picture.
         canvas.settleTentative(view, at: position)
         canvas.beginView(travel: abs(match.offset), lines: position + match.from ..< position + match.to)
-        canvas.noteChanges(view: view, old: old, offset: match.offset, rows: (match.from..<match.to).filter { !pulledOut(position + $0) }, at: position)
+        let rows = (match.from..<match.to).filter { !pulledOut(position + $0) }
+        canvas.noteChanges(view: view, old: old, offset: match.offset, rows: rows, at: position)
+        canvas.noteDrifted(view: view, old: old, offset: match.offset, rows: rows, at: position)
         for line in match.from..<match.to where !pulledOut(position + line) {
             let confirmed = line >= match.first && line < match.end
             let atEdge = line - band.lowerBound < margin || band.upperBound - 1 - line < margin
@@ -1470,6 +1472,15 @@ nonisolated private final class Canvas {
     /// Lines that took what came in under columns that stay put, and in which of them, until the next view tells
     /// whether it moved with the content.
     private var tentative: [(index: Int, segments: [Int])] = []
+    /// How far on the view before showed what the view being taken in shows moved part of the way the content did (a
+    /// sidebar held by its foot, stopping partway through the scroll): the distances `noteColumns` found.
+    private var partwayShifts: [Int] = []
+    /// Per row and segment of the view being taken in, whether it shows what moved part of the way (`noteDrifted`), and
+    /// whether any does.
+    private var driftedRows: [Bool] = []
+    private var anyDrifted = false
+    /// The row of `driftedRows` of the line being weighed, when any of it moved part of the way.
+    private var driftedLine: Int?
     /// Per segment of the line being taken in: grounded as over the content (1), or one color where it was on screen (2).
     private var overlay: [UInt8] = []
     /// The rows of the view being taken in whose lines `noteChanges` looked at, which of them show something that
@@ -1644,6 +1655,7 @@ nonisolated private final class Canvas {
                 }
             }
         }
+        partwayShifts = partway
         // A moving handle can supply a few accidental matches along an otherwise fixed track. Require
         // consistent movement, not a single matching edge, before treating the whole column as content.
         let moves = (0..<segments).map { movingSeen[$0] > 0 && movingSeen[$0] * 16 > stillSeen[$0] }
@@ -2082,6 +2094,7 @@ nonisolated private final class Canvas {
                 }
             }
         case .agreeing(let previous, let sameRow, let formerRow, let confirmed, let atEdge, let belowStart):
+            driftedLine = driftedRow(of: sameRow)
             let preferred = preferUnobscured(
                 source, into: target, support: support, qualities: chunk.quality + slot * segments, loose: loose, changes: changes,
                 quality: quality, previous: previous, sameRow: sameRow
@@ -2103,6 +2116,71 @@ nonisolated private final class Canvas {
             if confirmed { chunk.states[slot] = 2 }
         }
         count(source, into: target, chunk: chunk, slot: slot, still: still)
+    }
+
+    /// Marks what the lines of `view` at `rows` show moved part of the way the content did, before any is written: a
+    /// segment that says something, shown neither where the content moved nor where it was on screen but where `old`
+    /// showed it one of `partwayShifts` on, and the one color beside it in the same column, as near to it as it moved
+    /// short of the content (the blank between a sidebar's lines of small print). The lines `noteColumns` looked at are
+    /// few, and miss a column's small print stopping partway through the scroll; what the view shows there is over the
+    /// lines, as in a column found adrift. Only bands that differ from the last view's line are looked at, and nothing
+    /// that keeps changing where it is (a video playing, which matches somewhere by chance).
+    func noteDrifted(view: Lines, old: Lines, offset: Int, rows: [Int], at position: Int) {
+        if anyDrifted {
+            driftedRows.withUnsafeMutableBufferPointer { $0.update(repeating: false) }
+            anyDrifted = false
+        }
+        guard !partwayShifts.isEmpty else { return }
+        if driftedRows.count != view.count * segments { driftedRows = [Bool](repeating: false, count: view.count * segments) }
+        let reach = partwayShifts.map { abs(offset - $0) }.max() ?? 0
+        var found: [(row: Int, segment: Int)] = []
+        var differing: [ClosedRange<Int>] = []
+        for row in rows where row + offset >= 0 && row + offset < old.count {
+            differing.removeAll(keepingCapacity: true)
+            for (band, part) in view.bands.enumerated() where view.hashes[band * view.count + row] != old.hashes[band * old.count + row + offset] {
+                var range = part.lowerBound * 4 / Self.segmentBytes ... (part.upperBound * 4 - 1) / Self.segmentBytes
+                if let last = differing.last, last.upperBound >= range.lowerBound {
+                    range = last.lowerBound ... range.upperBound
+                    differing.removeLast()
+                }
+                differing.append(range)
+            }
+            guard !differing.isEmpty else { continue }
+            let index = position + row, number = Self.chunkNumber(of: index)
+            let chunk = number >= base && number - base < chunks.count ? chunks[number - base] : nil
+            let slot = index - number * Self.chunkLines
+            let changes = chunk.flatMap { $0.states[slot] != 0 ? $0.changes + slot * segments : nil }
+            let source = view.line(row), previous = old.line(row + offset), sameRow = old.line(row)
+            for range in differing {
+                for segment in range where isBetweenEnds(segment) && !stays[segment] && !adrift[segment] {
+                    if let changes, changes[segment] & (Self.restless | Self.video) != 0 { continue }
+                    let start = segment * Self.segmentBytes, length = min(Self.segmentBytes, lineBytes - start)
+                    guard !Self.nearlyAlike(source + start, previous + start, length), !Self.isPlain(source + start, length),
+                          memcmp(source + start, sameRow + start, length) != 0 else { continue }
+                    for shift in partwayShifts where row + shift >= 0 && row + shift < old.count {
+                        guard memcmp(source + start, old.line(row + shift) + start, length) == 0 else { continue }
+                        found.append((row, segment))
+                        break
+                    }
+                }
+            }
+        }
+        guard !found.isEmpty else { return }
+        anyDrifted = true
+        for (row, segment) in found {
+            driftedRows[row * segments + segment] = true
+            let start = segment * Self.segmentBytes, length = min(Self.segmentBytes, lineBytes - start)
+            // The blank beside it, one color up to something else: not across into a bar of another color.
+            for direction in [-1, 1] {
+                var next = row + direction, color: UInt32?
+                while abs(next - row) <= reach, next >= 0, next < view.count, Self.isPlain(view.line(next) + start, length) {
+                    let shown = (view.line(next) + start).load(as: UInt32.self)
+                    if color == nil { color = shown } else if shown != color { break }
+                    driftedRows[next * segments + segment] = true
+                    next += direction
+                }
+            }
+        }
     }
 
     /// Counts where the lines of `view` at `rows`, which the last view, `old`, showed `offset` rows on, change where
@@ -2370,6 +2448,21 @@ nonisolated private final class Canvas {
         }
     }
 
+    /// The view's row whose line the view before showed at `sameRow`, when `noteDrifted` found something there.
+    private func driftedRow(of sameRow: UnsafeRawPointer) -> Int? {
+        guard anyDrifted, let lastView else { return nil }
+        let offset = UnsafeRawPointer(lastView.pixels.baseAddress).distance(to: sameRow)
+        guard offset >= 0, offset.isMultiple(of: lineBytes), offset / lineBytes < lastView.count else { return nil }
+        let row = offset / lineBytes
+        return row * segments < driftedRows.count ? row : nil
+    }
+
+    /// Whether `segment` of the line being weighed is over the line: its column found adrift, or what it shows moved
+    /// part of the way the content did.
+    private func drifting(_ segment: Int) -> Bool {
+        adrift[segment] || driftedLine.map { driftedRows[$0 * segments + segment] } ?? false
+    }
+
     /// Votes alone favor whichever direction was traversed most often. Near a sticky edge that can be a
     /// displaced avatar, or the blank margin hiding its real position. Prefer a view whose page position
     /// is confirmed farther inside the viewport, even when visited only once. Fixed columns keep their first view.
@@ -2398,7 +2491,7 @@ nonisolated private final class Canvas {
                 // on, before the views tell it stays put), is over the line: no clearer view of what a view that saw
                 // the column move showed there. Of what is loose it may be (an avatar stuck below a header come to
                 // rest where its post begins, moving part of the way as it does).
-                if adrift[segment], loose[segment] == 0 { continue }
+                if drifting(segment), loose[segment] == 0 { continue }
                 // Nor is anything of a block that keeps changing where it is (a video): only a view that shows all of it
                 // writes it, one frame (`writeRestless`).
                 if changes[segment] & Self.video != 0 { continue }
@@ -2420,7 +2513,7 @@ nonisolated private final class Canvas {
                 if memcmp(source + start, target + start, end - start) != 0 {
                     memcpy(target + start, source + start, end - start)
                     support[segment] = max(Self.firstSupport, support[segment])
-                    loose[segment] = adrift[segment] ? 1 : 0
+                    loose[segment] = drifting(segment) ? 1 : 0
                     changed = true
                 }
             }
@@ -2678,8 +2771,10 @@ nonisolated private final class Canvas {
                     guard memcmp(source + start, target + start, length) != 0 else { continue }
                     support[segment] -= min(support[segment], step)
                     // Against what a view showed that saw the column move with the content, a view that saw it mostly
-                    // not move says nothing: what it shows there stayed put or moved otherwise.
-                    if adrift[segment], loose[segment] == 0 { continue }
+                    // not move says nothing: what it shows there stayed put or moved otherwise. Nor does a line that shows
+                    // what moved part of the way, where the lines the view looked at missed it.
+                    let drifted = drifting(segment)
+                    if drifted, loose[segment] == 0 { continue }
                     // Repeated passes close to a sticky edge cannot overrule a clearer interior observation; but where
                     // the line still holds what the first view showed, changed once or twice since, and three views in
                     // a row now show it alike and otherwise, the page changed there after the first view (a picture
@@ -2713,7 +2808,7 @@ nonisolated private final class Canvas {
                         } else if changes[segment] & Self.video == 0 {
                             memcpy(target + start, source + start, length)
                             support[segment] = step + 1
-                            loose[segment] = adrift[segment] ? 1 : 0
+                            loose[segment] = drifted ? 1 : 0
                             changed = true
                         }
                     } else if support[segment] <= step, let ground,
@@ -2731,7 +2826,7 @@ nonisolated private final class Canvas {
                         // taken instead, until a view backs something.
                         memcpy(target + start, source + start, length)
                         support[segment] = Self.seenOnce
-                        loose[segment] = adrift[segment] ? 1 : 0
+                        loose[segment] = drifted ? 1 : 0
                         changed = true
                     }
                 }

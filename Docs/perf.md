@@ -1039,3 +1039,38 @@ garbled otherwise; a mark of the page's own color inside a button fixed mid-view
 text at a page's foot leaves its flat inside in the last lines; a page whose background stays put while the text
 scrolls (a made-up landing page) is as broken as before, as long and in the same steps, its fragments elsewhere; a short
 white line under a dark panel on atlassian.com and a notch in a glyph of a made-up sequence are new.
+
+### A sidebar's small print stopping partway (2026-10-13, night, later)
+
+Since the change above, the X-like timelines' sidebar footer came out with its two lines of small print over each
+other, where before it had a seam. In the view where the sidebar stops partway (the content moved 22 px, the sidebar
+8), the 32 lines a view looks at mostly missed the footer, so its column was not found adrift, and the view wrote its
+footer 14 px low over the one the views before wrote as it scrolled; before, the same view also wrote the flat card
+over the upper one, which left a seam instead.
+
+Now a view in which those lines found something moving part of the way looks at every line, at the distances found,
+before any is written: a segment that says something, shown neither where the content moved nor where it was on screen
+but where the view before showed it one of those distances on, is over the line, as in a column found adrift, and so is
+the one color beside it in the same column, as near to it as it moved short of the content (the blank between the
+lines of small print), not across into another color. Only bands that differ from the last view's line are looked at,
+and nothing that keeps changing where it is (a video, which matches somewhere by chance). A view that finds nothing
+moving part of the way does nothing more.
+
+| Check | Before | After |
+| --- | --- | --- |
+| The X-like timelines' sidebar footer, made up, stepped 11 px and auto-scrolled | two lines of small print over each other | once, whole, where it scrolled (stepped: a speck under two letters) |
+| The same, auto-scrolled fast | both lines doubled | the first line whole; the second still doubled (below) |
+| The six live captures | as committed | the X-like timeline: 14 px of a card's edge; the other five byte for byte |
+| The 206 frame sets, each picture's size and steps | as committed | the same |
+| The 206 frame sets, pixels against pictures rebuilt from the frames' offsets | 186,830 rows off | 186,817 (13 sets changed, each looked at; 3 better, 0 worse) |
+| Frame sets with a video, a carousel or the timelines' footer, one at a time, optimized, alternating, five runs each | 1.3–7.0 ms a frame | 2–6% more (cnn.com's videos 1.27–1.30 → 1.34–1.35 ms; a carousel 6.84–6.96 → 7.01–7.19 ms) |
+| 3500 × 2400 px views scrolling, optimized build, alternating, two runs each (a load average of 5 to 7) | 11.3–11.5 ms | 11.5–11.6 ms |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+Besides the footers, what changed is within a video, an advertisement or an animation (a few segments a frame earlier
+or later), a speck on a made-up page, and a page whose background stays put (as broken as before).
+
+Still visible: in the fast auto-scrolled timeline the footer's second line, which comes into the part of the view that
+scrolls only once the sidebar has stopped (the bar at the view's foot goes then), still comes out doubled; apple.com's
+MacBook Pro page keeps the pause glyph of the media control at its foot in pieces (the change above), as the lines there
+are only ever seen under it.
