@@ -1936,8 +1936,15 @@ nonisolated private final class Canvas {
                 let segment = start / Self.segmentBytes
                 let end = min((segment + 1) * Self.segmentBytes, run.upperBound)
                 defer { start = end }
-                guard quality > qualities[segment],
-                      !staysPut(source, start, end - start, sameRow: sameRow, alike: previous) else { continue }
+                guard quality > qualities[segment] else { continue }
+                // A clearer view of just what the line holds holds it at that clearness, though it looks the same where
+                // it was on screen (a flat stretch of a picture): else what comes over it there later (a sticky tab
+                // bar), seen once a little clearer than ever counted, takes its place for good.
+                if memcmp(source + start, target + start, end - start) == 0 {
+                    qualities[segment] = quality
+                    continue
+                }
+                guard !staysPut(source, start, end - start, sameRow: sameRow, alike: previous) else { continue }
                 // What stayed where it was on screen while the content moved on is over the content (a sticky
                 // sidebar's flat strokes, a highlighted item's bar), no clearer observation of it; and a table's or
                 // timeline's stroke, alike top to bottom, matches both positions without saying anything.

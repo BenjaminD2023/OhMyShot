@@ -396,6 +396,39 @@ struct ScrollStitcherTests {
         #expect(below.isEmpty, "\(below.count) rows below the sidebar show some of it, from \(below.first ?? -1): \(stitcher.summary)")
     }
 
+    @Test func aStuckTabIsNeverTakenIntoAStretchAlikeAllDownPassingUnderIt() throws {
+        // A gray block, shaded left to right and alike all down (a stretch of a photo), in a page of text; above it a
+        // purple tab, part of the page until it sticks a little below the view's top, as a site's tab bar does.
+        // Passing under the tab the block's lines look the same where they were on screen; still, the picture shows
+        // the block, never the tab.
+        let width = 400, height = 300
+        var page = Page(width: width, height: 2400, seed: 29)
+        let purple: UInt32 = 0xFF4B_09F5
+        func shade(_ x: Int) -> UInt32 { 0xFF00_0000 | UInt32(0xA8 + x % 16) * 0x010101 }
+        for y in 700..<900 {
+            for x in 60..<340 { page.pixels[y * width + x] = shade(x) }
+        }
+        func view(at offset: Int) -> [UInt32] {
+            Self.view(page, at: offset, size: height) { pixels, width, height in
+                let top = max(40, 240 - offset)
+                for y in top ..< min(height, top + 40) {
+                    for x in 150..<250 { pixels[y * width + x] = purple }
+                }
+            }
+        }
+        let stitcher = Self.stitcher(width: width, height: height)
+        var offset = 0
+        Self.add(view(at: offset), to: stitcher)
+        for step in Array(repeating: [23, 17, 29, 21], count: 18).joined() where offset < 1300 {
+            offset += step
+            #expect(Self.add(view(at: offset), to: stitcher) == .scrolled(offset: step), "step \(step) to \(offset)")
+        }
+        let picture = try #require(stitcher.picture())
+        let pixels = Self.pixels(of: picture)
+        let tabbed = (700..<900).filter { y in (60..<340).contains { pixels[y * width + $0] != shade($0) } }
+        #expect(tabbed.isEmpty, "\(tabbed.count) rows of the block show something else, from \(tabbed.first ?? -1): \(stitcher.summary)")
+    }
+
     @Test func aBannerThatPopsUpLaterEndsUpOnlyAtTheEnd() throws {
         let page = Page(width: 400, height: 2400)
         let stitcher = Self.stitcher(width: 400, height: 300)
