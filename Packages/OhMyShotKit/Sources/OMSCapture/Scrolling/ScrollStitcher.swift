@@ -118,6 +118,11 @@ nonisolated public final class ScrollStitcher {
     private var band: Range<Int>?
     /// Whether the content last moved toward its start (scrolled up or left).
     private var movedTowardStart = false
+    /// Since the reference view was taken in: whether a view showed its part that scrolls all the one color the
+    /// picture ends in, a blank stretch taller than the view going by however far; whether a view that lined up with
+    /// nothing showed what the reference does not (something that could not be placed), which a view past a blank
+    /// stretch must never pass over; and that color and how many of the picture's last lines are it, once worked out.
+    private var sinceReference: (blank: Bool, unplaced: Bool, end: (color: UInt32, lines: Int)?) = (false, false, nil)
     /// What the last view that lined up with nothing was found to do, for the log.
     public private(set) var lostBecause = ""
 
@@ -167,6 +172,7 @@ nonisolated public final class ScrollStitcher {
             ) {
             case .same:
                 count(view, reference: track.reference)
+                noteBlank(view, reference: track.reference)
                 track.spare = view
                 vertical = track
                 return .unchanged
@@ -189,7 +195,7 @@ nonisolated public final class ScrollStitcher {
                 vertical = track
                 return step
             case .lost:
-                if axis != nil, let step = relocate(view, track: &track) {
+                if axis != nil, let step = pastBlank(view, track: &track) ?? relocate(view, track: &track) {
                     vertical = track
                     return step
                 }
@@ -211,6 +217,7 @@ nonisolated public final class ScrollStitcher {
         ) {
         case .same:
             count(view, reference: track.reference)
+            noteBlank(view, reference: track.reference)
             track.spare = view
             horizontal = track
             return .unchanged
@@ -242,7 +249,7 @@ nonisolated public final class ScrollStitcher {
             horizontal = track
             return step
         case .lost:
-            if axis != nil, let step = relocate(view, track: &track) {
+            if axis != nil, let step = pastBlank(view, track: &track) ?? relocate(view, track: &track) {
                 horizontal = track
                 return step
             }
@@ -480,9 +487,112 @@ nonisolated public final class ScrollStitcher {
         track.spare = old
         track.reference = view
         track.movingBands = []
+        sinceReference = (false, false, nil)
         guard offset != 0 else { return .unchanged }
         extend(with: view, sameRows: old)
         return .scrolled(offset: offset)
+    }
+
+    /// A view past a blank stretch of the page taller than the view, which no view can measure: since the reference
+    /// view, which reached the picture's end where the picture ends in one color, views showed nothing but that color
+    /// between the bars; now this one shows the stretch down to what comes in after it, which lines up with nothing
+    /// (a grid of cards alike may seem to line up with the grid before the stretch, and must not). It comes in past
+    /// the stretch, as much of the stretch kept as the picture or this view shows of it. Never past something a view
+    /// since showed that could not be placed: that is no blank stretch going by.
+    private func pastBlank(_ view: Lines, track: inout Track) -> Step? {
+        let reference = track.reference
+        guard let canvas, let range = canvas.range, let end = pictureEnd() else { return nil }
+        let band = end.band
+        let top = blankTop(view, besides: reference, end: end)
+        if top == band.upperBound {
+            sinceReference.blank = true
+            return nil
+        }
+        // Too little of the stretch above what came in to tell it from a view that scrolled too far at once: what it
+        // shows that the reference shows nowhere was not placed.
+        let overlap = Lines.minimumOverlap(view.count)
+        guard top - band.lowerBound >= overlap else {
+            if view.lines(newIn: band, to: reference) >= 16 { sinceReference.unplaced = true }
+            return nil
+        }
+        // Enough of what came in for the next view to line up with (a line or two is waited out), and of the stretch at
+        // the picture's end.
+        guard sinceReference.blank, !sinceReference.unplaced, end.lines >= overlap,
+              view.lines(saying: top ..< band.upperBound, besides: reference) >= 16 else { return nil }
+        // What came in follows as much of the stretch as either shows; this view's stretch overlaps the picture's, so no
+        // line in between goes unwritten.
+        let next = range.upperBound - end.lines + max(end.lines, top - band.lowerBound) - top
+        guard next > position else { return nil }
+        let grown = range.lowerBound ..< max(range.upperBound, next + band.upperBound)
+        guard grown.count <= (axis == .horizontal ? maxLines.horizontal : maxLines.vertical) else {
+            isFull = true
+            track.spare = view
+            return .full
+        }
+        let offset = next - position
+        position = next
+        canvas.settleTentative(view, at: position)
+        for line in max(band.lowerBound, range.upperBound - position) ..< band.upperBound {
+            canvas.write(view.line(line), at: position + line, as: .arrived(sameRow: reference.line(line), inward: nil))
+        }
+        movedTowardStart = false
+        track.spare = reference
+        track.reference = view
+        track.movingBands = []
+        sinceReference = (false, false, nil)
+        return .scrolled(offset: offset)
+    }
+
+    /// Notes a view where nothing scrolled that shows a blank stretch going by: its part that scrolls all the one color
+    /// the picture ends in.
+    private func noteBlank(_ view: Lines, reference: Lines) {
+        guard !sinceReference.blank, let end = pictureEnd(), blankTop(view, besides: reference, end: end) == end.band.upperBound else { return }
+        sinceReference.blank = true
+    }
+
+    /// Where the reference view reached the picture's end, when the picture ends in one color between the ends of its
+    /// lines, outside the columns that stay put: that color and how many of the picture's last lines are it (worked out
+    /// once for the reference), the reference's part that scrolls, and its line where the picture ends.
+    private func pictureEnd() -> (color: UInt32, lines: Int, band: Range<Int>, line: Int)? {
+        guard axis != nil, overscroll == nil, heldInner == nil, let canvas, let range = canvas.range, let band else { return nil }
+        let line = range.upperBound - position
+        guard line > band.lowerBound, line <= band.upperBound else { return nil }
+        if sinceReference.end == nil { sinceReference.end = canvas.blankEnd(most: line - band.lowerBound) ?? (0, 0) }
+        guard let found = sinceReference.end, found.lines > 0 else { return nil }
+        return (found.color, found.lines, band, line)
+    }
+
+    /// The first line of `view`'s part that scrolls, from its start, that is not the color the picture ends in throughout
+    /// between its ends, outside the columns that stay put; on the lines where the picture's end showed that color, what
+    /// `other` shows at the same place too (a button fixed on screen) aside. The part's end when there is none.
+    private func blankTop(_ view: Lines, besides other: Lines, end: (color: UInt32, lines: Int, band: Range<Int>, line: Int)) -> Int {
+        guard let canvas else { return end.band.lowerBound }
+        // Above where the picture's end is that color, the reference showed the content before the stretch: what stays
+        // where it showed it is that content, not something fixed on screen.
+        let fixed = end.line - end.lines
+        let straddling = canvas.straddling(view.bands)
+        var line = end.band.lowerBound
+        while line < end.band.upperBound, isBlank(view, line: line, color: end.color, besides: line >= fixed ? other : nil, straddling: straddling) {
+            line += 1
+        }
+        return line
+    }
+
+    /// Whether line `index` of `view` is `color` throughout between its ends, outside the columns that stay put, but where
+    /// it shows what `other` shows at the same place. `straddling`: which bands are partly over such a column.
+    private func isBlank(_ view: Lines, line index: Int, color: UInt32, besides other: Lines?, straddling: [Bool]) -> Bool {
+        guard let canvas else { return false }
+        // By the bands' hashes: one plain in the color, or alike in both views, says so without a look at the pixels.
+        for (band, part) in view.bands.enumerated() {
+            let slot = band * view.count + index
+            if view.plain[slot], view.line(index).load(fromByteOffset: part.lowerBound * 4, as: UInt32.self) == color { continue }
+            if let other, view.hashes[slot] == other.hashes[slot] { continue }
+            // Partly over a column that stays put: the pixels outside it tell.
+            guard straddling[band], canvas.isBlank(
+                view.line(index), color: color, besides: other.map { UnsafeRawPointer($0.line(index)) }, within: part.lowerBound * 4 ..< part.upperBound * 4
+            ) else { return false }
+        }
+        return true
     }
 
     /// Takes in what `view`, placed at `position`, shows past the content's end (or before its start), but what the
@@ -726,6 +836,7 @@ nonisolated public final class ScrollStitcher {
         track.reference = view
         track.movingBands = match.movingBands
         track.lastOffset = match.offset
+        sinceReference = (false, false, nil)
         return .scrolled(offset: match.offset)
     }
 
@@ -984,10 +1095,39 @@ nonisolated final class Lines {
 
     /// The line of `band` with `hash`, when exactly one line that is not plain has it.
     func line(band: Int, hash: UInt32) -> Int? {
-        if indexes == nil {
-            indexes = bands.indices.map { band in LineIndex(hashes: hashes + band * count, plain: plain + band * count, count: count) }
-        }
+        if indexes == nil { indexes = makeIndexes() }
         return indexes?[band].line(of: hash)
+    }
+
+    /// Whether a line of `band` that is not plain has `hash`, one line or several.
+    func holds(band: Int, hash: UInt32) -> Bool {
+        if indexes == nil { indexes = makeIndexes() }
+        return indexes?[band].holds(hash) ?? false
+    }
+
+    private func makeIndexes() -> [LineIndex] {
+        bands.indices.map { band in LineIndex(hashes: hashes + band * count, plain: plain + band * count, count: count) }
+    }
+
+    /// How many of `lines` show something in a band that `other` does not show at the same place: not one color, nor
+    /// what stayed put.
+    func lines(saying lines: Range<Int>, besides other: Lines) -> Int {
+        lines.count { line in
+            bands.indices.contains { band in
+                let slot = band * count + line
+                return !plain[slot] && hashes[slot] != other.hashes[slot]
+            }
+        }
+    }
+
+    /// How many of `lines` show something in a band that `other` shows nowhere.
+    func lines(newIn lines: Range<Int>, to other: Lines) -> Int {
+        lines.count { line in
+            bands.indices.contains { band in
+                let slot = band * count + line
+                return !plain[slot] && hashes[slot] != other.hashes[slot] && !other.holds(band: band, hash: hashes[slot])
+            }
+        }
     }
 
     /// How a new view lines up with an old one of the same size; `why` says what was found when it lines up
@@ -1328,6 +1468,16 @@ nonisolated private struct LineIndex {
             slot = (slot + 1) & mask
         }
         return nil
+    }
+
+    /// Whether any line has `hash`, one or several.
+    func holds(_ hash: UInt32) -> Bool {
+        var slot = Int(hash) & mask
+        while lines[slot] != -1 {
+            if keys[slot] == hash { return true }
+            slot = (slot + 1) & mask
+        }
+        return false
     }
 }
 
@@ -2942,6 +3092,52 @@ nonisolated private final class Canvas {
     func endsAlike(_ a: UnsafeRawPointer, _ b: UnsafeRawPointer) -> Bool {
         guard endBytes > 0 else { return true }
         return memcmp(a, b, endBytes) == 0 && memcmp(a + lineBytes - endBytes, b + lineBytes - endBytes, endBytes) == 0
+    }
+
+    /// The one color the content's last line is between its ends, outside the columns that stay put, and how many of
+    /// the last lines are it, `most` at most: nil when the last line is not one color.
+    func blankEnd(most: Int) -> (color: UInt32, lines: Int)? {
+        guard let range, let last = line(range.upperBound - 1), let first = scrollingMiddle.first else { return nil }
+        let color = last.load(fromByteOffset: first.lowerBound, as: UInt32.self)
+        let straddling = straddling(bands)
+        var lines = 0
+        lines: while lines < most, range.upperBound - 1 - lines >= range.lowerBound {
+            let index = range.upperBound - 1 - lines
+            let number = Self.chunkNumber(of: index)
+            guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { break }
+            let slot = index - number * Self.chunkLines
+            guard chunk.states[slot] > 0 else { break }
+            let line = UnsafeRawPointer(chunk.pixels.baseAddress + slot * lineBytes)
+            // By the bands first, as hashed: one plain in the color says so without a look at the rest of its pixels.
+            for (band, part) in bands.enumerated() {
+                if chunk.plain[slot * bands.count + band], line.load(fromByteOffset: part.lowerBound * 4, as: UInt32.self) == color { continue }
+                guard straddling[band], isBlank(line, color: color, besides: nil, within: part.lowerBound * 4 ..< part.upperBound * 4) else { break lines }
+            }
+            lines += 1
+        }
+        return lines > 0 ? (color, lines) : nil
+    }
+
+    /// Whether each of `bands` (pixels across a line) is partly or wholly over a column that stays put.
+    func straddling(_ bands: [Range<Int>]) -> [Bool] {
+        bands.map { band in
+            (band.lowerBound * 4 / Self.segmentBytes ..< (band.upperBound * 4 + Self.segmentBytes - 1) / Self.segmentBytes).contains {
+                $0 < stays.count && stays[$0]
+            }
+        }
+    }
+
+    /// Whether `line` is `color` throughout between its ends, outside the columns that stay put (and within the bytes
+    /// `within`), but where it shows what `other` shows at the same place.
+    func isBlank(_ line: UnsafeRawPointer, color: UInt32, besides other: UnsafeRawPointer?, within: Range<Int>? = nil) -> Bool {
+        for run in scrollingMiddle {
+            let bytes = within.map { run.clamped(to: $0) } ?? run
+            for offset in stride(from: bytes.lowerBound, to: bytes.upperBound, by: 4) {
+                let pixel = line.load(fromByteOffset: offset, as: UInt32.self)
+                guard pixel == color || other?.load(fromByteOffset: offset, as: UInt32.self) == pixel else { return false }
+            }
+        }
+        return true
     }
 
     /// Whether a line of `view` among `lines` says the view is where `reference` was: what it shows between the ends

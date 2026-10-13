@@ -1189,6 +1189,109 @@ struct ScrollStitcherTests {
         #expect(picture.height == 300 && Self.pixels(of: picture) == view)
     }
 
+    // MARK: - Blank stretches
+
+    /// A page of text in three blocks `block` rows tall with `blank` rows of blank page between them: taller than the
+    /// view, as the space between a shop's grids can be.
+    private static func blankStretches(width: Int, block: Int, blank: Int) -> Page {
+        var page = Page(width: width, height: 3 * block + 2 * blank, seed: 11)
+        for y in 0..<page.height where y % (block + blank) >= block {
+            for x in 0..<width { page.pixels[y * width + x] = white }
+        }
+        return page
+    }
+
+    /// Where `rows` of `page` are in `picture`, whole and in one run, at `from` or after: their first row that shows
+    /// something is looked for, then all of them checked there. Columns in `skipping` are left out.
+    private static func find(_ rows: Range<Int>, of page: Page, in picture: [UInt32], from: Int, skipping: Range<Int>? = nil) -> Int? {
+        let width = page.width
+        let height = picture.count / width
+        guard let first = rows.first(where: { y in page.row(y).contains { $0 != white } }) else { return nil }
+        func same(_ y: Int, _ at: Int) -> Bool {
+            (0..<width).allSatisfy { x in skipping?.contains(x) == true || picture[at * width + x] == page.pixels[y * width + x] }
+        }
+        for at in from..<height where same(first, at) {
+            let start = at - (first - rows.lowerBound)
+            guard start >= from, start + rows.count <= height else { continue }
+            if rows.allSatisfy({ same($0, start + $0 - rows.lowerBound) }) { return start }
+        }
+        return nil
+    }
+
+    @Test(arguments: [(0, false), (30, false), (0, true)])
+    func aBlankStretchTallerThanTheViewIsLeftShortAndWhatFollowsComesAfterIt(header: Int, button: Bool) throws {
+        // Scrolled by hand through two blank stretches 700 rows tall in a view of 300: views of nothing but the blank
+        // (lost without a header that stays put, unchanged with one), then the next block coming in from below. Each
+        // block comes out whole and in order, as much of the blank between as a view showed of it. A button fixed in
+        // the view's corner is left out of what is checked.
+        let width = 400, size = 300, block = 600, blank = 700
+        let page = Self.blankStretches(width: width, block: block, blank: blank)
+        let corner = 340..<380
+        let draw: ((inout [UInt32], Int, Int) -> Void)? = button ? { pixels, width, height in
+            for y in height - 50 ..< height - 10 {
+                for x in corner { pixels[y * width + x] = (x + y) % 7 == 0 ? Self.white : 0xFF2D_7FF9 }
+            }
+        } : nil
+        let stitcher = Self.stitcher(width: width, height: size)
+        var offset = 0
+        Self.add(Self.view(page, at: 0, size: size, header: header, draw: draw), to: stitcher)
+        while offset < page.height - size {
+            offset = min(offset + 20, page.height - size)
+            Self.add(Self.view(page, at: offset, size: size, header: header, draw: draw), to: stitcher)
+        }
+        let picture = Self.pixels(of: try #require(stitcher.picture()))
+        var at = header
+        for start in [0, block + blank, 2 * (block + blank)] {
+            let rows = max(start, header) ..< start + block
+            let found = Self.find(rows, of: page, in: picture, from: at, skipping: button ? corner : nil)
+            #expect(found != nil, "the block at \(start) is not there whole past row \(at): \(stitcher.summary)")
+            guard let found else { return }
+            if start > 0 { #expect(found > at && found - at < blank, "\(found - at) rows of blank before the block at \(start)") }
+            at = found + rows.count
+        }
+        #expect(picture.count / width == at, "\(picture.count / width) rows, the last block ending at \(at)")
+    }
+
+    @Test func whatCouldNotBePlacedIsNeverPassedOverForTheBlankStretchAfterIt() throws {
+        // Into the first blank stretch, a view of something else altogether (as a picture full of the view for a
+        // moment), then the blank, then the next block coming in: taken in past the blank, it would leave out whatever
+        // that was. Lost instead, until the views come back to what was taken in.
+        let width = 400, size = 300, block = 600, blank = 700
+        let page = Self.blankStretches(width: width, block: block, blank: blank)
+        let stitcher = Self.stitcher(width: width, height: size)
+        var offset = 0
+        Self.add(Self.view(page, at: offset, size: size), to: stitcher)
+        while offset < block {
+            offset += 20
+            Self.add(Self.view(page, at: offset, size: size), to: stitcher)
+        }
+        #expect(Self.add(Page(width: width, height: size, seed: 99).pixels, to: stitcher) == .lost)
+        var steps: [ScrollStitcher.Step] = []
+        while offset < block + blank + 200 {
+            offset += 20
+            steps.append(Self.add(Self.view(page, at: offset, size: size), to: stitcher))
+        }
+        #expect(steps.allSatisfy { $0 == .lost || $0 == .unchanged }, "\(steps)")
+        #expect(Self.add(Self.view(page, at: 400, size: size), to: stitcher) != .lost)
+    }
+
+    @Test func aPauseIsNoBlankStretchGoingBy() throws {
+        // Stopped where the text ends and the blank begins, then on at once to where the next block comes in: no view
+        // showed the stretch going by, and the views while it stopped, alike to the one before, show the text where it
+        // was. Lost, as any view too far on.
+        let width = 400, size = 300, block = 600, blank = 700
+        let page = Self.blankStretches(width: width, block: block, blank: blank)
+        let stitcher = Self.stitcher(width: width, height: size)
+        var offset = 0
+        Self.add(Self.view(page, at: offset, size: size), to: stitcher)
+        while offset < block - 40 {
+            offset += 20
+            Self.add(Self.view(page, at: offset, size: size), to: stitcher)
+        }
+        for _ in 0..<3 { #expect(Self.add(Self.view(page, at: offset, size: size), to: stitcher) == .unchanged) }
+        #expect(Self.add(Self.view(page, at: block + blank - 200, size: size), to: stitcher) == .lost)
+    }
+
     // MARK: - Pages that move on their own
 
     @Test func aPlayingVideoDoesNotStopTheCapture() throws {

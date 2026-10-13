@@ -1145,3 +1145,46 @@ of them, and two carousels lose small blocks of another color at their ends.
 
 Still visible: a row seen only in the first view, or loaded only right below a header that sticks (where the hero's top
 stays hidden after the first view), keeps what the first view showed, ends and all.
+
+### A blank stretch taller than the view (2026-10-14, later)
+
+Between a shop's grids, a blank stretch taller than the view went by as views of nothing but the page's color: nothing
+to line up, so as far as the stitcher could tell nothing scrolled. The next grid then came in from below and lined up
+with nothing either; with cards alike the views soon lined up with the grid before the stretch instead. The second grid
+was laid over the end of the first, and after the second stretch the views never lined up again: the third grid was
+missing, or, where the prices differed, its rows were written over the first grid's.
+
+Now a view comes in past the stretch when all of this holds:
+
+- the view last taken in reached the picture's end, and the picture ends in one color;
+- a view since showed nothing but that color between the bars (unchanged under a header that stays put, lost without
+  one);
+- this view shows the stretch for at least a tenth of the view, down to something that came in below it with 16 lines
+  that say something.
+
+It follows as much of the stretch as the picture or the view showed, and every line from the old end is written. It is
+tried before the view is looked for elsewhere in the picture, where the cards alike are found.
+
+What something fixed on screen shows (a chat button) counts as blank only on the lines where the picture's end was
+blank too. Above them the view last taken in showed the content before the stretch, and a pause shows that content
+where it was. It never comes in past something a view since showed that could not be placed (a section that plays as
+it is scrolled): that is not a blank stretch going by, and the capture stays lost as before.
+
+| Check | Before | After |
+| --- | --- | --- |
+| A shop of three grids of cards alike, blank stretches of 2400 px between, 120 px steps | 20 views lost, the third grid missing (9674 rows of 22960) | none lost, all three in order (15684 rows), the stretches 570 and 592 px |
+| The same, the prices differing | 13 jumps back: the third grid's rows written over the first's | all three in order |
+| A made-up page of three blocks, stretches of 700 rows in a view of 300, 20 rows a step: with a header, without, with a button fixed in the corner | the second block not in the picture whole | each block whole and in order |
+| The other 204 frame sets, and the six live captures | as committed | byte for byte |
+| Frame sets heavy in views where nothing scrolled (the live sheet and verge captures; cnn and a made-up timeline under Auto-scroll), optimized, alternating, five runs each | 0.82–2.63 ms a frame | from 0.3% faster to 4.3% slower, the runs overlapping |
+| 3500 × 2400 px views, optimized build, alternating, two runs each (a load average of 7 to 9) | 10.6–11.0 ms scrolling, 2.2–2.5 ms with only a video playing | 10.6–10.8 ms, 2.2 ms |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+Left as they are:
+
+- The stretch comes out only as long as a view showed it, since no view can measure it.
+- Auto-scroll stops once the capture stops growing, so it will likely stop inside a stretch taller than the view (not
+  tried live).
+- On a page without a bar that stays put, the views of the blank are still reported lost, so the panel asks to scroll
+  back while they go by.
+- A grid of cards alike with no blank between (made up) still skips 371 px where it lines up a row off.
