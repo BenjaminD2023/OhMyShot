@@ -1543,6 +1543,38 @@ struct ScrollStitcherTests {
         #expect(placeholder == 0, "\(placeholder) pixels of the placeholder left: \(stitcher.summary)")
     }
 
+    @Test func aPictureThatLoadsAfterTheFirstViewTakesItsEndsWithIt() throws {
+        // The same hero, scrolled past in long steps: each row of it is seen loaded in a few views only, too few to
+        // outweigh the still first view's ends by count. Where the picture shows it loaded between the ends, it shows it
+        // loaded at the ends too, not the placeholder in a strip down each side.
+        let page = Page(width: 800, height: 2400)
+        let hero = Page(width: 800, height: 300, seed: 51)
+        let rows = 120..<420
+        func view(at offset: Int, loaded: Bool) -> [UInt32] {
+            Self.view(page, at: offset, size: 500) { pixels, width, height in
+                for y in 0..<height where rows.contains(offset + y) {
+                    for x in 0..<width {
+                        pixels[y * width + x] = loaded ? hero.pixels[(offset + y - rows.lowerBound) * 800 + x] | 0xFF20_0000 : 0xFFE5_E7EB
+                    }
+                }
+            }
+        }
+        let stitcher = Self.stitcher(width: 800, height: 500)
+        Self.add(view(at: 0, loaded: false), to: stitcher)
+        var offset = 0
+        while offset < 1200 {
+            offset += 80
+            #expect(Self.add(view(at: offset, loaded: true), to: stitcher) == .scrolled(offset: 80), "to \(offset)")
+        }
+        let picture = try #require(stitcher.picture())
+        let pixels = Self.pixels(of: picture)
+        let strips = rows.filter { y in
+            (0..<8).contains { pixels[y * 800 + $0] == 0xFFE5_E7EB || pixels[y * 800 + 792 + $0] == 0xFFE5_E7EB }
+                && !(100..<700).contains { pixels[y * 800 + $0] == 0xFFE5_E7EB }
+        }
+        #expect(strips.isEmpty, "\(strips.count) rows loaded but at their ends, from \(strips.first ?? -1): \(stitcher.summary)")
+    }
+
     @Test func aCarouselSlidingDoesNotTurnThePageSideways() throws {
         // Before the page first scrolls, a hero half the view tall slides to its next picture.
         let page = Page(width: 800, height: 2000)

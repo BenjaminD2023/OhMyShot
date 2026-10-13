@@ -1115,3 +1115,33 @@ pixels on Wikipedia pages.
 Still visible: a strip 14 px wide by the scroll bar, at the line's end, which is counted rather than weighed, keeps the
 cards' color; faint streaks of it where a card's edge came in under the stuck sidebar; a sidebar whose first view
 shows no line of the page's color across it between its cards keeps its cards' color below.
+
+### A picture that loads after the first view, to its ends (2026-10-14)
+
+A hero that showed a placeholder in the first view and its picture in the views after came out loaded between the
+ends but with the placeholder in a strip 18 pt wide down each side. The ends of a line are counted, not weighed, and
+the first view, taken while nothing scrolled, counts eight times: a row seen loaded in fewer than nine views after it
+kept the first view's ends, though a clearer view had replaced what was between them.
+
+Now when what the first view showed of a line gives way, in half its segments or more, to something unlike it by more
+than a shade (24 levels in a channel), the first view's ends count once, and the ends two views agree on follow. A shade
+a little off (a gradient that shifts as the page scrolls) or something changing in part of the line leaves the ends as
+they were: tried without that, the ends took a scroll bar's knob on bbc.com and a progress bar's dark track on a made-up
+landing page from the views after.
+
+| Check | Before | After |
+| --- | --- | --- |
+| A hero loading after the first view (made up, scrolled in long steps) | 130 rows loaded but at their ends | none |
+| The same on a made-up page scrolled 40 px a step | 80 rows with the placeholder at the ends | none |
+| The six live captures | as committed | byte for byte |
+| The 206 frame sets, each picture's size and steps | as committed | the same |
+| The 206 frame sets, pixels against pictures rebuilt from the frames' offsets | 186,818 rows off | 186,669 (5 sets changed, each looked at; 3 better, 0 worse) |
+| Frame sets with the hero, a landing page, a carousel, a video or the timelines, one at a time, optimized, alternating, five runs each | 1.3–7.1 ms a frame | within 2% |
+| 3500 × 2400 px views scrolling, optimized build, alternating, two runs each (a load average of 5 to 6) | 11.5 ms | 11.5–11.6 ms |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+Besides the hero, a white block on two made-up landing pages now reaches the picture's edges instead of stopping short
+of them, and two carousels lose small blocks of another color at their ends.
+
+Still visible: a row seen only in the first view, or loaded only right below a header that sticks (where the hero's top
+stays hidden after the first view), keeps what the first view showed, ends and all.

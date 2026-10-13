@@ -2145,6 +2145,11 @@ nonisolated private final class Canvas {
         case .agreeing(let previous, let sameRow, let formerRow, let confirmed, let atEdge, let belowStart):
             driftedLine = driftedRow(of: sameRow)
             weighedIndex = index
+            // Whether the line still holds just what the first view showed, to tell below whether that gave way.
+            let wasFirst: Bool = {
+                guard let firstSnapshot, let firstLines, firstLines.contains(index) else { return false }
+                return memcmp(target, firstSnapshot.baseAddress + (index - firstLines.lowerBound) * lineBytes, lineBytes) == 0
+            }()
             let preferred = preferUnobscured(
                 source, into: target, support: support, qualities: chunk.quality + slot * segments, loose: loose, changes: changes,
                 quality: quality, previous: previous, sameRow: sameRow
@@ -2161,6 +2166,13 @@ nonisolated private final class Canvas {
             )
             if preferred || weighed {
                 rehash(target, chunk: chunk, slot: slot)
+                // What the first view showed of the line gave way, most of it, to something else altogether (a picture
+                // loaded after the first view, not a shade a little off): its ends no longer outweigh what the views show
+                // next by a still view's count, but follow the ends two views agree on.
+                if wasFirst, changedThroughout(target, firstOf: index) {
+                    let shown = slot * Self.variants + Int(chunk.shown[slot])
+                    chunk.endCounts[shown] = min(chunk.endCounts[shown], 1)
+                }
             }
             if !stale.isEmpty { pendingStale.append((index, source, quality, stale)) }
             if confirmed { chunk.states[slot] = 2 }
@@ -2231,6 +2243,25 @@ nonisolated private final class Canvas {
                 }
             }
         }
+    }
+
+    /// Whether `line`, line `index` of the first view's, now holds between its ends, in half its segments or more,
+    /// something unlike what the first view showed there by more than a shade.
+    private func changedThroughout(_ line: UnsafeRawPointer, firstOf index: Int) -> Bool {
+        guard let firstSnapshot, let firstLines, firstLines.contains(index) else { return false }
+        let first = UnsafeRawPointer(firstSnapshot.baseAddress + (index - firstLines.lowerBound) * lineBytes)
+        var changed = 0, all = 0
+        for run in scrollingMiddle {
+            var start = run.lowerBound
+            while start < run.upperBound {
+                let end = min((start / Self.segmentBytes + 1) * Self.segmentBytes, run.upperBound)
+                defer { start = end }
+                all += 1
+                let a = (line + start).assumingMemoryBound(to: UInt8.self), b = first.assumingMemoryBound(to: UInt8.self) + start
+                if (0..<(end - start)).contains(where: { abs(Int(a[$0]) - Int(b[$0])) > 24 }) { changed += 1 }
+            }
+        }
+        return all > 0 && changed * 2 >= all
     }
 
     /// Counts where the lines of `view` at `rows`, which the last view, `old`, showed `offset` rows on, change where
