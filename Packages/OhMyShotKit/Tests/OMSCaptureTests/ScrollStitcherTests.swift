@@ -1111,8 +1111,18 @@ struct ScrollStitcherTests {
         let picture = try #require(stitcher.picture())
         #expect(picture.height == offset + 400, "\(stitcher.summary)")
         // Above and below the video, the page as it is.
-        let rows = Self.differingRows(Self.pixels(of: picture), Array(page.pixels[0 ..< (offset + 400) * 1200]), width: 1200).filter { !video.contains($0) }
+        let pixels = Self.pixels(of: picture)
+        let rows = Self.differingRows(pixels, Array(page.pixels[0 ..< (offset + 400) * 1200]), width: 1200).filter { !video.contains($0) }
         #expect(rows.isEmpty, "\(rows.count) rows from \(rows.first ?? -1): \(stitcher.summary)")
+        // The video one picture of it, all of it from one view, not each line from another.
+        func shows(_ shown: Int, row y: Int) -> Bool {
+            (60..<1140).allSatisfy { x in
+                pixels[y * 1200 + x] & 0xFF_FFFF == UInt32(truncatingIfNeeded: (x &* 7919 &+ y &* 104_729 &+ shown &* 97) % 0xFF_FFFF)
+            }
+        }
+        let best = (1...frame).max { first, second in video.filter { shows(first, row: $0) }.count < video.filter { shows(second, row: $0) }.count } ?? 0
+        let others = video.filter { !shows(best, row: $0) }
+        #expect(others.isEmpty, "\(others.count) rows of the video show another picture than \(video.count - others.count) do, from \(others.first ?? -1)")
     }
 
     /// The view at the page's end, the content pulled `pull` rows on past it under a bar 30 rows tall, itself pulled

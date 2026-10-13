@@ -956,3 +956,39 @@ Two places where a view looks at too few lines of a column (32 a view) and leave
 30 frame sets came out otherwise, each looked at; two specks appear on a dark MDN page. Still visible: the X-like
 timelines' footers keep a seam where two views' halves of a line meet a few pixels apart, moved along it rather
 than gone.
+
+### A block that keeps changing (2026-10-13, evening)
+
+What keeps changing where it is (a video, an animated advertisement, a carousel) came out as a mosaic of its frames:
+each line kept its clearest view, and each line's clearest view was another frame (bbc.com's advertisements,
+cnn.com's clips, apple.com's chip cards).
+
+Each view now counts, segment by segment, where its lines show otherwise than the last view did at the same place in
+the page, unless something stuck over the line says why: three times and the segment keeps changing, until eight views
+in a row see it hold still. Before any line is written, what keeps changing is held together into blocks, with the
+lines come into view under it since. A block that fills at least half of its bounds, at least two margins tall and 8
+segments wide, shown whole and well inside the view with the lines around it holding still, is taken whole from one
+view: the first that shows it changing where the last view showed a block too (a video, not a shape turning or sliding
+across), then any view where nothing in it changed (a slide held), or one at least as clear as the block was taken.
+From then on no line by line rule writes it. What keeps changing otherwise (a heading's letters sliding in, a turning
+shape) is left to the line by line rules, as before: every picture without such a block comes out byte for byte as it
+did. Lines the last view showed as they are, by their bands' hashes, are skipped; a band that differs is compared in
+one memcmp before segment by segment.
+
+| Check | Before | After |
+| --- | --- | --- |
+| The six live captures | bbc.com's three playing advertisements a mosaic, white blocks in two | one frame each; the other five byte for byte as before |
+| The 206 frame sets, pixels against pictures rebuilt from the frames' offsets | 192,399 rows off | 191,580 (20 sets changed, all with something playing or sliding in place, each looked at; 11 better, 3 worse) |
+| A video playing in a made-up page | the video from three frames, in bands (152 of 240 rows from other frames) | one frame |
+| 3500 × 2400 px views scrolling, optimized build, two runs each (a busy machine) | 10.1–10.2 ms | 11.0–11.1 ms |
+| The same views, a video playing and nothing scrolling | 2.34 ms | 2.35–2.43 ms |
+| Frame sets with a video or a carousel in view, one at a time | 0.9–5.4 ms a frame | 0.1–1.1 ms more |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+The busy machine (a load average of 4 to 8) measured the committed version at 10.1 ms where a quiet one had 8.8. What
+it costs besides: a byte for every 8 pixels of each line (32 MB at the gigabyte limit), and for the view being taken in
+5 bytes a segment (5 MB for a 3500 × 2400 view).
+
+Still visible: a carousel caught mid-slide shows parts of two slides; a made-up page's diagonal streak sliding across
+leaves a few more fragments; a stray glyph by a logo in a sliding row of logos (vimeo.com); a faint bar under a button
+fading in at a page's end; a video taller than the view still comes out line by line, as before.

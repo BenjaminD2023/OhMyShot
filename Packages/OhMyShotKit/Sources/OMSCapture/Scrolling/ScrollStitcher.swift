@@ -645,6 +645,7 @@ nonisolated public final class ScrollStitcher {
         // stuck while its post scrolls back nothing, so they never spread down the picture.
         canvas.settleTentative(view, at: position)
         canvas.beginView(travel: abs(match.offset), lines: position + match.from ..< position + match.to)
+        canvas.noteChanges(view: view, old: old, offset: match.offset, rows: (match.from..<match.to).filter { !pulledOut(position + $0) }, at: position)
         for line in match.from..<match.to where !pulledOut(position + line) {
             let confirmed = line >= match.first && line < match.end
             let atEdge = line - band.lowerBound < margin || band.upperBound - 1 - line < margin
@@ -677,6 +678,7 @@ nonisolated public final class ScrollStitcher {
             }
         }
         canvas.endView(fewestLines: 3 * margin)
+        canvas.writeRestless(view, band: band, at: position, inset: margin)
         // A view reaching as far as the content does keeps its ends too: when its part that scrolls was cut
         // short by plain lines, what it shows past that part still follows the content.
         if overscroll?.springing != true {
@@ -1354,6 +1356,23 @@ nonisolated private final class Canvas {
     private static let largestStep = 16
     /// What a segment one view showed, and none backed since, holds.
     private static let seenOnce: UInt8 = 1
+    /// A segment the views saw change where it is this many times keeps changing (an animation, a video), until this
+    /// many views in a row see it as the view before did (an animation done, a video paused). Where what keeps
+    /// changing is a block of the page (a video, an advertisement, a carousel), the first view that shows all of it at
+    /// once takes it (`writeRestless`), and from then on no line by line rule writes it (`video`); what keeps changing
+    /// otherwise (a heading's letters sliding in, a shape turning) is left to the line by line rules. `Chunk.changes`
+    /// holds the count in its low bits, and `restless`, `still` (all of it was taken from a view where nothing in it
+    /// changed) and `video` in its top three.
+    private static let restlessChanges: UInt8 = 3
+    private static let calmViews: UInt8 = 8
+    private static let restless: UInt8 = 0x80
+    private static let still: UInt8 = 0x40
+    private static let video: UInt8 = 0x20
+    private static let counted: UInt8 = 0x0F
+    /// Of what `noteChanges` keeps of the view being taken in, per row and segment: it changed where it is in this
+    /// view; it keeps changing.
+    private static let changedNow: UInt8 = 1
+    private static let keepsChanging: UInt8 = 2
 
     private final class Chunk {
         let pixels: PageBuffer
@@ -1378,6 +1397,9 @@ nonisolated private final class Canvas {
         /// column not move with the content. What such a view shows may take the place of what is loose only, never
         /// of what a view showed that saw the column move with it.
         let loose: UnsafeMutablePointer<UInt8>
+        /// Per line and segment, how often a view showed it otherwise than the view before did, though the line was
+        /// where the content had it in both: changing where it is, not moving; and what follows (`Canvas.restless`).
+        let changes: UnsafeMutablePointer<UInt8>
 
         init?(lineBytes: Int, bands: Int, segments: Int) {
             guard let pixels = PageBuffer(byteCount: Canvas.chunkLines * lineBytes) else { return nil }
@@ -1390,12 +1412,15 @@ nonisolated private final class Canvas {
             quality.initialize(repeating: 0, count: Canvas.chunkLines * segments)
             loose = .allocate(capacity: Canvas.chunkLines * segments)
             loose.initialize(repeating: 0, count: Canvas.chunkLines * segments)
+            changes = .allocate(capacity: Canvas.chunkLines * segments)
+            changes.initialize(repeating: 0, count: Canvas.chunkLines * segments)
         }
 
         deinit {
             support.deallocate()
             quality.deallocate()
             loose.deallocate()
+            changes.deallocate()
         }
     }
 
@@ -1445,6 +1470,23 @@ nonisolated private final class Canvas {
     /// Lines that took what came in under columns that stay put, and in which of them, until the next view tells
     /// whether it moved with the content.
     private var tentative: [(index: Int, segments: [Int])] = []
+    /// The rows of the view being taken in whose lines `noteChanges` looked at, which of them show something that
+    /// keeps changing, and per row and segment what it saw there (`changedNow`, `keepsChanging`).
+    private var noted: [Bool] = []
+    private var noisy: [Bool] = []
+    private var seen: [UInt8] = []
+    /// The rows of `seen` that hold something, to clear for the next view.
+    private var written: [Int] = []
+    /// Per row and segment of the view being taken in, the search for what keeps changing that last went there: one
+    /// number a search, so nothing is cleared between views.
+    private var visits: [UInt32] = []
+    private var search: UInt32 = 0
+    /// The view before the one being taken in, as `noteChanges` had it, and how many rows on it showed what the view
+    /// being taken in shows.
+    private var lastView: Lines?
+    private var lastOffset = 0
+    /// The blocks that keep changing the last view showed, the page's lines and segments of each.
+    private var lastBlocks: [(lines: ClosedRange<Int>, segments: ClosedRange<Int>)] = []
     /// The segments that stay put while the content scrolls (a sidebar, a timeline).
     private(set) var stays: [Bool]
     /// The bytes between the ends, and of the ends, not in segments that stay put: what is weighed, and what
@@ -1981,10 +2023,12 @@ nonisolated private final class Canvas {
         let target = chunk.pixels.baseAddress + slot * lineBytes
         let support = chunk.support + slot * segments
         let loose = chunk.loose + slot * segments
+        let changes = chunk.changes + slot * segments
         let state = chunk.states[slot]
         if state == 0 {
             memcpy(target, source, lineBytes)
             loose.update(repeating: 0, count: segments)
+            changes.update(repeating: 0, count: segments)
             switch writing {
             case .first:
                 for segment in 0..<segments { support[segment] = Self.firstSupport }
@@ -2020,8 +2064,8 @@ nonisolated private final class Canvas {
             return
         case .arrived(let sameRow, let inward):
             if reconsider(
-                source, into: target, support: support, qualities: chunk.quality + slot * segments, loose: loose, quality: quality, sameRow: sameRow,
-                alike: inward
+                source, into: target, support: support, qualities: chunk.quality + slot * segments, loose: loose, changes: changes,
+                quality: quality, sameRow: sameRow, alike: inward
             ) {
                 rehash(target, chunk: chunk, slot: slot)
                 // Seen only once, and something else then (a banner that was over it): its ends as well.
@@ -2037,7 +2081,7 @@ nonisolated private final class Canvas {
             }
         case .agreeing(let previous, let sameRow, let formerRow, let confirmed, let atEdge, let belowStart):
             let preferred = preferUnobscured(
-                source, into: target, support: support, qualities: chunk.quality + slot * segments, loose: loose,
+                source, into: target, support: support, qualities: chunk.quality + slot * segments, loose: loose, changes: changes,
                 quality: quality, previous: previous, sameRow: sameRow
             )
             let firstRow = firstSnapshot.flatMap { snapshot in
@@ -2046,7 +2090,8 @@ nonisolated private final class Canvas {
             stale.removeAll(keepingCapacity: true)
             let weighed = weigh(
                 source, into: target, support: support, previous: previous, sameRow: sameRow, formerRow: formerRow,
-                held: state == 2, atEdge: atEdge, belowStart: belowStart, qualities: chunk.quality + slot * segments, loose: loose, quality: quality,
+                held: state == 2, atEdge: atEdge, belowStart: belowStart, qualities: chunk.quality + slot * segments, loose: loose, changes: changes,
+                quality: quality,
                 firstRow: firstRow, calm: &chunk.calm[slot], restless: &chunk.restless[slot]
             )
             if preferred || weighed {
@@ -2058,13 +2103,278 @@ nonisolated private final class Canvas {
         count(source, into: target, chunk: chunk, slot: slot, still: still)
     }
 
+    /// Counts where the lines of `view` at `rows`, which the last view, `old`, showed `offset` rows on, change where
+    /// they are, before any is written: whether something that keeps changing can be taken whole depends on the lines
+    /// around it, which come after it.
+    func noteChanges(view: Lines, old: Lines, offset: Int, rows: [Int], at position: Int) {
+        lastView = old
+        lastOffset = offset
+        noted = [Bool](repeating: false, count: view.count)
+        noisy = noted
+        if seen.count != view.count * segments {
+            seen = [UInt8](repeating: 0, count: view.count * segments)
+        } else {
+            seen.withUnsafeMutableBufferPointer { seen in
+                for row in written where row < view.count { (seen.baseAddress! + row * segments).update(repeating: 0, count: segments) }
+            }
+        }
+        written.removeAll(keepingCapacity: true)
+        // The segments of the line being counted in bands that differ from the last view's line (a band the same in
+        // both, by its hash, is the same throughout).
+        var differing: [ClosedRange<Int>] = []
+        seen.withUnsafeMutableBufferPointer { seen in
+            for row in rows {
+                let index = position + row
+                let number = Self.chunkNumber(of: index)
+                guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { continue }
+                let slot = index - number * Self.chunkLines
+                guard chunk.states[slot] != 0, firstSnapshot != nil || firstLines?.contains(index) != true else { continue }
+                noted[row] = true
+                let changes = chunk.changes + slot * segments, flags = seen.baseAddress! + row * segments
+                // Where the line is as the last view showed it, nothing to count, unless something on it keeps changing:
+                // most lines of most views, and most of the rest.
+                let restless = Self.anyRestless(changes, count: segments)
+                differing.removeAll(keepingCapacity: true)
+                if restless {
+                    differing.append(0 ... segments - 1)
+                } else {
+                    for (band, part) in view.bands.enumerated() where view.hashes[band * view.count + row] != old.hashes[band * old.count + row + offset] {
+                        var range = part.lowerBound * 4 / Self.segmentBytes ... (part.upperBound * 4 - 1) / Self.segmentBytes
+                        if let last = differing.last, last.upperBound >= range.lowerBound {
+                            range = last.lowerBound ... range.upperBound
+                            differing.removeLast()
+                        }
+                        differing.append(range)
+                    }
+                    guard !differing.isEmpty else { continue }
+                }
+                countChanges(
+                    view.line(row), previous: old.line(row + offset), sameRow: old.line(row), formerRow: view.line(row + offset), changes: changes,
+                    changedNow: flags, within: differing, restless: restless
+                )
+                written.append(row)
+                for segment in 0..<segments where changes[segment] & Self.restless != 0 && isBetweenEnds(segment) && !stays[segment] {
+                    flags[segment] |= Self.keepsChanging
+                    noisy[row] = true
+                }
+            }
+        }
+    }
+
+    /// Takes in, from `view`, the content `band` of which lies at `position`, each block of the page that keeps changing
+    /// where it is (a video, an advertisement, a carousel) that it shows whole, at least `inset` lines from the bars, all
+    /// of it from the one view (`takeWhole`): line by line, each line's clearest view would be another frame, and the
+    /// block would come out in bands. A block is what keeps changing held together segment to segment, with the lines
+    /// past it come into view since, filling at least half of its bounds. One never shown whole (taller than the view,
+    /// or what is around it changing too) is left to the line by line rules, as is what keeps changing here and there.
+    func writeRestless(_ view: Lines, band: Range<Int>, at position: Int, inset: Int) {
+        var blocks: [(lines: ClosedRange<Int>, segments: ClosedRange<Int>)] = []
+        defer { lastBlocks = blocks }
+        guard noted.count == view.count, noisy.contains(true) else { return }
+        let rows = max(band.lowerBound, 0) ..< min(band.upperBound, view.count)
+        // The side rows come into view on: below when the content moves up.
+        let arriving = lastOffset > 0 ? 1 : -1
+        if visits.count != view.count * segments { visits = [UInt32](repeating: 0, count: view.count * segments) }
+        if search > UInt32.max - UInt32(view.count * segments) {
+            search = 0
+            visits.withUnsafeMutableBufferPointer { $0.update(repeating: 0) }
+        }
+        var found: [(top: Int, bottom: Int, left: Int, right: Int, cells: Int, changing: Int)] = []
+        var stack: [(row: Int, segment: Int)] = []
+        let segments = self.segments
+        seen.withUnsafeBufferPointer { seen in
+            visits.withUnsafeMutableBufferPointer { visits in
+                search += 1
+                let mark = search
+                for row in rows where noisy[row] {
+                    for segment in 0..<segments where seen[row * segments + segment] & Self.keepsChanging != 0 && visits[row * segments + segment] != mark {
+                        visits[row * segments + segment] = mark
+                        // What keeps changing, with the rows past it that came into view since and change in this view, not
+                        // changed often enough yet (the rest of a video come in under it).
+                        stack.removeAll(keepingCapacity: true)
+                        stack.append((row, segment))
+                        var top = row, bottom = row, left = segment, right = segment, cells = 0
+                        while let (r, c) = stack.popLast() {
+                            cells += 1
+                            top = min(top, r)
+                            bottom = max(bottom, r)
+                            left = min(left, c)
+                            right = max(right, c)
+                            func reach(_ nr: Int, _ nc: Int) {
+                                guard rows.contains(nr), nc >= 0, nc < segments, noted[nr] else { return }
+                                let cell = nr * segments + nc
+                                guard visits[cell] != mark else { return }
+                                guard seen[cell] & Self.keepsChanging != 0 || seen[cell] & Self.changedNow != 0 && nr - r == arriving else { return }
+                                visits[cell] = mark
+                                stack.append((nr, nc))
+                            }
+                            reach(r - 1, c)
+                            reach(r + 1, c)
+                            reach(r, c - 1)
+                            reach(r, c + 1)
+                        }
+                        var changing = 0
+                        for r in top...bottom {
+                            for c in left...right where seen[r * segments + c] & Self.changedNow != 0 { changing += 1 }
+                        }
+                        found.append((top, bottom, left, right, cells, changing))
+                    }
+                }
+            }
+        }
+        for (top, bottom, left, right, cells, changing) in found {
+            // A block of the page that keeps changing, most of it (a video, an advertisement, a carousel), not what
+            // keeps changing here and there (a heading's letters sliding in, a shape turning, an avatar passing).
+            let area = (bottom - top + 1) * (right - left + 1)
+            guard bottom - top + 1 >= 2 * inset, right - left + 1 >= 8, cells * 2 >= area else { continue }
+            // Where the last view showed it too, or a block all through (a slide sliding in): a video stays where it
+            // is in the page, a shape sliding across does not, nor does one turning fill its corners.
+            let block = (lines: position + top ... position + bottom, segments: left...right)
+            blocks.append(block)
+            let staying = cells * 20 >= area * 19 || lastBlocks.contains { Self.overlapsMostly($0, block) }
+            takeWhole(
+                view, rows: top...bottom, segments: left...right, band: band, inset: inset, settled: changing == 0,
+                moving: changing * 2 >= area && staying, at: position
+            )
+        }
+    }
+
+    /// Whether any of the `count` segments `changes` has of a line keeps changing.
+    private static func anyRestless(_ changes: UnsafePointer<UInt8>, count: Int) -> Bool {
+        var index = 0
+        while index + 8 <= count {
+            if UnsafeRawPointer(changes + index).loadUnaligned(as: UInt64.self) & 0x8080_8080_8080_8080 != 0 { return true }
+            index += 8
+        }
+        while index < count {
+            if changes[index] & restless != 0 { return true }
+            index += 1
+        }
+        return false
+    }
+
+    /// Whether two blocks share at least half of what either covers.
+    private static func overlapsMostly(
+        _ a: (lines: ClosedRange<Int>, segments: ClosedRange<Int>), _ b: (lines: ClosedRange<Int>, segments: ClosedRange<Int>)
+    ) -> Bool {
+        let lines = min(a.lines.upperBound, b.lines.upperBound) - max(a.lines.lowerBound, b.lines.lowerBound) + 1
+        let columns = min(a.segments.upperBound, b.segments.upperBound) - max(a.segments.lowerBound, b.segments.lowerBound) + 1
+        guard lines > 0, columns > 0 else { return false }
+        let shared = lines * columns
+        return shared * 2 >= a.lines.count * a.segments.count && shared * 2 >= b.lines.count * b.segments.count
+    }
+
+    /// Takes the stretch `rows` by `segments` of `view` into the picture, if the view shows it whole: all of it, though
+    /// parts were taken clearer, for one frame of it; from then on only a view that shows it whole writes it. The first
+    /// view to show it whole while most of it changes where the last view showed it too (`moving`: a video playing, not
+    /// a shape turning, which changes at its edge, nor one sliding across) takes it; then a view where nothing in it
+    /// changed (`settled`: a slide held, a video paused), and one where it is changing (a crossfade, a slide sliding, a
+    /// video playing) when no less clear than the least clear part of it was taken, unless all of it was taken from a
+    /// view where nothing in it changed.
+    private func takeWhole(
+        _ view: Lines, rows: ClosedRange<Int>, segments columns: ClosedRange<Int>, band: Range<Int>, inset: Int, settled: Bool, moving: Bool,
+        at position: Int
+    ) {
+        // Well inside the view: what changes under a bar seen through (a header's blur) keeps changing too, and none of
+        // it is the page's.
+        guard rows.lowerBound - inset >= band.lowerBound, rows.upperBound + inset < band.upperBound,
+              noted[rows.lowerBound - 1], noted[rows.upperBound + 1], rows.allSatisfy({ noted[$0] }) else { return }
+        let taken = columns.filter { isBetweenEnds($0) && !stays[$0] && !adrift[$0] }
+        guard !taken.isEmpty, taken.allSatisfy({ column in
+            seen[(rows.lowerBound - 1) * segments + column] & Self.changedNow == 0 && seen[(rows.upperBound + 1) * segments + column] & Self.changedNow == 0
+        }) else { return }
+        let quality = UInt8(clamping: min(rows.lowerBound - band.lowerBound, band.upperBound - 1 - rows.upperBound) + 1)
+        var lines: [(chunk: Chunk, slot: Int)] = []
+        var least = UInt8.max, held = true, fresh = false
+        for row in rows {
+            let index = position + row
+            let number = Self.chunkNumber(of: index)
+            guard number >= base, number - base < chunks.count, let chunk = chunks[number - base] else { return }
+            let slot = index - number * Self.chunkLines
+            for column in taken {
+                let cell = slot * segments + column
+                least = min(least, chunk.quality[cell])
+                if chunk.changes[cell] & Self.still == 0 { held = false }
+                if chunk.changes[cell] & Self.video == 0 { fresh = true }
+            }
+            lines.append((chunk, slot))
+        }
+        guard fresh ? moving : settled || !held && quality >= least else { return }
+        for (row, line) in zip(rows, lines) {
+            let target = line.chunk.pixels.baseAddress + line.slot * lineBytes, source = view.line(row)
+            for column in taken {
+                let start = column * Self.segmentBytes, bytes = min(Self.segmentBytes, lineBytes - start)
+                // Not where the view shows what the last view did at the same place on screen and not where the content
+                // moved from: something stuck over it there (a header come down over the top of a video).
+                if let lastView, row < lastView.count, memcmp(source + start, lastView.line(row) + start, bytes) == 0,
+                   row + lastOffset < 0 || row + lastOffset >= lastView.count
+                       || memcmp(source + start, lastView.line(row + lastOffset) + start, bytes) != 0 { continue }
+                memcpy(target + start, source + start, bytes)
+                let cell = line.slot * segments + column
+                line.chunk.quality[cell] = quality
+                line.chunk.support[cell] = max(Self.firstSupport, line.chunk.support[cell])
+                line.chunk.loose[cell] = 0
+                line.chunk.changes[cell] |= settled ? Self.video | Self.still : Self.video
+            }
+            rehash(target, chunk: line.chunk, slot: line.slot)
+        }
+    }
+
+    /// Counts, segment by segment, where `source` shows the line otherwise than `previous`, the last view, did, and where
+    /// as it did: what changes where it is (a video playing, a picture loading) and for how long it holds still. Not
+    /// where what did not move with the content says why it changed: it came over the line (`sameRow`, the last view's
+    /// line at the same place on screen, shows it too) or left it (`formerRow`, this view's line where the line was,
+    /// still shows what the line did), as a chat button in a corner does over each line passing under it. Only the
+    /// segments `within` the ranges, the rest being as `previous` has them; `restless`: something on the line keeps
+    /// changing, so what holds still counts too.
+    private func countChanges(
+        _ source: UnsafeRawPointer, previous: UnsafeRawPointer, sameRow: UnsafeRawPointer, formerRow: UnsafeRawPointer,
+        changes: UnsafeMutablePointer<UInt8>, changedNow: UnsafeMutablePointer<UInt8>, within ranges: [ClosedRange<Int>], restless: Bool
+    ) {
+        for range in ranges {
+            for run in scrollingMiddle {
+                let lower = max(run.lowerBound, range.lowerBound * Self.segmentBytes)
+                let upper = min(run.upperBound, (range.upperBound + 1) * Self.segmentBytes)
+                guard lower < upper else { continue }
+                // All of it as the last view showed it, nothing on the line changing lately: nothing to count.
+                if !restless, memcmp(source + lower, previous + lower, upper - lower) == 0 { continue }
+                countChanges(source, previous: previous, sameRow: sameRow, formerRow: formerRow, changes: changes, changedNow: changedNow, bytes: lower..<upper)
+            }
+        }
+    }
+
+    /// Counts the segments of `run`, bytes of the line, as `countChanges(_:previous:sameRow:formerRow:...)` says.
+    private func countChanges(
+        _ source: UnsafeRawPointer, previous: UnsafeRawPointer, sameRow: UnsafeRawPointer, formerRow: UnsafeRawPointer,
+        changes: UnsafeMutablePointer<UInt8>, changedNow: UnsafeMutablePointer<UInt8>, bytes run: Range<Int>
+    ) {
+        var start = run.lowerBound
+        while start < run.upperBound {
+            let segment = start / Self.segmentBytes
+            let end = min((segment + 1) * Self.segmentBytes, run.upperBound), length = end - start
+            defer { start = end }
+            guard !adrift[segment] else { continue }
+            let value = changes[segment], flags = value & (Self.still | Self.video), count = value & Self.counted
+            if Self.nearlyAlike(source + start, previous + start, length) {
+                // Held still long enough, it is done changing: the line by line rules take it again.
+                if value & Self.restless != 0 {
+                    changes[segment] = count + 1 >= Self.calmViews ? value & Self.still : Self.restless | flags | (count + 1)
+                }
+                continue
+            }
+            guard memcmp(source + start, sameRow + start, length) != 0, memcmp(previous + start, formerRow + start, length) != 0 else { continue }
+            changedNow[segment] |= Self.changedNow
+            changes[segment] = value & Self.restless != 0 || count + 1 >= Self.restlessChanges ? Self.restless | flags : flags | (count + 1)
+        }
+    }
+
     /// Votes alone favor whichever direction was traversed most often. Near a sticky edge that can be a
     /// displaced avatar, or the blank margin hiding its real position. Prefer a view whose page position
     /// is confirmed farther inside the viewport, even when visited only once. Fixed columns keep their first view.
     private func preferUnobscured(
         _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
-        qualities: UnsafeMutablePointer<UInt8>, loose: UnsafeMutablePointer<UInt8>, quality: UInt8, previous: UnsafeRawPointer,
-        sameRow: UnsafeRawPointer
+        qualities: UnsafeMutablePointer<UInt8>, loose: UnsafeMutablePointer<UInt8>, changes: UnsafeMutablePointer<UInt8>, quality: UInt8,
+        previous: UnsafeRawPointer, sameRow: UnsafeRawPointer
     ) -> Bool {
         var changed = false
         for run in scrollingMiddle {
@@ -2087,6 +2397,9 @@ nonisolated private final class Canvas {
                 // the column move showed there. Of what is loose it may be (an avatar stuck below a header come to
                 // rest where its post begins, moving part of the way as it does).
                 if adrift[segment], loose[segment] == 0 { continue }
+                // Nor is anything of a block that keeps changing where it is (a video): only a view that shows all of it
+                // writes it, one frame (`writeRestless`).
+                if changes[segment] & Self.video != 0 { continue }
                 guard !staysPut(source, start, end - start, sameRow: sameRow, alike: previous) else { continue }
                 // What stayed where it was on screen while the content moved on is over the content (a sticky
                 // sidebar's flat strokes, a highlighted item's bar), no clearer observation of it; and a table's or
@@ -2181,8 +2494,8 @@ nonisolated private final class Canvas {
     /// holds, but what stays put on screen. Whether the line changed.
     private func reconsider(
         _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
-        qualities: UnsafeMutablePointer<UInt8>, loose: UnsafeMutablePointer<UInt8>, quality: UInt8, sameRow: UnsafeRawPointer,
-        alike: UnsafeRawPointer?
+        qualities: UnsafeMutablePointer<UInt8>, loose: UnsafeMutablePointer<UInt8>, changes: UnsafeMutablePointer<UInt8>, quality: UInt8,
+        sameRow: UnsafeRawPointer, alike: UnsafeRawPointer?
     ) -> Bool {
         var changed = false
         for run in scrollingMiddle {
@@ -2192,7 +2505,7 @@ nonisolated private final class Canvas {
                 defer { start = end }
                 guard quality >= qualities[segment], memcmp(source + start, target + start, end - start) != 0,
                       !staysPut(source, start, end - start, sameRow: sameRow, alike: alike),
-                      !adrift[segment] || loose[segment] != 0 else { continue }
+                      !adrift[segment] || loose[segment] != 0, changes[segment] & Self.video == 0 else { continue }
                 if support[segment] > step {
                     support[segment] -= step
                 } else {
@@ -2222,8 +2535,8 @@ nonisolated private final class Canvas {
     private func weigh(
         _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
         previous: UnsafeRawPointer, sameRow: UnsafeRawPointer, formerRow: UnsafeRawPointer, held: Bool, atEdge: Bool, belowStart: Bool,
-        qualities: UnsafeMutablePointer<UInt8>, loose: UnsafeMutablePointer<UInt8>, quality: UInt8, firstRow: UnsafeRawPointer?,
-        calm: UnsafeMutablePointer<UInt8>, restless: UnsafeMutablePointer<UInt8>
+        qualities: UnsafeMutablePointer<UInt8>, loose: UnsafeMutablePointer<UInt8>, changes: UnsafeMutablePointer<UInt8>, quality: UInt8,
+        firstRow: UnsafeRawPointer?, calm: UnsafeMutablePointer<UInt8>, restless: UnsafeMutablePointer<UInt8>
     ) -> Bool {
         for run in stayingMiddle {
             var from = run.lowerBound
@@ -2322,7 +2635,7 @@ nonisolated private final class Canvas {
                         let against = Int(step) * (plain || still ? 1 : 2)
                         if Int(support[segment]) > against {
                             support[segment] -= UInt8(against)
-                        } else {
+                        } else if changes[segment] & Self.video == 0 {
                             memcpy(target + start, source + start, length)
                             support[segment] = step + 1
                             loose[segment] = adrift[segment] ? 1 : 0
@@ -2336,7 +2649,8 @@ nonisolated private final class Canvas {
                         support[segment] = 0
                         loose[segment] = 1
                         changed = true
-                    } else if support[segment] <= Self.seenOnce, memcmp(source + start, sameRow + start, length) != 0 {
+                    } else if support[segment] <= Self.seenOnce, changes[segment] & Self.video == 0,
+                              memcmp(source + start, sameRow + start, length) != 0 {
                         // Nothing held but what one view showed, or the ground where something stayed put over the
                         // content, and now something that does not stay put (the content come out from under it):
                         // taken instead, until a view backs something.
