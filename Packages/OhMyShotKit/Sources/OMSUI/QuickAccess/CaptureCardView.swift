@@ -494,7 +494,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
     @objc private func closeClicked() { onClose?() }
 
     @objc private func moreClicked(_ sender: NSView) {
-        makeMenu().popUp(beside: sender)
+        makeMenu().popUp(beside: sender, outside: self)
     }
 }
 
