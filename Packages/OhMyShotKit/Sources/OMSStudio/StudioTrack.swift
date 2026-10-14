@@ -6,10 +6,11 @@ import Foundation
 /// how visible it is. Sampled `rate` times a second in the recording's own time; the compositor reads between
 /// samples, so playback, scrubbing, and export all draw the same movie.
 ///
-/// The cursor follows the pointer through a critically damped spring (none at smoothing 0), so a shaky hand
-/// draws a calm line; over the last `clickApproach` before a click it closes on the pointer, so it presses
-/// where the pointer did and the click's ring lands under its tip, and the click starts it afresh there. It
-/// fades when the pointer rests and, as the system hides it, while typing, until the pointer moves or clicks.
+/// The cursor follows the pointer through a critically damped spring (none at smoothing 0) that loosens as the
+/// pointer slows and tightens as it speeds up, so a shaky hand draws a calm line and a quick flick keeps up;
+/// over the last `clickApproach` before a click it closes on the pointer, so it presses where the pointer did
+/// and the click's ring lands under its tip, and the click starts it afresh there. It fades when the pointer
+/// rests and, as the system hides it, while typing, until the pointer moves or clicks.
 /// The camera eases into each zoom toward the pointer and, fully zoomed, moves only when the cursor nears the
 /// edge of what it shows, through a slower spring, never past the recording's edges.
 nonisolated public struct StudioTrack: Sendable {
@@ -39,6 +40,22 @@ nonisolated public struct StudioTrack: Sendable {
     public static let idleDelay = 1.6
     /// How long before a click the cursor gives up its smoothing.
     public static let clickApproach = 0.15
+    /// The quickest the cursor's spring ever follows: its time constant at the lowest smoothing, and the one a
+    /// fast pointer is followed with at any smoothing.
+    static let cursorQuickest = 0.02
+    /// The pointer speed, in points a second, at which the cursor's spring has come halfway from its time
+    /// constant at rest down to `cursorQuickest`. The time constant falls as 1 / (1 + speed / reference), the
+    /// shape the One Euro filter gives it (Casiez, Roussel and Vogel, CHI 2012: a low-pass filter whose cutoff
+    /// rises with the speed it measures), held above `cursorQuickest`. At 700 a slow drift of tens of points a
+    /// second keeps nearly all its smoothing and a flick of 2500 is followed with about a quarter of it, which
+    /// leaves the flick trailing 0.4 times as far as the fixed spring did and the drift's jitter within 1.2 times
+    /// the fixed spring's; a lower speed lets more of the jitter through, a higher one lets the flick trail farther.
+    static let referenceSpeed = 700.0
+    /// How long the pointer's velocity is averaged over before its speed is read: the time constant of a
+    /// first-order low-pass, 0.16 s, which is the one hertz One Euro filters its derivative at. The velocity is
+    /// averaged, not the speed, so jitter that changes direction every reading cancels instead of reading as
+    /// speed, and a flick still reaches nine tenths of its speed in 0.4 s.
+    static let speedWindow = 0.16
     /// How long the cursor takes to fade when the pointer rests, when typing hides it, and to come back.
     static let idleFade = 0.3
     static let typingFade = 0.15
@@ -53,9 +70,12 @@ nonisolated public struct StudioTrack: Sendable {
         let samples = telemetry.samples
         let zooms = project.zooms.sorted { $0.start < $1.start }
 
-        // The cursor's spring: a time constant from 0.02 s (barely smoothed) to 0.15 s.
+        // The cursor's spring: a time constant at rest from 0.02 s (barely smoothed) to 0.15 s, shorter the
+        // faster the pointer goes, by its velocity averaged over `speedWindow`.
         let smoothing = min(max(project.cursor.smoothing, 0), 1)
-        let cursorOmega = smoothing > 0 ? 1 / (0.02 + 0.13 * smoothing) : 0
+        let smoothed = smoothing > 0
+        let restTime = Self.cursorQuickest + 0.13 * smoothing
+        let speedBlend = 1 - exp(-step / Self.speedWindow)
         // The camera's spring is slower: it should glide, not chase.
         let cameraOmega = 1 / 0.35
 
@@ -66,6 +86,7 @@ nonisolated public struct StudioTrack: Sendable {
         var lastRaw: (x: Double, y: Double)?
         var cursor = Self.pointer(at: 0, in: samples, index: &index)
         var cursorVelocity = (x: 0.0, y: 0.0)
+        var pointerVelocity = (x: 0.0, y: 0.0)
         var center = (x: cursor.x, y: cursor.y)
         var centerVelocity = (x: 0.0, y: 0.0)
         var opacity = 1.0
@@ -91,10 +112,14 @@ nonisolated public struct StudioTrack: Sendable {
             }
 
             // The cursor: the spring toward the pointer, or the pointer itself (and afresh from it at a click,
-            // moving as the pointer moves, so it never stalls there).
-            if cursorOmega > 0, frameIndex > 0, !clicked {
-                Self.spring(&cursor.x, &cursorVelocity.x, toward: raw.x, omega: cursorOmega, step: step)
-                Self.spring(&cursor.y, &cursorVelocity.y, toward: raw.y, omega: cursorOmega, step: step)
+            // moving as the pointer moves, so it never stalls there). The speed it loosens and tightens by
+            // goes on being read through a click.
+            pointerVelocity.x += (rawVelocity.0 - pointerVelocity.x) * speedBlend
+            pointerVelocity.y += (rawVelocity.1 - pointerVelocity.y) * speedBlend
+            if smoothed, frameIndex > 0, !clicked {
+                let omega = 1 / Self.cursorTime(rest: restTime, speed: hypot(pointerVelocity.x, pointerVelocity.y))
+                Self.spring(&cursor.x, &cursorVelocity.x, toward: raw.x, omega: omega, step: step)
+                Self.spring(&cursor.y, &cursorVelocity.y, toward: raw.y, omega: omega, step: step)
             } else {
                 cursor = (raw.x, raw.y, raw.cursor)
                 cursorVelocity = clicked ? rawVelocity : (0, 0)
@@ -102,7 +127,7 @@ nonisolated public struct StudioTrack: Sendable {
             cursor.cursor = raw.cursor
             // Into the next click, the cursor drawn closes on the pointer.
             var drawn = (x: cursor.x, y: cursor.y)
-            if cursorOmega > 0, clickIndex < clicks.count, clicks[clickIndex] - time < Self.clickApproach {
+            if smoothed, clickIndex < clicks.count, clicks[clickIndex] - time < Self.clickApproach {
                 let t = 1 - (clicks[clickIndex] - time) / Self.clickApproach
                 let eased = t * t * (3 - 2 * t)
                 drawn = (cursor.x + (raw.x - cursor.x) * eased, cursor.y + (raw.y - cursor.y) * eased)
@@ -190,6 +215,12 @@ nonisolated public struct StudioTrack: Sendable {
 
     static func easeInOut(_ t: Double) -> Double {
         t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
+    }
+
+    /// The cursor's spring's time constant, in seconds, while the pointer moves at `speed` points a second: `rest`
+    /// when it is still, falling toward `cursorQuickest` as it speeds up, halfway at `referenceSpeed`.
+    static func cursorTime(rest: Double, speed: Double) -> Double {
+        cursorQuickest + (rest - cursorQuickest) / (1 + speed / referenceSpeed)
     }
 
     /// One step of a critically damped spring pulling `value` toward `target`.

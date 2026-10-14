@@ -162,6 +162,95 @@ struct StudioMotionTests {
         #expect(abs(smooth.frame(at: 2).cursorX - 400) < 1)
     }
 
+    @Test func theCursorSpringKeepsItsRestingTimeWhenStillAndTightensWithSpeed() {
+        #expect(abs(StudioTrack.cursorTime(rest: 0.15, speed: 0) - 0.15) < 1e-12)
+        // Halfway down to the quickest at the reference speed.
+        #expect(abs(StudioTrack.cursorTime(rest: 0.15, speed: StudioTrack.referenceSpeed) - 0.085) < 1e-12)
+        let times = [0, 100, 400, 1600, 6400, 100_000].map { StudioTrack.cursorTime(rest: 0.15, speed: $0) }
+        #expect(zip(times, times.dropFirst()).allSatisfy { $0 > $1 }, "\(times)")
+        #expect(times.last! > StudioTrack.cursorQuickest && times.last! < 0.021)
+        // Nothing slower than the quickest to tighten from.
+        #expect(abs(StudioTrack.cursorTime(rest: 0.02, speed: 3000) - 0.02) < 1e-12)
+    }
+
+    /// The cursor as a spring of one time constant would draw it, frame by frame, following the pointer `pointer`
+    /// drew with no smoothing: what the cursor was before its time constant followed the pointer's speed.
+    private func fixedSpring(following pointer: StudioTrack, time: Double) -> [(x: Double, y: Double)] {
+        var cursor = (x: pointer.frames[0].cursorX, y: pointer.frames[0].cursorY)
+        var velocity = (x: 0.0, y: 0.0)
+        var path = [cursor]
+        for frame in pointer.frames.dropFirst() {
+            StudioTrack.spring(&cursor.x, &velocity.x, toward: frame.cursorX, omega: 1 / time, step: 1 / pointer.rate)
+            StudioTrack.spring(&cursor.y, &velocity.y, toward: frame.cursorY, omega: 1 / time, step: 1 / pointer.rate)
+            path.append(cursor)
+        }
+        return path
+    }
+
+    @Test func aFastFlickTrailsHalfAsFarAsAFixedSpringWould() {
+        // A pointer flicking right at 2500 pt/s for 0.4 s and resting, the cursor smoothed as much as it goes.
+        let samples = (0...24).map { StudioTelemetry.Sample(time: Double($0) / 60, x: 100 + 2500 * Double($0) / 60, y: 400, cursor: 0) }
+        let telemetry = StudioTelemetry(width: 3000, height: 1000, pixelsPerPoint: 2, samples: samples)
+        var project = StudioProject()
+        project.cursor.smoothing = 1
+        var exact = project
+        exact.cursor.smoothing = 0
+        let pointer = StudioTrack(telemetry: telemetry, project: exact, duration: 1)
+        let fixed = fixedSpring(following: pointer, time: 0.15)
+        let track = StudioTrack(telemetry: telemetry, project: project, duration: 1)
+        // At the flick's end, frame 48 of 120 a second, how far each cursor is behind the pointer.
+        let end = 48
+        let fixedTrail = pointer.frames[end].cursorX - fixed[end].x
+        let trail = pointer.frames[end].cursorX - track.frames[end].cursorX
+        #expect(fixedTrail > 400, "\(fixedTrail)")
+        #expect(trail > 20 && trail <= fixedTrail / 2, "\(trail) against \(fixedTrail)")
+        // Still a spring: it lands on the pointer where it rests.
+        #expect(abs(track.frame(at: 1).cursorX - 1100) < 1)
+    }
+
+    /// A pointer drifting right at 40 pt/s for 6 s, read 60 times a second, each reading moved by `offset`
+    /// points in x and in y.
+    private func shaky(_ offset: (_ reading: Int, _ axis: Int) -> Double) -> StudioTelemetry {
+        let samples = (0...360).map { reading -> StudioTelemetry.Sample in
+            let time = Double(reading) / 60
+            return .init(time: time, x: 100 + 40 * time + offset(reading, 0), y: 400 + offset(reading, 1), cursor: 0)
+        }
+        return StudioTelemetry(width: 1600, height: 1000, pixelsPerPoint: 2, samples: samples)
+    }
+
+    @Test func slowShakyMotionIsCalmedAsMuchAsByAFixedSpring() {
+        // Readings 3 points off by turns above and below, and off by amounts scattered from -3 to 3 (a fixed
+        // list, from a hash of the reading's number).
+        let alternating: (Int, Int) -> Double = { reading, _ in reading.isMultiple(of: 2) ? 3 : -3 }
+        let scattered: (Int, Int) -> Double = { reading, axis in
+            var bits = UInt64(reading * 2 + axis) &* 0x9E37_79B9_7F4A_7C15
+            bits = (bits ^ (bits >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            bits = (bits ^ (bits >> 27)) &* 0x94D0_49BB_1331_11EB
+            return Double(bits >> 11) / Double(1 << 53) * 6 - 3
+        }
+        // Jitter: how far each frame's step is from the drift's own, as a root mean square over the last 4 s.
+        func jitter(_ path: [(x: Double, y: Double)]) -> Double {
+            let steps = path.indices.dropFirst(240).map { (path[$0].x - path[$0 - 1].x - 40.0 / 120, path[$0].y - path[$0 - 1].y) }
+            return (steps.map { $0.0 * $0.0 + $0.1 * $0.1 }.reduce(0, +) / Double(2 * steps.count)).squareRoot()
+        }
+        var project = StudioProject()
+        project.cursor.smoothing = 1
+        var exact = project
+        exact.cursor.smoothing = 0
+        for offset in [alternating, scattered] {
+            let telemetry = shaky(offset)
+            let pointer = StudioTrack(telemetry: telemetry, project: exact, duration: 6)
+            let raw = jitter(pointer.frames.map { ($0.cursorX, $0.cursorY) })
+            let fixed = jitter(fixedSpring(following: pointer, time: 0.15))
+            let track = StudioTrack(telemetry: telemetry, project: project, duration: 6)
+            let calmed = jitter(track.frames.map { ($0.cursorX, $0.cursorY) })
+            #expect(calmed <= 1.2 * fixed, "\(calmed) against \(fixed)")
+            #expect(calmed < raw / 20, "\(calmed) against \(raw)")
+            // The drift is still followed, a spring's width behind.
+            #expect(abs(track.frames[track.frames.count - 1].cursorX - (100 + 40 * 6)) < 15)
+        }
+    }
+
     @Test func aRestingCursorFadesAndComesBack() {
         let samples = [StudioTelemetry.Sample(time: 0, x: 100, y: 100, cursor: 0), .init(time: 4, x: 300, y: 100, cursor: 0)]
         let telemetry = StudioTelemetry(width: 1600, height: 1000, pixelsPerPoint: 2, samples: samples)

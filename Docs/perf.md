@@ -1414,3 +1414,35 @@ the queue is free and before the picture and the summary are made. When nothing 
 
 Not seen in a Release build: there it would take views that take longer to take in than frames come (a busy machine,
 very large views).
+
+### Studio's cursor follows the pointer's speed (2026-10-14, night)
+
+The cursor's spring had one time constant per project (0.02 + 0.13 × Smoothing s). Its time constant now falls
+from that toward 0.02 s as the pointer's speed (its velocity averaged over 0.16 s) rises past 700 pt/s. Measured
+on made-up telemetry (60 readings a second, the cursor drawn at 120 frames a second), against the old spring
+computed alongside with the same step; nothing recorded or on screen. The flick's trail at its end and the two
+jitter rows are the values `StudioMotionTests` asserts on (`aFastFlickTrailsHalfAsFarAsAFixedSpringWould`,
+`slowShakyMotionIsCalmedAsMuchAsByAFixedSpring`); the rest were read from a throwaway test run once, built the
+same way (the sweeps lasting 3 s, the jump a single 300 pt step at 1 s), and are not kept.
+
+| Measurement (Smoothing 100%) | Fixed spring, 0.15 s | By speed |
+| --- | --- | --- |
+| A flick at 2500 pt/s for 0.4 s: how far the cursor trails the pointer at its end | 621 pt | 254 pt |
+| The same, until the cursor is within 5 pt of where the pointer rests | 0.95 s after the flick | 0.31 s after |
+| A steady sweep at 100 / 300 / 600 / 1200 pt/s: the trail | 30 / 89 / 177 / 355 pt | 26 / 65 / 106 / 158 pt |
+| A drift at 40 pt/s, each reading 3 pt off by turns above and below: the cursor's frame-to-frame jitter (raw 3.000 pt) | 0.0033 pt | 0.0038 pt (1.15×) |
+| The same, readings off by amounts scattered from −3 to 3 pt (raw 1.220 pt) | 0.0126 pt | 0.0139 pt (1.11×) |
+
+- **A critically damped spring trails a steady sweep by twice its time constant of travel**, not once: the
+  fixed 0.15 s spring is 0.3 s behind a pointer at constant speed (739 pt at 2500 pt/s). By speed it is 0.09 s
+  behind at 2500 pt/s and 0.13 s at 1200.
+- **The speed is read from the velocity as a vector, not as a number**: readings 3 pt off by turns above and
+  below, in x and in y, move 6 pt in each between readings 1/60 s apart, which as a speed is about 510 pt/s,
+  thirteen times the drift, and tried once that way left the jitter at 2.5× the fixed spring's (1.4× for the
+  scattered readings); averaged as a velocity they cancel, and the 40 pt/s drift keeps about 95% of its
+  smoothing.
+- **The time constant grows again as the speed estimate decays after a stop**, so the spring is no longer
+  exactly critically damped over the whole stop and the cursor passes where the pointer rests, by 0.36 pt
+  after the 2500 pt/s flick at 100% and 0.01 pt at the default 50%. The fixed spring never passes it.
+- **A jump in the pointer counts as speed**: a 300 pt step in one reading (a gap in the readings) leaves the
+  cursor 141 pt short after 0.1 s and 19 pt after 0.3 s at 100%, where the fixed spring had 251 pt and 117 pt.
