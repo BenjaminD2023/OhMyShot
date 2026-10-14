@@ -1391,3 +1391,26 @@ Left as they are:
   past the one taken in, which is then taken in, 4 rows past the end (made up; as before).
 - A first view taken while the page is still drawing (scrolled just before the capture began) left every later view
   lost, once, live.
+
+### Telling the capture while frames keep coming (2026-10-14, night)
+
+On MDN, scrolled to near its end just before the capture began, the page was still moving (a smooth scroll) when the
+first frames came, and the Debug app took about 33 ms a view. The capture was told that Auto-scroll drives it right
+after the first frame, but the stitcher only heard it once the frames stopped coming: after about 250 views with every
+view dumped to disk, after about 50 without. Until then it took the views as scrolled by hand, so the pull at the page's
+end went unrecognized (the views replayed with the message where it took effect give the live picture), and the
+columns were taken in where the pull moved them. What the capture is told (the way Auto-scroll goes, whether it drives,
+the pull let go of) went to the stream's queue as work behind the frames; how the stream schedules its frames on that
+queue is not known here, only that the message waited for them.
+
+Now each message goes into a list, in order, and the list is applied before the next frame is taken in, as well as when
+the queue is free and before the picture and the summary are made. When nothing waits, this is as before.
+
+| Check | Result |
+| --- | --- |
+| Capture tests (OMSCapture, 107) | pass, 7 known issues |
+| The app | builds |
+| MDN again, live | not run: the throwaway browser window was closed meanwhile |
+
+Not seen in a Release build: there it would take views that take longer to take in than frames come (a busy machine,
+very large views).

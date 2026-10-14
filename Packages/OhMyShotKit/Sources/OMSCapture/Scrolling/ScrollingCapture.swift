@@ -5,6 +5,7 @@ import Foundation
 import OMSCore
 import OSLog
 import ScreenCaptureKit
+import Synchronization
 
 /// Streams an area of the screen while what is under it scrolls, stitching the views as they come: the
 /// engine under scrolling capture.
@@ -173,7 +174,10 @@ public final class ScrollingCapture {
         let output = output
         return await withCheckedContinuation { continuation in
             // After every frame the stream had handed over: the queue runs them in order.
-            queue.async { continuation.resume(returning: output.picture()) }
+            queue.async {
+                output.applyPending()
+                continuation.resume(returning: output.picture())
+            }
         }
     }
 
@@ -186,30 +190,30 @@ public final class ScrollingCapture {
     /// The direction the app is made to scroll in (Auto-scroll), which the stitching keeps to until the first
     /// scroll says; nil for either.
     public func prefer(_ axis: ScrollStitcher.Axis?) {
-        let output = output
-        queue.async { output.prefer(axis) }
+        output.post(.prefer(axis))
     }
 
     /// Whether the app is being made to scroll (Auto-scroll), which tells content pushed past its end apart, and
     /// where the gesture lands, in fractions of the area from its top left: a scroller inside the page there is left
     /// out (nil takes in whatever scrolls).
     public func setDriven(_ driven: Bool, at point: CGPoint? = nil) {
-        let output = output
-        queue.async { output.setDriven(driven, at: point) }
+        output.post(.driven(driven, at: point))
     }
 
     /// Lets go of what an elastic overscroll pulled into view past the content's end: Auto-scroll pushed on and
     /// nothing more came.
     public func trimOverscroll() {
-        let output = output
-        queue.async { output.trimOverscroll() }
+        output.post(.trim)
     }
 
     /// How the stitching went, for the log.
     public func summary() async -> String {
         let output = output
         return await withCheckedContinuation { continuation in
-            queue.async { continuation.resume(returning: output.summary) }
+            queue.async {
+                output.applyPending()
+                continuation.resume(returning: output.summary)
+            }
         }
     }
 
@@ -255,6 +259,17 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
     private var waitingPreview = false
     /// How long taking in the views took, for the log.
     private var busy: Duration = .zero
+    /// What the capture was told since, in order: applied before the next frame is taken in, or as soon as the queue
+    /// is free, whichever comes first. A stream handing over frame after frame, each taking a while, kept the queue
+    /// busy for seconds, and the views were taken in as nothing told them meanwhile (not driven, so a pull past the
+    /// page's end went unrecognized).
+    private let pending = Mutex<[Control]>([])
+
+    enum Control: Sendable {
+        case prefer(ScrollStitcher.Axis?)
+        case driven(Bool, at: CGPoint?)
+        case trim
+    }
 
     /// Previews at most this often: a panel's picture, not a film; less often once the picture is long, as each
     /// draws thousands of its lines small.
@@ -270,6 +285,7 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        applyPending()
         #if DEBUG
         if !madePicture, type == .screen, sampleBuffer.isValid, !Self.isComplete(sampleBuffer) {
             let raw = (CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]])?.first?[.status] as? Int
@@ -354,11 +370,32 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
         ))
     }
 
-    func prefer(_ axis: ScrollStitcher.Axis?) {
+    /// Tells the capture something, from anywhere.
+    func post(_ control: Control) {
+        pending.withLock { $0.append(control) }
+        queue.async { [self] in applyPending() }
+    }
+
+    /// Applies what the capture was told, in order: on the stream's queue only.
+    func applyPending() {
+        let controls = pending.withLock { controls in
+            defer { controls.removeAll() }
+            return controls
+        }
+        for control in controls {
+            switch control {
+            case .prefer(let axis): prefer(axis)
+            case .driven(let driven, let point): setDriven(driven, at: point)
+            case .trim: trimOverscroll()
+            }
+        }
+    }
+
+    private func prefer(_ axis: ScrollStitcher.Axis?) {
         stitcher.preferredAxis = axis
     }
 
-    func setDriven(_ driven: Bool, at point: CGPoint?) {
+    private func setDriven(_ driven: Bool, at point: CGPoint?) {
         stitcher.isDriven = driven
         stitcher.drivenAt = driven ? point : nil
         #if DEBUG
@@ -366,7 +403,7 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
         #endif
     }
 
-    func trimOverscroll() {
+    private func trimOverscroll() {
         #if DEBUG
         ScrollingCapture.debugEventSink?("trim pulled \(stitcher.isPulled)")
         #endif
