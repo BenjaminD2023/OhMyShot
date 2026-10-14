@@ -280,6 +280,10 @@ nonisolated public final class ScrollStitcher {
     /// The content is pulled past its end (or start), as far as the views tell: elastic overscroll.
     public var isPulled: Bool { overscroll.map { !$0.springing } ?? false }
 
+    /// Since the view last taken in as scrolled, a view showed nothing but a blank stretch going by, the one color the
+    /// picture ends in: the picture cannot grow until what follows the stretch comes in.
+    public var isInBlank: Bool { sinceReference.blank }
+
     /// The part of the view that moved with the content when it last scrolled, in fractions of the view (x across, y
     /// along the rows as they are on screen): its lines, and the bands across them that moved.
     public var movingPart: CGRect? {

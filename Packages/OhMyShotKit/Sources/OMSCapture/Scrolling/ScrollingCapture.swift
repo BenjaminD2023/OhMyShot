@@ -59,6 +59,9 @@ public final class ScrollingCapture {
         public var settledLength: Int
         /// The content is pulled past its end (or start): it came to its end, and the app pushes on.
         public var isPulled: Bool
+        /// A view showed nothing but a blank stretch going by since the picture last grew: it cannot grow until what
+        /// follows comes in, and the stream sends nothing while the view stays blank.
+        public var isInBlank: Bool
         /// The part of the view that moved with the content when it last scrolled, in fractions of the view: where
         /// a scroller inside the page is, when only that scrolls.
         public var moving: CGRect?
@@ -68,7 +71,8 @@ public final class ScrollingCapture {
 
         public init(
             step: ScrollStitcher.Step, axis: ScrollStitcher.Axis?, pictureWidth: Int, pictureHeight: Int, lostInARow: Int, isFull: Bool,
-            preview: CGImage?, views: Int, settledLength: Int? = nil, isPulled: Bool = false, moving: CGRect? = nil, inner: CGRect? = nil
+            preview: CGImage?, views: Int, settledLength: Int? = nil, isPulled: Bool = false, isInBlank: Bool = false, moving: CGRect? = nil,
+            inner: CGRect? = nil
         ) {
             self.step = step
             self.axis = axis
@@ -80,14 +84,31 @@ public final class ScrollingCapture {
             self.views = views
             self.settledLength = settledLength ?? (axis == .horizontal ? pictureWidth : pictureHeight)
             self.isPulled = isPulled
+            self.isInBlank = isInBlank
             self.moving = moving
             self.inner = inner
+        }
+    }
+
+    /// How the capture keeps up with the views the stream hands over: how many it took in, how long that took, and
+    /// since when the one being taken in now has been. Read from anywhere.
+    nonisolated public struct Load: Sendable {
+        public var views = 0
+        public var busy: Duration = .zero
+        public var takingSince: ContinuousClock.Instant?
+
+        public init(views: Int = 0, busy: Duration = .zero, takingSince: ContinuousClock.Instant? = nil) {
+            self.views = views
+            self.busy = busy
+            self.takingSince = takingSince
         }
     }
 
     public let source: Source
     /// Told on the main actor.
     public var onProgress: ((Progress) -> Void)?
+    /// How the capture keeps up, as it stands.
+    public var load: Load { output.load.withLock { $0 } }
     /// The stream ended on its own (the display went away, Screen Recording was turned off).
     public var onStopped: ((any Error) -> Void)?
     public private(set) var isRunning = false
@@ -259,6 +280,10 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
     private var waitingPreview = false
     /// How long taking in the views took, for the log.
     private var busy: Duration = .zero
+    /// The views taken in and the time it took, and the one being taken in, for Auto-scroll's watch on the main actor.
+    let load = Mutex(ScrollingCapture.Load())
+    /// Whether the last report said the capture was in a blank stretch.
+    private var reportedBlank = false
     /// What the capture was told since, in order: applied before the next frame is taken in, or as soon as the queue
     /// is free, whichever comes first. A stream handing over frame after frame, each taking a while, kept the queue
     /// busy for seconds, and the views were taken in as nothing told them meanwhile (not driven, so a pull past the
@@ -311,6 +336,7 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
             return
         }
         let started = ContinuousClock.now
+        load.withLock { $0.takingSince = started }
         let step = stitcher.add(base, bytesPerRow: CVPixelBufferGetBytesPerRow(pixels))
         #if DEBUG
         ScrollingCapture.debugViewSink?(base, CVPixelBufferGetBytesPerRow(pixels), step, step == .lost ? stitcher.lostBecause : "")
@@ -329,10 +355,10 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
         case .scrolled, .unchanged, .started: lostInARow = 0
         case .full: break
         }
-        // A view that changed nothing says nothing, unless it ends a run of lost ones or a scroller inside the page
-        // scrolled in it.
-        guard step != .unchanged || wasLost || stitcher.innerPart != nil else {
-            busy += .now - started
+        // A view that changed nothing says nothing, unless it ends a run of lost ones, a scroller inside the page
+        // scrolled in it, or it is the first of a blank stretch going by (often the last frame until the stretch ends).
+        guard step != .unchanged || wasLost || stitcher.innerPart != nil || stitcher.isInBlank != reportedBlank else {
+            tookIn(since: started)
             return
         }
         // The preview follows the picture as it grows, at most ten times a second; a growth that comes too soon
@@ -351,8 +377,13 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
                 }
             }
         }
-        busy += .now - started
+        tookIn(since: started)
         report(step, preview: image)
+    }
+
+    private func tookIn(since started: ContinuousClock.Instant) {
+        busy += .now - started
+        load.withLock { $0 = ScrollingCapture.Load(views: views, busy: busy) }
     }
 
     private func makePreview() -> CGImage? {
@@ -363,10 +394,11 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
 
     private func report(_ step: ScrollStitcher.Step, preview: CGImage?) {
         let size = stitcher.pictureSize
+        reportedBlank = stitcher.isInBlank
         onProgress?(ScrollingCapture.Progress(
             step: step, axis: stitcher.axis, pictureWidth: size.width, pictureHeight: size.height, lostInARow: lostInARow,
             isFull: stitcher.isFull, preview: preview, views: views, settledLength: stitcher.settledLength, isPulled: stitcher.isPulled,
-            moving: stitcher.movingPart, inner: stitcher.innerPart
+            isInBlank: stitcher.isInBlank, moving: stitcher.movingPart, inner: stitcher.innerPart
         ))
     }
 

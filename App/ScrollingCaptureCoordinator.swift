@@ -47,9 +47,10 @@ final class ScrollingCaptureCoordinator {
         var autoScrollStopped: ContinuousClock.Instant?
         var against = 0
         /// How far the capture has got (the picture but what an overscroll pulled out), whether the content is
-        /// pulled past its end, and the part of the view that last moved with it.
+        /// pulled past its end or a blank stretch is going by, and the part of the view that last moved with it.
         var settled = 0
         var isPulled = false
+        var isInBlank = false
         var moving: CGRect?
         /// Watches Auto-scroll's progress; and the places it was moved to, in fractions of the area.
         var watchdog: Task<Void, Never>?
@@ -162,6 +163,7 @@ final class ScrollingCaptureCoordinator {
         if progress.axis != nil { run.axis = progress.axis }
         run.settled = progress.settledLength
         run.isPulled = progress.isPulled
+        run.isInBlank = progress.isInBlank
         if let moving = progress.moving { run.moving = moving }
         if let inner = progress.inner {
             run.inner = inner
@@ -256,43 +258,46 @@ final class ScrollingCaptureCoordinator {
         scroller.retarget(to: CGPoint(x: frame.minX + point.x * frame.width, y: frame.maxY - point.y * frame.height))
     }
 
-    /// Every quarter second while Auto-scroll runs: since it last pushed four tenths of the area's length (however
-    /// slowly), the capture got little of that: the content stopped. Pulled past its end, it came to its end;
-    /// otherwise what took the gesture stopped, and it is moved once or twice to where the page might scroll.
+    /// Every quarter second while Auto-scroll runs: once the capture gets little of what it pushes (`AutoScrollWatch`),
+    /// the content stopped. Pulled past its end, or in a blank stretch pushed through for a long while, it came to its
+    /// end; otherwise what took the gesture stopped, and it is moved once or twice to where the page might scroll.
     private func watch(_ run: Run) {
         run.watchdog?.cancel()
         run.watchdog = Task { [weak self, weak run] in
-            var samples: [(time: ContinuousClock.Instant, posted: Double, settled: Int)] = []
+            var watch = AutoScrollWatch(extent: 0)
+            let began = ContinuousClock.now
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled, let self, let run, self.run === run, let scroller = run.scroller else { return }
                 let now = ContinuousClock.now
-                samples.append((now, scroller.posted, run.settled))
-                samples.removeAll { now - $0.time > .seconds(10) }
                 let scale = Double(run.capture.source.pixelsPerPoint)
-                let reach = extent(of: run) * scale * 0.4
-                guard let since = samples.last(where: { (scroller.posted - $0.posted) * scale >= reach }), now - since.time >= .milliseconds(750) else {
+                watch.extent = extent(of: run) * scale
+                let load = run.capture.load
+                let verdict = watch.look(AutoScrollWatch.Sample(
+                    time: now - began, pushed: scroller.posted * scale, settled: run.settled, views: load.views, busy: load.busy,
+                    taking: load.takingSince.map { now - $0 } ?? .zero, isInBlank: run.isInBlank, isPulled: run.isPulled
+                ))
+                guard case .stopped(let pushed, let got) = verdict else {
+                    if verdict == .behind { Log.capture.notice("Auto-scroll watch: the capture is behind, \(load.views, privacy: .public) views") }
                     continue
                 }
-                let pushed = (scroller.posted - since.posted) * scale
-                let got = Double(abs(run.settled - since.settled))
-                guard got < pushed * 0.15 else { continue }
-                if !run.isPulled, run.moves.count < 2 {
+                // Through a blank stretch the page itself was scrolling: the gesture is where it should be.
+                if !run.isPulled, !run.isInBlank, run.moves.count < 2 {
                     let places = [CGPoint(x: 0.5, y: 0.2), CGPoint(x: 0.5, y: 0.8), CGPoint(x: 0.2, y: 0.5), CGPoint(x: 0.8, y: 0.5)]
                     if let place = places.first(where: { place in !run.moves.contains(place) && !(run.moving?.contains(place) ?? false) }) {
                         moveAutoScroll(to: place, in: run, scroller: scroller)
-                        samples.removeAll()
+                        watch.restart()
                         continue
                     }
                 }
                 // Nothing beside the scroller inside the page scrolls: it is what there is to capture.
-                if !run.isPulled, let inner = run.inner, !run.takesInner {
+                if !run.isPulled, !run.isInBlank, let inner = run.inner, !run.takesInner {
                     run.takesInner = true
                     moveAutoScroll(to: CGPoint(x: inner.midX, y: inner.midY), in: run, scroller: scroller)
-                    samples.removeAll()
+                    watch.restart()
                     continue
                 }
-                Log.capture.notice("Auto-scroll stopped: \(Int(pushed), privacy: .public) px pushed, \(Int(got), privacy: .public) px got, pulled \(run.isPulled, privacy: .public)")
+                Log.capture.notice("Auto-scroll stopped: \(pushed, privacy: .public) px pushed, \(got, privacy: .public) px got, pulled \(run.isPulled, privacy: .public), blank \(run.isInBlank, privacy: .public)")
                 run.capture.trimOverscroll()
                 setAutoScroll(false)
                 panel.showAutoScrollStopped(.reachedEnd)

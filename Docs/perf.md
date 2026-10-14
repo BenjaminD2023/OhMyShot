@@ -1183,8 +1183,9 @@ it is scrolled): that is not a blank stretch going by, and the capture stays los
 Left as they are:
 
 - The stretch comes out only as long as a view showed it, since no view can measure it.
-- Auto-scroll stops once the capture stops growing, so it will likely stop inside a stretch taller than the view (not
-  tried live).
+- Auto-scroll stops once the capture stops growing, so it will likely stop inside a stretch taller than the view. It
+  did, live, in a stretch of 1344 pt (below); its watch now pushes on through such a stretch first ("Auto-scroll's
+  watch: a blank stretch, a capture behind").
 - On a page without a bar that stays put, the views of the blank are still reported lost, so the panel asks to scroll
   back while they go by.
 - A grid of cards alike with no blank between (made up) still skips 371 px where it lines up a row off.
@@ -1486,3 +1487,41 @@ user's was read, and real recordings will differ.
   same bytes every time; three at once (the test recording's own writer counts) gave 2.4–3× as many. It looks like
   the hardware encoder's two sessions running out and a software encoder taking over; that is not confirmed.
   `StudioExportTests` runs one test at a time for that.
+
+### Auto-scroll's watch: a blank stretch, a capture behind (2026-10-14, night)
+
+Auto-scroll's watch stopped it twice when nothing was at an end. In a blank stretch of 1344 pt, live, the view was all
+blank, the stream sent nothing, and the picture could not grow until what follows came in. On apple.com in the Debug
+app the capture fell behind the page ("738 px pushed, 100 px got"): views took 235–464 ms each, and the picture grew
+later. Both look like the page's end on what the watch looked at: pushed on, and the picture not growing.
+
+The watch is now `AutoScrollWatch` in OMSCapture, a value the coordinator tells how things stand four times a second,
+and tests tell made-up looks. Its rule is as before: since it last pushed four tenths of the area (and at least 0.75 s
+ago), the capture got less than 15% of that. Two exceptions:
+
+- **A blank stretch.** The stitcher says when a view since the picture last grew showed nothing but the stretch
+  (`isInBlank`), and the capture now reports that view. Before, it went unreported, as a view that changed nothing,
+  though it is often the last frame the stream sends until the stretch ends. The watch then waits until three of the
+  area's lengths were pushed since, and moves no gesture: the page itself was scrolling. That costs about 8.6 s at 1×
+  on a page that ends in a blank margin taller than the view, where no pull shows either, the view being all blank.
+  The elastic pull still stops it at once.
+- **A capture behind.** The capture keeps how many views it took in, how long that took, and since when it has been
+  taking in the one now. A look where the views took 50 ms or more each, or the one now has taken 150 ms so far, is not
+  counted, three looks in a row at most. Release builds took 9–15 ms for the heaviest views seen, so this should come
+  into play only in Debug builds, or for very large areas on a busy machine.
+
+Left out: slowing Auto-scroll down while the capture is behind, as the design suggested. Even a view of 400 ms at the
+top speed (2×, about 1140 px a second at 2×) lets the page move about 450 px between views, well inside a view of
+1626 px, so the views still overlap. The panel's speed slider stays as the user set it.
+
+| Check | Result |
+| --- | --- |
+| `AutoScrollWatchTests` (9): a page that keeps coming, one that stops, a stretch of 2.5 areas, one without end, a pull, a capture behind for 2 s and for good, a view under way, the gesture moved | pass |
+| The same with the blank patience at 0, then no looks let off for being behind | 2, then 5 issues |
+| The blank-stretch test, with and without a header and with a fixed button: `isInBlank` on from the first view of nothing but the stretch until the view past it, twice | pass |
+| Capture tests (OMSCapture, 116) | pass, 7 known issues |
+| The app | builds |
+| Live | not run: it needs a browser window on screen |
+
+The numbers (three areas, 50 ms, 150 ms, three looks) are first guesses: the slow capture was seen only in a Debug
+build, and the blank stretch once.

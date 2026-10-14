@@ -1236,13 +1236,21 @@ struct ScrollStitcherTests {
         var offset = 0
         Self.add(Self.view(page, at: 0, size: size, header: header, draw: draw), to: stitcher)
         var steps: [ScrollStitcher.Step] = []
+        var inBlank: [Bool] = []
         while offset < page.height - size {
             offset = min(offset + 20, page.height - size)
             steps.append(Self.add(Self.view(page, at: offset, size: size, header: header, draw: draw), to: stitcher))
+            inBlank.append(stitcher.isInBlank)
         }
         // Never two lost in a row, which would have the panel ask to scroll back: a view where what comes next has only
         // begun to come in may be waited out.
         #expect(!zip(steps, steps.dropFirst()).contains { $0 == .lost && $1 == .lost }, "\(steps)")
+        // In a blank stretch from the first view of nothing but it until the view past it, for Auto-scroll's watch;
+        // twice, one stretch after the other.
+        let runs = zip(inBlank, [false] + inBlank).filter { $0 && !$1 }.count
+        #expect(runs == 2, "\(inBlank)")
+        #expect(zip(steps, inBlank).allSatisfy { step, blank in !blank || step == .unchanged || step == .lost }, "\(steps) \(inBlank)")
+        #expect(inBlank.last == false)
         let picture = Self.pixels(of: try #require(stitcher.picture()))
         var at = header
         for start in [0, block + blank, 2 * (block + blank)] {
