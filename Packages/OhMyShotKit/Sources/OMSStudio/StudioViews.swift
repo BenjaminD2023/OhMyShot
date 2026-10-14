@@ -196,7 +196,7 @@ struct TransportBar: View {
     }
 }
 
-/// The inspector: the background, the frame, the cursor, the camera, zooms, and keys.
+/// The inspector: the background, the frame, the cursor, the camera, zooms, keys, and the movie's quality.
 struct StudioInspector: View {
     @Bindable var document: StudioDocument
     let swatches: [StudioWindowController.Swatch]
@@ -368,6 +368,24 @@ struct StudioInspector: View {
                 } header: {
                     Text("Keys", bundle: .module)
                 }
+            }
+
+            Section {
+                Picker(selection: Binding(get: { document.project.quality }, set: { document.setQuality($0) })) {
+                    Text("Smaller file", bundle: .module).tag(StudioProject.Quality.smaller)
+                    Text("Standard", bundle: .module).tag(StudioProject.Quality.standard)
+                    Text("Best quality", bundle: .module).tag(StudioProject.Quality.best)
+                } label: {
+                    Text("Quality", bundle: .module)
+                }
+                // Follows the quality, the shape and padding, and the cuts; unknown when the recording's size is.
+                if let bytes = document.estimatedMovieByteCount {
+                    Text(verbatim: StudioExporter.estimateDescription(byteCount: bytes))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Movie", bundle: .module)
             }
         }
         .formStyle(.grouped)

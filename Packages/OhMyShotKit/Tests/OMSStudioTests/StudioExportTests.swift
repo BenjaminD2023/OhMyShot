@@ -1,9 +1,14 @@
 import AVFoundation
 import CoreImage
+import CoreText
 import Foundation
 import Testing
+import VideoToolbox
 @testable import OMSStudio
 
+/// One at a time: with a third encoder session at once the same settings made movies two or three times as
+/// large, which the tests that count bytes would measure (Docs/perf.md, "Studio movie quality").
+@Suite(.serialized)
 struct StudioExportTests {
     /// A movie of `seconds` at 30 fps, 320 × 200, its gray stepping up each second.
     private static func movie(seconds: Int) async throws -> URL {
@@ -154,6 +159,122 @@ struct StudioExportTests {
         let extensions = CMFormatDescriptionGetExtensions(format) as? [String: Any] ?? [:]
         #expect(extensions[kCVImageBufferYCbCrMatrixKey as String] as? String == kCVImageBufferYCbCrMatrix_ITU_R_709_2 as String)
         #expect(extensions[kCVImageBufferTransferFunctionKey as String] as? String == kCVImageBufferTransferFunction_ITU_R_709_2 as String)
+    }
+
+    /// Four seconds of 640 × 400 at 30 fps: a page of text scrolling 16 pixels a frame, encoded as the recorder
+    /// encodes (constant quality 0.6, real time, no B-frames, a key frame every two seconds), so it weighs what a
+    /// recording of text does. Flat colors weigh the same at every quality.
+    private static func scrollingText() async throws -> URL {
+        let width = 640, height = 400, fps = 30
+        let url = FileManager.default.temporaryDirectory.appending(path: "OMSStudioTests-\(UUID().uuidString).mov")
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: width, AVVideoHeightKey: height,
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2, AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+            ],
+            AVVideoCompressionPropertiesKey: [
+                AVVideoQualityKey: 0.6, AVVideoExpectedSourceFrameRateKey: fps, AVVideoMaxKeyFrameIntervalDurationKey: 2,
+                AVVideoAllowFrameReorderingKey: false, kVTCompressionPropertyKey_RealTime as String: true,
+            ],
+        ])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height,
+        ])
+        writer.add(input)
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+
+        // Three screens of lines of words, drawn once.
+        let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        let sRGB = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let pageContext = try #require(CGContext(
+            data: nil, width: width, height: height * 3, bitsPerComponent: 8, bytesPerRow: 0, space: sRGB, bitmapInfo: bitmapInfo
+        ))
+        pageContext.setFillColor(CGColor(red: 0.97, green: 0.97, blue: 0.97, alpha: 1))
+        pageContext.fill(CGRect(x: 0, y: 0, width: width, height: height * 3))
+        let words = ["screen", "capture", "studio", "movie", "quality", "export", "pointer", "zoom", "frame", "cursor", "the", "of", "and", "a", "to", "in", "is", "that", "for", "with"]
+        let attributes: [NSAttributedString.Key: Any] = [
+            kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName("Helvetica" as CFString, 22, nil),
+            kCTForegroundColorAttributeName as NSAttributedString.Key: CGColor(red: 0.1, green: 0.1, blue: 0.12, alpha: 1),
+        ]
+        var seed: UInt64 = 12345
+        var baseline = Double(height * 3) - 30
+        while baseline > 20 {
+            var line = ""
+            while line.count < 64 {
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                line += words[Int(seed >> 33) % words.count] + " "
+            }
+            pageContext.textPosition = CGPoint(x: 24, y: baseline)
+            CTLineDraw(CTLineCreateWithAttributedString(NSAttributedString(string: line, attributes: attributes)), pageContext)
+            baseline -= 32
+        }
+        let page = try #require(pageContext.makeImage())
+
+        for frame in 0..<(4 * fps) {
+            while !input.isReadyForMoreMediaData { try await Task.sleep(for: .milliseconds(1)) }
+            var buffer: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
+            let pixels = try #require(buffer)
+            CVPixelBufferLockBaseAddress(pixels, [])
+            let context = try #require(CGContext(
+                data: CVPixelBufferGetBaseAddress(pixels), width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: CVPixelBufferGetBytesPerRow(pixels), space: sRGB, bitmapInfo: bitmapInfo
+            ))
+            context.draw(page, in: CGRect(x: 0, y: -height * 2 + frame * 16 % (height * 2), width: width, height: height * 3))
+            CVPixelBufferUnlockBaseAddress(pixels, [])
+            adaptor.append(pixels, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(fps)))
+        }
+        input.markAsFinished()
+        await writer.finishWriting()
+        return url
+    }
+
+    /// The scrolling text exported at each quality with `project`: the movie's bytes at each, and the bytes the
+    /// estimate gives for each.
+    private static func exportedAtEveryQuality(
+        _ source: URL, project: StudioProject
+    ) async throws -> [StudioProject.Quality: (made: Int, estimated: Int?)] {
+        let size = CGSize(width: 640, height: 400)
+        let sourceBytes = try #require(try source.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        var results: [StudioProject.Quality: (made: Int, estimated: Int?)] = [:]
+        for quality in StudioProject.Quality.allCases {
+            var project = project
+            project.quality = quality
+            let output = FileManager.default.temporaryDirectory.appending(path: "OMSStudioTests-\(UUID().uuidString).mp4")
+            defer { try? FileManager.default.removeItem(at: output) }
+            let telemetry = StudioTelemetry(width: 320, height: 200, pixelsPerPoint: 2)
+            let renderer = StudioRenderer(telemetry: telemetry, project: project, duration: 4, recordingSize: size, background: nil)
+            let composition = try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts)
+            let movie = try await StudioExporter.export(composition, to: output)
+            let estimate = StudioExporter.estimatedByteCount(
+                sourceByteCount: sourceBytes, sourceSize: size, sourceDuration: 4, canvas: renderer.layout.canvas, keptDuration: composition.duration,
+                quality: quality
+            )
+            results[quality] = (movie.byteCount, estimate)
+        }
+        return results
+    }
+
+    @Test func aBetterQualityMakesALargerMovieOfTheSamePicture() async throws {
+        let source = try await Self.scrollingText()
+        defer { try? FileManager.default.removeItem(at: source) }
+        let made = try await Self.exportedAtEveryQuality(source, project: StudioProject()).mapValues { $0.made }
+        let smaller = try #require(made[.smaller]), standard = try #require(made[.standard]), best = try #require(made[.best])
+        #expect(smaller < standard && standard < best, "\(smaller), \(standard), \(best) bytes")
+    }
+
+    @Test func theEstimateIsCloseToTheMovieMadeAtEveryQuality() async throws {
+        let source = try await Self.scrollingText()
+        defer { try? FileManager.default.removeItem(at: source) }
+        // The default frame around it.
+        for (quality, result) in try await Self.exportedAtEveryQuality(source, project: StudioProject()) {
+            let estimate = try #require(result.estimated)
+            #expect(Double(estimate) > Double(result.made) * 0.75 && Double(estimate) < Double(result.made) * 1.25, "\(quality): \(estimate) estimated, \(result.made) made")
+        }
     }
 
     @Test func aClicksRingShowsOnAWhitePage() throws {

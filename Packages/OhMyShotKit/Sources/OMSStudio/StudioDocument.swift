@@ -15,6 +15,8 @@ public final class StudioDocument {
     /// The recording's length in seconds, and its size in pixels.
     public let duration: Double
     public let recordingSize: CGSize
+    /// The recording's file size in bytes; 0 when it can't be read.
+    public let sourceByteCount: Int
     /// Where the project is kept: its settings are saved here after each change.
     public let folder: URL
     /// The camera's movie, recorded beside the recording; nil when none was.
@@ -24,7 +26,7 @@ public final class StudioDocument {
         didSet {
             guard project != oldValue else { return }
             registerUndo(back: oldValue)
-            projectChanged()
+            projectChanged(from: oldValue)
         }
     }
 
@@ -78,6 +80,7 @@ public final class StudioDocument {
         self.project = project
         self.duration = duration
         self.recordingSize = recordingSize
+        sourceByteCount = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         self.folder = folder
         self.background = background
         let camera = folder.appending(path: StudioFiles.camera)
@@ -190,6 +193,23 @@ public final class StudioDocument {
         change(named: on ? String(localized: "Zoom on Clicks", bundle: .module) : String(localized: "No Zoom on Clicks", bundle: .module)) {
             project = changed
         }
+    }
+
+    /// Sets how closely the movie is encoded, as one step that Undo names.
+    public func setQuality(_ quality: StudioProject.Quality) {
+        change(named: String(localized: "Change Quality", bundle: .module)) {
+            project.quality = quality
+        }
+    }
+
+    /// About how many bytes the movie will be as the project is now: its canvas at the export's size, the
+    /// recording's cuts left out. Nil when the recording's size isn't known.
+    public var estimatedMovieByteCount: Int? {
+        let kept = StudioComposition.keptSegments(duration: duration, cuts: project.cuts).reduce(0) { $0 + $1.duration }
+        return StudioExporter.estimatedByteCount(
+            sourceByteCount: sourceByteCount, sourceSize: recordingSize, sourceDuration: duration,
+            canvas: StudioRenderer.layout(recordingSize: recordingSize, project: project).canvas, keptDuration: kept, quality: project.quality
+        )
     }
 
     /// The zooms the clicks and the typing place; empty when the recording holds no two clicks or keys close
@@ -351,10 +371,13 @@ public final class StudioDocument {
         hasUnexportedChanges = false
     }
 
-    private func projectChanged() {
+    private func projectChanged(from old: StudioProject) {
         hasUnexportedChanges = true
         save()
-        scheduleComposition()
+        // The preview isn't encoded, so the movie's quality is no reason to film it again.
+        var seen = project
+        seen.quality = old.quality
+        if seen != old { scheduleComposition() }
     }
 
     private func scheduleComposition() {

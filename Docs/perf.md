@@ -1446,3 +1446,43 @@ same way (the sweeps lasting 3 s, the jump a single 300 pt step at 1 s), and are
   after the 2500 pt/s flick at 100% and 0.01 pt at the default 50%. The fixed spring never passes it.
 - **A jump in the pointer counts as speed**: a 300 pt step in one reading (a gap in the readings) leaves the
   cursor 141 pt short after 0.1 s and 19 pt after 0.3 s at 100%, where the fixed spring had 251 pt and 117 pt.
+
+### Studio movie quality (2026-10-14, night)
+
+Debug build, in `swift test` (`StudioExportTests`, and a sweep run by hand with the encoder's quality set to each
+value), on made-up media and the real `StudioExporter`: a page of text (Helvetica 22 pt, 64 characters a line)
+scrolling 480 px a second, written as the recorder writes (H.264, constant quality 0.6, real time, no
+B-frames, a key frame every 2 s), 4 s of it; exported white around it, once with no frame (no padding, shadow, or
+corners) and once with the default one. H.264 through VideoToolbox on this Mac, a rerun giving the same bytes. Nothing of the
+user's was read, and real recordings will differ.
+
+| Measurement | Result |
+| --- | --- |
+| Recording: 640×400 at 30 fps / 1280×800 at 60 fps | 253 KB / 416 KB |
+| Export, no frame, 640×400 at 0.3 / 0.45 / 0.6 / 0.8 / 0.9 / 1.0 | 119 / 172 / 261 / 462 / 977 / 1,205 KB |
+| Export, no frame, 1280×800 at 0.3 / 0.45 / 0.6 / 0.8 / 0.9 / 1.0 | 218 / 303 / 472 / 789 / 1,804 / 2,252 KB |
+| Export, default frame (704×464), 640×400 at 0.45 / 0.6 / 0.8 | 204 / 285 / 496 KB |
+| Against 0.6: 0.45 / 0.8 (both recordings) | 0.64–0.66× / 1.67–1.77× |
+| Ten exports at 0.6 (five canvases at both sizes), against the estimate's model with Standard's factor at 1 | 1.00× on average (0.72–1.30×) |
+| Exports at once at 0.6, default frame: one / two / three | 285 KB / 285 KB each / 687, 858, and 756 KB |
+
+- **Quality is cheap to lose and dear to gain.** Smaller File (0.45) weighs two thirds of Standard (0.6) and Best
+  Quality (0.8) seven tenths more; past 0.8 each step costs more than the last (0.9 is 3.7–3.8× Standard, 1.0 is
+  4.6–4.8×), so 0.8 is where Best stops. `StudioExporter.sizeFactor` is these ratios: 0.65, 1, and 1.7.
+- **The estimate is the recording's bytes times the share kept times the square root of the pixels the movie has
+  for each of the recording's** (`StudioExporter.estimatedByteCount`). At the default frame it is 1.00× the movie
+  at Standard, 0.91× at Smaller File, and 0.98× at Best Quality (`theEstimateIsCloseToTheMovieMadeAtEveryQuality`
+  holds it within 25%). The square root over-estimates tall and square canvases (9:16 came out at 0.72–0.94× of it,
+  1:1 at 0.88–0.97×) and under-estimates a 25% padding at 1280×800 (1.30×): the background costs less than a
+  recording's pixels, though not nothing.
+- **A short movie saves less than the share cut.** Two seconds of four cut away left 62% of the recording's bytes,
+  not 50%: each kept stretch brings its own key frame. For recordings of minutes the share is what counts.
+- **Noisy video and HEVC recordings are off, both ways.** A noisy 640×400 picture weighed 0.48× its recording at
+  Standard, since the recorder's real-time encoder spends more on noise than the export's, and an H.264 export of
+  an HEVC recording (any side past 4096, such as the built-in display) 1.48× against 1.14× for H.264 to H.264, so
+  the estimate runs about twice high for the first and a quarter low for the second. The document knows neither
+  the recording's codec nor what is in it, so neither is corrected.
+- **A third encoder session at once makes far larger movies.** Alone or two at a time the same settings gave the
+  same bytes every time; three at once (the test recording's own writer counts) gave 2.4–3× as many. It looks like
+  the hardware encoder's two sessions running out and a software encoder taking over; that is not confirmed.
+  `StudioExportTests` runs one test at a time for that.

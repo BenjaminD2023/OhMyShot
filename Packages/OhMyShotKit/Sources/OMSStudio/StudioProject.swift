@@ -32,6 +32,14 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         }
     }
 
+    /// How closely the movie is encoded: a smaller file or a sharper picture. Standard is the quality the
+    /// recording itself is made at.
+    public enum Quality: String, Codable, CaseIterable, Sendable {
+        case smaller
+        case standard
+        case best
+    }
+
     /// A stretch of the movie drawn larger, following the pointer.
     public struct Zoom: Codable, Equatable, Identifiable, Sendable {
         public var id: UUID
@@ -158,12 +166,15 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
     public var camera: Camera
     /// The picture blurs along its way while the camera zooms and pans, as a film camera's would.
     public var motionBlur: Bool
+    /// How closely the exported movie is encoded.
+    public var quality: Quality
 
     /// The defaults are the annotation editor's background card's: the same padding, corners, and shadow.
     public init(
         background: Background = .gradient("sky"), padding: Double = 0.08, cornerRadius: Double = 12, shadow: Double = 0.5,
         aspect: Aspect = .auto, cursor: Cursor = Cursor(), zooms: [Zoom] = [], cuts: [ClosedRange<Double>] = [], showsKeys: Bool = true,
-        keystrokeMode: KeystrokeMode = .all, automaticZooms: Bool = true, camera: Camera = Camera(), motionBlur: Bool = true
+        keystrokeMode: KeystrokeMode = .all, automaticZooms: Bool = true, camera: Camera = Camera(), motionBlur: Bool = true,
+        quality: Quality = .standard
     ) {
         self.background = background
         self.padding = padding
@@ -178,10 +189,11 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         self.automaticZooms = automaticZooms
         self.camera = camera
         self.motionBlur = motionBlur
+        self.quality = quality
     }
 
     private enum CodingKeys: String, CodingKey {
-        case background, padding, cornerRadius, shadow, aspect, cursor, zooms, cuts, showsKeys, keystrokeMode, automaticZooms, camera, motionBlur
+        case background, padding, cornerRadius, shadow, aspect, cursor, zooms, cuts, showsKeys, keystrokeMode, automaticZooms, camera, motionBlur, quality
     }
 
     /// A project saved before a setting existed takes its default.
@@ -201,5 +213,6 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         automaticZooms = try container.decodeIfPresent(Bool.self, forKey: .automaticZooms) ?? defaults.automaticZooms
         camera = try container.decodeIfPresent(Camera.self, forKey: .camera) ?? defaults.camera
         motionBlur = try container.decodeIfPresent(Bool.self, forKey: .motionBlur) ?? defaults.motionBlur
+        quality = try container.decodeIfPresent(Quality.self, forKey: .quality) ?? defaults.quality
     }
 }
