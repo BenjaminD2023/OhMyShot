@@ -8,9 +8,12 @@ import Foundation
 /// long while, the stream dropping the frames between, the picture growing later), and a blank stretch taller than
 /// the view going by (the stream sends nothing while the view stays blank, and the picture grows only once what
 /// follows comes in). A stretch is waited out over three of the area's lengths pushed; a capture behind, over three
-/// such looks in a row. The content pulled past its end ends it at once.
+/// such looks in a row. And an app may stand still a moment (a page busy drawing, live: 1.1 s, then on at once): the
+/// first look that saw little is only quiet, and the watch looks once more afresh; the content came no further when
+/// the next sees little too. The content pulled past its end ends it at once.
 ///
-/// The numbers are first guesses: the slow capture was seen only in a Debug build, and the blank stretch once.
+/// The numbers are first guesses: the slow capture was seen only in a Debug build, the blank stretch and the app
+/// standing still once each.
 nonisolated public struct AutoScrollWatch: Sendable {
     /// How things stood at one look.
     public struct Sample: Sendable {
@@ -48,6 +51,9 @@ nonisolated public struct AutoScrollWatch: Sendable {
         case going
         /// The capture got little, but it is behind the page: not counted.
         case behind
+        /// The capture got little of what was pushed, a first time: what took the gesture may have stopped, or the app
+        /// stood still a moment. The watch looks once more afresh.
+        case quiet(pushed: Int, got: Int)
         /// The content came no further: pushed so many pixels, the capture got so many.
         case stopped(pushed: Int, got: Int)
     }
@@ -73,6 +79,8 @@ nonisolated public struct AutoScrollWatch: Sendable {
     /// How far Auto-scroll had pushed when the capture was first seen in a blank stretch.
     private var blankFrom: Double?
     private var behindInARow = 0
+    /// The last look that counted saw little.
+    private var wasQuiet = false
 
     public init(extent: Double) {
         self.extent = extent
@@ -90,6 +98,7 @@ nonisolated public struct AutoScrollWatch: Sendable {
         let got = Double(abs(sample.settled - since.settled))
         guard got < pushed * Self.little else {
             behindInARow = 0
+            wasQuiet = false
             return .going
         }
         // A blank stretch going by: nothing to see grow until what follows comes in. Pulled past its end, the
@@ -99,10 +108,15 @@ nonisolated public struct AutoScrollWatch: Sendable {
         }
         let views = sample.views - since.views
         let behind = views > 0 && (sample.busy - since.busy) / views >= Self.slowView || sample.taking >= Self.stuckView
-        if behind, behindInARow < Self.behindLooks {
+        if behind, !sample.isPulled, behindInARow < Self.behindLooks {
             behindInARow += 1
             samples.removeAll()
             return .behind
+        }
+        guard sample.isPulled || wasQuiet else {
+            wasQuiet = true
+            samples.removeAll()
+            return .quiet(pushed: Int(pushed), got: Int(got))
         }
         return .stopped(pushed: Int(pushed), got: Int(got))
     }
@@ -111,5 +125,6 @@ nonisolated public struct AutoScrollWatch: Sendable {
     public mutating func restart() {
         samples.removeAll()
         behindInARow = 0
+        wasQuiet = false
     }
 }

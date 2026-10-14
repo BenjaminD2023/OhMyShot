@@ -71,6 +71,8 @@ public final class ScrollingCapture {
         /// A scroller inside the page that took the gesture making the app scroll, and alone scrolled in the view just
         /// taken in, which was left out for it: where it is, in fractions of the view.
         public var inner: CGRect?
+        /// When the report was made, on the stream's queue.
+        public var made = ContinuousClock.now
 
         public init(
             step: ScrollStitcher.Step, axis: ScrollStitcher.Axis?, pictureWidth: Int, pictureHeight: Int, lostInARow: Int, isFull: Bool,
@@ -94,16 +96,26 @@ public final class ScrollingCapture {
     }
 
     /// How the capture keeps up with the views the stream hands over: how many it took in, how long that took, and
-    /// since when the one being taken in now has been. Read from anywhere.
+    /// since when the one being taken in now has been; and how far it got, as `Progress` tells, as of the last view.
+    /// Read from anywhere, as it stands: the reports on the main actor may come late, behind others waiting there.
     nonisolated public struct Load: Sendable {
         public var views = 0
         public var busy: Duration = .zero
         public var takingSince: ContinuousClock.Instant?
+        public var settledLength = 0
+        public var isPulled = false
+        public var isInBlank = false
 
-        public init(views: Int = 0, busy: Duration = .zero, takingSince: ContinuousClock.Instant? = nil) {
+        public init(
+            views: Int = 0, busy: Duration = .zero, takingSince: ContinuousClock.Instant? = nil, settledLength: Int = 0, isPulled: Bool = false,
+            isInBlank: Bool = false
+        ) {
             self.views = views
             self.busy = busy
             self.takingSince = takingSince
+            self.settledLength = settledLength
+            self.isPulled = isPulled
+            self.isInBlank = isInBlank
         }
     }
 
@@ -388,7 +400,12 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
 
     private func tookIn(since started: ContinuousClock.Instant) {
         busy += .now - started
-        load.withLock { $0 = ScrollingCapture.Load(views: views, busy: busy) }
+        publishLoad()
+    }
+
+    private func publishLoad() {
+        let settled = stitcher.settledLength, pulled = stitcher.isPulled, blank = stitcher.isInBlank
+        load.withLock { $0 = ScrollingCapture.Load(views: views, busy: busy, settledLength: settled, isPulled: pulled, isInBlank: blank) }
     }
 
     private func makePreview() -> CGImage? {
@@ -446,6 +463,7 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
         #endif
         guard !madePicture, stitcher.isPulled else { return }
         stitcher.trimOverscroll()
+        publishLoad()
         report(.unchanged, preview: views > 0 ? makePreview() : nil)
     }
 

@@ -1571,3 +1571,42 @@ worse against their pages); with it, all 206 come out byte for byte.
 The 37 views lost in the blank stretch of 1344 pt (above) came from the corners changing while the views showed nothing
 but the stretch; filled, they should no longer be. Expected, not checked: that run's frames were not kept.
 
+### Live runs with the corners, and Auto-scroll's watch again (2026-10-14, late night)
+
+The Debug app at 8887453 and after, through the whole flow (`scroll-e2e-flow`: the real coordinator, Auto-scroll and
+panel) on a throwaway Chrome window, 1100 × 813 pt in view at 2×. Every run measured the window's corners from its own
+picture, the call a window chosen with Space makes (bottom corners 48 rows, as the frames' alpha has them), and every
+picture came out without a clear pixel.
+
+| Run | What happened | Cause, and what changed |
+| --- | --- | --- |
+| The 1344 pt blank stretch, first | stopped inside the stretch, 8064 rows | two views in a row lost where the next block began: a line of it at the view's foot, the page standing still a frame while the scroll bar's knob was redrawn. Now a view of the stretch and a line or two of what follows is unchanged, as one of the stretch alone is (`aLineOrTwoOfWhatFollowsTheStretchIsWaitedOutHoweverManyViewsShowIt`; the run's frames replay with none lost) |
+| The same, second | stopped by the watch before the stretch, 6736 rows | no frame for 1.1 s, then the page 676 px on at once: the page stood still drawing (the Debug app writing every view as PNG beside it). Now the first look that sees little is only quiet, and the watch looks once more afresh before it stops; the pull still stops it at once |
+| The same, third | stopped by the watch twice over, 6464 rows | the capture had taken views 20 px apart all along (its replay grows steadily), but the watch read how far it got from the reports on the main actor, and saw nothing come for 1.3 s. Why those came late is not established. Now the watch reads the capture as it stands (`ScrollingCapture.Load`: how far it got, pulled, in a blank stretch), and a report more than 0.5 s late is logged |
+| The same, fourth | through to the end: 15817 rows, the stretch kept as 1618 rows, what follows in order, stopped by the pull | no report came late; one quiet look as the stretch ended moved the gesture once, to no harm |
+| The docs page with a banner | 12062 rows for a page of 12062, its ruler unbroken from 0 to 6022, stopped by the pull | |
+| MDN, scrolled 2500 px from its end before the capture | "driven" told before the second view (after about 250 before the mailbox), the pull seen and stopped by, 6627 rows, the contents list whole; the run's frames replay to the live picture pixel for pixel | |
+
+A review of the two commits by three agents (two reading, one trying to refute) found two things, both checked: a
+capture behind was let off though the pull already showed the end (now the pull wins:
+`pulledPastTheEndStopsAtOnceThoughTheCaptureIsBehind`), and the end-to-end check measured the corners on the area
+before it was cut to its display.
+
+The checks themselves: the flow's steps now carry when each view was taken in, and how long writing the views held
+the capture up. The end-to-end check over the screen (not the window alone), and its real Auto-scroll, which addresses
+whatever is under the area's middle, now run only with the check's own window in front there: a run with the user's
+own browser in front started nothing only because no frame came.
+
+Not run: a window chosen with Space over the real desktop. The user's own windows were in front of the check's.
+
+Left as it is: on MDN the contents list's heading ("In this article") loses its lowest 7 rows, as the stitcher before
+this round did too. The heading sits just under the header that sticks; its upper rows are the first view's, and the
+rows below are written from the second view as lines it agrees on, which there show the blank above the list where it
+stuck.
+
+| Check | Result |
+| --- | --- |
+| The 206 frame sets | byte for byte |
+| 120 randomized forum walks | 0 rows off |
+| Capture tests (OMSCapture, 124), Studio (55) | pass, 7 known issues |
+

@@ -1264,6 +1264,33 @@ struct ScrollStitcherTests {
         #expect(picture.count / width == at, "\(picture.count / width) rows, the last block ending at \(at)")
     }
 
+    @Test func aLineOrTwoOfWhatFollowsTheStretchIsWaitedOutHoweverManyViewsShowIt() throws {
+        // Through a blank stretch, the page standing still for a few frames just as the next block begins to come in
+        // (a scroll bar's knob redrawn meanwhile, live): each of those views shows the stretch and a line or two of the
+        // block, too little to line up with. Unchanged, never lost (two lost in a row stop Auto-scroll), and the block
+        // is taken in once enough of it has come in.
+        let width = 400, size = 300, block = 600, blank = 700
+        let page = Self.blankStretches(width: width, block: block, blank: blank)
+        let stitcher = Self.stitcher(width: width, height: size)
+        var offset = 0
+        var steps = [Self.add(Self.view(page, at: 0, size: size), to: stitcher)]
+        // On until a few lines of the next block show at the view's foot: the block's first marks begin 6 rows in.
+        let edge = block + blank - size + 6 + 4
+        while offset < edge {
+            offset = min(offset + 20, edge)
+            steps.append(Self.add(Self.view(page, at: offset, size: size), to: stitcher))
+        }
+        for _ in 0..<3 { steps.append(Self.add(Self.view(page, at: offset, size: size), to: stitcher)) }
+        while offset < block + blank {
+            offset += 20
+            steps.append(Self.add(Self.view(page, at: offset, size: size), to: stitcher))
+        }
+        #expect(!steps.contains(.lost), "\(steps)")
+        let picture = Self.pixels(of: try #require(stitcher.picture()))
+        let found = Self.find(block + blank ..< block + blank + 200, of: page, in: picture, from: block)
+        #expect(found != nil, "the next block is not there: \(stitcher.summary)")
+    }
+
     @Test func whatCouldNotBePlacedIsNeverPassedOverForTheBlankStretchAfterIt() throws {
         // Into the first blank stretch, a view of something else altogether (as a picture full of the view for a
         // moment), then the blank, then the next block coming in: taken in past the blank, it would leave out whatever

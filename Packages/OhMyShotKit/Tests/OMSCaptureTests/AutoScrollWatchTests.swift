@@ -52,12 +52,31 @@ struct AutoScrollWatchTests {
         #expect(Self.watch(seconds: 30) { _, capture in capture.keepsUp() }.isEmpty)
     }
 
-    @Test func aPageThatStopsIsStoppedOnceFourTenthsOfTheAreaArePushedOnto() {
-        // The page ends at 2 s: no more views, the picture as it is. Four tenths of the area take 1.15 s to push.
+    @Test func aPageThatStopsIsStoppedOnceFourTenthsOfTheAreaArePushedOntoTwice() {
+        // The page ends at 2 s: no more views, the picture as it is. Four tenths of the area take 1.15 s to push: quiet
+        // at the first look that could tell, stopped at the next, afresh.
         let told = Self.watch(seconds: 10) { time, capture in if time <= 2 { capture.keepsUp() } }
+        #expect(told.first.map { $0.time > 3 && $0.time <= 3.5 && $0.verdict == .quiet(pushed: 710, got: 0) } == true, "\(told)")
         let stopped = Self.stoppedAt(told)
-        #expect(stopped.map { $0 > 3 && $0 <= 3.5 } == true, "\(told)")
-        #expect(told.count == 1, "\(told)")
+        #expect(stopped.map { $0 > 4.5 && $0 <= 5 } == true, "\(told)")
+        #expect(told.count == 2, "\(told)")
+    }
+
+    @Test func anAppStandingStillAMomentIsNoEnd() {
+        // Live: the page stood still 1.1 s, busy drawing, then caught up with all it was pushed at once. Quiet once,
+        // never stopped.
+        var owed = 0
+        let told = Self.watch(seconds: 12) { time, capture in
+            if time > 2, time <= 3.25 {
+                owed += Self.push
+            } else {
+                capture.settled += owed
+                owed = 0
+                capture.keepsUp()
+            }
+        }
+        #expect(Self.stoppedAt(told) == nil, "\(told)")
+        #expect(told.contains { if case .quiet = $0.verdict { true } else { false } }, "\(told)")
     }
 
     @Test func aBlankStretchIsPushedThroughBeforeItIsTakenForTheEnd() {
@@ -82,7 +101,7 @@ struct AutoScrollWatchTests {
         }
         let stopped = Self.stoppedAt(told)
         let patience = 2.25 + 3 * Self.extent / 568
-        #expect(stopped.map { $0 >= patience && $0 < patience + 0.5 } == true, "\(told), patience to \(patience)")
+        #expect(stopped.map { $0 >= patience + 1.15 && $0 < patience + 2 } == true, "\(told), patience to \(patience)")
     }
 
     @Test func pulledPastTheEndStopsAtOnceThoughBlank() {
@@ -95,6 +114,22 @@ struct AutoScrollWatchTests {
                 capture.isPulled = true
             }
         }
+        #expect(Self.stoppedAt(told).map { $0 <= 3.5 } == true, "\(told)")
+    }
+
+    @Test func pulledPastTheEndStopsAtOnceThoughTheCaptureIsBehind() {
+        // A slow build at the page's end: the pull seen, and the views of it creeping still slow to take in. The pull is
+        // the end; it is not let off as a capture behind.
+        let told = Self.watch(seconds: 12) { time, capture in
+            if time <= 2 {
+                capture.keepsUp()
+            } else {
+                capture.isPulled = true
+                capture.views += 1
+                capture.busy += .milliseconds(250)
+            }
+        }
+        #expect(!told.contains { $0.verdict == .behind }, "\(told)")
         #expect(Self.stoppedAt(told).map { $0 <= 3.5 } == true, "\(told)")
     }
 
@@ -150,7 +185,8 @@ struct AutoScrollWatchTests {
     }
 
     @Test func movingTheGestureStartsTheWatchAfresh() {
-        // Stopped at 2 s; the gesture moved at the stop: the watch waits the whole while again before it tells.
+        // Stopped at 2 s; the gesture moved at the first quiet look: the watch waits the whole while again before it
+        // tells, and tells quiet again, not stopped.
         var watch = AutoScrollWatch(extent: Self.extent)
         var settled = 0
         var first: Double?
@@ -162,7 +198,7 @@ struct AutoScrollWatchTests {
                 time: .milliseconds(look * 250), pushed: Double(look * Self.push), settled: settled, views: min(look, 8) * 15,
                 busy: .milliseconds(min(look, 8) * 150)
             ))
-            guard case .stopped = verdict else { continue }
+            guard case .quiet = verdict else { continue }
             if first == nil {
                 first = time
                 watch.restart()

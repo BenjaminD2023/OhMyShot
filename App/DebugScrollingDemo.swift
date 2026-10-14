@@ -92,6 +92,15 @@ enum DebugScrollingDemo {
                 Log.app.notice("debug.scroll-e2e unavailable: the window's middle is on no display")
                 return
             }
+            // The screen over the area, or the real Auto-scroll addressed to whatever is under the area's middle: only
+            // with the check's own window in front there, never over or into a window of the user's.
+            if !window || driver == "auto" {
+                let front = WindowCatalog.target(at: CGPoint(x: area.midX, y: area.midY), in: WindowCatalog.snapshot(layout: layout, excludingPID: getpid()))
+                guard front?.id == target.windowID else {
+                    Log.app.notice("debug.scroll-e2e unavailable: the check's window is not in front at the area's middle (\(front?.ownerName ?? "nothing", privacy: .public) is)")
+                    return
+                }
+            }
             var source: ScrollingCapture.Source
             if window {
                 let filter = SCContentFilter(desktopIndependentWindow: target)
@@ -105,7 +114,7 @@ enum DebugScrollingDemo {
                 source = try await capturer.scrollingSource(for: area, on: display)
             }
             // As a window chosen with Space: its rounded corners the area shares, filled.
-            source.corners = await capturer.windowCorners(for: area, on: display, layout: layout, windowID: target.windowID)
+            source.corners = await capturer.windowCorners(for: source.frame, on: display, layout: layout, windowID: target.windowID)
 
             // Every view as PNG, written off the stream's queue, at most 8 at a time.
             let writing = DispatchQueue(label: "OhMyShot.scroll-e2e", qos: .utility, attributes: .concurrent)
@@ -246,6 +255,9 @@ enum DebugScrollingDemo {
             let slots = DispatchSemaphore(value: 8)
             let space = ScrollingCapture.colorSpace
             let width = source.pixelWidth, height = source.pixelHeight
+            // When each view was taken in, and how long writing the views held the capture up, to tell a page standing
+            // still from the check itself.
+            let began = ContinuousClock.now
             ScrollingCapture.debugViewSink = { @Sendable base, bytesPerRow, step, why in
                 let index = record.views
                 record.views += 1
@@ -256,11 +268,14 @@ enum DebugScrollingDemo {
                 case .lost: "LOST (\(why))"
                 case .full: "full"
                 }
-                record.steps.append("\(index) \(name)")
+                record.steps.append("\(index) \(name) t=\(Int((ContinuousClock.now - began) / .milliseconds(1)))")
                 guard dumps else { return }
                 nonisolated(unsafe) let buffer = UnsafeMutableRawPointer.allocate(byteCount: width * height * 4, alignment: 64)
                 for row in 0..<height { memcpy(buffer + row * width * 4, base + row * bytesPerRow, width * 4) }
+                let waiting = ContinuousClock.now
                 slots.wait()
+                let waited = ContinuousClock.now - waiting
+                if waited > .milliseconds(20) { record.steps.append("# view \(index) waited \(Int(waited / .milliseconds(1))) ms to be written") }
                 group.enter()
                 writing.async {
                     defer { buffer.deallocate(); slots.signal(); group.leave() }
@@ -298,7 +313,7 @@ enum DebugScrollingDemo {
             await withCheckedContinuation { continuation in group.notify(queue: .main) { continuation.resume() } }
             let steps = record.steps
             try steps.joined(separator: "\n").write(to: folder.appending(path: "steps.txt"), atomically: true, encoding: .utf8)
-            let counts = Dictionary(grouping: steps.filter { !$0.hasPrefix("- ") }.map { $0.split(separator: " ").dropFirst().first.map(String.init) ?? "" }, by: { $0 })
+            let counts = Dictionary(grouping: steps.filter { !$0.hasPrefix("- ") && !$0.hasPrefix("# ") }.map { $0.split(separator: " ").dropFirst().first.map(String.init) ?? "" }, by: { $0 })
                 .mapValues(\.count)
             Log.app.notice("""
             debug.scroll-e2e-flow \(label, privacy: .public): Auto-scroll ran \(ran.formatted(.units(allowed: [.seconds], fractionalPart: .show(length: 1))), privacy: .public), \
