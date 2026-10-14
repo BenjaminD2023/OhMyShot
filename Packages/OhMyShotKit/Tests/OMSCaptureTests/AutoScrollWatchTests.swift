@@ -94,6 +94,29 @@ struct AutoScrollWatchTests {
         #expect(told.isEmpty, "\(told)")
     }
 
+    @Test func outOfABlankStretchTheWatchLooksAfresh() {
+        // Live: the stretch ended, and the first look after it saw only the first few views placed past it, 40 px of
+        // the push of the last 1.25 s, most of which went through the stretch. Not quiet: no gesture moved.
+        let through = 2 + 2.5 * Self.extent / 568
+        var first = true
+        let told = Self.watch(seconds: 20) { time, capture in
+            if time <= 2 {
+                capture.keepsUp()
+            } else if time <= through {
+                capture.isInBlank = true
+            } else {
+                capture.isInBlank = false
+                if first {
+                    capture.settled += 40
+                    first = false
+                } else {
+                    capture.keepsUp()
+                }
+            }
+        }
+        #expect(told.isEmpty, "\(told)")
+    }
+
     @Test func aBlankStretchWithoutEndIsTheEndOnceThreeAreasArePushedThrough() {
         // A page ending in a blank margin taller than the view: stopped, three of the area's lengths pushed into it on.
         let told = Self.watch(seconds: 20) { time, capture in

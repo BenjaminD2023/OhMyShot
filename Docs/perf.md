@@ -1610,3 +1610,26 @@ stuck.
 | 120 randomized forum walks | 0 rows off |
 | Capture tests (OMSCapture, 124), Studio (55) | pass, 7 known issues |
 
+### Into a blank stretch, and out of it (2026-10-15)
+
+Run again with the commit above, the blank stretch page stopped short once more: the two views as the stretch began
+showed only the last 4 rows of the picture before it, at the top, and the stretch below, the page standing still a
+frame between them. Those rows line up with the view before 20 px on, but 4 rows are too few to trust (a match needs
+162 in a view of 1626), so both views were lost, and two lost in a row stop Auto-scroll. Now a view whose part that
+scrolls shows a few of the reference's own lines at its start, fewer than a match needs, and the color the picture
+ends in from there on is unchanged, the stretch begun (`theLastLinesOfTheBlockBeforeTheStretchLeavingAreNothingLost`;
+the run's frames replay with none lost).
+
+And as the stretch ended, Auto-scroll's watch moved the gesture once in every run: the first views placed past the
+stretch ended "in a blank stretch", so its patience ended, but the look still reached back over the push through the
+stretch, where nothing could grow. Out of a blank stretch the watch now looks afresh (`outOfABlankStretchTheWatchLooksAfresh`).
+
+| Run | Result |
+| --- | --- |
+| The blank stretch page, twice with the first change | through to the end, stopped by the pull, none lost; the gesture moved once each as the stretch ended |
+| The same with both | through to the end (15817 rows), stopped by the pull, none lost, no gesture moved |
+| BBC News | 12520 rows, stopped by the pull at its foot, none lost, no clear pixel |
+| The 206 frame sets | byte for byte |
+| 120 randomized forum walks | 0 rows off |
+| Capture tests (OMSCapture, 126) | pass, 7 known issues |
+

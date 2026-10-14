@@ -1291,6 +1291,32 @@ struct ScrollStitcherTests {
         #expect(found != nil, "the next block is not there: \(stitcher.summary)")
     }
 
+    @Test func theLastLinesOfTheBlockBeforeTheStretchLeavingAreNothingLost() throws {
+        // Into a blank stretch, the page standing still a few frames just as the block before it has all but left the
+        // view: each of those views shows a few of its last lines at the top, too few to line up with, and the stretch
+        // below (live: 4 rows of a picture's foot, twice). Unchanged, never lost, and what follows the stretch comes in.
+        let width = 400, size = 300, block = 600, blank = 700
+        let page = Self.blankStretches(width: width, block: block, blank: blank)
+        let stitcher = Self.stitcher(width: width, height: size)
+        // The block's last marks: where its last line of text ends.
+        let last = try #require((0..<block).last { y in page.row(y).contains { $0 != Self.white } })
+        var offset = 0
+        var steps = [Self.add(Self.view(page, at: 0, size: size), to: stitcher)]
+        let edge = last + 1 - 3
+        while offset < edge {
+            offset = min(offset + 20, edge)
+            steps.append(Self.add(Self.view(page, at: offset, size: size), to: stitcher))
+        }
+        for _ in 0..<3 { steps.append(Self.add(Self.view(page, at: offset, size: size), to: stitcher)) }
+        while offset < block + blank + 200 {
+            offset += 20
+            steps.append(Self.add(Self.view(page, at: offset, size: size), to: stitcher))
+        }
+        #expect(!steps.contains(.lost), "\(steps)")
+        let picture = Self.pixels(of: try #require(stitcher.picture()))
+        #expect(Self.find(block + blank ..< block + blank + 200, of: page, in: picture, from: block) != nil, "\(stitcher.summary)")
+    }
+
     @Test func whatCouldNotBePlacedIsNeverPassedOverForTheBlankStretchAfterIt() throws {
         // Into the first blank stretch, a view of something else altogether (as a picture full of the view for a
         // moment), then the blank, then the next block coming in: taken in past the blank, it would leave out whatever

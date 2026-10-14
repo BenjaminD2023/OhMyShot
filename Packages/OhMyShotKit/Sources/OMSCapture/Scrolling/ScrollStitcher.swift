@@ -518,9 +518,10 @@ nonisolated public final class ScrollStitcher {
     /// between the bars; now this one shows the stretch down to what comes in after it, which lines up with nothing
     /// (a grid of cards alike may seem to line up with the grid before the stretch, and must not). It comes in past
     /// the stretch, as much of the stretch kept as the picture or this view shows of it. Never past something a view
-    /// since showed that could not be placed: that is no blank stretch going by. A view of nothing but the stretch, or
-    /// of the stretch and a line or two of what follows, shows nothing to line up or take in, and nothing scrolled as
-    /// far as anything tells: unchanged, as it is under a header that stays put, not lost.
+    /// since showed that could not be placed: that is no blank stretch going by. A view of nothing but the stretch, of
+    /// the content before it leaving and the stretch, or of the stretch and a line or two of what follows, shows nothing
+    /// to line up or take in, and nothing scrolled as far as anything tells: unchanged, as it is under a header that
+    /// stays put, not lost.
     private func pastBlank(_ view: Lines, track: inout Track) -> Step? {
         let reference = track.reference
         guard let canvas, let range = canvas.range, let end = pictureEnd() else { return nil }
@@ -531,9 +532,20 @@ nonisolated public final class ScrollStitcher {
             track.spare = view
             return .unchanged
         }
+        let overlap = Lines.minimumOverlap(view.count)
+        // The content before the stretch leaving the view: a few of its last lines at the view's start, too few to line
+        // up with, and the stretch after them. Nothing comes into view but the stretch, however many views show it (the
+        // page may stand still between them): unchanged, the stretch begun.
+        if !movedTowardStart, top == band.lowerBound {
+            let blankFrom = blankBottom(view, besides: reference, end: end)
+            if blankFrom - band.lowerBound < overlap, view.lines(newIn: band.lowerBound ..< blankFrom, to: reference) == 0 {
+                sinceReference.blank = true
+                track.spare = view
+                return .unchanged
+            }
+        }
         // Too little of the stretch above what came in to tell it from a view that scrolled too far at once: what it
         // shows that the reference shows nowhere was not placed.
-        let overlap = Lines.minimumOverlap(view.count)
         guard top - band.lowerBound >= overlap else {
             if view.lines(newIn: band, to: reference) >= 16 { sinceReference.unplaced = true }
             return nil
@@ -602,6 +614,19 @@ nonisolated public final class ScrollStitcher {
         var line = end.band.lowerBound
         while line < end.band.upperBound, isBlank(view, line: line, color: end.color, besides: line >= fixed ? other : nil, straddling: straddling) {
             line += 1
+        }
+        return line
+    }
+
+    /// The first line of `view`'s part that scrolls from which on to its end every line is the color the picture ends in,
+    /// as `blankTop` tells it line by line. The part's start when it is that color throughout.
+    private func blankBottom(_ view: Lines, besides other: Lines, end: (color: UInt32, lines: Int, band: Range<Int>, line: Int)) -> Int {
+        guard let canvas else { return end.band.upperBound }
+        let fixed = end.line - end.lines
+        let straddling = canvas.straddling(view.bands)
+        var line = end.band.upperBound
+        while line > end.band.lowerBound, isBlank(view, line: line - 1, color: end.color, besides: line - 1 >= fixed ? other : nil, straddling: straddling) {
+            line -= 1
         }
         return line
     }

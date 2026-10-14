@@ -88,9 +88,11 @@ nonisolated public struct AutoScrollWatch: Sendable {
 
     /// Takes in how things stand now and tells what to make of it.
     public mutating func look(_ sample: Sample) -> Verdict {
+        // Out of a blank stretch, what was pushed through it says nothing of the content stopping: looked at afresh.
+        if blankFrom != nil, !sample.isInBlank { samples.removeAll() }
+        blankFrom = sample.isInBlank ? blankFrom ?? sample.pushed : nil
         samples.append(sample)
         samples.removeAll { sample.time - $0.time > Self.memory }
-        blankFrom = sample.isInBlank ? blankFrom ?? sample.pushed : nil
         guard let since = samples.last(where: { sample.pushed - $0.pushed >= extent * Self.reach }), sample.time - since.time >= Self.least else {
             return .going
         }
