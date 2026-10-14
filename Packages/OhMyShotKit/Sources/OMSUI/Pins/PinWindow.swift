@@ -791,7 +791,7 @@ final class PinView: NSView {
     }
 
     @objc private func moreClicked(_ sender: NSView) {
-        makeMenu().popUp(positioning: nil, at: CGPoint(x: 0, y: sender.bounds.maxY + 4), in: sender)
+        makeMenu().popUp(beside: sender)
     }
 
     @objc private func closeClicked() {
