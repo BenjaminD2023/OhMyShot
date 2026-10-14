@@ -192,7 +192,8 @@ public final class StudioDocument {
         }
     }
 
-    /// The zooms the clicks and the typing place; empty when nothing was clicked or typed in the recording.
+    /// The zooms the clicks and the typing place; empty when the recording holds no two clicks or keys close
+    /// enough together to follow.
     public var automaticZooms: [StudioProject.Zoom] {
         AutoZoom.zooms(for: telemetry, duration: duration)
     }
