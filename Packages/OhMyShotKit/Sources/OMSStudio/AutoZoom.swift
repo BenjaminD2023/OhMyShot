@@ -10,7 +10,7 @@ import Foundation
 /// the light one; either is cut down to fit what happens in it when that is spread too wide, and spread wider
 /// than a gentle zoom can hold, it gets none. Zooms that overlap or end no more than `joinGap` before the next
 /// begins are joined at the gentler of their scales, so the camera stays in and pans instead of zooming out
-/// and back in. Clicks are heard all over the screen and keys wherever the pointer is: only those inside the
+/// and back in; never across a zoom placed by hand (`around`), which would cost both. Clicks are heard all over the screen and keys wherever the pointer is: only those inside the
 /// recording count, or a click on another display would zoom into the recording's nearest edge.
 nonisolated public enum AutoZoom {
     public static let gap = 2.0
@@ -31,7 +31,7 @@ nonisolated public enum AutoZoom {
     /// Room around what happens, in the recording's points, when fitting it into a zoom.
     public static let margin = 80.0
 
-    public static func zooms(for telemetry: StudioTelemetry, duration: Double) -> [StudioProject.Zoom] {
+    public static func zooms(for telemetry: StudioTelemetry, duration: Double, around fixed: [StudioProject.Zoom] = []) -> [StudioProject.Zoom] {
         // Every click, and every key at the pointer's place when it was pressed.
         var events = telemetry.clicks.map { (time: $0.time, x: $0.x, y: $0.y, isKey: false) }
         events += telemetry.keys.filter { !$0.isRepeat }.map { key in
@@ -68,7 +68,7 @@ nonisolated public enum AutoZoom {
             guard end > start else { continue }
             // Tenths, so a zoom's scale reads as a round number in the inspector.
             let rounded = (scale * 10).rounded(.down) / 10
-            if let last = zooms.last, start - last.end <= joinGap {
+            if let last = zooms.last, start - last.end <= joinGap, !fixed.contains(where: { $0.start < start && last.end < $0.end }) {
                 zooms[zooms.count - 1].end = max(last.end, end)
                 zooms[zooms.count - 1].scale = min(last.scale, rounded)
             } else {

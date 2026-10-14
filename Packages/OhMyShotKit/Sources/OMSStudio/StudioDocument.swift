@@ -186,8 +186,10 @@ public final class StudioDocument {
         changed.automaticZooms = on
         var zooms = project.zooms.filter { !$0.isAutomatic }
         if on {
-            // A zoom placed by hand wins where the two meet.
-            zooms += automaticZooms.filter { auto in !zooms.contains { $0.start < auto.end && auto.start < $0.end } }
+            // A zoom placed by hand wins where the two meet, and the automatic ones on either side of it stay apart.
+            let hand = zooms
+            zooms += AutoZoom.zooms(for: telemetry, duration: duration, around: hand)
+                .filter { auto in !hand.contains { $0.start < auto.end && auto.start < $0.end } }
         }
         changed.zooms = zooms.sorted { $0.start < $1.start }
         change(named: on ? String(localized: "Zoom on Clicks", bundle: .module) : String(localized: "No Zoom on Clicks", bundle: .module)) {

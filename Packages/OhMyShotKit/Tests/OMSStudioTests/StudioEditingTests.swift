@@ -147,6 +147,29 @@ struct StudioEditingTests {
         #expect(document.project.zooms.count == 1)
     }
 
+    @Test func aZoomPlacedByHandBetweenTwoStretchesKeepsBothAutomaticZooms() {
+        // Two pairs of clicks close enough to join into one automatic zoom, and a zoom placed by hand between
+        // them: turned on again, the automatic zooms go on either side of it, not away with it.
+        let folder = FileManager.default.temporaryDirectory.appending(path: "OMSStudioTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let telemetry = StudioTelemetry(
+            width: 1600, height: 1000, pixelsPerPoint: 2, samples: [.init(time: 0, x: 800, y: 500, cursor: 0)],
+            clicks: [1, 1.3, 4.3, 4.6].map { .init(time: $0, x: 800, y: 500, button: .primary) }
+        )
+        let document = StudioDocument(
+            source: folder.appending(path: "none.mp4"), telemetry: telemetry, project: StudioProject(), duration: 10,
+            recordingSize: CGSize(width: 3200, height: 2000), folder: folder, hasBeenExported: false, background: { _, _ in nil }
+        )
+        #expect(document.automaticZooms.count == 1)
+        document.setAutomaticZooms(false)
+        document.project.zooms = [StudioProject.Zoom(start: 2.8, end: 3.6, scale: 2, isAutomatic: false)]
+        document.setAutomaticZooms(true)
+        let zooms = document.project.zooms
+        #expect(zooms.count == 3, "\(zooms.map { ($0.start, $0.end, $0.isAutomatic) })")
+        #expect(zooms.map(\.isAutomatic) == [true, false, true])
+        #expect(abs(zooms[0].end - (1.3 + AutoZoom.hold)) < 1e-9 && abs(zooms[2].start - (4.3 - AutoZoom.leadIn)) < 1e-9)
+    }
+
     @Test func automaticZoomsAreASettingThatHoldsWithNothingToFollow() throws {
         let document = try document()
         defer { try? FileManager.default.removeItem(at: document.folder) }
