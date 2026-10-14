@@ -1220,10 +1220,10 @@ struct ScrollStitcherTests {
 
     @Test(arguments: [(0, false), (30, false), (0, true)])
     func aBlankStretchTallerThanTheViewIsLeftShortAndWhatFollowsComesAfterIt(header: Int, button: Bool) throws {
-        // Scrolled by hand through two blank stretches 700 rows tall in a view of 300: views of nothing but the blank
-        // (lost without a header that stays put, unchanged with one), then the next block coming in from below. Each
-        // block comes out whole and in order, as much of the blank between as a view showed of it. A button fixed in
-        // the view's corner is left out of what is checked.
+        // Scrolled by hand through two blank stretches 700 rows tall in a view of 300: views of nothing but the blank,
+        // unchanged with or without a header that stays put (nothing to line up, nothing lost), then the next block
+        // coming in from below. Each block comes out whole and in order, as much of the blank between as a view showed
+        // of it. A button fixed in the view's corner is left out of what is checked.
         let width = 400, size = 300, block = 600, blank = 700
         let page = Self.blankStretches(width: width, block: block, blank: blank)
         let corner = 340..<380
@@ -1235,10 +1235,14 @@ struct ScrollStitcherTests {
         let stitcher = Self.stitcher(width: width, height: size)
         var offset = 0
         Self.add(Self.view(page, at: 0, size: size, header: header, draw: draw), to: stitcher)
+        var steps: [ScrollStitcher.Step] = []
         while offset < page.height - size {
             offset = min(offset + 20, page.height - size)
-            Self.add(Self.view(page, at: offset, size: size, header: header, draw: draw), to: stitcher)
+            steps.append(Self.add(Self.view(page, at: offset, size: size, header: header, draw: draw), to: stitcher))
         }
+        // Never two lost in a row, which would have the panel ask to scroll back: a view where what comes next has only
+        // begun to come in may be waited out.
+        #expect(!zip(steps, steps.dropFirst()).contains { $0 == .lost && $1 == .lost }, "\(steps)")
         let picture = Self.pixels(of: try #require(stitcher.picture()))
         var at = header
         for start in [0, block + blank, 2 * (block + blank)] {

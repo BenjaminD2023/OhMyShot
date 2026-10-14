@@ -1285,3 +1285,22 @@ Tried and left out: preferring, at any scroll, an offset better told every way (
 and a share agreeing a tenth higher). It set five views right in the calibration rows, among them the MDN ones. On the
 made-up docs page it took the sticky offset where the committed stitcher had the article's: the sidebars, dense there,
 told better than the article.
+
+### Views of a blank stretch, not lost (2026-10-14, later still)
+
+On a page without a bar that stays put, views of nothing but a blank stretch taller than the view came out lost.
+Nothing in them stayed where the view before had it, and nothing moved. After two of them the panel asked to scroll
+back, and Auto-scroll stopped, though nothing was wrong. Under a header that stays put the same views were unchanged.
+
+Now a view of nothing but the stretch, the one color the picture ends in, is unchanged wherever the stretch continues
+after the view last taken in. Only the view where what comes next has begun to come in, too little of it to line up
+with, is lost and waited out: one view, never two in a row.
+
+| Check | Before | After |
+| --- | --- | --- |
+| The made-up page of two blank stretches, no header, scrolled 20 rows at a time | 22 views lost in a row, twice | unchanged, then one view lost each time |
+| A made-up page of near-duplicate sections with blank stretches | 8 views lost | 8 unchanged, the picture byte for byte |
+| The other 205 frame sets and the six live captures | as committed | byte for byte |
+
+Auto-scroll now goes on through such a stretch as under a header, until its watch on how much the picture grows stops
+it or moves its gesture.

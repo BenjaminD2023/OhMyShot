@@ -503,7 +503,9 @@ nonisolated public final class ScrollStitcher {
     /// between the bars; now this one shows the stretch down to what comes in after it, which lines up with nothing
     /// (a grid of cards alike may seem to line up with the grid before the stretch, and must not). It comes in past
     /// the stretch, as much of the stretch kept as the picture or this view shows of it. Never past something a view
-    /// since showed that could not be placed: that is no blank stretch going by.
+    /// since showed that could not be placed: that is no blank stretch going by. A view of nothing but the stretch
+    /// shows nothing to line up or take in, and nothing scrolled as far as anything tells: unchanged, as it is under a
+    /// header that stays put, not lost.
     private func pastBlank(_ view: Lines, track: inout Track) -> Step? {
         let reference = track.reference
         guard let canvas, let range = canvas.range, let end = pictureEnd() else { return nil }
@@ -511,7 +513,8 @@ nonisolated public final class ScrollStitcher {
         let top = blankTop(view, besides: reference, end: end)
         if top == band.upperBound {
             sinceReference.blank = true
-            return nil
+            track.spare = view
+            return .unchanged
         }
         // Too little of the stretch above what came in to tell it from a view that scrolled too far at once: what it
         // shows that the reference shows nowhere was not placed.
