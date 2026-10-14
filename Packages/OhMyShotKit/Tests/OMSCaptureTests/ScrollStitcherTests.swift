@@ -1344,6 +1344,56 @@ struct ScrollStitcherTests {
         #expect(rows.isEmpty, "\(rows.count) rows off, from \(rows.first ?? -1): \(picture.height) rows, \(stitcher.summary)")
     }
 
+    // MARK: - What sticks after a banner
+
+    /// A docs page `height` rows tall in view, `scroll` rows down: a banner `banner` rows tall at the top, then a header
+    /// `header` rows tall, and below it a navigation column and a contents column either side of the article. The header
+    /// and both columns stick once the banner has scrolled away; the article scrolls on under the header.
+    private static func docsView(nav: Page, article: Page, contents: Page, banner: Int, header: Int, at scroll: Int, height: Int) -> [UInt32] {
+        let width = nav.width + article.width + contents.width
+        var pixels = [UInt32](repeating: white, count: width * height)
+        let top = max(0, banner - scroll)
+        for y in 0..<height {
+            if y < top {
+                for x in 0..<width { pixels[y * width + x] = 0xFF20_4080 &+ UInt32((x / 7 + (y + scroll) * 3) % 13) }
+            } else if y < top + header {
+                let row = y - top
+                for x in 0..<width { pixels[y * width + x] = row % 10 < 6 && (x / 9 + row) % 4 != 0 ? 0xFF1A_1A1A &+ UInt32(x % 3) : 0xFFF4_F4F4 }
+            } else {
+                let stuck = y - top - header
+                for x in 0..<nav.width { pixels[y * width + x] = nav.pixels[stuck * nav.width + x] }
+                for x in 0..<contents.width { pixels[y * width + nav.width + article.width + x] = contents.pixels[stuck * contents.width + x] }
+                let row = y + scroll - banner - header
+                if row >= 0, row < article.height {
+                    for x in 0..<article.width { pixels[y * width + nav.width + x] = article.pixels[row * article.width + x] }
+                }
+            }
+        }
+        return pixels
+    }
+
+    @Test(arguments: [(400, 40, 100), (400, 80, 160), (360, 40, 280), (300, 80, 280)])
+    func aFirstScrollPastABannerFollowsTheArticleNotWhatSticks(navWidth: Int, header: Int, step: Int) throws {
+        // The first scroll goes further than the banner is tall: the header and the columns of sparse items beside the
+        // article move only the banner's height and stick, the article the whole way. The columns span more bands and
+        // outscore the article; taken at the banner's height, what scrolled by in between would be missing.
+        var nav = Page(width: navWidth, height: 1600, seed: 31)
+        var contents = Page(width: navWidth, height: 1600, seed: 32)
+        for y in 0..<1600 where y % 40 >= 16 {
+            for x in 0..<navWidth { nav.pixels[y * navWidth + x] = Self.white; contents.pixels[y * navWidth + x] = Self.white }
+        }
+        let article = Page(width: 1200 - 2 * navWidth, height: 3000, seed: 33)
+        func view(_ scroll: Int) -> [UInt32] {
+            Self.docsView(nav: nav, article: article, contents: contents, banner: 60, header: header, at: scroll, height: 600)
+        }
+        let stitcher = Self.stitcher(width: 1200, height: 600)
+        Self.add(view(0), to: stitcher)
+        #expect(Self.add(view(step), to: stitcher) == .scrolled(offset: step))
+        for scroll in stride(from: step + 20, through: step + 100, by: 20) {
+            #expect(Self.add(view(scroll), to: stitcher) == .scrolled(offset: 20), "at \(scroll)")
+        }
+    }
+
     // MARK: - Pages that move on their own
 
     @Test func aPlayingVideoDoesNotStopTheCapture() throws {

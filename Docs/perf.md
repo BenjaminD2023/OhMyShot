@@ -1248,3 +1248,40 @@ Left as they are:
   longer line up; the picture keeps what came before the jump.
 - A page whose background, a texture repeating every 480 px, stays fixed under its text still comes out wrong: now
   5400 px too long rather than 1080.
+
+### The first scroll past a banner (2026-10-14, later still)
+
+On MDN captured in steps of 200 CSS px (400 pixels at 2x), a promo banner sat above a header that sticks, with sidebars
+that stick below it. The first step scrolled the banner away. The header and both sidebars moved only the banner's
+height (182 pixels) and stuck, while the article moved the whole step.
+
+Both offsets held. The sticky ones span five of the six bands the lines are hashed in: the header runs across all of
+them, and a band counts as moving when a fifth of what testifies in it agrees. So 182 pixels outscored the article's
+400, and the picture came out 218 pixels short of what the article had scrolled by (118 in the set with steps of 150
+CSS px).
+
+Now, with no last offset to go by (the first scroll), an offset that moved further the same way and holds at least half
+as well wins. What sticks once a banner has gone moves only partway on the scroll that starts it, and a parallax picture
+moves less than the page; the page itself moves furthest. After the first scroll the last offset decides, as before.
+
+The rule was checked against the calibration rows of the jump work. Among first scrolls with two offsets holding (8
+views), it changes only the three MDN ones, each to the true offset. The four grids' second offsets go the other way and
+are left alone.
+
+| Check | Before | After |
+| --- | --- | --- |
+| MDN, MDN dark and MDN with animations, steps of 200 / 200 / 150 CSS px | 18,982 / 16,982 / 13,182 rows; rows off against pictures rebuilt from the true offsets 13,849 / 12,263 / 9,753 | 19,200 / 17,200 / 13,300 rows, each the true length; 7,823 / 7,046 / 6,215 off (the rest is the rebuilt pictures not knowing what sticks) |
+| A made-up docs page: a banner, a header, sparse columns either side of a dense article, 24 sizes and first steps | the sticky offset taken on 10 | taken on 1, where the article's offset was not voted for enough to be verified |
+| The other 203 frame sets and the six live captures | as committed | byte for byte |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+The rule runs once a capture, on its first scroll, so the time a view takes is unchanged and was not measured.
+
+Left as it is: on a page that repeats itself (a grid of cards alike), a first scroll could be taken a period further,
+where the cards line up as well, if that offset gets half the votes. In the frame sets the grids' second offsets were
+all the other way, so nothing here tried it.
+
+Tried and left out: preferring, at any scroll, an offset better told every way (more lines agreeing, fewer against it,
+and a share agreeing a tenth higher). It set five views right in the calibration rows, among them the MDN ones. On the
+made-up docs page it took the sticky offset where the committed stitcher had the article's: the sidebars, dense there,
+told better than the article.

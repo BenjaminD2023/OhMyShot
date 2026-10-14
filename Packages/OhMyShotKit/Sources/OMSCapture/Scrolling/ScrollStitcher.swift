@@ -1244,10 +1244,18 @@ nonisolated final class Lines {
     }
 
     /// The offset that holds best, by how many lines that say something agree in how many bands; or one nearly as
-    /// good nearer the last offset.
+    /// good nearer the last offset. With no last offset to go by (the first scroll), one that moved further the same
+    /// way, holding at least half as well, wins: what sticks once a banner above it has gone (a header, the sidebars
+    /// beside an article) moves only partway on the scroll that starts it, and a parallax picture less than the page,
+    /// while the page itself moves furthest; the bands that sticks across can outscore the page's own.
     private static func choose(_ held: [(match: Match, score: Int)], expected: Int?) -> Match? {
         guard let top = held.max(by: { $0.score < $1.score }) else { return nil }
-        guard let expected else { return top.match }
+        guard let expected else {
+            let further = held.filter {
+                ($0.match.offset > 0) == (top.match.offset > 0) && abs($0.match.offset) > abs(top.match.offset) && $0.score * 2 >= top.score
+            }
+            return (further.max { abs($0.match.offset) < abs($1.match.offset) } ?? top).match
+        }
         let near = held.filter { $0.score * 5 >= top.score * 4 }.min { abs($0.match.offset - expected) < abs($1.match.offset - expected) }
         return (near ?? top).match
     }
