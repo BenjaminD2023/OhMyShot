@@ -1348,7 +1348,8 @@ the 18 pt at each side left out of the hashes. Its frames' PNGs no longer replay
 change on the way, premultiplied), so replays are compared with those pixels left out. The corners also reach the
 picture: a column that stays put at the area's edge keeps the first view's corner, a notch at that view's foot, and
 corners changing while the views show nothing but a blank stretch make those views lost (the 37 above). Choosing a
-window with Space passes its frame as the area, where the corners show what is behind the window. Left as it is.
+window with Space passes its frame as the area, where the corners show what is behind the window. Left as it is then;
+see "A window's rounded corners, and a contents list by the edge".
 
 At the docs page's end Auto-scroll pushed on, and the browser pulled the whole view along a pixel or two a view, header
 and columns too, then let it spring back. Past the article's end the views showed white, the columns' rules and a
@@ -1525,3 +1526,48 @@ top speed (2×, about 1140 px a second at 2×) lets the page move about 450 px b
 
 The numbers (three areas, 50 ms, 150 ms, three looks) are first guesses: the slow capture was seen only in a Debug
 build, and the blank stretch once.
+
+### A window's rounded corners, and a contents list by the edge (2026-10-14, night)
+
+A window chosen with Space is captured as its frame, and past its rounded corners shows what is behind it: the desktop,
+still while the page scrolls (a window streamed on its own, as the checks stream it, has them clear). The picture keeps
+the first view as it showed the columns that stay put, so the first view's lower corners stayed in it where that view
+ended. The live frames of the docs page and MDN, laid over a still desktop and replayed, left one and two such notches
+(rows 1579 to 1625 of the 1626-row view), and MDN a piece more near its end.
+
+Now `ScreenCapturer.windowCorners` finds the window under the area's middle and, for each corner of the area within a
+point of one of the window's, takes the corner's shape from the window captured on its own without its shadow: row by
+row in from the edge, the pixels not wholly opaque, up to 64 pt. A corner that is square, or see-through further than
+that (a translucent sidebar), is left out. The stitcher (`ScrollStitcher.corners`) fills each view's pixels past the
+shape from the first pixel inside it in the same column, in its own copy of the view, after the copy and before the
+hashes; the stream's buffers are never written to. Filling along the column, not the row: a column that stays put is
+the same all the way down, so there the fill is exact, while along the row it would have written the page's color
+over a scroll bar's track. The capture's steps record the shape (`corners …`), so replays fill as the capture did.
+
+The fill changed one thing besides: on MDN, "Browser compatibility" in the contents list that sticks at the right came
+out as "Browser compatib". The fill was not the cause. The same frames cut 48 rows short, as an area that misses the
+corners is, came out the same. The clear corners had made the last 8 px column look still far enough down the view
+(past a sixth of it) to count as staying put. That made the blank between the list and the view's edge stay put, and
+the list's short words with it. Now a run of columns on to the line's end, past one that stays put, stays put too
+when no view saw any of it move and what views saw still in it spans a sixth of the view. A first version without the
+span stamped a round button fixed by the edge twice down the picture (9 of the 206 frame sets changed, 6 a little
+worse against their pages); with it, all 206 come out byte for byte.
+
+| Check | Result |
+| --- | --- |
+| The docs page and MDN over a still desktop, as committed | 1 and 2 notches of the desktop down the picture |
+| The same with the corners filled | none; the same steps; byte for byte the pictures of the window-alone frames filled |
+| The stitcher's fill against a prototype that filled the frames' PNGs, replayed by the same build | byte for byte, both pages, the window alone and over the desktop |
+| MDN's contents list (dark pixels where "compatibility" is): as it was, the corners filled, the frames cut short | 782, 310, 310 before; 782 in all three now |
+| The other 206 frame sets | byte for byte |
+| 120 randomized forum walks | 0 rows off |
+| `ViewCornersTests` (4): the shape from a window's alpha, a see-through edge, the shape read back, a view turned filled as it is straight | pass |
+| A made-up page with a track at its edge, the desktop in each view's corners | rows of the desktop in the picture without the fill; none with it |
+| Capture tests (OMSCapture, 121) | pass, 7 known issues |
+| The app | builds |
+| Starting a capture whose area shares a corner with a window | one more look at the shareable content and one screenshot of the window alone: not timed |
+| Live | not run: measuring the window's corners is the one part nothing offline runs |
+
+The 37 views lost in the blank stretch of 1344 pt (above) came from the corners changing while the views showed nothing
+but the stretch; filled, they should no longer be. Expected, not checked: that run's frames were not kept.
+

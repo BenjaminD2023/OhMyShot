@@ -151,6 +151,37 @@ public final class ScreenCapturer {
         )
     }
 
+    /// The rounded corners `area` (global points, on `display`) shares with the window under its middle (or `windowID`),
+    /// as the window's own picture has them, its corners clear: a window chosen with Space is captured as its frame, its
+    /// corners showing what is behind it. Nil when it shares none, or they cannot be told.
+    public func windowCorners(for area: CGRect, on display: DisplayInfo, layout: DisplayLayout, windowID: CGWindowID? = nil) async -> ViewCorners? {
+        let windows = WindowCatalog.snapshot(layout: layout, excludingPID: getpid())
+        let found = windowID.map { id in windows.first { $0.id == id } } ?? WindowCatalog.target(at: CGPoint(x: area.midX, y: area.midY), in: windows)
+        guard let target = found else { return nil }
+        let frame = target.frame
+        func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) <= 1 }
+        var shared: Set<ViewCorners.Corner> = []
+        if near(area.minX, frame.minX), near(area.maxY, frame.maxY) { shared.insert(.topLeft) }
+        if near(area.maxX, frame.maxX), near(area.maxY, frame.maxY) { shared.insert(.topRight) }
+        if near(area.minX, frame.minX), near(area.minY, frame.minY) { shared.insert(.bottomLeft) }
+        if near(area.maxX, frame.maxX), near(area.minY, frame.minY) { shared.insert(.bottomRight) }
+        guard !shared.isEmpty else { return nil }
+        content.refresh()
+        guard let window = try? await content.current().windows.first(where: { $0.windowID == target.id }) else { return nil }
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        // Its pixels are the stream's only at the display's scale.
+        guard CGFloat(filter.pointPixelScale) == display.pixelsPerPoint else { return nil }
+        let configuration = SCScreenshotConfiguration()
+        configuration.showsCursor = false
+        configuration.dynamicRange = .sdr
+        configuration.ignoreShadows = true
+        guard let output = try? await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration),
+              let image = output.sdrImage,
+              let corners = ViewCorners(alphaOf: image, most: Int((64 * display.pixelsPerPoint).rounded()))?.only(shared), !corners.isEmpty
+        else { return nil }
+        return corners
+    }
+
     private func capture(
         display: DisplayInfo,
         region: CGRect?,

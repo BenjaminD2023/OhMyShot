@@ -159,13 +159,15 @@ nonisolated public final class ScrollStitcher {
         viewsSinceMoved += 1
         guard !isFull, taken == nil else { return .full }
         guard vertical != nil || horizontal != nil else {
-            vertical = Track(Lines.make(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: false, margin: margin))
-            horizontal = Track(Lines.make(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: true, margin: margin))
+            vertical = Track(Lines.make(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: false, margin: margin, corners: corners))
+            horizontal = Track(Lines.make(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: true, margin: margin, corners: corners))
             return .started
         }
         var verticalReason: String?
         if axis != .horizontal, preferredAxis != .horizontal, var track = vertical {
-            guard let view = track.take(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: false, margin: margin) else { return .lost }
+            guard let view = track.take(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: false, margin: margin, corners: corners) else {
+                return .lost
+            }
             var why = ""
             let reference = track.reference
             switch Lines.compare(
@@ -210,7 +212,9 @@ nonisolated public final class ScrollStitcher {
             }
         }
         guard preferredAxis != .vertical, var track = horizontal else { return .lost }
-        guard let view = track.take(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: true, margin: margin) else { return .lost }
+        guard let view = track.take(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: true, margin: margin, corners: corners) else {
+            return .lost
+        }
         var why = ""
         let reference = track.reference
         switch Lines.compare(
@@ -283,6 +287,10 @@ nonisolated public final class ScrollStitcher {
     /// Since the view last taken in as scrolled, a view showed nothing but a blank stretch going by, the one color the
     /// picture ends in: the picture cannot grow until what follows the stretch comes in.
     public var isInBlank: Bool { sinceReference.blank }
+
+    /// The rounded corners of a window the area shares with it, filled in each view as it is taken in. Set before the
+    /// first view.
+    public var corners: ViewCorners?
 
     /// The part of the view that moved with the content when it last scrolled, in fractions of the view (x across, y
     /// along the rows as they are on screen): its lines, and the bands across them that moved.
@@ -1035,10 +1043,10 @@ nonisolated private struct Track {
 
     /// The next view in this direction, in the spare buffer when there is one; nil when there is no memory
     /// for it.
-    mutating func take(_ pixels: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int, turned: Bool, margin: Int) -> Lines? {
+    mutating func take(_ pixels: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int, turned: Bool, margin: Int, corners: ViewCorners?) -> Lines? {
         guard let view = spare ?? Lines(count: reference.count, length: reference.length, margin: margin) else { return nil }
         spare = nil
-        view.fill(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: turned)
+        view.fill(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: turned, corners: corners)
         return view
     }
 }
@@ -1110,9 +1118,9 @@ nonisolated final class Lines {
         kept.deallocate()
     }
 
-    static func make(_ pixels: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int, turned: Bool, margin: Int) -> Lines? {
+    static func make(_ pixels: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int, turned: Bool, margin: Int, corners: ViewCorners?) -> Lines? {
         guard let lines = Lines(count: turned ? width : height, length: turned ? height : width, margin: margin) else { return nil }
-        lines.fill(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: turned)
+        lines.fill(pixels, bytesPerRow: bytesPerRow, width: width, height: height, turned: turned, corners: corners)
         return lines
     }
 
@@ -1136,8 +1144,8 @@ nonisolated final class Lines {
     }
 
     /// Takes a view of `width` × `height` pixels as these lines: its rows, or its columns turned a quarter
-    /// clockwise (each column then reads from the bottom up).
-    func fill(_ source: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int, turned: Bool) {
+    /// clockwise (each column then reads from the bottom up); past a window's rounded `corners`, filled.
+    func fill(_ source: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int, turned: Bool, corners: ViewCorners? = nil) {
         if turned {
             var from = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: source), height: vImagePixelCount(height), width: vImagePixelCount(width), rowBytes: bytesPerRow)
             var to = vImage_Buffer(data: pixels.baseAddress, height: vImagePixelCount(count), width: vImagePixelCount(length), rowBytes: lineBytes)
@@ -1151,6 +1159,15 @@ nonisolated final class Lines {
                 let from = source + row * bytesPerRow
                 kept[row] = filled && memcmp(line(row), from, lineBytes) == 0
                 if !kept[row] { memcpy(line(row), from, lineBytes) }
+            }
+        }
+        if let corners, !corners.isEmpty {
+            corners.fill(width: width, height: height) { x, y in turned ? line(x) + (height - 1 - y) * 4 : line(y) + x * 4 }
+            // Filled from the lines further in, which may have changed: hashed again.
+            if !turned {
+                let rows = corners.rows
+                for row in 0 ..< min(rows.top, count) { kept[row] = false }
+                for row in max(0, count - rows.bottom) ..< count { kept[row] = false }
             }
         }
         filled = true
@@ -2042,7 +2059,13 @@ nonisolated private final class Canvas {
             let between = enclosed && end - segment <= 3
             let byTheEdge = (segment == 0) != (end == segments) && end - segment <= 8
             let quiet = enclosed && (segment..<end).allSatisfy { stillSeen[$0] >= movingSeen[$0] * 4 || idleFor[$0] >= 8 }
-            if quiet || (between || byTheEdge) && (segment..<end).allSatisfy({ !moves[$0] }) {
+            // On to the line's end, past a column that stays put, where no view saw anything move and views saw it stay
+            // put, taken together, over a good part of the view's height: a sticky table of contents' short lines, and
+            // the blank by the view's edge after them. Not a button fixed by the edge, seen still only where it is.
+            let seenStill = (segment..<end).filter { stillSeen[$0] >= 4 }
+            let stillOver = seenStill.map { stillTo[$0] }.max().flatMap { last in seenStill.map { stillFrom[$0] }.min().map { last - $0 + 1 } } ?? 0
+            let stillToTheEdge = (segment == 0) != (end == segments) && (segment..<end).allSatisfy { movingSeen[$0] == 0 } && stillOver * 6 >= new.count
+            if quiet || stillToTheEdge || (between || byTheEdge) && (segment..<end).allSatisfy({ !moves[$0] }) {
                 for gap in segment..<end { stays[gap] = true }
             }
             segment = end

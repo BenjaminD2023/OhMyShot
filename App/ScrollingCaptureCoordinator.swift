@@ -109,7 +109,9 @@ final class ScrollingCaptureCoordinator {
 
     private func start(_ area: CGRect, on display: DisplayInfo, autoScrolls: Bool, appName: String?, copiesToClipboard: Bool = true) async {
         do {
-            let source = try await capturer.scrollingSource(for: area, on: display)
+            var source = try await capturer.scrollingSource(for: area, on: display)
+            source.corners = await capturer.windowCorners(for: source.frame, on: display, layout: displays.layout)
+            if let corners = source.corners { Log.capture.notice("Scrolling capture fills the window's \(corners.description, privacy: .public)") }
             // The app whose window is scrolled, which need not be the one in front when the shortcut was pressed.
             let owner = Self.appName(at: CGPoint(x: area.midX, y: area.midY)) ?? appName
             await start(source, on: display, autoScrolls: autoScrolls, appName: owner, copiesToClipboard: copiesToClipboard)
@@ -483,10 +485,16 @@ final class ScrollingCaptureCoordinator {
     private var debugAppearance: NSAppearance?
 
     /// Runs a scrolling capture of `source` without choosing an area, everything of it behind the desktop
-    /// picture, the picture written to `folder` instead of kept: for scripted checks on the app's own windows.
+    /// picture, the picture written to `folder` instead of kept: for scripted checks on the app's own windows. With
+    /// `cornersOf`, the rounded corners the area shares with that window are filled, as a window chosen with Space has.
     func debugStart(
-        _ source: ScrollingCapture.Source, on display: DisplayInfo, savingTo folder: URL, appearance: NSAppearance? = nil, autoScrolls: Bool = false
+        _ source: ScrollingCapture.Source, on display: DisplayInfo, savingTo folder: URL, appearance: NSAppearance? = nil, autoScrolls: Bool = false,
+        cornersOf windowID: CGWindowID? = nil
     ) async {
+        var source = source
+        if let windowID {
+            source.corners = await capturer.windowCorners(for: source.frame, on: display, layout: displays.layout, windowID: windowID)
+        }
         debugHidden = true
         debugSaveFolder = folder
         debugAppearance = appearance

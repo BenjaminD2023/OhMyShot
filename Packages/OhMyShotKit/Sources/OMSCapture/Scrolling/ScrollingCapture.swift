@@ -25,10 +25,12 @@ public final class ScrollingCapture {
         /// The area in AppKit's global space.
         public let frame: CGRect
         public let displayID: CGDirectDisplayID
+        /// The rounded corners of the window the area shares with it, filled in each view.
+        public var corners: ViewCorners?
 
         public init(
             filter: SCContentFilter, sourceRect: CGRect?, pixelWidth: Int, pixelHeight: Int, pixelsPerPoint: CGFloat, frame: CGRect,
-            displayID: CGDirectDisplayID
+            displayID: CGDirectDisplayID, corners: ViewCorners? = nil
         ) {
             self.filter = filter
             self.sourceRect = sourceRect
@@ -37,6 +39,7 @@ public final class ScrollingCapture {
             self.pixelsPerPoint = pixelsPerPoint
             self.frame = frame
             self.displayID = displayID
+            self.corners = corners
         }
     }
 
@@ -139,12 +142,11 @@ public final class ScrollingCapture {
     /// - Parameter preview: The preview's size in pixels: across the scroll, and the most along it.
     public init(_ source: Source, preview: (across: Int, along: Int)) {
         self.source = source
-        output = Output(
-            stitcher: ScrollStitcher(
-                width: source.pixelWidth, height: source.pixelHeight, pixelsPerPoint: source.pixelsPerPoint, colorSpace: Self.colorSpace
-            ),
-            preview: preview, queue: queue
+        let stitcher = ScrollStitcher(
+            width: source.pixelWidth, height: source.pixelHeight, pixelsPerPoint: source.pixelsPerPoint, colorSpace: Self.colorSpace
         )
+        stitcher.corners = source.corners
+        output = Output(stitcher: stitcher, preview: preview, queue: queue)
     }
 
     static func configuration(for source: Source) -> SCStreamConfiguration {
@@ -337,6 +339,9 @@ nonisolated private final class Output: NSObject, SCStreamOutput, SCStreamDelega
         }
         let started = ContinuousClock.now
         load.withLock { $0.takingSince = started }
+        #if DEBUG
+        if views == 0, let corners = stitcher.corners { ScrollingCapture.debugEventSink?(corners.description) }
+        #endif
         let step = stitcher.add(base, bytesPerRow: CVPixelBufferGetBytesPerRow(pixels))
         #if DEBUG
         ScrollingCapture.debugViewSink?(base, CVPixelBufferGetBytesPerRow(pixels), step, step == .lost ? stitcher.lostBecause : "")

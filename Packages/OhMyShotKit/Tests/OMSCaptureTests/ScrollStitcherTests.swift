@@ -1304,6 +1304,50 @@ struct ScrollStitcherTests {
         #expect(Self.add(Self.view(page, at: block + blank - 200, size: size), to: stitcher) == .lost)
     }
 
+    // MARK: - A window's corners
+
+    @Test func aWindowsRoundedCornersLeaveNothingInThePicture() throws {
+        // A window chosen with Space is captured as its frame: past its rounded corners shows the desktop, still while
+        // the page scrolls, beside a column that stays put at the edge (a scrollbar's track). Taken in as they are, the
+        // first view's corners stay in the picture where its columns stay put; filled, nothing of the desktop is left.
+        let width = 400, size = 300
+        let page = Page(width: width, height: 1500, seed: 13)
+        let desktop: UInt32 = 0xFF3A_5A8C
+        let radius = 16.0
+        let insets = (0..<16).map { row -> Int in
+            let y = radius - Double(row) - 0.5
+            return Int((radius - (radius * radius - y * y).squareRoot()).rounded(.up))
+        }.filter { $0 > 0 }
+        let draw: (inout [UInt32], Int, Int) -> Void = { pixels, width, height in
+            for y in 0..<height {
+                for x in width - 28 ..< width { pixels[y * width + x] = (y / 9 + x / 8) % 2 == 0 ? 0xFF88_99AA : 0xFF66_7788 }
+            }
+            for (row, inset) in insets.enumerated() {
+                for x in 0..<inset {
+                    pixels[(height - 1 - row) * width + x] = desktop
+                    pixels[(height - 1 - row) * width + width - 1 - x] = desktop
+                }
+            }
+        }
+        func picture(corners: ViewCorners?) throws -> [UInt32] {
+            let stitcher = Self.stitcher(width: width, height: size)
+            stitcher.corners = corners
+            var offset = 0
+            Self.add(Self.view(page, at: 0, size: size, draw: draw), to: stitcher)
+            while offset < page.height - size {
+                offset = min(offset + 20, page.height - size)
+                Self.add(Self.view(page, at: offset, size: size, draw: draw), to: stitcher)
+            }
+            return Self.pixels(of: try #require(stitcher.picture()))
+        }
+        let rows = { (pixels: [UInt32]) in Set(pixels.indices.filter { pixels[$0] == desktop }.map { $0 / width }) }
+        let kept = rows(try picture(corners: nil))
+        #expect(kept.contains { $0 < size }, "the first view's corners: \(kept.sorted())")
+        let filled = try picture(corners: ViewCorners(bottomLeft: insets, bottomRight: insets))
+        #expect(rows(filled).isEmpty, "\(rows(filled).sorted())")
+        #expect(filled.count / width == page.height, "\(filled.count / width) rows")
+    }
+
     // MARK: - Jumps
 
     /// A page of text with one heading it repeats (as a document repeats a phrase, a thread its reply links), blank

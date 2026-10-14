@@ -88,7 +88,11 @@ enum DebugScrollingDemo {
             let windowFrame = target.frame
             let areaCG = CGRect(x: windowFrame.minX, y: windowFrame.minY + top, width: windowFrame.width, height: windowFrame.height - top)
             let area = CGRect(x: areaCG.minX, y: primaryHeight - areaCG.maxY, width: areaCG.width, height: areaCG.height)
-            let source: ScrollingCapture.Source
+            guard let display = layout.displays.first(where: { $0.frame.contains(CGPoint(x: area.midX, y: area.midY)) }) else {
+                Log.app.notice("debug.scroll-e2e unavailable: the window's middle is on no display")
+                return
+            }
+            var source: ScrollingCapture.Source
             if window {
                 let filter = SCContentFilter(desktopIndependentWindow: target)
                 let scale = CGFloat(filter.pointPixelScale)
@@ -98,12 +102,10 @@ enum DebugScrollingDemo {
                     pixelsPerPoint: scale, frame: area, displayID: CGMainDisplayID()
                 )
             } else {
-                guard let display = layout.displays.first(where: { $0.frame.contains(CGPoint(x: area.midX, y: area.midY)) }) else {
-                    Log.app.notice("debug.scroll-e2e unavailable: the window's middle is on no display")
-                    return
-                }
                 source = try await capturer.scrollingSource(for: area, on: display)
             }
+            // As a window chosen with Space: its rounded corners the area shares, filled.
+            source.corners = await capturer.windowCorners(for: area, on: display, layout: layout, windowID: target.windowID)
 
             // Every view as PNG, written off the stream's queue, at most 8 at a time.
             let writing = DispatchQueue(label: "OhMyShot.scroll-e2e", qos: .utility, attributes: .concurrent)
@@ -184,7 +186,9 @@ enum DebugScrollingDemo {
             await withCheckedContinuation { continuation in group.notify(queue: .main) { continuation.resume() } }
             if let picture { try await ImageExporter.write(picture, to: folder.appending(path: "picture.png"), format: .png) }
             let steps = record.steps
-            try steps.joined(separator: "\n").write(to: folder.appending(path: "steps.txt"), atomically: true, encoding: .utf8)
+            // The corners filled come first, as a replay takes what the capture was told before the first view.
+            let told = source.corners.map { ["- \($0.description)"] } ?? []
+            try (told + steps).joined(separator: "\n").write(to: folder.appending(path: "steps.txt"), atomically: true, encoding: .utf8)
             let counts = Dictionary(grouping: steps.map { $0.split(separator: " ").dropFirst().first.map(String.init) ?? "" }, by: { $0 }).mapValues(\.count)
             let lost = steps.filter { $0.contains("LOST") }.prefix(12).joined(separator: " | ")
             Log.app.notice("""
@@ -279,7 +283,7 @@ enum DebugScrollingDemo {
             coordinator.debugAutoScrollTarget = (processID, target.windowID, windowFrame)
             defer { coordinator.debugAutoScrollTarget = nil }
             let started = ContinuousClock.now
-            await coordinator.debugStart(source, on: display, savingTo: folder, autoScrolls: true)
+            await coordinator.debugStart(source, on: display, savingTo: folder, autoScrolls: true, cornersOf: target.windowID)
             var ranAt: ContinuousClock.Instant?
             var stoppedAt: ContinuousClock.Instant?
             while ContinuousClock.now - started < .seconds(seconds) {
