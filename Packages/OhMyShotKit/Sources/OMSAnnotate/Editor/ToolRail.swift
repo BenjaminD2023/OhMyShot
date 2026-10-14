@@ -258,6 +258,10 @@ final class RailChip: NSButton {
     var onHover: ((Bool) -> Void)?
     private(set) var isHovered = false
 
+    /// No padding around the frame, as a button otherwise keeps for its bezel: the layer's fill covers
+    /// the frame, and it must be the square the constraints give, for a round chip.
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
