@@ -1304,3 +1304,20 @@ with, is lost and waited out: one view, never two in a row.
 
 Auto-scroll now goes on through such a stretch as under a header, until its watch on how much the picture grows stops
 it or moves its gesture.
+
+### A carousel changing slide once while in view: tried, left as it is (2026-10-14, later still)
+
+A made-up carousel 180 rows tall, its slide changing once while the views go past it 20 rows at a time, comes out the
+first slide above the second (40 to 80 rows of the first). The views after the change show the carousel's upper lines
+nearer the view's top, never clearer than the views before the change did. A line's out-of-date picture gives way to
+what three views in a row show only where the first view took it. A new test keeps this as a known issue.
+
+Two ways were tried and left out:
+
+- Taking a block whole from the view where all of it changed at once, as what keeps changing is taken. It took the
+  carousel whole only where the change was caught well inside the view, and left a segment at each end of the old
+  slide. Caught near the view's foot, the carousel was no part of the lines compared, which end where the change
+  begins.
+- Letting any line's out-of-date picture give way, not only the first view's. Lines did give way, but never three
+  margins of lines together in one view, as the rule asks: the upper lines turn out of date one view at a time as they
+  near the top.

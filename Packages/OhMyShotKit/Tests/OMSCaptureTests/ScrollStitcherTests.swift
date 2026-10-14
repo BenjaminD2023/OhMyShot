@@ -1398,6 +1398,43 @@ struct ScrollStitcherTests {
         }
     }
 
+    @Test(arguments: [380, 400, 440])
+    func aCarouselThatChangesSlideOnceInViewComesOutAsOneSlide(switchAt: Int) throws {
+        // A carousel 180 rows tall in a page of text, its slide changing once while the views go past it 20 rows at a
+        // time, with all of it in view: it should come out one slide, all of it, not the first above the second.
+        let width = 400, size = 300
+        let page = Page(width: width, height: 1600, seed: 41)
+        let slides = [(42, 0xFF1E_6FB8), (43, 0xFFC2_5A1C)].map { seed, ground in
+            Page(width: width, height: 180, seed: UInt64(seed)).pixels.map { $0 == Self.white ? UInt32(ground) : $0 }
+        }
+        let rows = 500..<680
+        func view(_ offset: Int) -> [UInt32] {
+            let shown = slides[offset >= switchAt ? 1 : 0]
+            return Self.view(page, at: offset, size: size) { pixels, width, height in
+                for y in 0..<height where rows.contains(offset + y) {
+                    for x in 0..<width { pixels[y * width + x] = shown[(offset + y - rows.lowerBound) * width + x] }
+                }
+            }
+        }
+        let stitcher = Self.stitcher(width: width, height: size)
+        var offset = 0
+        Self.add(view(offset), to: stitcher)
+        while offset < 1000 {
+            offset += 20
+            #expect(Self.add(view(offset), to: stitcher) == .scrolled(offset: 20), "at \(offset)")
+        }
+        let picture = Self.pixels(of: try #require(stitcher.picture()))
+        let shown = Array(picture[rows.lowerBound * width ..< rows.upperBound * width])
+        let off = slides.map { slide in (0..<rows.count).filter { y in (0..<width).contains { shown[y * width + $0] != slide[y * width + $0] } } }
+        // Above the lines where a view clearer than any before the change shows the new slide, the old one stays: the
+        // views after the change show those lines nearer the view's top, never clearer, and a line's out-of-date
+        // picture gives way to what three views in a row show only where the first view took it, and only in runs of
+        // three margins of lines together.
+        withKnownIssue("A carousel whose slide changes once while in view comes out the first slide above the second") {
+            #expect(off.contains { $0.isEmpty }, "rows off slide A \(off[0].count), slide B \(off[1].count) (the first \(off[1].first ?? -1)...\(off[1].last ?? -1))")
+        }
+    }
+
     // MARK: - Pages that move on their own
 
     @Test func aPlayingVideoDoesNotStopTheCapture() throws {
