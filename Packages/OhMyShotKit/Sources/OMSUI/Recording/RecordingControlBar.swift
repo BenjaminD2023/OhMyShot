@@ -73,6 +73,11 @@ public final class RecordingControlBar {
         bar?.updateMicrophone(level: microphoneLevel)
     }
 
+    /// Whether the microphone has stopped sending sound: the meter gives way to a warning until it sends again.
+    public func update(microphoneStalled: Bool) {
+        bar?.updateMicrophone(stalled: microphoneStalled)
+    }
+
     /// The time so far and whether recording is paused. The bar grows when the time does (an hour in),
     /// keeping its middle where it is.
     public func update(elapsed: Duration, paused: Bool) {
@@ -108,10 +113,11 @@ public final class RecordingControlBar {
 
     #if DEBUG
     /// The bar alone in a window behind the desktop picture, for scripted renders that show nothing.
-    public static func debugHiddenWindow(elapsed: Duration, paused: Bool, dark: Bool, microphoneLevel: Double? = nil) -> NSWindow {
-        let view = ControlBarView(actions: Actions(pause: {}, resume: {}, restart: {}, delete: {}, stop: {}), showsMicrophone: microphoneLevel != nil)
+    public static func debugHiddenWindow(elapsed: Duration, paused: Bool, dark: Bool, microphoneLevel: Double? = nil, microphoneStalled: Bool = false) -> NSWindow {
+        let view = ControlBarView(actions: Actions(pause: {}, resume: {}, restart: {}, delete: {}, stop: {}), showsMicrophone: microphoneLevel != nil || microphoneStalled)
         view.update(elapsed: elapsed, paused: paused)
         if let microphoneLevel { view.updateMicrophone(level: microphoneLevel) }
+        if microphoneStalled { view.updateMicrophone(stalled: true) }
         let size = view.fittingSize
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: size.width + shadowRoom * 2, height: size.height + shadowRoom * 2),
@@ -169,9 +175,9 @@ private final class ControlBarPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// The capsule: a red dot and the time in the reading face, the microphone's meter when it is recorded,
-/// then the four buttons. Glass over an opaque window-colored backing, as the All-In-One bar is; a solid
-/// capsule with Reduce Transparency.
+/// The capsule: a red dot and the time in the reading face, the microphone's meter when it is recorded (a
+/// slashed microphone in orange when it stops sending sound), then the four buttons. Glass over an opaque
+/// window-colored backing, as the All-In-One bar is; a solid capsule with Reduce Transparency.
 private final class ControlBarView: NSView {
     private let actions: RecordingControlBar.Actions
     private let container: NSView
@@ -188,6 +194,8 @@ private final class ControlBarView: NSView {
     private var shownLevel = 0.0
     /// The meter's lit dots, in fifths, so the symbol is drawn again only when they change.
     private var litSteps = -1
+    /// The microphone stopped sending sound: the meter shows a warning instead of the level.
+    private var stalled = false
     private let pauseButton = CardButton(style: .barIcon, title: String(localized: "Pause", bundle: .module), symbolName: "pause.fill")
     private let restartButton = CardButton(style: .barIcon, title: String(localized: "Restart", bundle: .module), symbolName: "arrow.counterclockwise")
     private let deleteButton = CardButton(style: .barIcon, title: String(localized: "Delete", bundle: .module), symbolName: "trash")
@@ -313,7 +321,7 @@ private final class ControlBarView: NSView {
     }
 
     func updateMicrophone(level: Double) {
-        guard showsMicrophone else { return }
+        guard showsMicrophone, !stalled else { return }
         // Up at once, down by a fifth of the scale in about 0.3 s.
         shownLevel = max(min(level, 1), shownLevel - 0.07)
         let steps = Int((shownLevel * 5).rounded())
@@ -321,6 +329,25 @@ private final class ControlBarView: NSView {
         litSteps = steps
         meter.image = NSImage(systemSymbolName: "mic.and.signal.meter.fill", variableValue: Double(steps) / 5, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+    }
+
+    /// A microphone that stopped sending sound shows `mic.slash` in system orange in the meter's place, and says
+    /// why in its tooltip and to VoiceOver; the meter comes back when sound does.
+    func updateMicrophone(stalled: Bool) {
+        guard showsMicrophone, stalled != self.stalled else { return }
+        self.stalled = stalled
+        let warning = String(localized: "The microphone stopped sending sound. It may have been disconnected.", bundle: .module)
+        meter.contentTintColor = stalled ? .systemOrange : .labelColor
+        meter.toolTip = stalled ? warning : String(localized: "Microphone level", bundle: .module)
+        meter.setAccessibilityElement(stalled)
+        meter.setAccessibilityLabel(stalled ? warning : nil)
+        if stalled {
+            meter.image = NSImage(systemSymbolName: "mic.slash", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        } else {
+            litSteps = -1
+            updateMicrophone(level: shownLevel)
+        }
     }
 
     func update(elapsed: Duration, paused: Bool) {

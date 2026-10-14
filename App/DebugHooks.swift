@@ -828,16 +828,17 @@ struct DebugHooks {
             }
         case "record-bar-render":
             // The control bar alone behind the desktop picture, captured without showing anything:
-            // elapsed= (seconds), paused=1, mode=light|dark, mic=<percent> for the microphone's meter. Writes
-            // record-bar-<mode>[-paused].png.
+            // elapsed= (seconds), paused=1, mode=light|dark, mic=<percent> for the microphone's meter, stalled=1
+            // for the microphone that stopped sending sound. Writes record-bar-<mode>[-paused][-stalled].png.
             let paused = Self.intParameter("paused", in: url) == 1
+            let stalled = Self.intParameter("stalled", in: url) == 1
             let dark = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "mode" }?.value == "dark"
             let window = RecordingControlBar.debugHiddenWindow(
                 elapsed: .seconds(Self.intParameter("elapsed", in: url) ?? 42), paused: paused, dark: dark,
-                microphoneLevel: Self.intParameter("mic", in: url).map { Double($0) / 100 }
+                microphoneLevel: Self.intParameter("mic", in: url).map { Double($0) / 100 }, microphoneStalled: stalled
             )
             Task {
-                await captureHiddenWindow(window, name: "record-bar-\(dark ? "dark" : "light")\(paused ? "-paused" : "")")
+                await captureHiddenWindow(window, name: "record-bar-\(dark ? "dark" : "light")\(paused ? "-paused" : "")\(stalled ? "-stalled" : "")")
                 window.orderOut(nil)
             }
         case "pin-render":

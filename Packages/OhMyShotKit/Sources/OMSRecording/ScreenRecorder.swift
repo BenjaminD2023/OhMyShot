@@ -117,6 +117,7 @@ public final class ScreenRecorder {
         self.stream = stream
         state = .recording
         startedAt = .now
+        output.watchAudio(microphone: request.audio.microphone != nil, systemAudio: request.audio.system, from: Self.hostTime().seconds)
         leases = [ActiveResources.shared.acquire(.captureStream), ActiveResources.shared.acquire(.activity)]
         // Kept from App Nap and idle sleep while recording; the display may still sleep.
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated], reason: "Recording the screen")
@@ -135,6 +136,7 @@ public final class ScreenRecorder {
         state = .paused
         pausedSince = .now
         let time = Self.hostTime()
+        output.pauseWatchingAudio()
         Task { await writer.pause(at: time) }
     }
 
@@ -144,6 +146,7 @@ public final class ScreenRecorder {
         if let since = pausedSince { pausedFor += .now - since }
         pausedSince = nil
         let time = Self.hostTime()
+        output.resumeWatchingAudio(at: time.seconds)
         Task { await writer.resume(at: time) }
     }
 
@@ -201,6 +204,18 @@ public final class ScreenRecorder {
         return AudioLevel.meterValue(rms: output.takeMicrophoneLevel())
     }
 
+    /// Whether the microphone has stopped sending sound, as when a headset is switched off: nothing has come
+    /// from it for `AudioWatch.stallAfter` seconds of recording. A quiet room still sends buffers, of silence.
+    /// False when the microphone isn't recorded, while paused, and for that long after starting or resuming.
+    public var isMicrophoneStalled: Bool {
+        output.isStalled(.microphone, at: Self.hostTime().seconds)
+    }
+
+    /// Whether what the Mac plays has stopped arriving, by the same rule as the microphone.
+    public var isSystemAudioStalled: Bool {
+        output.isStalled(.systemAudio, at: Self.hostTime().seconds)
+    }
+
     /// The host clock's time now, which stream samples are stamped with.
     nonisolated static func hostTime() -> CMTime {
         CMClockGetTime(CMClockGetHostTimeClock())
@@ -217,6 +232,9 @@ private final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @u
     private var idle = 0
     /// The loudest microphone buffer since the meter last read it.
     private var microphoneLevel: Float = 0
+    /// Whether each audio track still sends buffers; nil for one that isn't recorded.
+    private var microphoneWatch: AudioWatch?
+    private var systemAudioWatch: AudioWatch?
 
     init(writer: RecordingWriter) {
         self.writer = writer
@@ -235,6 +253,38 @@ private final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @u
         }
     }
 
+    /// Begins watching the audio tracks that are recorded, from `time` (host clock seconds).
+    func watchAudio(microphone: Bool, systemAudio: Bool, from time: Double) {
+        lock.withLock {
+            microphoneWatch = microphone ? AudioWatch(startedAt: time) : nil
+            systemAudioWatch = systemAudio ? AudioWatch(startedAt: time) : nil
+        }
+    }
+
+    func pauseWatchingAudio() {
+        lock.withLock {
+            microphoneWatch?.pause()
+            systemAudioWatch?.pause()
+        }
+    }
+
+    func resumeWatchingAudio(at time: Double) {
+        lock.withLock {
+            microphoneWatch?.resume(at: time)
+            systemAudioWatch?.resume(at: time)
+        }
+    }
+
+    /// Whether `track` has stopped sending buffers by `time` (host clock seconds); false for one that isn't recorded.
+    func isStalled(_ track: RecordingWriter.Track, at time: Double) -> Bool {
+        lock.withLock {
+            switch track {
+            case .microphone: microphoneWatch?.isStalled(at: time) ?? false
+            case .systemAudio: systemAudioWatch?.isStalled(at: time) ?? false
+            }
+        }
+    }
+
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard sampleBuffer.isValid else { return }
         // The stream hands the buffer over and keeps no hold on it; the writer runs on this same queue.
@@ -249,10 +299,15 @@ private final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @u
             lock.withLock { complete += 1 }
             writer.assumeIsolated { $0.appendFrame(sample) }
         case .audio:
+            let arrival = ScreenRecorder.hostTime().seconds
+            lock.withLock { systemAudioWatch?.bufferArrived(at: arrival) }
             writer.assumeIsolated { $0.appendAudio(sample, to: .systemAudio) }
         case .microphone:
-            if let level = AudioLevel.rms(of: sample) {
-                lock.withLock { microphoneLevel = max(microphoneLevel, level) }
+            let arrival = ScreenRecorder.hostTime().seconds
+            let level = AudioLevel.rms(of: sample)
+            lock.withLock {
+                microphoneWatch?.bufferArrived(at: arrival)
+                if let level { microphoneLevel = max(microphoneLevel, level) }
             }
             writer.assumeIsolated { $0.appendAudio(sample, to: .microphone) }
         @unknown default:

@@ -95,9 +95,13 @@ final class RecordingCoordinator {
     private var pending: Plan?
     private var ticker: Task<Void, Never>?
     private var tickerLease: ActiveResources.Lease?
-    /// Ten times a second while the microphone is recorded: the control bar's meter.
+    /// Ten times a second while the microphone or the Mac's sound is recorded: the control bar's meter, and a
+    /// look at whether either has stopped sending sound.
     private var meter: Task<Void, Never>?
     private var meterLease: ActiveResources.Lease?
+    /// Which of them the meter found stopped when it last looked.
+    private var microphoneStalled = false
+    private var systemAudioStalled = false
     /// Recordings being finished; the app waits for them before quitting.
     private var finishing = 0
     private var finishingDone: [() -> Void] = []
@@ -1072,8 +1076,8 @@ final class RecordingCoordinator {
                 by: area, displays: displays.layout.displays.map(\.frame), clearing: keystrokes == nil ? 0 : KeystrokeDisplay.reservedHeight,
                 microphone: plan.choices.recordsMicrophone
             )
-            if plan.choices.recordsMicrophone { startMeter() }
         }
+        if plan.choices.recordsMicrophone || plan.choices.recordsSystemAudio { startMeter() }
         startTicking()
     }
 
@@ -1152,10 +1156,13 @@ final class RecordingCoordinator {
         }
     }
 
-    /// The control bar's microphone meter, read ten times a second from the stream; still while paused.
+    /// The control bar's microphone meter, read ten times a second from the stream; still while paused. The
+    /// same pass notices a microphone that stops sending sound, as a headset that was switched off does.
     private func startMeter() {
         meter?.cancel()
         meterLease = ActiveResources.shared.acquire(.timer)
+        microphoneStalled = false
+        systemAudioStalled = false
         meter = Task { [weak self] in
             while !Task.isCancelled {
                 do {
@@ -1164,8 +1171,34 @@ final class RecordingCoordinator {
                     return
                 }
                 guard let self, let recorder = session?.recorder else { return }
+                watchSound(of: recorder)
                 let level = recorder.takeMicrophoneLevel() ?? 0
                 controls.update(microphoneLevel: recorder.state == .recording ? level : 0)
+            }
+        }
+    }
+
+    /// Shows, logs, and announces the microphone going silent, once, and clears the warning when sound is back.
+    /// What the Mac plays stopping is only logged. Pausing clears both, and resuming counts the seconds again.
+    private func watchSound(of recorder: ScreenRecorder) {
+        let microphone = recorder.isMicrophoneStalled
+        if microphone != microphoneStalled {
+            microphoneStalled = microphone
+            controls.update(microphoneStalled: microphone)
+            if microphone {
+                Log.recording.error("The microphone stopped sending sound")
+                announce(String(localized: "The microphone stopped sending sound. It may have been disconnected."))
+            } else if recorder.state == .recording {
+                Log.recording.notice("The microphone is sending sound again")
+            }
+        }
+        let system = recorder.isSystemAudioStalled
+        if system != systemAudioStalled {
+            systemAudioStalled = system
+            if system {
+                Log.recording.notice("The Mac's sound stopped arriving")
+            } else if recorder.state == .recording {
+                Log.recording.notice("The Mac's sound is arriving again")
             }
         }
     }
