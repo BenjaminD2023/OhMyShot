@@ -1562,6 +1562,57 @@ struct ScrollStitcherTests {
         #expect(Self.add(Self.view(page, at: 600, size: 300, header: 30), to: stitcher) == .scrolled(offset: -100))
     }
 
+    @Test(arguments: [false, true])
+    func pullingPastTheEndBesideColumnsThatStickLeavesNothingBehind(denseColumns: Bool) throws {
+        // A docs page at its end, the columns either side of the article stuck, each with a rule down its edge, and a
+        // button fixed on screen near the view's end. Pushed on, the whole view is pulled a pixel or so at a time, the
+        // columns and their rules along, the page's background below the article: a rule looks the same moved or not,
+        // so the part that scrolls ends where the article does, never past it. Trimmed, it springs back. Nothing of the
+        // pull may come into the picture: neither the background past the end nor the columns as the pull moved them.
+        var nav = Page(width: 300, height: 1600, seed: 51)
+        var contents = Page(width: 300, height: 1600, seed: 52)
+        if !denseColumns {
+            for y in 0..<1600 where y % 40 >= 16 {
+                for x in 0..<300 { nav.pixels[y * 300 + x] = Self.white; contents.pixels[y * 300 + x] = Self.white }
+            }
+        }
+        for y in 0..<1600 { nav.pixels[y * 300 + 299] = 0xFFCC_CCCC; contents.pixels[y * 300] = 0xFFCC_CCCC }
+        let article = Page(width: 600, height: 1400, seed: 53)
+        let size = 600, end = article.height - size
+        func view(_ scroll: Int, pull: Int = 0) -> [UInt32] {
+            let rest = Self.docsView(nav: nav, article: article, contents: contents, banner: 0, header: 0, at: scroll, height: size)
+            var pixels = [UInt32](repeating: Self.white, count: 1200 * size)
+            pixels[0 ..< (size - pull) * 1200] = rest[pull * 1200 ..< size * 1200]
+            for y in size - 60 ..< size - 20 {
+                for x in 1080..<1140 { pixels[y * 1200 + x] = 0xFF00_66CC &+ UInt32((x + y) % 5) }
+            }
+            return pixels
+        }
+        let stitcher = Self.stitcher(width: 1200, height: size)
+        Self.add(view(0), to: stitcher)
+        var scroll = 0
+        while scroll < end {
+            scroll = min(end, scroll + 40)
+            Self.add(view(scroll), to: stitcher)
+        }
+        let settled = stitcher.pictureSize.height
+        #expect(settled == article.height, "\(stitcher.summary)")
+        stitcher.isDriven = true
+        for pull in [1, 2, 3, 4, 5, 6, 7, 8, 10, 12] { Self.add(view(end, pull: pull), to: stitcher) }
+        #expect(stitcher.isPulled, "\(stitcher.summary)")
+        stitcher.trimOverscroll()
+        stitcher.isDriven = false
+        for pull in [9, 6, 4, 2, 1, 0] { Self.add(view(end, pull: pull), to: stitcher) }
+        let picture = try #require(stitcher.picture())
+        #expect(picture.height == settled, "\(stitcher.summary)")
+        // The article as it is: no background and no column pulled into it.
+        let pixels = Self.pixels(of: picture)
+        let rows = (0..<min(picture.height, settled)).filter { y in
+            (300..<900).contains { x in pixels[y * 1200 + x] != article.pixels[y * 600 + x - 300] }
+        }
+        #expect(rows.isEmpty, "\(rows.count) rows of the article from \(rows.first ?? -1): \(stitcher.summary)")
+    }
+
     @Test func slowlyScrollingThroughBlankRowsKeepsThem() throws {
         // Two rows at a time into the blank end of a page, as the slowest Auto-scroll or a careful hand scrolls.
         var page = Page(width: 600, height: 1200)

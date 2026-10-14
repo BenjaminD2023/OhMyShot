@@ -103,12 +103,15 @@ nonisolated public final class ScrollStitcher {
     private var tailFrom = 0
     /// Where the view the head was kept from was in the content.
     private var headPosition = 0
-    /// While the content may be pulled past its end (or start) in elastic overscroll: that end, and whether it is
-    /// springing back. Pulled, what comes into view past the end is kept for now, as slow scrolling through blank
-    /// rows looks just the same; springing back, it goes, and nothing past the end is taken until the content is back.
-    private var overscroll: (line: Int, towardEnd: Bool, springing: Bool)?
-    /// Views in a row that crept past the content's end while driven, and where that end was before the first.
-    private var creeping: (views: Int, line: Int)?
+    /// While the content may be pulled past its end (or start) in elastic overscroll: that end, whether it is
+    /// springing back, where the reference view was in the content when the pull began (where it springs back to),
+    /// and whether what stays put while the content scrolls went along with the pull, which makes it a pull for sure.
+    /// Pulled, what comes into view past the end is kept for now, as slow scrolling through blank rows looks just the
+    /// same; springing back, it goes, and nothing past the end is taken until the content is back.
+    private var overscroll: (line: Int, towardEnd: Bool, springing: Bool, from: Int, along: Bool)?
+    /// Views in a row that crept past the content's end while driven, where that end was before the first, and
+    /// where the reference view was then, with its part that scrolls and how many bands moved with the content.
+    private var creeping: (views: Int, line: Int, from: Int, band: Range<Int>?, moving: Int)?
     /// How far the bars at the view's ends reach, and in how many views in a row that scrolled they stayed put.
     private var barsSeen = (head: (views: 0, lines: Int.max), tail: (views: 0, lines: Int.max))
     private var bars: (head: Int, tail: Int) {
@@ -332,7 +335,7 @@ nonisolated public final class ScrollStitcher {
     /// there, and nothing past the end is taken in on the way.
     public func trimOverscroll() {
         guard let edge = overscroll, !edge.springing else { return }
-        overscroll = (edge.line, edge.towardEnd, true)
+        overscroll = (edge.line, edge.towardEnd, true, edge.from, edge.along)
         canvas?.truncate(at: edge.line, towardEnd: edge.towardEnd)
     }
 
@@ -729,27 +732,51 @@ nonisolated public final class ScrollStitcher {
         // color, the page's background pulled out; then springs back. None of it is content.
         let blank = !arrived.isEmpty && arrived.allSatisfy { Self.isBlank(view, line: $0, besides: old) }
         let pastEnd = match.offset > 0 ? next + band.upperBound > span.upperBound : next + band.lowerBound < span.lowerBound
+        // What stays put while the content scrolls (a header, the columns either side of it) goes along with it only
+        // when the whole view is pulled: since before it crept, the part that scrolls starts nearer the view's start
+        // (its end, pulled past the start), or more of the line moves with the content than did (as far as that is known).
+        let start = creeping.map { ($0.band, $0.moving) } ?? (self.band, track.movingBands.count)
+        let along = start.1 > 0 && match.movingBands.count > start.1
+            || start.0.map { match.offset > 0 ? band.lowerBound < $0.lowerBound : band.upperBound > $0.upperBound } == true
+        // Beside what stays put to the view's end (a rule down a column, a button fixed on screen), what the pull brings
+        // into view lines up with nothing: the part that scrolls ends where the content does and draws back from the
+        // view's end as far as it creeps. Slowly scrolling on through blank rows beside them looks just the same, but
+        // for what goes along.
+        let drawnBack = along && self.band.map { last in
+            match.offset > 0
+                ? band.upperBound < last.upperBound && next + band.upperBound + margin >= span.upperBound
+                : band.lowerBound > last.lowerBound && next + band.lowerBound - margin <= span.lowerBound
+        } == true
         // Pushed on, it creeps view after view: two in a row tell it from a slow step through blank rows.
-        if isDriven, abs(match.offset) <= 3, blank, pastEnd {
-            creeping = (views: (creeping?.views ?? 0) + 1, line: creeping?.line ?? (match.offset > 0 ? span.upperBound : span.lowerBound))
+        let creeps = isDriven && abs(match.offset) <= 3 && blank && (pastEnd || drawnBack)
+        if creeps {
+            creeping = (
+                views: (creeping?.views ?? 0) + 1, line: creeping?.line ?? (match.offset > 0 ? span.upperBound : span.lowerBound),
+                from: creeping?.from ?? position, band: start.0, moving: start.1
+            )
         } else {
             creeping = nil
         }
         if let edge = overscroll {
             let backward = edge.towardEnd ? match.offset < 0 : match.offset > 0
-            let back = edge.towardEnd ? next + band.upperBound <= edge.line : next + band.lowerBound >= edge.line
+            // Back at the end. Pulled along, back where the view was when the pull began, not where its part that
+            // scrolls ends (beside a sidebar that part ends at the content's end, pulled out or not, long before the
+            // content is back); and well past it, as springing back ends a pixel either side of it: scrolled back for real.
+            let back = edge.along
+                ? edge.towardEnd ? next <= edge.from - margin : next >= edge.from + margin
+                : edge.towardEnd ? next + band.upperBound <= edge.line : next + band.lowerBound >= edge.line
             if backward, !edge.springing {
                 // Springing back: what only the pull showed goes again.
                 trimOverscroll()
                 if back { overscroll = nil }
-            } else if back || !backward && !blank {
+            } else if !creeps, back || !backward && !blank {
                 // Back at the end; or something come into view past it: it scrolls on for real (slowly, through
                 // blank rows), and what came before it stays. Still pulled on, a view that lags behind the pull
                 // shows only more of the background.
                 overscroll = nil
             }
         } else if let creeping, creeping.views >= 2 {
-            overscroll = (creeping.line, match.offset > 0, false)
+            overscroll = (creeping.line, match.offset > 0, false, creeping.from, along)
         }
         // Whether line `index` of the content lies past the end the content is springing back to.
         func pulledOut(_ index: Int) -> Bool {
@@ -757,6 +784,26 @@ nonisolated public final class ScrollStitcher {
             return edge.towardEnd ? index >= edge.line : index < edge.line
         }
         guard let before = canvas.range else { return .lost }
+        // Pulled on with what stays put otherwise, or springing back from such a pull, the view shows what the views
+        // before it did, a few lines on, and what the pull brought into view; and bars and sidebars moving along would
+        // say they scroll. It is placed, for the next view to line up with, and only what it shows past the content's
+        // end is taken in; but for the ends of the lines it shows as the content has them, which count as a still
+        // view's (an overlay knob gone as the pull began).
+        let springsBack = overscroll.map { $0.along && $0.springing && ($0.towardEnd ? match.offset < 0 : match.offset > 0) } == true
+        if creeps && along || springsBack {
+            position = next
+            for line in match.from..<match.to { canvas.count(view.line(line), at: position + line) }
+            canvas.beginView(travel: abs(match.offset), lines: position + match.from ..< position + match.to)
+            for line in arrived where !before.contains(position + line) && !pulledOut(position + line) {
+                let inward = line - match.offset
+                canvas.write(
+                    view.line(line), at: position + line,
+                    as: .arrived(sameRow: old.line(line), inward: inward >= 0 && inward < view.count ? view.line(inward) : nil)
+                )
+            }
+            canvas.endView(fewestLines: 3 * margin)
+            return place(match, view: view, old: old, band: band, track: &track)
+        }
         canvas.noteColumns(new: view, old: old, offset: match.offset, lines: match.first ..< match.end, at: next)
         position = next
         // The lines both views show back, segment by segment, what moved with the content; what just came into
@@ -833,6 +880,12 @@ nonisolated public final class ScrollStitcher {
             seen(Self.staysPut(view, old, lines: 0 ..< band.lowerBound) ? band.lowerBound : 0, barsSeen.head),
             seen(Self.staysPut(view, old, lines: band.upperBound ..< view.count) ? view.count - band.upperBound : 0, barsSeen.tail)
         )
+        return place(match, view: view, old: old, band: band, track: &track)
+    }
+
+    /// Makes `view`, whose part that scrolls is `band`, the reference the next view lines up with: the content moved
+    /// `match.offset` lines from `old`.
+    private func place(_ match: Lines.Match, view: Lines, old: Lines, band: Range<Int>, track: inout Track) -> Step {
         self.band = band
         // The scroller left out moves on with the page; the gesture's last moves may still scroll it a little.
         if let held = heldInner {

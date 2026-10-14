@@ -1321,3 +1321,73 @@ Two ways were tried and left out:
 - Letting any line's out-of-date picture give way, not only the first view's. Lines did give way, but never three
   margins of lines together in one view, as the rule asks: the upper lines turn out of date one view at a time as they
   near the top.
+
+### A live run, and a pull beside columns that stick (2026-10-14, evening)
+
+The Debug app, built at 01d2017, captured ten pages in a throwaway Chrome window (1100 × 813 pt in view, at 2×)
+through the real coordinator and Auto-scroll:
+
+| Page | Views | Picture |
+| --- | --- | --- |
+| A made-up article with a blank stretch of 894 pt, no header | none lost | the stretch kept as 1616 rows, what follows in order; stopped by itself at the end |
+| The same, its header sticking | none lost | the stretch 1504 rows |
+| The same, a stretch of 1344 pt | 37 lost at the end | ends inside the stretch: Auto-scroll's watch stopped it, as recorded above; the lost views came from the window's corners (below) |
+| A made-up docs page, a banner above a header that sticks, columns either side | none lost; ruler.js continuous from 0 to 6129 pt | 12307 rows for a page of 12266: the pull at its end (below) |
+| MDN, BBC News, The Verge | none lost | continuous to the eye |
+| apple.com/iphone | none lost | stopped at 4680 rows of 33782 (below) |
+
+Apple's page: Auto-scroll stopped after 5.4 s in both runs ("738 px pushed, 100 px got"). The page kept moving: its
+scroll position, read in the page, followed every event, and the views summed to where it ended. As the lineup's large
+pictures came into view the Debug build's stitcher took 235–464 ms a view for five views (9–15 ms optimized, the slowest
+of the run), the stream dropped the frames between, and the picture did not grow while the watch looked, so it took the
+page's end as reached. A Release build is some forty times faster on those views; left as it is.
+
+A window streamed on its own, as these checks capture it, has its corners clear: a radius of 24 pt (48 px), more than
+the 18 pt at each side left out of the hashes. Its frames' PNGs no longer replay byte for byte (the corners' pixels
+change on the way, premultiplied), so replays are compared with those pixels left out. The corners also reach the
+picture: a column that stays put at the area's edge keeps the first view's corner, a notch at that view's foot, and
+corners changing while the views show nothing but a blank stretch make those views lost (the 37 above). Choosing a
+window with Space passes its frame as the area, where the corners show what is behind the window. Left as it is.
+
+At the docs page's end Auto-scroll pushed on, and the browser pulled the whole view along a pixel or two a view, header
+and columns too, then let it spring back. Past the article's end the views showed white, the columns' rules and a
+button fixed on screen, which look the same moved or not: the part that scrolls ended where the article did, drawing
+back from the view's end as far as the pull went, and never reached past the picture's end. The pull was not
+recognized:
+
+- the pulled views were taken in as scrolling, the header and columns where the pull moved them: a second header,
+  navigation and contents column near the picture's end, and the navigation's thin strokes dashed;
+- springing back, the views were taken in down to the view's end, 39 rows past the article's.
+
+Now:
+
+- A view creeping a few rows while driven is a pull also when its part that scrolls draws back from the view's end to
+  within 18 pt of the picture's end, if what stayed put before the creep goes along: the part that scrolls starts nearer
+  the view's start, or more of the line moves with the content. Slowly scrolling on through blank rows beside a rule
+  looks just the same but for that (a news page did, halfway down).
+- Such a view, or one springing back from such a pull, is only placed, for the next to line up with: nothing but what it
+  shows past the picture's end is taken in, and the ends of the lines it shows as the content has them count as a still
+  view's (an overlay knob gone as the pull began would stay otherwise).
+- The spring back ends where the view was when the pull began, give or take 18 pt, rather than where the part that
+  scrolls ends: beside the columns that is the content's end long before the content is back, and the last views,
+  pulled a pixel still, wrote the columns a pixel off.
+
+| Check | Before | After |
+| --- | --- | --- |
+| The live docs page, replayed | 12307 rows, a second header and navigation near the end, strokes dashed | 12268 rows, the columns once, as the first view showed them |
+| The live docs page captured again with the new build | | the pull recognized ("pulled true"), Auto-scroll stopped by it; 12268 rows |
+| A made-up page, columns with rules either side of the article and a button fixed near the foot, pulled 12 rows and sprung back | not taken as a pull; 9 rows past the end | a pull; the picture as before it |
+| The live BBC capture, replayed | an overlay knob in its last rows | the knob left out; an animated advertisement's frame differs |
+| The other nine live captures | as committed | byte for byte, but for 34 pixels of a window's corner in one last row |
+| 206 frame sets | as committed | byte for byte but two: 872 pixels at a block's edge; a header seen near a news page's end, alike to the eye |
+| Stitcher tests | 64, 7 known issues | 65, 7 known issues |
+| 120 randomized forum walks | 0 rows off | 0 rows off |
+
+Not timed: only views creeping while driven do more than before (they count their lines' ends).
+
+Left as they are:
+
+- With a header taken for a bar (three views alike), a pull is taken as nothing scrolled until a view has crept 4 rows
+  past the one taken in, which is then taken in, 4 rows past the end (made up; as before).
+- A first view taken while the page is still drawing (scrolled just before the capture began) left every later view
+  lost, once, live.
