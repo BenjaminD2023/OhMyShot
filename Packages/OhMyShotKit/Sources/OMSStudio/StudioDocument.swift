@@ -220,6 +220,12 @@ public final class StudioDocument {
         AutoZoom.zooms(for: telemetry, duration: duration)
     }
 
+    /// Whether the recording holds a click or a key to follow at all: when it places no zoom, it held too few, or
+    /// too spread out.
+    public var hasEventsToFollow: Bool {
+        AutoZoom.hasEvents(in: telemetry)
+    }
+
     /// Whether keys were written down, so typing can place zooms as clicks do.
     public var hasKeyPresses: Bool {
         telemetry.keystrokeMode != nil

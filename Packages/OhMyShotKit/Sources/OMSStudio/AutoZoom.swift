@@ -31,18 +31,29 @@ nonisolated public enum AutoZoom {
     /// Room around what happens, in the recording's points, when fitting it into a zoom.
     public static let margin = 80.0
 
-    public static func zooms(for telemetry: StudioTelemetry, duration: Double, around fixed: [StudioProject.Zoom] = []) -> [StudioProject.Zoom] {
-        // Every click, and every key at the pointer's place when it was pressed.
+    typealias Event = (time: Double, x: Double, y: Double, isKey: Bool)
+
+    /// Every click, and every key at the pointer's place when it was pressed, inside the recording, in order.
+    static func events(in telemetry: StudioTelemetry) -> [Event] {
         var events = telemetry.clicks.map { (time: $0.time, x: $0.x, y: $0.y, isKey: false) }
         events += telemetry.keys.filter { !$0.isRepeat }.map { key in
             let place = pointer(at: key.time, in: telemetry.samples)
             return (time: key.time, x: place.x, y: place.y, isKey: true)
         }
         events = events.filter { $0.x >= 0 && $0.x <= telemetry.width && $0.y >= 0 && $0.y <= telemetry.height }
-        events.sort { $0.time < $1.time }
+        return events.sorted { $0.time < $1.time }
+    }
+
+    /// Whether the recording holds a click or a key to follow at all, whether or not it places a zoom.
+    public static func hasEvents(in telemetry: StudioTelemetry) -> Bool {
+        !events(in: telemetry).isEmpty
+    }
+
+    public static func zooms(for telemetry: StudioTelemetry, duration: Double, around fixed: [StudioProject.Zoom] = []) -> [StudioProject.Zoom] {
+        let events = events(in: telemetry)
         guard !events.isEmpty, duration > 0 else { return [] }
 
-        var groups: [[(time: Double, x: Double, y: Double, isKey: Bool)]] = []
+        var groups: [[Event]] = []
         for event in events {
             if let last = groups.last?.last, event.time - last.time < gap {
                 groups[groups.count - 1].append(event)

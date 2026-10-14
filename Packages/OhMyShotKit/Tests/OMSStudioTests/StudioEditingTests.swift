@@ -179,4 +179,26 @@ struct StudioEditingTests {
         document.setAutomaticZooms(false)
         #expect(!document.project.automaticZooms)
     }
+
+    @Test func aLoneClickIsSomethingToFollowThoughItPlacesNoZoom() {
+        // One click inside the recording places no zoom, but the panel says why rather than that nothing was clicked;
+        // a click on another display, outside the recording, is nothing to follow.
+        let folder = FileManager.default.temporaryDirectory.appending(path: "OMSStudioTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func document(clickAt x: Double) -> StudioDocument {
+            StudioDocument(
+                source: folder.appending(path: "none.mp4"),
+                telemetry: StudioTelemetry(
+                    width: 1600, height: 1000, pixelsPerPoint: 2, samples: [.init(time: 0, x: 800, y: 500, cursor: 0)],
+                    clicks: [.init(time: 2, x: x, y: 500, button: .primary)]
+                ),
+                project: StudioProject(), duration: 10, recordingSize: CGSize(width: 3200, height: 2000), folder: folder, hasBeenExported: false,
+                background: { _, _ in nil }
+            )
+        }
+        let inside = document(clickAt: 800)
+        #expect(inside.automaticZooms.isEmpty && inside.hasEventsToFollow)
+        let outside = document(clickAt: 2400)
+        #expect(outside.automaticZooms.isEmpty && !outside.hasEventsToFollow)
+    }
 }

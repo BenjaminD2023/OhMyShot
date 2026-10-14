@@ -326,11 +326,20 @@ struct StudioInspector: View {
                 Toggle(isOn: $document.project.motionBlur) { Text("Motion blur", bundle: .module) }
                     .help(Text("Blurs the picture while the view zooms or pans, as a camera would. Still frames stay sharp.", bundle: .module))
                 if document.project.automaticZooms, document.automaticZooms.isEmpty {
-                    (document.hasKeyPresses
-                        ? Text("No clicks or typing to follow, so no zooms were placed.", bundle: .module)
-                        : Text("No clicks to follow, so no zooms were placed.", bundle: .module))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    Group {
+                        if !document.hasEventsToFollow {
+                            document.hasKeyPresses
+                                ? Text("No clicks or typing to follow, so no zooms were placed.", bundle: .module)
+                                : Text("No clicks to follow, so no zooms were placed.", bundle: .module)
+                        } else {
+                            // A lone click places none: a zoom in and straight back out for one click only jolts.
+                            document.hasKeyPresses
+                                ? Text("The clicks and typing were too few or too spread out to zoom on. Add Zoom places one by hand.", bundle: .module)
+                                : Text("The clicks were too few or too spread out to zoom on. Add Zoom places one by hand.", bundle: .module)
+                        }
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                 }
                 if let id = document.selectedZoom, let zoom = document.project.zooms.first(where: { $0.id == id }) {
                     LabeledSlider(
