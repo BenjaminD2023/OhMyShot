@@ -1,0 +1,18 @@
+// The text reader: a command-line tool inside the app (Contents/MacOS) that reads the text in captures
+// for Capture History's search, so Vision's memory leaves with it (Helpers/TextReader/main.swift).
+// Signing, the SDK, and Swift settings come from Base.xcconfig; what makes the app an app is cleared.
+
+#include "Base.xcconfig"
+
+PRODUCT_NAME = OhMyShot Text Reader
+PRODUCT_MODULE_NAME = OhMyShotTextReader
+PRODUCT_BUNDLE_IDENTIFIER = $(OMS_BUNDLE_ID_PREFIX).ohmyshot.text-reader
+
+INFOPLIST_FILE =
+CODE_SIGN_ENTITLEMENTS =
+ASSETCATALOG_COMPILER_APPICON_NAME =
+SKIP_INSTALL = YES
+
+// An Info.plist in the binary, so the signature names the tool by its bundle identifier.
+GENERATE_INFOPLIST_FILE = YES
+CREATE_INFOPLIST_SECTION_IN_BINARY = YES

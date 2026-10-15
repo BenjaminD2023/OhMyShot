@@ -45,18 +45,26 @@ public struct HistoryActions {
     }
 }
 
-/// Capture History: every recent capture, restorable to Quick Access. Created when opened and released
-/// when closed.
+/// Capture History: every recent capture, restorable to Quick Access, and found by the text in it. Created
+/// when opened and released when closed.
 public final class HistoryWindowController: NSWindowController, NSWindowDelegate {
     public var onClose: (() -> Void)?
 
     private let model: HistoryModel
+    private let textReader: HistoryTextReader?
     private var windowLease: ActiveResources.Lease?
+    private var readingShown: Task<Void, Never>?
 
-    /// - Parameter expiredCount: how many captures a retention would delete now, so the window can ask
-    ///   before shortening it.
-    public init(store: HistoryStore, settings: SettingsStore, actions: HistoryActions, expiredCount: @escaping (HistoryRetention) -> Int) {
+    /// - Parameters:
+    ///   - expiredCount: how many captures a retention would delete now, so the window can ask before
+    ///     shortening it.
+    ///   - textReader: what reads the captures' text, so the window can say while it does.
+    public init(
+        store: HistoryStore, settings: SettingsStore, actions: HistoryActions, textReader: HistoryTextReader?,
+        expiredCount: @escaping (HistoryRetention) -> Int
+    ) {
         model = HistoryModel(store: store, settings: settings, actions: actions, expiredCount: expiredCount)
+        self.textReader = textReader
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 920, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -64,6 +72,8 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
             defer: true
         )
         window.title = String(localized: "Capture History", bundle: .module)
+        // The toolbar's room goes to the filter and the search field; the title stays in the Window menu.
+        window.titleVisibility = .hidden
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         super.init(window: window)
@@ -87,6 +97,7 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }
+        showReading()
         if window?.isVisible == false { window?.center() }
         showWindow(nil)
         AppActivation.bringForward(window)
@@ -99,8 +110,24 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
 
     /// Picks up new pictures of existing captures (marked up, or put back as taken).
     public func reload(changed ids: Set<UUID>) {
+        model.forgetText(of: ids)
         model.reload()
         model.refreshThumbnails(for: ids)
+    }
+
+    /// Picks up the text just read in a capture, for searching it.
+    public func textRead(_ id: UUID) {
+        model.loadText(of: [id])
+    }
+
+    /// While captures are being read, a search says how many are left.
+    private func showReading() {
+        guard readingShown == nil, let textReader else { return }
+        readingShown = Task { [weak self] in
+            for await count in Observations({ textReader.reading }) {
+                self?.model.reading = count
+            }
+        }
     }
 
     #if DEBUG
@@ -109,9 +136,21 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
     public func previewRetentionChange(to retention: HistoryRetention?) {
         model.retentionRequest = retention.map { RetentionChangeRequest(retention: $0, count: model.expiredCount($0)) }
     }
+
+    /// Searches for `query` as if it were typed into the search field.
+    public func previewSearch(_ query: String) {
+        model.query = query
+    }
+
+    /// Chooses All, Screenshots, or Recordings in the Show filter by name.
+    public func previewFilter(_ name: String) {
+        if let filter = HistoryModel.Filter(rawValue: name) { model.filter = filter }
+    }
     #endif
 
     public func windowWillClose(_ notification: Notification) {
+        readingShown?.cancel()
+        readingShown = nil
         windowLease?.end()
         windowLease = nil
         onClose?()
@@ -130,6 +169,17 @@ final class HistoryModel {
     var thumbnails: [UUID: CGImage] = [:]
     var filter: Filter = .all
     var selection: UUID?
+    /// What is typed in the search field.
+    var query = "" {
+        didSet { if query != oldValue { search() } }
+    }
+    /// Where the search found each capture it found; nil while nothing is searched for.
+    private(set) var matches: [UUID: HistorySearch.Match]?
+    /// Captures whose text is still being read.
+    var reading = 0
+    /// The captures' text, ready for searching, as it has been read.
+    @ObservationIgnored private var entries: [UUID: HistorySearch.Entry] = [:]
+    @ObservationIgnored private var loading: Set<UUID> = []
     /// The file shown in Quick Look, if any.
     var previewURL: URL?
     var retentionRequest: RetentionChangeRequest?
@@ -147,11 +197,22 @@ final class HistoryModel {
     }
 
     var visibleItems: [HistoryItem] {
-        switch filter {
+        let shown = switch filter {
         case .all: items
         case .screenshots: items.filter { $0.kind == .screenshot }
         case .recordings: items.filter { $0.kind == .recording }
         }
+        guard let matches else { return shown }
+        return shown.filter { matches[$0.id] != nil }
+    }
+
+    /// Whether something is searched for.
+    var isSearching: Bool { matches != nil }
+
+    /// Captures the search found that the Show filter leaves out.
+    var foundElsewhere: Int {
+        guard let matches, filter != .all else { return 0 }
+        return matches.count - visibleItems.count
     }
 
     var selectedItem: HistoryItem? {
@@ -162,7 +223,57 @@ final class HistoryModel {
         items = store.items()
         let ids = Set(items.map(\.id))
         thumbnails = thumbnails.filter { ids.contains($0.key) }
+        entries = entries.filter { ids.contains($0.key) }
         if let selection, !ids.contains(selection) { self.selection = nil }
+        loadText(of: ids.subtracting(entries.keys))
+    }
+
+    /// Reads the kept text of these captures and makes it ready for searching, off the main actor: a long
+    /// history holds megabytes of text. Captures not read yet are skipped; they come with `textRead`.
+    func loadText(of ids: Set<UUID>) {
+        let wanted = items.filter { ids.contains($0.id) && !loading.contains($0.id) }
+        guard !wanted.isEmpty else { return }
+        loading.formUnion(wanted.map(\.id))
+        let store = store
+        Task {
+            let loaded = await Self.entries(of: wanted, in: store)
+            loading.subtract(wanted.map(\.id))
+            let present = Set(items.map(\.id))
+            for (id, entry) in loaded where present.contains(id) { entries[id] = entry }
+            search()
+        }
+    }
+
+    @concurrent
+    private static func entries(of items: [HistoryItem], in store: HistoryStore) async -> [UUID: HistorySearch.Entry] {
+        var folding = HistorySearch.Folding()
+        var entries: [UUID: HistorySearch.Entry] = [:]
+        for item in items {
+            // Recordings have no text, but are found by their app.
+            let text = item.kind == .screenshot ? store.text(of: item) : ""
+            guard let text else { continue }
+            entries[item.id] = HistorySearch.Entry(text: text, appName: item.appName, folding: &folding)
+        }
+        return entries
+    }
+
+    /// Forgets the text of captures whose picture changed: it is read again.
+    func forgetText(of ids: Set<UUID>) {
+        for id in ids { entries[id] = nil }
+        search()
+    }
+
+    private func search() {
+        let terms = HistorySearch.terms(in: query)
+        guard !terms.isEmpty else {
+            matches = nil
+            return
+        }
+        var found: [UUID: HistorySearch.Match] = [:]
+        for (id, entry) in entries {
+            if let match = HistorySearch.match(terms, in: entry) { found[id] = match }
+        }
+        matches = found
     }
 
     /// Loads the thumbnails of captures whose picture changed, keeping the old ones until then.
@@ -220,6 +331,7 @@ struct HistoryView: View {
     @State private var confirmingTrashAll = false
     @State private var gridWidth: CGFloat = 0
     @FocusState private var gridFocused: Bool
+    @FocusState private var searchFocused: Bool
 
     private static let cardMinimum: CGFloat = 200
     private static let spacing: CGFloat = 20
@@ -231,7 +343,13 @@ struct HistoryView: View {
             if model.items.isEmpty {
                 emptyState
             } else if model.visibleItems.isEmpty {
-                filteredEmptyState
+                if !model.isSearching {
+                    filteredEmptyState
+                } else if model.foundElsewhere > 0 {
+                    foundElsewhere
+                } else {
+                    noResults
+                }
             } else {
                 grid
             }
@@ -239,6 +357,25 @@ struct HistoryView: View {
         .frame(minWidth: 560, minHeight: 420)
         .background(.background)
         .toolbar { toolbar }
+        .searchable(text: $model.query, placement: .toolbar, prompt: Text("Search Text", bundle: .module))
+        .searchFocused($searchFocused)
+        // Return in the search field goes to the first capture found, ready for the grid's keys.
+        .onSubmit(of: .search) {
+            guard let first = model.visibleItems.first else { return }
+            model.selection = first.id
+            gridFocused = true
+        }
+        // ⌘F, Find… in the Edit menu: to the search field, whatever the window shows.
+        .onCommand(#selector(NSTextView.performFindPanelAction(_:))) { searchFocused = true }
+        // What a search found is said once typing pauses, for VoiceOver.
+        .task(id: model.query) {
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled, model.isSearching else { return }
+            let count = model.visibleItems.count
+            AccessibilityNotification.Announcement(count == 0
+                ? String(localized: "No Results", bundle: .module)
+                : String(localized: "\(count) captures found", bundle: .module)).post()
+        }
         .quickLookPreview($model.previewURL)
         .confirmationDialog(
             Text("Move all captures in the history to the Trash?", bundle: .module),
@@ -272,6 +409,10 @@ struct HistoryView: View {
                     .padding(.vertical, 20)
                     // Measured inside the scroll view, so a visible scroller is not counted as room.
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
+                    if model.isSearching, model.reading > 0 {
+                        stillReading
+                            .padding(.bottom, 20)
+                    }
                 }
             }
             .focusable()
@@ -325,7 +466,7 @@ struct HistoryView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
+        ToolbarItem(placement: .navigation) {
             Picker(selection: $model.filter) {
                 Text("All", bundle: .module).tag(HistoryModel.Filter.all)
                 Text("Screenshots", bundle: .module).tag(HistoryModel.Filter.screenshots)
@@ -385,6 +526,43 @@ struct HistoryView: View {
         )
     }
 
+    /// Below what a search found while captures are still being read: more may be found.
+    private var stillReading: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Still reading the text in \(model.reading) captures.", bundle: .module)
+                .font(.callout)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Nothing found under the Show filter, though the search found captures it leaves out.
+    private var foundElsewhere: some View {
+        placeholder(
+            symbol: "magnifyingglass",
+            title: model.filter == .recordings
+                ? Text("No Recordings Found", bundle: .module)
+                : Text("No Screenshots Found", bundle: .module),
+            message: String(localized: "Found in \(model.foundElsewhere) captures under All.", bundle: .module)
+        ) {
+            Button { model.filter = .all } label: { Text("Show All", bundle: .module) }
+        }
+    }
+
+    private var noResults: some View {
+        placeholder(
+            symbol: "magnifyingglass",
+            title: Text("No Results for “\(model.query.trimmingCharacters(in: .whitespaces))”", bundle: .module),
+            message: model.reading > 0
+                ? String(localized: "Still reading the text in \(model.reading) captures.", bundle: .module)
+                : String(localized: "Captures are found by the words in them and the app they were taken in.", bundle: .module)
+        )
+    }
+
     private var filteredEmptyState: some View {
         placeholder(
             symbol: model.filter == .recordings ? "video" : "photo",
@@ -394,6 +572,10 @@ struct HistoryView: View {
     }
 
     private func placeholder(symbol: String, title: Text, message: String) -> some View {
+        placeholder(symbol: symbol, title: title, message: message) { EmptyView() }
+    }
+
+    private func placeholder(symbol: String, title: Text, message: String, @ViewBuilder action: () -> some View) -> some View {
         VStack(spacing: 10) {
             Image(systemName: symbol)
                 .font(.system(size: 40, weight: .light))
@@ -402,9 +584,13 @@ struct HistoryView: View {
                 .font(.title3.weight(.semibold))
             Text(message)
                 .font(.callout)
+                // A count that changes while it is read keeps its width.
+                .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
+            action()
+                .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -470,17 +656,25 @@ struct HistoryCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.createdAt, format: .relative(presentation: .named))
                     .font(.callout.weight(.medium))
-                Text(verbatim: "\(item.pixelWidth) × \(item.pixelHeight)" + (item.appName.map { "  ·  \($0)" } ?? ""))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if let excerpt {
+                    // What the search found, in the line it was found in.
+                    Text(Self.attributed(excerpt))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                } else {
+                    Text(verbatim: "\(item.pixelWidth) × \(item.pixelHeight)" + (item.appName.map { "  ·  \($0)" } ?? ""))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, 2)
         }
         .contextMenu { menu }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(Text(item.createdAt, format: .relative(presentation: .named)))
+        .accessibilityValue(accessibilityValue)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityAction(named: Text("Restore", bundle: .module)) { model.actions.restore(item) }
         .accessibilityAction(named: Text("Copy", bundle: .module)) { model.actions.copy(item) }
@@ -498,6 +692,25 @@ struct HistoryCard: View {
 
     private var isGIF: Bool {
         item.fileName.lowercased().hasSuffix(".gif")
+    }
+
+    private var excerpt: HistorySearch.Excerpt? {
+        model.matches?[item.id]?.excerpt
+    }
+
+    /// The excerpt with what was found in label ink and semibold, the rest left to the line's secondary ink.
+    static func attributed(_ excerpt: HistorySearch.Excerpt) -> AttributedString {
+        var found = AttributedString(excerpt.found)
+        found.foregroundColor = .primary
+        found.font = .caption.weight(.semibold)
+        return AttributedString((excerpt.continuesBefore ? "…" : "") + excerpt.before) + found + AttributedString(excerpt.after)
+    }
+
+    /// When it was taken, and what the search found in it.
+    private var accessibilityValue: Text {
+        let time = Text(item.createdAt, format: .relative(presentation: .named))
+        guard let excerpt else { return time }
+        return Text("\(time), \(excerpt.before + excerpt.found + excerpt.after)", bundle: .module)
     }
 
     private var accessibilityLabel: Text {

@@ -25,6 +25,12 @@ final class CompositionRoot {
     private lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions())
     private lazy var textCapture = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
     private lazy var annotations = AnnotationCoordinator(history: history)
+    /// Reads the text in the history's screenshots for its search, in the text reader beside the app.
+    private lazy var textReader: HistoryTextReader = {
+        let reader = HistoryTextReader(store: history, helper: Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader"))
+        reader.onRead = { [weak self] id in self?.historyWindow?.textRead(id) }
+        return reader
+    }()
     private lazy var pins = PinController(settings: settings, actions: makePinActions())
     private lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
     private lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
@@ -329,6 +335,7 @@ final class CompositionRoot {
     /// Keeps edits still open in the editor before the app quits.
     func prepareForTermination() {
         annotations.keepAll()
+        textReader.stop()
     }
 
     /// Stops a recording and keeps it before the app quits, and the replay's buffers once the clips being
@@ -417,6 +424,9 @@ final class CompositionRoot {
         let controller = historyWindow ?? makeHistoryWindow()
         historyWindow = controller
         controller.show()
+        // Its search waits on captures not read yet, Low Power Mode or not; with history off they leave with
+        // their cards.
+        if settings.historyRetention != .never { textReader.readNow() }
     }
 
     func showOnboarding() {
@@ -559,6 +569,18 @@ final class CompositionRoot {
             history.delete(entry)
         }
         removeExpiredHistory()
+        readTextSoon()
+    }
+
+    /// Has the text read in captures new to the history or with a new picture: now while the History window
+    /// is open, else in a moment; not with history off, where they leave the history with their card.
+    private func readTextSoon() {
+        guard settings.historyRetention != .never else { return }
+        if historyWindow != nil {
+            textReader.readNow()
+        } else {
+            textReader.readSoon()
+        }
     }
 
     /// A capture's picture changed in the editor: its card and its History thumbnail follow.
@@ -578,6 +600,7 @@ final class CompositionRoot {
                 ))
             }
             historyWindow?.reload(changed: [entry.id])
+            readTextSoon()
         }
     }
 
@@ -629,6 +652,7 @@ final class CompositionRoot {
                 kind: .screenshot, pixelWidth: image.width, pixelHeight: image.height, appName: nil
             )
             historyWindow?.reload()
+            readTextSoon()
             annotations.annotate(entry, scale: scale)
         } catch {
             Log.capture.error("Adding \(name, privacy: .public) to the history failed: \(error.localizedDescription, privacy: .public)")
@@ -896,7 +920,7 @@ final class CompositionRoot {
                 self?.quickAccess.remove(entry.id)
                 self?.history.moveToTrash(entry)
             }
-        ), expiredCount: { [weak self] retention in self?.expiredCount(for: retention) ?? 0 })
+        ), textReader: textReader, expiredCount: { [weak self] retention in self?.expiredCount(for: retention) ?? 0 })
         controller.onClose = { [weak self] in
             Task { @MainActor in
                 self?.historyWindow = nil
@@ -1034,6 +1058,7 @@ final class CompositionRoot {
                 return history.fileURL(for: entry)
             },
             previewRetentionChange: { [weak self] retention in self?.historyWindow?.previewRetentionChange(to: retention) },
+            historySearch: makeHistorySearchHooks(),
             textCapture: textCapture,
             annotations: annotations,
             pins: pins,
@@ -1043,6 +1068,54 @@ final class CompositionRoot {
             scrolling: scrolling,
             settings: settings,
             replay: { [weak self] in self?.replayStorage }
+        )
+    }
+
+    private func makeHistorySearchHooks() -> DebugHooks.HistorySearchHooks {
+        let testApp = "OhMyShot Test"
+        return DebugHooks.HistorySearchHooks(
+            add: { [weak self] url in
+                guard let self, let data = try? Data(contentsOf: url),
+                      let source = CGImageSourceCreateWithData(data as CFData, nil),
+                      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                      let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
+                      let entry = try? history.add(
+                          data: data, name: url.deletingPathExtension().lastPathComponent, fileExtension: url.pathExtension,
+                          kind: .screenshot, pixelWidth: width, pixelHeight: height, appName: testApp
+                      )
+                else { return Log.app.notice("debug.history-add failed") }
+                Log.app.notice("debug.history-add \(entry.fileName, privacy: .public)")
+                historyWindow?.reload()
+                readTextSoon()
+            },
+            removeTests: { [weak self] in
+                guard let self else { return }
+                let tests = history.items().filter { $0.appName == testApp }
+                tests.forEach(history.delete)
+                historyWindow?.reload()
+                Log.app.notice("debug.history-remove-tests \(tests.count, privacy: .public)")
+            },
+            search: { [weak self] query in
+                // Counts for the whole history; names and what was found only for the test pictures.
+                guard let self else { return "" }
+                let items = history.items(), terms = HistorySearch.terms(in: query)
+                var folding = HistorySearch.Folding()
+                var found = 0, unread = 0, tests: [String] = []
+                for item in items {
+                    guard let text = item.kind == .screenshot ? history.text(of: item) : "" else {
+                        unread += 1
+                        continue
+                    }
+                    guard let match = HistorySearch.match(terms, in: HistorySearch.Entry(text: text, appName: item.appName, folding: &folding)) else { continue }
+                    found += 1
+                    if item.appName == testApp { tests.append("\(item.fileName) [\(match.excerpt.map { $0.before + "|" + $0.found + "|" + $0.after } ?? "app")]") }
+                }
+                return "found \(found) of \(items.count), unread \(unread); tests: \(tests.joined(separator: "; "))"
+            },
+            read: { [weak self] in self?.textReader.readNow() },
+            reading: { [weak self] in self?.textReader.reading ?? 0 },
+            setQuery: { [weak self] query in self?.historyWindow?.previewSearch(query) },
+            setFilter: { [weak self] name in self?.historyWindow?.previewFilter(name) }
         )
     }
     #endif

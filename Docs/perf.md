@@ -1633,3 +1633,45 @@ stretch, where nothing could grow. Out of a blank stretch the watch now looks af
 | 120 randomized forum walks | 0 rows off |
 | Capture tests (OMSCapture, 126) | pass, 7 known issues |
 
+
+## M5 — Capture History search (2026-10-15)
+
+Same machine and displays. Every screenshot's text is read for the history's search by the text reader, a tool
+inside the app (`OhMyShot Text Reader`, Contents/MacOS) that the app runs while there is something to read and
+that exits when it is done, so that what Vision keeps after a recognition (M2: 61–70 MB after Capture Text, 110–125
+after the OCR panel) is never the menu bar app's. The app's own numbers are a Debug build's, fresh launch; the
+reader's are the Release reader over the 130 screenshots then in the Debug app's history (timings and sizes only:
+nothing they show was read out).
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Idle after launch | 23 MB | < 30 MB |
+| A capture read for search, a few seconds after it is kept (background priority) | 0.7 s; the app 23 MB before and after | the app unchanged |
+| Idle 60 s after it | 0.00% CPU (one 0.1% second), 0 wakeups, 23 MB, no live resources | 0.0%, < 60, < 60 MB |
+| Reading the whole history, 130 screenshots, at utility priority (History open) | 76.5 s: median 394 ms, p90 1.2 s, slowest 3.2 s (a scrolling capture 3346 × 16811) | — |
+| The same at background priority (after captures) | 253 s: median 1.27 s, p90 4.4 s | — |
+| The reader's footprint while it reads | 340–720 MB through the run, never climbing; all of it gone when it exits | gone after use |
+| The OCR panel (`ocr.analyze`, warm) while the reader runs | 749–776 ms (618–675 alone); nothing stalls with four accurate requests in two processes | no stall |
+| The history's text, all 133 captures / the largest | 95,779 characters (129 KB) / 3606 | — |
+| Searching | instant: a unit test searches 300 texts of 23,000 characters in well under its 0.5 s bound (Debug) | as typed |
+| History window open, 133 captures, no search / 15 s after closing it | 104 / 103 MB (live heap 22 MB) | < 60 MB after use |
+
+### Findings
+
+- **Reading in the app would have cost the app's footprint for good; reading beside it costs nothing that stays.**
+  The app stays at 23 MB across a capture read for search, with no wakeup after. The reader is a 1.7 MB tool with
+  the L1 pipeline linked in, signed with the app's team and hardened runtime, embedded by XcodeGen.
+- **One Vision request over a large picture loses text** (Docs/ocr.md › Large pictures, in bands): bands 2048 tall
+  across the width read 8–14% more of a 4K screen and up to sixty times more of a tall capture, and the slowest
+  pictures went from 10–15 s to about 2 s. The reader reads in bands; Capture Text and the OCR panel still read a
+  selection whole.
+- **Background priority is three times slower** than utility for the same reading (E cores); a capture or two is
+  read in a second or so either way. Only the first History window after many captures waits on a backfill, and it
+  says how many are left; opening it stops a reading going at background priority and goes on at utility, keeping
+  what was read. Re-read with bands, the history's text went from 95,779 to 109,172 characters (some of the gain is
+  lines read twice where bands overlap).
+- **The History window leaves the allocator's freed pages dirty** (found here, not new): with 133 captures its
+  thumbnails take the app from 23 to 104 MB, and 103 MB stays after it closes, though only 22 MB is live (`vmmap`:
+  the default zone 50 MB resident for 22 MB allocated, 20 MB of empty large blocks). Searching adds about 1 MB
+  while the window is open. Decoding the thumbnails off the heap (as GIFMaker's `PageBuffer` did for M4) is the
+  next thing to try.

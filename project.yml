@@ -40,6 +40,24 @@ targets:
         product: OMSRecording
       - package: OhMyShotKit
         product: OMSStudio
+      - target: TextReader
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables
+
+  # Reads the text in captures for Capture History's search, in a process of its own (see main.swift).
+  TextReader:
+    type: tool
+    platform: macOS
+    configFiles:
+      Debug: Config/TextReader-Debug.xcconfig
+      Release: Config/TextReader-Release.xcconfig
+    sources:
+      - path: Helpers/TextReader
+    dependencies:
+      - package: OhMyShotKit
+        product: OMSOCR
 
 schemes:
   OhMyShot:

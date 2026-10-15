@@ -37,6 +37,7 @@ struct DebugHooks {
     /// The newest capture's file in the history.
     let latestCaptureFile: () -> URL?
     let previewRetentionChange: (HistoryRetention?) -> Void
+    let historySearch: HistorySearchHooks
     let textCapture: TextCaptureCoordinator
     let annotations: AnnotationCoordinator
     let pins: PinController
@@ -47,6 +48,23 @@ struct DebugHooks {
     let settings: SettingsStore
     /// The replay's coordinator on macOS 27, as any object.
     let replay: () -> AnyObject?
+
+    /// Capture History's search, for scripted checks on the hook's own test pictures.
+    struct HistorySearchHooks {
+        /// Adds a picture file to the history as a screenshot taken in "OhMyShot Test", read as a capture is.
+        let add: (URL) -> Void
+        /// Removes every picture `add` added.
+        let removeTests: () -> Void
+        /// How a search of the whole history comes out, as a log line.
+        let search: (String) -> String
+        let read: () -> Void
+        /// Captures being read now.
+        let reading: () -> Int
+        /// Types into the History window's search field.
+        let setQuery: (String) -> Void
+        /// Chooses the History window's Show filter by name.
+        let setFilter: (String) -> Void
+    }
 
     /// Where `snapshot` writes window captures.
     static let snapshotDirectory = URL.cachesDirectory.appending(path: "\(Log.subsystem)/debug-snapshots", directoryHint: .isDirectory)
@@ -112,6 +130,13 @@ struct DebugHooks {
             // real key press.
             let key = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "key" }?.value ?? ""
             sendKey(key, to: historyWindow())
+            if key == "return" {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    let window = historyWindow()
+                    Log.app.notice("debug.history-key first responder: \(window?.firstResponder.map { String(describing: type(of: $0)) } ?? "none", privacy: .public)")
+                }
+            }
         case "history-restore-latest":
             restoreLatestFromHistory()
         case "retention":
@@ -126,6 +151,36 @@ struct DebugHooks {
             let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "value" }?.value
             previewRetentionChange(value.flatMap(HistoryRetention.init(rawValue:)))
             Log.app.notice("debug.history-retention-preview \(value ?? "dismiss", privacy: .public)")
+        case "history-add":
+            // path=/…/picture.png: added to the history as a screenshot taken in "OhMyShot Test", then read.
+            if let path = Self.parameter("path", in: url) { historySearch.add(URL(filePath: path)) }
+        case "history-remove-tests":
+            historySearch.removeTests()
+        case "history-read":
+            historySearch.read()
+            Log.app.notice("debug.history-read \(historySearch.reading(), privacy: .public) being read")
+        case "history-search":
+            // q=words: counts across the history, and what was found in the test pictures.
+            let query = Self.parameter("q", in: url) ?? ""
+            Log.app.notice("debug.history-search \(historySearch.search(query), privacy: .public)")
+        case "history-query":
+            // q=words typed into the History window's search field.
+            historySearch.setQuery(Self.parameter("q", in: url) ?? "")
+        case "history-size":
+            // w=points, h=points: the History window's size (at least 560 × 420), its height kept unless given.
+            if let width = Self.intParameter("w", in: url), let window = historyWindow() {
+                let height = Self.intParameter("h", in: url).map { CGFloat($0) } ?? window.frame.height
+                window.setFrame(CGRect(origin: window.frame.origin, size: CGSize(width: CGFloat(width), height: height)), display: true)
+            }
+        case "history-filter":
+            // value=all|screenshots|recordings
+            historySearch.setFilter(Self.parameter("value", in: url) ?? "all")
+        case "history-click":
+            // count=1|2: a click or a double-click at the middle of the first card's picture, sent through the
+            // window like real mouse events.
+            clickFirstHistoryCard(times: Self.intParameter("count", in: url) ?? 1)
+        case "history-close":
+            historyWindow()?.close()
         case "history-count":
             Log.app.notice("debug.history-count \(historyCount(), privacy: .public) in history, \(quickAccess.itemIDs.count, privacy: .public) card(s), can restore: \(quickAccess.canRestoreRecentlyClosed, privacy: .public)")
         case "capture-display":
@@ -1103,6 +1158,7 @@ struct DebugHooks {
             "cmd-c": (8, "c", .command),
             "cmd-s": (1, "s", .command),
             "cmd-delete": (51, "\u{7F}", .command),
+            "cmd-f": (3, "f", .command),
         ]
         guard let entry = table[key] else {
             Log.app.error("debug.history-key: unknown key \(key, privacy: .public)")
@@ -1114,8 +1170,18 @@ struct DebugHooks {
             let characters = key == "cmd-delete" ? "\u{8}" : entry.characters
             let item = NSApp.mainMenu.flatMap { Self.menuItem(withKeyEquivalent: characters, in: $0) }
             window.makeKeyAndOrderFront(nil)
-            let handled = item?.action.map { NSApp.sendAction($0, to: nil, from: item) } ?? false
+            // Up the window's own responder chain, as the menu would while it is the key window (an app
+            // opened in the background may not be let in front).
+            let handled = item?.action.map { action in
+                window.isKeyWindow
+                    ? NSApp.sendAction(action, to: nil, from: item)
+                    : window.firstResponder?.tryToPerform(action, with: item) ?? false
+            } ?? false
             Log.app.notice("debug.history-key \(key, privacy: .public) menu=\(item?.title ?? "none", privacy: .public) handled=\(handled, privacy: .public)")
+            Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                Log.app.notice("debug.history-key first responder: \(window.firstResponder.map { String(describing: type(of: $0)) } ?? "none", privacy: .public)")
+            }
             return
         }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
@@ -1134,6 +1200,28 @@ struct DebugHooks {
             window.sendEvent(event)
         }
         Log.app.notice("debug.history-key \(key, privacy: .public) key=\(window.isKeyWindow, privacy: .public)")
+    }
+
+    private func clickFirstHistoryCard(times: Int) {
+        guard let window = historyWindow() else { return Log.app.error("debug.history-click: no history window") }
+        // Where the grid puts its first card (DESIGN.md › Layout): 24 pt in, 20 pt below the toolbar, 150 pt tall,
+        // as wide as the adaptive columns make it.
+        let width = window.frame.width, toolbar = window.frame.height - window.contentLayoutRect.height
+        let columns = max(1, Int((width - 48 + 20) / 220))
+        let cardWidth = min(280, (width - 48 - 20 * CGFloat(columns - 1)) / CGFloat(columns))
+        let point = CGPoint(x: 24 + cardWidth / 2, y: window.frame.height - (toolbar + 20 + 75))
+        var number = 0
+        for click in 1...max(1, times) {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                number += 1
+                guard let event = NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: number, clickCount: click, pressure: 1
+                ) else { continue }
+                window.sendEvent(event)
+            }
+        }
+        Log.app.notice("debug.history-click \(times, privacy: .public) at \(Int(point.x), privacy: .public),\(Int(point.y), privacy: .public)")
     }
 
     private static func menuItem(withKeyEquivalent characters: String, in menu: NSMenu) -> NSMenuItem? {

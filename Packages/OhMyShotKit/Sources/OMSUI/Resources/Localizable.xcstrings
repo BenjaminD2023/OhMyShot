@@ -66,6 +66,72 @@
           }
         }
       }
+    },
+    "Still reading the text in %lld captures.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Still reading the text in %lld capture."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Still reading the text in %lld captures."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Found in %lld captures under All.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Found in %lld capture under All."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Found in %lld captures under All."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld captures found": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld capture found"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld captures found"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "version": "1.0"

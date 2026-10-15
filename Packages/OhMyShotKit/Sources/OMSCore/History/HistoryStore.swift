@@ -162,6 +162,43 @@ public final class HistoryStore: Sendable {
         studioURL(for: item).appending(path: "exported.json")
     }
 
+    /// The text read in the capture, for searching the history (`HistoryText`). Not `.json`, so listing the
+    /// history never takes it for a record.
+    public func textURL(for item: HistoryItem) -> URL {
+        directory.appending(path: "\(item.fileName).text")
+    }
+
+    /// The capture's file as it is now, to tell later whether text read from it still belongs to it; nil
+    /// when the file is gone.
+    public func stamp(of item: HistoryItem) -> HistoryText.Stamp? {
+        let values = try? fileURL(for: item).resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        guard let size = values?.fileSize, let modified = values?.contentModificationDate else { return nil }
+        return HistoryText.Stamp(size: size, modified: modified.timeIntervalSinceReferenceDate)
+    }
+
+    /// The text read in the capture as it is now; nil when none was read, or it was read from a picture
+    /// since replaced (marked up, or put back as taken).
+    public func text(of item: HistoryItem) -> String? {
+        guard let data = try? Data(contentsOf: textURL(for: item)),
+              let kept = try? JSONDecoder().decode(HistoryText.self, from: data),
+              kept.version == HistoryText.version, kept.stamp == stamp(of: item)
+        else { return nil }
+        return kept.text
+    }
+
+    /// Keeps `text`, read from the capture's file when it was `stamp`; if the file has changed since, the text
+    /// is kept but counts as not read.
+    public func setText(_ text: String, of item: HistoryItem, readFrom stamp: HistoryText.Stamp) throws {
+        let kept = HistoryText(version: HistoryText.version, stamp: stamp, text: text)
+        try JSONEncoder().encode(kept).write(to: textURL(for: item), options: .atomic)
+    }
+
+    /// The screenshots among `items` whose text has not been read from their picture as it is now. Recordings
+    /// have no text to read.
+    public func needingText(_ items: [HistoryItem]) -> [HistoryItem] {
+        items.filter { $0.kind == .screenshot && text(of: $0) == nil }
+    }
+
     /// Whether the capture has been marked up and its original kept.
     public func hasOriginal(_ item: HistoryItem) -> Bool {
         FileManager.default.fileExists(atPath: originalURL(for: item).path(percentEncoded: false))
@@ -343,6 +380,7 @@ public final class HistoryStore: Sendable {
         try? FileManager.default.removeItem(at: fileURL(for: item))
         try? FileManager.default.removeItem(at: sidecarURL(for: item.id, fileName: item.fileName))
         removeExtras(of: item)
+        try? FileManager.default.removeItem(at: textURL(for: item))
     }
 
     /// Moves the capture to the Trash, where it can still be recovered, and forgets it.
@@ -353,8 +391,9 @@ public final class HistoryStore: Sendable {
             try? FileManager.default.removeItem(at: fileURL(for: item))
         }
         try? FileManager.default.removeItem(at: sidecarURL(for: item.id, fileName: item.fileName))
-        // The Trash keeps the picture as it was last shown; the original and the marks go with the record.
+        // The Trash keeps the picture as it was last shown; the original, the marks, and its text go with the record.
         removeExtras(of: item)
+        try? FileManager.default.removeItem(at: textURL(for: item))
     }
 
     public func deleteAll() {

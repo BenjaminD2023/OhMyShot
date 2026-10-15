@@ -285,6 +285,37 @@ in 144 ms (the Latin reading alone). Both entry points are `@concurrent`: called
 main-actor task through the app's closures, the ink fitting (50–300 ms on the real screenshots) used to
 run on the main thread.
 
+## Large pictures, in bands (`PictureText`, 2026-10-15)
+
+Capture History's search reads every screenshot with L1, so it met pictures the benchmark never had: whole 4K and
+6K screens, and scrolling captures up to 50,000 pixels long. One request over a large picture loses text, and on
+a tall one most of it: Vision shrinks what it is given, and small text goes. Read again in bands 2048 pixels tall
+across the full width, 256 pixels into each other, the history's own captures gave (characters in distinct lines,
+so a line read twice in an overlap counts once; Release reader, M3 Max):
+
+| Picture | Whole | Bands of 2048 | Bands of 1400 |
+| --- | --- | --- | --- |
+| 3346 × 16811 (scrolling) | 0, 0.6 s | 1222, 2.4 s | 1256, 3.4 s |
+| 3667 × 8418 | 20, 0.4 s | 1232, 1.6 s | 1289, 2.2 s |
+| 3687 × 8237 | 2100, 11.0 s | 2478, 2.2 s | 2650, 2.7 s |
+| 3700 × 8000 | 2126, 14.4 s | 2332, 2.0 s | 2600, 2.5 s |
+| 3527 × 6020 | 309, 0.6 s | 1669, 1.5 s | 1690, 1.8 s |
+| 4112 × 2658 (a 4K screen) | 1095, 0.6 s | 1182, 0.9 s | 1184, 1.0 s |
+| 4112 × 2579 | 653, 0.7 s | 744, 0.8 s | 932, 1.1 s |
+| 2336 × 2287 | 807, 0.4 s | (one band) | 807, 0.6 s |
+| 10989 × 2880 (sideways scrolling) | 567, 0.6 s | 1100, 1.6 s | 396, 0.7 s |
+
+On a drawn page 3700 × 8000 of 154 dense lines, the whole picture read nothing in 34 s; its bands read every line
+in 3 s. Bands of 1400 read a little more again on some pictures, but a band seven times wider than tall reads
+less, and they cost more time; `PictureText` uses 2048, and only for pictures more than a quarter taller than a
+band. The one very wide picture read best cut across too, into squares as wide as it is tall (1451 characters,
+against 1100 in bands across its width), though that cuts its lines: `PictureText` does it only for pictures over
+4096 pixels wide and 2.5 times wider than tall.
+
+Capture Text and the OCR panel read a selection whole, as before; selections are rarely this large, but a
+fullscreen Capture Text, or a scrolling capture opened in the panel, loses text the same way. Banding them (and
+placing each band's lines back into the whole) is the open follow-up.
+
 ## L2 runtime (spike, 2026-10-09)
 
 The plan's L2 is a model pack for what Vision reads poorly: Chinese-heavy interfaces, vertical text, low

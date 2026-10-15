@@ -14,6 +14,8 @@ public final class ActiveResources: Sendable {
         case frameBuffer
         case window
         case activity
+        /// A process of the app's own running beside it (the text reader).
+        case helperProcess
     }
 
     public static let shared = ActiveResources()

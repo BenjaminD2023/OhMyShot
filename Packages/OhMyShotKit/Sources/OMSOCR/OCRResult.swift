@@ -95,6 +95,8 @@ public struct OCRResult: Sendable {
 public enum OCRError: Error, Equatable {
     /// The engine did not answer in time; Vision can stall when too many accurate requests run at once.
     case timedOut
+    /// The file holds no picture that could be read.
+    case unreadableImage
 }
 
 /// Recognizes text in an image.
