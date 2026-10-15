@@ -649,6 +649,10 @@ struct HistoryCard: View {
             }
             .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
             .onHover { hovering = $0 }
+            // Dragged out as the file, as from a Quick Access card: copied wherever it lands, never moved out
+            // of the history.
+            .onDrag { NSItemProvider(object: model.store.fileURL(for: item) as NSURL) }
+            .dragConfiguration(DragConfiguration(operationsOutsideApp: .init(allowCopy: true, allowMove: false, allowDelete: false)))
             .onTapGesture(count: 2) { model.actions.restore(item) }
             .simultaneousGesture(TapGesture().onEnded { model.selection = item.id })
             .task { await model.loadThumbnail(for: item) }
