@@ -2,6 +2,7 @@ import AVFoundation
 import CoreGraphics
 import Foundation
 import ImageIO
+import OMSPixels
 import OSLog
 
 /// How long captures stay in the history.
@@ -473,6 +474,10 @@ public final class HistoryStore: Sendable {
     @concurrent
     public static func cardThumbnail(of url: URL, maxPixels: Int) async -> CGImage? {
         if isMovie(url) { return await thumbnail(of: url, maxPixels: maxPixels) }
+        // The PNGs the app writes are read row by row, for what ImageIO leaves in the heap (see PNGThumbnail).
+        if let data = try? Data(contentsOf: url, options: .alwaysMapped), let thumbnail = PNGThumbnail.make(from: data, maxPixels: maxPixels, part: CardPicture.shownRect) {
+            return thumbnail
+        }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         return cardThumbnail(of: source, maxPixels: maxPixels)
     }
@@ -480,6 +485,7 @@ public final class HistoryStore: Sendable {
     /// The same, from encoded data already in memory.
     @concurrent
     public static func cardThumbnail(of data: Data, maxPixels: Int) async -> CGImage? {
+        if let thumbnail = PNGThumbnail.make(from: data, maxPixels: maxPixels, part: CardPicture.shownRect) { return thumbnail }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         return cardThumbnail(of: source, maxPixels: maxPixels)
     }

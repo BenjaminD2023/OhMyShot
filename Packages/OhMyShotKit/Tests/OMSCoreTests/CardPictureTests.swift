@@ -61,6 +61,17 @@ struct CardPictureTests {
         #expect(corners.top == Self.red && corners.bottom == Self.blue)
     }
 
+    @Test func aPictureStoredTurnedIsShownUpright() async throws {
+        // 600 × 300 with a quarter-turn orientation: shown 300 × 600, so 150 × 300 at 300 pixels.
+        let image = try Self.picture(width: 600, height: 300, band: 100)
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: 6] as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination))
+        let thumbnail = try #require(await HistoryStore.cardThumbnail(of: data as Data, maxPixels: 300))
+        #expect(thumbnail.width == 150 && thumbnail.height == 300)
+    }
+
     @Test func anOrdinaryPictureIsShownWhole() async throws {
         let image = try Self.picture(width: 800, height: 500, band: 100)
         let thumbnail = try #require(await HistoryStore.cardThumbnail(of: image, maxPixels: 400))

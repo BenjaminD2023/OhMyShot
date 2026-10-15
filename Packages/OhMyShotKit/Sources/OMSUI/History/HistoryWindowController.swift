@@ -149,6 +149,13 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
     #endif
 
     public func windowWillClose(_ notification: Notification) {
+        // A closed window can be kept alive after its controller is gone, and with it everything its views hold:
+        // the thumbnails loaded among it, some 55 MB once a long history has been scrolled through. They go now,
+        // with the views, for left to SwiftUI they stayed a minute or more in one close of three. The window closes
+        // at once, as it would show empty while it faded.
+        window?.animationBehavior = .none
+        model.release()
+        window?.contentViewController = nil
         readingShown?.cancel()
         readingShown = nil
         windowLease?.end()
@@ -183,6 +190,11 @@ final class HistoryModel {
     /// The file shown in Quick Look, if any.
     var previewURL: URL?
     var retentionRequest: RetentionChangeRequest?
+
+    /// Thumbnails being made: the grid asks for every card it shows at once, which would take every core, and the
+    /// cards scrolled away while they wait need none.
+    @ObservationIgnored private let decodeSlots = Slots(count: 3)
+    @ObservationIgnored private var isReleased = false
 
     @ObservationIgnored let store: HistoryStore
     @ObservationIgnored let settings: SettingsStore
@@ -280,7 +292,7 @@ final class HistoryModel {
     func refreshThumbnails(for ids: Set<UUID>) {
         for item in items where ids.contains(item.id) {
             Task {
-                if let image = await HistoryStore.cardThumbnail(of: store.fileURL(for: item), maxPixels: 520) {
+                if let image = await HistoryStore.cardThumbnail(of: store.fileURL(for: item), maxPixels: 520), !isReleased {
                     thumbnails[item.id] = image
                 }
             }
@@ -288,10 +300,18 @@ final class HistoryModel {
     }
 
     func loadThumbnail(for item: HistoryItem) async {
-        guard thumbnails[item.id] == nil else { return }
-        if let image = await HistoryStore.cardThumbnail(of: store.fileURL(for: item), maxPixels: 520) {
-            thumbnails[item.id] = image
-        }
+        guard thumbnails[item.id] == nil, !isReleased else { return }
+        // A few at a time, and not for a card scrolled away while it waited.
+        await decodeSlots.acquire()
+        let image = Task.isCancelled || isReleased ? nil : await HistoryStore.cardThumbnail(of: store.fileURL(for: item), maxPixels: 520)
+        await decodeSlots.release()
+        if let image, !isReleased { thumbnails[item.id] = image }
+    }
+
+    /// Lets go of the thumbnails, for good: the window has closed, and what is still loading is dropped.
+    func release() {
+        isReleased = true
+        thumbnails = [:]
     }
 
     func moveToTrash(_ item: HistoryItem) {
@@ -323,6 +343,32 @@ final class HistoryModel {
             return
         }
         selection = visible[min(max(current + offset, 0), visible.count - 1)].id
+    }
+}
+
+/// A fixed number of places, taken in turn: `acquire` waits until one is free.
+private actor Slots {
+    private var free: Int
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    init(count: Int) {
+        free = count
+    }
+
+    func acquire() async {
+        if free > 0 {
+            free -= 1
+        } else {
+            await withCheckedContinuation { waiting.append($0) }
+        }
+    }
+
+    func release() {
+        if waiting.isEmpty {
+            free += 1
+        } else {
+            waiting.removeFirst().resume()
+        }
     }
 }
 

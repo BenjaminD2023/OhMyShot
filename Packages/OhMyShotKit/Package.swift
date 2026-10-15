@@ -25,10 +25,17 @@ let package = Package(
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", .upToNextMinor(from: "3.1.0")),
     ],
     targets: [
+        // Pixel work that has to be fast in debug builds too, where nothing else in the app is optimized: it is
+        // built with optimization always. Depends on nothing of ours.
+        .target(
+            name: "OMSPixels",
+            swiftSettings: swiftSettings + [.unsafeFlags(["-O"])]
+        ),
         // Models, geometry, settings, permissions, automation. No UI framework state; UI-facing
         // types opt into the main actor explicitly.
         .target(
             name: "OMSCore",
+            dependencies: ["OMSPixels"],
             swiftSettings: swiftSettings
         ),
         // ScreenCaptureKit, the selection overlay, window catalog, selection model. Main-actor by default.
@@ -76,7 +83,7 @@ let package = Package(
         ),
         .testTarget(
             name: "OMSCoreTests",
-            dependencies: ["OMSCore"],
+            dependencies: ["OMSCore", "OMSPixels"],
             swiftSettings: swiftSettings
         ),
         .testTarget(

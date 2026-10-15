@@ -1673,5 +1673,67 @@ nothing they show was read out).
 - **The History window leaves the allocator's freed pages dirty** (found here, not new): with 133 captures its
   thumbnails take the app from 23 to 104 MB, and 103 MB stays after it closes, though only 22 MB is live (`vmmap`:
   the default zone 50 MB resident for 22 MB allocated, 20 MB of empty large blocks). Searching adds about 1 MB
-  while the window is open. Decoding the thumbnails off the heap (as GIFMaker's `PageBuffer` did for M4) is the
-  next thing to try.
+  while the window is open. Decoding the thumbnails off the heap (as GIFMaker's `PageBuffer` did for M4) was the
+  next thing to try; what it came to, and a second cause, are in M5 — Capture History memory, next.
+
+## M5 — Capture History memory (2026-10-15)
+
+Same machine and displays, Debug build. Measured in an isolated build of the same code, with a bundle identifier
+of its own so that another session's Dev app could be neither quit nor driven by these runs, over a clone of the
+Dev history: 133 captures, 120 of them screenshots (PNGs up to 3346 × 16811, ten of them over 12 million pixels).
+Each round opens the window, steps down through every card with the arrow keys (the grid is lazy: only the cards
+shown are made), closes it, and takes `footprint` at 3 s and 15 s after; rounds follow one another in one
+process. "Before" is the committed code in the Dev app with the real history.
+
+| Measurement | Before | After | Target |
+| --- | --- | --- | --- |
+| Idle after launch | 23 MB | 23 MB | < 30 MB |
+| History open, at the top | 106–113 MB | 55–60 MB | — |
+| 15 s after closing it (no scrolling) | 89–103 MB | 49 / 53 / 53 MB (rounds 1–3) | < 60 MB |
+| History open, every card shown | 262–269 MB (peak 271 MB) | 107–112 MB (peak 112 MB) | — |
+| 15 s after closing it, every card shown | 133 MB or 262–266 MB, the window kept in 4 closes of 5 | 52–57 MB, six rounds in two processes | < 60 MB |
+| Idle 60 s after (`Scripts/power-sample.sh`) | — | 0.00% CPU, 0 wakeups, 52 MB, no live resources | 0.0%, < 60, < 60 MB |
+
+The thumbnails alone, the 120 screenshots made by a standalone tool (sizes and timings only: nothing in them was
+looked at), then released; the process starts at 3 MB. Serial / three at once / eight at once, all from a Release
+build of the tool except the last row's times, which are from a Debug build (4.6 / 1.6 s in Release; its Debug
+peaks are 11 / 13 MB):
+
+| Way of making a card's thumbnail | Peak footprint | Left after release | Time (serial / 3 at once) |
+| --- | --- | --- | --- |
+| ImageIO's thumbnail call (before) | 52 / 81 / — MB | 41 / 65 / 95 MB | 4.6 / 1.5 s |
+| Decoding the picture, then drawing it | 225 / 386 / 891 MB | 6 / 9 / 12 MB | 4.1 / 1.4 s |
+| Reading the PNG's rows (now) | 11 / 14 / 22 MB | 3 / 5 / 12 MB | 5.0 / 1.7 s |
+
+Against ImageIO's, the new thumbnails' gradient (a sharpness measure) is 1.00 at the median, 0.95 at the 10th
+percentile and 0.87 at worst (1.12 at best), their mean difference 1.3 of 255 (3.0 at p90, 6.0 at most), and 19 of
+the 120 are a pixel off in one side. A drawn page of text 3346 × 16811 gave the same thumbnail to the eye, in 0.05 s
+against 0.26 s.
+
+### Findings
+
+- **The closed window was not let go** (found here, not new): the model, 19 cards' views and 224 images were still
+  alive 15 s and more after the close in 4 of 5 runs of the committed code, so what was loaded stayed (262–266 MB, not the
+  allocator's doing). A window whose root view is a single `Text` also stayed, and the retention was not found:
+  the model was held by SwiftUI's key-handler cache for the grid (`FocusBridge`), the window by something in
+  AppKit. Emptying the root view when it closes was not reliable (the model stayed alive on later rounds, done in a
+  task or in the close itself); clearing `model.thumbnails` and removing the window's content
+  view in the same call freed the memory in every round since. The window now closes without its fade, as it
+  would show empty while it faded (unseen: judge it by eye).
+- **ImageIO's thumbnail call leaves its working blocks dirty**: 41 MB serial and 95 MB at eight at once, 15 s
+  later, and `malloc_zone_pressure_relief` (which `onClose` already calls) returns none of it, as in M4.
+- **Drawing the decoded picture takes the heap out of it and the footprint up**: the pixels are mapped pages given
+  back at once, but all of them are there at the peak, 225 MB for the long scrolling capture and 891 MB for eight
+  at once. Tried and dropped.
+- **Reading the PNG's rows** (`OMSPixels`, `PNGThumbnail`): the rows the card shows are inflated one at a time and
+  averaged down, so the peak is a few rows and nothing is left behind, and a long capture is read only as far as
+  its card shows. It reads the PNGs the app writes (8 bits, RGBA or RGB, one pass, an iCCP profile or sRGB, all 122
+  in the history) and leaves anything else to ImageIO. Unoptimized Swift took 357 s over the 120 screenshots in a
+  Debug build, so the target is built with `-O` always (`unsafeFlags` in the package, a local one: 5.0 s, as Release;
+  the Xcode Debug build passes `-O` after `-Onone` for it).
+- **What is left, 52–57 MB, is mostly what any SwiftUI window leaves** (M0: Settings alone takes the app from 23 to
+  41 MB; with no thumbnails at all the History window left 49 MB). The window object may also be kept after it
+  closes, empty. The other windows built the same way (Settings, the OCR panel, the editor, Studio) were not
+  checked for the same retention.
+- **Not looked at**: one close, with the text reader running (`helperProcess` in `debug/resources`), left the app at
+  116 MB 15 s later (24 MB in Foundation, 24 MB of large blocks); the reader was not part of these runs otherwise.
