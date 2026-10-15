@@ -1662,9 +1662,9 @@ nothing they show was read out).
   The app stays at 23 MB across a capture read for search, with no wakeup after. The reader is a 1.7 MB tool with
   the L1 pipeline linked in, signed with the app's team and hardened runtime, embedded by XcodeGen.
 - **One Vision request over a large picture loses text** (Docs/ocr.md › Large pictures, in bands): bands 2048 tall
-  across the width read 8–14% more of a 4K screen and up to sixty times more of a tall capture, and the slowest
-  pictures went from 10–15 s to about 2 s. The reader reads in bands; Capture Text and the OCR panel still read a
-  selection whole.
+  across the width read up to sixty times more of a tall capture (the 8–14% first counted for a 4K screen was
+  mostly lines read twice; placed and merged, 0.1–0.6%), and the slowest pictures went from 10–15 s to about 2 s.
+  The reader reads in bands, and so do Capture Text, the OCR panel, and Translate Area since the next section.
 - **Background priority is three times slower** than utility for the same reading (E cores); a capture or two is
   read in a second or so either way. Only the first History window after many captures waits on a backfill, and it
   says how many are left; opening it stops a reading going at background priority and goes on at utility, keeping
@@ -1737,3 +1737,52 @@ against 0.26 s.
   checked for the same retention.
 - **Not looked at**: one close, with the text reader running (`helperProcess` in `debug/resources`), left the app at
   116 MB 15 s later (24 MB in Foundation, 24 MB of large blocks); the reader was not part of these runs otherwise.
+
+## M5 — Large selections in bands (2026-10-15)
+
+Same machine. `VisionPipeline.recognize` reads an image more than 2560 pixels tall (or very wide) in overlapping
+pieces and puts the lines back together in the whole image's coordinates, so Capture Text, the OCR panel, and
+Translate Area get per-line boxes for highlighting and copy as before (Docs/ocr.md › Large selections in bands).
+Release build of the pipeline, warm, over the 18 captures in this Mac's Capture History that are that large
+(timings and character counts only; nothing they show was read out):
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Characters read, all 18 | 26,731 (15,563 whole) | no loss |
+| `recognize`, summed over the 18 | 27.3 s (43.3 s whole) | not slower |
+| The three captures that took 10–15 s whole | 2.1–2.3 s | — |
+| `analyze` (the panel), summed | 33.4 s (49.7 s whole) | not slower |
+| Four screens 2573–2672 tall | +170–330 ms each, +0.1–0.6% characters | — |
+| A sideways scrolling capture 10989 × 2880 | 3.2 s, 1372 characters (0.53 s, 567 whole); 7 cut lines read whole in one extra request | — |
+| Benchmark, 27 cases and 12 real crops (one piece each) | text and scores byte-identical to before; p50 184–205 ms against 184–190, p95 348–406 against 365–373 (four runs against three) | no regression |
+| The benchmark's new `tall-page` (1128 × 5950) | content CER 1.2%, line order 0.90 (23.1% and 0.31 whole) | — |
+| Peak resident size of the harness, image decoded: 3346 × 16811 / 3700 × 8000 / the sideways capture | 1286 / 604 / 1607 MB (2561 / 984 / 1417 whole) | — |
+| A drawn ultrawide page of 55 long lines, 5120 × 1440 / 10240 × 2880 | 55 lines, 99.9% of the text, 3.5 s / 7.3 s (whole: 65 / 68 lines, 62% / 85%, 1.9 s / 2.9 s) | — |
+| Unit tests | `PieceMergeTests` (14), `BandedReadingTests` (3, with Vision); the whole package passes | pass |
+
+### Findings
+
+- **Banding is faster as well as better on anything tall**, because Vision's time over a large picture grows far
+  faster than its area: 10–15 s whole against 2 s in bands for the three worst. It costs 0.25–0.45 s per band, so
+  a picture just over the threshold (2573–2672 tall) pays 170–330 ms for little; cut to 2600–3600 pixels, five
+  tall captures read +19% to +66% more on 11 of 20 crops and never meaningfully less (−2% at worst), so the
+  threshold stays where the history reader put it.
+- **Ownership by position beats comparing text.** Each piece answers for itself less half the overlap; a line cut by
+  a piece's edge lies in the neighbour's core, whole, and the cut reading is dropped. Comparing text would keep
+  every cut fragment and every line the two pieces read differently (the Latin-or-Chinese choice is made per piece).
+  No line a piece read was left with nothing in its place.
+- **A column cut splits a line, unless it is read again.** A line across a whole 256-pixel overlap is cut in both
+  columns (8 of the sideways capture's 99 lines; most lines of a dense ultrawide page). They are stacked in strips
+  of at most 2048 pixels and read whole, a request per strip: 0.4 s on the sideways capture, 1.6 s on a drawn
+  5120 × 1440 page. One strip for all of them failed at 2× (Vision shrank it and nothing came back whole).
+- **Tables and codes stay on the whole image.** A table taller than the overlap would be cut in two (the panel's
+  281-cell table 7182 pixels tall came back as 93 and 70 cells from the bands), and the bands found small tables
+  the whole image missed, so a union is open. The cells' text takes the bands' lines.
+- **The history reader takes the merged text** (`PictureText.read` is now `recognize(image).text`, so it reads in
+  pieces once, through the same code): over the 120 pictures in the Debug app's History, 91,969 characters in 73.6 s
+  against 94,715 in 67.9 s for the per-piece text joined; the 3% are lines read twice in the overlaps (largest text
+  3606 characters either way).
+- **Vision's document request stalled for 17–29 s four times** in the first sweeps (3710 × 9875 whole twice,
+  2173 × 4242 once, and the bands of 3499 × 8440 once), against 0.2–0.7 s when it ran normally and on every rerun;
+  the app's 30 s timeout then returns no tables without an error. Other processes using Vision at the time cannot
+  be ruled out.

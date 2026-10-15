@@ -45,10 +45,83 @@ public struct VisionPipeline: OCREngine {
     private static let english = [Locale.Language(identifier: "en-US")]
 
     /// Runs off the caller's actor: besides Vision's requests, the pipeline scans pixels.
+    ///
+    /// A large image is read in overlapping pieces (`PictureText.pieces`), one after another, and the pieces'
+    /// lines are put together in the whole image's coordinates: one Vision request over a large image shrinks
+    /// it and loses small text (Docs/ocr.md › Large pictures, in bands).
     @concurrent
     public func recognize(_ image: CGImage) async throws -> OCRResult {
         let started = ContinuousClock.now
-        var mark = started
+        let lines = try await readImage(image)
+        let assembling = ContinuousClock.now
+        let ordered = ReadingOrder.sorted(lines)
+        let text = TextAssembler.assemble(ordered, options: options.assembly)
+        options.trace?("assembly: \(Self.milliseconds(ContinuousClock.now - assembling)) ms")
+        return OCRResult(lines: ordered, text: text, duration: ContinuousClock.now - started)
+    }
+
+    /// The lines of an image, whole or in pieces, not yet in reading order.
+    private func readImage(_ image: CGImage) async throws -> [OCRLine] {
+        let size = CGSize(width: image.width, height: image.height)
+        let pieces = PictureText.pieces(width: image.width, height: image.height)
+        guard pieces.count > 1 else { return try await readPiece(image) }
+        var readings: [[OCRLine]] = []
+        for (number, piece) in pieces.enumerated() {
+            guard let part = image.cropping(to: piece) else {
+                readings.append([])
+                continue
+            }
+            options.trace?("piece \(number + 1) of \(pieces.count): \(Int(piece.minX)),\(Int(piece.minY)) \(part.width)×\(part.height)")
+            readings.append(try await readPiece(part).map { $0.moved(by: piece.origin) })
+        }
+        let merged = PieceMerge.merged(readings, pieces: pieces, size: size)
+        let joined = try await joinedAcrossColumns(merged, pieces: pieces, in: image)
+        // A gutter of line numbers is found only with three numbers in view: a piece with fewer left its own.
+        return LineNumbers.removed(from: joined)
+    }
+
+    /// A line that runs across a whole overlap of two columns is cut in both (`PieceMerge.crossings`); each
+    /// such line is read again whole, many of them stacked in a strip (a few strips, when there are dozens, since
+    /// Vision shrinks a tall strip as it does a tall picture), and replaces its pieces if it reads about as long as
+    /// they do together.
+    private func joinedAcrossColumns(_ lines: [OCRLine], pieces: [CGRect], in image: CGImage) async throws -> [OCRLine] {
+        let groups = PieceMerge.crossings(in: lines, pieces: pieces)
+        guard !groups.isEmpty else { return lines }
+        let wholes = groups.map { group in group.dropFirst().reduce(lines[group[0]].box) { $0.union(lines[$1].box) } }
+        let first = lines.count
+        let crops = LineStrip.crops(
+            for: Array(first..<(first + wholes.count)),
+            of: lines + wholes.map { OCRLine(text: "", box: $0, confidence: 1) },
+            in: CGSize(width: image.width, height: image.height)
+        )
+        let latin = groups.allSatisfy { group in group.allSatisfy { !Script.containsCJK(lines[$0].text) } }
+        var found = [Int: [OCRLine]]()
+        for batch in LineStrip.batches(of: crops) {
+            guard let strip = LineStrip(source: image, crops: Array(crops[batch])) else { continue }
+            for read in try await readLines(in: strip.image, languages: latin ? Self.english : options.primaryLanguages) {
+                if let row = strip.row(of: read.box) { found[batch.lowerBound + row, default: []].append(read) }
+            }
+        }
+        var replaced = Set<Int>()
+        var whole: [OCRLine] = []
+        for (row, group) in groups.enumerated() {
+            let parts = group.map { lines[$0] }
+            guard let read = found[row]?.sorted(by: { $0.box.minX < $1.box.minX }) else { continue }
+            let text = read.map(\.text).joined(separator: " ")
+            guard PieceMerge.isWhole(text, of: parts) else { continue }
+            replaced.formUnion(group)
+            whole.append(OCRLine(
+                text: text, box: wholes[row], confidence: read.map(\.confidence).min() ?? parts[0].confidence,
+                direction: parts[0].direction, wrapsToNextLine: parts.last?.wrapsToNextLine
+            ))
+        }
+        options.trace?("  column cuts: \(replaced.count) pieces of \(whole.count) lines read whole, \(groups.count - whole.count) left cut")
+        return lines.indices.filter { !replaced.contains($0) }.map { lines[$0] } + whole
+    }
+
+    /// The lines of an image read as one piece: both models, the gaps between them, and the repairs.
+    private func readPiece(_ image: CGImage) async throws -> [OCRLine] {
+        var mark = ContinuousClock.now
         func lap(_ step: String) {
             guard let trace = options.trace else { return }
             let now = ContinuousClock.now
@@ -94,11 +167,7 @@ public struct VisionPipeline: OCREngine {
         lap("latin lines")
         lines = inferLoneBrackets(in: lines, image: image)
         lap("lone brackets")
-
-        let ordered = ReadingOrder.sorted(lines)
-        let text = TextAssembler.assemble(ordered, options: options.assembly)
-        lap("assembly")
-        return OCRResult(lines: ordered, text: text, duration: ContinuousClock.now - started)
+        return lines
     }
 
     // MARK: Reading

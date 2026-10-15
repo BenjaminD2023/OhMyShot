@@ -108,6 +108,11 @@
       "tableCells" : 0,
       "tableShape" : false
     },
+    "tall-page" : {
+      "cerContent" : 0.011690746663725599,
+      "cerRaw" : 0.010447485207100591,
+      "lineOrder" : 0.9
+    },
     "ui-icons" : {
       "cerContent" : 0.05555555555555555,
       "cerRaw" : 0.0625,

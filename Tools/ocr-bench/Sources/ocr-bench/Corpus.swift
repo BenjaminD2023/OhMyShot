@@ -68,7 +68,7 @@ enum Corpus {
 
     static var all: [BenchCase] {
         [zhEnChat, zhNoSpace, zhDoc, zhEnLines, zhHant, ja, ko, multilingual, enUI, enWithChinese, codeSwift, codeSwiftPlain, codeYAML, codeGutter, tableZh, tableEn, verticalZh, chat, darkUI, uiIcons]
-            + smallText
+            + smallText + [tallPage]
     }
 
     // MARK: Text blocks
@@ -244,6 +244,38 @@ enum Corpus {
             textBlock(lines.map { ($0, "zh-Hans") }, size: CGFloat(pixels) / 2, padding: 12)
         }
     }
+
+    /// A page tall and dense enough that L1 reads it in bands: 150 lines of English and Chinese at 2×, about
+    /// 3100 pixels wide and 7000 tall. Read whole, Vision shrinks it and loses most of the small text.
+    static let tallPage = BenchCase(
+        id: "tall-page",
+        category: .zhHansEn,
+        truth: Truth(lines: tallPageLines.map(\.text))
+    ) {
+        textBlock(tallPageLines, size: 11, padding: 24)
+    }
+
+    /// Lines made from word lists in a fixed order, so the page is the same every run.
+    private static let tallPageLines: [(text: String, language: String)] = {
+        let adjectives = ["quiet", "bright", "narrow", "heavy", "early", "hidden", "plain", "steady", "rough", "gentle"]
+        let nouns = ["harbor", "lantern", "window", "kettle", "compass", "orchard", "bridge", "station", "garden", "market"]
+        let verbs = ["crosses", "follows", "watches", "reaches", "leaves", "circles", "shelters", "outlasts", "answers", "joins"]
+        let places = ["the old mill", "a river bend", "the north gate", "an empty square", "the lower meadow", "a stone quay"]
+        let zhSubjects = ["旧码头", "小渡口", "北门", "老磨坊", "河湾", "石桥"]
+        let zhVerbs = ["连着", "望向", "绕过", "留给", "守着", "通往"]
+        let zhObjects = ["清晨的集市", "安静的花园", "远处的灯塔", "狭窄的巷子", "整片果园", "傍晚的车站"]
+        return (1...150).map { number in
+            let a = number * 7 % adjectives.count
+            let b = number * 3 % nouns.count
+            let c = number * 5 % verbs.count
+            if number % 3 == 0 {
+                let text = "第 \(number) 条：\(zhSubjects[number % zhSubjects.count])\(zhVerbs[number * 7 % zhVerbs.count])\(zhObjects[number * 5 % zhObjects.count])，\(adjectives[a])的\(nouns[b])也在这里。"
+                return (text, "zh-Hans")
+            }
+            let text = "\(number). The \(adjectives[a]) \(nouns[b]) \(verbs[c]) the \(adjectives[(a + 3) % adjectives.count]) \(nouns[(b + 4) % nouns.count]) near \(places[number % places.count]), and nobody asks why."
+            return (text, "en")
+        }
+    }()
 
     // MARK: Code
 

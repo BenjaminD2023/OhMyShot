@@ -16,7 +16,7 @@ it; real screenshots stay outside the repository. Categories: Simplified Chinese
 Traditional Chinese, Japanese, Korean, one image mixing all of them, English UI text (also with one
 Chinese file name), Chinese written without spaces around Latin and digits, highlighted code
 on a dark background (with and without a Chinese comment, 2- and 4-space indentation), tables, vertical
-Chinese, chat bubbles with emoji, a dark settings list, and the same two lines from 9 to 30 px tall.
+Chinese, chat bubbles with emoji, a dark settings list, the same two lines from 9 to 30 px tall, and a tall page of 150 lines (read in bands).
 
 Metrics, per case and engine:
 
@@ -68,7 +68,8 @@ one per engine and major macOS version; a run reports cases that got worse than 
 
 ## L1 (`VisionPipeline` in OMSOCR)
 
-What the pipeline does, in order, and why:
+What the pipeline does, in order, and why (an image more than 2560 pixels tall, or very wide, is cut into
+overlapping pieces first and each piece goes through all of this: see Large selections in bands):
 
 1. **Primary pass** with `[zh-Hans, en-US]`, language correction off, while the Latin model `[en-US]`
    reads the whole page and `DetectTextRectanglesRequest` finds text regions, all three side by side.
@@ -127,7 +128,7 @@ Results on the corpus (macOS 27.2, release build):
 
 | | best plain Vision setup | L1 |
 | --- | --- | --- |
-| Content CER, mean (27 cases) | 6.3% | 0.8% |
+| Content CER, mean (28 cases) | 6.3% | 0.8% |
 | Raw CER, mean | 9.3% (automatic language) | 1.3% |
 | Line order, mean | 0.93 (automatic language) | 0.98 |
 | Code indentation | 0.20 | 0.93 |
@@ -312,9 +313,111 @@ band. The one very wide picture read best cut across too, into squares as wide a
 against 1100 in bands across its width), though that cuts its lines: `PictureText` does it only for pictures over
 4096 pixels wide and 2.5 times wider than tall.
 
-Capture Text and the OCR panel read a selection whole, as before; selections are rarely this large, but a
-fullscreen Capture Text, or a scrolling capture opened in the panel, loses text the same way. Banding them (and
-placing each band's lines back into the whole) is the open follow-up.
+Counting caveat: those characters are in *distinct lines of text*, so a line both bands read, a little differently
+each time, counts twice, and a line cut by a band's edge counts once more as a fragment. Placed in the whole
+picture and put together once (below), the same bands give 1180 characters for the 3346 × 16811 capture (1222
+above), 2438 for 3687 × 8237 (2478), and for the four 4K-screen captures 0.1–0.6% more than the whole picture read,
+not 8–14%: what bands gain is on tall pictures, and on dense small text.
+
+Capture Text, the OCR panel, and Translate Area read in bands too, from `VisionPipeline.recognize`: see below.
+
+## Large selections in bands (`VisionPipeline.recognize`, 2026-10-15)
+
+`recognize` cuts an image the way `PictureText.pieces` does (bands 2048 tall with 256 pixels of overlap when the
+image is more than 2560 tall; also columns as wide as the image is tall when it is over 4096 wide and 2.5 times
+wider than tall) and reads the pieces one after another, each through the whole pipeline above (both models, gaps,
+code, Latin lines, lone brackets), so every piece's Vision requests still hold two slots at most. Then:
+
+1. **Each line is placed in the whole image** (its box moved by the piece's origin) and kept from the piece that
+   owns its spot: a piece owns its *core*, itself less half the overlap (128 pixels) on every side it shares with
+   another piece. The cores tile the image, and a line no taller than the overlap that an edge cuts lies, whole, in
+   the core of the piece beside it, so the cut reading of it is dropped without comparing text. A reading from a
+   piece that does not own its spot is kept only when the owner found nothing there (it can miss a line its
+   neighbour reads), and a line that two pieces each own by a pixel is kept once when the text repeats.
+2. **A line that runs across a whole column overlap** is cut in both columns: the left reading ends at the
+   column's edge, the right one begins at its own, and they overlap. Such pairs are found (same row, one touching the
+   left column's right edge, the other the right column's left edge) and each is cut out of the image whole, all of
+   them stacked in one strip as for Latin lines (`LineStrip`), read in one request, and put in the pieces' place if
+   the reading is about as long as the pieces together less their overlap.
+3. **Line numbers** are removed once more from the merged lines (a piece with fewer than three numbers in view
+   leaves its own), and `ReadingOrder` and `TextAssembler` then run once, over the whole image's lines.
+
+`analyze` (the panel) reads its lines this way. Its document request and barcode request stay on the whole image: a
+table or a code taller than the overlap would be cut in two. Measured over the 18 captures below (counts only),
+the document request over the whole image found one table 7182 pixels tall with 281 cells in 3687 × 7335, where its
+bands found two with 93 and 70, and its pieces found tables the whole image missed (three tables of 10, 82, and 25
+cells in 3687 × 8237; one of 18 cells in 3700 × 8000; two with 38 cells in all in 3534 × 2619, where the whole image
+gave one with 22). Keeping the whole-image result keeps what the panel showed before; a union of the two, with the
+bands' small tables added where the whole image found none over them, is open. The cells' text comes from the
+bands' lines either way (`filled(from:)`).
+
+**Measured** on the 18 captures in this Mac's Capture History that are over 2560 pixels tall or 4096 wide
+(Release, M3 Max, warm; a throwaway harness outside the repository, counts and times only: characters are those of
+`OCRResult.text` without whitespace; two runs agree to the character, timings to within 5%):
+
+| Capture | Whole: characters, ms | Bands: characters, ms | Lines whole → bands |
+| --- | --- | --- | --- |
+| 3346 × 16811 | 0, 590 | 1180, 2830 | 0 → 105 |
+| 3710 × 9875 | 1685, 10050 | 1943, 2240 | 193 → 223 |
+| 3499 × 8440 | 135, 450 | 2167, 2120 | 6 → 232 |
+| 3667 × 8418 | 20, 320 | 1226, 1740 | 1 → 142 |
+| 3687 × 8237 | 2126, 10570 | 2438, 2300 | 192 → 264 |
+| 3700 × 8000 | 2198, 14640 | 2328, 2080 | 233 → 241 |
+| 3687 × 7335 | 430, 630 | 2521, 2110 | 36 → 336 |
+| 3527 × 6020 | 309, 560 | 1602, 1570 | 27 → 181 |
+| 2173 × 4242 | 322, 600 | 1313, 1130 | 32 → 180 |
+| 3658 × 4167 | 778, 670 | 1632, 1380 | 75 → 153 |
+| 10989 × 2880 (sideways) | 567, 530 | 1372, 3210 | 18 → 92 |
+| 4336 × 2672 (a 4K screen) | 1550, 740 | 1551, 930 | 81 → 86 |
+| 4112 × 2658 | 1095, 540 | 1102, 870 | 52 → 57 |
+| 3534 × 2619 | 553, 540 | 556, 720 | 81 → 88 |
+| 4110 × 2573 | 1397, 580 | 1402, 810 | 52 → 50 |
+| 4105 × 2327, 4699 × 2299, 4301 × 1723 | unchanged | unchanged (one piece) | — |
+
+Over all 18: 15,563 characters whole, 26,731 in bands. Reading time summed over the 18: 43.3 s whole, 27.3 s in bands; the
+panel's `analyze` 49.7 s against 33.4 s. A capture in bands costs 0.25–0.45 s per band; the three captures that took
+10–15 s whole now take 2.1–2.3 s. The sideways capture is the slowest in bands (3.2 s; 10 pieces and one request to
+read its cut lines whole), and the screens a little over 2560 pixels tall pay 170–330 ms for almost no more text.
+
+**Does banding start too early?** The captures just over the threshold gained almost nothing, but the same
+captures cut to 2600–3600 pixels (20 crops of five tall captures, top-aligned)
+show that whole-picture loss is erratic with height, and banding is never meaningfully worse: +19% to +66% on 11 of the
+20, +2% to +10% on 3, and −2% to +2% on 6 (two captures whose text the whole picture read as well, 530–1300 characters).
+The threshold stays at 2560.
+
+**What ownership drops.** Over the 15 captures that were cut, no line a piece read lies where the merged reading has
+nothing. In characters: for 2 of the 15 a dropped line held 3 and 4 characters more than what replaced it, and that is
+all; the rest dropped was repeats and cut fragments.
+
+**Column cuts.** The sideways capture's 10 pieces gave 99 lines, 16 of them the two halves of 8 cut lines
+(six at one cut, two at another); the stitching read seven of the eight whole (1445 → 1372 characters, 99 → 92 lines) for one extra request
+(about 0.4 s). Without it a full-screen Capture Text on an ultrawide screen would split every long line that crosses
+a cut, so the same was tried on drawn pages of 55 long lines (8487 characters, most of them across a cut):
+
+| Page | Whole | In columns |
+| --- | --- | --- |
+| 5120 × 1440 (an ultrawide screen at 1×) | 65 lines, 5241 characters (62%), 1.9 s | 55 lines, 8480 characters, 3.5 s |
+| 10240 × 2880 (the same at 2×) | 68 lines, 7230 characters (85%), 2.9 s | 55 lines, 8484 characters, 7.3 s |
+
+The first version stacked every cut line in one strip, and at 2× that strip (55 rows) was far taller than 2048 pixels, so
+Vision shrank it: nothing was read whole (109 lines, 9243 characters, every line split and its overlap read
+twice). The strips are now at most 2048 pixels tall (`LineStrip.batches`), a request each, which gave the second
+row. So the column rule makes a dense ultrawide screen read nearly everything, once, and costs 1.6 s (1×) to 4.4 s
+(2×) on these pages: the latency to weigh if the rule (over 4096 wide, 2.5 times wider than tall) is ever tuned for
+Capture Text. The tests `BandedReadingTests` draw one line across a cut and a 5120 × 1440 page of 30 long lines, and
+fail without the stitching.
+
+**The benchmark** gained a case, `tall-page` (1128 × 5950, 150 lines of English and Chinese at 11 pt, 2×): read
+whole, content CER 23.1% and line order 0.31; in bands, 1.2% and 0.90 (what remains is Vision misreading Chinese at
+22 pixels, not the bands). The other 27 cases and the 12 real crops in `Tools/ocr-bench/real` (all under 2100 pixels
+tall, so one piece) give byte-identical text and scores to the code before, and the time per image is the same
+(p50 184–205 against 184–190 ms, p95 348–406 against 365–373; four runs against three). The L1 baseline gained the one case. Peak resident size of the
+harness, image decoding included: 3346 × 16811, 2561 → 1286 MB; 3700 × 8000, 984 → 604 MB; the sideways capture,
+1417 → 1607 MB.
+
+**Known limits.** A line taller than 256 pixels that a band's edge cuts (a heading at 3× or more) is cut in the owner
+too, and a vertical line longer than that that crosses an edge likewise. Vision also reads a line a little differently
+in two pieces now and then; the ownership rule takes the owner's reading, not the better one.
 
 ## L2 runtime (spike, 2026-10-09)
 

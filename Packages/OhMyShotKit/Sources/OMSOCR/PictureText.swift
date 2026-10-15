@@ -2,15 +2,16 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
-/// A picture's text, read for finding it again later (Capture History's search): every line the L1 pipeline
-/// reads, in reading order.
+/// How a large picture is cut up to be read, and a picture's text read for finding it again later (Capture
+/// History's search): every line the L1 pipeline reads, in reading order.
 ///
-/// A large picture is read in overlapping pieces. One Vision request over a whole picture shrinks it to fit and
-/// loses small text: over the history's own captures, bands 2048 pixels tall across the width read 8 to 14% more of
-/// a 4K screen's text, and from 10% to sixty times more of every tall capture's, in a tenth of the time where the
-/// whole took 10 to 15 seconds (Docs/perf.md, M5 — Capture History search). Bands cut between lines; a very wide picture
+/// A large picture is read in overlapping pieces, which `VisionPipeline.recognize` does for every caller (Capture
+/// Text, the OCR panel, Translate Area, this). One Vision request over a whole picture shrinks it to fit and
+/// loses small text: over the history's own captures, bands 2048 pixels tall across the width read from 10% to
+/// sixty times more of every tall capture's text, in a tenth of the time where the whole took 10 to 15 seconds
+/// (Docs/ocr.md › Large pictures, in bands). Bands cut between lines; a very wide picture
 /// (a sideways scrolling capture) is also cut across, through its lines. A line cut by a piece's edge is whole in the
-/// next piece, as long as it is no taller than the overlap; it may then be read twice, which costs a search nothing.
+/// next piece, as long as it is no taller than the overlap (`PieceMerge` keeps that reading and drops the cut one).
 public enum PictureText {
     /// How tall a band is, in pixels.
     static let band = 2048
@@ -26,13 +27,7 @@ public enum PictureText {
     }
 
     public static func read(_ image: CGImage, pipeline: VisionPipeline) async throws -> String {
-        var texts: [String] = []
-        for piece in pieces(width: image.width, height: image.height) {
-            guard let part = image.cropping(to: piece) else { continue }
-            let text = try await pipeline.recognize(part).text
-            if !text.isEmpty { texts.append(text) }
-        }
-        return texts.joined(separator: "\n")
+        try await pipeline.recognize(image).text
     }
 
     /// The pieces a `width` × `height` picture is read in, row by row. Rows: bands `band` tall when the picture is

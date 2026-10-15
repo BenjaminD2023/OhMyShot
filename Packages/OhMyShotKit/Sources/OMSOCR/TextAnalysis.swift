@@ -35,6 +35,11 @@ extension VisionPipeline {
     /// The document request waits for L1, so no more than two accurate requests ever overlap. It runs
     /// on every image: a table whose columns sit close reads as one line per row, so the lines alone
     /// cannot rule a table out, and skipping it saved only about 80 ms and 15 MB.
+    ///
+    /// The lines are read in pieces when the image is large (`recognize`). Tables and codes are not: a table
+    /// or a code taller than a piece's overlap would be cut in two, and the whole image's request finds the
+    /// 281-cell table 7000 pixels tall that its pieces' requests split (Docs/ocr.md › Large pictures); the
+    /// cells take their text from the pieces' lines all the same.
     @concurrent
     public func analyze(_ image: CGImage) async throws -> TextAnalysis {
         async let codes = detectCodes(in: image)

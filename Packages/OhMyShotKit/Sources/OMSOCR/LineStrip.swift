@@ -61,6 +61,26 @@ struct LineStrip {
         self.rows = rows
     }
 
+    /// How to split `crops` over strips no taller than `height` pixels each, as ranges of the crops in order (a
+    /// crop taller than that gets a strip of its own). Vision shrinks what it is given, so a strip of a few dozen
+    /// long lines read in one request loses text the same way a large picture does.
+    static func batches(of crops: [CGRect], height limit: CGFloat = 2048) -> [Range<Int>] {
+        var batches: [Range<Int>] = []
+        var start = 0
+        var used = CGFloat(margin * 2)
+        for (index, crop) in crops.enumerated() {
+            let height = crop.integral.height + max(8, (crop.integral.height * 0.6).rounded())
+            if index > start, used + height > limit {
+                batches.append(start..<index)
+                start = index
+                used = CGFloat(margin * 2)
+            }
+            used += height
+        }
+        if start < crops.count { batches.append(start..<crops.count) }
+        return batches
+    }
+
     /// The row an observation in the strip belongs to: the one holding its vertical middle.
     func row(of box: CGRect) -> Int? {
         rows.firstIndex { $0.contains(box.midY) }
