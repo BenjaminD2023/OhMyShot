@@ -155,11 +155,19 @@ struct GeneralSettingsView: View {
             SettingsDivider()
 
             SettingsRow(Text("Selecting", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Toggle(isOn: $settings.freezeScreen) {
-                        Text("Freeze the screen", bundle: .module)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Toggle(isOn: $settings.freezeScreen) {
+                            Text("Freeze the screen", bundle: .module)
+                        }
+                        InfoButton(Text("Hover states and open menus stay in place until the capture is taken.", bundle: .module))
                     }
-                    InfoButton(Text("Hover states and open menus stay in place until the capture is taken.", bundle: .module))
+                    HStack(spacing: 6) {
+                        Toggle(isOn: $settings.allInOneRemembersArea) {
+                            Text("All-In-One remembers the last area", bundle: .module)
+                        }
+                        InfoButton(Text("All-In-One opens with the area it last took, framed to adjust or take again.", bundle: .module))
+                    }
                 }
             }
             SettingsRow(Text("Self-Timer", bundle: .module)) {

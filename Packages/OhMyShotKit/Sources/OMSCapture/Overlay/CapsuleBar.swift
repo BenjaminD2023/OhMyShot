@@ -128,6 +128,12 @@ class CapsuleBar: NSView {
         button.setAccessibilityLabel(title)
     }
 
+    /// Any other control in the bar's row (All-In-One's size fields), 2 pt from what comes before it.
+    func addView(_ view: NSView) {
+        if let last = stack.arrangedSubviews.last, !(last is NSBox) { stack.setCustomSpacing(2, after: last) }
+        stack.addArrangedSubview(view)
+    }
+
     func addDivider() {
         let divider = NSBox()
         divider.boxType = .separator

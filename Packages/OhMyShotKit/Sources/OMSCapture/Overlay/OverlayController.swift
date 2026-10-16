@@ -31,6 +31,9 @@ public final class OverlayController {
         /// The area of a scrolling capture, in global points, set on the scrolling bar; Start (or Auto-scroll,
         /// `autoScrolls`) was pressed.
         case scroll(CGRect, display: DisplayInfo, autoScrolls: Bool)
+        /// All-In-One's area (global points, on one display) and what to do with it; `frozen` as for a region. A
+        /// recording chosen there is set up in the same session, and ends it as `record`.
+        case allInOne(AllInOneChoice, CGRect, display: DisplayInfo, frozen: CapturedFrame?)
         case cancelled
     }
 
@@ -86,6 +89,22 @@ public final class OverlayController {
     /// A scrolling capture starts as soon as its area is chosen, without the scrolling bar (the URL API's
     /// `start=true`). Set before `begin`; every session ends with it off again.
     public var startsScrollingAtOnce = false
+    /// All-In-One: a screenshot session whose area is framed to adjust, with a bar of every way to take it, rather
+    /// than captured as the mouse goes up; its bar and letter keys also offer text, scrolling, and recording. Set
+    /// before `begin`; every session ends with it off again.
+    public var isAllInOne = false
+    /// Whether All-In-One's bar offers Upload: only while a destination is set up.
+    public var allInOneOffersUpload = false
+    /// A recording is about to be set up outside Record Screen (from All-In-One): whoever records sets
+    /// `recordingChoices` and `onRecordingSetupChange` for it.
+    public var onWillSetUpRecording: (() -> Void)?
+    /// Whether this session (or the one just ended) set up a recording, so whoever began it knows a cancel left a
+    /// camera preview to put away.
+    public private(set) var didSetUpRecording = false
+    /// What All-In-One's next area is for, when a mode was chosen before dragging; nil frames it to choose then.
+    private var allInOneMode: AllInOneChoice?
+    /// An area given to `begin`, taken once the overlay has the keyboard: a frozen session gets it a moment later.
+    private var chosenAhead: (area: CGRect, display: DisplayInfo)?
     /// The notation picked colors are copied in: the magnifier's reading shows it while picking.
     public var colorFormat: ColorFormat = .hex
     /// What the ruler reads in. Tab switches it during a session, and `onMeasureUnitChange` hears it.
@@ -189,6 +208,9 @@ public final class OverlayController {
         pointer = nil
         nudged = false
         self.completion = completion
+        allInOneMode = nil
+        didSetUpRecording = false
+        chosenAhead = nil
         previousApp = NSWorkspace.shared.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
 
         prepare()
@@ -208,12 +230,15 @@ public final class OverlayController {
                 showsPointer: !holdsStill,
                 purpose: purpose,
                 colorFormat: colorFormat,
-                measureUnit: measureUnit
+                measureUnit: measureUnit,
+                allInOne: isAllInOne
             )
         }
         hasInput = false
-        // Shown before the overlay takes input, which tells VoiceOver it is there.
-        let chosen = mode == .area ? area.flatMap(choose) : nil
+        // Shown before the overlay takes input, which tells VoiceOver it is there; framed with its bar once the
+        // overlay has the keyboard (`takeInput`), which a frozen session gets a moment later.
+        let framesAhead = purpose == .record || purpose == .scroll || (isAllInOne && purpose == .screenshot)
+        chosenAhead = mode == .area && framesAhead ? area.flatMap(choose) : nil
         let session = self.session
         // Text without freezing shows no frame, but the pointer display's still arrives first: it tells
         // the watchdog that capturing works.
@@ -243,8 +268,6 @@ public final class OverlayController {
             try? await Task.sleep(for: .milliseconds(500))
             self?.watchdog(session: session)
         }
-        // A recording or a scrolling capture frames the area with its bar, once the overlay has the keyboard.
-        if let chosen, purpose == .record || purpose == .scroll { select(chosen.area, startingOn: chosen.display, modifiers: []) }
         beginning.end()
     }
 
@@ -261,10 +284,7 @@ public final class OverlayController {
         return (placed, display)
     }
 
-    /// An area shows chosen with no drag under way: one given to `begin`, which Return takes.
-    private var hasChosenArea: Bool {
-        dragPoint == nil && selection.rect != nil && !selection.isTooSmall
-    }
+
 
     /// Puts the session's panels on screen. Until the overlay takes input they let the pointer through
     /// to what is under them, which keeps its hover state and its menus.
@@ -298,8 +318,7 @@ public final class OverlayController {
             let announcement = switch purpose {
             case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.")
             case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.")
-            case .screenshot where hasChosenArea: String(localized: "An area is chosen: press Return to capture it, or drag to capture another.")
-            case .text where hasChosenArea: String(localized: "An area is chosen: press Return to copy its text, or drag over other text.")
+            case .screenshot where isAllInOne: String(localized: "All-In-One. Drag over an area, then choose what to do with it.")
             case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.")
             case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.")
             case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.")
@@ -327,6 +346,11 @@ public final class OverlayController {
             guard let self, isActive, session == self.session else { return }
             Log.capture.notice("Overlay shown (\(self.holdsStill ? "frozen" : "live", privacy: .public)): app active \(NSApp.isActive, privacy: .public), keyboard \(NSApp.keyWindow is OverlayPanel, privacy: .public)")
         }
+        // An area given to `begin` is framed now: its bar takes the keyboard and the pointer from the overlay.
+        if let chosen = chosenAhead {
+            chosenAhead = nil
+            select(chosen.area, startingOn: chosen.display, modifiers: [])
+        }
     }
 
     public func cancel() {
@@ -347,6 +371,12 @@ public final class OverlayController {
     var recordingSetup: RecordingSetupView? {
         guard isActive else { return nil }
         return entries.values.lazy.compactMap { entry in entry.view.subviews.lazy.compactMap { $0 as? RecordingSetupView }.first }.first
+    }
+
+    /// All-In-One's frame while its area is framed, for scripted checks.
+    var allInOneSetup: AllInOneSetupView? {
+        guard isActive else { return nil }
+        return entries.values.lazy.compactMap { entry in entry.view.subviews.lazy.compactMap { $0 as? AllInOneSetupView }.first }.first
     }
 
     /// The scrolling bar's view while an area is framed, for scripted checks.
@@ -407,6 +437,24 @@ public final class OverlayController {
         return summary
     }
 
+    /// Presses a key in All-In-One's frame (`return`, `escape`, a letter, `cmd-c`, `left`, `opt-right`…), or with
+    /// nil only reads, for scripted checks. Returns the frame's area, or nil when none is framed.
+    public func debugAllInOneSetup(_ action: String?) -> String? {
+        allInOneSetup?.debugAct(action)
+    }
+
+    /// Chooses All-In-One's mode before an area, as its bar or its letter key would: "text", "scroll", "record".
+    public func debugChooseAllInOneMode(_ name: String) {
+        guard let view = entries.values.first?.view else { return }
+        let choice: AllInOneChoice? = switch name {
+        case "text": .text
+        case "scroll": .scroll
+        case "record": .record
+        default: nil
+        }
+        if let choice { overlayView(view, didChooseMode: choice) }
+    }
+
     /// Puts the crosshair at a point in global space without the mouse, for scripted checks; the real
     /// (hidden) pointer cannot move it after that.
     public func simulatePointer(_ point: CGPoint) {
@@ -445,21 +493,6 @@ public final class OverlayController {
     public var debugMeasurement: String? {
         guard let point = pointer, let display = topology.layout.display(at: point) else { return nil }
         return entries[display.id]?.view.debugMeasurement
-    }
-
-    /// Presses Return in the overlay that has the keyboard (or the pointer's display's), as the key would, for scripted
-    /// checks. Returns whether the key was handled rather than passed on.
-    public func debugPressReturn() -> Bool {
-        guard isActive else { return false }
-        let key = entries.values.first { $0.panel.isKeyWindow } ?? topology.layout.display(at: NSEvent.mouseLocation).flatMap { entries[$0.id] }
-        guard let view = (key ?? entries.values.first)?.view,
-              let event = NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: "\r",
-                charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36
-              ) else { return false }
-        let handled = overlayViewDidPressReturn(view, modifiers: [])
-        if !handled { view.keyDown(with: event) }
-        return handled
     }
 
     /// Chooses an area for in-place annotation without mouse input, for scripted checks.
@@ -581,6 +614,54 @@ public final class OverlayController {
         setup.begin()
     }
 
+    /// Frames All-In-One's area on its display with the bar of every way to take it, as a scrolling capture's area is
+    /// framed: the other displays' panels go, the selection and crosshair step aside, the pointer is the system's.
+    private func startAllInOneSetup(on display: DisplayInfo, area: CGRect) {
+        guard let entry = entries[display.id] else { return }
+        let area = area.intersection(display.frame)
+        guard !area.isNull, area.width >= AreaFrame.smallest, area.height >= AreaFrame.smallest else { return }
+        if hidesCursor { NSCursor.unhide() }
+        hidesCursor = false
+        for (id, other) in entries where id != display.id {
+            other.panel.orderOut(nil)
+            other.view.clear()
+        }
+        entry.view.enterAnnotation()
+        entry.panel.level = OverlayPanel.annotationLevel
+        entry.panel.makeKey()
+        let setup = AllInOneSetupView(display: display, area: area, offersUpload: allInOneOffersUpload)
+        setup.frame = entry.view.bounds
+        setup.onChoose = { [weak self, weak setup] choice, area in
+            guard let self else { return }
+            if choice == .record {
+                setup?.removeFromSuperview()
+                setUpRecording(on: display, target: area == display.frame ? .display : .area(area))
+            } else {
+                endAllInOne(choice, area, on: display)
+            }
+        }
+        setup.onCancel = { [weak self] in self?.cancel() }
+        entry.view.addSubview(setup)
+        entry.panel.makeFirstResponder(setup)
+        setup.begin()
+    }
+
+    /// Ends All-In-One with what to do with `area`: on a frozen screen, the area as it was frozen goes along.
+    private func endAllInOne(_ choice: AllInOneChoice, _ area: CGRect, on display: DisplayInfo) {
+        let frozen = holdsStill ? frozenArea(area, on: [display]) : nil
+        Log.capture.notice("All-In-One \(String(describing: choice), privacy: .public) on \(NSStringFromRect(area), privacy: .public)")
+        end(.allInOne(choice, area, display: display, frozen: frozen))
+    }
+
+    /// A recording chosen in All-In-One, set up in the same session (another would have to take the keyboard back):
+    /// the screen goes live again, as a recording shows it, and the recording bar frames what is chosen.
+    private func setUpRecording(on display: DisplayInfo, target: RecordingTarget) {
+        onWillSetUpRecording?()
+        didSetUpRecording = true
+        entries[display.id]?.view.showLive()
+        startRecordingSetup(on: display, target: target)
+    }
+
     /// Hands the chosen area to in-place annotation, once its display's frozen frame is there.
     private func startAnnotating(on displayID: CGDirectDisplayID, area: CGRect) {
         guard let entry = entries[displayID] else { return }
@@ -606,6 +687,10 @@ public final class OverlayController {
         guard isActive else { return }
         isActive = false
         startsScrollingAtOnce = false
+        isAllInOne = false
+        allInOneOffersUpload = false
+        allInOneMode = nil
+        chosenAhead = nil
         pendingAnnotation = nil
         dragPoint = nil
         spaceHeld = false
@@ -643,7 +728,7 @@ extension OverlayController {
     /// A fresh selection for a drag that begins on `display`: free to cross onto every display, at the
     /// sharpest one's pixels, except in place, where it stays on its own display.
     private func startSelection(on display: DisplayInfo) {
-        let displays = purpose == .annotate || purpose == .record || purpose == .scroll ? [display] : topology.layout.displays
+        let displays = purpose == .annotate || purpose == .record || purpose == .scroll || isAllInOne ? [display] : topology.layout.displays
         selection = SelectionModel(
             bounds: displays.reduce(CGRect.null) { $0.union($1.frame) },
             pixelsPerPoint: displays.map(\.pixelsPerPoint).max() ?? display.pixelsPerPoint
@@ -692,6 +777,14 @@ extension OverlayController {
     /// or captured once the overlay has gone. `display` is where the drag began; the outcome names the
     /// display holding most of the area.
     private func select(_ rect: CGRect, startingOn display: DisplayInfo, modifiers: NSEvent.ModifierFlags) {
+        if isAllInOne, purpose == .screenshot {
+            switch allInOneMode {
+            case .record?: setUpRecording(on: display, target: rect == display.frame ? .display : .area(rect))
+            case let mode?: endAllInOne(mode, rect, on: display)
+            case nil: startAllInOneSetup(on: display, area: rect)
+            }
+            return
+        }
         if purpose == .annotate {
             startAnnotating(on: display.id, area: rect)
             return
@@ -864,10 +957,45 @@ extension OverlayController: OverlayViewDelegate {
     }
 
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) {
+        // All-In-One's Screen (or F) takes the whole display at once; a mode chosen before takes it too.
+        if isAllInOne, purpose == .screenshot, allInOneMode == nil {
+            return endAllInOne(.screenshot(nil), rect, on: view.display)
+        }
         select(rect, startingOn: view.display, modifiers: modifiers)
     }
 
+    func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice) {
+        guard isAllInOne, purpose == .screenshot, dragPoint == nil else { return }
+        // Choosing the purpose in hand again, or a plain capture (Area, A), lets it go.
+        let next: AllInOneChoice? = if case .screenshot = choice { nil } else if choice == allInOneMode { nil } else { choice }
+        guard next != allInOneMode else { return }
+        allInOneMode = next
+        let mark: AllInOneBar.Choice? = switch next {
+        case .text?: .text
+        case .scroll?: .scroll
+        case .record?: .record
+        case .screenshot?, nil: nil
+        }
+        for entry in entries.values { entry.view.markPurpose(mark) }
+        let announcement = switch next {
+        case .text?: String(localized: "Text. Drag over text to copy it.")
+        case .scroll?: String(localized: "Scrolling capture. Drag over the part that scrolls.")
+        case .record?: String(localized: "Record. Drag over an area to record it.")
+        case .screenshot?, nil: String(localized: "Capture. Drag over an area, then choose what to do with it.")
+        }
+        NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
+            .announcement: announcement, .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
+    }
+
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {
+        if isAllInOne, purpose == .screenshot, let mode = allInOneMode {
+            switch mode {
+            case .record: setUpRecording(on: view.display, target: .window(target))
+            case .scroll, .text, .screenshot: endAllInOne(mode, target.frame.intersection(view.display.frame), on: view.display)
+            }
+            return
+        }
         if purpose == .record {
             startRecordingSetup(on: view.display, target: .window(target))
             return
@@ -905,9 +1033,4 @@ extension OverlayController: OverlayViewDelegate {
         end(.cancelled)
     }
 
-    func overlayViewDidPressReturn(_ view: OverlayView, modifiers: NSEvent.ModifierFlags) -> Bool {
-        guard hasChosenArea, let rect = selection.rect, let display = dragDisplay ?? startDisplay(of: rect) else { return false }
-        select(rect, startingOn: display, modifiers: modifiers)
-        return true
-    }
 }

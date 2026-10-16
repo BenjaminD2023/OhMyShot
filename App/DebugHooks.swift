@@ -840,6 +840,19 @@ struct DebugHooks {
             // clipboard alone, for checks on the screen with the user's word; clipboard=1 puts it back.
             scrolling.debugLeavesClipboard = Self.parameter("clipboard", in: url) == "0"
             Log.app.notice("debug.scroll-test leaves the clipboard alone: \(scrolling.debugLeavesClipboard, privacy: .public)")
+        case "allinone-render":
+            // All-In-One behind the desktop picture, captured alone: part=setup (the framed area and its bar, default) or
+            // part=modes (the bar before an area); mode=dark; upload=0 without the Upload chip. Writes allinone-<part>.png.
+            let setup = Self.parameter("part", in: url) != "modes"
+            let window = AllInOneRenders.hiddenWindow(
+                setup: setup, dark: Self.parameter("mode", in: url) == "dark", offersUpload: Self.intParameter("upload", in: url) != 0,
+                marksText: Self.intParameter("text", in: url) == 1,
+                actions: (Self.parameter("act", in: url) ?? "").split(separator: ",").map(String.init)
+            )
+            Task {
+                await captureHiddenWindow(window, name: setup ? "allinone-setup" : "allinone-modes")
+                window.close()
+            }
         case "scroll-bar-render":
             // The bar under an area chosen for a scrolling capture, behind the desktop picture, captured alone into
             // scroll-bar.png (mode=dark for dark).
@@ -1077,14 +1090,29 @@ struct DebugHooks {
                     }
                 }
             }
-        case "chosen-area-demo":
-            // all-in-one with an area, on drawn screens (never the real one) and off the clipboard: the overlay opens
-            // with the area chosen, Return takes it; logs whether what was kept is that area of the frozen screen,
-            // then removes it. x, y, w, h in the display's points from its top-left corner; cancel=1 presses Escape
-            // instead and logs that the capture's follow-up heard nothing was kept.
+        case "allinone-demo":
+            // All-In-One on drawn screens (never the real one), the clipboard left alone: the area (x, y, w, h in the
+            // display's points from its top-left corner) is framed, then `key` is pressed in the frame (return, cmd-c,
+            // e, p, o, s, r, f, escape…; default return). A capture is compared with the frozen area and removed; text
+            // and scrolling only log what would be read or scrolled; a recording logs its bar and is cancelled.
+            // ahead=1 hands the area to All-In-One as the URL API does instead of dragging it; drag=0 neither hands nor
+            // drags one, so the area remembered from the last run comes back; keep=1 leaves the area it took
+            // remembered (else the one remembered before is put back).
             let rect = ["x", "y", "w", "h"].compactMap { Self.intParameter($0, in: url) }
-            let cancels = Self.intParameter("cancel", in: url) == 1
-            Task { await runChosenAreaDemo(area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil, cancels: cancels) }
+            let key = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "key" }?.value ?? "return"
+            let ahead = Self.intParameter("ahead", in: url) == 1
+            let drags = Self.intParameter("drag", in: url) != 0
+            let keeps = Self.intParameter("keep", in: url) == 1
+            Task {
+                await runAllInOneDemo(
+                    area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil, key: key, ahead: ahead,
+                    drags: drags, keepsArea: keeps
+                )
+            }
+        case "allinone-act":
+            // key=… presses a key in All-In-One's frame; none logs what is framed.
+            let key = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "key" }?.value
+            Log.app.notice("debug.allinone-act \(key ?? "state", privacy: .public): \(overlay.debugAllInOneSetup(key) ?? "nothing framed", privacy: .public)")
         case "scroll-setup-act":
             // action=start|auto|cancel drives the scrolling bar while an area is framed; none logs what is framed.
             let action = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "action" }?.value
@@ -1110,8 +1138,6 @@ struct DebugHooks {
             // back afterwards.
             if let value = Self.intParameter("value", in: url) { settings.copyAfterCapture = value == 1 }
             Log.app.notice("debug.copy-after-capture \(settings.copyAfterCapture, privacy: .public)")
-        case "overlay-return":
-            Log.app.notice("debug.overlay-return handled=\(overlay.debugPressReturn(), privacy: .public)")
         case "desktop-cover-check":
             // The covers' windows, then the display under the pointer captured as a screenshot is (covers in) and with
             // them left out: logs how much of the picture they change and where, the pixels themselves dropped.
@@ -1695,7 +1721,7 @@ struct DebugHooks {
         Log.app.notice("debug.freeze-demo kept \(kept.width, privacy: .public)x\(kept.height, privacy: .public) from \(parts.count, privacy: .public) display(s), frozen selection \(expected.image.width, privacy: .public)x\(expected.image.height, privacy: .public), largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public)")
     }
 
-    func runChosenAreaDemo(area: CGRect?, cancels: Bool) async {
+    func runAllInOneDemo(area: CGRect?, key: String, ahead: Bool, drags: Bool = true, keepsArea: Bool = false) async {
         let layout = displays.layout
         guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
         var frames: [CGDirectDisplayID: CapturedFrame] = [:]
@@ -1707,32 +1733,53 @@ struct DebugHooks {
         let chosen = area ?? DebugPanelDemo.pageRect(on: display)
         let rect = CGRect(x: display.frame.minX + chosen.minX, y: display.frame.maxY - chosen.maxY, width: chosen.width, height: chosen.height)
         guard let expected = frames[display.id]?.cropped(to: rect) else { return }
+        // What a check must not change: the area kept for next time, what text and scrolling would do.
+        let remembered = settings.allInOneArea
+        let text = captures.allInOneText, scroll = captures.allInOneScroll
+        var handed: String?
+        captures.allInOneText = { area, frozen in handed = "text of \(NSStringFromRect(area)) from \(frozen.map { "the frozen \($0.image.width)x\($0.image.height)" } ?? "the live screen")" }
+        captures.allInOneScroll = { area in handed = "scrolling capture of \(NSStringFromRect(area))" }
+        defer {
+            if !keepsArea { settings.allInOneArea = remembered }
+            captures.allInOneText = text
+            captures.allInOneScroll = scroll
+        }
         let before = historyCount()
-        var heard: HistoryItem?? = .none
         overlay.injectedFrames = frames
-        captures.captureArea(copiesToClipboard: false, freezes: true, choosing: rect, followUp: CaptureFollowUp { heard = .some($0) })
+        captures.allInOne(choosing: ahead ? rect : nil, copiesToClipboard: false, freezes: true)
         await waitForOverlayFrames()
-        try? await Task.sleep(for: .milliseconds(200))
-        if cancels {
+        if !ahead, drags { overlay.simulateSelection(rect) }
+        for _ in 0..<20 where overlay.debugAllInOneSetup(nil) == nil {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        let framed = overlay.debugAllInOneSetup(nil) ?? "nothing framed"
+        Log.app.notice("debug.allinone-demo framed: \(framed, privacy: .public), key window \(NSApp.keyWindow.map { String(describing: type(of: $0)) } ?? "none", privacy: .public), first responder \(NSApp.keyWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "none", privacy: .public)")
+        _ = overlay.debugAllInOneSetup(key)
+        try? await Task.sleep(for: .milliseconds(150))
+        if overlay.isActive {
+            let recording = overlay.debugRecordingSetup(nil)
+            let keyWindow = NSApp.keyWindow.map { String(describing: type(of: $0)) } ?? "none"
+            Log.app.notice("debug.allinone-demo still open after \(key, privacy: .public): recording bar \(recording ?? "none", privacy: .public), app active \(NSApp.isActive, privacy: .public), key window \(keyWindow, privacy: .public), first responder \(NSApp.keyWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "none", privacy: .public); cancelled")
             overlay.cancel()
-            try? await Task.sleep(for: .milliseconds(100))
-            Log.app.notice("debug.chosen-area-demo cancelled: follow-up heard \(heard.map { $0 == nil ? "nothing kept" : "a capture" } ?? "nothing yet", privacy: .public), active=\(self.overlay.isActive, privacy: .public), history +\(self.historyCount() - before, privacy: .public)")
             return
         }
-        let handled = overlay.debugPressReturn()
+        if let handed {
+            Log.app.notice("debug.allinone-demo \(key, privacy: .public) handed on \(handed, privacy: .public)")
+            return
+        }
         for _ in 0..<80 where historyCount() == before {
             try? await Task.sleep(for: .milliseconds(50))
         }
         guard historyCount() == before + 1 else {
-            Log.app.error("debug.chosen-area-demo kept nothing: Return handled=\(handled, privacy: .public) active=\(self.overlay.isActive, privacy: .public)")
-            if overlay.isActive { overlay.cancel() }
+            Log.app.notice("debug.allinone-demo \(key, privacy: .public) kept nothing")
             return
         }
+        let kept = settings.allInOneArea.map { NSStringFromRect($0.area) } ?? "none"
         defer { deleteLatestFromHistory() }
         guard let file = latestCaptureFile(), let source = CGImageSourceCreateWithURL(file as CFURL, nil),
-              let kept = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
-        let difference = Self.pixelDifference(kept, expected.image)
-        Log.app.notice("debug.chosen-area-demo Return handled=\(handled, privacy: .public), kept \(kept.width, privacy: .public)x\(kept.height, privacy: .public), area \(expected.image.width, privacy: .public)x\(expected.image.height, privacy: .public), largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public), follow-up heard \(heard.map { $0 == nil ? "nothing kept" : "the capture" } ?? "nothing", privacy: .public)")
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
+        let difference = Self.pixelDifference(image, expected.image)
+        Log.app.notice("debug.allinone-demo \(key, privacy: .public) kept \(image.width, privacy: .public)x\(image.height, privacy: .public), area \(expected.image.width, privacy: .public)x\(expected.image.height, privacy: .public), largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public), remembered \(kept, privacy: .public)")
     }
 
     /// The display under the pointer captured with the desktop covers (as every screenshot is) and without them: how

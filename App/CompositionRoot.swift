@@ -116,6 +116,7 @@ final class CompositionRoot {
         }
         let statusItem = StatusItemController(
             captureEntries: [
+                .init(title: String(localized: "All-In-One"), shortcut: .allInOne) { [weak self] in self?.handle(.allInOne) },
                 .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
                 .init(title: String(localized: "Annotate Area"), shortcut: .annotateArea) { [weak self] in self?.handle(.annotateArea) },
                 .init(title: String(localized: "Capture Area and Pin"), shortcut: .pinArea) { [weak self] in self?.handle(.pinArea) },
@@ -305,6 +306,16 @@ final class CompositionRoot {
         captures.openInEditor = { [weak self] entry, scale in
             self?.annotations.annotate(entry, scale: scale)
         }
+        // All-In-One hands on what it does not do itself.
+        captures.allInOneText = { [weak self] area, frozen in
+            Task { await self?.textCapture.recognize(region: area, frozen: frozen, joinLines: false) }
+        }
+        captures.allInOneScroll = { [weak self] area in self?.scrolling.begin(area: area, starts: true) }
+        captures.onRecord = { [weak self] target, display, choices, app in
+            self?.recordings.record(target, on: display, choices: choices, appName: app)
+        }
+        captures.recordingSetupCancelled = { [weak self] in self?.recordings.recordingSetupCancelled() }
+        captures.canUpload = { [weak self] in self?.uploads.destinations.defaultDestination != nil }
         captures.onColor = { [weak self] color, point, modifiers, keyboard in
             self?.colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard)
         }
@@ -506,8 +517,10 @@ final class CompositionRoot {
             return
         }
         switch shortcut {
-        case .captureArea, .allInOne:
+        case .captureArea:
             captures.captureArea()
+        case .allInOne:
+            captures.allInOne()
         case .annotateArea:
             captures.annotateArea()
         case .pinArea:
@@ -559,7 +572,7 @@ final class CompositionRoot {
         switch command {
         case .allInOne(let region):
             guard let area = area(of: region) else { return }
-            captures.captureArea(choosing: area)
+            captures.allInOne(choosing: area)
         case .captureArea(let region, let action):
             guard let area = area(of: region), let followUp = followUp(for: action) else { return }
             if let area { captures.captureArea(at: area, followUp: followUp) } else { captures.captureArea(followUp: followUp) }

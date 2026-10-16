@@ -118,6 +118,8 @@ final class RecordingCoordinator {
         self.overlay = overlay
         self.history = history
         self.permissions = permissions
+        // All-In-One sets up a recording in its own session: the bar starts with the choices it has here.
+        overlay.onWillSetUpRecording = { [weak self] in self?.configureOverlayForRecording() }
     }
 
     var isRecording: Bool { session != nil }
@@ -144,6 +146,19 @@ final class RecordingCoordinator {
         guard !overlay.isActive else { return }
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         overlay.freezesScreen = false
+        configureOverlayForRecording()
+        overlay.begin(mode: .area, purpose: .record, choosing: area) { [weak self] outcome in
+            guard case .record(let target, let display, let choices) = outcome else {
+                self?.camera.hide()
+                return
+            }
+            self?.prepare(Plan(target: target, display: display, choices: choices, appName: app))
+        }
+    }
+
+    /// The recording bar's choices as Settings have them, and what remembers a change to them and shows the camera:
+    /// for Record Screen, and for a recording All-In-One sets up.
+    private func configureOverlayForRecording() {
         overlay.recordingChoices = RecordingChoices(
             output: settings.recordingOutput, systemAudio: settings.recordingSystemAudio, microphone: settings.recordingMicrophone,
             microphoneID: settings.recordingMicrophoneID, showsClicks: settings.recordingShowsClicks,
@@ -163,13 +178,11 @@ final class RecordingCoordinator {
             settings.recordingCameraStyle = choices.cameraStyle
             settings.recordingShowsClicks = choices.showsClicks
         }
-        overlay.begin(mode: .area, purpose: .record, choosing: area) { [weak self] outcome in
-            guard case .record(let target, let display, let choices) = outcome else {
-                self?.camera.hide()
-                return
-            }
-            self?.prepare(Plan(target: target, display: display, choices: choices, appName: app))
-        }
+    }
+
+    /// A recording All-In-One set up was cancelled: the camera's preview goes.
+    func recordingSetupCancelled() {
+        camera.hide()
     }
 
     /// Records `target` on `display` without the overlay: for scripted checks, and for Restart.

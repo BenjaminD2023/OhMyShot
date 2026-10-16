@@ -11,6 +11,10 @@ final class AllInOneBar: NSView {
         case area
         case window
         case fullscreen
+        /// All-In-One's other modes: what the next area is for.
+        case text
+        case scroll
+        case record
         case cancel
     }
 
@@ -23,7 +27,10 @@ final class AllInOneBar: NSView {
     /// the glass bends what is behind it. The glass still gives the capsule its rim.
     private let backing = NSView()
     private var buttons: [Choice: BarButton] = [:]
+    private let modesDivider = NSBox()
     private var selected: Choice = .area
+    /// All-In-One's purpose for the next area, shown as a second on-state beside the area or window.
+    private var purpose: Choice?
     private var hovered: Choice?
     private static let inset: CGFloat = 6
     private static let buttonHeight: CGFloat = 30
@@ -54,14 +61,24 @@ final class AllInOneBar: NSView {
         for choice in [Choice.area, .window, .fullscreen] {
             stack.addArrangedSubview(makeButton(choice))
         }
+        modesDivider.boxType = .separator
+        modesDivider.translatesAutoresizingMaskIntoConstraints = false
+        modesDivider.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        stack.addArrangedSubview(modesDivider)
+        stack.setCustomSpacing(8, after: buttons[.fullscreen]!)
+        stack.setCustomSpacing(8, after: modesDivider)
+        for choice in [Choice.text, .scroll, .record] {
+            stack.addArrangedSubview(makeButton(choice))
+        }
         let divider = NSBox()
         divider.boxType = .separator
         divider.translatesAutoresizingMaskIntoConstraints = false
         divider.heightAnchor.constraint(equalToConstant: 20).isActive = true
         stack.addArrangedSubview(divider)
-        stack.setCustomSpacing(8, after: buttons[.fullscreen]!)
+        stack.setCustomSpacing(8, after: buttons[.record]!)
         stack.setCustomSpacing(8, after: divider)
         stack.addArrangedSubview(makeButton(.cancel))
+        showModes(false)
 
         if let glass = container as? NSGlassEffectView {
             backing.wantsLayer = true
@@ -103,11 +120,34 @@ final class AllInOneBar: NSView {
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
 
-    /// Marks the current mode.
+    /// Shows All-In-One's modes beside area, window, and screen; Capture Area's bar has only those three.
+    func showModes(_ shows: Bool) {
+        for choice in [Choice.text, .scroll, .record] { buttons[choice]?.isHidden = !shows }
+        modesDivider.isHidden = !shows
+    }
+
+    /// Marks how the next capture is chosen: an area or a window (the screen is taken at once, never held).
     func select(_ choice: Choice) {
+        guard choice == .area || choice == .window else { return }
         selected = choice
+        restyle()
+    }
+
+    /// Marks what All-In-One's next area is for (text, scrolling, recording), apart from how it is chosen; nil for
+    /// a plain capture.
+    func markPurpose(_ choice: Choice?) {
+        purpose = choice
+        restyle()
+    }
+
+    /// The chips shown as on, for tests.
+    var onChoices: Set<Choice> {
+        Set(buttons.filter { $0.value.state == .on }.map(\.key))
+    }
+
+    private func restyle() {
         for (candidate, button) in buttons where candidate != .cancel {
-            let isSelected = candidate == choice
+            let isSelected = candidate == selected || candidate == purpose
             button.state = isSelected ? .on : .off
             // The symbol carries the accent; the label stays in the label color so it reads on any tint.
             button.contentTintColor = isSelected ? .controlAccentColor : .labelColor
@@ -133,13 +173,19 @@ final class AllInOneBar: NSView {
             } else {
                 container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             }
-            // The hairline keeps the capsule's edge on white pages, where the glass alone fades out.
-            layer?.borderColor = NSColor.separatorColor.cgColor
+            // The hairline keeps the capsule's edge on white pages, where the glass alone fades out; Increase Contrast
+            // firms it up and doubles the chip fills, as the other capsule bars do.
+            let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
             let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            let highlight = dark ? CGColor(gray: 1, alpha: 0.16) : CGColor(gray: 0, alpha: 0.08)
-            let hover = dark ? CGColor(gray: 1, alpha: 0.09) : CGColor(gray: 0, alpha: 0.045)
+            layer?.borderWidth = contrast ? 1 : 0.5
+            layer?.borderColor = contrast
+                ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))
+                : NSColor.separatorColor.cgColor
+            let boost: CGFloat = contrast ? 2 : 1
+            let highlight = dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost)
+            let hover = dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
             for (candidate, button) in buttons {
-                button.layer?.backgroundColor = candidate == selected && candidate != .cancel ? highlight
+                button.layer?.backgroundColor = (candidate == selected || candidate == purpose) && candidate != .cancel ? highlight
                     : candidate == hovered ? hover
                     : .clear
             }
@@ -154,6 +200,12 @@ final class AllInOneBar: NSView {
             ("macwindow", String(localized: "Window"), String(localized: "Click a window to capture it (Space)"))
         case .fullscreen:
             ("display", String(localized: "Screen"), String(localized: "Capture this whole screen"))
+        case .text:
+            ("text.viewfinder", String(localized: "Text"), String(localized: "Drag over text to copy it (O)"))
+        case .scroll:
+            ("arrow.up.and.down.text.horizontal", String(localized: "Scrolling"), String(localized: "Drag over the part that scrolls to capture all of it (S)"))
+        case .record:
+            ("record.circle", String(localized: "Record"), String(localized: "Drag over an area to record it (R)"))
         case .cancel:
             ("xmark", String(localized: "Cancel"), String(localized: "Cancel (Esc)"))
         }
@@ -182,7 +234,15 @@ final class AllInOneBar: NSView {
         button.setAccessibilityHelp(help)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.heightAnchor.constraint(equalToConstant: Self.buttonHeight).isActive = true
-        button.widthAnchor.constraint(greaterThanOrEqualToConstant: choice == .cancel ? 30 : 84).isActive = true
+        switch choice {
+        case .cancel:
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
+        case .text, .scroll, .record:
+            // As wide as their labels plus the chips' padding, so the gaps on both sides of the separator match.
+            button.widthAnchor.constraint(equalToConstant: ceil(button.intrinsicContentSize.width) + 22).isActive = true
+        case .area, .window, .fullscreen:
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 84).isActive = true
+        }
         buttons[choice] = button
         return button
     }

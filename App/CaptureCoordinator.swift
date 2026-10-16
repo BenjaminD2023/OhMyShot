@@ -77,6 +77,73 @@ final class CaptureCoordinator {
         Task { await captureArea(rect, appName: app, followUp: followUp) }
     }
 
+    // MARK: All-In-One
+
+    /// All-In-One's area's text, with the area as it was frozen when the screen held still.
+    var allInOneText: ((CGRect, CapturedFrame?) -> Void)?
+    /// A scrolling capture of All-In-One's area, started at once.
+    var allInOneScroll: ((CGRect) -> Void)?
+    /// A recording All-In-One set up: what, where, with what, and the app in front.
+    var onRecord: ((RecordingTarget, DisplayInfo, RecordingChoices, String?) -> Void)?
+    /// A recording All-In-One set up was cancelled, leaving a camera preview to put away.
+    var recordingSetupCancelled: (() -> Void)?
+    /// Whether an upload destination is set up, for All-In-One's Upload.
+    var canUpload: (() -> Bool)?
+
+    /// All-In-One: choose an area, adjust it, then take it any way: capture it (and copy, save, annotate, pin, or
+    /// upload it), read its text, capture it scrolling, or record it. A window or the whole screen is captured at
+    /// once. The area last taken comes back framed while Settings keep it; `area` (global points, the URL API's)
+    /// comes instead.
+    /// - Parameters:
+    ///   - copiesToClipboard: false for scripted checks, which never touch the clipboard.
+    ///   - freezes: whether the screen holds still; nil follows the setting.
+    func allInOne(choosing area: CGRect? = nil, copiesToClipboard: Bool = true, freezes: Bool? = nil) {
+        guard !overlay.isActive else { return }
+        cancelSelfTimer()
+        let app = NSWorkspace.shared.frontmostApplication?.localizedName
+        overlay.freezesScreen = freezes ?? settings.freezeScreen
+        overlay.isAllInOne = true
+        overlay.allInOneOffersUpload = canUpload?() ?? false
+        let start = area ?? (settings.allInOneRemembersArea ? settings.allInOneArea?.area(in: displays.layout) : nil)
+        overlay.begin(mode: .area, choosing: start) { [weak self] outcome in
+            guard let self else { return }
+            switch outcome {
+            case .allInOne(let choice, let rect, let display, let frozen):
+                remember(rect, on: display)
+                switch choice {
+                case .screenshot(let action):
+                    previousArea = rect
+                    let followUp = CaptureFollowUp(action: action)
+                    if let frozen {
+                        Task { await self.deliver(frozen, appName: app, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                    } else {
+                        Task { await self.captureArea(rect, appName: app, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                    }
+                case .text: allInOneText?(rect, frozen)
+                case .scroll: allInOneScroll?(rect)
+                case .record: break
+                }
+            case .window(let target, _):
+                Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard) }
+            case .record(let target, let display, let choices):
+                if case .area(let rect) = target { remember(rect, on: display) }
+                onRecord?(target, display, choices, app)
+            case .color(let color, let point, _, let modifiers, let keyboard):
+                onColor?(color, point, modifiers, keyboard)
+            case .cancelled:
+                if overlay.didSetUpRecording { recordingSetupCancelled?() }
+            case .region, .annotated, .scroll:
+                break
+            }
+        }
+    }
+
+    /// Keeps All-In-One's area for next time, while Settings say to; the whole display is no area to keep.
+    private func remember(_ area: CGRect, on display: DisplayInfo) {
+        guard settings.allInOneRemembersArea, area != display.frame else { return }
+        settings.allInOneArea = RememberedArea(area: area, on: display)
+    }
+
     /// Choose an area (or a window) and mark it up in place, on the frozen screen; then copy it, save
     /// it, or carry on in the editor.
     /// - Parameter copiesToClipboard: false for scripted checks, which never touch the clipboard.
@@ -206,7 +273,7 @@ final class CaptureCoordinator {
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
                 followUp.finish(nil)
-            case .annotated, .record, .scroll, .cancelled:
+            case .annotated, .record, .scroll, .allInOne, .cancelled:
                 followUp.finish(nil)
             }
         }
@@ -412,7 +479,7 @@ final class CaptureCoordinator {
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
                 followUp.finish(nil)
-            case .annotated, .record, .scroll, .cancelled:
+            case .annotated, .record, .scroll, .allInOne, .cancelled:
                 followUp.finish(nil)
             }
         }

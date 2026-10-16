@@ -25,12 +25,7 @@ struct OverlayKeyTests {
         func overlayView(_ view: OverlayView, didNudge pixels: CGVector) { heard.append("nudge") }
         func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) { heard.append("copy") }
         func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) { heard.append("unit") }
-        /// Whether an area shows chosen, which Return takes.
-        var hasChosenArea = false
-        func overlayViewDidPressReturn(_ view: OverlayView, modifiers: NSEvent.ModifierFlags) -> Bool {
-            heard.append("return")
-            return hasChosenArea
-        }
+        func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice) { heard.append("mode \(choice)") }
     }
 
     /// Takes the keys the overlay passes on, so none reaches the end of the chain and beeps.
@@ -49,17 +44,18 @@ struct OverlayKeyTests {
 
     /// What pressing `keyCode` in an overlay for `purpose`, the pointer in its middle, tells the controller,
     /// and whether the key was passed on.
-    private func press(_ keyCode: UInt16, in purpose: OverlayController.Purpose, areaChosen: Bool = false) throws -> (heard: [String], passedOn: Bool) {
+    private func press(
+        _ keyCode: UInt16, characters: String = "", in purpose: OverlayController.Purpose, allInOne: Bool = false
+    ) throws -> (heard: [String], passedOn: Bool) {
         let view = OverlayView(display: Self.display)
         let recorder = Recorder()
-        recorder.hasChosenArea = areaChosen
         let passedOn = PassedOn()
         view.delegate = recorder
         view.nextResponder = passedOn
-        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: purpose)
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: purpose, allInOne: allInOne)
         let event = try #require(NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: "",
-            charactersIgnoringModifiers: "", isARepeat: false, keyCode: keyCode
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
         ))
         view.keyDown(with: event)
         return (recorder.heard, !passedOn.keys.isEmpty)
@@ -70,28 +66,32 @@ struct OverlayKeyTests {
 
     @Test func whileCapturingTheArrowsAndReturnArePassedOn() throws {
         for purpose in [OverlayController.Purpose.screenshot, .text, .annotate, .record, .scroll] {
-            for key in Self.arrows {
-                let result = try press(key, in: purpose)
-                #expect(result.heard.isEmpty && result.passedOn, "key \(key) in \(purpose): \(result.heard)")
-            }
-        }
-        for purpose in [OverlayController.Purpose.annotate, .record, .scroll] {
-            for key in Self.returns {
+            for key in Self.arrows + Self.returns {
                 let result = try press(key, in: purpose)
                 #expect(result.heard.isEmpty && result.passedOn, "key \(key) in \(purpose): \(result.heard)")
             }
         }
     }
 
-    /// Return takes an area the URL API chose ahead; with none it is passed on.
-    @Test func whileCapturingReturnTakesAnAreaChosenAhead() throws {
-        for purpose in [OverlayController.Purpose.screenshot, .text] {
-            for key in Self.returns {
-                let none = try press(key, in: purpose)
-                #expect(none.heard == ["return"] && none.passedOn, "key \(key) in \(purpose): \(none.heard)")
-                let chosen = try press(key, in: purpose, areaChosen: true)
-                #expect(chosen.heard == ["return"] && !chosen.passedOn, "key \(key) in \(purpose): \(chosen.heard)")
-            }
+    /// All-In-One's letters choose a mode before an area: O text, S scrolling, R recording; W a window, F the screen.
+    @Test func allInOneLettersChooseWhatTheNextAreaIsFor() throws {
+        let cases: [(UInt16, String, [String])] = [
+            (31, "o", ["mode text"]), (1, "s", ["mode scroll"]), (15, "r", ["mode record"]),
+            (13, "w", ["switch"]), (3, "f", ["select"]),
+            // A: a plain capture of an area, letting go of what the next area was for.
+            (0, "a", ["mode screenshot(nil)"]),
+        ]
+        for (code, letter, heard) in cases {
+            let result = try press(code, characters: letter, in: .screenshot, allInOne: true)
+            #expect(result.heard == heard && !result.passedOn, "\(letter): \(result.heard)")
+        }
+    }
+
+    /// Capture Area's overlay has none of them: the letters are passed on.
+    @Test func captureAreaPassesTheLettersOn() throws {
+        for (code, letter) in [(UInt16(31), "o"), (1, "s"), (15, "r"), (13, "w"), (3, "f")] {
+            let result = try press(code, characters: letter, in: .screenshot)
+            #expect(result.heard.isEmpty && result.passedOn, "\(letter): \(result.heard)")
         }
     }
 

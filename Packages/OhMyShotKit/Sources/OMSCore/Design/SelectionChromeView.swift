@@ -222,6 +222,7 @@ public final class SelectionChromeView: NSView {
         readingLayer.shadowPath = CGPath(roundedRect: readingLayer.bounds, cornerWidth: size.height / 2, cornerHeight: size.height / 2, transform: nil)
         readingText.string = reading
         readingText.frame = CGRect(x: 0, y: (size.height - textHeight) / 2 - 0.5, width: size.width, height: textHeight)
-        readingLayer.isHidden = false
+        // No reading, no capsule: All-In-One shows the size in its bar's fields instead, but while the area is adjusted.
+        readingLayer.isHidden = reading.isEmpty
     }
 }

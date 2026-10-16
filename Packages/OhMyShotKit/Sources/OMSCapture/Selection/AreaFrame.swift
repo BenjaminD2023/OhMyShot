@@ -52,6 +52,61 @@ enum AreaFrame {
         return CGRect(x: min(minX, maxX), y: min(minY, maxY), width: abs(maxX - minX), height: abs(maxY - minY))
     }
 
+    /// `rect` with `handle` dragged to `point` (flipped points) keeping `ratio` (width over height): a corner grows the
+    /// area from the opposite corner, on whichever side the pointer reaches further; an edge resizes its side and the
+    /// other side follows, centered where it was.
+    static func resized(_ rect: CGRect, dragging handle: Handle, to point: CGPoint, keeping ratio: CGFloat) -> CGRect {
+        let free = resized(rect, dragging: handle, to: point)
+        guard ratio > 0 else { return free }
+        switch handle {
+        case .left, .right:
+            let height = free.width / ratio
+            return CGRect(x: free.minX, y: rect.midY - height / 2, width: free.width, height: height)
+        case .top, .bottom:
+            let width = free.height * ratio
+            return CGRect(x: rect.midX - width / 2, y: free.minY, width: width, height: free.height)
+        case .topLeft, .topRight, .bottomRight, .bottomLeft:
+            var width = free.width, height = free.height
+            if width / max(height, 0.001) > ratio { height = width / ratio } else { width = height * ratio }
+            // The corner opposite the one dragged stays put, on whichever side of it the pointer went.
+            let anchor = CGPoint(
+                x: handle == .topLeft || handle == .bottomLeft ? rect.maxX : rect.minX,
+                y: handle == .topLeft || handle == .topRight ? rect.maxY : rect.minY
+            )
+            let x = point.x < anchor.x ? anchor.x - width : anchor.x
+            let y = point.y < anchor.y ? anchor.y - height : anchor.y
+            return CGRect(x: x, y: y, width: width, height: height)
+        }
+    }
+
+    /// `rect` reshaped to `ratio` around its center, as large as it was across its longer side would allow while
+    /// staying inside `bounds`.
+    static func shaped(_ rect: CGRect, to ratio: CGFloat, in bounds: CGRect) -> CGRect {
+        guard ratio > 0 else { return rect }
+        var width = rect.width, height = rect.width / ratio
+        if height < rect.height { height = rect.height; width = height * ratio }
+        // Never past the bounds: shrink, keeping the shape.
+        let fit = min(1, bounds.width / width, bounds.height / height)
+        width *= fit
+        height *= fit
+        return placed(CGRect(x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height), in: bounds)
+    }
+
+    /// `rect` at `size` (points) from its top-left corner (flipped points), moved back inside `bounds` where it would
+    /// reach past them and no larger than they are.
+    static func sized(_ rect: CGRect, to size: CGSize, in bounds: CGRect) -> CGRect {
+        let width = min(size.width, bounds.width), height = min(size.height, bounds.height)
+        return placed(CGRect(x: rect.minX, y: rect.minY, width: width, height: height), in: bounds)
+    }
+
+    /// `rect` moved inside `bounds`, its size kept (it must fit).
+    private static func placed(_ rect: CGRect, in bounds: CGRect) -> CGRect {
+        var rect = rect
+        rect.origin.x = min(max(rect.minX, bounds.minX), bounds.maxX - rect.width)
+        rect.origin.y = min(max(rect.minY, bounds.minY), bounds.maxY - rect.height)
+        return rect
+    }
+
     static func cursor(for handle: Handle) -> NSCursor {
         switch handle {
         case .topLeft: NSCursor.frameResize(position: .topLeft, directions: .all)
@@ -95,4 +150,28 @@ enum AreaFrame {
     static func global(_ rect: CGRect, on display: DisplayInfo) -> CGRect {
         CGRect(x: display.frame.minX + rect.minX, y: display.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
     }
+}
+
+/// A shape to keep, width to height, for All-In-One's area.
+struct AspectRatio: Equatable, Sendable {
+    let width: CGFloat
+    let height: CGFloat
+
+    var value: CGFloat { width / height }
+
+    /// "16:9", "1:1", "1.85:1".
+    var label: String {
+        func text(_ number: CGFloat) -> String {
+            number.rounded() == number ? String(Int(number)) : String(format: "%.2f", number).replacingOccurrences(of: #"0+$"#, with: "", options: .regularExpression)
+        }
+        return "\(text(width)):\(text(height))"
+    }
+
+    /// The shapes the ratio menu offers: square, then landscape, then portrait.
+    static let presets: [AspectRatio] = [
+        AspectRatio(width: 1, height: 1),
+        AspectRatio(width: 4, height: 3), AspectRatio(width: 3, height: 2), AspectRatio(width: 16, height: 10), AspectRatio(width: 16, height: 9),
+        AspectRatio(width: 21, height: 9),
+        AspectRatio(width: 3, height: 4), AspectRatio(width: 2, height: 3), AspectRatio(width: 9, height: 16),
+    ]
 }

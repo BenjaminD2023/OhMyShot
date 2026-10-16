@@ -45,7 +45,7 @@ should happen after a capture:
 
 | Command | Parameters | What it does |
 |---|---|---|
-| `all-in-one` | area | Opens Capture Area with the All-In-One bar. With an area, the area shows selected: press Return to capture it, or drag a new one. |
+| `all-in-one` | area | Opens All-In-One. With an area, the area comes framed with All-In-One's bar, to adjust and then capture, copy, save, annotate, pin, upload, read, scroll, or record. |
 | `capture-area` | area, `action` | Opens Capture Area. With an area, captures it at once without the overlay. That area is the next Capture Previous Area. |
 | `capture-previous-area` | `action` | Captures the area chosen last again, as the screen shows it now. Beeps if no area was chosen since launch. |
 | `capture-fullscreen` | `action` | Captures the display under the pointer. |

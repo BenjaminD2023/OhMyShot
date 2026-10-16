@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import Testing
 @testable import OMSCore
 
@@ -89,5 +90,27 @@ struct DisplayLayoutTests {
         #expect(scaled.pixelsPerPoint == 1.5)
         #expect(Self.builtIn.supportsHDR)
         #expect(!scaled.supportsHDR)
+    }
+}
+
+/// All-In-One's last area comes back only where it was.
+struct RememberedAreaTests {
+    @Test func theAreaComesBackOnItsDisplayAsItWas() {
+        let layout = DisplayLayoutTests.layout(externalAt: CGPoint(x: 1728, y: 0))
+        let area = CGRect(x: 1800, y: 100, width: 400, height: 300)
+        let kept = RememberedArea(area: area, on: DisplayLayoutTests.external(at: CGPoint(x: 1728, y: 0)))
+        #expect(kept.area(in: layout) == area)
+    }
+
+    @Test func aDisplayMovedOrGoneDropsTheArea() {
+        let kept = RememberedArea(area: CGRect(x: 1800, y: 100, width: 400, height: 300), on: DisplayLayoutTests.external(at: CGPoint(x: 1728, y: 0)))
+        #expect(kept.area(in: DisplayLayoutTests.layout(externalAt: CGPoint(x: -3440, y: 0))) == nil)
+        #expect(kept.area(in: DisplayLayout(displays: [DisplayLayoutTests.builtIn])) == nil)
+    }
+
+    @Test func itSurvivesBeingStored() throws {
+        let kept = RememberedArea(area: CGRect(x: 10, y: 20, width: 30, height: 40), on: DisplayLayoutTests.builtIn)
+        let decoded = try JSONDecoder().decode(RememberedArea.self, from: JSONEncoder().encode(kept))
+        #expect(decoded == kept)
     }
 }

@@ -31,9 +31,8 @@ protocol OverlayViewDelegate: AnyObject {
     /// The ruler's measurement, to copy; `ending` closes the overlay after it (Return).
     func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool)
     func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit)
-    /// Return while capturing or copying text, with the keys held then: takes an area shown chosen (the URL API's).
-    /// Returns whether there was one; else the key is passed on.
-    func overlayViewDidPressReturn(_ view: OverlayView, modifiers: NSEvent.ModifierFlags) -> Bool
+    /// All-In-One's bar or keys chose what the next area is for: its text, a scrolling capture, or a recording.
+    func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice)
 }
 
 /// The capture overlay on one display: a lightly dimmed screen, the selection with its size, a small
@@ -66,6 +65,8 @@ final class OverlayView: NSView {
     private var isSimulated = false
     /// In-place annotation has the display: its interface takes the input and draws the selection.
     private(set) var isAnnotating = false
+    /// An All-In-One session: its modes on the bar, its letter keys.
+    private(set) var isAllInOne = false
     private var increasedContrast = false
 
     private let backdrop = CALayer()
@@ -123,9 +124,12 @@ final class OverlayView: NSView {
     /// display where the session started.
     /// `showsPointer` is false for a frozen screen until the overlay takes input: the system arrow is
     /// still showing then, and a crosshair under it would double it.
+    /// `allInOne` adds All-In-One's modes to the bar and its letter keys: A, W, and F for an area, a window, or the
+    /// screen; O, S, and R for text, a scrolling capture, or a recording.
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
-        purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex, measureUnit: MeasureUnit = .points
+        purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex, measureUnit: MeasureUnit = .points,
+        allInOne: Bool = false
     ) {
         self.mode = mode
         self.windows = windows
@@ -138,6 +142,7 @@ final class OverlayView: NSView {
         increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         self.purpose = purpose
         self.colorFormat = colorFormat
+        isAllInOne = allInOne && purpose == .screenshot
         if purpose == .measure {
             let measure = self.measure ?? MeasureOverlay(display: display)
             if measure.layer.superlayer == nil { layer?.insertSublayer(measure.layer, below: crosshairOutline) }
@@ -151,12 +156,15 @@ final class OverlayView: NSView {
         // The bar first: the size reading below steers clear of it.
         toolbar.isHidden = !showsToolbar
         toolbar.alphaValue = 1
+        toolbar.showModes(isAllInOne)
+        toolbar.markPurpose(nil)
         toolbar.select(mode == .area ? .area : .window)
         layoutToolbar()
         window?.invalidateCursorRects(for: self)
         let help = switch purpose {
         case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.")
         case .annotate: String(localized: "Drag over an area to mark it up. Press Space to choose a window instead. Press Escape to cancel.")
+        case .screenshot where isAllInOne: String(localized: "Drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, or R to record. Press Escape to cancel.")
         case .screenshot: String(localized: "Drag to capture an area. Press Space to capture a window instead. Press Escape to cancel.")
         case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.")
         case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel.")
@@ -445,9 +453,7 @@ final class OverlayView: NSView {
                 if let pointer { delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags, keyboard: true) }
             case .measure:
                 if let text = measure?.measurement { delegate?.overlayView(self, didCopyMeasurement: text, ending: true) }
-            case .screenshot, .text:
-                if delegate?.overlayViewDidPressReturn(self, modifiers: event.modifierFlags) != true { super.keyDown(with: event) }
-            case .annotate, .record, .scroll:
+            case .screenshot, .text, .annotate, .record, .scroll:
                 super.keyDown(with: event)
             }
         case 48 where purpose == .measure:
@@ -455,6 +461,8 @@ final class OverlayView: NSView {
         default:
             if character == "u", purpose == .measure, let measure {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
+            } else if isAllInOne, !event.modifierFlags.contains(.command), let choice = Self.allInOneKeys[character ?? ""] {
+                toolbarChose(choice)
             } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose != .text, purpose != .record, purpose != .scroll, let pointer, capturedFrame != nil {
                 // C takes the color under the crosshair, as in Snipaste: from the magnifier while capturing. With
                 // Option it opens the color card, as an Option-click does.
@@ -488,8 +496,33 @@ final class OverlayView: NSView {
         if event.keyCode == 49 { delegate?.overlayViewDidReleaseSpace(self) }
     }
 
+    /// All-In-One's letter keys, before an area is chosen.
+    static let allInOneKeys: [String: AllInOneBar.Choice] = [
+        "a": .area, "w": .window, "f": .fullscreen, "o": .text, "s": .scroll, "r": .record,
+    ]
+
+    /// Marks what All-In-One's next area is for on the bar; nil for a plain capture.
+    func markPurpose(_ choice: AllInOneBar.Choice?) {
+        toolbar.markPurpose(choice)
+    }
+
+    /// Shows the screen as it is now instead of as it was frozen, for a recording set up from a frozen All-In-One.
+    func showLive() {
+        withoutAnimation { backdrop.contents = nil }
+    }
+
     private func toolbarChose(_ choice: AllInOneBar.Choice) {
         switch choice {
+        case .area where isAllInOne:
+            // All-In-One's Area is a plain capture of an area: whatever the next area was for is let go.
+            if mode != .area { delegate?.overlayView(self, didSwitchTo: .area) }
+            delegate?.overlayView(self, didChooseMode: .screenshot(nil))
+        case .text:
+            delegate?.overlayView(self, didChooseMode: .text)
+        case .scroll:
+            delegate?.overlayView(self, didChooseMode: .scroll)
+        case .record:
+            delegate?.overlayView(self, didChooseMode: .record)
         case .area where mode != .area:
             delegate?.overlayView(self, didSwitchTo: .area)
         case .window where mode != .window:

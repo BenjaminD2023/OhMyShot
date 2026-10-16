@@ -231,6 +231,19 @@ public final class SettingsStore {
         didSet { defaults.set(hidesDesktopIcons, forKey: Key.hidesDesktopIcons) }
     }
 
+    /// All-In-One opens with the area it last captured, framed to adjust or take again.
+    public var allInOneRemembersArea: Bool {
+        didSet {
+            defaults.set(allInOneRemembersArea, forKey: Key.allInOneRemembersArea)
+            if !allInOneRemembersArea { allInOneArea = nil }
+        }
+    }
+
+    /// The area All-In-One last captured, kept across launches.
+    public var allInOneArea: RememberedArea? {
+        didSet { defaults.set(allInOneArea.flatMap { try? JSONEncoder().encode($0) }, forKey: Key.allInOneArea) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -250,6 +263,7 @@ public final class SettingsStore {
             // Frozen by default: a hover card or menu that closes as the pointer leaves it can still be
             // captured, since the screen is taken the moment the shortcut is pressed.
             Key.freezeScreen: true,
+            Key.allInOneRemembersArea: true,
             Key.selfTimerDelay: 5,
             Key.pinCornerRadius: 12.0,
             Key.pinShadow: true,
@@ -319,6 +333,8 @@ public final class SettingsStore {
         recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : 15
         replaySound = defaults.string(forKey: Key.replaySound).flatMap(ReplaySound.init(rawValue:)) ?? .all
         hidesDesktopIcons = defaults.bool(forKey: Key.hidesDesktopIcons)
+        allInOneRemembersArea = defaults.bool(forKey: Key.allInOneRemembersArea)
+        allInOneArea = defaults.data(forKey: Key.allInOneArea).flatMap { try? JSONDecoder().decode(RememberedArea.self, from: $0) }
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         uploadAfterCapture = defaults.bool(forKey: Key.uploadAfterCapture)
         copyLinkAfterUpload = defaults.bool(forKey: Key.copyLinkAfterUpload)
@@ -365,6 +381,8 @@ public final class SettingsStore {
         static let replaySound = "replaySound"
         static let copyAfterCapture = "copyAfterCapture"
         static let hidesDesktopIcons = "hidesDesktopIcons"
+        static let allInOneRemembersArea = "allInOneRemembersArea"
+        static let allInOneArea = "allInOneArea"
         static let uploadAfterCapture = "uploadAfterCapture"
         static let copyLinkAfterUpload = "copyLinkAfterUpload"
         static let saveAfterCapture = "saveAfterCapture"
