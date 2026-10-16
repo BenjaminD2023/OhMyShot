@@ -29,6 +29,12 @@ public final class SettingsStore {
         didSet { defaults.set(copyAfterCapture, forKey: Key.copyAfterCapture) }
     }
 
+    /// After an upload: put the link on the clipboard. On by default; with it off the link waits on the card
+    /// until it is copied from there.
+    public var copyLinkAfterUpload: Bool {
+        didSet { defaults.set(copyLinkAfterUpload, forKey: Key.copyLinkAfterUpload) }
+    }
+
     /// After a capture: also save a copy to the export location without asking. Off by default;
     /// captures go to the history and are saved from their Quick Access card.
     public var saveAfterCapture: Bool {
@@ -223,6 +229,7 @@ public final class SettingsStore {
             Key.playSounds: true,
             Key.automationEnabled: true,
             Key.copyAfterCapture: true,
+            Key.copyLinkAfterUpload: true,
             Key.saveAfterCapture: false,
             Key.showQuickAccess: true,
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
@@ -300,6 +307,7 @@ public final class SettingsStore {
         recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : 15
         replaySound = defaults.string(forKey: Key.replaySound).flatMap(ReplaySound.init(rawValue:)) ?? .all
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
+        copyLinkAfterUpload = defaults.bool(forKey: Key.copyLinkAfterUpload)
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
@@ -342,6 +350,7 @@ public final class SettingsStore {
         static let recordingGIFFrameRate = "recordingGIFFrameRate"
         static let replaySound = "replaySound"
         static let copyAfterCapture = "copyAfterCapture"
+        static let copyLinkAfterUpload = "copyLinkAfterUpload"
         static let saveAfterCapture = "saveAfterCapture"
         static let showQuickAccess = "showQuickAccess"
         static let historyRetention = "historyRetention"

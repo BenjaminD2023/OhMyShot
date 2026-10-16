@@ -5,13 +5,13 @@ import OMSCore
 import OMSOCR
 import SwiftUI
 
-private let paneWidth: CGFloat = 520
+let paneWidth: CGFloat = 520
 
 /// A settings pane in the classic two-column layout: short labels right-aligned in the first column,
 /// controls in the second, and groups split by dividers. Explanations wait behind a help button rather
 /// than sitting under every row. The pane is as tall as its content, so the window fits each tab; a
 /// pane taller than the screen allows stops at that height and scrolls.
-private struct SettingsPane<Rows: View>: View {
+struct SettingsPane<Rows: View>: View {
     /// How a row's label lines up with its controls: on the first line of text by default, or centered
     /// for controls without text, such as shortcut recorders.
     var alignment: Alignment = .leadingFirstTextBaseline
@@ -44,26 +44,35 @@ private struct SettingsPane<Rows: View>: View {
 }
 
 /// A row of a settings pane: its label right-aligned in the first column, its controls in the second.
-private struct SettingsRow<Content: View>: View {
+struct SettingsRow<Content: View>: View {
     let label: Text?
+    /// A fixed width for the label column, so the fields of one form line up whatever its rows say.
+    var labelWidth: CGFloat?
     @ViewBuilder var content: Content
 
-    init(_ label: Text? = nil, @ViewBuilder content: () -> Content) {
+    init(_ label: Text? = nil, labelWidth: CGFloat? = nil, @ViewBuilder content: () -> Content) {
         self.label = label
+        self.labelWidth = labelWidth
         self.content = content()
     }
 
     var body: some View {
         GridRow {
-            (label ?? Text(verbatim: ""))
-                .gridColumnAlignment(.trailing)
+            Group {
+                if let labelWidth {
+                    (label ?? Text(verbatim: "")).frame(width: labelWidth, alignment: .trailing)
+                } else {
+                    label ?? Text(verbatim: "")
+                }
+            }
+            .gridColumnAlignment(.trailing)
             content
         }
     }
 }
 
 /// The line between groups of rows.
-private struct SettingsDivider: View {
+struct SettingsDivider: View {
     var body: some View {
         Divider()
             .gridCellUnsizedAxes(.horizontal)
@@ -72,7 +81,7 @@ private struct SettingsDivider: View {
 }
 
 /// The round help button beside a control, with a short explanation in a popover.
-private struct InfoButton: View {
+struct InfoButton: View {
     let text: Text
     @State private var isShown = false
 

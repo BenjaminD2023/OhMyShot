@@ -7,6 +7,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     case general
     case recording
     case tools
+    case sharing
     case shortcuts
     case permissions
     case automation
@@ -17,6 +18,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         case .general: String(localized: "General", bundle: .module)
         case .recording: String(localized: "Recording", bundle: .module)
         case .tools: String(localized: "Tools", bundle: .module)
+        case .sharing: String(localized: "Sharing", bundle: .module)
         case .shortcuts: String(localized: "Shortcuts", bundle: .module)
         case .permissions: String(localized: "Permissions", bundle: .module)
         case .automation: String(localized: "Automation", bundle: .module)
@@ -29,6 +31,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         case .general: "gearshape"
         case .recording: "record.circle"
         case .tools: "wrench.and.screwdriver"
+        case .sharing: "icloud.and.arrow.up"
         case .shortcuts: "command"
         case .permissions: "hand.raised"
         case .automation: "point.3.connected.trianglepath.dotted"
@@ -47,6 +50,8 @@ public struct SettingsDependencies {
     /// How many captures a retention would delete now, so Settings can ask before shortening it.
     public let expiredCount: (HistoryRetention) -> Int
     public let backgrounds: Backgrounds
+    /// The places captures can be uploaded to, which only the Sharing tab shows.
+    public let destinations: UploadDestinationStore
 
     /// The backgrounds saved in the editor, and the one set on every new screenshot.
     public struct Backgrounds {
@@ -80,6 +85,7 @@ public struct SettingsDependencies {
         relaunch: @escaping () -> Void,
         openHistory: @escaping () -> Void,
         expiredCount: @escaping (HistoryRetention) -> Int,
+        destinations: UploadDestinationStore,
         backgrounds: Backgrounds = .none
     ) {
         self.settings = settings
@@ -89,6 +95,7 @@ public struct SettingsDependencies {
         self.openHistory = openHistory
         self.expiredCount = expiredCount
         self.backgrounds = backgrounds
+        self.destinations = destinations
     }
 }
 
@@ -158,6 +165,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             host(RecordingSettingsView(settings: dependencies.settings))
         case .tools:
             host(ToolsSettingsView(settings: dependencies.settings))
+        case .sharing:
+            host(SharingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
         case .shortcuts:
             host(ShortcutsSettingsView())
         case .permissions:

@@ -53,8 +53,9 @@ final class CaptureCoordinator {
     ///   - copiesToClipboard: false for scripted checks, which never touch the clipboard.
     ///   - freezes: whether the screen holds still while selecting; nil follows the setting. Scripted
     ///     checks on drawn screens pass true, so the real screen is never captured.
-    func captureArea(copiesToClipboard: Bool = true, freezes: Bool? = nil) {
-        begin(mode: .area, copiesToClipboard: copiesToClipboard, freezes: freezes)
+    /// - Parameter then: runs with the capture's record once it is kept, for the URL API's follow-up actions.
+    func captureArea(copiesToClipboard: Bool = true, freezes: Bool? = nil, then: ((HistoryItem) -> Void)? = nil) {
+        begin(mode: .area, copiesToClipboard: copiesToClipboard, freezes: freezes, then: then)
     }
 
     /// Choose an area (or a window) and mark it up in place, on the frozen screen; then copy it, save
@@ -204,7 +205,8 @@ final class CaptureCoordinator {
     ///   - copiesToClipboard: false for scripted checks, which never touch the clipboard.
     ///   - freezes: whether the screen holds still while choosing; nil follows the setting.
     ///   - delay: seconds to wait; nil follows the setting. Scripted checks keep it short.
-    func selfTimer(copiesToClipboard: Bool = true, freezes: Bool? = nil, delay: Int? = nil) {
+    ///   - then: runs with the capture's record once it is kept.
+    func selfTimer(copiesToClipboard: Bool = true, freezes: Bool? = nil, delay: Int? = nil, then: ((HistoryItem) -> Void)? = nil) {
         if countdown.isRunning {
             cancelSelfTimer()
             return
@@ -216,9 +218,9 @@ final class CaptureCoordinator {
             switch outcome {
             case .region(let rect, _, _, _):
                 // Whatever was frozen while choosing, what is captured is the screen once the time is up.
-                self?.countDown(to: .area(rect), seconds: seconds, copiesToClipboard: copiesToClipboard)
+                self?.countDown(to: .area(rect), seconds: seconds, copiesToClipboard: copiesToClipboard, then: then)
             case .window(let target, _):
-                self?.countDown(to: .window(target), seconds: seconds, copiesToClipboard: copiesToClipboard)
+                self?.countDown(to: .window(target), seconds: seconds, copiesToClipboard: copiesToClipboard, then: then)
             case .color(let color, let point, _, let modifiers, let keyboard):
                 self?.onColor?(color, point, modifiers, keyboard)
             case .annotated, .record, .scroll, .cancelled:
@@ -235,7 +237,7 @@ final class CaptureCoordinator {
         announce(String(localized: "Self-Timer cancelled."))
     }
 
-    private func countDown(to target: TimerTarget, seconds: Int, copiesToClipboard: Bool) {
+    private func countDown(to target: TimerTarget, seconds: Int, copiesToClipboard: Bool, then: ((HistoryItem) -> Void)? = nil) {
         let area = switch target {
         case .area(let rect): rect
         case .window(let window): window.frame
@@ -254,14 +256,14 @@ final class CaptureCoordinator {
             let app = NSWorkspace.shared.frontmostApplication?.localizedName
             #if DEBUG
             if let stand = selfTimerCapture, case .area(let rect) = target {
-                if let frame = stand(rect) { Task { await self.deliver(frame, appName: "Demo", copiesToClipboard: false) } }
+                if let frame = stand(rect) { Task { await self.deliver(frame, appName: "Demo", copiesToClipboard: false, then: then) } }
                 return
             }
             #endif
             Task {
                 switch target {
-                case .area(let rect): await self.captureArea(rect, appName: app, copiesToClipboard: copiesToClipboard)
-                case .window(let window): await self.captureWindow(window, copiesToClipboard: copiesToClipboard)
+                case .area(let rect): await self.captureArea(rect, appName: app, copiesToClipboard: copiesToClipboard, then: then)
+                case .window(let window): await self.captureWindow(window, copiesToClipboard: copiesToClipboard, then: then)
                 }
             }
         }
@@ -273,13 +275,24 @@ final class CaptureCoordinator {
         ])
     }
 
+    /// The area last chosen for a capture, in global points: what Capture Previous Area takes again.
+    private(set) var previousArea: CGRect?
+
+    /// Captures the area chosen last, as it is on screen now. Does nothing, but beep, before any was chosen.
+    func capturePreviousArea(then: ((HistoryItem) -> Void)? = nil) {
+        guard let rect = previousArea, !overlay.isActive else { return NSSound.beep() }
+        cancelSelfTimer()
+        let app = NSWorkspace.shared.frontmostApplication?.localizedName
+        Task { await captureArea(rect, appName: app, then: then) }
+    }
+
     /// Hover a window and click it: captured on its own, with its rounded corners and shadow.
-    func captureWindow() {
-        begin(mode: .window)
+    func captureWindow(then: ((HistoryItem) -> Void)? = nil) {
+        begin(mode: .window, then: then)
     }
 
     /// Captures the whole display under the pointer.
-    func captureFullscreen() {
+    func captureFullscreen(then: ((HistoryItem) -> Void)? = nil) {
         let layout = displays.layout
         guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
@@ -288,7 +301,7 @@ final class CaptureCoordinator {
             do {
                 let frame = try await capturer.captureDisplay(display)
                 probe.end()
-                await deliver(frame, appName: app)
+                await deliver(frame, appName: app, then: then)
             } catch {
                 Log.capture.error("Fullscreen capture failed: \(error.localizedDescription, privacy: .public)")
             }
@@ -299,12 +312,12 @@ final class CaptureCoordinator {
     /// drag on a live screen. Also used by scripted checks.
     /// - Parameter copiesToClipboard: false leaves the clipboard alone whatever the settings say, so
     ///   scripted test captures never replace what the user copied.
-    func captureArea(_ rect: CGRect, appName: String?, copiesToClipboard: Bool = true) async {
+    func captureArea(_ rect: CGRect, appName: String?, copiesToClipboard: Bool = true, then: ((HistoryItem) -> Void)? = nil) async {
         let probe = LatencyProbe("capture.region")
         do {
             let frame = try await capturer.captureArea(rect, in: displays.layout)
             probe.end()
-            await deliver(frame, appName: appName, copiesToClipboard: copiesToClipboard)
+            await deliver(frame, appName: appName, copiesToClipboard: copiesToClipboard, then: then)
         } catch {
             Log.capture.error("Region capture failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -382,7 +395,7 @@ final class CaptureCoordinator {
 
     // MARK: Private
 
-    private func begin(mode: OverlayController.Mode, copiesToClipboard: Bool = true, freezes: Bool? = nil) {
+    private func begin(mode: OverlayController.Mode, copiesToClipboard: Bool = true, freezes: Bool? = nil, then: ((HistoryItem) -> Void)? = nil) {
         guard !overlay.isActive else { return }
         // A new capture replaces a Self-Timer still counting down, rather than leaving it under the overlay.
         cancelSelfTimer()
@@ -390,15 +403,17 @@ final class CaptureCoordinator {
         overlay.freezesScreen = freezes ?? settings.freezeScreen
         overlay.begin(mode: mode) { [weak self] outcome in
             switch outcome {
-            case .region(_, _, _, let frozen?):
+            case .region(let rect, _, _, let frozen?):
                 // The screen was held still: the selection is kept as it was seen.
-                Task { await self?.deliver(frozen, appName: app, copiesToClipboard: copiesToClipboard) }
+                self?.previousArea = rect
+                Task { await self?.deliver(frozen, appName: app, copiesToClipboard: copiesToClipboard, then: then) }
             case .region(let rect, _, _, nil):
-                Task { await self?.captureArea(rect, appName: app, copiesToClipboard: copiesToClipboard) }
+                self?.previousArea = rect
+                Task { await self?.captureArea(rect, appName: app, copiesToClipboard: copiesToClipboard, then: then) }
             case .window(let target, _):
                 // A window is captured on its own, frozen or not: with its shadow and its transparent
                 // corners, which the frozen screen does not have.
-                Task { await self?.captureWindow(target, copiesToClipboard: copiesToClipboard) }
+                Task { await self?.captureWindow(target, copiesToClipboard: copiesToClipboard, then: then) }
             case .color(let color, let point, _, let modifiers, let keyboard):
                 self?.onColor?(color, point, modifiers, keyboard)
             case .annotated, .record, .scroll, .cancelled:
@@ -407,12 +422,12 @@ final class CaptureCoordinator {
         }
     }
 
-    private func captureWindow(_ target: WindowTarget, copiesToClipboard: Bool = true) async {
+    private func captureWindow(_ target: WindowTarget, copiesToClipboard: Bool = true, then: ((HistoryItem) -> Void)? = nil) async {
         let probe = LatencyProbe("capture.window")
         do {
             let frame = try await capturer.captureWindow(target, shadow: true, layout: displays.layout)
             probe.end()
-            await deliver(frame, appName: target.ownerName, copiesToClipboard: copiesToClipboard)
+            await deliver(frame, appName: target.ownerName, copiesToClipboard: copiesToClipboard, then: then)
         } catch {
             Log.capture.error("Window capture failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -433,7 +448,7 @@ final class CaptureCoordinator {
     private func deliver(
         _ frame: CapturedFrame, appName: String?, copiesToClipboard: Bool = true,
         marks: AnnotationDocument? = nil, copy: Copy = .asSet, savesCopy: Bool = false, showsCard: Bool = true, playsSound: Bool = true,
-        setsBackground: Bool = true
+        setsBackground: Bool = true, then: ((HistoryItem) -> Void)? = nil
     ) async -> HistoryItem? {
         if settings.playSounds, playsSound { shutter?.play() }
         let probe = LatencyProbe("capture.deliver")
@@ -488,6 +503,9 @@ final class CaptureCoordinator {
             }
             probe.end()
             Log.capture.notice("Captured \(frame.image.width, privacy: .public)x\(frame.image.height, privacy: .public) into history as \(entry.fileName, privacy: .public)\(marks.map { " with \($0.items.count) mark(s)" } ?? "", privacy: .public)")
+            // Before the card, so a follow-up that holds the capture (an upload) is in place when the card
+            // decides whether anything else still needs the file.
+            then?(entry)
             if showsCard { onCaptured?(item) }
             return entry
         } catch {

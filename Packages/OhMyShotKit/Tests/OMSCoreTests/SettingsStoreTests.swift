@@ -16,3 +16,16 @@ struct SettingsStoreTests {
         #expect(!ReplaySound.none.keepsSystem && !ReplaySound.none.keepsMicrophone)
     }
 }
+
+@MainActor
+struct CopyLinkSettingTests {
+    @Test func theLinkIsCopiedAfterAnUploadUnlessTurnedOff() throws {
+        let suite = "OMSCoreTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        #expect(settings.copyLinkAfterUpload)
+        settings.copyLinkAfterUpload = false
+        #expect(!SettingsStore(defaults: defaults).copyLinkAfterUpload)
+    }
+}

@@ -23,6 +23,16 @@ final class CompositionRoot {
     private lazy var overlay = OverlayController(topology: displays, capturer: capturer)
     private lazy var captures = CaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history)
     private lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions())
+    /// Uploads to the user's own storage; idle unless one is in flight.
+    private lazy var uploads: UploadCoordinator = {
+        let uploads = UploadCoordinator(settings: settings, quickAccess: quickAccess)
+        uploads.restoreCard = { [weak self] id in
+            guard let self, let entry = history.item(id: id) else { return }
+            Task { await self.restore(entry) }
+        }
+        uploads.ended = { [weak self] id, outcome in self?.uploadEnded(id, outcome) }
+        return uploads
+    }()
     private lazy var textCapture = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
     private lazy var annotations = AnnotationCoordinator(history: history)
     /// Reads the text in the history's screenshots for its search, in the text reader beside the app.
@@ -347,6 +357,8 @@ final class CompositionRoot {
             if waiting == 0 { done() }
         }
         if recordings.finishBeforeQuitting(finished) { waiting += 1 }
+        // An upload still going is cancelled, and quitting waits until its transfer has stopped and cleaned up.
+        if uploads.cancelAll(then: finished) { waiting += 1 }
         if #available(macOS 27, *), replay?.finishBeforeQuitting(finished) == true { waiting += 1 }
         // The count's own share: what still waits calls `done` when it ends.
         waiting -= 1
@@ -477,6 +489,8 @@ final class CompositionRoot {
             captures.captureWindow()
         case .selfTimer:
             captures.selfTimer()
+        case .capturePreviousArea:
+            captures.capturePreviousArea()
         case .captureText:
             captures.cancelSelfTimer()
             textCapture.captureText(joinLines: false)
@@ -516,6 +530,24 @@ final class CompositionRoot {
             captures.pinArea()
         case .pin(let file):
             if let file { pin(fileAt: file) } else { pinClipboard() }
+        case .captureArea(let region, .upload) where region.rect == nil:
+            guard permissions.status(of: .screenRecording) == .granted else {
+                showOnboarding()
+                return
+            }
+            captures.captureArea(then: uploadAfterCapture)
+        case .captureFullscreen(.upload):
+            guard permissions.status(of: .screenRecording) == .granted else { return showOnboarding() }
+            captures.captureFullscreen(then: uploadAfterCapture)
+        case .captureWindow(.upload):
+            guard permissions.status(of: .screenRecording) == .granted else { return showOnboarding() }
+            captures.captureWindow(then: uploadAfterCapture)
+        case .capturePreviousArea(.upload):
+            guard permissions.status(of: .screenRecording) == .granted else { return showOnboarding() }
+            captures.capturePreviousArea(then: uploadAfterCapture)
+        case .selfTimer(.upload):
+            guard permissions.status(of: .screenRecording) == .granted else { return showOnboarding() }
+            captures.selfTimer(then: uploadAfterCapture)
         case .captureArea(let region, _) where region.rect == nil:
             captures.captureArea()
         case .allInOne(let region) where region.rect == nil:
@@ -564,12 +596,34 @@ final class CompositionRoot {
     private func didCapture(_ item: QuickAccessItem) {
         if settings.showQuickAccess {
             quickAccess.add(item)
-        } else if settings.historyRetention == .never, let entry = history.item(id: item.id) {
+        } else if settings.historyRetention == .never, !uploads.uploadingIDs.contains(item.id), let entry = history.item(id: item.id) {
             // Nothing else holds on to it: it already went to the clipboard or the export folder.
             history.delete(entry)
         }
         removeExpiredHistory()
         readTextSoon()
+    }
+
+    /// The URL API's `action=upload`: the capture just kept goes to the default destination.
+    private func uploadAfterCapture(_ entry: HistoryItem) {
+        uploads.upload(captureID: entry.id, fileURL: history.fileURL(for: entry))
+    }
+
+    /// An upload ended. With history off a capture lives as long as something shows it, and an upload was one
+    /// of those things: let it go now unless a card (or, after a failure, the card that comes back with Retry),
+    /// or the editor, still holds it.
+    private func uploadEnded(_ id: UUID, _ outcome: UploadCoordinator.Outcome) {
+        if outcome == .failed, settings.showQuickAccess { return }
+        releaseIfUnheld(id)
+    }
+
+    private func releaseIfUnheld(_ id: UUID) {
+        guard
+            settings.historyRetention == .never, !quickAccess.itemIDs.contains(id), !annotations.openCaptureIDs.contains(id),
+            !uploads.uploadingIDs.contains(id), let entry = history.item(id: id)
+        else { return }
+        history.delete(entry)
+        historyWindow?.reload()
     }
 
     /// Has the text read in captures new to the history or with a new picture: now while the History window
@@ -817,7 +871,7 @@ final class CompositionRoot {
     }
 
     private func removeExpiredHistory() {
-        let removed = history.removeExpired(retention: settings.historyRetention, keeping: quickAccess.itemIDs.union(annotations.openCaptureIDs))
+        let removed = history.removeExpired(retention: settings.historyRetention, keeping: heldCaptureIDs)
         if removed > 0 {
             Log.capture.notice("Removed \(removed, privacy: .public) expired capture(s) from the history")
         }
@@ -825,7 +879,7 @@ final class CompositionRoot {
     }
 
     private func makeQuickAccessActions() -> QuickAccessController.Actions {
-        QuickAccessController.Actions(
+        var actions = QuickAccessController.Actions(
             copy: { item in CaptureFiles.copy(item.fileURL) },
             save: { [weak self] item in self?.captures.save(item) },
             saveAs: { [weak self] item in self?.captures.saveAs(item) },
@@ -850,6 +904,7 @@ final class CompositionRoot {
             },
             moveToTrash: { [weak self] item in
                 guard let self else { return }
+                uploads.cancel(captureID: item.id)
                 // As in CleanShot, the capture goes as a whole: the copy this card saved goes to the Trash
                 // with it. Both can be put back from the Trash.
                 if let saved = item.savedURL {
@@ -864,20 +919,41 @@ final class CompositionRoot {
                 // With history off, a capture lives only as long as its card, or its editor.
                 guard
                     let self, settings.historyRetention == .never, !annotations.openCaptureIDs.contains(item.id),
-                    let entry = history.item(id: item.id)
+                    !uploads.uploadingIDs.contains(item.id), let entry = history.item(id: item.id)
                 else { return }
                 history.delete(entry)
             }
         )
+        actions.sharing = makeSharingActions()
+        return actions
+    }
+
+    /// What cards offer for uploading. Every closure asks the destinations when it is called, so a destination
+    /// added or removed in Settings shows in the next menu that opens.
+    private func makeSharingActions() -> QuickAccessController.Actions.Sharing {
+        var sharing = QuickAccessController.Actions.Sharing()
+        sharing.menu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }
+        sharing.upload = { [weak self] item, destination in self?.uploads.upload(captureID: item.id, fileURL: item.fileURL, destinationID: destination) }
+        sharing.cancel = { [weak self] item in self?.uploads.cancel(captureID: item.id) }
+        sharing.retry = { [weak self] item in self?.uploads.retry(captureID: item.id) }
+        sharing.copyLink = { [weak self] item in self?.uploads.copyLink(captureID: item.id) }
+        sharing.hasLink = { [weak self] item in self?.uploads.hasLink(item.id) ?? false }
+        sharing.current = { [weak self] item in self?.uploads.cardState(item.id) }
+        return sharing
     }
 
     /// How many captures a retention would delete now; captures still on screen as cards are kept.
     private func expiredCount(for retention: HistoryRetention) -> Int {
-        history.expired(retention: retention, keeping: quickAccess.itemIDs.union(annotations.openCaptureIDs)).count
+        history.expired(retention: retention, keeping: heldCaptureIDs).count
+    }
+
+    /// Captures something still needs the file of: a card, an open editor, an upload on its way.
+    private var heldCaptureIDs: Set<UUID> {
+        quickAccess.itemIDs.union(annotations.openCaptureIDs).union(uploads.uploadingIDs)
     }
 
     private func makeHistoryWindow() -> HistoryWindowController {
-        let controller = HistoryWindowController(store: history, settings: settings, actions: HistoryActions(
+        var historyActions = HistoryActions(
             restore: { [weak self] entry in Task { await self?.restore(entry) } },
             copy: { [weak self] entry in
                 guard let self else { return }
@@ -917,10 +993,22 @@ final class CompositionRoot {
                 pin(fileAt: history.fileURL(for: entry), origin: .capture(entry.id), fallbackScale: scale)
             },
             moveToTrash: { [weak self] entry in
+                self?.uploads.cancel(captureID: entry.id)
                 self?.quickAccess.remove(entry.id)
                 self?.history.moveToTrash(entry)
             }
-        ), textReader: textReader, expiredCount: { [weak self] retention in self?.expiredCount(for: retention) ?? 0 })
+        )
+        historyActions.sharing.menu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }
+        historyActions.sharing.upload = { [weak self] entry, destination in
+            guard let self else { return }
+            uploads.upload(captureID: entry.id, fileURL: history.fileURL(for: entry), destinationID: destination)
+        }
+        historyActions.sharing.isUploading = { [weak self] entry in self?.uploads.isUploading(entry.id) ?? false }
+        historyActions.sharing.cancel = { [weak self] entry in self?.uploads.cancel(captureID: entry.id) }
+        let controller = HistoryWindowController(
+            store: history, settings: settings, actions: historyActions, textReader: textReader,
+            expiredCount: { [weak self] retention in self?.expiredCount(for: retention) ?? 0 }
+        )
         controller.onClose = { [weak self] in
             Task { @MainActor in
                 self?.historyWindow = nil
@@ -979,6 +1067,7 @@ final class CompositionRoot {
             relaunch: { Relauncher.relaunch() },
             openHistory: { [weak self] in self?.showHistory() },
             expiredCount: { [weak self] retention in self?.expiredCount(for: retention) ?? 0 },
+            destinations: uploads.destinations,
             backgrounds: SettingsDependencies.Backgrounds(
                 presets: { BackdropPresets.shared.all.map { SettingsDependencies.Backgrounds.Choice(id: $0.id, name: $0.name) } },
                 automatic: { BackdropPresets.shared.automatic?.id },
@@ -1067,6 +1156,20 @@ final class CompositionRoot {
             recordings: recordings,
             scrolling: scrolling,
             settings: settings,
+            uploads: uploads,
+            removeCheckCaptures: { [weak self] in
+                guard let self else { return 0 }
+                let mine = history.items().filter { ["Demo", "Test"].contains($0.appName ?? "") && $0.createdAt > .now.addingTimeInterval(-4 * 3600) }
+                for entry in mine {
+                    quickAccess.remove(entry.id)
+                    history.delete(entry)
+                }
+                historyWindow?.reload()
+                return mine.count
+            },
+            perform: { [weak self] in self?.perform($0) },
+            uploadAfterCapture: { [weak self] in self?.uploadAfterCapture($0) },
+            latestCaptureID: { [weak self] in self?.history.items().first?.id },
             replay: { [weak self] in self?.replayStorage }
         )
     }
@@ -1135,6 +1238,8 @@ private extension SettingsTab {
         case "recording": self = .recording
         case "shortcuts": self = .shortcuts
         case "advanced": self = .automation
+        // CleanShot's Cloud tab is where uploads are set up.
+        case "cloud", "sharing": self = .sharing
         case "about": self = .about
         default: self = .general
         }

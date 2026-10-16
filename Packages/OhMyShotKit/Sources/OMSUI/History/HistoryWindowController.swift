@@ -21,6 +21,20 @@ public struct HistoryActions {
     public var pin: (HistoryItem) -> Void
     /// Moves the capture to the Trash, where it can be put back from.
     public var moveToTrash: (HistoryItem) -> Void
+    /// Uploading, for a person who set up a destination. Left as it is, the window offers none of it.
+    public var sharing = Sharing()
+
+    public struct Sharing {
+        /// What the menu offers; read each time a menu opens, so a destination added or removed shows at once.
+        public var menu: () -> UploadMenu = { .hidden }
+        /// Uploads to a destination, or to the default for nil. The window does not wait for it.
+        public var upload: (HistoryItem, UUID?) -> Void = { _, _ in }
+        /// Whether the capture is being uploaded now.
+        public var isUploading: (HistoryItem) -> Bool = { _ in false }
+        public var cancel: (HistoryItem) -> Void = { _ in }
+
+        public init() {}
+    }
 
     public init(
         restore: @escaping (HistoryItem) -> Void,
@@ -736,12 +750,34 @@ struct HistoryCard: View {
                 Button { model.actions.recognizeText(item) } label: { Text("Recognize Text", bundle: .module) }
                 Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
             }
+            Button { Self.share(model.store.fileURL(for: item)) } label: { Text("Share", bundle: .module) }
+            if model.actions.sharing.isUploading(item) {
+                Button { model.actions.sharing.cancel(item) } label: { Text("Cancel Upload", bundle: .module) }
+            } else {
+                switch model.actions.sharing.menu() {
+                case .hidden:
+                    EmptyView()
+                case .upload:
+                    Button { model.actions.sharing.upload(item, nil) } label: { Text("Upload", bundle: .module) }
+                case .uploadWithChoice(let targets):
+                    Button { model.actions.sharing.upload(item, nil) } label: { Text("Upload to \(targets.first(where: \.isDefault)?.name ?? targets[0].name)", bundle: .module) }
+                    ForEach(targets) { target in
+                        Button { model.actions.sharing.upload(item, target.id) } label: { Text("Upload to \(target.name)", bundle: .module) }
+                    }
+                }
+            }
         }
         .accessibilityAction(named: Text("Move to Trash", bundle: .module)) { model.moveToTrash(item) }
     }
 
     private var isGIF: Bool {
         item.fileName.lowercased().hasSuffix(".gif")
+    }
+
+    /// The system share sheet over the window, for VoiceOver: the context menu's Share… is a `ShareLink`.
+    private static func share(_ file: URL) {
+        guard let view = NSApp.keyWindow?.contentView ?? NSApp.mainWindow?.contentView else { return }
+        NSSharingServicePicker(items: [file]).show(relativeTo: CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1), of: view, preferredEdge: .minY)
     }
 
     private var excerpt: HistorySearch.Excerpt? {
@@ -850,6 +886,29 @@ struct HistoryCard: View {
             Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
         }
         Button { model.actions.reveal(item) } label: { Text("Show in Finder", bundle: .module) }
+        Divider()
+        ShareLink(item: model.store.fileURL(for: item)) { Text("Share…", bundle: .module) }
+        if model.actions.sharing.isUploading(item) {
+            Button { model.actions.sharing.cancel(item) } label: { Text("Cancel Upload", bundle: .module) }
+        } else {
+            switch model.actions.sharing.menu() {
+            case .hidden:
+                EmptyView()
+            case .upload:
+                Button { model.actions.sharing.upload(item, nil) } label: { Text("Upload", bundle: .module) }
+            case .uploadWithChoice(let targets):
+                Button { model.actions.sharing.upload(item, nil) } label: { Text("Upload to \(targets.first(where: \.isDefault)?.name ?? targets[0].name)", bundle: .module) }
+                Menu {
+                    ForEach(targets) { target in
+                        Button { model.actions.sharing.upload(item, target.id) } label: {
+                            if target.isDefault { Label(target.name, systemImage: "checkmark") } else { Text(target.name) }
+                        }
+                    }
+                } label: {
+                    Text("Upload To", bundle: .module)
+                }
+            }
+        }
         Divider()
         Button(role: .destructive) { model.moveToTrash(item) } label: { Text("Move to Trash", bundle: .module) }
             .keyboardShortcut(.delete)

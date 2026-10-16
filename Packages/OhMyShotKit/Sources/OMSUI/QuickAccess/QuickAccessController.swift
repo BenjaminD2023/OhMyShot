@@ -23,6 +23,26 @@ public final class QuickAccessController {
         /// A card was dismissed without being trashed.
         public var closed: (QuickAccessItem) -> Void
 
+        /// Uploading, for a person who set up a destination. Left as it is, the card offers none of it.
+        public var sharing = Sharing()
+
+        /// What a card needs to offer Upload, Cancel Upload, Retry and Copy Link.
+        public struct Sharing {
+            /// What the menu offers; read each time a menu opens, so a destination added or removed shows at once.
+            public var menu: () -> UploadMenu = { .hidden }
+            /// Uploads to a destination, or to the default for nil.
+            public var upload: (QuickAccessItem, UUID?) -> Void = { _, _ in }
+            public var cancel: (QuickAccessItem) -> Void = { _ in }
+            public var retry: (QuickAccessItem) -> Void = { _ in }
+            public var copyLink: (QuickAccessItem) -> Void = { _ in }
+            /// Whether the capture has a link from an upload to copy.
+            public var hasLink: (QuickAccessItem) -> Bool = { _ in false }
+            /// What a capture's upload is now, for a card shown after the upload began.
+            public var current: (QuickAccessItem) -> CardUpload? = { _ in nil }
+
+            public init() {}
+        }
+
         public init(
             copy: @escaping (QuickAccessItem) -> Void,
             save: @escaping (QuickAccessItem) -> URL?,
@@ -57,6 +77,20 @@ public final class QuickAccessController {
     #if DEBUG
     /// The cards' panel while it shows, for scripted captures of it.
     public var debugPanel: NSWindow? { panel }
+
+    /// Opens the system share sheet for the newest card, as its Share… does.
+    public func debugShareLatest() {
+        guard let latest = items.last else { return }
+        stack?.debugShare(of: latest.id)
+    }
+
+    /// Opens the newest card's menu as More does and keeps it open for a moment, long enough for `whileOpen` to
+    /// look at it (it gets the menu's titles, submenus indented) and for a snapshot; then closes it. A menu
+    /// blocks until it closes, so the closing is scheduled before it opens and cannot be missed.
+    public func debugShowMenuOnLatest(whileOpen: @escaping @MainActor ([String]) async -> Void) {
+        guard let latest = items.last else { return }
+        stack?.debugShowMenu(of: latest.id, whileOpen: whileOpen)
+    }
     #endif
     private var stack: CardStackView?
     private var items: [QuickAccessItem] = []
@@ -116,6 +150,16 @@ public final class QuickAccessController {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         items[index].savedURL = url
         stack?.markSaved(id, at: url)
+    }
+
+    /// Shows how a capture's upload stands on its card, if it has one; a card made later asks the actions.
+    public func setUpload(_ upload: CardUpload?, for id: UUID) {
+        stack?.setUpload(upload, for: id)
+    }
+
+    /// Where a capture's card is on screen, if it has one: for a confirmation shown beside it.
+    public func screenFrame(ofCard id: UUID) -> CGRect? {
+        stack?.screenFrame(ofCard: id)
     }
 
     /// Copies the newest card's capture: the keyboard path to Quick Access.
@@ -256,6 +300,14 @@ public final class QuickAccessController {
             refresh()
         }
         stack.onClose = { [weak self] item in self?.dismiss(item.id) }
+        let sharing = actions.sharing
+        stack.uploadMenu = sharing.menu
+        stack.onUpload = sharing.upload
+        stack.onCancelUpload = sharing.cancel
+        stack.onRetryUpload = sharing.retry
+        stack.onCopyLink = sharing.copyLink
+        stack.hasLink = sharing.hasLink
+        stack.currentUpload = sharing.current
         let panel = QuickAccessPanel()
         panel.contentView = stack
         self.panel = panel

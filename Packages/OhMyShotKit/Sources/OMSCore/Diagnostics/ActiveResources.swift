@@ -16,6 +16,10 @@ public final class ActiveResources: Sendable {
         case activity
         /// A process of the app's own running beside it (the text reader).
         case helperProcess
+        /// One file on its way to the user's own storage: a URL session and, for a form upload, a temporary
+        /// copy of the file with its form around it. Taken when the upload starts, ended when it finishes,
+        /// fails or is cancelled.
+        case upload
     }
 
     public static let shared = ActiveResources()

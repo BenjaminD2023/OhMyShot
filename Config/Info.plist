@@ -64,6 +64,13 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>OhMyShot uploads a capture to storage on your network when you share it to a server there.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>OhMyShot records the microphone with a screen recording when you turn it on.</string>
 	<key>NSCameraUsageDescription</key>

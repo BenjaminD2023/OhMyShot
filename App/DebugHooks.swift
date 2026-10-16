@@ -46,6 +46,16 @@ struct DebugHooks {
     let recordings: RecordingCoordinator
     let scrolling: ScrollingCaptureCoordinator
     let settings: SettingsStore
+    let uploads: UploadCoordinator
+    /// Deletes the captures the scripted checks made in the last few hours (the apps "Demo" and "Test"),
+    /// and says how many.
+    let removeCheckCaptures: () -> Int
+    /// Runs a URL API command as if it had come in through the URL scheme, past its approval prompt.
+    let perform: (AutomationCommand) -> Void
+    /// What the URL API's `action=upload` does with a capture just kept.
+    let uploadAfterCapture: (HistoryItem) -> Void
+    /// The newest capture's id in the history.
+    let latestCaptureID: () -> UUID?
     /// The replay's coordinator on macOS 27, as any object.
     let replay: () -> AnyObject?
 
@@ -1083,6 +1093,7 @@ struct DebugHooks {
             // A demo's overlay too (Measure, Pick Color), as Escape would.
             if overlay.isActive { overlay.cancel() }
         default:
+            if handleUploadHook(hook, url) { return }
             Log.app.error("debug.unknown \(hook, privacy: .public)")
         }
     }
@@ -1803,7 +1814,7 @@ struct DebugHooks {
         parameter(name, in: url).flatMap(Int.init)
     }
 
-    private static func parameter(_ name: String, in url: URL) -> String? {
+    static func parameter(_ name: String, in url: URL) -> String? {
         URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == name }?.value
     }
 
