@@ -1,0 +1,415 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "ohmyshot",
+  "title": "OhMyShot",
+  "description": "Capture, record, read text, pin, and annotate with OhMyShot, the open-source screenshot app for macOS.",
+  "icon": "extension-icon.png",
+  "author": "fzlzjerry",
+  "categories": [
+    "Productivity",
+    "Media"
+  ],
+  "license": "MIT",
+  "platforms": [
+    "macOS"
+  ],
+  "commands": [
+    {
+      "name": "capture-area",
+      "title": "Capture Area",
+      "description": "Choose an area of the screen to capture.",
+      "mode": "no-view",
+      "keywords": [
+        "screenshot",
+        "region"
+      ],
+      "arguments": [
+        {
+          "name": "action",
+          "type": "dropdown",
+          "placeholder": "After Capture",
+          "required": false,
+          "data": [
+            {
+              "title": "Copy",
+              "value": "copy"
+            },
+            {
+              "title": "Save",
+              "value": "save"
+            },
+            {
+              "title": "Annotate",
+              "value": "annotate"
+            },
+            {
+              "title": "Upload",
+              "value": "upload"
+            },
+            {
+              "title": "Pin",
+              "value": "pin"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "capture-previous-area",
+      "title": "Capture Previous Area",
+      "description": "Capture the area chosen last again.",
+      "mode": "no-view",
+      "keywords": [
+        "screenshot",
+        "repeat"
+      ],
+      "arguments": [
+        {
+          "name": "action",
+          "type": "dropdown",
+          "placeholder": "After Capture",
+          "required": false,
+          "data": [
+            {
+              "title": "Copy",
+              "value": "copy"
+            },
+            {
+              "title": "Save",
+              "value": "save"
+            },
+            {
+              "title": "Annotate",
+              "value": "annotate"
+            },
+            {
+              "title": "Upload",
+              "value": "upload"
+            },
+            {
+              "title": "Pin",
+              "value": "pin"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "capture-fullscreen",
+      "title": "Capture Fullscreen",
+      "description": "Capture the display under the pointer.",
+      "mode": "no-view",
+      "keywords": [
+        "screenshot",
+        "screen"
+      ],
+      "arguments": [
+        {
+          "name": "action",
+          "type": "dropdown",
+          "placeholder": "After Capture",
+          "required": false,
+          "data": [
+            {
+              "title": "Copy",
+              "value": "copy"
+            },
+            {
+              "title": "Save",
+              "value": "save"
+            },
+            {
+              "title": "Annotate",
+              "value": "annotate"
+            },
+            {
+              "title": "Upload",
+              "value": "upload"
+            },
+            {
+              "title": "Pin",
+              "value": "pin"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "capture-window",
+      "title": "Capture Window",
+      "description": "Click a window to capture it with its shadow.",
+      "mode": "no-view",
+      "keywords": [
+        "screenshot"
+      ],
+      "arguments": [
+        {
+          "name": "action",
+          "type": "dropdown",
+          "placeholder": "After Capture",
+          "required": false,
+          "data": [
+            {
+              "title": "Copy",
+              "value": "copy"
+            },
+            {
+              "title": "Save",
+              "value": "save"
+            },
+            {
+              "title": "Annotate",
+              "value": "annotate"
+            },
+            {
+              "title": "Upload",
+              "value": "upload"
+            },
+            {
+              "title": "Pin",
+              "value": "pin"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "self-timer",
+      "title": "Self-Timer",
+      "description": "Choose an area; it is captured after the Self-Timer delay.",
+      "mode": "no-view",
+      "keywords": [
+        "screenshot",
+        "delay",
+        "timer"
+      ],
+      "arguments": [
+        {
+          "name": "action",
+          "type": "dropdown",
+          "placeholder": "After Capture",
+          "required": false,
+          "data": [
+            {
+              "title": "Copy",
+              "value": "copy"
+            },
+            {
+              "title": "Save",
+              "value": "save"
+            },
+            {
+              "title": "Annotate",
+              "value": "annotate"
+            },
+            {
+              "title": "Upload",
+              "value": "upload"
+            },
+            {
+              "title": "Pin",
+              "value": "pin"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "all-in-one",
+      "title": "All-In-One",
+      "description": "Open the capture overlay with the All-In-One bar.",
+      "mode": "no-view",
+      "keywords": [
+        "screenshot"
+      ]
+    },
+    {
+      "name": "scrolling-capture",
+      "title": "Scrolling Capture",
+      "description": "Choose the part of the screen that scrolls and capture all of it.",
+      "mode": "no-view",
+      "keywords": [
+        "long",
+        "page",
+        "screenshot"
+      ],
+      "arguments": [
+        {
+          "name": "autoscroll",
+          "type": "dropdown",
+          "placeholder": "Scrolling",
+          "required": false,
+          "data": [
+            {
+              "title": "Scroll by Hand",
+              "value": "false"
+            },
+            {
+              "title": "Auto-scroll",
+              "value": "true"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "record-screen",
+      "title": "Record Screen",
+      "description": "Choose what to record; while recording, stop.",
+      "mode": "no-view",
+      "keywords": [
+        "video",
+        "gif",
+        "recording"
+      ]
+    },
+    {
+      "name": "capture-text",
+      "title": "Capture Text",
+      "description": "Drag over text on screen to copy it.",
+      "mode": "no-view",
+      "keywords": [
+        "ocr",
+        "text recognition",
+        "copy text"
+      ],
+      "arguments": [
+        {
+          "name": "linebreaks",
+          "type": "dropdown",
+          "placeholder": "Line Breaks",
+          "required": false,
+          "data": [
+            {
+              "title": "Keep Line Breaks",
+              "value": "true"
+            },
+            {
+              "title": "Join Lines",
+              "value": "false"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "recognize-text-in-image",
+      "title": "Recognize Text in Image",
+      "description": "Copy the text in the image selected in Finder.",
+      "mode": "no-view",
+      "keywords": [
+        "ocr",
+        "finder"
+      ]
+    },
+    {
+      "name": "pin-image",
+      "title": "Pin Image",
+      "description": "Keep the image selected in Finder on screen; with none selected, choose one.",
+      "mode": "no-view",
+      "keywords": [
+        "float",
+        "finder"
+      ]
+    },
+    {
+      "name": "annotate-image",
+      "title": "Annotate Image",
+      "description": "Open the image selected in Finder in the editor; with none selected, choose one.",
+      "mode": "no-view",
+      "keywords": [
+        "edit",
+        "markup",
+        "finder"
+      ]
+    },
+    {
+      "name": "open-from-clipboard",
+      "title": "Annotate Clipboard Image",
+      "description": "Open the image on the clipboard in the editor.",
+      "mode": "no-view",
+      "keywords": [
+        "edit",
+        "markup",
+        "paste"
+      ]
+    },
+    {
+      "name": "toggle-desktop-icons",
+      "title": "Toggle Desktop Icons",
+      "description": "Hide the desktop icons behind the wallpaper, or show them again.",
+      "mode": "no-view",
+      "keywords": [
+        "hide",
+        "show",
+        "clean desktop"
+      ]
+    },
+    {
+      "name": "open-history",
+      "title": "Open Capture History",
+      "description": "Open the window with every capture kept.",
+      "mode": "no-view",
+      "keywords": [
+        "history",
+        "recent"
+      ]
+    },
+    {
+      "name": "restore-recently-closed",
+      "title": "Restore Recently Closed",
+      "description": "Bring back the capture whose card closed last.",
+      "mode": "no-view",
+      "keywords": [
+        "undo",
+        "quick access"
+      ]
+    },
+    {
+      "name": "open-settings",
+      "title": "Open OhMyShot Settings",
+      "description": "Open OhMyShot’s settings.",
+      "mode": "no-view",
+      "keywords": [
+        "preferences"
+      ]
+    }
+  ],
+  "preferences": [
+    {
+      "name": "scheme",
+      "title": "App",
+      "description": "Which copy of OhMyShot the commands control.",
+      "type": "dropdown",
+      "required": false,
+      "default": "ohmyshot",
+      "data": [
+        {
+          "title": "OhMyShot",
+          "value": "ohmyshot"
+        },
+        {
+          "title": "OhMyShot Dev",
+          "value": "ohmyshot-dev"
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^2.8.1"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.1.1",
+    "@types/node": "^24.2.1",
+    "eslint": "^9.39.2",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint",
+    "test": "node --test test/*.test.ts"
+  }
+}

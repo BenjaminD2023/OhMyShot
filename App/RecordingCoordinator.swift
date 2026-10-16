@@ -136,7 +136,9 @@ final class RecordingCoordinator {
     // MARK: Starting
 
     /// Record Screen: choose what to record; while recording, stop; while counting down, cancel.
-    func recordScreen() {
+    /// - Parameter area: chosen already, in global points (the URL API's `record-screen` with an area): framed with
+    ///   the recording bar at once.
+    func recordScreen(area: CGRect? = nil) {
         if session != nil { return stop() }
         if pending != nil { return cancelCountdown() }
         guard !overlay.isActive else { return }
@@ -161,7 +163,7 @@ final class RecordingCoordinator {
             settings.recordingCameraStyle = choices.cameraStyle
             settings.recordingShowsClicks = choices.showsClicks
         }
-        overlay.begin(mode: .area, purpose: .record) { [weak self] outcome in
+        overlay.begin(mode: .area, purpose: .record, choosing: area) { [weak self] outcome in
             guard case .record(let target, let display, let choices) = outcome else {
                 self?.camera.hide()
                 return

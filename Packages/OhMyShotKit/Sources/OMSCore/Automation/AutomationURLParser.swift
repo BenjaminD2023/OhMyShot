@@ -6,6 +6,24 @@ public enum AutomationURLError: Error, Equatable, Sendable {
     case unknownCommand(String)
     case missingParameter(String)
     case invalidParameter(name: String, value: String)
+    /// `display=` names a display that is not attached.
+    case noSuchDisplay(Int)
+    /// The area given lies outside its display.
+    case areaOffDisplay(CGRect)
+}
+
+extension AutomationRegion {
+    /// Where the area lies in AppKit's global space: on the display numbered `display`, else the one under
+    /// `pointer`, else the primary. Nil when no area is given, and the user chooses one. An area reaching
+    /// past its display is cut to it.
+    public func area(in layout: DisplayLayout, pointer: CGPoint) throws(AutomationURLError) -> CGRect? {
+        guard let rect else { return nil }
+        let found = if let display { layout.display(number: display) } else { layout.display(at: pointer) ?? layout.primary }
+        guard let found else { throw .noSuchDisplay(display ?? 1) }
+        let area = layout.globalRect(fromLocal: rect, on: found).intersection(found.frame)
+        guard !area.isNull, area.width >= 1, area.height >= 1 else { throw .areaOffDisplay(rect) }
+        return area
+    }
 }
 
 /// Parses `<scheme>://<command>?<parameters>` URLs. Unknown parameters are ignored, so callers written

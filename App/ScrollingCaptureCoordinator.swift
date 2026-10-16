@@ -78,7 +78,11 @@ final class ScrollingCaptureCoordinator {
 
     /// The shortcut, the menu, or the URL: chooses the area on the live screen, or finishes the capture
     /// under way. `autoScrolls` starts the app scrolling as soon as the capture starts.
-    func begin(autoScrolls: Bool = false) {
+    /// - Parameters:
+    ///   - area: chosen already, in global points (the URL API's): framed with the scrolling bar at once.
+    ///   - starts: the capture starts once the area is chosen, without the bar; at once with `area` (the URL API's
+    ///     `start=true`).
+    func begin(autoScrolls: Bool = false, area: CGRect? = nil, starts: Bool = false) {
         if run != nil { return finish() }
         guard !overlay.isActive else { return }
         captures.cancelSelfTimer()
@@ -89,7 +93,14 @@ final class ScrollingCaptureCoordinator {
         #else
         let copies = true
         #endif
-        overlay.begin(mode: .area, purpose: .scroll) { [weak self] outcome in
+        if let area, starts {
+            guard let display = displays.layout.display(at: CGPoint(x: area.midX, y: area.midY)) else { return }
+            if autoScrolls, !AutoScroller.isAllowed { return askForAccessibility() }
+            Task { await start(area, on: display, autoScrolls: autoScrolls, appName: app, copiesToClipboard: copies) }
+            return
+        }
+        overlay.startsScrollingAtOnce = starts
+        overlay.begin(mode: .area, purpose: .scroll, choosing: area) { [weak self] outcome in
             guard let self, case .scroll(let area, let display, let auto) = outcome else { return }
             if auto || autoScrolls, !AutoScroller.isAllowed {
                 // Asked now, before anything is captured: macOS's question would be in the picture.

@@ -31,6 +31,9 @@ protocol OverlayViewDelegate: AnyObject {
     /// The ruler's measurement, to copy; `ending` closes the overlay after it (Return).
     func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool)
     func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit)
+    /// Return while capturing or copying text, with the keys held then: takes an area shown chosen (the URL API's).
+    /// Returns whether there was one; else the key is passed on.
+    func overlayViewDidPressReturn(_ view: OverlayView, modifiers: NSEvent.ModifierFlags) -> Bool
 }
 
 /// The capture overlay on one display: a lightly dimmed screen, the selection with its size, a small
@@ -442,7 +445,9 @@ final class OverlayView: NSView {
                 if let pointer { delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags, keyboard: true) }
             case .measure:
                 if let text = measure?.measurement { delegate?.overlayView(self, didCopyMeasurement: text, ending: true) }
-            case .screenshot, .text, .annotate, .record, .scroll:
+            case .screenshot, .text:
+                if delegate?.overlayViewDidPressReturn(self, modifiers: event.modifierFlags) != true { super.keyDown(with: event) }
+            case .annotate, .record, .scroll:
                 super.keyDown(with: event)
             }
         case 48 where purpose == .measure:

@@ -46,6 +46,13 @@ final class CompositionRoot {
     private lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
     private lazy var recordings = RecordingCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions)
     private lazy var scrolling = ScrollingCaptureCoordinator(displays: displays, capturer: capturer, overlay: overlay, permissions: permissions, captures: captures)
+    /// Hide Desktop Icons: nothing exists unless the icons are hidden.
+    private lazy var desktopIcons: DesktopCover = {
+        let cover = DesktopCover(topology: displays, capturer: capturer)
+        cover.onChange = { [weak self] in self?.shareableContent.refresh() }
+        cover.canReadScreen = { [weak self] in self?.permissions.status(of: .screenRecording) == .granted }
+        return cover
+    }()
     /// The replay (macOS 27), kept as any object: a stored property can't be of a type this macOS may lack.
     private var replayStorage: AnyObject?
     private let hotkeys: HotkeyCenter
@@ -203,6 +210,15 @@ final class CompositionRoot {
                 ) { [weak self] in
                     self?.pins.closeAll()
                 },
+                .init(
+                    title: String(localized: "Hide Desktop Icons"),
+                    currentTitle: { [weak self] in
+                        self?.settings.hidesDesktopIcons == true ? String(localized: "Show Desktop Icons") : String(localized: "Hide Desktop Icons")
+                    }
+                ) { [weak self] in
+                    guard let self else { return }
+                    setDesktopIconsHidden(!settings.hidesDesktopIcons)
+                },
             ],
             historyEntries: [
                 .init(title: String(localized: "Annotate Image…")) { [weak self] in self?.chooseFilesToAnnotate() },
@@ -311,7 +327,10 @@ final class CompositionRoot {
         // Pins are in new captures as they are on screen (Settings can leave them out); a pin just opened
         // is fetched into the capturable content at once, so the next capture has it.
         capturer.includedWindowIDs = { [weak self] in
-            (self?.pins.capturedWindowIDs ?? []).union(Self.standardWindowIDs())
+            guard let self else { return Self.standardWindowIDs() }
+            // The cover over the desktop icons too: a capture shows the desktop as it looks.
+            let covers = settings.hidesDesktopIcons ? desktopIcons.windowIDs : []
+            return pins.capturedWindowIDs.union(Self.standardWindowIDs()).union(covers)
         }
         pins.onChange = { [weak self] in self?.shareableContent.refresh() }
         annotations.onChange = { [weak self] entry, data in
@@ -333,12 +352,15 @@ final class CompositionRoot {
             captures.cancelSelfTimer()
             overlay.prepare()
             quickAccess.displaysChanged()
+            if settings.hidesDesktopIcons { desktopIcons.refresh() }
         }
 
         logStartup()
         // What a crash or a forced quit left of a recording is finished and kept.
         recordings.recoverLeftovers()
         permissions.refresh([.screenRecording])
+        // After the permission is known: without it the cover draws the wallpaper's file, never asking for the screen.
+        if settings.hidesDesktopIcons { desktopIcons.setShown(true) }
         if permissions.status(of: .screenRecording) == .granted {
             // Built and fetched once now so the first capture does not pay for them. The panels come
             // first: the app is listed in the shareable content only once it has windows.
@@ -493,11 +515,11 @@ final class CompositionRoot {
         case .captureFullscreen:
             captures.captureFullscreen()
         case .captureAreaAndUpload:
-            guard uploads.destinations.defaultDestination != nil else { return uploads.tellNoDestination() }
-            captures.captureArea(then: uploadAfterCapture)
+            guard let followUp = followUp(for: .upload) else { return }
+            captures.captureArea(followUp: followUp)
         case .captureFullscreenAndUpload:
-            guard uploads.destinations.defaultDestination != nil else { return uploads.tellNoDestination() }
-            captures.captureFullscreen(then: uploadAfterCapture)
+            guard let followUp = followUp(for: .upload) else { return }
+            captures.captureFullscreen(followUp: followUp)
         case .captureWindow:
             captures.captureWindow()
         case .selfTimer:
@@ -531,76 +553,228 @@ final class CompositionRoot {
         }
     }
 
+    /// Runs a URL API command from an approved caller, as CleanShot X runs it under the same name and parameters.
     private func perform(_ command: AutomationCommand) {
+        if command.readsScreen, permissions.status(of: .screenRecording) != .granted { return showOnboarding() }
         switch command {
-        case .openSettings(let tab):
-            showSettings(SettingsTab(urlTab: tab))
-        case .captureArea(let region, .pin) where region.rect == nil:
-            guard permissions.status(of: .screenRecording) == .granted else {
-                showOnboarding()
-                return
-            }
-            captures.pinArea()
+        case .allInOne(let region):
+            guard let area = area(of: region) else { return }
+            captures.captureArea(choosing: area)
+        case .captureArea(let region, let action):
+            guard let area = area(of: region), let followUp = followUp(for: action) else { return }
+            if let area { captures.captureArea(at: area, followUp: followUp) } else { captures.captureArea(followUp: followUp) }
+        case .capturePreviousArea(let action):
+            guard let followUp = followUp(for: action) else { return }
+            captures.capturePreviousArea(followUp: followUp)
+        case .captureFullscreen(let action):
+            guard let followUp = followUp(for: action) else { return }
+            captures.cancelSelfTimer()
+            captures.captureFullscreen(followUp: followUp)
+        case .captureWindow(let action):
+            guard let followUp = followUp(for: action) else { return }
+            captures.captureWindow(followUp: followUp)
+        case .selfTimer(let action):
+            guard let followUp = followUp(for: action) else { return }
+            captures.selfTimer(followUp: followUp)
+        case .scrollingCapture(let region, let start, let autoScrolls):
+            guard let area = area(of: region) else { return }
+            scrolling.begin(autoScrolls: autoScrolls, area: area, starts: start)
         case .pin(let file):
-            if let file { pin(fileAt: file) } else { pinClipboard() }
-        case .captureArea(let region, .upload) where region.rect == nil:
-            guard permissions.status(of: .screenRecording) == .granted else {
-                showOnboarding()
-                return
-            }
-            captures.captureArea(then: uploadAfterCapture)
-        case .captureFullscreen(.upload):
-            guard permissions.status(of: .screenRecording) == .granted else { return showOnboarding() }
-            captures.captureFullscreen(then: uploadAfterCapture)
-        case .captureWindow(.upload):
-            guard permissions.status(of: .screenRecording) == .granted else { return showOnboarding() }
-            captures.captureWindow(then: uploadAfterCapture)
-        case .capturePreviousArea(.upload):
-            guard permissions.status(of: .screenRecording) == .granted else { return showOnboarding() }
-            captures.capturePreviousArea(then: uploadAfterCapture)
-        case .selfTimer(.upload):
-            guard permissions.status(of: .screenRecording) == .granted else { return showOnboarding() }
-            captures.selfTimer(then: uploadAfterCapture)
-        case .captureArea(let region, _) where region.rect == nil:
-            captures.captureArea()
-        case .allInOne(let region) where region.rect == nil:
-            captures.captureArea()
-        case .captureFullscreen:
-            captures.captureFullscreen()
-        case .captureWindow:
-            captures.captureWindow()
-        case .selfTimer:
-            guard permissions.status(of: .screenRecording) == .granted else {
-                showOnboarding()
-                return
-            }
-            captures.selfTimer()
-        case .captureText(nil, let region, let lineBreaks) where region.rect == nil:
-            guard permissions.status(of: .screenRecording) == .granted else {
-                showOnboarding()
-                return
-            }
+            if let file { pin(fileAt: file) } else { choosePicturesToPin() }
+        case .recordScreen(let region):
+            guard let area = area(of: region) else { return }
             captures.cancelSelfTimer()
-            textCapture.captureText(joinLines: lineBreaks == false)
-        case .scrollingCapture(let region, _, let autoScrolls) where region.rect == nil:
-            guard permissions.status(of: .screenRecording) == .granted else {
-                showOnboarding()
-                return
-            }
-            scrolling.begin(autoScrolls: autoScrolls)
-        case .recordScreen(let region) where region.rect == nil:
-            guard permissions.status(of: .screenRecording) == .granted else {
-                showOnboarding()
-                return
-            }
+            recordings.recordScreen(area: area)
+        case .captureText(let file?, _, let lineBreaks):
+            Task { await textCapture.recognize(fileAt: file, joinLines: lineBreaks == false) }
+        case .captureText(nil, let region, let lineBreaks):
+            guard let area = area(of: region) else { return }
             captures.cancelSelfTimer()
-            recordings.recordScreen()
+            if let area {
+                Task { await textCapture.recognize(region: area, joinLines: lineBreaks == false) }
+            } else {
+                textCapture.captureText(joinLines: lineBreaks == false)
+            }
+        case .openAnnotate(let file):
+            if let file { open([file]) } else { chooseFilesToAnnotate() }
+        case .openFromClipboard:
+            annotateClipboard()
+        case .toggleDesktopIcons:
+            setDesktopIconsHidden(!settings.hidesDesktopIcons)
+        case .hideDesktopIcons:
+            setDesktopIconsHidden(true)
+        case .showDesktopIcons:
+            setDesktopIconsHidden(false)
+        case .addQuickAccessOverlay(let file):
+            Task { await addToQuickAccess(file) }
         case .openHistory:
             showHistory()
         case .restoreRecentlyClosed:
             quickAccess.restoreRecentlyClosed()
-        default:
-            Log.automation.notice("Not available yet: \(String(describing: command), privacy: .public)")
+        case .openSettings(let tab):
+            showSettings(SettingsTab(urlTab: tab))
+        }
+    }
+
+    /// A URL command's area in global points: `.some(nil)` when the user is to choose it, nil (with a beep) when it
+    /// lies on no display.
+    private func area(of region: AutomationRegion) -> CGRect?? {
+        do {
+            return .some(try region.area(in: displays.layout, pointer: NSEvent.mouseLocation))
+        } catch {
+            Log.automation.error("URL command's area refused: \(String(describing: error), privacy: .public)")
+            NSSound.beep()
+            return nil
+        }
+    }
+
+    /// The URL API's `action` (or an upload shortcut's) as a capture's follow-up; nil when it cannot be done: an
+    /// upload with no destination, which is said by the pointer.
+    private func followUp(for action: CaptureAction?, done: ((HistoryItem?) -> Void)? = nil) -> CaptureFollowUp? {
+        if action == .upload, uploads.destinations.defaultDestination == nil {
+            uploads.tellNoDestination()
+            done?(nil)
+            return nil
+        }
+        return CaptureFollowUp(action: action, done: done)
+    }
+
+    private func setDesktopIconsHidden(_ hidden: Bool) {
+        settings.hidesDesktopIcons = hidden
+        desktopIcons.setShown(hidden)
+    }
+
+    /// The URL API's `open-from-clipboard`: the clipboard's picture in the editor, added to the history first.
+    private func annotateClipboard() {
+        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
+        switch PasteboardImage.read(.general) {
+        case .file(let url):
+            open([url])
+        case .data(let data):
+            guard let loaded = ImageLoader.load(data: data, fallbackScale: scale) else { return NSSound.beep() }
+            Task { await annotate(image: loaded.image, scale: loaded.scale, name: String(localized: "Clipboard")) }
+        case nil:
+            Log.automation.notice("Open from Clipboard: no picture on the clipboard")
+            NSSound.beep()
+        }
+    }
+
+    /// The URL API's `add-quick-access-overlay`: a copy of a picture or a recording joins the history and gets a card,
+    /// whatever Settings says about cards: it is what was asked for. The file itself stays where it is.
+    private func addToQuickAccess(_ url: URL) async {
+        do {
+            let entry = try await history.add(copyOf: url)
+            historyWindow?.reload()
+            if entry.kind == .screenshot { readTextSoon() }
+            guard let item = await quickAccessItem(for: entry) else {
+                history.delete(entry)
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            quickAccess.add(item)
+        } catch {
+            Log.automation.error("Could not add \(url.lastPathComponent, privacy: .public) to Quick Access: \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
+        }
+    }
+
+    // MARK: - Shortcuts
+
+    /// What a shortcut's capture action takes.
+    enum ShortcutCapture {
+        case area
+        case window
+        case fullscreen
+        case previousArea
+        case selfTimer
+    }
+
+    enum ShortcutError: Error {
+        case needsScreenRecording
+        case noUploadDestination
+        case unreadableImage
+    }
+
+    /// A shortcut's capture, run as its keyboard shortcut runs it with `action` after it: the capture's record once it
+    /// is kept, or nil when it was cancelled or failed.
+    func captureForShortcut(_ capture: ShortcutCapture, action: CaptureAction?) async throws -> HistoryItem? {
+        guard permissions.status(of: .screenRecording) == .granted else {
+            showOnboarding()
+            throw ShortcutError.needsScreenRecording
+        }
+        if action == .upload, uploads.destinations.defaultDestination == nil { throw ShortcutError.noUploadDestination }
+        return await withCheckedContinuation { continuation in
+            let answer = Answer(continuation)
+            let followUp = CaptureFollowUp(action: action) { answer.give($0) }
+            switch capture {
+            case .area: captures.captureArea(followUp: followUp)
+            case .window: captures.captureWindow(followUp: followUp)
+            case .fullscreen:
+                captures.cancelSelfTimer()
+                captures.captureFullscreen(followUp: followUp)
+            case .previousArea: captures.capturePreviousArea(followUp: followUp)
+            case .selfTimer: captures.selfTimer(followUp: followUp)
+            }
+        }
+    }
+
+    /// A kept capture's file, to hand to a shortcut.
+    func fileForShortcut(_ entry: HistoryItem) -> URL {
+        history.fileURL(for: entry)
+    }
+
+    /// A shortcut's Capture Text: the text copied, or nil when none was.
+    func captureTextForShortcut(keepsLineBreaks: Bool) async throws -> String? {
+        guard permissions.status(of: .screenRecording) == .granted else {
+            showOnboarding()
+            throw ShortcutError.needsScreenRecording
+        }
+        captures.cancelSelfTimer()
+        return await withCheckedContinuation { continuation in
+            let answer = Answer(continuation)
+            textCapture.captureText(joinLines: !keepsLineBreaks) { answer.give($0) }
+        }
+    }
+
+    /// The text in a picture a shortcut hands over, read as Capture Text reads it; nothing is copied or shown.
+    func textForShortcut(inImage data: Data, keepsLineBreaks: Bool) async throws -> String? {
+        guard let loaded = ImageLoader.load(data: data, fallbackScale: 1) else { throw ShortcutError.unreadableImage }
+        return await textCapture.text(in: loaded.image, joinLines: !keepsLineBreaks)
+    }
+
+    /// Pins a picture a shortcut hands over.
+    func pinForShortcut(_ data: Data) throws {
+        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
+        guard let loaded = ImageLoader.load(data: data, fallbackScale: scale) else { throw ShortcutError.unreadableImage }
+        pins.pin(loaded.image, scale: loaded.scale, origin: .clipboard)
+    }
+
+    /// Opens a picture a shortcut hands over in the editor, added to the history first.
+    func annotateForShortcut(_ data: Data, name: String) async throws {
+        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
+        guard let loaded = ImageLoader.load(data: data, fallbackScale: scale) else { throw ShortcutError.unreadableImage }
+        await annotate(image: loaded.image, scale: loaded.scale, name: name)
+    }
+
+    /// Runs a URL API command for a shortcut, which needs no caller's approval: the user made the shortcut.
+    func performForShortcut(_ command: AutomationCommand) throws {
+        if command.readsScreen, permissions.status(of: .screenRecording) != .granted {
+            showOnboarding()
+            throw ShortcutError.needsScreenRecording
+        }
+        perform(command)
+    }
+
+    /// Hands a continuation its value once, however many times a follow-up says it is done.
+    private final class Answer<Value: Sendable> {
+        private var continuation: CheckedContinuation<Value, Never>?
+
+        init(_ continuation: CheckedContinuation<Value, Never>) {
+            self.continuation = continuation
+        }
+
+        func give(_ value: Value) {
+            continuation?.resume(returning: value)
+            continuation = nil
         }
     }
 
@@ -1191,6 +1365,7 @@ final class CompositionRoot {
             scrolling: scrolling,
             settings: settings,
             uploads: uploads,
+            desktopIcons: desktopIcons,
             removeCheckCaptures: { [weak self] in
                 guard let self else { return 0 }
                 let mine = history.items().filter { ["Demo", "Test"].contains($0.appName ?? "") && $0.createdAt > .now.addingTimeInterval(-4 * 3600) }
@@ -1267,15 +1442,22 @@ final class CompositionRoot {
 }
 
 private extension SettingsTab {
-    /// Maps CleanShot's `open-settings?tab=` names onto ours.
+    /// Maps CleanShot's `open-settings?tab=` names onto ours, and takes ours as they are.
     init(urlTab: String?) {
-        switch urlTab?.lowercased() {
-        case "recording": self = .recording
-        case "shortcuts": self = .shortcuts
-        case "advanced": self = .automation
+        let name = urlTab?.lowercased() ?? ""
+        if let tab = SettingsTab(rawValue: name) {
+            self = tab
+            return
+        }
+        switch name {
+        // Backgrounds, Quick Access, and what happens after a screenshot are all in General.
+        case "wallpaper", "quickaccess", "screenshots": self = .general
+        // Pins and the reading tools.
+        case "annotate": self = .tools
         // CleanShot's Cloud tab is where uploads are set up.
-        case "cloud", "sharing": self = .sharing
-        case "about": self = .about
+        case "cloud": self = .sharing
+        // The URL scheme is set up there.
+        case "advanced": self = .automation
         default: self = .general
         }
     }

@@ -19,6 +19,12 @@ public final class ShareableContentCache {
         Task { _ = try? await current() }
     }
 
+    /// Content fetched now, in one round trip, for what changes without telling the cache: the wallpaper's windows.
+    public func fresh() async throws -> SCShareableContent {
+        content = nil
+        return try await current()
+    }
+
     /// The cached content, fetching it if there is none yet.
     public func current() async throws -> SCShareableContent {
         if let content { return content }

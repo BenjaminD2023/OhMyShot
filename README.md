@@ -28,6 +28,11 @@ macOS ties the Screen Recording permission to the app's code signature. An ad-ho
 
 After you grant Screen Recording, relaunch the app: macOS applies the permission only to new processes.
 
+## Automation
+
+OhMyShot answers CleanShot X's URL commands under `ohmyshot://`, offers actions in Shortcuts and Spotlight, and
+comes with a Raycast extension. See [Docs/automation.md](Docs/automation.md).
+
 ## Power budget
 
 Idle means idle. While OhMyShot sits in the menu bar it runs no timers, polls nothing, and holds no capture streams or event taps. Every milestone is gated on measured numbers:

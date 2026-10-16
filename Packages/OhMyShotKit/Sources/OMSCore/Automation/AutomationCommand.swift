@@ -46,6 +46,19 @@ public enum AutomationCommand: Equatable, Sendable {
     case restoreRecentlyClosed
     case openSettings(tab: String?)
 
+    /// Whether the command captures the screen, which needs Screen Recording.
+    public var readsScreen: Bool {
+        switch self {
+        case .allInOne, .captureArea, .capturePreviousArea, .captureFullscreen, .captureWindow, .selfTimer, .scrollingCapture, .recordScreen:
+            true
+        case .captureText(let file, _, _):
+            file == nil
+        case .pin, .openAnnotate, .openFromClipboard, .toggleDesktopIcons, .hideDesktopIcons, .showDesktopIcons, .addQuickAccessOverlay,
+             .openHistory, .restoreRecentlyClosed, .openSettings:
+            false
+        }
+    }
+
     /// Files the command would read.
     public var fileURLs: [URL] {
         switch self {

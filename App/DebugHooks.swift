@@ -1,4 +1,5 @@
 #if DEBUG
+import AppIntents
 import AppKit
 import AVFoundation
 import CoreMedia
@@ -47,6 +48,7 @@ struct DebugHooks {
     let scrolling: ScrollingCaptureCoordinator
     let settings: SettingsStore
     let uploads: UploadCoordinator
+    let desktopIcons: DesktopCover
     /// Deletes the captures the scripted checks made in the last few hours (the apps "Demo" and "Test"),
     /// and says how many.
     let removeCheckCaptures: () -> Int
@@ -86,6 +88,18 @@ struct DebugHooks {
     private static var readingDelays = (redactions: 0, textLines: 0)
     /// How many of the next readings of each fail, as a reading the capture could not be made for does.
     private static var readingFailures = (redactions: 0, textLines: 0)
+
+    /// A picture's average color as hex, from a 1×1 drawing of it.
+    private static func averageColor(of image: CGImage) -> String {
+        var pixel = [UInt8](repeating: 0, count: 4)
+        guard let context = CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return "?" }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return String(format: "#%02X%02X%02X alpha %d", pixel[0], pixel[1], pixel[2], pixel[3])
+    }
 
     func handle(_ url: URL) {
         let hook = url.pathComponents.dropFirst().first ?? ""
@@ -1045,6 +1059,80 @@ struct DebugHooks {
             Self.readingFailures = (times, times)
             Self.wrapReadings()
             Log.app.notice("debug.reading-fail \(times, privacy: .public)")
+        case "shortcut-recognize":
+            // Runs the Shortcuts action Recognize Text in Image on the drawn demo page through ShortcutsBridge, as
+            // Shortcuts would; logs how much text came back (never the text). Nothing is shown or copied.
+            if let png = DebugPanelDemo.png() {
+                Task {
+                    let breaks = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "breaks" }?.value != "0"
+                    let intent = RecognizeTextIntent()
+                    intent.image = IntentFile(data: png, filename: "Demo.png", type: .png)
+                    intent.keepsLineBreaks = breaks
+                    do {
+                        let result = try await intent.perform()
+                        let text = result.value ?? nil
+                        Log.app.notice("debug.shortcut-recognize \(text?.count ?? -1, privacy: .public) characters, \(text.map { $0.split(separator: "\n").count } ?? 0, privacy: .public) lines")
+                    } catch {
+                        Log.app.notice("debug.shortcut-recognize failed \(String(describing: error), privacy: .public)")
+                    }
+                }
+            }
+        case "chosen-area-demo":
+            // all-in-one with an area, on drawn screens (never the real one) and off the clipboard: the overlay opens
+            // with the area chosen, Return takes it; logs whether what was kept is that area of the frozen screen,
+            // then removes it. x, y, w, h in the display's points from its top-left corner; cancel=1 presses Escape
+            // instead and logs that the capture's follow-up heard nothing was kept.
+            let rect = ["x", "y", "w", "h"].compactMap { Self.intParameter($0, in: url) }
+            let cancels = Self.intParameter("cancel", in: url) == 1
+            Task { await runChosenAreaDemo(area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil, cancels: cancels) }
+        case "scroll-setup-act":
+            // action=start|auto|cancel drives the scrolling bar while an area is framed; none logs what is framed.
+            let action = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "action" }?.value
+            Log.app.notice("debug.scroll-setup \(action ?? "state", privacy: .public): \(overlay.debugScrollingSetup(action) ?? "nothing framed", privacy: .public), capturing=\(scrolling.isCapturing, privacy: .public)")
+        case "scroll-cancel":
+            scrolling.cancel()
+            Log.app.notice("debug.scroll-cancel capturing=\(scrolling.isCapturing, privacy: .public)")
+        case "overlay-state":
+            // Whether the overlay is up and has the keyboard, and who is in front: for runs started from Shortcuts.
+            let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none"
+            Log.app.notice("debug.overlay-state active=\(overlay.isActive, privacy: .public) appActive=\(NSApp.isActive, privacy: .public) key=\(NSApp.keyWindow.map { String(describing: type(of: $0)) } ?? "none", privacy: .public) front=\(front, privacy: .public) panels \(overlay.panelStates, privacy: .public)")
+        case "overlay-select":
+            // Chooses an area in the open overlay as a drag would: x, y, w, h in the pointer's display's points from its
+            // top-left corner.
+            let rect = ["x", "y", "w", "h"].compactMap { Self.intParameter($0, in: url) }
+            if rect.count == 4, let display = displays.layout.display(at: NSEvent.mouseLocation) ?? displays.layout.primary {
+                let area = CGRect(x: display.frame.minX + CGFloat(rect[0]), y: display.frame.maxY - CGFloat(rect[1] + rect[3]), width: CGFloat(rect[2]), height: CGFloat(rect[3]))
+                overlay.simulateSelection(area)
+                Log.app.notice("debug.overlay-select \(NSStringFromRect(area), privacy: .public) active=\(overlay.isActive, privacy: .public)")
+            }
+        case "copy-after-capture":
+            // value=0|1 sets the Dev app's Copy after capture, so a scripted capture leaves the clipboard alone; put it
+            // back afterwards.
+            if let value = Self.intParameter("value", in: url) { settings.copyAfterCapture = value == 1 }
+            Log.app.notice("debug.copy-after-capture \(settings.copyAfterCapture, privacy: .public)")
+        case "overlay-return":
+            Log.app.notice("debug.overlay-return handled=\(overlay.debugPressReturn(), privacy: .public)")
+        case "desktop-cover-check":
+            // The covers' windows, then the display under the pointer captured as a screenshot is (covers in) and with
+            // them left out: logs how much of the picture they change and where, the pixels themselves dropped.
+            Log.app.notice("debug.desktop-cover \(desktopIcons.debugSummary, privacy: .public)")
+            Task { await checkDesktopCoverInCaptures() }
+        case "wallpaper-check":
+            // Takes each display's wallpaper as Hide Desktop Icons does and logs its size, time, and average color;
+            // nothing is kept or shown.
+            Task {
+                let start = ContinuousClock.now
+                do {
+                    let pictures = try await capturer.captureWallpapers(of: displays.layout.displays)
+                    let elapsed = ContinuousClock.now - start
+                    for display in displays.layout.displays {
+                        let found = pictures[display.id].map { "\($0.width)x\($0.height), average \(Self.averageColor(of: $0))" } ?? "none"
+                        Log.app.notice("debug.wallpaper-check display \(display.id, privacy: .public): \(found, privacy: .public) (all in \(elapsed.formatted(.units(allowed: [.milliseconds])), privacy: .public))")
+                    }
+                } catch {
+                    Log.app.notice("debug.wallpaper-check failed: \(String(describing: error), privacy: .public)")
+                }
+            }
         case "redact-scan":
             // Reads the drawn demo page for redaction suggestions and logs them; nothing is shown.
             if let image = DebugPanelDemo.image(), let read = AnnotationSession.readText {
@@ -1605,6 +1693,107 @@ struct DebugHooks {
         }
         let difference = Self.pixelDifference(kept, expected.image)
         Log.app.notice("debug.freeze-demo kept \(kept.width, privacy: .public)x\(kept.height, privacy: .public) from \(parts.count, privacy: .public) display(s), frozen selection \(expected.image.width, privacy: .public)x\(expected.image.height, privacy: .public), largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public)")
+    }
+
+    func runChosenAreaDemo(area: CGRect?, cancels: Bool) async {
+        let layout = displays.layout
+        guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
+        var frames: [CGDirectDisplayID: CapturedFrame] = [:]
+        for each in layout.displays {
+            if let image = DebugPanelDemo.screen(for: each, page: each.id == display.id) {
+                frames[each.id] = CapturedFrame(image: image, hdrImage: nil, displayID: each.id, frame: each.frame)
+            }
+        }
+        let chosen = area ?? DebugPanelDemo.pageRect(on: display)
+        let rect = CGRect(x: display.frame.minX + chosen.minX, y: display.frame.maxY - chosen.maxY, width: chosen.width, height: chosen.height)
+        guard let expected = frames[display.id]?.cropped(to: rect) else { return }
+        let before = historyCount()
+        var heard: HistoryItem?? = .none
+        overlay.injectedFrames = frames
+        captures.captureArea(copiesToClipboard: false, freezes: true, choosing: rect, followUp: CaptureFollowUp { heard = .some($0) })
+        await waitForOverlayFrames()
+        try? await Task.sleep(for: .milliseconds(200))
+        if cancels {
+            overlay.cancel()
+            try? await Task.sleep(for: .milliseconds(100))
+            Log.app.notice("debug.chosen-area-demo cancelled: follow-up heard \(heard.map { $0 == nil ? "nothing kept" : "a capture" } ?? "nothing yet", privacy: .public), active=\(self.overlay.isActive, privacy: .public), history +\(self.historyCount() - before, privacy: .public)")
+            return
+        }
+        let handled = overlay.debugPressReturn()
+        for _ in 0..<80 where historyCount() == before {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        guard historyCount() == before + 1 else {
+            Log.app.error("debug.chosen-area-demo kept nothing: Return handled=\(handled, privacy: .public) active=\(self.overlay.isActive, privacy: .public)")
+            if overlay.isActive { overlay.cancel() }
+            return
+        }
+        defer { deleteLatestFromHistory() }
+        guard let file = latestCaptureFile(), let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+              let kept = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
+        let difference = Self.pixelDifference(kept, expected.image)
+        Log.app.notice("debug.chosen-area-demo Return handled=\(handled, privacy: .public), kept \(kept.width, privacy: .public)x\(kept.height, privacy: .public), area \(expected.image.width, privacy: .public)x\(expected.image.height, privacy: .public), largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public), follow-up heard \(heard.map { $0 == nil ? "nothing kept" : "the capture" } ?? "nothing", privacy: .public)")
+    }
+
+    /// The display under the pointer captured with the desktop covers (as every screenshot is) and without them: how
+    /// many of its pixels the covers change, and the box around them. Nothing is kept.
+    func checkDesktopCoverInCaptures() async {
+        let layout = displays.layout
+        guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
+        do {
+            let covered = try await capturer.captureDisplay(display)
+            let included = capturer.includedWindowIDs
+            let covers = desktopIcons.windowIDs
+            capturer.includedWindowIDs = { included?().subtracting(covers) ?? [] }
+            defer { capturer.includedWindowIDs = included }
+            let bare = try await capturer.captureDisplay(display)
+            let (count, box) = Self.differingPixels(covered.image, bare.image)
+            Log.app.notice("debug.desktop-cover capture of display \(display.id, privacy: .public) with covers \(covers.sorted().map(String.init).joined(separator: ","), privacy: .public): \(count, privacy: .public) of every 16 pixels differ from the capture without them, within \(box.map { NSStringFromRect($0) } ?? "nothing", privacy: .public) (pixels of the display, top left)")
+            // The same way of letting the covers in (this app left out, its covers excepted), with every other app's
+            // windows left out too, so the desktop shows even where windows hide it.
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            guard let scDisplay = content.displays.first(where: { $0.displayID == display.id }) else { return }
+            let keeps: Set<String> = ["com.apple.finder", "com.apple.WindowManager", "com.apple.dock"]
+            let others = content.applications.filter { !keeps.contains($0.bundleIdentifier) && !$0.bundleIdentifier.contains("Wallpaper") }
+            let coverWindows = content.windows.filter { covers.contains($0.windowID) }
+            func desktop(_ excepting: [SCWindow]) async throws -> CGImage? {
+                let configuration = SCScreenshotConfiguration()
+                configuration.showsCursor = false
+                configuration.dynamicRange = .sdr
+                configuration.width = Int(display.pixelSize.width)
+                configuration.height = Int(display.pixelSize.height)
+                let filter = SCContentFilter(display: scDisplay, excludingApplications: others, exceptingWindows: excepting)
+                return try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration).sdrImage
+            }
+            guard let withCovers = try await desktop(coverWindows), let withoutCovers = try await desktop([]) else { return }
+            let (shown, shownBox) = Self.differingPixels(withCovers, withoutCovers)
+            let wallpaper = try await capturer.captureWallpapers(of: [display])[display.id]
+            let (off, _) = wallpaper.map { Self.differingPixels(withCovers, $0) } ?? (-1, nil)
+            Log.app.notice("debug.desktop-cover desktop alone (\(others.count, privacy: .public) apps left out, \(coverWindows.count, privacy: .public) cover window(s) found): \(shown, privacy: .public) of every 16 pixels differ with the covers excepted, within \(shownBox.map { NSStringFromRect($0) } ?? "nothing", privacy: .public); with them, \(off, privacy: .public) differ from the bare wallpaper")
+        } catch {
+            Log.app.error("debug.desktop-cover capture failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Pixels (every fourth row and column) whose channels differ by more than 8, and the box around them in the
+    /// pictures' pixels from the top left.
+    private static func differingPixels(_ first: CGImage, _ second: CGImage) -> (count: Int, box: CGRect?) {
+        guard first.width == second.width, first.height == second.height,
+              let a = first.dataProvider?.data, let b = second.dataProvider?.data,
+              first.bitsPerPixel == 32, second.bitsPerPixel == 32 else { return (-1, nil) }
+        let pa = CFDataGetBytePtr(a)!, pb = CFDataGetBytePtr(b)!
+        var count = 0
+        var box = CGRect.null
+        for y in stride(from: 0, to: first.height, by: 4) {
+            for x in stride(from: 0, to: first.width, by: 4) {
+                let i = y * first.bytesPerRow + x * 4, j = y * second.bytesPerRow + x * 4
+                if (0..<3).contains(where: { abs(Int(pa[i + $0]) - Int(pb[j + $0])) > 8 }) {
+                    count += 1
+                    box = box.union(CGRect(x: x, y: y, width: 4, height: 4))
+                }
+            }
+        }
+        return (count, box.isNull ? nil : box)
     }
 
     /// An area 600 × 400 points across the edge two displays share, in the middle of the stretch they

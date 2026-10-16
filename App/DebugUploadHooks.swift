@@ -116,7 +116,7 @@ extension DebugHooks {
                 let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
                 let snap = value("snap") == "1"
                 Task {
-                    await captures.captureArea(rect, appName: "Test", copiesToClipboard: false, then: uploadAfterCapture)
+                    await captures.captureArea(rect, appName: "Test", copiesToClipboard: false, followUp: CaptureFollowUp(action: .upload))
                     if snap { await snapshotWindows() }
                 }
             }

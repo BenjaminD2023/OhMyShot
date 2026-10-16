@@ -226,6 +226,11 @@ public final class SettingsStore {
         didSet { defaults.set(replaySound.rawValue, forKey: Key.replaySound) }
     }
 
+    /// Hide Desktop Icons: a picture of the wallpaper covers them, and does again after a relaunch.
+    public var hidesDesktopIcons: Bool {
+        didSet { defaults.set(hidesDesktopIcons, forKey: Key.hidesDesktopIcons) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -313,6 +318,7 @@ public final class SettingsStore {
         let gifFrameRate = defaults.integer(forKey: Key.recordingGIFFrameRate)
         recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : 15
         replaySound = defaults.string(forKey: Key.replaySound).flatMap(ReplaySound.init(rawValue:)) ?? .all
+        hidesDesktopIcons = defaults.bool(forKey: Key.hidesDesktopIcons)
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         uploadAfterCapture = defaults.bool(forKey: Key.uploadAfterCapture)
         copyLinkAfterUpload = defaults.bool(forKey: Key.copyLinkAfterUpload)
@@ -358,6 +364,7 @@ public final class SettingsStore {
         static let recordingGIFFrameRate = "recordingGIFFrameRate"
         static let replaySound = "replaySound"
         static let copyAfterCapture = "copyAfterCapture"
+        static let hidesDesktopIcons = "hidesDesktopIcons"
         static let uploadAfterCapture = "uploadAfterCapture"
         static let copyLinkAfterUpload = "copyLinkAfterUpload"
         static let saveAfterCapture = "saveAfterCapture"

@@ -48,9 +48,10 @@ final class TextCaptureCoordinator {
         hud.onToggleJoin = { [weak self] in self?.toggleJoin() }
     }
 
-    /// Shows the overlay for text. `joinLines` joins the lines of each paragraph.
-    func captureText(joinLines: Bool) {
-        guard !overlay.isActive else { return }
+    /// Shows the overlay for text. `joinLines` joins the lines of each paragraph. `done` is told the text copied, or
+    /// nil when none was: cancelled, nothing readable, or Option opened the OCR panel instead.
+    func captureText(joinLines: Bool, done: ((String?) -> Void)? = nil) {
+        guard !overlay.isActive else { done?(nil); return }
         // The model loads while the person selects, which hides its first-use cost.
         let pipeline = pipeline
         Task {
@@ -62,19 +63,22 @@ final class TextCaptureCoordinator {
         overlay.begin(mode: .area, purpose: .text) { [weak self] outcome in
             // The highlight appears in the same turn the overlay closes, so no frame goes by without
             // the selection.
+            guard let self else { done?(nil); return }
             switch outcome {
             case .region(let rect, _, let modifiers, let frozen) where modifiers.contains(.option):
-                Task { await self?.openPanel(region: rect, frozen: frozen) }
+                done?(nil)
+                Task { await self.openPanel(region: rect, frozen: frozen) }
             case .window(let target, let modifiers) where modifiers.contains(.option):
-                Task { await self?.openPanel(window: target) }
+                done?(nil)
+                Task { await self.openPanel(window: target) }
             case .region(let rect, _, _, let frozen):
-                self?.highlight.show(rect)
-                Task { await self?.recognize(region: rect, frozen: frozen, joinLines: joinLines) }
+                highlight.show(rect)
+                Task { await self.recognize(region: rect, frozen: frozen, joinLines: joinLines, done: done) }
             case .window(let target, _):
-                self?.highlight.show(target.frame)
-                Task { await self?.recognize(window: target, joinLines: joinLines) }
+                highlight.show(target.frame)
+                Task { await self.recognize(window: target, joinLines: joinLines, done: done) }
             case .annotated, .color, .record, .scroll, .cancelled:
-                break
+                done?(nil)
             }
         }
     }
@@ -84,29 +88,61 @@ final class TextCaptureCoordinator {
     ///   - frozen: the region as the overlay held it still; nil captures it now.
     ///   - copiesToClipboard: false leaves the clipboard alone, so scripted checks never replace what
     ///     the user copied.
-    func recognize(region rect: CGRect, frozen: CapturedFrame? = nil, joinLines: Bool, copiesToClipboard: Bool = true) async {
+    ///   - done: told the text copied, or nil when there was none.
+    func recognize(region rect: CGRect, frozen: CapturedFrame? = nil, joinLines: Bool, copiesToClipboard: Bool = true, done: ((String?) -> Void)? = nil) async {
         highlight.show(rect)
         do {
             let frame = try await capture(rect, frozen: frozen)
-            await recognize(frame.image, selection: rect, joinLines: joinLines, copiesToClipboard: copiesToClipboard)
+            await recognize(frame.image, selection: rect, joinLines: joinLines, copiesToClipboard: copiesToClipboard, done: done)
         } catch {
             Log.capture.error("Capture Text failed to capture: \(error.localizedDescription, privacy: .public)")
             highlight.finish(copied: nil, announces: !settings.showTextResult)
+            done?(nil)
         }
     }
 
-    private func recognize(window target: WindowTarget, joinLines: Bool) async {
+    private func recognize(window target: WindowTarget, joinLines: Bool, done: ((String?) -> Void)? = nil) async {
         highlight.show(target.frame)
         do {
             let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
-            await recognize(frame.image, selection: target.frame, joinLines: joinLines, copiesToClipboard: true)
+            await recognize(frame.image, selection: target.frame, joinLines: joinLines, copiesToClipboard: true, done: done)
         } catch {
             Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
             highlight.finish(copied: nil, announces: !settings.showTextResult)
+            done?(nil)
         }
     }
 
-    private func recognize(_ image: CGImage, selection: CGRect, joinLines: Bool, copiesToClipboard: Bool) async {
+    /// The URL API's `capture-text` with a file: its text goes to the clipboard as a selection's does, the card (when
+    /// it is on) by the pointer. Nothing is highlighted: the picture is not on screen.
+    /// - Parameter copiesToClipboard: false for a shortcut's action, which hands the text on instead.
+    func recognize(fileAt url: URL, joinLines: Bool, copiesToClipboard: Bool = true, done: ((String?) -> Void)? = nil) async {
+        guard let loaded = await Self.load(.file(url), fallbackScale: 1) else {
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to recognize its text")
+            highlight.finish(copied: nil, announces: true)
+            done?(nil)
+            return
+        }
+        let pointer = NSEvent.mouseLocation
+        await recognize(
+            loaded.image, selection: CGRect(origin: pointer, size: .zero), joinLines: joinLines, copiesToClipboard: copiesToClipboard, done: done
+        )
+    }
+
+    /// A picture's text as Capture Text puts it together, or nil when it has none; nothing is copied or shown. For a
+    /// shortcut's Recognize Text in Image.
+    func text(in image: CGImage, joinLines: Bool) async -> String? {
+        do {
+            let lines = try await pipeline.recognize(image).lines
+            let text = TextAssembler.assemble(lines, options: .init(joinsWrappedLines: joinLines))
+            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+        } catch {
+            Log.capture.error("Recognizing a shortcut's picture failed: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }
+
+    private func recognize(_ image: CGImage, selection: CGRect, joinLines: Bool, copiesToClipboard: Bool, done: ((String?) -> Void)? = nil) async {
         let showsCard = settings.showTextResult
         let probe = LatencyProbe("ocr.recognize")
         let result: OCRResult
@@ -116,6 +152,7 @@ final class TextCaptureCoordinator {
             Log.capture.error("Capture Text failed to recognize: \(String(describing: error), privacy: .public)")
             highlight.finish(copied: nil, announces: !showsCard)
             if showsCard { hud.show(.empty, near: selection) }
+            done?(nil)
             return
         }
         probe.end()
@@ -127,6 +164,7 @@ final class TextCaptureCoordinator {
             Log.capture.notice("Capture Text found no text")
             highlight.finish(copied: nil, announces: !showsCard)
             if showsCard { hud.show(.empty, near: selection) }
+            done?(nil)
             return
         }
         if copiesToClipboard { copy(text) }
@@ -137,6 +175,7 @@ final class TextCaptureCoordinator {
         if showsCard {
             hud.show(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection)
         }
+        done?(text)
     }
 
     /// The card's switch: copies the text again with the other line-break choice.

@@ -83,6 +83,9 @@ public final class OverlayController {
 
     /// Hold the screen still while selecting, so hover states and menus can be captured.
     public var freezesScreen = false
+    /// A scrolling capture starts as soon as its area is chosen, without the scrolling bar (the URL API's
+    /// `start=true`). Set before `begin`; every session ends with it off again.
+    public var startsScrollingAtOnce = false
     /// The notation picked colors are copied in: the magnifier's reading shows it while picking.
     public var colorFormat: ColorFormat = .hex
     /// What the ruler reads in. Tab switches it during a session, and `onMeasureUnitChange` hears it.
@@ -166,7 +169,10 @@ public final class OverlayController {
         }
     }
 
-    public func begin(mode: Mode = .area, purpose: Purpose = .screenshot, completion: @escaping (Outcome) -> Void) {
+    /// - Parameter area: an area chosen already, in global points (the URL API's): a recording or a scrolling
+    ///   capture frames it with its bar at once; a screenshot or text shows it chosen, and Return takes it, or a drag
+    ///   chooses another.
+    public func begin(mode: Mode = .area, purpose: Purpose = .screenshot, choosing area: CGRect? = nil, completion: @escaping (Outcome) -> Void) {
         guard !isActive else { return }
         let beginning = LatencyProbe("overlay.begin")
         let visible = LatencyProbe("overlay.visible")
@@ -206,6 +212,8 @@ public final class OverlayController {
             )
         }
         hasInput = false
+        // Shown before the overlay takes input, which tells VoiceOver it is there.
+        let chosen = mode == .area ? area.flatMap(choose) : nil
         let session = self.session
         // Text without freezing shows no frame, but the pointer display's still arrives first: it tells
         // the watchdog that capturing works.
@@ -235,7 +243,27 @@ public final class OverlayController {
             try? await Task.sleep(for: .milliseconds(500))
             self?.watchdog(session: session)
         }
+        // A recording or a scrolling capture frames the area with its bar, once the overlay has the keyboard.
+        if let chosen, purpose == .record || purpose == .scroll { select(chosen.area, startingOn: chosen.display, modifiers: []) }
         beginning.end()
+    }
+
+    /// Shows `area` chosen, as a drag over it would leave it, and returns it as placed (on its display's pixels).
+    private func choose(_ area: CGRect) -> (area: CGRect, display: DisplayInfo)? {
+        guard let display = startDisplay(of: area) else { return nil }
+        place(area, startingOn: display)
+        guard let placed = selection.rect, !selection.isTooSmall else {
+            selection.reset()
+            showSelection()
+            return nil
+        }
+        Log.capture.notice("Area chosen ahead: \(NSStringFromRect(placed), privacy: .public) on display \(display.id, privacy: .public)")
+        return (placed, display)
+    }
+
+    /// An area shows chosen with no drag under way: one given to `begin`, which Return takes.
+    private var hasChosenArea: Bool {
+        dragPoint == nil && selection.rect != nil && !selection.isTooSmall
     }
 
     /// Puts the session's panels on screen. Until the overlay takes input they let the pointer through
@@ -270,6 +298,8 @@ public final class OverlayController {
             let announcement = switch purpose {
             case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.")
             case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.")
+            case .screenshot where hasChosenArea: String(localized: "An area is chosen: press Return to capture it, or drag to capture another.")
+            case .text where hasChosenArea: String(localized: "An area is chosen: press Return to copy its text, or drag over other text.")
             case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.")
             case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.")
             case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.")
@@ -417,6 +447,21 @@ public final class OverlayController {
         return entries[display.id]?.view.debugMeasurement
     }
 
+    /// Presses Return in the overlay that has the keyboard (or the pointer's display's), as the key would, for scripted
+    /// checks. Returns whether the key was handled rather than passed on.
+    public func debugPressReturn() -> Bool {
+        guard isActive else { return false }
+        let key = entries.values.first { $0.panel.isKeyWindow } ?? topology.layout.display(at: NSEvent.mouseLocation).flatMap { entries[$0.id] }
+        guard let view = (key ?? entries.values.first)?.view,
+              let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: "\r",
+                charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36
+              ) else { return false }
+        let handled = overlayViewDidPressReturn(view, modifiers: [])
+        if !handled { view.keyDown(with: event) }
+        return handled
+    }
+
     /// Chooses an area for in-place annotation without mouse input, for scripted checks.
     public func simulateAnnotation(selection rect: CGRect) {
         guard isActive, purpose == .annotate, let display = startDisplay(of: rect) else { return }
@@ -515,6 +560,7 @@ public final class OverlayController {
         guard let entry = entries[display.id] else { return }
         let area = area.intersection(display.frame)
         guard !area.isNull, area.width >= AreaFrame.smallest, area.height >= AreaFrame.smallest else { return }
+        if startsScrollingAtOnce { return end(.scroll(area, display: display, autoScrolls: false)) }
         if hidesCursor { NSCursor.unhide() }
         hidesCursor = false
         for (id, other) in entries where id != display.id {
@@ -559,6 +605,7 @@ public final class OverlayController {
     private func end(_ outcome: Outcome) {
         guard isActive else { return }
         isActive = false
+        startsScrollingAtOnce = false
         pendingAnnotation = nil
         dragPoint = nil
         spaceHeld = false
@@ -854,6 +901,13 @@ extension OverlayController: OverlayViewDelegate {
     }
 
     func overlayViewDidCancel(_ view: OverlayView) {
+        Log.capture.notice("Overlay cancelled with Escape\(self.dragPoint == nil ? "" : " during a drag", privacy: .public)")
         end(.cancelled)
+    }
+
+    func overlayViewDidPressReturn(_ view: OverlayView, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard hasChosenArea, let rect = selection.rect, let display = dragDisplay ?? startDisplay(of: rect) else { return false }
+        select(rect, startingOn: display, modifiers: modifiers)
+        return true
     }
 }

@@ -25,6 +25,12 @@ struct OverlayKeyTests {
         func overlayView(_ view: OverlayView, didNudge pixels: CGVector) { heard.append("nudge") }
         func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) { heard.append("copy") }
         func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) { heard.append("unit") }
+        /// Whether an area shows chosen, which Return takes.
+        var hasChosenArea = false
+        func overlayViewDidPressReturn(_ view: OverlayView, modifiers: NSEvent.ModifierFlags) -> Bool {
+            heard.append("return")
+            return hasChosenArea
+        }
     }
 
     /// Takes the keys the overlay passes on, so none reaches the end of the chain and beeps.
@@ -43,9 +49,10 @@ struct OverlayKeyTests {
 
     /// What pressing `keyCode` in an overlay for `purpose`, the pointer in its middle, tells the controller,
     /// and whether the key was passed on.
-    private func press(_ keyCode: UInt16, in purpose: OverlayController.Purpose) throws -> (heard: [String], passedOn: Bool) {
+    private func press(_ keyCode: UInt16, in purpose: OverlayController.Purpose, areaChosen: Bool = false) throws -> (heard: [String], passedOn: Bool) {
         let view = OverlayView(display: Self.display)
         let recorder = Recorder()
+        recorder.hasChosenArea = areaChosen
         let passedOn = PassedOn()
         view.delegate = recorder
         view.nextResponder = passedOn
@@ -63,9 +70,27 @@ struct OverlayKeyTests {
 
     @Test func whileCapturingTheArrowsAndReturnArePassedOn() throws {
         for purpose in [OverlayController.Purpose.screenshot, .text, .annotate, .record, .scroll] {
-            for key in Self.arrows + Self.returns {
+            for key in Self.arrows {
                 let result = try press(key, in: purpose)
                 #expect(result.heard.isEmpty && result.passedOn, "key \(key) in \(purpose): \(result.heard)")
+            }
+        }
+        for purpose in [OverlayController.Purpose.annotate, .record, .scroll] {
+            for key in Self.returns {
+                let result = try press(key, in: purpose)
+                #expect(result.heard.isEmpty && result.passedOn, "key \(key) in \(purpose): \(result.heard)")
+            }
+        }
+    }
+
+    /// Return takes an area the URL API chose ahead; with none it is passed on.
+    @Test func whileCapturingReturnTakesAnAreaChosenAhead() throws {
+        for purpose in [OverlayController.Purpose.screenshot, .text] {
+            for key in Self.returns {
+                let none = try press(key, in: purpose)
+                #expect(none.heard == ["return"] && none.passedOn, "key \(key) in \(purpose): \(none.heard)")
+                let chosen = try press(key, in: purpose, areaChosen: true)
+                #expect(chosen.heard == ["return"] && !chosen.passedOn, "key \(key) in \(purpose): \(chosen.heard)")
             }
         }
     }

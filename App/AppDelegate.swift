@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let root = CompositionRoot()
         self.root = root
         root.start()
+        ShortcutsBridge.started(root)
         for pending in pendingURLs {
             root.handle(url: pending.url, senderPID: pending.senderPID)
         }

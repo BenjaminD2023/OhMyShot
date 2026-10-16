@@ -79,6 +79,31 @@ public final class ScreenCapturer {
         return CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: target.frame)
     }
 
+    /// The wallpaper of each of `displays` as it shows under the desktop icons: the windows below the icons' level
+    /// and nothing above them, at the display's pixels. What Hide Desktop Icons lays over the icons. One fetch of the
+    /// shareable content serves every display; a display whose wallpaper cannot be taken is left out.
+    public func captureWallpapers(of displays: [DisplayInfo]) async throws -> [CGDirectDisplayID: CGImage] {
+        // The wallpaper's windows change with the Space and the wallpaper, without the cache hearing of it.
+        let current = try await content.fresh()
+        let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
+        var pictures: [CGDirectDisplayID: CGImage] = [:]
+        for display in displays {
+            guard let scDisplay = current.displays.first(where: { $0.displayID == display.id }) else { continue }
+            let below = current.windows.filter { $0.isOnScreen && $0.windowLayer < iconLevel && $0.frame.intersects(scDisplay.frame) }
+            guard !below.isEmpty else { continue }
+            let configuration = SCScreenshotConfiguration()
+            configuration.showsCursor = false
+            configuration.dynamicRange = .sdr
+            configuration.width = Int(display.pixelSize.width)
+            configuration.height = Int(display.pixelSize.height)
+            let output = try? await SCScreenshotManager.captureScreenshot(
+                contentFilter: SCContentFilter(display: scDisplay, including: below), configuration: configuration
+            )
+            if let image = output?.sdrImage { pictures[display.id] = image }
+        }
+        return pictures
+    }
+
     /// What a recording streams: the content filter, the part of it, and the frame's size in pixels.
     public struct RecordingSource {
         public let filter: SCContentFilter

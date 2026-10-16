@@ -44,6 +44,12 @@ struct AutomationURLParserTests {
         #expect(result == .success(.captureText(file: URL(filePath: "/tmp/shot.png"), region: AutomationRegion(), lineBreaks: false)))
     }
 
+    /// As the Raycast extension writes them: every reserved character percent-encoded, a plus as %2B.
+    @Test func encodedPathsKeepTheirSpacesAndPlusSigns() {
+        let result = parse("ohmyshot://pin?filepath=%2FUsers%2Fme%2FDesktop%2Fa%2Bb%20shot.png")
+        #expect(result == .success(.pin(file: URL(filePath: "/Users/me/Desktop/a+b shot.png"))))
+    }
+
     @Test func relativeFilePathsAreRejected() {
         #expect(parse("ohmyshot://pin?filepath=shot.png") == .failure(.invalidParameter(name: "filepath", value: "shot.png")))
     }
@@ -69,10 +75,66 @@ struct AutomationURLParserTests {
         #expect(parse("ohmyshot://make-coffee") == .failure(.unknownCommand("make-coffee")))
     }
 
+    @Test func screenCommandsSayTheyReadTheScreen() {
+        #expect(AutomationCommand.captureWindow(action: .pin).readsScreen)
+        #expect(AutomationCommand.captureText(file: nil, region: AutomationRegion(), lineBreaks: nil).readsScreen)
+        #expect(!AutomationCommand.captureText(file: URL(filePath: "/tmp/a.png"), region: AutomationRegion(), lineBreaks: nil).readsScreen)
+        #expect(!AutomationCommand.hideDesktopIcons.readsScreen)
+    }
+
     @Test func fileCommandsReportTheFilesTheyRead() {
         let file = URL(filePath: "/tmp/a.png")
         #expect(AutomationCommand.pin(file: file).fileURLs == [file])
         #expect(AutomationCommand.captureFullscreen(action: nil).fileURLs.isEmpty)
+    }
+}
+
+/// URL areas are in their display's own points, from its bottom-left corner.
+struct AutomationRegionTests {
+    private let pointerOnBuiltIn = CGPoint(x: 100, y: 100)
+
+    @Test func noAreaLeavesTheChoiceToTheUser() throws {
+        let layout = DisplayLayoutTests.layout(externalAt: CGPoint(x: 1728, y: 0))
+        #expect(try AutomationRegion(display: 2).area(in: layout, pointer: pointerOnBuiltIn) == nil)
+    }
+
+    @Test func areaOnTheNumberedDisplay() throws {
+        // The 6K display to the left of the built-in one, with its bottom 200 pt below it.
+        let layout = DisplayLayoutTests.layout(externalAt: CGPoint(x: -3440, y: -200))
+        let region = AutomationRegion(rect: CGRect(x: 10, y: 20, width: 300, height: 200), display: 2)
+        #expect(try region.area(in: layout, pointer: pointerOnBuiltIn) == CGRect(x: -3430, y: -180, width: 300, height: 200))
+    }
+
+    @Test func areaAboveThePrimaryDisplay() throws {
+        let layout = DisplayLayoutTests.layout(externalAt: CGPoint(x: -500, y: 1117))
+        let region = AutomationRegion(rect: CGRect(x: 0, y: 0, width: 100, height: 50), display: 2)
+        #expect(try region.area(in: layout, pointer: pointerOnBuiltIn) == CGRect(x: -500, y: 1117, width: 100, height: 50))
+    }
+
+    @Test func withoutADisplayTheOneUnderThePointer() throws {
+        let layout = DisplayLayoutTests.layout(externalAt: CGPoint(x: 1728, y: 0))
+        let region = AutomationRegion(rect: CGRect(x: 10, y: 10, width: 40, height: 40))
+        #expect(try region.area(in: layout, pointer: CGPoint(x: 2000, y: 500)) == CGRect(x: 1738, y: 10, width: 40, height: 40))
+        #expect(try region.area(in: layout, pointer: pointerOnBuiltIn) == CGRect(x: 10, y: 10, width: 40, height: 40))
+        // A pointer off every display (as it is between screens of different heights) falls back on the primary.
+        #expect(try region.area(in: layout, pointer: CGPoint(x: 100, y: 1300)) == CGRect(x: 10, y: 10, width: 40, height: 40))
+    }
+
+    @Test func areaPastItsDisplayIsCutToIt() throws {
+        let layout = DisplayLayoutTests.layout(externalAt: CGPoint(x: 1728, y: 0))
+        let region = AutomationRegion(rect: CGRect(x: 1600, y: 1000, width: 400, height: 400), display: 1)
+        #expect(try region.area(in: layout, pointer: pointerOnBuiltIn) == CGRect(x: 1600, y: 1000, width: 128, height: 117))
+    }
+
+    @Test func areaOffItsDisplayOrAMissingDisplayIsRefused() {
+        let layout = DisplayLayoutTests.layout(externalAt: CGPoint(x: 1728, y: 0))
+        let off = CGRect(x: 2000, y: 10, width: 50, height: 50)
+        #expect(throws: AutomationURLError.areaOffDisplay(off)) {
+            try AutomationRegion(rect: off, display: 1).area(in: layout, pointer: pointerOnBuiltIn)
+        }
+        #expect(throws: AutomationURLError.noSuchDisplay(3)) {
+            try AutomationRegion(rect: CGRect(x: 0, y: 0, width: 10, height: 10), display: 3).area(in: layout, pointer: pointerOnBuiltIn)
+        }
     }
 }
 

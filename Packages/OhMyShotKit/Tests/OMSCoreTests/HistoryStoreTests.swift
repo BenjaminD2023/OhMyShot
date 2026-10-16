@@ -1,5 +1,8 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
+import UniformTypeIdentifiers
 @testable import OMSCore
 
 struct HistoryStoreTests {
@@ -14,6 +17,41 @@ struct HistoryStoreTests {
         let newer = try store.add(data: Data([2]), fileExtension: "png", kind: .screenshot, pixelWidth: 30, pixelHeight: 40, appName: nil)
         #expect(store.items().map(\.id) == [newer.id, older.id])
         #expect(FileManager.default.contents(atPath: store.fileURL(for: older).path(percentEncoded: false)) == Data([1]))
+    }
+
+    /// The URL API's `add-quick-access-overlay` copies the user's file: it stays where it was.
+    @Test func aCopiedPictureKeepsItsNameAndSizeAndTheFileStays() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let folder = FileManager.default.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let source = folder.appending(path: "My Shot.PNG")
+        let context = try #require(CGContext(
+            data: nil, width: 3, height: 2, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let destination = try #require(CGImageDestinationCreateWithURL(source as CFURL, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try #require(context.makeImage()), nil)
+        #expect(CGImageDestinationFinalize(destination))
+
+        let item = try await store.add(copyOf: source)
+        #expect(item.kind == .screenshot)
+        #expect(item.pixelWidth == 3 && item.pixelHeight == 2)
+        #expect(item.fileName == "My Shot.png")
+        #expect(FileManager.default.fileExists(atPath: source.path(percentEncoded: false)))
+        #expect(FileManager.default.contents(atPath: store.fileURL(for: item).path(percentEncoded: false)) == FileManager.default.contents(atPath: source.path(percentEncoded: false)))
+        #expect(store.items().map(\.id) == [item.id])
+    }
+
+    @Test func aFileThatIsNoPictureIsNotCopied() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let source = FileManager.default.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString).txt")
+        try Data("hello".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+        await #expect(throws: (any Error).self) { try await store.add(copyOf: source) }
+        #expect(store.items().isEmpty)
     }
 
     @Test func deletingRemovesTheFileAndTheRecord() throws {

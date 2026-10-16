@@ -318,6 +318,61 @@ public final class HistoryStore: Sendable {
         return item
     }
 
+    /// Copies a picture or a recording of the user's into the history under its own name, leaving the file where it
+    /// is: the URL API's `add-quick-access-overlay`. A movie or a GIF is kept as a recording, with its size and
+    /// length; anything else must be a picture ImageIO reads.
+    public func add(copyOf source: URL, date: Date = .now) async throws -> HistoryItem {
+        let kind: HistoryItem.Kind
+        let size: (width: Int, height: Int)
+        var duration: TimeInterval?
+        if Self.isMovie(source) {
+            let asset = AVURLAsset(url: source)
+            guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw CocoaError(.fileReadCorruptFile) }
+            let (natural, transform) = try await track.load(.naturalSize, .preferredTransform)
+            let shown = CGRect(origin: .zero, size: natural).applying(transform)
+            kind = .recording
+            size = (Int(abs(shown.width).rounded()), Int(abs(shown.height).rounded()))
+            duration = try await asset.load(.duration).seconds
+        } else {
+            guard let picture = CGImageSourceCreateWithURL(source as CFURL, nil), let found = Self.pixelSize(of: picture) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            kind = source.pathExtension.lowercased() == "gif" ? .recording : .screenshot
+            size = found
+            if kind == .recording { duration = Self.gifDuration(of: picture) }
+        }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let item = HistoryItem(
+            kind: kind, createdAt: date, pixelWidth: size.width, pixelHeight: size.height, appName: nil,
+            fileName: availableFileName(source.deletingPathExtension().lastPathComponent, fileExtension: source.pathExtension.lowercased()),
+            duration: duration
+        )
+        try FileManager.default.copyItem(at: source, to: fileURL(for: item))
+        try JSONEncoder.history.encode(item).write(to: sidecarURL(for: item.id, fileName: item.fileName), options: .atomic)
+        return item
+    }
+
+    /// A picture's first image's size in pixels, turned upright as it is shown.
+    private static func pixelSize(of source: CGImageSource) -> (width: Int, height: Int)? {
+        guard CGImageSourceGetCount(source) > 0,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else { return nil }
+        // Orientations 5 to 8 turn the picture on its side.
+        let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
+        return orientation >= 5 ? (height, width) : (width, height)
+    }
+
+    /// How long a GIF plays once: its frames' delays added up.
+    private static func gifDuration(of source: CGImageSource) -> TimeInterval {
+        (0..<CGImageSourceGetCount(source)).reduce(0) { total, index in
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
+            let gif = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+            let delay = gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double ?? gif?[kCGImagePropertyGIFDelayTime] as? Double ?? 0
+            return total + delay
+        }
+    }
+
     /// `name.fileExtension`, or `name (2).fileExtension` and so on when that is taken.
     private func availableFileName(_ name: String, fileExtension: String) -> String {
         var fileName = "\(name).\(fileExtension)"
