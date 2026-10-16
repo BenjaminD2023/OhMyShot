@@ -63,6 +63,7 @@ final class CompositionRoot {
     private var onboardingWindow: OnboardingWindowController?
     private var historyWindow: HistoryWindowController?
     private var observations: [Task<Void, Never>] = []
+    private var pictureSweep: Task<Void, Never>?
 
     init() {
         #if DEBUG
@@ -830,6 +831,7 @@ final class CompositionRoot {
         else { return }
         history.delete(entry)
         historyWindow?.reload()
+        sweepWallpaperPictures()
     }
 
     /// Has the text read in captures new to the history or with a new picture: now while the History window
@@ -1082,6 +1084,40 @@ final class CompositionRoot {
             Log.capture.notice("Removed \(removed, privacy: .public) expired capture(s) from the history")
         }
         historyWindow?.reload()
+        sweepWallpaperPictures()
+    }
+
+    /// Takes away the desktop pictures' pieces kept for window screenshots once nothing uses them: no capture's
+    /// marks in the history (the Trash keeps a capture's picture, not its marks), no saved background, not the
+    /// last picture chosen for one. Never while an editor is open, as its Undo may bring a background back.
+    /// Captures going one after another are swept once.
+    private func sweepWallpaperPictures() {
+        pictureSweep?.cancel()
+        pictureSweep = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled, annotations.openCaptureIDs.isEmpty else { return }
+            let marks = history.items().map { history.annotationsURL(for: $0) }
+            var used = BackdropPresets.shared.pictureNames
+            used.formUnion(await Self.wallpaperPictures(namedIn: marks))
+            guard !Task.isCancelled, annotations.openCaptureIDs.isEmpty else { return }
+            // A piece just made may not be in a capture's marks yet.
+            let removed = PictureStore.shared.removeUnused(prefix: CaptureBackground.wallpaperPrefix, used: used, olderThan: 10 * 60)
+            if removed > 0 {
+                Log.capture.notice("Removed \(removed, privacy: .public) desktop picture piece(s) no capture uses")
+            }
+        }
+    }
+
+    /// The desktop pictures' pieces named in the marks files at `urls`.
+    @concurrent private nonisolated static func wallpaperPictures(namedIn urls: [URL]) async -> Set<String> {
+        guard let name = try? Regex(CaptureBackground.wallpaperPrefix + "[0-9a-f]{16}\\.jpg") else { return [] }
+        var names = Set<String>()
+        for url in urls {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let text = String(decoding: data, as: UTF8.self)
+            for match in text.matches(of: name) { names.insert(String(text[match.range])) }
+        }
+        return names
     }
 
     private func makeQuickAccessActions() -> QuickAccessController.Actions {
@@ -1120,6 +1156,7 @@ final class CompositionRoot {
                     history.moveToTrash(entry)
                 }
                 historyWindow?.reload()
+                sweepWallpaperPictures()
             },
             closed: { [weak self] item in
                 // With history off, a capture lives only as long as its card, or its editor.
@@ -1204,6 +1241,7 @@ final class CompositionRoot {
                 self?.uploads.cancel(captureID: entry.id)
                 self?.quickAccess.remove(entry.id)
                 self?.history.moveToTrash(entry)
+                self?.sweepWallpaperPictures()
             }
         )
         historyActions.sharing.menu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }

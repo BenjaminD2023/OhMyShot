@@ -47,20 +47,40 @@ nonisolated public final class PictureStore: @unchecked Sendable {
         try add(Data(contentsOf: url), fileExtension: url.pathExtension)
     }
 
-    /// Keeps encoded picture data (PNG, JPEG, HEIC, TIFF…); returns the name it is kept under.
-    public func add(_ data: Data, fileExtension: String) throws -> String {
+    /// Keeps encoded picture data (PNG, JPEG, HEIC, TIFF…); returns the name it is kept under, which starts with
+    /// `prefix`: one the app gives the pictures it makes itself, so `removeUnused` can take them away again.
+    public func add(_ data: Data, fileExtension: String, prefix: String = "") throws -> String {
         let digest = data.withUnsafeBytes { raw -> UInt64 in
             // FNV-1a: enough to tell one person's pictures apart.
             raw.reduce(0xCBF2_9CE4_8422_2325) { ($0 ^ UInt64($1)) &* 0x100_0000_01B3 }
         }
         let suffix = fileExtension.isEmpty ? "png" : fileExtension.lowercased()
-        let name = String(format: "%016llx", digest) + "." + suffix
+        let name = prefix + String(format: "%016llx", digest) + "." + suffix
         let destination = url(named: name)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        if !FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) {
+        if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) {
+            // Added again: as new to `removeUnused` as a picture just made.
+            try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: destination.path(percentEncoded: false))
+        } else {
             try data.write(to: destination, options: .atomic)
         }
         return name
+    }
+
+    /// Removes the pictures whose names start with `prefix` (never empty: the user's own pictures have none) that
+    /// are not in `used` and were added longer than `age` ago, as one just added may not be in use yet. Returns how
+    /// many went.
+    @discardableResult
+    public func removeUnused(prefix: String, used: Set<String>, olderThan age: TimeInterval, now: Date = .now) -> Int {
+        guard !prefix.isEmpty, let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)) else { return 0 }
+        var removed = 0
+        for name in names where name.hasPrefix(prefix) && !used.contains(name) {
+            let file = url(named: name)
+            let added = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? now
+            guard now.timeIntervalSince(added) > age else { continue }
+            if (try? FileManager.default.removeItem(at: file)) != nil { removed += 1 }
+        }
+        return removed
     }
 
     /// Keeps an image, as PNG; returns the name it is kept under.

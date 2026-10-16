@@ -21,7 +21,8 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     private weak var adjustPopover: NSPopover?
 
     /// The picture last chosen for a background, offered again.
-    private static let lastPictureKey = "annotation.backdropPicture"
+    /// The last picture chosen for a background, offered again beside the colors.
+    static let lastPictureKey = "annotation.backdropPicture"
 
     private static let railInset: CGFloat = 12
     /// The band along the bottom where the capsule rests when nothing is selected.

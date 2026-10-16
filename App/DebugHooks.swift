@@ -840,6 +840,23 @@ struct DebugHooks {
             // clipboard alone, for checks on the screen with the user's word; clipboard=1 puts it back.
             scrolling.debugLeavesClipboard = Self.parameter("clipboard", in: url) == "0"
             Log.app.notice("debug.scroll-test leaves the clipboard alone: \(scrolling.debugLeavesClipboard, privacy: .public)")
+        case "window-wallpaper-demo":
+            // The drawn page as a window centered on the pointer's display, put on the desktop picture around it as a
+            // window screenshot would be; writes window-wallpaper.png to the snapshot folder (it holds a piece of the
+            // wallpaper, nothing else of the screen) and keeps nothing in the history.
+            Task {
+                let layout = displays.layout
+                guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary, let page = DebugPanelDemo.image() else { return }
+                let size = DebugPanelDemo.size
+                let frame = CGRect(x: display.frame.midX - size.width / 2, y: display.frame.midY - size.height / 2, width: size.width, height: size.height)
+                guard let picture = await captures.debugWindowOnWallpaper(page, frame: frame, displayID: display.id) else {
+                    return Log.app.notice("debug.window-wallpaper-demo: no picture")
+                }
+                let url = Self.snapshotDirectory.appending(path: "window-wallpaper.png")
+                try? FileManager.default.createDirectory(at: Self.snapshotDirectory, withIntermediateDirectories: true)
+                if let data = try? await ImageExporter.encode(picture, as: .png) { try? data.write(to: url) }
+                Log.app.notice("debug.window-wallpaper-demo \(url.path(percentEncoded: false), privacy: .public) \(picture.width, privacy: .public)x\(picture.height, privacy: .public)")
+            }
         case "allinone-render":
             // All-In-One behind the desktop picture, captured alone: part=setup (the framed area and its bar, default) or
             // part=modes (the bar before an area); mode=dark; upload=0 without the Upload chip. Writes allinone-<part>.png.

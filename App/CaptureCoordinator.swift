@@ -123,8 +123,8 @@ final class CaptureCoordinator {
                 case .scroll: allInOneScroll?(rect)
                 case .record: break
                 }
-            case .window(let target, _):
-                Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard) }
+            case .window(let target, let modifiers):
+                Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
             case .record(let target, let display, let choices):
                 if case .area(let rect) = target { remember(rect, on: display) }
                 onRecord?(target, display, choices, app)
@@ -239,7 +239,8 @@ final class CaptureCoordinator {
     /// What Self-Timer captures at zero.
     private enum TimerTarget {
         case area(CGRect)
-        case window(WindowTarget)
+        /// With the keys held as it was clicked: Shift turns its background the other way round.
+        case window(WindowTarget, NSEvent.ModifierFlags)
     }
 
     var isSelfTimerRunning: Bool {
@@ -268,8 +269,8 @@ final class CaptureCoordinator {
             case .region(let rect, _, _, _):
                 // Whatever was frozen while choosing, what is captured is the screen once the time is up.
                 countDown(to: .area(rect), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
-            case .window(let target, _):
-                countDown(to: .window(target), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
+            case .window(let target, let modifiers):
+                countDown(to: .window(target, modifiers), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
                 followUp.finish(nil)
@@ -292,7 +293,7 @@ final class CaptureCoordinator {
     private func countDown(to target: TimerTarget, seconds: Int, copiesToClipboard: Bool, followUp: CaptureFollowUp) {
         let area = switch target {
         case .area(let rect): rect
-        case .window(let window): window.frame
+        case .window(let window, _): window.frame
         }
         let keys = selfTimerKeys?()
         announce(keys.map { String(localized: "Capturing in \(seconds) seconds. Press \($0) again to cancel.") }
@@ -317,7 +318,8 @@ final class CaptureCoordinator {
             Task {
                 switch target {
                 case .area(let rect): await self.captureArea(rect, appName: app, copiesToClipboard: copiesToClipboard, followUp: followUp)
-                case .window(let window): await self.captureWindow(window, copiesToClipboard: copiesToClipboard, followUp: followUp)
+                case .window(let window, let modifiers):
+                    await self.captureWindow(window, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers)
                 }
             }
         }
@@ -395,7 +397,7 @@ final class CaptureCoordinator {
         )
         // Kept as captured: the background chosen for every screenshot pads by the picture's size and grows it to its
         // shape, which for a picture tens of thousands of pixels long is gigabytes; the editor still adds one.
-        return await deliver(frame, appName: appName, copiesToClipboard: copiesToClipboard, setsBackground: false)
+        return await deliver(frame, appName: appName, copiesToClipboard: copiesToClipboard, background: .none)
     }
 
     #if DEBUG
@@ -472,10 +474,10 @@ final class CaptureCoordinator {
             case .region(let rect, _, _, nil):
                 previousArea = rect
                 Task { await self.captureArea(rect, appName: app, copiesToClipboard: copiesToClipboard, followUp: followUp) }
-            case .window(let target, _):
+            case .window(let target, let modifiers):
                 // A window is captured on its own, frozen or not: with its shadow and its transparent
                 // corners, which the frozen screen does not have.
-                Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers) }
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
                 followUp.finish(nil)
@@ -485,16 +487,95 @@ final class CaptureCoordinator {
         }
     }
 
-    private func captureWindow(_ target: WindowTarget, copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none) async {
+    /// Captures a window on its own, with its shadow while Settings keep it, on the background Settings choose for
+    /// windows; `modifiers` with Shift, as the window was clicked, takes it the other way round.
+    private func captureWindow(
+        _ target: WindowTarget, copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none, modifiers: NSEvent.ModifierFlags = []
+    ) async {
         let probe = LatencyProbe("capture.window")
         do {
-            let frame = try await capturer.captureWindow(target, shadow: true, layout: displays.layout)
+            let frame = try await capturer.captureWindow(target, shadow: settings.windowShadow, layout: displays.layout)
             probe.end()
-            await deliver(frame, appName: target.ownerName, copiesToClipboard: copiesToClipboard, followUp: followUp)
+            let background = await windowBackground(for: frame, shiftHeld: modifiers.contains(.shift))
+            // The display's scale: the capture is larger than the window's frame by its shadow.
+            await deliver(
+                frame, appName: target.ownerName, copiesToClipboard: copiesToClipboard, background: background,
+                pixelsPerPoint: displays.layout.display(id: frame.displayID)?.pixelsPerPoint, followUp: followUp
+            )
         } catch {
             Log.capture.error("Window capture failed: \(error.localizedDescription, privacy: .public)")
             followUp.finish(nil)
         }
+    }
+
+    /// What a window screenshot is put on: Settings' choice for windows, flipped by Shift as it was clicked. The
+    /// desktop picture is taken around the window as the display shows it now and kept with the pictures backgrounds
+    /// use, so the capture can be marked up and kept the same later.
+    private func windowBackground(for frame: CapturedFrame, shiftHeld: Bool) async -> CaptureBackground {
+        let resolved = settings.windowBackground.resolved(automaticPreset: BackdropPresets.shared.automatic != nil, shiftHeld: shiftHeld)
+        switch resolved {
+        case .none: return .none
+        case .preset: return .automatic
+        case .wallpaper:
+            guard let backdrop = await wallpaperBackdrop(around: frame) else {
+                Log.capture.notice("Window screenshot without the desktop picture: it could not be taken")
+                return .none
+            }
+            return .backdrop(backdrop)
+        }
+    }
+
+    #if DEBUG
+    /// A drawn window (`image`, at `frame` in global points) put on the desktop picture as a window screenshot would
+    /// be, rendered and returned; nothing is kept. For scripted checks.
+    func debugWindowOnWallpaper(_ image: CGImage, frame: CGRect, displayID: CGDirectDisplayID) async -> CGImage? {
+        let captured = CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: frame)
+        guard let backdrop = await wallpaperBackdrop(around: captured) else { return nil }
+        let scale = displays.layout.display(id: displayID)?.pixelsPerPoint ?? 2
+        guard let composed = await composed(image, scale: scale, marks: nil, background: .backdrop(backdrop)),
+              let document = try? JSONDecoder().decode(AnnotationDocument.self, from: composed.document) else { return nil }
+        Log.capture.notice("debug window-on-wallpaper: background \(String(describing: document.backdrop?.fill), privacy: .public), \(composed.image.width, privacy: .public)x\(composed.image.height, privacy: .public)")
+        // The piece of the wallpaper it stored is in no capture's marks: the next sweep takes it.
+        return composed.image
+    }
+    #endif
+
+    /// The desktop picture around a window capture as a background: as much of it as the finished picture covers.
+    private func wallpaperBackdrop(around frame: CapturedFrame) async -> Backdrop? {
+        let layout = displays.layout
+        guard let display = layout.display(id: frame.displayID) ?? layout.display(at: CGPoint(x: frame.frame.midX, y: frame.frame.midY)),
+              let wallpaper = try? await capturer.captureWallpapers(of: [display])[display.id] else { return nil }
+        let padding = CaptureBackground.wallpaperPadding
+        let picture = WallpaperCrop.pictureFrame(of: frame.image, window: frame.frame, pixelsPerPoint: display.pixelsPerPoint)
+        guard let region = WallpaperCrop.region(
+            around: picture, picturePixels: CGSize(width: frame.image.width, height: frame.image.height), padding: padding, on: display
+        ), let crop = wallpaper.cropping(to: region) else { return nil }
+        // A background is soft: a JPEG of it, no larger than a background is ever read, keeps the pictures folder
+        // small. The same picture is kept once.
+        guard let data = try? await ImageExporter.encode(Self.shrunk(crop, toAtMost: PictureStore.backgroundLimit), as: .jpeg),
+              let name = try? PictureStore.shared.add(data, fileExtension: "jpg", prefix: CaptureBackground.wallpaperPrefix)
+        else {
+            return nil
+        }
+        var backdrop = Backdrop(fill: .picture(name), padding: padding)
+        // Without the window's shadow, none is drawn under a window with square corners either.
+        if !settings.windowShadow { backdrop.shadow = 0 }
+        return backdrop
+    }
+
+    /// `image` with its longer side at most `limit` pixels, its shape kept.
+    private nonisolated static func shrunk(_ image: CGImage, toAtMost limit: Int) -> CGImage {
+        let longest = max(image.width, image.height)
+        guard longest > limit else { return image }
+        let factor = CGFloat(limit) / CGFloat(longest)
+        let width = max(Int((CGFloat(image.width) * factor).rounded()), 1), height = max(Int((CGFloat(image.height) * factor).rounded()), 1)
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return image }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage() ?? image
     }
 
     /// Whether a delivered capture goes to the clipboard: as the settings say, always (copying is what
@@ -510,11 +591,12 @@ final class CaptureCoordinator {
     /// every screenshot is set under them. Returns its record.
     /// `followUp`'s action comes on top of the settings: copy copies whatever they say, save saves; annotate and
     /// pin keep the capture as the editor and Capture Area and Pin do, off the clipboard and without a card.
+    /// `pixelsPerPoint` is the capture's scale where its frame does not give it (a window's, larger by its shadow).
     @discardableResult
     private func deliver(
         _ frame: CapturedFrame, appName: String?, copiesToClipboard: Bool = true,
         marks: AnnotationDocument? = nil, copy: Copy = .asSet, savesCopy: Bool = false, showsCard: Bool = true, playsSound: Bool = true,
-        setsBackground: Bool = true, followUp: CaptureFollowUp = .none
+        background: CaptureBackground = .automatic, pixelsPerPoint: CGFloat? = nil, followUp: CaptureFollowUp = .none
     ) async -> HistoryItem? {
         let action = followUp.action
         let copying: Copy = switch action {
@@ -533,8 +615,8 @@ final class CaptureCoordinator {
             // do, so the editor can change or remove them.
             var shown = (image: frame.image, png: png)
             var document: Data?
-            let scale = frame.frame.width > 0 ? CGFloat(frame.image.width) / frame.frame.width : 1
-            if let composed = await composed(frame.image, scale: scale, marks: marks, setsBackground: setsBackground),
+            let scale = pixelsPerPoint ?? (frame.frame.width > 0 ? CGFloat(frame.image.width) / frame.frame.width : 1)
+            if let composed = await composed(frame.image, scale: scale, marks: marks, background: background),
                let composedPNG = try? await ImageExporter.encode(composed.image, as: .png) {
                 shown = (composed.image, composedPNG)
                 document = composed.document
@@ -602,9 +684,15 @@ final class CaptureCoordinator {
 
     /// The capture as it is kept: with marks drawn in place and the background chosen for every new
     /// screenshot set under them, and the document that recreates it; nil when it is kept as captured.
-    private func composed(_ image: CGImage, scale: CGFloat, marks: AnnotationDocument?, setsBackground: Bool = true) async -> (image: CGImage, document: Data)? {
+    private func composed(_ image: CGImage, scale: CGFloat, marks: AnnotationDocument?, background: CaptureBackground = .automatic) async -> (image: CGImage, document: Data)? {
         var document = marks ?? AnnotationDocument(pixelSize: CGSize(width: image.width, height: image.height), scale: scale)
-        if setsBackground, document.backdrop == nil { document.backdrop = BackdropPresets.shared.automatic?.backdrop }
+        if document.backdrop == nil {
+            switch background {
+            case .automatic: document.backdrop = BackdropPresets.shared.automatic?.backdrop
+            case .none: break
+            case .backdrop(let backdrop): document.backdrop = backdrop
+            }
+        }
         guard !document.isEmpty, let rendered = await AnnotationRenderer.render(document, base: image), let data = try? JSONEncoder().encode(document) else { return nil }
         return (rendered, data)
     }
@@ -627,4 +715,18 @@ struct CaptureFollowUp {
     func finish(_ entry: HistoryItem?) {
         done?(entry)
     }
+}
+
+/// What a kept capture is put on: the background chosen for every new screenshot, none, or one of its own (a window
+/// screenshot on the desktop picture).
+enum CaptureBackground {
+    case automatic
+    case none
+    case backdrop(Backdrop)
+
+    /// The room around a window on the desktop picture, as a fraction of its measure.
+    static let wallpaperPadding: CGFloat = 0.08
+    /// What the desktop pictures' pieces kept for window screenshots are named with, so they can go again once
+    /// nothing uses them.
+    nonisolated static let wallpaperPrefix = "wallpaper-"
 }

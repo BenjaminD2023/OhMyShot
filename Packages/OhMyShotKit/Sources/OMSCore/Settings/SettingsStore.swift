@@ -231,6 +231,16 @@ public final class SettingsStore {
         didSet { defaults.set(hidesDesktopIcons, forKey: Key.hidesDesktopIcons) }
     }
 
+    /// Window screenshots keep the window's shadow, as macOS's do.
+    public var windowShadow: Bool {
+        didSet { defaults.set(windowShadow, forKey: Key.windowShadow) }
+    }
+
+    /// What window screenshots are put on; Shift held as the window is clicked takes it the other way round.
+    public var windowBackground: WindowBackground {
+        didSet { defaults.set(windowBackground.rawValue, forKey: Key.windowBackground) }
+    }
+
     /// All-In-One opens with the area it last captured, framed to adjust or take again.
     public var allInOneRemembersArea: Bool {
         didSet {
@@ -264,6 +274,7 @@ public final class SettingsStore {
             // captured, since the screen is taken the moment the shortcut is pressed.
             Key.freezeScreen: true,
             Key.allInOneRemembersArea: true,
+            Key.windowShadow: true,
             Key.selfTimerDelay: 5,
             Key.pinCornerRadius: 12.0,
             Key.pinShadow: true,
@@ -334,6 +345,8 @@ public final class SettingsStore {
         replaySound = defaults.string(forKey: Key.replaySound).flatMap(ReplaySound.init(rawValue:)) ?? .all
         hidesDesktopIcons = defaults.bool(forKey: Key.hidesDesktopIcons)
         allInOneRemembersArea = defaults.bool(forKey: Key.allInOneRemembersArea)
+        windowShadow = defaults.bool(forKey: Key.windowShadow)
+        windowBackground = defaults.string(forKey: Key.windowBackground).flatMap(WindowBackground.init(rawValue:)) ?? .asScreenshots
         allInOneArea = defaults.data(forKey: Key.allInOneArea).flatMap { try? JSONDecoder().decode(RememberedArea.self, from: $0) }
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         uploadAfterCapture = defaults.bool(forKey: Key.uploadAfterCapture)
@@ -382,6 +395,8 @@ public final class SettingsStore {
         static let copyAfterCapture = "copyAfterCapture"
         static let hidesDesktopIcons = "hidesDesktopIcons"
         static let allInOneRemembersArea = "allInOneRemembersArea"
+        static let windowShadow = "windowShadow"
+        static let windowBackground = "windowBackground"
         static let allInOneArea = "allInOneArea"
         static let uploadAfterCapture = "uploadAfterCapture"
         static let copyLinkAfterUpload = "copyLinkAfterUpload"

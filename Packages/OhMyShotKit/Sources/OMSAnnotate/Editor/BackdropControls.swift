@@ -40,6 +40,16 @@ public final class BackdropPresets {
         return all.first { $0.id == id }
     }
 
+    /// The pictures the saved backgrounds use, and the last one chosen for a background.
+    public var pictureNames: Set<String> {
+        var names = Set(all.compactMap { preset -> String? in
+            guard case .picture(let name) = preset.backdrop.fill else { return nil }
+            return name
+        })
+        if let last = defaults.string(forKey: EditorContentView.lastPictureKey) { names.insert(last) }
+        return names
+    }
+
     public func setAutomatic(_ id: UUID?) {
         defaults.set(id?.uuidString, forKey: Self.automaticKey)
         onChange?()

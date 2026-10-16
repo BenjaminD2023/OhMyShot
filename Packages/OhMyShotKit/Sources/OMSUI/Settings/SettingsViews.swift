@@ -266,6 +266,25 @@ struct GeneralSettingsView: View {
                     InfoButton(Text("Puts each new screenshot on a background. Save one as a preset with the editor’s Background tool.", bundle: .module))
                 }
             }
+            SettingsRow(Text("Windows", bundle: .module)) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle(isOn: $settings.windowShadow) {
+                        Text("Capture the shadow", bundle: .module)
+                    }
+                    HStack(spacing: 6) {
+                        Picker(selection: $settings.windowBackground) {
+                            Text("Same background as screenshots", bundle: .module).tag(WindowBackground.asScreenshots)
+                            Text("No background", bundle: .module).tag(WindowBackground.transparent)
+                            Text("Desktop wallpaper", bundle: .module).tag(WindowBackground.desktopWallpaper)
+                        } label: {
+                            Text("Window background", bundle: .module)
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        InfoButton(Text("Desktop wallpaper puts a window on the desktop picture around it, as the screen shows it. Hold Shift as you click a window to take it the other way: with no background, or on the desktop wallpaper.", bundle: .module))
+                    }
+                }
+            }
 
             SettingsDivider()
 
