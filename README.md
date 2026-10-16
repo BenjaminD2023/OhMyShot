@@ -15,7 +15,7 @@ A native macOS capture tool — screenshots, recordings, annotation, pins, and o
 ## Build and run
 
 ```sh
-Scripts/bootstrap.sh   # generate OhMyShot.xcodeproj from project.yml
+Scripts/bootstrap.sh   # generate OhMyShot.xcodeproj from project.yml (build.sh and run.sh do it again when project.yml has changed)
 Scripts/run.sh         # build the Debug app ("OhMyShot Dev") and launch it
 swift test --package-path Packages/OhMyShotKit
 ```
@@ -32,6 +32,13 @@ After you grant Screen Recording, relaunch the app: macOS applies the permission
 
 OhMyShot answers CleanShot X's URL commands under `ohmyshot://`, offers actions in Shortcuts and Spotlight, and
 comes with a Raycast extension. See [Docs/automation.md](Docs/automation.md).
+
+## Share menu, Open With, and email
+
+OhMyShot is in the Share menu of other apps (Preview, Safari, Photos, Finder) for pictures, to mark them up or pin
+them; switch it on in System Settings › General › Login Items & Extensions › Sharing. It also appears in Finder's
+Open With for images, and a capture's Quick Access card and its row in Capture History can start an email with the
+file attached.
 
 ## Power budget
 

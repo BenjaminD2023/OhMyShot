@@ -8,6 +8,7 @@ final class AutomationController {
     private let scheme: String
     private let settings: SettingsStore
     private let perform: (AutomationCommand) -> Void
+    private let receiveShared: (ShareHandoff) -> Void
     private let debugHandler: (URL) -> Bool
     /// Callers refused during this session, so a script in a loop cannot spam the approval prompt.
     private var deniedCallers: Set<String> = []
@@ -16,16 +17,27 @@ final class AutomationController {
         scheme: String,
         settings: SettingsStore,
         perform: @escaping (AutomationCommand) -> Void,
+        receiveShared: @escaping (ShareHandoff) -> Void,
         debugHandler: @escaping (URL) -> Bool
     ) {
         self.scheme = scheme
         self.settings = settings
         self.perform = perform
+        self.receiveShared = receiveShared
         self.debugHandler = debugHandler
     }
 
     func handle(_ url: URL, senderPID: pid_t?) {
         if url.scheme?.lowercased() == scheme, url.host(percentEncoded: false) == "debug", debugHandler(url) {
+            return
+        }
+        if ShareHandoff.isHandoff(url, scheme: scheme) {
+            // The Share extension: choosing OhMyShot in a Share menu is the approval, so the gate and its switch
+            // do not apply. What it can reach is limited to the pictures in the app's own Share Inbox.
+            switch ShareHandoff.parse(url, scheme: scheme) {
+            case .success(let handoff): receiveShared(handoff)
+            case .failure(let error): Log.automation.error("Rejected share hand-over: \(String(describing: error), privacy: .public)")
+            }
             return
         }
         let caller = senderPID.map(AutomationCaller.init(pid:))

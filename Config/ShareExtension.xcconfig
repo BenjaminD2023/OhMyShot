@@ -1,0 +1,17 @@
+// The Share extension: OhMyShot in any app's Share menu, taking pictures to annotate or pin. A sandboxed
+// app extension inside the app (Contents/PlugIns) that hands the pictures over through the Share Inbox
+// folder and a URL (Extensions/Share/ShareViewController.swift). Signing, the SDK, and Swift settings come
+// from Base.xcconfig; what makes the app an app is replaced.
+
+#include "Base.xcconfig"
+
+// The same in every configuration, as the app embeds the extension by this name; the name people see in the
+// Share menu is OMS_APP_NAME, in the Info.plist.
+PRODUCT_NAME = OhMyShot Share
+PRODUCT_MODULE_NAME = OhMyShotShare
+PRODUCT_BUNDLE_IDENTIFIER = $(OMS_HOST_BUNDLE_IDENTIFIER).share
+
+INFOPLIST_FILE = Config/ShareExtension-Info.plist
+CODE_SIGN_ENTITLEMENTS = Config/ShareExtension.entitlements
+SKIP_INSTALL = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../../../../Frameworks

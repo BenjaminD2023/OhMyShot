@@ -624,6 +624,9 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
             }
         }
         actions.append(action(String(localized: "Share", bundle: .module)) { [weak self] in self?.shareClicked() })
+        if EmailSharing.canSend(item.fileURL) {
+            actions.append(action(String(localized: "Send by Email", bundle: .module)) { [weak self] in self?.emailClicked() })
+        }
         switch upload {
         case .uploading?:
             actions.append(action(String(localized: "Cancel Upload", bundle: .module)) { [weak self] in self?.onCancelUpload?() })
@@ -931,10 +934,14 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         onHold?(.menu, false)
     }
 
-    /// Share, always; then the upload entries, which exist only for a person who set up a destination.
+    /// Share, always, and Send by Email while a message can be started; then the upload entries, which exist
+    /// only for a person who set up a destination.
     private func addSharingItems(to menu: NSMenu, add: (String, String, Selector) -> Void) {
         // Not the system's own Share item, which draws an icon the rest of this menu does not have.
         add(String(localized: "Share…", bundle: .module), "square.and.arrow.up", #selector(shareClicked))
+        if EmailSharing.canSend(item.fileURL) {
+            add(String(localized: "Send by Email", bundle: .module), "envelope", #selector(emailClicked))
+        }
         switch upload {
         case .uploading?:
             add(String(localized: "Cancel Upload", bundle: .module), "xmark.circle", #selector(cancelUploadClicked))
@@ -996,6 +1003,9 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     @objc private func shareClicked() {
         NSSharingServicePicker(items: [fileToHandOver?() ?? item.fileURL]).show(relativeTo: bounds, of: self, preferredEdge: .maxY)
     }
+
+    /// As Share, the file in the format Settings choose.
+    @objc private func emailClicked() { EmailSharing.send(fileToHandOver?() ?? item.fileURL) }
 
     @objc private func copyClicked() { onCopy?() }
     @objc private func saveClicked() { onSave?() }

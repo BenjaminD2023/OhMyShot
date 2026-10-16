@@ -1,0 +1,8 @@
+#include "ShareExtension.xcconfig"
+
+OMS_APP_NAME = OhMyShot
+OMS_HOST_BUNDLE_IDENTIFIER = $(OMS_BUNDLE_ID_PREFIX).ohmyshot
+
+SWIFT_OPTIMIZATION_LEVEL = -O
+SWIFT_COMPILATION_MODE = wholemodule
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym

@@ -5,7 +5,12 @@ cd "$(dirname "$0")/.."
 
 CONFIGURATION=${1:-Debug}
 
-[ -d OhMyShot.xcodeproj ] || Scripts/bootstrap.sh
+# The project is generated from project.yml: make it when it is missing and again when project.yml has changed
+# since, or a checkout that was generated before (before the Share extension target, say) would build without
+# the targets added since.
+if [ ! -d OhMyShot.xcodeproj ] || [ project.yml -nt OhMyShot.xcodeproj/project.pbxproj ]; then
+  Scripts/bootstrap.sh
+fi
 
 # The repository can live in a file-provider folder (iCloud Desktop & Documents), which tags existing
 # bundles with Finder info that codesign then rejects ("resource fork, Finder information, or similar

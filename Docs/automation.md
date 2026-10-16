@@ -85,6 +85,15 @@ Screenshots show the desktop as it looks, without the icons. The choice is remem
 
 The menu bar menu has Hide Desktop Icons too.
 
+### The Share extension's URL
+
+The `share` command is not part of CleanShot's API, and nothing else should send it: it is how OhMyShot's Share
+extension (OhMyShot in other apps' Share menus) tells the app that pictures are waiting. It is answered without
+approval, and works with the URL scheme turned off, because choosing OhMyShot in a Share menu is the approval.
+It carries no path, only the name of a folder in the app's own Share Inbox (`~/Library/Application Support/<bundle
+identifier>/Share Inbox`) and what to do with it (`action=annotate` or `pin`). The app opens only the pictures it
+finds directly in that folder, and removes the folder afterwards.
+
 ## Shortcuts and Spotlight
 
 These actions appear in the Shortcuts app under OhMyShot:

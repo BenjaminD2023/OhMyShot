@@ -45,6 +45,9 @@ targets:
         codeSign: true
         copy:
           destination: executables
+      - target: ShareExtension
+        embed: true
+        codeSign: true
 
   # Reads the text in captures for Capture History's search, in a process of its own (see main.swift).
   TextReader:
@@ -58,6 +61,21 @@ targets:
     dependencies:
       - package: OhMyShotKit
         product: OMSOCR
+
+  # OhMyShot in any app's Share menu: pictures to annotate or pin, handed over through the Share Inbox (see
+  # Extensions/Share/ShareViewController.swift). Sandboxed, as extensions must be; the app is not.
+  ShareExtension:
+    type: app-extension
+    platform: macOS
+    configFiles:
+      Debug: Config/ShareExtension-Debug.xcconfig
+      Release: Config/ShareExtension-Release.xcconfig
+    sources:
+      - path: Extensions/Share
+      - path: App/AppIcon.icon
+    dependencies:
+      - package: OhMyShotKit
+        product: OMSCore
 
 schemes:
   OhMyShot:

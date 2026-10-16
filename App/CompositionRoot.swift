@@ -93,6 +93,9 @@ final class CompositionRoot {
         let icon = AppActivation.appIcon
         icon.size = NSSize(width: 128, height: 128)
         NSApp.applicationIconImage = icon
+        // The Share extension can write only inside this folder, so it has to be there for the extension.
+        ShareInbox.standard().prepare()
+        ShareInbox.standard().removeStaleBatches()
         // A capture's text, read on this Mac for the annotation tools, one reading for both: the redaction
         // tool's suggestions, what reading finds better covered, and the lines of text the highlighter snaps
         // to, where they lie, never what they say.
@@ -1008,6 +1011,39 @@ final class CompositionRoot {
         }
     }
 
+    /// The Share extension's hand-over: the pictures in its batch go to the editor, or onto the screen as pins.
+    /// They are taken one at a time, each read and opened before the next is read, so a large share does not
+    /// hold every picture decoded at once; the batch is removed when all are done, and batches nobody
+    /// collected go with it.
+    private func receiveShared(_ handoff: ShareHandoff) {
+        let inbox = ShareInbox.standard()
+        let pictures: [URL]
+        do {
+            pictures = try inbox.pictures(inBatch: handoff.batch)
+        } catch {
+            Log.automation.error("Share hand-over refused: \(String(describing: error), privacy: .public)")
+            return NSSound.beep()
+        }
+        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
+        Task {
+            var opened = 0
+            for url in pictures {
+                guard let picture = await Self.loadImage(url, fallbackScale: scale) else {
+                    Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) shared to \(handoff.action.rawValue, privacy: .public) it")
+                    continue
+                }
+                switch handoff.action {
+                case .annotate: await annotate(image: picture.image, scale: picture.scale, name: url.deletingPathExtension().lastPathComponent)
+                case .pin: pins.pin(picture.image, scale: picture.scale, origin: .clipboard)
+                }
+                opened += 1
+            }
+            inbox.discard(batch: handoff.batch)
+            inbox.removeStaleBatches()
+            if opened == 0 { NSSound.beep() }
+        }
+    }
+
     /// Chooses pictures or projects to open in the editor.
     private func chooseFilesToAnnotate() {
         let chooser = NSOpenPanel()
@@ -1492,6 +1528,8 @@ final class CompositionRoot {
         #endif
         return AutomationController(scheme: urlScheme, settings: settings) { [weak self] command in
             self?.perform(command)
+        } receiveShared: { [weak self] handoff in
+            self?.receiveShared(handoff)
         } debugHandler: { url in
             #if DEBUG
             hooks.handle(url)

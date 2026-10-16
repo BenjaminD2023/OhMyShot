@@ -1,0 +1,14 @@
+// The Share extension of the Debug app ("OhMyShot Dev"): the host's bundle identifier and URL scheme, so it
+// hands pictures to that app and not to a release build beside it.
+
+#include "ShareExtension.xcconfig"
+
+OMS_APP_NAME = OhMyShot Dev
+OMS_HOST_BUNDLE_IDENTIFIER = $(OMS_BUNDLE_ID_PREFIX).ohmyshot.dev
+OMS_URL_SCHEME = ohmyshot-dev
+
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG
+SWIFT_OPTIMIZATION_LEVEL = -Onone
+GCC_OPTIMIZATION_LEVEL = 0
+ONLY_ACTIVE_ARCH = YES
+DEBUG_INFORMATION_FORMAT = dwarf

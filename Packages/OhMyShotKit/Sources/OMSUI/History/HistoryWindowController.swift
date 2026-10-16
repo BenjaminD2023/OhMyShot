@@ -777,6 +777,9 @@ struct HistoryCard: View {
                 Button { model.print(item) } label: { Text("Print", bundle: .module) }
             }
             Button { Self.share(fileToHandOver) } label: { Text("Share", bundle: .module) }
+            if EmailSharing.canSendRecently(model.store.fileURL(for: item)) {
+                Button { EmailSharing.send(fileToHandOver) } label: { Text("Send by Email", bundle: .module) }
+            }
             if model.actions.sharing.isUploading(item) {
                 Button { model.actions.sharing.cancel(item) } label: { Text("Cancel Upload", bundle: .module) }
             } else {
@@ -934,6 +937,9 @@ struct HistoryCard: View {
         Button { model.actions.reveal(item) } label: { Text("Show in Finder", bundle: .module) }
         Divider()
         Button { Self.share(fileToHandOver, atPointer: true) } label: { Text("Share…", bundle: .module) }
+        if EmailSharing.canSendRecently(model.store.fileURL(for: item)) {
+            Button { EmailSharing.send(fileToHandOver) } label: { Text("Send by Email", bundle: .module) }
+        }
         if model.actions.sharing.isUploading(item) {
             Button { model.actions.sharing.cancel(item) } label: { Text("Cancel Upload", bundle: .module) }
         } else {
