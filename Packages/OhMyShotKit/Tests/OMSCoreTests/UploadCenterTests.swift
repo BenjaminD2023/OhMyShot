@@ -139,7 +139,8 @@ struct UploadCenterTests {
         rig.center.cancel(captureID: id)
         // The stub answers one request at a time: let it go on to the other tests' requests.
         answer.signal()
-        try await until { rig.center.status(for: id) == nil }
+        // The center says so once its observer has seen the job end.
+        try await until { rig.center.status(for: id) == nil && last == .some(nil) }
         #expect(delivered == 0)
         #expect(last == .some(nil))
         #expect(rig.center.isIdle)
