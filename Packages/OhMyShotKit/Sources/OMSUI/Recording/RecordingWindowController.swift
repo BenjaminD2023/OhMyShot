@@ -14,21 +14,31 @@ public struct RecordingEdit: Equatable, Sendable {
     public var keepsAudio: Bool
     /// The size against the recording's own, at most 1.
     public var scale: Double
+    /// How loud the sound that stays is against the recording's own, at most 1.
+    public var volume: Double
+    /// How closely the picture is encoded when it is encoded again.
+    public var quality: RecordingQuality
 
-    public init(timeRange: CMTimeRange? = nil, keepsAudio: Bool = true, scale: Double = 1) {
+    public init(
+        timeRange: CMTimeRange? = nil, keepsAudio: Bool = true, scale: Double = 1, volume: Double = 1, quality: RecordingQuality = .medium
+    ) {
         self.timeRange = timeRange
         self.keepsAudio = keepsAudio
         self.scale = scale
+        self.volume = volume
+        self.quality = quality
     }
 
+    /// Whether the recording is left as it was made: nothing trimmed, silenced, quieted, made smaller, or
+    /// given another quality.
     public var isNone: Bool {
-        timeRange == nil && keepsAudio && scale >= 1
+        timeRange == nil && keepsAudio && scale >= 1 && RecordingVolume.isFull(volume) && quality == .medium
     }
 }
 
 /// The recording window: plays a kept recording and makes the few edits a recording needs before it goes
-/// out. Trim takes QuickTime's trimming bar; the toolbar leaves the sound out, makes the movie smaller,
-/// makes a GIF of it, and saves or copies it. A GIF only plays here.
+/// out. Trim takes QuickTime's trimming bar; the toolbar leaves the sound out or makes it quieter, makes the
+/// movie smaller or changes its quality, makes a GIF of it, and saves or copies it. A GIF only plays here.
 ///
 /// Edits are kept in the recording itself when it leaves the window (copied, saved) and when the window
 /// closes, as the annotation editor keeps marks; the recording as it was made stays beside it, and Revert to
@@ -72,6 +82,8 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     private var closed: (() -> Void)?
     /// The edits being kept now, which a second keep waits for.
     private var keeping: Task<URL?, Never>?
+    /// The audio tracks of the movie being played, which the volume is previewed on.
+    private var audioTracks: [AVAssetTrack] = []
 
     /// - Parameters:
     ///   - fileURL: the recording's file in the history: a movie, or a GIF.
@@ -84,7 +96,8 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         let isGIF = fileURL.pathExtension.lowercased() == "gif"
         // A GIF is made as large as things were on screen already.
         let scale = isGIF ? 1 : max(pixelsPerPoint ?? 2, 1)
-        let size = Self.preferredSize(pixelWidth: pixelWidth, pixelHeight: pixelHeight, scale: scale)
+        let minimumWidth = Self.minimumWidth(isGIF: isGIF)
+        let size = Self.preferredSize(pixelWidth: pixelWidth, pixelHeight: pixelHeight, scale: scale, minimumWidth: minimumWidth)
         let window = NSWindow(
             contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -94,7 +107,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         window.title = title
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.minSize = CGSize(width: 560, height: 360)
+        window.minSize = CGSize(width: minimumWidth, height: 360)
         super.init(window: window)
         model.controller = self
         model.isGIF = isGIF
@@ -133,13 +146,20 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     /// The window's toolbar, over the top of its content.
     private static let toolbarHeight: CGFloat = 52
 
+    /// The narrowest the window goes: a recording's toolbar (Trim, Sound, Volume, Size, Quality, Make GIF, Save,
+    /// and Copy) is laid out whole from here, as the editor's is at its minimum, rather than spilling into the
+    /// overflow menu; a GIF's, with Save and Copy only, needs less.
+    static func minimumWidth(isGIF: Bool) -> CGFloat {
+        isGIF ? 560 : 760
+    }
+
     /// The recording as large as it was on screen under the toolbar (the player's controls float over the
     /// movie), within most of the screen; no smaller than the toolbar needs.
-    private static func preferredSize(pixelWidth: Int, pixelHeight: Int, scale: Double) -> CGSize {
+    private static func preferredSize(pixelWidth: Int, pixelHeight: Int, scale: Double, minimumWidth: CGFloat) -> CGSize {
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
         let movie = CGSize(width: CGFloat(Double(pixelWidth) / scale), height: CGFloat(Double(pixelHeight) / scale))
         let fit = min(1, visible.width * 0.85 / movie.width, (visible.height * 0.85 - toolbarHeight) / movie.height)
-        return CGSize(width: max((movie.width * fit).rounded(), 560), height: max((movie.height * fit).rounded(), 300) + toolbarHeight)
+        return CGSize(width: max((movie.width * fit).rounded(), minimumWidth), height: max((movie.height * fit).rounded(), 300) + toolbarHeight)
     }
 
     public func show() {
@@ -152,16 +172,21 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     }
 
     private func loadAudio() {
-        let asset = AVURLAsset(url: fileURL)
+        guard let item = playerView.player?.currentItem else { return }
         Task { [weak self] in
-            let tracks = (try? await asset.loadTracks(withMediaType: .audio)) ?? []
-            self?.model.hasAudio = !tracks.isEmpty
+            let tracks = (try? await item.asset.loadTracks(withMediaType: .audio)) ?? []
+            // Not for a movie already replaced by another.
+            guard let self, playerView.player?.currentItem === item else { return }
+            audioTracks = tracks
+            model.hasAudio = !tracks.isEmpty
+            previewVolume()
         }
     }
 
     // MARK: Window
 
-    /// Whether closing would keep edits: something is trimmed, silenced, or made smaller.
+    /// Whether closing would keep edits: something is trimmed, silenced, quieted, made smaller, or given another
+    /// quality.
     public var hasUnkeptEdits: Bool {
         !model.isGIF && !edit.isNone
     }
@@ -198,10 +223,10 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
 
     // MARK: Edits
 
-    /// The edits made so far: the part kept (QuickTime's trim sets the item's playback ends), the sound,
-    /// the size.
+    /// The edits made so far: the part kept (QuickTime's trim sets the item's playback ends), the sound and its
+    /// volume, the size, the quality.
     var edit: RecordingEdit {
-        RecordingEdit(timeRange: trimRange, keepsAudio: !model.hasAudio || model.keepsAudio, scale: model.scale)
+        model.edit(timeRange: trimRange)
     }
 
     private var trimRange: CMTimeRange? {
@@ -237,6 +262,33 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         model.scale = scale
     }
 
+    func setQuality(_ quality: RecordingQuality) {
+        model.quality = quality
+    }
+
+    /// Sets how loud the sound that stays is, in whole percents, and plays it that loud.
+    func setVolume(_ volume: Double) {
+        model.setVolume(volume)
+        previewVolume()
+    }
+
+    /// Plays the movie at the volume chosen, through an audio mix that the export makes again, so the player's
+    /// own volume stays the listener's.
+    private func previewVolume() {
+        guard let item = playerView.player?.currentItem else { return }
+        guard !RecordingVolume.isFull(model.volume), !audioTracks.isEmpty else {
+            item.audioMix = nil
+            return
+        }
+        let mix = AVMutableAudioMix()
+        mix.inputParameters = audioTracks.map { track in
+            let parameters = AVMutableAudioMixInputParameters(track: track)
+            parameters.setVolume(Float(model.volume), at: .zero)
+            return parameters
+        }
+        item.audioMix = mix
+    }
+
     /// Makes the edits and keeps them in the recording, once; returns the file that holds it, or nil when
     /// it failed (said with a beep and an alert).
     private func keepEdits() async -> URL? {
@@ -268,6 +320,8 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         fileURL = url
         model.keepsAudio = true
         model.scale = 1
+        model.volume = 1
+        model.quality = .medium
         model.isTrimmed = false
         playerView.player?.isMuted = false
         playerView.player?.replaceCurrentItem(with: AVPlayerItem(url: url))
@@ -405,8 +459,11 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         window.orderFront(nil)
     }
 
-    /// Edits as the toolbar would make them, for scripted checks: a trim to `range`, the sound, the size.
-    public func debugEdit(trim range: CMTimeRange?, keepsAudio: Bool, scale: Double) {
+    /// Edits as the toolbar would make them, for scripted checks: a trim to `range`, the sound, the size, and
+    /// the volume and quality.
+    public func debugEdit(
+        trim range: CMTimeRange?, keepsAudio: Bool, scale: Double, volume: Double = 1, quality: RecordingQuality = .medium
+    ) {
         if let range, let item = playerView.player?.currentItem {
             item.reversePlaybackEndTime = range.start
             item.forwardPlaybackEndTime = range.end
@@ -414,12 +471,16 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         }
         if keepsAudio != model.keepsAudio { toggleAudio() }
         setScale(scale)
+        setVolume(volume)
+        setQuality(quality)
     }
 
     /// Forgets the edits and closes, for cleaning up after scripted checks.
     public func debugDiscardAndClose() {
         model.keepsAudio = true
         model.scale = 1
+        model.volume = 1
+        model.quality = .medium
         if let item = playerView.player?.currentItem {
             item.reversePlaybackEndTime = .invalid
             item.forwardPlaybackEndTime = .invalid
@@ -449,6 +510,9 @@ final class RecordingWindowModel {
     var hasAudio = false
     var keepsAudio = true
     var scale = 1.0
+    /// How loud the sound that stays is, from 0 to 1.
+    var volume = 1.0
+    var quality = RecordingQuality.medium
     var pixelWidth = 0
     var pixelHeight = 0
     var isTrimmed = false
@@ -482,7 +546,18 @@ final class RecordingWindowModel {
     }
 
     var isEdited: Bool {
-        isTrimmed || !keepsAudio || scale < 1
+        isTrimmed || !keepsAudio || scale < 1 || !RecordingVolume.isFull(volume) || quality != .medium
+    }
+
+    /// Sets the volume in whole percents between 0 and 100, so the slider's far end is exactly full.
+    func setVolume(_ volume: Double) {
+        self.volume = (min(max(volume, 0), 1) * 100).rounded() / 100
+    }
+
+    /// The edits made so far, keeping the part `timeRange` says. A recording without sound has no sound to
+    /// keep or quiet.
+    func edit(timeRange: CMTimeRange?) -> RecordingEdit {
+        RecordingEdit(timeRange: timeRange, keepsAudio: !hasAudio || keepsAudio, scale: scale, volume: hasAudio ? volume : 1, quality: quality)
     }
 
     func flashCopied() {
@@ -557,6 +632,14 @@ struct RecordingWindowView: View {
                     }
                     .help(model.keepsAudio ? Text("Leave the sound out", bundle: .module) : Text("Keep the sound", bundle: .module))
                     .accessibilityValue(model.keepsAudio ? Text("On", bundle: .module) : Text("Off", bundle: .module))
+                    // How loud the sound is in the recording kept; dimmed while it is left out. Without a step, so it
+                    // draws no tick marks (setVolume rounds to whole percents).
+                    Slider(value: Binding(get: { model.volume }, set: { model.controller?.setVolume($0) }), in: 0...1)
+                        .frame(width: 80)
+                        .disabled(!model.keepsAudio)
+                        .help(Text("Make the sound quieter", bundle: .module))
+                        .accessibilityLabel(Text("Volume", bundle: .module))
+                        .accessibilityValue(Text("\(Int((model.volume * 100).rounded())) percent", bundle: .module))
                 }
                 // The size the recording will have, as the editor's zoom shows its scale.
                 Menu {
@@ -572,6 +655,20 @@ struct RecordingWindowView: View {
                 .help(Text("Make the recording smaller", bundle: .module))
                 .accessibilityLabel(Text("Size", bundle: .module))
                 .accessibilityValue(Text(verbatim: model.sizeTitle(model.scale)))
+                // How closely the picture is encoded when it has to be encoded again.
+                Menu {
+                    ForEach(RecordingQuality.allCases, id: \.self) { quality in
+                        Toggle(isOn: Binding(get: { model.quality == quality }, set: { if $0 { model.controller?.setQuality(quality) } })) {
+                            Text(verbatim: quality.menuTitle)
+                        }
+                    }
+                } label: {
+                    Text(verbatim: model.quality.title)
+                }
+                .fixedSize()
+                .help(Text("How closely the picture is encoded when the recording is kept: High makes a larger file, Low a smaller one", bundle: .module))
+                .accessibilityLabel(Text("Quality", bundle: .module))
+                .accessibilityValue(Text(verbatim: model.quality.menuTitle))
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -618,6 +715,26 @@ struct RecordingWindowView: View {
             }
             .buttonStyle(.glassProminent)
             .help(Text("Copy the recording (⌘C)", bundle: .module))
+        }
+    }
+}
+
+extension RecordingQuality {
+    /// The name the toolbar shows: "High Quality".
+    var title: String {
+        switch self {
+        case .high: String(localized: "High Quality", bundle: .module)
+        case .medium: String(localized: "Medium Quality", bundle: .module)
+        case .low: String(localized: "Low Quality", bundle: .module)
+        }
+    }
+
+    /// The name in the menu, with what it makes: "Medium (as recorded)".
+    var menuTitle: String {
+        switch self {
+        case .high: String(localized: "High (larger file)", bundle: .module)
+        case .medium: String(localized: "Medium (as recorded)", bundle: .module)
+        case .low: String(localized: "Low (smaller file)", bundle: .module)
         }
     }
 }

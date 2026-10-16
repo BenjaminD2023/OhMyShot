@@ -45,11 +45,26 @@ public enum RecordingFinisher {
         }
     }
 
+    /// The audio mix that plays `tracks` at `volume`, or nil at full volume, which needs none.
+    static func audioMix(for tracks: [AVAssetTrack], volume: Double) -> AVAudioMix? {
+        guard !RecordingVolume.isFull(volume), !tracks.isEmpty else { return nil }
+        let mix = AVMutableAudioMix()
+        mix.inputParameters = tracks.map { track in
+            let parameters = AVMutableAudioMixInputParameters(track: track)
+            parameters.setVolume(Float(max(volume, 0)), at: .zero)
+            return parameters
+        }
+        return mix
+    }
+
     /// Writes the movie at `source` as an MP4 at `destination` (replacing anything there), its index first so
-    /// it starts playing before it has all loaded, with the audio tracks `audio` keeps. `source` is left as it
-    /// is.
+    /// it starts playing before it has all loaded, with the audio tracks `audio` keeps, at `volume` against
+    /// their own. `source` is left as it is.
+    ///
+    /// Sound at full volume is copied as it was encoded when it is one track; at a lower volume, or mixed from
+    /// more tracks, it is decoded and encoded again.
     @concurrent
-    public static func finish(_ source: URL, to destination: URL, audio: AudioTracks = .all) async throws -> Movie {
+    public static func finish(_ source: URL, to destination: URL, audio: AudioTracks = .all, volume: Double = 1) async throws -> Movie {
         let asset = AVURLAsset(url: source)
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { throw FinishError.noVideo }
         let allAudio = try await asset.loadTracks(withMediaType: .audio)
@@ -69,13 +84,14 @@ public enum RecordingFinisher {
         var audioOutput: AVAssetReaderOutput?
         var audioSettings: [String: Any]?
         var audioHint: CMFormatDescription?
-        if audioTracks.count == 1 {
+        let mix = audioMix(for: audioTracks, volume: volume)
+        if audioTracks.count == 1, mix == nil {
             let output = AVAssetReaderTrackOutput(track: audioTracks[0], outputSettings: nil)
             output.alwaysCopiesSampleData = false
             audioHint = try await audioTracks[0].load(.formatDescriptions).first
             audioOutput = output
-        } else if audioTracks.count > 1 {
-            audioOutput = AVAssetReaderAudioMixOutput(audioTracks: audioTracks, audioSettings: [
+        } else if !audioTracks.isEmpty {
+            let output = AVAssetReaderAudioMixOutput(audioTracks: audioTracks, audioSettings: [
                 AVFormatIDKey: kAudioFormatLinearPCM,
                 AVSampleRateKey: RecordingAudio.sampleRate,
                 AVNumberOfChannelsKey: 2,
@@ -84,6 +100,8 @@ public enum RecordingFinisher {
                 AVLinearPCMIsNonInterleaved: false,
                 AVLinearPCMIsBigEndianKey: false,
             ])
+            output.audioMix = mix
+            audioOutput = output
             audioSettings = RecordingAudio.settings(channels: 2)
         }
         if let audioOutput { reader.add(audioOutput) }

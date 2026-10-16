@@ -151,14 +151,14 @@ public final class RecordingControlBar {
 
 /// The control bar's panel: borderless and clear, above Quick Access, pins, and the Dock, on every Space and
 /// over full-screen apps, never key, so a click on it never takes the keyboard from the app being recorded.
-private final class ControlBarPanel: NSPanel {
+final class ControlBarPanel: NSPanel {
     init(frame: CGRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
         // Above the Dock: on a whole display the bar sits inside its bottom edge, where the Dock is.
-        level = .statusBar
+        level = RecordingWindowLevel.chrome
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         hidesOnDeactivate = false
         isMovableByWindowBackground = true

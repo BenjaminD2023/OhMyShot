@@ -224,6 +224,11 @@ public final class SettingsStore {
     /// The countdowns Settings offers, in seconds.
     public static let recordingCountdowns = [0, 3, 5]
 
+    /// How an area being recorded shows on screen: outlined, the rest of the display dimmed, or framed in red.
+    public var recordingHighlight: RecordingHighlight {
+        didSet { defaults.set(recordingHighlight.rawValue, forKey: Key.recordingHighlight) }
+    }
+
     /// Whether the pointer is in recordings.
     public var recordingShowsCursor: Bool {
         didSet { defaults.set(recordingShowsCursor, forKey: Key.recordingShowsCursor) }
@@ -417,6 +422,7 @@ public final class SettingsStore {
             Key.recordingFrameRate: 60,
             Key.recordingPrefersHEVC: false,
             Key.recordingCountdown: 3,
+            Key.recordingHighlight: RecordingHighlight.outline.rawValue,
             Key.recordingShowsCursor: true,
             Key.recordingShowsClicks: false,
             Key.recordingClickStyle: ClickStyle.system.rawValue,
@@ -464,6 +470,7 @@ public final class SettingsStore {
         recordingPrefersHEVC = defaults.bool(forKey: Key.recordingPrefersHEVC)
         let countdown = defaults.integer(forKey: Key.recordingCountdown)
         recordingCountdown = Self.recordingCountdowns.contains(countdown) ? countdown : 3
+        recordingHighlight = defaults.string(forKey: Key.recordingHighlight).flatMap(RecordingHighlight.init(rawValue:)) ?? .outline
         recordingShowsCursor = defaults.bool(forKey: Key.recordingShowsCursor)
         recordingShowsClicks = defaults.bool(forKey: Key.recordingShowsClicks)
         recordingClickStyle = defaults.string(forKey: Key.recordingClickStyle).flatMap(ClickStyle.init(rawValue:)) ?? .system
@@ -547,6 +554,7 @@ public final class SettingsStore {
         static let recordingFrameRate = "recordingFrameRate"
         static let recordingPrefersHEVC = "recordingPrefersHEVC"
         static let recordingCountdown = "recordingCountdown"
+        static let recordingHighlight = "recordingHighlight"
         static let recordingShowsCursor = "recordingShowsCursor"
         static let recordingShowsClicks = "recordingShowsClicks"
         static let recordingClickStyle = "recordingClickStyle"

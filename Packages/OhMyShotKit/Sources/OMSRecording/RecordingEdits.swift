@@ -1,9 +1,11 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import OMSCore
 
 extension RecordingFinisher {
-    /// What the recording window changes in a kept recording: the part kept, its sound, its size.
+    /// What the recording window changes in a kept recording: the part kept, its sound and how loud it is, its
+    /// size, and how closely its picture is encoded again.
     public struct Edits: Equatable, Sendable {
         /// The part kept, in the movie's time; nil keeps all of it.
         public var timeRange: CMTimeRange?
@@ -11,14 +13,29 @@ extension RecordingFinisher {
         public var keepsAudio: Bool
         /// The size against the recording's own, from a twentieth up to 1.
         public var scale: Double
+        /// How loud the sound that stays is against the recording's own, from 0 to 1.
+        public var volume: Double
+        /// How closely the picture is encoded when it is encoded again.
+        public var quality: RecordingQuality
 
-        public init(timeRange: CMTimeRange? = nil, keepsAudio: Bool = true, scale: Double = 1) {
+        public init(
+            timeRange: CMTimeRange? = nil, keepsAudio: Bool = true, scale: Double = 1, volume: Double = 1, quality: RecordingQuality = .medium
+        ) {
             self.timeRange = timeRange
             self.keepsAudio = keepsAudio
             self.scale = scale
+            self.volume = volume
+            self.quality = quality
         }
 
         public static let none = Edits()
+
+        /// Whether the picture is encoded again to make these edits of a movie lasting `whole`, keeping
+        /// `range` of it. A trim falls between key frames and a smaller size has fewer pixels, so both are; a
+        /// quality other than Medium asks for it. The sound alone is changed with the picture copied.
+        func encodesVideo(keeping range: CMTimeRange, of whole: CMTimeRange) -> Bool {
+            range != whole || min(max(scale, 0.05), 1) < 1 || quality != .medium
+        }
     }
 
     /// Writes the movie at `source` with `edits` as an MP4 at `destination` (replacing anything there).
@@ -38,8 +55,8 @@ extension RecordingFinisher {
         guard range.duration.seconds > 0 else { throw FinishError.noVideo }
         let scale = min(max(edits.scale, 0.05), 1)
         let natural = try await videoTrack.load(.naturalSize)
-        guard range != whole || scale < 1 else {
-            return try await finish(source, to: destination, audio: edits.keepsAudio ? .all : .none)
+        guard edits.encodesVideo(keeping: range, of: whole) else {
+            return try await finish(source, to: destination, audio: edits.keepsAudio ? .all : .none, volume: edits.volume)
         }
 
         let description = try await videoTrack.load(.formatDescriptions).first
@@ -47,7 +64,7 @@ extension RecordingFinisher {
         let nominal = try await videoTrack.load(.nominalFrameRate)
         let format = RecordingFormat.choose(
             width: Int((natural.width * scale).rounded()), height: Int((natural.height * scale).rounded()),
-            framesPerSecond: nominal > 1 ? min(Int(nominal.rounded()), 120) : 60, prefersHEVC: isHEVC
+            framesPerSecond: nominal > 1 ? min(Int(nominal.rounded()), 120) : 60, quality: edits.quality.videoQuality, prefersHEVC: isHEVC
         )
 
         let reader = try AVAssetReader(asset: asset)
@@ -67,6 +84,7 @@ extension RecordingFinisher {
                 AVLinearPCMIsNonInterleaved: false,
                 AVLinearPCMIsBigEndianKey: false,
             ])
+            output.audioMix = audioMix(for: audioTracks, volume: edits.volume)
             reader.add(output)
             audioOutput = output
         }
@@ -134,6 +152,18 @@ extension RecordingFinisher {
             url: destination, duration: length.seconds, pixelWidth: format.width, pixelHeight: format.height,
             byteCount: bytes, hasAudio: audioInput != nil
         )
+    }
+}
+
+extension RecordingQuality {
+    /// The encoder's constant quality, from 0 to 1. Medium is the quality recordings are made at; Low is
+    /// Studio's smaller file, and High its best quality (Docs/perf.md, "Studio movie quality").
+    var videoQuality: Double {
+        switch self {
+        case .high: 0.8
+        case .medium: RecordingFormat.standardQuality
+        case .low: 0.45
+        }
     }
 }
 

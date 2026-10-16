@@ -736,7 +736,9 @@ struct HistoryCard: View {
             // of the history.
             .onDrag { NSItemProvider(object: fileToHandOver as NSURL) }
             .dragConfiguration(DragConfiguration(operationsOutsideApp: .init(allowCopy: true, allowMove: false, allowDelete: false)))
-            .onTapGesture(count: 2) { model.actions.restore(item) }
+            // Opens the capture in the annotation editor, a recording in the recording window, as in CleanShot;
+            // Return and the hover button restore it to Quick Access.
+            .onTapGesture(count: 2) { model.actions.annotate(item) }
             .simultaneousGesture(TapGesture().onEnded { model.selection = item.id })
             .task { await model.loadThumbnail(for: item) }
 

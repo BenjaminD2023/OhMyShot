@@ -70,7 +70,7 @@ public final class KeystrokeDisplay {
         }
     }
 
-    private func makePanel() -> NSPanel {
+    func makePanel() -> NSPanel {
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -80,7 +80,7 @@ public final class KeystrokeDisplay {
         panel.animationBehavior = .none
         // Above what is recorded and the Dock, which a recording of a whole display takes in at its foot;
         // under menus.
-        panel.level = .statusBar
+        panel.level = RecordingWindowLevel.chrome
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         let view = NSView()
         view.wantsLayer = true

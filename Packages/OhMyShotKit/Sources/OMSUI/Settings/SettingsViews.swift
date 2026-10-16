@@ -455,6 +455,20 @@ struct RecordingSettingsView: View {
                     }
                 }
             }
+            SettingsRow(Text("Recorded area", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.recordingHighlight) {
+                        Text("Outline", bundle: .module).tag(RecordingHighlight.outline)
+                        Text("Dim the rest of the screen", bundle: .module).tag(RecordingHighlight.dim)
+                        Text("Red frame", bundle: .module).tag(RecordingHighlight.redFrame)
+                    } label: {
+                        Text("Recorded area", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("How an area you record shows on screen, from the countdown to the end: a white outline, the rest of the display dimmed, or a red frame just outside it. None of it is in the recording. A window or a whole display is not marked.", bundle: .module))
+                }
+            }
             SettingsRow(Text("Audio", bundle: .module)) {
                 Text("Chosen on the bar before you record.", bundle: .module)
                     .foregroundStyle(.secondary)

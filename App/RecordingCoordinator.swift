@@ -220,7 +220,7 @@ final class RecordingCoordinator {
             showCamera(for: plan)
             let seconds = settings.recordingCountdown
             let area = Self.area(of: plan)
-            if case .area = plan.target { outline.show(area, layout: displays.layout) }
+            if case .area = plan.target { outline.show(area, layout: displays.layout, style: settings.recordingHighlight) }
             guard seconds > 0 else { return await start(plan) }
             let keys = shortcutKeys?()
             announce(keys.map { String(localized: "Recording in \(seconds) seconds. Press \($0) to cancel.") }
@@ -969,7 +969,7 @@ final class RecordingCoordinator {
     }
 
     private static func edits(_ edit: RecordingEdit) -> RecordingFinisher.Edits {
-        RecordingFinisher.Edits(timeRange: edit.timeRange, keepsAudio: edit.keepsAudio, scale: edit.scale)
+        RecordingFinisher.Edits(timeRange: edit.timeRange, keepsAudio: edit.keepsAudio, scale: edit.scale, volume: edit.volume, quality: edit.quality)
     }
 
     #if DEBUG
@@ -1094,12 +1094,12 @@ final class RecordingCoordinator {
 
     // MARK: Chrome
 
-    /// The outline (areas only: a window moves, a display needs none), the control bar, and the clock.
+    /// The area's highlight (areas only: a window moves, a display needs none), the control bar, and the clock.
     private func showChrome(for plan: Plan, source: ScreenCapturer.RecordingSource) {
         let area = Self.area(of: plan, recorded: source.frame)
         // The countdown's outline stays up; it is shown here only when there was no countdown.
         if case .area = plan.target {
-            if !outline.isShowing { outline.show(area, layout: displays.layout) }
+            if !outline.isShowing { outline.show(area, layout: displays.layout, style: settings.recordingHighlight) }
         } else {
             outline.hide()
         }
