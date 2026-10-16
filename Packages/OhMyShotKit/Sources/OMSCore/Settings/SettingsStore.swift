@@ -335,6 +335,46 @@ public final class SettingsStore {
         didSet { defaults.set(allInOneArea.flatMap { try? JSONEncoder().encode($0) }, forKey: Key.allInOneArea) }
     }
 
+    // MARK: Quick Access
+
+    /// The corner Quick Access cards stack in.
+    public var quickAccessCorner: QuickAccessCorner {
+        didSet { defaults.set(quickAccessCorner.rawValue, forKey: Key.quickAccessCorner) }
+    }
+
+    /// How large Quick Access cards are.
+    public var quickAccessSize: QuickAccessSize {
+        didSet { defaults.set(quickAccessSize.rawValue, forKey: Key.quickAccessSize) }
+    }
+
+    /// Quick Access goes to the display with the pointer. Off by default: the cards stay on the display the
+    /// capture was taken on.
+    public var quickAccessOnPointerDisplay: Bool {
+        didSet { defaults.set(quickAccessOnPointerDisplay, forKey: Key.quickAccessOnPointerDisplay) }
+    }
+
+    /// Seconds a Quick Access card stays before it closes by itself; 0, the default, keeps cards until they
+    /// are closed.
+    public var quickAccessCloseAfter: Int {
+        didSet { defaults.set(quickAccessCloseAfter, forKey: Key.quickAccessCloseAfter) }
+    }
+
+    /// The delays Settings offers for closing cards, in seconds; 0 is never.
+    public static let quickAccessCloseDelays = [0, 5, 10, 20, 30, 60]
+
+    /// What a card does when its time is up.
+    public var quickAccessCloseAction: QuickAccessCloseAction {
+        didSet { defaults.set(quickAccessCloseAction.rawValue, forKey: Key.quickAccessCloseAction) }
+    }
+
+    /// The Quick Access settings together, as the cards read them.
+    public var quickAccessPreferences: QuickAccessPreferences {
+        QuickAccessPreferences(
+            corner: quickAccessCorner, size: quickAccessSize, onPointerDisplay: quickAccessOnPointerDisplay,
+            closeAfter: quickAccessCloseAfter, closeAction: quickAccessCloseAction
+        )
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -394,6 +434,11 @@ public final class SettingsStore {
             Key.recordingOutput: RecordingOutput.video.rawValue,
             Key.recordingGIFFrameRate: 15,
             Key.replaySound: ReplaySound.all.rawValue,
+            Key.quickAccessCorner: QuickAccessCorner.bottomLeft.rawValue,
+            Key.quickAccessSize: QuickAccessSize.medium.rawValue,
+            Key.quickAccessOnPointerDisplay: false,
+            Key.quickAccessCloseAfter: 0,
+            Key.quickAccessCloseAction: QuickAccessCloseAction.close.rawValue,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
@@ -444,6 +489,12 @@ public final class SettingsStore {
         windowShadow = defaults.bool(forKey: Key.windowShadow)
         windowBackground = defaults.string(forKey: Key.windowBackground).flatMap(WindowBackground.init(rawValue:)) ?? .asScreenshots
         allInOneArea = defaults.data(forKey: Key.allInOneArea).flatMap { try? JSONDecoder().decode(RememberedArea.self, from: $0) }
+        quickAccessCorner = defaults.string(forKey: Key.quickAccessCorner).flatMap(QuickAccessCorner.init(rawValue:)) ?? .bottomLeft
+        quickAccessSize = defaults.string(forKey: Key.quickAccessSize).flatMap(QuickAccessSize.init(rawValue:)) ?? .medium
+        quickAccessOnPointerDisplay = defaults.bool(forKey: Key.quickAccessOnPointerDisplay)
+        let closeAfter = defaults.integer(forKey: Key.quickAccessCloseAfter)
+        quickAccessCloseAfter = Self.quickAccessCloseDelays.contains(closeAfter) ? closeAfter : 0
+        quickAccessCloseAction = defaults.string(forKey: Key.quickAccessCloseAction).flatMap(QuickAccessCloseAction.init(rawValue:)) ?? .close
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         uploadAfterCapture = defaults.bool(forKey: Key.uploadAfterCapture)
         copyLinkAfterUpload = defaults.bool(forKey: Key.copyLinkAfterUpload)
@@ -519,6 +570,11 @@ public final class SettingsStore {
         static let windowShadow = "windowShadow"
         static let windowBackground = "windowBackground"
         static let allInOneArea = "allInOneArea"
+        static let quickAccessCorner = "quickAccessCorner"
+        static let quickAccessSize = "quickAccessSize"
+        static let quickAccessOnPointerDisplay = "quickAccessOnPointerDisplay"
+        static let quickAccessCloseAfter = "quickAccessCloseAfter"
+        static let quickAccessCloseAction = "quickAccessCloseAction"
         static let uploadAfterCapture = "uploadAfterCapture"
         static let copyLinkAfterUpload = "copyLinkAfterUpload"
         static let saveAfterCapture = "saveAfterCapture"

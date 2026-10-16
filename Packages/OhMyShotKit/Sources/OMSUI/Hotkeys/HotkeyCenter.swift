@@ -47,6 +47,9 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case annotateLatestCapture
     /// Opens the clipboard's picture in the annotation editor.
     case openFromClipboard
+    /// Gives the newest Quick Access card the keyboard, without bringing the app forward: Copy, Save, Annotate,
+    /// Quick Look, and the rest are then a key away (Escape gives the keyboard back).
+    case controlQuickAccess
 
     public var name: KeyboardShortcuts.Name {
         KeyboardShortcuts.Name(rawValue)
@@ -91,6 +94,7 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .copyLatestCapture: String(localized: "Copy Latest Capture", bundle: .module)
         case .annotateLatestCapture: String(localized: "Annotate Latest Capture", bundle: .module)
         case .openFromClipboard: String(localized: "Open from Clipboard", bundle: .module)
+        case .controlQuickAccess: String(localized: "Control Quick Access", bundle: .module)
         }
     }
 }
@@ -170,7 +174,8 @@ public final class HotkeyCenter {
         case .saveReplay: profile == .development ? KeyboardShortcuts.Shortcut(.minus, modifiers: modifiers) : nil
         case .scrollingCapture: profile == .development ? KeyboardShortcuts.Shortcut(.equal, modifiers: modifiers) : nil
         case .captureWindow, .capturePreviousArea, .selfTimer, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload,
-             .captureFullscreenAndUpload, .captureTextJoined, .openHistory, .copyLatestCapture, .annotateLatestCapture, .openFromClipboard: nil
+             .captureFullscreenAndUpload, .captureTextJoined, .openHistory, .copyLatestCapture, .annotateLatestCapture, .openFromClipboard,
+             .controlQuickAccess: nil
         }
     }
 }

@@ -36,6 +36,15 @@ final class CompositionRoot {
     }()
     private lazy var textCapture = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
     private lazy var annotations = AnnotationCoordinator(history: history)
+    /// Turns, flips, and scales pictures from their Quick Access cards.
+    private lazy var pictureChanges = PictureChangeCoordinator(
+        history: history,
+        isBeingEdited: { [weak self] in self?.annotations.openCaptureIDs.contains($0) ?? false },
+        displayScale: { [weak self] item in Double(self?.displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 1) },
+        changed: { [weak self] entry, data in self?.pictureChanged(entry, data: data, savedCopyIsStale: true) }
+    )
+    /// The cards' and History's showing of changed pictures, in the order the pictures changed.
+    private var pictureUpdates: Task<Void, Never>?
     /// Reads the text in the history's screenshots for its search, in the text reader beside the app.
     private lazy var textReader: HistoryTextReader = {
         let reader = HistoryTextReader(store: history, helper: Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader"))
@@ -552,6 +561,9 @@ final class CompositionRoot {
         case .openFromClipboard:
             annotateClipboard()
             return
+        case .controlQuickAccess:
+            quickAccess.focusLatest()
+            return
         default:
             break
         }
@@ -955,9 +967,15 @@ final class CompositionRoot {
         }
     }
 
-    /// A capture's picture changed in the editor: its card and its History thumbnail follow.
-    private func pictureChanged(_ entry: HistoryItem, data: Data) {
-        Task {
+    /// A capture's picture changed in the editor, or was turned, flipped, or scaled on its card: its card and
+    /// its History thumbnail follow. `savedCopyIsStale`: the copy saved from the card is of the picture as it was,
+    /// so the card offers Save again.
+    private func pictureChanged(_ entry: HistoryItem, data: Data, savedCopyIsStale: Bool = false) {
+        // One after another: a big picture's thumbnail takes longer than a small one's, and an earlier change's
+        // must not come in over a later one's.
+        let previous = pictureUpdates
+        pictureUpdates = Task {
+            await previous?.value
             if let card = quickAccess.item(entry.id), let thumbnail = await HistoryStore.cardThumbnail(of: data, maxPixels: 560) {
                 quickAccess.update(QuickAccessItem(
                     id: entry.id,
@@ -968,8 +986,8 @@ final class CompositionRoot {
                     pixelHeight: entry.pixelHeight,
                     displayID: card.displayID,
                     createdAt: entry.createdAt,
-                    savedURL: card.savedURL
-                ))
+                    savedURL: savedCopyIsStale ? nil : card.savedURL
+                ), keepsSaved: !savedCopyIsStale)
             }
             historyWindow?.reload(changed: [entry.id])
             readTextSoon()
@@ -1242,13 +1260,14 @@ final class CompositionRoot {
             reveal: { item in NSWorkspace.shared.activateFileViewerSelecting([item.savedURL ?? item.fileURL]) },
             recognizeText: { [weak self] item in
                 guard let self, item.kind == .screenshot else { return }
-                // Captures are saved without a resolution, so the scale is their display's.
-                let scale = displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 1
+                // Captures are saved without a resolution, so the scale is their display's, unless it was scaled
+                // to one pixel per point.
+                let scale = history.item(id: item.id)?.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 1
                 Task { await self.textCapture.openPanel(forFileAt: item.fileURL, fallbackScale: scale) }
             },
             pin: { [weak self] item in
                 guard let self, item.kind == .screenshot else { return }
-                let scale = displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
+                let scale = history.item(id: item.id)?.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
                 pin(fileAt: item.fileURL, origin: .capture(item.id), fallbackScale: scale)
             },
             moveToTrash: { [weak self] item in
@@ -1276,10 +1295,13 @@ final class CompositionRoot {
         )
         actions.print = { [weak self] item in
             guard let self, item.kind == .screenshot else { return }
-            let scale = displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
+            let scale = history.item(id: item.id)?.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
             printPicture(fileAt: item.fileURL, fallbackScale: scale)
         }
         actions.fileToHandOver = { [weak self] item in self?.captures.files.fileToHandOver(item.fileURL) ?? item.fileURL }
+        actions.preferences = { [weak self] in self?.settings.quickAccessPreferences ?? QuickAccessPreferences() }
+        actions.pictureChangeOffer = { [weak self] item in self?.pictureChanges.offer(for: item) ?? .unsupported }
+        actions.changePicture = { [weak self] item, change in self?.pictureChanges.apply(change, to: item) }
         actions.sharing = makeSharingActions()
         return actions
     }
@@ -1342,12 +1364,12 @@ final class CompositionRoot {
             recognizeText: { [weak self] entry in
                 guard let self else { return }
                 // The display a capture came from is not recorded; most captures come from the sharpest.
-                let scale = displays.layout.displays.map(\.pixelsPerPoint).max() ?? 1
+                let scale = entry.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.displays.map(\.pixelsPerPoint).max() ?? 1
                 Task { await self.textCapture.openPanel(forFileAt: self.history.fileURL(for: entry), fallbackScale: scale) }
             },
             pin: { [weak self] entry in
                 guard let self else { return }
-                let scale = displays.layout.displays.map(\.pixelsPerPoint).max() ?? 2
+                let scale = entry.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.displays.map(\.pixelsPerPoint).max() ?? 2
                 pin(fileAt: history.fileURL(for: entry), origin: .capture(entry.id), fallbackScale: scale)
             },
             moveToTrash: { [weak self] entry in
@@ -1623,8 +1645,10 @@ private extension SettingsTab {
             return
         }
         switch name {
-        // Backgrounds, Quick Access, and what happens after a screenshot are all in General.
-        case "wallpaper", "quickaccess", "screenshots": self = .general
+        // Backgrounds and what happens after a screenshot are in General.
+        case "wallpaper", "screenshots": self = .general
+        // The cards have a tab of their own.
+        case "quickaccess": self = .quickAccess
         // Pins and the reading tools.
         case "annotate": self = .tools
         // CleanShot's Cloud tab is where uploads are set up.

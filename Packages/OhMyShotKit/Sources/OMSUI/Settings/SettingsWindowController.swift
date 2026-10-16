@@ -5,6 +5,7 @@ import SwiftUI
 
 public enum SettingsTab: String, CaseIterable, Sendable {
     case general
+    case quickAccess
     case recording
     case tools
     case sharing
@@ -16,6 +17,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     var title: String {
         switch self {
         case .general: String(localized: "General", bundle: .module)
+        case .quickAccess: String(localized: "Quick Access", bundle: .module)
         case .recording: String(localized: "Recording", bundle: .module)
         case .tools: String(localized: "Tools", bundle: .module)
         case .sharing: String(localized: "Sharing", bundle: .module)
@@ -29,6 +31,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     var symbolName: String {
         switch self {
         case .general: "gearshape"
+        case .quickAccess: "rectangle.stack"
         case .recording: "record.circle"
         case .tools: "wrench.and.screwdriver"
         case .sharing: "icloud.and.arrow.up"
@@ -201,6 +204,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
                 openHistory: dependencies.openHistory,
                 expiredCount: dependencies.expiredCount
             ))
+        case .quickAccess:
+            host(QuickAccessSettingsView(settings: dependencies.settings))
         case .recording:
             host(RecordingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
         case .tools:

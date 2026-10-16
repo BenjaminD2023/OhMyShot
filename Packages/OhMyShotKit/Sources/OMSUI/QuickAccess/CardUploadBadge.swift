@@ -177,8 +177,15 @@ final class CardUploadBadge: NSView {
 
     private var leading: CGFloat { 8 }
 
-    /// The most the badge may span: the card's width less the room of the corner buttons on both sides.
-    private static let widest: CGFloat = 152
+    /// The most the badge may span: the card's width less the room of the corner buttons on both sides (152 pt
+    /// on a medium card); the card sets it.
+    var widest: CGFloat = 152 {
+        didSet {
+            guard widest != oldValue else { return }
+            invalidateIntrinsicContentSize()
+            needsLayout = true
+        }
+    }
 
     private var trailing: CGFloat {
         switch display {
@@ -194,7 +201,7 @@ final class CardUploadBadge: NSView {
         // The percent has room for "99%". A long label is cut with an ellipsis rather than reach the corner buttons.
         let body: CGFloat = isUploading ? max(text, 28) : text
         let wide: CGFloat = leading + mark + body + trailing
-        return NSSize(width: min(wide, Self.widest), height: Self.height)
+        return NSSize(width: min(wide, widest), height: Self.height)
     }
 
     /// Where a press cancels or retries: the part of the capsule after the label.

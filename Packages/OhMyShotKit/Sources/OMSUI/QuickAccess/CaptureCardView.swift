@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import OMSCore
 import QuartzCore
+import QuickLookUI
 
 /// The column of capture cards, newest at the bottom. Transparent; each card draws its own soft shadow,
 /// so the view keeps a margin around the cards for it.
@@ -33,18 +34,42 @@ final class CardStackView: NSView {
     var onDeleteFromStorage: ((QuickAccessItem) -> Void)?
     /// The upload a capture has now, for a card made after it began (restored from Recently Closed).
     var currentUpload: ((QuickAccessItem) -> CardUpload?)?
+    /// What the menu and the keyboard add to the actions above: Quick Look, a change to the picture, and the
+    /// commands of the whole stack.
+    var onCommand: ((CardCommand, QuickAccessItem) -> Void)?
+    /// What can be done to a capture's picture now, read when a menu opens.
+    var pictureOffer: (QuickAccessItem) -> PictureChangeOffer = { _ in .unsupported }
+    /// How many cards the stack has.
+    var cardCount: () -> Int = { 1 }
+    /// A card is kept from closing (the pointer over it, its menu open, a drag out of it) or let go.
+    var onHold: ((UUID, CardCountdown.Hold, Bool) -> Void)?
+    /// A card was clicked: the keyboard goes to it.
+    var onFocus: ((UUID) -> Void)?
+    /// A key of the table arrived while the panel has the keyboard; whether the stack's owner took it.
+    var onKey: ((CardCommand) -> Bool)?
+
+    /// How large the cards are, and which corner they stack in: the stack's owner sets them before each layout.
+    var size = QuickAccessSize.medium
+    var corner = QuickAccessCorner.bottomLeft
+
+    /// Quick Look for the card that has the keyboard.
+    let quickLook = CardQuickLook()
 
     /// Room for each card's shadow to fade out completely: twice its blur plus its drop.
     static let margin: CGFloat = Theme.Shadow.radius * 2 + Theme.Shadow.drop
     static let gap: CGFloat = 12
-    static let width = CaptureCardView.width + margin * 2
+
+    /// The panel's width for cards of `size`.
+    static func width(for size: QuickAccessSize) -> CGFloat {
+        size.cardWidth + margin * 2
+    }
 
     private var cards: [UUID: CaptureCardView] = [:]
     private var generation = 0
 
     /// The height a stack of `items` needs, margins included.
-    static func height(for items: [QuickAccessItem]) -> CGFloat {
-        let heights = items.map(CaptureCardView.preferredHeight(for:))
+    static func height(for items: [QuickAccessItem], size: QuickAccessSize) -> CGFloat {
+        let heights = items.map { CaptureCardView.preferredHeight(for: $0, size: size) }
         return heights.reduce(0, +) + CGFloat(max(heights.count - 1, 0)) * gap + margin * 2
     }
 
@@ -63,8 +88,8 @@ final class CardStackView: NSView {
         var frames: [UUID: CGRect] = [:]
         var y = Self.margin
         for item in items.reversed() {
-            let height = CaptureCardView.preferredHeight(for: item)
-            frames[item.id] = CGRect(x: Self.margin, y: y, width: CaptureCardView.width, height: height)
+            let height = CaptureCardView.preferredHeight(for: item, size: size)
+            frames[item.id] = CGRect(x: Self.margin, y: y, width: size.cardWidth, height: height)
             y += height + Self.gap
         }
 
@@ -72,15 +97,18 @@ final class CardStackView: NSView {
         for item in items {
             guard let frame = frames[item.id] else { continue }
             if let card = cards[item.id] {
+                card.size = size
                 card.item = item
                 if card.frame != frame { staying.append((card, frame)) }
             } else {
                 let card = makeCard(for: item)
                 card.frame = frame
-                if item.id == entering { card.slideIn() }
+                if item.id == entering { card.slideIn(fromLeft: corner.slidesFromLeft) }
             }
         }
 
+        // Cards leave toward the edge they came from.
+        let departure: CGFloat = corner.slidesFromLeft ? -40 : 40
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -89,7 +117,7 @@ final class CardStackView: NSView {
             }
             for card in leaving {
                 card.animator().alphaValue = 0
-                card.animator().setFrameOrigin(CGPoint(x: card.frame.minX - 40, y: card.frame.minY))
+                card.animator().setFrameOrigin(CGPoint(x: card.frame.minX + departure, y: card.frame.minY))
             }
         }
         Task { [weak self] in
@@ -113,6 +141,11 @@ final class CardStackView: NSView {
         cards[id]?.showSaved()
     }
 
+    func markUnsaved(_ id: UUID) {
+        cards[id]?.item.savedURL = nil
+        cards[id]?.showUnsaved()
+    }
+
     #if DEBUG
     func debugShare(of id: UUID) { cards[id]?.debugShare() }
 
@@ -124,6 +157,69 @@ final class CardStackView: NSView {
     func setUpload(_ upload: CardUpload?, for id: UUID) {
         cards[id]?.upload = upload
     }
+
+    /// Rings the card that has the keyboard, and no other.
+    func select(_ id: UUID?) {
+        for (cardID, card) in cards { card.isSelected = cardID == id }
+    }
+
+    // MARK: Keys
+
+    /// The stack takes the keys the panel is given: the first responder of a panel that was clicked or asked
+    /// for, so the keys of the table (`CardKeys`) reach it.
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        if !handle(event) { super.keyDown(with: event) }
+    }
+
+    /// An accessory app's menu bar is not there to route ⌘ keys, so the cards answer their own.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        handle(event)
+    }
+
+    private func handle(_ event: NSEvent) -> Bool {
+        guard let key = Self.key(of: event),
+              let command = CardKeys.command(for: key, modifiers: Self.modifiers(of: event)) else { return false }
+        return onKey?(command) ?? false
+    }
+
+    private static func key(of event: NSEvent) -> CardKeys.Key? {
+        switch event.keyCode {
+        case 53: .escape
+        case 51, 117: .delete
+        case 49: .space
+        case 123: .left
+        case 124: .right
+        case 125: .down
+        case 126: .up
+        default: event.charactersIgnoringModifiers?.lowercased().first.map(CardKeys.Key.character)
+        }
+    }
+
+    private static func modifiers(of event: NSEvent) -> CardKeys.Modifiers {
+        var modifiers: CardKeys.Modifiers = []
+        let flags = event.modifierFlags
+        if flags.contains(.command) { modifiers.insert(.command) }
+        if flags.contains(.shift) { modifiers.insert(.shift) }
+        if flags.contains(.option) { modifiers.insert(.option) }
+        if flags.contains(.control) { modifiers.insert(.control) }
+        return modifiers
+    }
+
+    // MARK: Quick Look
+
+    /// The preview panel asks the key window's responders for a controller; the stack is the one.
+    nonisolated override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+
+    nonisolated override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        MainActor.assumeIsolated {
+            panel.dataSource = quickLook
+            panel.delegate = quickLook
+        }
+    }
+
+    nonisolated override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {}
 
     /// Where a card is on screen, for what is shown beside it.
     func screenFrame(ofCard id: UUID) -> CGRect? {
@@ -137,7 +233,12 @@ final class CardStackView: NSView {
     }
 
     private func makeCard(for item: QuickAccessItem) -> CaptureCardView {
-        let card = CaptureCardView(item: item)
+        let card = CaptureCardView(item: item, size: size)
+        card.onCommand = { [weak self, weak card] command in card.map { self?.onCommand?(command, $0.item) } }
+        card.pictureOffer = { [weak self, weak card] in card.flatMap { self?.pictureOffer($0.item) } ?? .unsupported }
+        card.cardCount = { [weak self] in self?.cardCount() ?? 1 }
+        card.onHold = { [weak self, weak card] hold, on in card.map { self?.onHold?($0.item.id, hold, on) } }
+        card.onFocus = { [weak self, weak card] in card.map { self?.onFocus?($0.item.id) } }
         card.onCopy = { [weak self, weak card] in
             guard let card else { return }
             self?.onCopy?(card.item)
@@ -174,9 +275,7 @@ final class CardStackView: NSView {
 
 /// One capture: the picture with rounded corners and a soft shadow; on hover, buttons to copy or save
 /// it, close it, or reach the rest of its actions.
-final class CaptureCardView: NSView, NSDraggingSource {
-    static let width = CardPicture.width
-
+final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     var onCopy: (() -> Void)?
     var onSave: (() -> Void)?
     var onSaveAs: (() -> Void)?
@@ -197,6 +296,32 @@ final class CaptureCardView: NSView, NSDraggingSource {
     var hasLink: () -> Bool = { false }
     var canDeleteFromStorage: () -> Bool = { false }
     var onDeleteFromStorage: (() -> Void)?
+    /// Quick Look, a change to the picture, and the commands of the whole stack.
+    var onCommand: ((CardCommand) -> Void)?
+    var pictureOffer: () -> PictureChangeOffer = { .unsupported }
+    var cardCount: () -> Int = { 1 }
+    /// The card is kept from closing, or let go (see `CardCountdown.Hold`).
+    var onHold: ((CardCountdown.Hold, Bool) -> Void)?
+    /// The card was clicked: the keyboard goes to it.
+    var onFocus: (() -> Void)?
+
+    /// How large the card is; its Copy and Save capsules narrow with it.
+    var size: QuickAccessSize {
+        didSet {
+            guard size != oldValue else { return }
+            for button in [copyButton, saveButton] { button.pillWidth = size == .small ? 96 : 112 }
+            needsLayout = true
+        }
+    }
+
+    /// Whether the card has the keyboard: ringed, and its keys answered.
+    var isSelected = false {
+        didSet {
+            guard isSelected != oldValue else { return }
+            selectionRing.isHidden = !isSelected
+            setAccessibilitySelected(isSelected)
+        }
+    }
 
     /// The capture's upload, shown in the capsule at the top. A finished one goes again after a moment; the
     /// menu keeps Copy Link.
@@ -205,6 +330,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
             guard upload != oldValue else { return }
             uploadBadge.show(upload)
             updateAccessibility()
+            if isHovering { updateExtras() }
             finishedReset?.cancel()
             guard case .finished? = upload else { return }
             finishedReset = Task { [weak self] in
@@ -222,16 +348,28 @@ final class CaptureCardView: NSView, NSDraggingSource {
             }
             updateDuration()
             updateAccessibility()
+            if isHovering { updateExtras() }
         }
     }
 
     private let picture = CALayer()
     private let hoverShade = CALayer()
+    /// The ring of a card that has the keyboard, like a pin's.
+    private let selectionRing = CALayer()
     private let actions = NSStackView()
     private let copyButton = CardButton(style: .pill, title: String(localized: "Copy", bundle: .module), symbolName: "doc.on.doc")
     private let saveButton = CardButton(style: .pill, title: String(localized: "Save", bundle: .module), symbolName: "square.and.arrow.down")
     private let closeButton = CardButton(style: .round, title: String(localized: "Close", bundle: .module), symbolName: "xmark")
     private let moreButton = CardButton(style: .round, title: String(localized: "More", bundle: .module), symbolName: "ellipsis")
+    // The small buttons down the card's sides, which `CardControlLayout` places.
+    private let annotateButton = CardButton(style: .round, title: String(localized: "Annotate", bundle: .module), symbolName: "pencil.tip.crop.circle")
+    private let pinButton = CardButton(style: .round, title: String(localized: "Pin to Screen", bundle: .module), symbolName: "pin")
+    private let uploadButton = CardButton(style: .round, title: String(localized: "Upload", bundle: .module), symbolName: "icloud.and.arrow.up")
+    private let recognizeButton = CardButton(style: .round, title: String(localized: "Recognize Text", bundle: .module), symbolName: "text.viewfinder")
+    private let trashButton = CardButton(style: .round, title: String(localized: "Move to Trash", bundle: .module), symbolName: "trash")
+    /// The side buttons this capture has now, in the order they take places.
+    private var wantedExtras: [CardButton] = []
+    private var isHovering = false
     private let savedBadge = NSImageView()
     /// A recording's length and a play mark, in a small capsule in the corner.
     private let durationBadge = DurationBadge()
@@ -242,8 +380,9 @@ final class CaptureCardView: NSView, NSDraggingSource {
     private var copiedReset: Task<Void, Never>?
     private var hoverGeneration = 0
 
-    init(item: QuickAccessItem) {
+    init(item: QuickAccessItem, size: QuickAccessSize) {
         self.item = item
+        self.size = size
         super.init(frame: .zero)
         wantsLayer = true
         guard let layer else { return }
@@ -264,8 +403,14 @@ final class CaptureCardView: NSView, NSDraggingSource {
         hoverShade.cornerRadius = Theme.Radius.card
         hoverShade.cornerCurve = .continuous
         hoverShade.opacity = 0
+        selectionRing.borderWidth = 1.5
+        selectionRing.cornerRadius = Theme.Radius.card
+        selectionRing.cornerCurve = .continuous
+        selectionRing.isHidden = true
         layer.addSublayer(picture)
         layer.addSublayer(hoverShade)
+        layer.addSublayer(selectionRing)
+        for button in [copyButton, saveButton] { button.pillWidth = size == .small ? 96 : 112 }
 
         copyButton.target = self
         copyButton.action = #selector(copyClicked)
@@ -279,7 +424,14 @@ final class CaptureCardView: NSView, NSDraggingSource {
         closeButton.action = #selector(closeClicked)
         moreButton.target = self
         moreButton.action = #selector(moreClicked(_:))
-        for view in hoverControls {
+        for (button, action) in [
+            (annotateButton, #selector(annotateClicked)), (pinButton, #selector(pinClicked)), (uploadButton, #selector(uploadClicked)),
+            (recognizeButton, #selector(recognizeTextClicked)), (trashButton, #selector(trashClicked)),
+        ] {
+            button.target = self
+            button.action = action
+        }
+        for view in allHoverControls {
             view.isHidden = true
             view.alphaValue = 0
             addSubview(view)
@@ -310,9 +462,8 @@ final class CaptureCardView: NSView, NSDraggingSource {
     override var isFlipped: Bool { true }
 
     /// The picture keeps its proportions within sensible bounds; extreme shapes are letterboxed.
-    static func preferredHeight(for item: QuickAccessItem) -> CGFloat {
-        let aspect = CGFloat(item.pixelHeight) / CGFloat(max(item.pixelWidth, 1))
-        return min(max(width * aspect, 100), CardPicture.tallest)
+    static func preferredHeight(for item: QuickAccessItem, size: QuickAccessSize = .medium) -> CGFloat {
+        size.cardHeight(pixelWidth: item.pixelWidth, pixelHeight: item.pixelHeight)
     }
 
     /// The part of a capture the card shows (`CardPicture`). Thumbnails made for cards are that part already.
@@ -321,7 +472,43 @@ final class CaptureCardView: NSView, NSDraggingSource {
         return CardPicture.shownPart(of: image)
     }
 
-    private var hoverControls: [NSView] { [actions, closeButton, moreButton] }
+    /// Every control that shows while the pointer is over the card.
+    private var allHoverControls: [NSView] {
+        [actions, closeButton, moreButton, annotateButton, pinButton, uploadButton, recognizeButton, trashButton]
+    }
+
+    /// The controls that show now: the capsules and corner buttons, and the side buttons that have room.
+    private var hoverControls: [NSView] {
+        [actions, closeButton, moreButton] + extraPlacements().map(\.button)
+    }
+
+    /// Which side buttons this capture has, in the order they take places: the editor, Pin, Upload when there
+    /// is a destination and no upload is going or waiting on Retry (the badge has those), Recognize Text, and
+    /// Move to Trash. A recording has the editor (or Play), Upload, and Trash.
+    private func updateExtras() {
+        annotateButton.title = item.kind == .recording
+            ? isGIF ? String(localized: "Play", bundle: .module) : String(localized: "Edit", bundle: .module)
+            : String(localized: "Annotate", bundle: .module)
+        annotateButton.symbolName = item.kind == .recording ? isGIF ? "play" : "timeline.selection" : "pencil.tip.crop.circle"
+        let uploads: Bool
+        switch upload {
+        case .uploading?, .failed?: uploads = false
+        default: uploads = !uploadMenu().isHidden
+        }
+        var wanted = [annotateButton]
+        if item.kind == .screenshot { wanted.append(pinButton) }
+        if uploads { wanted.append(uploadButton) }
+        if item.kind == .screenshot { wanted.append(recognizeButton) }
+        wanted.append(trashButton)
+        wantedExtras = wanted
+        needsLayout = true
+    }
+
+    /// The side buttons that have a place at the card's height, with their places.
+    private func extraPlacements() -> [(button: CardButton, slot: CardControlLayout.Slot)] {
+        let slots = CardControlLayout.slots(count: wantedExtras.count, height: bounds.height, leadingReserve: item.kind == .recording ? 24 : 0)
+        return zip(wantedExtras, slots).compactMap { button, slot in slot.map { (button, $0) } }
+    }
 
     override func layout() {
         super.layout()
@@ -329,16 +516,33 @@ final class CaptureCardView: NSView, NSDraggingSource {
         CATransaction.setDisableActions(true)
         picture.frame = bounds
         hoverShade.frame = bounds
+        selectionRing.frame = bounds
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: Theme.Radius.card, cornerHeight: Theme.Radius.card, transform: nil)
         CATransaction.commit()
         let actionsSize = actions.fittingSize
         actions.frame = CGRect(x: (bounds.width - actionsSize.width) / 2, y: (bounds.height - actionsSize.height) / 2, width: actionsSize.width, height: actionsSize.height)
         closeButton.frame = CGRect(x: 8, y: 8, width: 24, height: 24)
         moreButton.frame = CGRect(x: bounds.width - 32, y: 8, width: 24, height: 24)
+        let placed = extraPlacements()
+        for button in [annotateButton, pinButton, uploadButton, recognizeButton, trashButton] where !placed.contains(where: { $0.button === button }) {
+            button.isHidden = true
+        }
+        for (button, slot) in placed {
+            button.frame = CGRect(
+                x: CardControlLayout.left(of: slot, width: bounds.width), y: CardControlLayout.top(of: slot),
+                width: CardControlLayout.buttonSize, height: CardControlLayout.buttonSize
+            )
+            // One that has come while the pointer is over the card (an upload ended) shows at once.
+            if isHovering, button.isHidden {
+                button.alphaValue = 1
+                button.isHidden = false
+            }
+        }
         savedBadge.frame = CGRect(x: bounds.width - 26, y: bounds.height - 26, width: 18, height: 18)
         let badge = durationBadge.fittingSize
         durationBadge.frame = CGRect(x: 8, y: bounds.height - 8 - badge.height, width: badge.width, height: badge.height)
         // Between the corner buttons, level with them.
+        uploadBadge.widest = max(bounds.width - 68, 0)
         let upload = uploadBadge.fittingSize
         uploadBadge.frame = CGRect(x: ((bounds.width - upload.width) / 2).rounded(), y: 8, width: upload.width, height: upload.height)
     }
@@ -375,6 +579,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         picture.borderColor = dark ? CGColor(gray: 1, alpha: 0.16) : CGColor(gray: 0, alpha: 0.10)
         picture.backgroundColor = Theme.cgColor(.controlBackgroundColor, for: effectiveAppearance)
+        selectionRing.borderColor = Theme.cgColor(.keyboardFocusIndicatorColor, for: effectiveAppearance)
     }
 
     private func updateAccessibility() {
@@ -407,9 +612,16 @@ final class CaptureCardView: NSView, NSDraggingSource {
         ]
         if isPicture { actions.append(action(String(localized: "Annotate", bundle: .module)) { [weak self] in self?.onAnnotate?() }) }
         actions.append(action(String(localized: "Open", bundle: .module)) { [weak self] in self?.onOpen?() })
+        actions.append(action(String(localized: "Quick Look", bundle: .module)) { [weak self] in self?.onCommand?(.quickLook) })
         if isPicture {
             actions.append(action(String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onRecognizeText?() })
             actions.append(action(String(localized: "Pin to Screen", bundle: .module)) { [weak self] in self?.onPin?() })
+            let offer = pictureOffer()
+            if offer.availability == .available {
+                for (title, change) in pictureChanges(for: offer) {
+                    actions.append(action(title) { [weak self] in self?.onCommand?(.picture(change)) })
+                }
+            }
         }
         actions.append(action(String(localized: "Share", bundle: .module)) { [weak self] in self?.shareClicked() })
         switch upload {
@@ -438,15 +650,34 @@ final class CaptureCardView: NSView, NSDraggingSource {
         }
         actions.append(action(String(localized: "Move to Trash", bundle: .module)) { [weak self] in self?.onMoveToTrash?() })
         actions.append(action(String(localized: "Close", bundle: .module)) { [weak self] in self?.onClose?() })
+        if cardCount() > 1 {
+            actions.append(action(String(localized: "Save All", bundle: .module)) { [weak self] in self?.onCommand?(.saveAll) })
+            actions.append(action(String(localized: "Close All", bundle: .module)) { [weak self] in self?.onCommand?(.closeAll) })
+        }
         return actions
+    }
+
+    /// The changes to the picture the menu and VoiceOver offer, with their names; Scale to 1× only above one pixel
+    /// per point.
+    private func pictureChanges(for offer: PictureChangeOffer) -> [(String, PictureChange)] {
+        var changes: [(String, PictureChange)] = [
+            (String(localized: "Rotate Left", bundle: .module), .rotateLeft),
+            (String(localized: "Rotate Right", bundle: .module), .rotateRight),
+            (String(localized: "Flip Horizontal", bundle: .module), .flipHorizontal),
+            (String(localized: "Flip Vertical", bundle: .module), .flipVertical),
+        ]
+        if offer.pixelsPerPoint > 1 {
+            changes.append((String(localized: "Scale to 1×", bundle: .module), .scaleToOneX(pixelsPerPoint: offer.pixelsPerPoint)))
+        }
+        return changes
     }
 
     /// The card slides in from the screen edge with a short ease-out, or simply appears with Reduce
     /// Motion on.
-    func slideIn() {
+    func slideIn(fromLeft: Bool = true) {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer else { return }
         let slide = CABasicAnimation(keyPath: "transform.translation.x")
-        slide.fromValue = -36
+        slide.fromValue = fromLeft ? -36 : 36
         slide.toValue = 0
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 0
@@ -478,6 +709,15 @@ final class CaptureCardView: NSView, NSDraggingSource {
         updateAccessibility()
     }
 
+    /// The saved copy is of an earlier picture: the card offers Save again.
+    func showUnsaved() {
+        saveButton.title = String(localized: "Save", bundle: .module)
+        saveButton.symbolName = "square.and.arrow.down"
+        saveButton.toolTip = nil
+        savedBadge.isHidden = true
+        updateAccessibility()
+    }
+
     // MARK: Hover
 
     override func updateTrackingAreas() {
@@ -499,8 +739,14 @@ final class CaptureCardView: NSView, NSDraggingSource {
         hoverGeneration += 1
         let generation = hoverGeneration
         let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Theme.Motion.fade
+        isHovering = hovering
+        onHold?(.pointer, hovering)
         if hovering {
-            hoverControls.forEach { $0.isHidden = false }
+            // Which side buttons the capture has is asked each time: an upload may have ended, or a destination
+            // been added, since the pointer was last here.
+            updateExtras()
+            let shown = hoverControls
+            for control in allHoverControls { control.isHidden = !shown.contains { $0 === control } }
             savedBadge.isHidden = true
         }
         CATransaction.begin()
@@ -512,14 +758,14 @@ final class CaptureCardView: NSView, NSDraggingSource {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            hoverControls.forEach { $0.animator().alphaValue = hovering ? 1 : 0 }
+            allHoverControls.forEach { $0.animator().alphaValue = hovering ? 1 : 0 }
         }
         guard !hovering else { return }
         // Hidden once faded, so invisible buttons never take clicks.
         Task { [weak self] in
             if duration > 0 { try? await Task.sleep(for: .seconds(duration)) }
             guard let self, generation == hoverGeneration else { return }
-            hoverControls.forEach { $0.isHidden = true }
+            allHoverControls.forEach { $0.isHidden = true }
             savedBadge.isHidden = item.savedURL == nil
         }
     }
@@ -544,15 +790,23 @@ final class CaptureCardView: NSView, NSDraggingSource {
         // The file in the format Settings choose, made now when it is not the capture itself.
         let draggingItem = NSDraggingItem(pasteboardWriter: (fileToHandOver?() ?? item.fileURL) as NSURL)
         draggingItem.setDraggingFrame(bounds, contents: NSImage(cgImage: item.thumbnail, size: bounds.size))
+        onHold?(.drag, true)
         beginDraggingSession(with: [draggingItem], event: event, source: self)
     }
 
+    /// A click on the picture, not a drag, gives the card the keyboard.
     override func mouseUp(with event: NSEvent) {
+        let clicked = mouseDownPoint != nil && event.clickCount == 1
         mouseDownPoint = nil
+        if clicked { onFocus?() }
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         context == .outsideApplication ? [.copy] : []
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        onHold?(.drag, false)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -575,37 +829,106 @@ final class CaptureCardView: NSView, NSDraggingSource {
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
-        func add(_ title: String, _ symbol: String, _ action: Selector) {
+        menu.delegate = self
+        // Items are enabled by what the card allows, not by whether a target answers.
+        menu.autoenablesItems = false
+        func add(_ title: String, _ symbol: String, _ action: Selector, _ command: CardCommand? = nil) {
             let menuItem = NSMenuItem(title: title, action: action, keyEquivalent: "")
             menuItem.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
             menuItem.target = self
+            if let command { Self.showKey(of: command, on: menuItem) }
             menu.addItem(menuItem)
         }
-        add(String(localized: "Copy", bundle: .module), "doc.on.doc", #selector(copyClicked))
-        add(String(localized: "Save", bundle: .module), "square.and.arrow.down", #selector(saveClicked))
-        add(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", #selector(saveAsClicked))
+        add(String(localized: "Copy", bundle: .module), "doc.on.doc", #selector(copyClicked), .copy)
+        add(String(localized: "Save", bundle: .module), "square.and.arrow.down", #selector(saveClicked), .save)
+        add(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", #selector(saveAsClicked), .saveAs)
         menu.addItem(.separator())
         if item.kind == .recording {
             // A movie is trimmed and made smaller there; a GIF only plays.
-            if item.fileURL.pathExtension.lowercased() == "gif" {
-                add(String(localized: "Play", bundle: .module), "play", #selector(annotateClicked))
+            if isGIF {
+                add(String(localized: "Play", bundle: .module), "play", #selector(annotateClicked), .annotate)
             } else {
-                add(String(localized: "Edit…", bundle: .module), "timeline.selection", #selector(annotateClicked))
+                add(String(localized: "Edit…", bundle: .module), "timeline.selection", #selector(annotateClicked), .annotate)
             }
-            add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked))
+            add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked), .open)
+            add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
         } else {
-            add(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle", #selector(annotateClicked))
-            add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked))
-            add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked))
-            add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked))
-            add(String(localized: "Print…", bundle: .module), "printer", #selector(printClicked))
+            add(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle", #selector(annotateClicked), .annotate)
+            add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked), .open)
+            add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
+            add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked), .recognizeText)
+            add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked), .pin)
+            add(String(localized: "Print…", bundle: .module), "printer", #selector(printClicked), .print)
+            addPictureItems(to: menu)
         }
         add(String(localized: "Show in Finder", bundle: .module), "folder", #selector(revealClicked))
         menu.addItem(.separator())
-        addSharingItems(to: menu, add: add)
-        add(String(localized: "Move to Trash", bundle: .module), "trash", #selector(trashClicked))
-        add(String(localized: "Close", bundle: .module), "xmark", #selector(closeClicked))
+        addSharingItems(to: menu, add: { add($0, $1, $2) })
+        if let upload = menu.items.first(where: { $0.action == #selector(uploadClicked) }) { Self.showKey(of: .upload, on: upload) }
+        add(String(localized: "Move to Trash", bundle: .module), "trash", #selector(trashClicked), .moveToTrash)
+        add(String(localized: "Close", bundle: .module), "xmark", #selector(closeClicked), .close)
+        // What the whole stack can do, once there is more than one card.
+        if cardCount() > 1 {
+            menu.addItem(.separator())
+            add(String(localized: "Save All", bundle: .module), "square.and.arrow.down.on.square", #selector(saveAllClicked), .saveAll)
+            add(String(localized: "Close All", bundle: .module), "xmark.square", #selector(closeAllClicked), .closeAll)
+        }
         return menu
+    }
+
+    /// Shows the key a command has on the keyboard beside its menu item. (The item is not answered by that key:
+    /// the cards answer their own keys, see `CardStackView`.)
+    private static func showKey(of command: CardCommand, on menuItem: NSMenuItem) {
+        guard let binding = CardKeys.binding(for: command) else { return }
+        menuItem.keyEquivalent = CardKeys.menuEquivalent(for: binding.key)
+        var mask: NSEvent.ModifierFlags = []
+        if binding.modifiers.contains(.command) { mask.insert(.command) }
+        if binding.modifiers.contains(.shift) { mask.insert(.shift) }
+        if binding.modifiers.contains(.option) { mask.insert(.option) }
+        if binding.modifiers.contains(.control) { mask.insert(.control) }
+        menuItem.keyEquivalentModifierMask = mask
+    }
+
+    /// Transform: turn, flip, or scale the picture. Offered to a screenshot whose picture the card can change;
+    /// dimmed, with the reason as a tooltip, while it cannot (edited, on a background, or open in the editor).
+    private func addPictureItems(to menu: NSMenu) {
+        let offer = pictureOffer()
+        guard offer.availability != .unsupported else { return }
+        let reason: String? = switch offer.availability {
+        case .marked: String(localized: "This capture has marks or a background. They would stay as they were.", bundle: .module)
+        case .beingEdited: String(localized: "Close the capture’s editor first.", bundle: .module)
+        default: nil
+        }
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        for (title, change) in pictureChanges(for: offer) {
+            let entry = NSMenuItem(title: title, action: #selector(pictureChangeClicked(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = change
+            entry.isEnabled = offer.availability == .available
+            entry.toolTip = reason
+            Self.showKey(of: .picture(change), on: entry)
+            submenu.addItem(entry)
+        }
+        if offer.pixelsPerPoint <= 1 {
+            // Already at one pixel per point: the entry stays, dimmed, so the menu does not change shape.
+            let entry = NSMenuItem(title: String(localized: "Scale to 1×", bundle: .module), action: nil, keyEquivalent: "")
+            entry.isEnabled = false
+            entry.toolTip = String(localized: "Already one pixel per point.", bundle: .module)
+            submenu.addItem(entry)
+        }
+        let parent = NSMenuItem(title: String(localized: "Transform", bundle: .module), action: nil, keyEquivalent: "")
+        parent.image = NSImage(systemSymbolName: "crop.rotate", accessibilityDescription: nil)
+        parent.submenu = submenu
+        menu.addItem(parent)
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        onHold?(.menu, true)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        onHold?(.menu, false)
     }
 
     /// Share, always; then the upload entries, which exist only for a person who set up a destination.
@@ -685,6 +1008,13 @@ final class CaptureCardView: NSView, NSDraggingSource {
     @objc private func printClicked() { onPrint?() }
     @objc private func trashClicked() { onMoveToTrash?() }
     @objc private func closeClicked() { onClose?() }
+    @objc private func quickLookClicked() { onCommand?(.quickLook) }
+    @objc private func saveAllClicked() { onCommand?(.saveAll) }
+    @objc private func closeAllClicked() { onCommand?(.closeAll) }
+    @objc private func pictureChangeClicked(_ sender: NSMenuItem) {
+        guard let change = sender.representedObject as? PictureChange else { return }
+        onCommand?(.picture(change))
+    }
 
     #if DEBUG
     func debugShowMenu(whileOpen: @escaping @MainActor ([String]) async -> Void) {

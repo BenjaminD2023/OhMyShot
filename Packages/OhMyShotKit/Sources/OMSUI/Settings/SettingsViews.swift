@@ -733,7 +733,7 @@ extension CaptureShortcut {
              .captureFullscreenAndUpload, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .scrollingCapture, .recordScreen, .saveReplay: 0
         case .captureText, .captureTextJoined, .translateArea: 1
         case .pickColor, .measure: 2
-        case .openHistory, .copyLatestCapture, .annotateLatestCapture, .openFromClipboard: 3
+        case .openHistory, .copyLatestCapture, .annotateLatestCapture, .openFromClipboard, .controlQuickAccess: 3
         }
     }
 }

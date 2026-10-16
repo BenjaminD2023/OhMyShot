@@ -44,6 +44,15 @@ final class CardButton: NSControl {
         didSet { needsDisplay = true }
     }
 
+    /// A pill's width: a little narrower on a small card, which has less room around it.
+    var pillWidth: CGFloat = 112 {
+        didSet {
+            guard pillWidth != oldValue else { return }
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
+
     private let style: Style
     private var pressed = false {
         didSet { needsDisplay = true }
@@ -87,7 +96,7 @@ final class CardButton: NSControl {
     override var intrinsicContentSize: NSSize {
         switch style {
         case .pill:
-            NSSize(width: 112, height: 30)
+            NSSize(width: pillWidth, height: 30)
         case .round, .chipIcon:
             NSSize(width: 24, height: 24)
         case .barIcon:

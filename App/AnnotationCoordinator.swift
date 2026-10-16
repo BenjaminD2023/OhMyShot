@@ -30,7 +30,8 @@ final class AnnotationCoordinator {
     }
 
     /// Opens `entry` in the editor, or brings its editor forward. `scale` is pixels per point of the
-    /// screen it was captured on.
+    /// screen it was captured on; the scale the capture itself has (marks kept with one, or a screenshot
+    /// brought down to one pixel per point) comes first.
     func annotate(_ entry: HistoryItem, scale: CGFloat) {
         if let editor = editors[entry.id] {
             editor.show()
@@ -53,7 +54,7 @@ final class AnnotationCoordinator {
             let id = entry.id
             let editor = AnnotationEditorWindowController(
                 image: loaded.image,
-                scale: loaded.document?.scale ?? scale,
+                scale: loaded.document?.scale ?? entry.pixelsPerPoint.map { CGFloat($0) } ?? scale,
                 document: loaded.document,
                 title: (entry.fileName as NSString).deletingPathExtension,
                 fileURL: history.fileURL(for: entry),

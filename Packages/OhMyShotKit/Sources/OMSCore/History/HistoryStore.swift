@@ -46,7 +46,7 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
     public let duration: TimeInterval?
     /// The pixels per point of the display the capture was made on: which sizes a GIF made of a recording as
     /// things were on screen, and says how large a screenshot was, so it can be saved at 1×. Nil for captures and
-    /// recordings from before it was kept.
+    /// recordings from before it was kept. A screenshot scaled to 1× in its card has 1.
     public let pixelsPerPoint: Double?
     /// The title of the window captured, or of the front window when an area was; nil when there was none or it is
     /// unknown. A saved copy's name can hold it.
@@ -228,6 +228,24 @@ public final class HistoryStore: Sendable {
         return try resized(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
     }
 
+    /// Puts a turned, flipped, or scaled picture in place of a capture that has never been edited. Unlike
+    /// `replaceImage` it keeps no original and no marks: the new picture is the capture, so the editor, a
+    /// restore, and Revert all see it, and the change is undone by changing it back. A capture that has an
+    /// original (marked up, cropped, or put on a background) is refused, since its original and its marks
+    /// would go on showing the picture as it was. `pixelsPerPoint` is kept as the capture's scale when given
+    /// (1 after scaling to one pixel per point). Returns the record with the new size.
+    @discardableResult
+    public func replacePicture(of item: HistoryItem, with data: Data, pixelWidth: Int, pixelHeight: Int, pixelsPerPoint: Double? = nil) throws -> HistoryItem {
+        guard !hasOriginal(item) else { throw PictureError.hasOriginal }
+        try data.write(to: fileURL(for: item), options: .atomic)
+        return try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: item.duration, pixelsPerPoint: pixelsPerPoint)
+    }
+
+    public enum PictureError: Error, Equatable, Sendable {
+        /// The capture was edited, and its original and marks are kept beside it.
+        case hasOriginal
+    }
+
     /// Puts the capture back as it was taken and forgets its marks. Returns the record with the
     /// original's size; unchanged when it was never marked up.
     @discardableResult
@@ -279,10 +297,10 @@ public final class HistoryStore: Sendable {
         try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: item.duration)
     }
 
-    private func updated(_ item: HistoryItem, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval?) throws -> HistoryItem {
+    private func updated(_ item: HistoryItem, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval?, pixelsPerPoint: Double? = nil) throws -> HistoryItem {
         let updated = HistoryItem(
             id: item.id, kind: item.kind, createdAt: item.createdAt, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
-            appName: item.appName, fileName: item.fileName, duration: duration, pixelsPerPoint: item.pixelsPerPoint,
+            appName: item.appName, fileName: item.fileName, duration: duration, pixelsPerPoint: pixelsPerPoint ?? item.pixelsPerPoint,
             windowTitle: item.windowTitle, isTemplateNamed: item.isTemplateNamed
         )
         if updated != item {
@@ -476,6 +494,13 @@ public final class HistoryStore: Sendable {
     /// no picture to mark up.
     public func latestScreenshot() -> HistoryItem? {
         items().first { $0.kind == .screenshot }
+    }
+
+    /// The record of the capture whose file is `fileName`, read from its own sidecar: for what is asked often
+    /// (a card's menu, VoiceOver's actions), which should not read the whole history.
+    public func item(fileName: String) -> HistoryItem? {
+        guard let data = FileManager.default.contents(atPath: directory.appending(path: "\(fileName).json").path(percentEncoded: false)) else { return nil }
+        return try? JSONDecoder.history.decode(HistoryItem.self, from: data)
     }
 
     public func delete(_ item: HistoryItem) {

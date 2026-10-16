@@ -61,7 +61,7 @@ should happen after a capture:
 | `add-quick-access-overlay` | `filepath` (required) | Adds a copy of a picture, an MP4 or MOV, or a GIF to Capture History and shows its Quick Access card, whatever Settings says about cards. The file itself is left where it is. |
 | `open-history` | | Opens Capture History. |
 | `restore-recently-closed` | | Brings back the capture whose card closed last. |
-| `open-settings` | `tab` | Opens Settings. Our tab names work, and so do CleanShot's: `wallpaper`, `quickaccess`, and `screenshots` open General; `annotate` opens Tools; `cloud` opens Sharing; `advanced` opens Automation. |
+| `open-settings` | `tab` | Opens Settings. Our tab names work, and so do CleanShot's: `wallpaper` and `screenshots` open General; `quickaccess` opens Quick Access; `annotate` opens Tools; `cloud` opens Sharing; `advanced` opens Automation. |
 
 `filepath` must be an absolute path. A leading `~` is expanded. Percent-encode the path. A `+` is read as a plus
 sign, not as a space.
