@@ -269,6 +269,18 @@ final class CompositionRoot {
                 self?.overlay.colorFormat = format
             }
         })
+        observations.append(Task { [weak self] in
+            for await shows in Observations({ settings.screenshotShowsCursor }) {
+                self?.overlay.showsPointer = shows
+            }
+        })
+        observations.append(Task { [weak self] in
+            for await shape in Observations({ settings.areaShape }) {
+                self?.overlay.keptShape = AspectRatio(label: shape)
+            }
+        })
+        // A shape chosen on Capture Area's size control is the one Shift keeps from now on; a square is the empty one.
+        overlay.onKeptShapeChange = { shape in settings.areaShape = shape == .square ? "" : shape.label }
         observations.append(Task { [weak statusItem] in
             for await visible in Observations({ settings.showMenuBarIcon }) {
                 statusItem?.setVisible(visible)

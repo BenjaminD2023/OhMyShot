@@ -26,8 +26,11 @@ protocol OverlayViewDelegate: AnyObject {
     /// A color taken at a point in global space (a click, Return, or C), with the keys held then; `keyboard`
     /// says it was a key, so what follows can take the keyboard too.
     func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool)
-    /// The arrow keys moved the crosshair by whole pixels; down is positive.
+    /// The arrow keys moved the crosshair by whole pixels, down positive: the corner being dragged, when an area is
+    /// being dragged out.
     func overlayView(_ view: OverlayView, didNudge pixels: CGVector)
+    /// Tab: the area being chosen (or one around the crosshair) is framed for a size typed and a shape kept.
+    func overlayViewDidRequestSizing(_ view: OverlayView)
     /// The ruler's measurement, to copy; `ending` closes the overlay after it (Return).
     func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool)
     func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit)
@@ -163,9 +166,9 @@ final class OverlayView: NSView {
         window?.invalidateCursorRects(for: self)
         let help = switch purpose {
         case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.")
-        case .annotate: String(localized: "Drag over an area to mark it up. Press Space to choose a window instead. Press Escape to cancel.")
+        case .annotate: String(localized: "Drag over an area to mark it up. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to choose a window instead. Press Escape to cancel.")
         case .screenshot where isAllInOne: String(localized: "Drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, or R to record. Press Escape to cancel.")
-        case .screenshot: String(localized: "Drag to capture an area. Press Space to capture a window instead. Press Escape to cancel.")
+        case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.")
         case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.")
         case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel.")
         case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.")
@@ -437,8 +440,10 @@ final class OverlayView: NSView {
         // purpose == .color`, Return picked a color in every overlay (Measure's Return copied a color, a frozen
         // screenshot ended on one), and ←, →, ↓ moved the crosshair while capturing.
         case 123, 124, 125, 126:
-            // While picking a color or measuring, the arrows move the crosshair a pixel at a time, ten with Shift.
-            guard picks else { return super.keyDown(with: event) }
+            // While picking a color or measuring, the arrows move the crosshair a pixel at a time, ten with Shift; so
+            // they do while choosing an area (before a drag, the crosshair; during one, the corner being dragged), but
+            // not when choosing a window, which has no crosshair.
+            guard picks || mode == .area else { return super.keyDown(with: event) }
             let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
             let direction: CGVector = switch event.keyCode {
             case 123: CGVector(dx: -1, dy: 0)
@@ -458,6 +463,9 @@ final class OverlayView: NSView {
             }
         case 48 where purpose == .measure:
             if let measure { delegate?.overlayView(self, didChangeUnit: measure.unit.toggled) }
+        case 48 where mode == .area && !isAllInOne && (purpose == .screenshot || purpose == .annotate):
+            // Tab frames the area for a size typed and a shape kept; the drag itself needs none of this.
+            delegate?.overlayViewDidRequestSizing(self)
         default:
             if character == "u", purpose == .measure, let measure {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)

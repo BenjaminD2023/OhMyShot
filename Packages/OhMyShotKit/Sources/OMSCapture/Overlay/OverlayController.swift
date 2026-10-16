@@ -86,6 +86,18 @@ public final class OverlayController {
 
     /// Hold the screen still while selecting, so hover states and menus can be captured.
     public var freezesScreen = false
+    /// Whether screenshots show the pointer. A frozen screen is captured with it, where it was when the shortcut was
+    /// pressed, so the area is cut from a screen that has it; a live one is captured later, by whoever began.
+    public var showsPointer = false
+    /// The area chosen is captured again once the overlay has gone (the Self-Timer's), so what the screen was frozen
+    /// as is only what choosing is done on, and carries no pointer. Set before `begin`; every session ends with it
+    /// off again.
+    public var recapturesLive = false
+    /// The shape Shift keeps while an area is dragged out; nil for a square. Set from Settings.
+    public var keptShape: AspectRatio?
+    /// A shape chosen on Capture Area's size control, which Shift keeps from now on: whoever keeps the setting sets
+    /// `keptShape` to it.
+    public var onKeptShapeChange: ((AspectRatio) -> Void)?
     /// A scrolling capture starts as soon as its area is chosen, without the scrolling bar (the URL API's
     /// `start=true`). Set before `begin`; every session ends with it off again.
     public var startsScrollingAtOnce = false
@@ -157,6 +169,8 @@ public final class OverlayController {
     private var dragTop: CGFloat = -.greatestFiniteMagnitude
     /// Space held during a drag moves the selection instead of resizing it.
     private var spaceHeld = false
+    /// The keys held at the drag's last move or change of keys: the arrow keys redraw the selection under them.
+    private var dragModifiers: NSEvent.ModifierFlags = []
     /// The pointer in global space, and whether the arrow keys moved the crosshair since the mouse last
     /// did: then a color is taken at the crosshair, not under the hidden pointer.
     private var pointer: CGPoint?
@@ -205,6 +219,7 @@ public final class OverlayController {
         dragDisplay = nil
         dragPoint = nil
         spaceHeld = false
+        dragModifiers = []
         pointer = nil
         nudged = false
         self.completion = completion
@@ -516,6 +531,7 @@ public final class OverlayController {
 
     /// Captures each display in turn, the pointer's first; `onFirstFrame` runs once that one is shown.
     private func loadFrames(for displays: [DisplayInfo], session: Int, probe: LatencyProbe, onFirstFrame: () -> Void) async {
+        let showsCursor = Self.framesShowPointer(showsPointer, purpose: purpose, holdsStill: holdsStill, allInOne: isAllInOne, recaptured: recapturesLive)
         for (index, display) in displays.enumerated() {
             do {
                 let frame: CapturedFrame
@@ -524,10 +540,10 @@ public final class OverlayController {
                 if let injected = injectedFrames?[display.id] {
                     frame = injected
                 } else {
-                    frame = try await capturer.captureDisplay(display)
+                    frame = try await capturer.captureDisplay(display, showsCursor: showsCursor)
                 }
                 #else
-                frame = try await capturer.captureDisplay(display)
+                frame = try await capturer.captureDisplay(display, showsCursor: showsCursor)
                 #endif
                 capturing?.end()
                 guard isActive, session == self.session else { return }
@@ -548,6 +564,14 @@ public final class OverlayController {
                 return
             }
         }
+    }
+
+    /// Whether the frames captured for a session carry the pointer: only a screenshot's frozen ones, which are what is
+    /// kept (a live screen is captured after the overlay has gone, as is a Self-Timer's area). Picking a color and
+    /// measuring read the frames' pixels, and text is read from them, so the pointer would only be in the way: that is
+    /// why All-In-One's, which may take its area's text, carry none either.
+    static func framesShowPointer(_ setting: Bool, purpose: Purpose, holdsStill: Bool, allInOne: Bool = false, recaptured: Bool = false) -> Bool {
+        setting && holdsStill && !allInOne && !recaptured && (purpose == .screenshot || purpose == .annotate)
     }
 
     /// The first frame normally lands within about 50 ms. If it has not after half a second, macOS is
@@ -616,7 +640,9 @@ public final class OverlayController {
 
     /// Frames All-In-One's area on its display with the bar of every way to take it, as a scrolling capture's area is
     /// framed: the other displays' panels go, the selection and crosshair step aside, the pointer is the system's.
-    private func startAllInOneSetup(on display: DisplayInfo, area: CGRect) {
+    /// `sizing` is Capture Area's (or Annotate Area's) own frame, opened with Tab: the same frame with only Capture, the
+    /// size, and the shape on its bar, keeping `ratio`.
+    private func startAllInOneSetup(on display: DisplayInfo, area: CGRect, sizing: Bool = false, ratio: AspectRatio? = nil) {
         guard let entry = entries[display.id] else { return }
         let area = area.intersection(display.frame)
         guard !area.isNull, area.width >= AreaFrame.smallest, area.height >= AreaFrame.smallest else { return }
@@ -629,11 +655,20 @@ public final class OverlayController {
         entry.view.enterAnnotation()
         entry.panel.level = OverlayPanel.annotationLevel
         entry.panel.makeKey()
-        let setup = AllInOneSetupView(display: display, area: area, offersUpload: allInOneOffersUpload)
+        let setup = AllInOneSetupView(
+            display: display, area: area, offersUpload: allInOneOffersUpload && !sizing,
+            kind: sizing ? .sizing : .allInOne, ratio: sizing ? ratio : nil
+        )
         setup.frame = entry.view.bounds
+        setup.onShapeKept = { [weak self] shape in self?.onKeptShapeChange?(shape) }
         setup.onChoose = { [weak self, weak setup] choice, area in
             guard let self else { return }
-            if choice == .record {
+            if sizing {
+                // Taken as the drag would have taken it. In-place annotation hosts its interface in the overlay's view,
+                // which the frame no longer covers.
+                setup?.removeFromSuperview()
+                select(area, startingOn: display, modifiers: [])
+            } else if choice == .record {
                 setup?.removeFromSuperview()
                 setUpRecording(on: display, target: area == display.frame ? .display : .area(area))
             } else {
@@ -687,6 +722,7 @@ public final class OverlayController {
         guard isActive else { return }
         isActive = false
         startsScrollingAtOnce = false
+        recapturesLive = false
         isAllInOne = false
         allInOneOffersUpload = false
         allInOneMode = nil
@@ -733,6 +769,7 @@ extension OverlayController {
             bounds: displays.reduce(CGRect.null) { $0.union($1.frame) },
             pixelsPerPoint: displays.map(\.pixelsPerPoint).max() ?? display.pixelsPerPoint
         )
+        selection.shape = keptShape?.value ?? 1
         dragDisplay = display
         dragTop = -.greatestFiniteMagnitude
     }
@@ -764,8 +801,8 @@ extension OverlayController {
         }
     }
 
-    /// Shift keeps the selection square; Option grows it from the center, except when copying text,
-    /// where Option means "open the OCR panel" when the mouse is released.
+    /// Shift keeps the selection's shape (a square, unless Settings keep another); Option grows it from the center,
+    /// except when copying text, where Option means "open the OCR panel" when the mouse is released.
     private func selectionModifiers(_ flags: NSEvent.ModifierFlags) -> SelectionModel.Modifiers {
         var modifiers: SelectionModel.Modifiers = []
         if flags.contains(.shift) { modifiers.insert(.square) }
@@ -845,11 +882,13 @@ extension OverlayController: OverlayViewDelegate {
         pointer = point
         nudged = false
         spaceHeld = false
+        dragModifiers = []
         showSelection()
     }
 
     func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) {
         guard let last = dragPoint else { return }
+        dragModifiers = modifiers
         if spaceHeld {
             selection.move(by: CGVector(dx: point.x - last.x, dy: point.y - last.y))
         } else {
@@ -857,13 +896,19 @@ extension OverlayController: OverlayViewDelegate {
         }
         dragPoint = point
         dragTop = max(dragTop, point.y)
-        pointer = point
-        nudged = false
         showSelection()
-        // Drag events reach only the display the press began on: the crosshair and magnifier follow the
-        // pointer onto whichever display it is over.
+        showCorner(pointer: point)
+    }
+
+    /// Puts the crosshair and magnifier on the corner being dragged: the pointer, or where the arrow keys moved the
+    /// corner to. Drag events reach only the display the press began on, so they follow the corner onto whichever
+    /// display it is over. The crosshair is what a color is taken at (C), so the controller's pointer is the corner too.
+    private func showCorner(pointer point: CGPoint) {
+        let shown = selection.isNudged ? (selection.corner ?? point) : point
+        pointer = shown
+        nudged = selection.isNudged
         for entry in entries.values {
-            entry.view.movePointer(to: point)
+            entry.view.movePointer(to: shown)
         }
     }
 
@@ -884,6 +929,7 @@ extension OverlayController: OverlayViewDelegate {
 
     func overlayView(_ view: OverlayView, didChangeModifiers modifiers: NSEvent.ModifierFlags) {
         guard let last = dragPoint, !spaceHeld else { return }
+        dragModifiers = modifiers
         selection.drag(to: last, modifiers: selectionModifiers(modifiers))
         showSelection()
     }
@@ -905,6 +951,10 @@ extension OverlayController: OverlayViewDelegate {
     }
 
     func overlayView(_ view: OverlayView, didNudge pixels: CGVector) {
+        if let last = dragPoint {
+            nudgeDraggedCorner(by: pixels, pointer: last)
+            return
+        }
         let base = pointer ?? NSEvent.mouseLocation
         let layout = topology.layout
         guard let display = layout.display(at: base) ?? layout.primary else { return }
@@ -931,6 +981,23 @@ extension OverlayController: OverlayViewDelegate {
         if let under = layout.display(at: next) { entries[under.id]?.view.announceValue() }
     }
 
+    /// Moves the corner being dragged by whole pixels (down positive) while the pointer stays where it is, so a selection
+    /// can be set to the pixel. The corner stays that far from the pointer for the rest of the drag. Shift and Option
+    /// keep their say: the shape still holds, and a selection from the center still grows both ways. While Space moves the
+    /// selection, no corner is being set.
+    private func nudgeDraggedCorner(by pixels: CGVector, pointer last: CGPoint) {
+        guard !spaceHeld else { return }
+        let scale = selection.pixelsPerPoint
+        selection.nudge(by: CGVector(dx: pixels.dx / scale, dy: -pixels.dy / scale), modifiers: selectionModifiers(dragModifiers))
+        showSelection()
+        showCorner(pointer: last)
+        // VoiceOver hears the size the corner made.
+        let layout = topology.layout
+        if let rect = selection.rect, let display = layout.display(at: CGPoint(x: rect.midX, y: rect.minY)) ?? layout.display(at: last) {
+            entries[display.id]?.view.announceValue()
+        }
+    }
+
     func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) {
         onCopyMeasurement?(text, pointer ?? NSEvent.mouseLocation, ending)
         if ending { end(.cancelled) }
@@ -942,6 +1009,41 @@ extension OverlayController: OverlayViewDelegate {
             entry.view.setMeasureUnit(unit)
         }
         onMeasureUnitChange?(unit)
+    }
+
+    func overlayViewDidRequestSizing(_ view: OverlayView) {
+        guard isActive, hasInput, !isAllInOne, purpose == .screenshot || purpose == .annotate, !isAnnotating else { return }
+        let at = pointer ?? NSEvent.mouseLocation
+        let display: DisplayInfo
+        var dragged: CGRect?
+        if dragPoint != nil, let began = dragDisplay, let rect = selection.rect?.intersection(began.frame),
+           !rect.isNull, rect.width >= AreaFrame.smallest, rect.height >= AreaFrame.smallest {
+            // The drag in hand becomes the frame, on the display it began on.
+            display = began
+            dragged = rect
+        } else {
+            // Nothing dragged yet (or too little): a start around the crosshair, for the size to be typed.
+            display = topology.layout.display(at: at) ?? view.display
+        }
+        let start = Self.sizingStart(dragged: dragged, on: display, around: at, shapeLocked: dragModifiers.contains(.shift), kept: keptShape)
+        // The press that began the drag may still be down: its moves and its end are no longer the selection's.
+        dragPoint = nil
+        spaceHeld = false
+        selection.reset()
+        showSelection()
+        Log.capture.notice("Area framed to size: \(NSStringFromRect(start.area), privacy: .public) on display \(display.id, privacy: .public)")
+        startAllInOneSetup(on: display, area: start.area, sizing: true, ratio: start.ratio)
+    }
+
+    /// The area the size control opens on, and the shape it keeps. A drag in hand is framed as it is, free; one dragged
+    /// with Shift held was kept to a shape, `kept` or a square, and keeps it. With no drag, an area around `point` is
+    /// framed free.
+    static func sizingStart(
+        dragged: CGRect?, on display: DisplayInfo, around point: CGPoint, shapeLocked: Bool, kept: AspectRatio?
+    ) -> (area: CGRect, ratio: AspectRatio?) {
+        guard let dragged else { return (AreaFrame.starting(around: point, on: display, keeping: nil), nil) }
+        let ratio: AspectRatio? = shapeLocked ? kept ?? .square : nil
+        return (AreaFrame.framed(dragged, on: display, keeping: ratio), ratio)
     }
 
     func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool) {

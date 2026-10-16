@@ -145,6 +145,21 @@ public final class SettingsStore {
         didSet { defaults.set(freezeScreen, forKey: Key.freezeScreen) }
     }
 
+    /// Whether screenshots show the pointer, where it was when they were taken. Off by default, as macOS's own are.
+    public var screenshotShowsCursor: Bool {
+        didSet { defaults.set(screenshotShowsCursor, forKey: Key.screenshotShowsCursor) }
+    }
+
+    /// The shape Shift keeps while an area is dragged out, as "16:9"; empty for a square.
+    public var areaShape: String {
+        didSet { defaults.set(areaShape, forKey: Key.areaShape) }
+    }
+
+    /// The shape Shift keeps, or nil for a square.
+    public var areaRatio: AspectRatio? {
+        AspectRatio(label: areaShape)
+    }
+
     /// How long Self-Timer waits, in seconds, between choosing what to capture and capturing it.
     public var selfTimerDelay: Int {
         didSet { defaults.set(selfTimerDelay, forKey: Key.selfTimerDelay) }
@@ -348,6 +363,8 @@ public final class SettingsStore {
             // Frozen by default: a hover card or menu that closes as the pointer leaves it can still be
             // captured, since the screen is taken the moment the shortcut is pressed.
             Key.freezeScreen: true,
+            Key.screenshotShowsCursor: false,
+            Key.areaShape: "",
             Key.allInOneRemembersArea: true,
             Key.windowShadow: true,
             Key.selfTimerDelay: 5,
@@ -385,6 +402,10 @@ public final class SettingsStore {
         exportDirectory = defaults.string(forKey: Key.exportDirectory).map { URL(filePath: $0, directoryHint: .isDirectory) }
             ?? URL.desktopDirectory
         freezeScreen = defaults.bool(forKey: Key.freezeScreen)
+        screenshotShowsCursor = defaults.bool(forKey: Key.screenshotShowsCursor)
+        // Only a shape the picker lists is kept; anything else, a square included, is a square.
+        let shape = defaults.string(forKey: Key.areaShape) ?? ""
+        areaShape = AspectRatio.presets.dropFirst().contains { $0.label == shape } ? shape : ""
         let delay = defaults.integer(forKey: Key.selfTimerDelay)
         selfTimerDelay = Self.selfTimerDelays.contains(delay) ? delay : 5
         pinCornerRadius = min(max(defaults.double(forKey: Key.pinCornerRadius), Self.pinCornerRadii.lowerBound), Self.pinCornerRadii.upperBound)
@@ -463,6 +484,8 @@ public final class SettingsStore {
         static let approvedAutomationCallers = "approvedAutomationCallers"
         static let exportDirectory = "exportDirectory"
         static let freezeScreen = "freezeScreen"
+        static let screenshotShowsCursor = "screenshotShowsCursor"
+        static let areaShape = "areaShape"
         static let selfTimerDelay = "selfTimerDelay"
         static let pinCornerRadius = "pinCornerRadius"
         static let pinShadow = "pinShadow"

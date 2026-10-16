@@ -3,12 +3,15 @@ import OMSCore
 import Testing
 @testable import OMSCapture
 
-/// The overlay's keys by purpose: the arrows and Return belong to Pick Color and Measure only.
+/// The overlay's keys by purpose: Return belongs to Pick Color and Measure only; the arrows move the crosshair there
+/// and while an area is chosen; Tab opens Capture Area's size control.
 @MainActor
 struct OverlayKeyTests {
     /// What the overlay told its controller, by name.
     private final class Recorder: OverlayViewDelegate {
         var heard: [String] = []
+        /// The last nudge, in pixels, down positive.
+        var nudge: CGVector?
 
         func overlayView(_ view: OverlayView, didPressAt point: CGPoint) { heard.append("press") }
         func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) { heard.append("drag") }
@@ -22,7 +25,11 @@ struct OverlayKeyTests {
         func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) { heard.append("switch") }
         func overlayViewDidCancel(_ view: OverlayView) { heard.append("cancel") }
         func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) { heard.append("pick") }
-        func overlayView(_ view: OverlayView, didNudge pixels: CGVector) { heard.append("nudge") }
+        func overlayView(_ view: OverlayView, didNudge pixels: CGVector) {
+            heard.append("nudge")
+            nudge = pixels
+        }
+        func overlayViewDidRequestSizing(_ view: OverlayView) { heard.append("size") }
         func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) { heard.append("copy") }
         func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) { heard.append("unit") }
         func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice) { heard.append("mode \(choice)") }
@@ -45,32 +52,71 @@ struct OverlayKeyTests {
     /// What pressing `keyCode` in an overlay for `purpose`, the pointer in its middle, tells the controller,
     /// and whether the key was passed on.
     private func press(
-        _ keyCode: UInt16, characters: String = "", in purpose: OverlayController.Purpose, allInOne: Bool = false
-    ) throws -> (heard: [String], passedOn: Bool) {
+        _ keyCode: UInt16, characters: String = "", modifiers: NSEvent.ModifierFlags = [], in purpose: OverlayController.Purpose,
+        mode: OverlayView.Mode = .area, allInOne: Bool = false
+    ) throws -> (heard: [String], passedOn: Bool, nudge: CGVector?) {
         let view = OverlayView(display: Self.display)
         let recorder = Recorder()
         let passedOn = PassedOn()
         view.delegate = recorder
         view.nextResponder = passedOn
-        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: purpose, allInOne: allInOne)
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: mode, windows: [], showsToolbar: false, purpose: purpose, allInOne: allInOne)
         let event = try #require(NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: characters,
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil, characters: characters,
             charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
         ))
         view.keyDown(with: event)
-        return (recorder.heard, !passedOn.keys.isEmpty)
+        return (recorder.heard, !passedOn.keys.isEmpty, recorder.nudge)
     }
 
     private static let arrows: [UInt16] = [123, 124, 125, 126]
     private static let returns: [UInt16] = [36, 76]
 
-    @Test func whileCapturingTheArrowsAndReturnArePassedOn() throws {
+    /// Return is a color picker's and the ruler's; choosing an area, it is passed on.
+    @Test func whileCapturingReturnIsPassedOn() throws {
         for purpose in [OverlayController.Purpose.screenshot, .text, .annotate, .record, .scroll] {
-            for key in Self.arrows + Self.returns {
+            for key in Self.returns {
                 let result = try press(key, in: purpose)
                 #expect(result.heard.isEmpty && result.passedOn, "key \(key) in \(purpose): \(result.heard)")
             }
         }
+    }
+
+    /// Choosing an area, the arrows move the crosshair, or the corner being dragged, a pixel at a time (down positive),
+    /// ten with Shift; choosing a window, which has no crosshair, they are passed on.
+    @Test func whileChoosingAnAreaTheArrowsNudgeByAPixel() throws {
+        let steps: [(UInt16, CGVector)] = [
+            (123, CGVector(dx: -1, dy: 0)), (124, CGVector(dx: 1, dy: 0)), (125, CGVector(dx: 0, dy: 1)), (126, CGVector(dx: 0, dy: -1)),
+        ]
+        for purpose in [OverlayController.Purpose.screenshot, .text, .annotate, .record, .scroll] {
+            for (key, step) in steps {
+                let result = try press(key, in: purpose)
+                #expect(result.heard == ["nudge"] && result.nudge == step && !result.passedOn, "key \(key) in \(purpose): \(result.heard)")
+            }
+        }
+        #expect(try press(124, modifiers: .shift, in: .screenshot).nudge == CGVector(dx: 10, dy: 0))
+        #expect(try press(125, modifiers: .shift, in: .screenshot, allInOne: true).nudge == CGVector(dx: 0, dy: 10))
+        for key in Self.arrows {
+            let result = try press(key, in: .screenshot, mode: .window)
+            #expect(result.heard.isEmpty && result.passedOn, "key \(key) in window mode: \(result.heard)")
+        }
+    }
+
+    /// Tab frames the area for a size typed, in Capture Area and Annotate Area; elsewhere it is passed on (All-In-One's
+    /// area is framed after its drag; Measure's Tab is its unit).
+    @Test func tabOpensTheSizeControlWhereAnAreaIsChosen() throws {
+        for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+            let result = try press(48, characters: "\t", in: purpose)
+            #expect(result.heard == ["size"] && !result.passedOn, "\(purpose): \(result.heard)")
+        }
+        for purpose in [OverlayController.Purpose.text, .record, .scroll, .color] {
+            let result = try press(48, characters: "\t", in: purpose)
+            #expect(result.heard.isEmpty && result.passedOn, "\(purpose): \(result.heard)")
+        }
+        let allInOne = try press(48, characters: "\t", in: .screenshot, allInOne: true)
+        #expect(allInOne.heard.isEmpty && allInOne.passedOn)
+        let window = try press(48, characters: "\t", in: .screenshot, mode: .window)
+        #expect(window.heard.isEmpty && window.passedOn)
     }
 
     /// All-In-One's letters choose a mode before an area: O text, S scrolling, R recording; W a window, F the screen.

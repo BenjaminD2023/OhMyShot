@@ -99,6 +99,26 @@ enum AreaFrame {
         return placed(CGRect(x: rect.minX, y: rect.minY, width: width, height: height), in: bounds)
     }
 
+    /// `area` (global points) as the size and shape control first frames it on `display`: reshaped to `ratio` around its
+    /// middle when one is kept, inside the display, on its pixels.
+    static func framed(_ area: CGRect, on display: DisplayInfo, keeping ratio: AspectRatio?) -> CGRect {
+        let bounds = CGRect(origin: .zero, size: display.frame.size)
+        let flipped = local(area, on: display).intersection(bounds)
+        guard !flipped.isNull else { return area }
+        let reshaped = ratio.map { shaped(flipped, to: $0.value, in: bounds) } ?? flipped
+        return global(snapped(reshaped, pixelsPerPoint: display.pixelsPerPoint), on: display)
+    }
+
+    /// The area a size is typed for when none was dragged: a third of the display across, centered on `point` (global
+    /// points), in the shape kept, moved back inside the display.
+    static func starting(around point: CGPoint, on display: DisplayInfo, keeping ratio: AspectRatio?) -> CGRect {
+        let bounds = CGRect(origin: .zero, size: display.frame.size)
+        let middle = local(CGRect(origin: point, size: .zero), on: display).origin
+        let size = CGSize(width: (bounds.width / 3).rounded(), height: (bounds.height / 3).rounded())
+        let third = placed(CGRect(x: middle.x - size.width / 2, y: middle.y - size.height / 2, width: size.width, height: size.height), in: bounds)
+        return framed(global(third, on: display), on: display, keeping: ratio)
+    }
+
     /// `rect` moved inside `bounds`, its size kept (it must fit).
     private static func placed(_ rect: CGRect, in bounds: CGRect) -> CGRect {
         var rect = rect
@@ -150,28 +170,4 @@ enum AreaFrame {
     static func global(_ rect: CGRect, on display: DisplayInfo) -> CGRect {
         CGRect(x: display.frame.minX + rect.minX, y: display.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
     }
-}
-
-/// A shape to keep, width to height, for All-In-One's area.
-struct AspectRatio: Equatable, Sendable {
-    let width: CGFloat
-    let height: CGFloat
-
-    var value: CGFloat { width / height }
-
-    /// "16:9", "1:1", "1.85:1".
-    var label: String {
-        func text(_ number: CGFloat) -> String {
-            number.rounded() == number ? String(Int(number)) : String(format: "%.2f", number).replacingOccurrences(of: #"0+$"#, with: "", options: .regularExpression)
-        }
-        return "\(text(width)):\(text(height))"
-    }
-
-    /// The shapes the ratio menu offers: square, then landscape, then portrait.
-    static let presets: [AspectRatio] = [
-        AspectRatio(width: 1, height: 1),
-        AspectRatio(width: 4, height: 3), AspectRatio(width: 3, height: 2), AspectRatio(width: 16, height: 10), AspectRatio(width: 16, height: 9),
-        AspectRatio(width: 21, height: 9),
-        AspectRatio(width: 3, height: 4), AspectRatio(width: 2, height: 3), AspectRatio(width: 9, height: 16),
-    ]
 }

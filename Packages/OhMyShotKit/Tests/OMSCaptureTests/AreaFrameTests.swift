@@ -1,4 +1,5 @@
 import CoreGraphics
+import OMSCore
 import Testing
 @testable import OMSCapture
 
@@ -50,5 +51,70 @@ struct AreaFrameTests {
     @Test func ratiosReadAsTheirShape() {
         #expect(AspectRatio(width: 16, height: 9).label == "16:9")
         #expect(AspectRatio(width: 1.85, height: 1).label == "1.85:1")
+    }
+
+    /// Every shape the menu offers reads back from its label; a label that is no shape reads as none.
+    @Test func ratiosReadBackFromTheirLabel() {
+        for preset in AspectRatio.presets {
+            #expect(AspectRatio(label: preset.label) == preset, "\(preset.label)")
+        }
+        #expect(AspectRatio(label: "1.85:1") == AspectRatio(width: 1.85, height: 1))
+        for label in ["", "16", "16:", ":9", "0:9", "16:0", "-4:3", "a:b", "16:9:1", "inf:1", "nan:1"] {
+            #expect(AspectRatio(label: label) == nil, "\(label)")
+        }
+    }
+
+    /// A side far outside what an area could be is no shape, and no label of any shape traps.
+    @Test func absurdShapesAreNoShapeAndTheirLabelsAreSafe() {
+        for label in ["1e300:1", "1:1e300", "1e-9:1", "1:1e-9", "101:1", "0.001:1", "9223372036854775808:1"] {
+            #expect(AspectRatio(label: label) == nil, "\(label)")
+        }
+        #expect(AspectRatio(label: "100:0.01") != nil && AspectRatio(label: "0.01:100") != nil)
+        for width in [1e300, 1e19, Double.infinity, Double.nan, 0.5] {
+            #expect(!AspectRatio(width: width, height: 1).label.isEmpty)
+        }
+    }
+
+    private let display = DisplayInfo(
+        id: 1, name: "Test", frame: CGRect(x: 0, y: 0, width: 1200, height: 800), pixelSize: CGSize(width: 2400, height: 1600),
+        backingScale: 2, maximumPotentialEDR: 1
+    )
+    /// A raised display to the left of the primary one, as the author's built-in one is.
+    private let raised = DisplayInfo(
+        id: 2, name: "Raised", frame: CGRect(x: -2056, y: 111, width: 2056, height: 1329), pixelSize: CGSize(width: 4112, height: 2658),
+        backingScale: 2, maximumPotentialEDR: 1
+    )
+
+    /// With no drag, a size is typed for a third of the display across, around the crosshair.
+    @Test func anAreaToTypeASizeForStartsAroundTheCrosshair() {
+        let area = AreaFrame.starting(around: CGPoint(x: 600, y: 400), on: display, keeping: nil)
+        #expect(area.width == 400 && area.height == 267)
+        #expect(abs(area.midX - 600) <= 0.5 && abs(area.midY - 400) <= 0.5)
+        // Near a corner it is moved back inside, whole.
+        let cornered = AreaFrame.starting(around: CGPoint(x: -10, y: 120), on: raised, keeping: nil)
+        #expect(raised.frame.contains(cornered) && cornered.width == 685 && cornered.height == 443)
+        let far = AreaFrame.starting(around: CGPoint(x: 1195, y: 795), on: display, keeping: nil)
+        #expect(display.frame.contains(far) && far.maxX == 1200 && far.maxY == 800)
+    }
+
+    @Test func aShapeKeptShapesTheStartingAreaAndStaysInside() {
+        let wide = AreaFrame.starting(around: CGPoint(x: 600, y: 400), on: display, keeping: AspectRatio(width: 16, height: 9))
+        #expect(abs(wide.width / wide.height - 16.0 / 9) < 0.01 && display.frame.contains(wide))
+        let tall = AreaFrame.starting(around: CGPoint(x: 600, y: 400), on: display, keeping: AspectRatio(width: 9, height: 16))
+        #expect(abs(tall.width / tall.height - 9.0 / 16) < 0.01 && display.frame.contains(tall))
+    }
+
+    /// A dragged area opens the control as it is, or reshaped to the shape kept around its middle.
+    @Test func aDraggedAreaIsFramedAsItIsOrInTheShapeKept() {
+        let dragged = CGRect(x: 100, y: 100, width: 400, height: 300)
+        #expect(AreaFrame.framed(dragged, on: display, keeping: nil) == dragged)
+        let square = AreaFrame.framed(dragged, on: display, keeping: AspectRatio(width: 1, height: 1))
+        #expect(square.width == 400 && square.height == 400)
+        #expect(abs(square.midX - dragged.midX) <= 0.5 && abs(square.midY - dragged.midY) <= 0.5)
+        // Kept on its pixels, and never off the display.
+        let ragged = AreaFrame.framed(CGRect(x: 100.3, y: 100.3, width: 400.4, height: 300.2), on: display, keeping: nil)
+        #expect(ragged.minX * 2 == (ragged.minX * 2).rounded() && ragged.width * 2 == (ragged.width * 2).rounded())
+        let edge = AreaFrame.framed(CGRect(x: 1000, y: 600, width: 400, height: 300), on: display, keeping: nil)
+        #expect(display.frame.contains(edge))
     }
 }

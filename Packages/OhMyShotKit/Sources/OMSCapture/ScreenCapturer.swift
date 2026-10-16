@@ -51,16 +51,17 @@ public final class ScreenCapturer {
 
     /// Captures an area that may cross displays: each display's part, put together at the sharpest
     /// display's scale. An area on one display is a plain region capture, with its extended-range copy when
-    /// `wantsHDR` and the display has one to give.
-    public func captureArea(_ rect: CGRect, in layout: DisplayLayout, wantsHDR: Bool = false) async throws -> CapturedFrame {
+    /// `wantsHDR` and the display has one to give. With `showsCursor` the pointer is in the picture where it is, on
+    /// whichever display's part it falls.
+    public func captureArea(_ rect: CGRect, in layout: DisplayLayout, wantsHDR: Bool = false, showsCursor: Bool = false) async throws -> CapturedFrame {
         let displays = layout.displays.filter { !$0.frame.intersection(rect).isEmpty }
         guard let first = displays.first else { throw CaptureError.emptyResult }
         guard displays.count > 1 else {
-            return try await captureRegion(rect, on: first, dynamicRange: Self.dynamicRange(wantsHDR: wantsHDR, on: first))
+            return try await captureRegion(rect, on: first, dynamicRange: Self.dynamicRange(wantsHDR: wantsHDR, on: first), showsCursor: showsCursor)
         }
         var parts: [CapturedFrame] = []
         for display in displays {
-            parts.append(try await captureRegion(rect, on: display))
+            parts.append(try await captureRegion(rect, on: display, showsCursor: showsCursor))
         }
         let scale = displays.map(\.pixelsPerPoint).max() ?? first.pixelsPerPoint
         guard let stitched = CapturedFrame.stitched(parts, covering: rect, pixelsPerPoint: scale) else { throw CaptureError.emptyResult }
@@ -68,8 +69,9 @@ public final class ScreenCapturer {
     }
 
     /// Captures one window on its own, with real transparency at its rounded corners, even when other
-    /// windows cover it. With `shadow`, the image grows to hold the window's shadow.
-    public func captureWindow(_ target: WindowTarget, shadow: Bool, layout: DisplayLayout) async throws -> CapturedFrame {
+    /// windows cover it. With `shadow`, the image grows to hold the window's shadow. With `showsCursor` the pointer is
+    /// in the picture when it is over the window.
+    public func captureWindow(_ target: WindowTarget, shadow: Bool, layout: DisplayLayout, showsCursor: Bool = false) async throws -> CapturedFrame {
         // Windows come and go, so look this one up in fresh content.
         content.refresh()
         guard let window = try await content.current().windows.first(where: { $0.windowID == target.id }) else {
@@ -77,7 +79,7 @@ public final class ScreenCapturer {
         }
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let configuration = SCScreenshotConfiguration()
-        configuration.showsCursor = false
+        configuration.showsCursor = showsCursor
         configuration.dynamicRange = .sdr
         configuration.ignoreShadows = !shadow
         // No explicit size: the default is the window at its native scale plus, with a shadow, the

@@ -144,6 +144,157 @@ struct AllInOneSetupTests {
     }
 }
 
+/// Capture Area's size control: All-In-One's frame with only Capture, the size, and the shape on its bar.
+@MainActor
+struct AreaSizeControlTests {
+    private static let display = DisplayInfo(
+        id: 1, name: "Test", frame: CGRect(x: 0, y: 0, width: 800, height: 600), pixelSize: CGSize(width: 1600, height: 1200),
+        backingScale: 2, maximumPotentialEDR: 1
+    )
+    private static let area = CGRect(x: 100, y: 200, width: 300, height: 150)
+
+    /// Takes the keys the frame passes on, so none reaches the end of the chain and beeps.
+    private final class PassedOn: NSResponder {
+        var keys = 0
+
+        override func keyDown(with event: NSEvent) {
+            keys += 1
+        }
+    }
+
+    private func control(ratio: AspectRatio? = nil) -> (view: AllInOneSetupView, chose: () -> [(AllInOneChoice, CGRect)], passedOn: PassedOn) {
+        let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: false, kind: .sizing, ratio: ratio)
+        let passedOn = PassedOn()
+        view.nextResponder = passedOn
+        var chose: [(AllInOneChoice, CGRect)] = []
+        view.onChoose = { chose.append(($0, $1)) }
+        return (view, { chose }, passedOn)
+    }
+
+    @Test func itsBarOffersCaptureAlone() {
+        let sizing = control().view
+        #expect(sizing.barChoiceCount == 1)
+        let allInOne = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: false)
+        #expect(allInOne.barChoiceCount > 5)
+    }
+
+    @Test func returnCapturesTheAreaAsItIs() {
+        let (view, chose, _) = control()
+        _ = view.debugAct("return")
+        #expect(chose().map(\.0) == [.screenshot(nil)] && chose().first?.1 == Self.area)
+    }
+
+    /// The letters and Command-C and -S take an area every other way; here they do nothing but pass on.
+    @Test func allInOnesOtherKeysAreNotItsOwn() {
+        let (view, chose, passedOn) = control()
+        for key in ["e", "p", "u", "o", "s", "r", "f", "cmd-c", "cmd-s"] {
+            _ = view.debugAct(key)
+        }
+        #expect(chose().isEmpty)
+        #expect(passedOn.keys == 7)
+        #expect(view.area == Self.area)
+    }
+
+    @Test func theArrowsMoveAndResizeItAsAllInOnesDo() {
+        let (view, _, _) = control()
+        _ = view.debugAct("right")
+        #expect(view.area == Self.area.offsetBy(dx: 1, dy: 0))
+        _ = view.debugAct("opt-right")
+        #expect(view.area.width == Self.area.width + 1)
+    }
+
+    /// A shape kept when it opens shows on the bar, is not forced on the area, and holds a typed width.
+    @Test func aShapeKeptShowsAndHoldsATypedWidth() {
+        let (view, _, _) = control(ratio: AspectRatio(width: 16, height: 9))
+        #expect(view.ratio == AspectRatio(width: 16, height: 9))
+        #expect(view.area == Self.area)
+        #expect(view.barSummary == "600 × 300 16:9")
+        _ = view.debugAct("width=640")
+        #expect(view.barSummary == "640 × 360 16:9")
+        #expect(view.area.width == 320 && view.area.height == 180)
+    }
+
+    @Test func aSizeTypedOnItsOwnLeavesTheShapeFree() {
+        let (view, _, _) = control()
+        #expect(view.barSummary == "600 × 300 any")
+        _ = view.debugAct("size=800x400")
+        #expect(view.area.size == CGSize(width: 400, height: 200))
+        #expect(view.ratio == nil)
+    }
+
+    /// A key as the window delivers it to its first responder.
+    private func send(_ keyCode: UInt16, _ characters: String, to window: NSWindow) throws {
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+        ))
+        try #require(window.firstResponder).keyDown(with: event)
+    }
+
+    /// The frame, in a window that is never shown, with the keyboard as Capture Area gives it.
+    private func opened() -> (view: AllInOneSetupView, window: NSWindow, chose: () -> [(AllInOneChoice, CGRect)]) {
+        let (view, chose, _) = control()
+        let window = NSWindow(contentRect: Self.display.frame, styleMask: [.borderless], backing: .buffered, defer: true)
+        window.contentView = view
+        window.makeFirstResponder(view)
+        return (view, window, chose)
+    }
+
+    /// Opened from Capture Area, the keyboard stays with the frame, so Return captures at once, as the drag would have.
+    @Test func theKeysStayWithTheFrameWhenItOpens() throws {
+        let (view, window, chose) = opened()
+        #expect(window.firstResponder === view)
+        try send(36, "\r", to: window)
+        #expect(chose().map(\.0) == [.screenshot(nil)] && chose().first?.1 == Self.area)
+    }
+
+    @Test func escapeCancelsAtOnce() throws {
+        let (view, window, _) = opened()
+        var cancelled = false
+        view.onCancel = { cancelled = true }
+        try send(53, "\u{1b}", to: window)
+        #expect(cancelled)
+    }
+
+    /// Tab goes to the width to type it. Return there sets the size typed and gives the keys back to the frame; the next
+    /// Return captures what was typed.
+    @Test func tabGoesToTheWidthAndReturnThereOnlySetsTheSize() throws {
+        let (view, window, chose) = opened()
+        try send(48, "\t", to: window)
+        let editor = try #require(window.firstResponder as? NSTextView)
+        editor.insertText("800", replacementRange: NSRange(location: 0, length: (editor.string as NSString).length))
+        editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        #expect(chose().isEmpty && window.firstResponder === view)
+        #expect(view.area.width == 400 && view.area.height == Self.area.height)
+        try send(36, "\r", to: window)
+        #expect(chose().map(\.0) == [.screenshot(nil)] && chose().first?.1.width == 400)
+    }
+
+    /// A shape chosen on the chip is the one Shift keeps from now on; Any Shape leaves what Shift keeps alone.
+    @Test func aShapeChosenOnTheChipIsTheOneShiftKeeps() {
+        let (view, _, _) = control()
+        var kept: [AspectRatio] = []
+        view.onShapeKept = { kept.append($0) }
+        _ = view.debugAct("ratio=16:9")
+        _ = view.debugAct("ratio=any")
+        _ = view.debugAct("ratio=1:1")
+        #expect(kept == [AspectRatio(width: 16, height: 9), .square])
+        // All-In-One's own chip keeps a shape for its area alone.
+        let allInOne = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: false)
+        allInOne.onShapeKept = { kept.append($0) }
+        _ = allInOne.debugAct("ratio=4:3")
+        #expect(kept.count == 2)
+    }
+
+    @Test func escapeCancels() {
+        let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: false, kind: .sizing)
+        var cancelled = false
+        view.onCancel = { cancelled = true }
+        _ = view.debugAct("escape")
+        #expect(cancelled)
+    }
+}
+
 /// The bar before an area: how it is chosen and what it is for are two marks, and the second can be let go.
 @MainActor
 struct AllInOneBarTests {

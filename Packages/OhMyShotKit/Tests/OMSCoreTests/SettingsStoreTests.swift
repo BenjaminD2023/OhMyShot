@@ -115,3 +115,48 @@ struct UploadAfterCaptureSettingTests {
         #expect(SettingsStore(defaults: defaults).uploadAfterCapture)
     }
 }
+
+@MainActor
+struct SelectingSettingsTests {
+    @Test func screenshotsLeaveOutThePointerUnlessAskedFor() throws {
+        let suite = "OMSCoreTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        #expect(!settings.screenshotShowsCursor)
+        settings.screenshotShowsCursor = true
+        #expect(SettingsStore(defaults: defaults).screenshotShowsCursor)
+    }
+
+    /// Shift keeps a square until Settings name another shape; a value that is no shape is a square too.
+    @Test func shiftKeepsASquareUnlessAnotherShapeIsKept() throws {
+        let suite = "OMSCoreTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        #expect(settings.areaShape.isEmpty && settings.areaRatio == nil)
+        settings.areaShape = "16:9"
+        #expect(settings.areaRatio == AspectRatio(width: 16, height: 9))
+        let reopened = SettingsStore(defaults: defaults)
+        #expect(reopened.areaShape == "16:9" && reopened.areaRatio == AspectRatio(width: 16, height: 9))
+        defaults.set("wide", forKey: "areaShape")
+        let garbled = SettingsStore(defaults: defaults)
+        #expect(garbled.areaShape.isEmpty && garbled.areaRatio == nil)
+    }
+
+    /// Only a shape the picker lists is kept: a square is the empty one, and an absurd or unlisted shape is a square.
+    @Test func onlyAShapeThePickerListsIsKept() throws {
+        let suite = "OMSCoreTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for shape in AspectRatio.presets.dropFirst().map(\.label) {
+            defaults.set(shape, forKey: "areaShape")
+            #expect(SettingsStore(defaults: defaults).areaShape == shape, "\(shape)")
+        }
+        for shape in ["1:1", "5:4", "1e300:1", "1e-9:1", "16 : 9", "16:9:1"] {
+            defaults.set(shape, forKey: "areaShape")
+            let settings = SettingsStore(defaults: defaults)
+            #expect(settings.areaShape.isEmpty && settings.areaRatio == nil, "\(shape)")
+        }
+    }
+}

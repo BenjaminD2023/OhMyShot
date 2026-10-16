@@ -163,6 +163,26 @@ struct GeneralSettingsView: View {
                         InfoButton(Text("Hover states and open menus stay in place until the capture is taken.", bundle: .module))
                     }
                     HStack(spacing: 6) {
+                        Toggle(isOn: $settings.screenshotShowsCursor) {
+                            Text("Show the pointer in screenshots", bundle: .module)
+                        }
+                        InfoButton(Text("The pointer is in the picture where it was when you took it. With the screen frozen, that is where it was when you pressed the shortcut; All-In-One leaves it out then.", bundle: .module))
+                    }
+                    HStack(spacing: 6) {
+                        Text("Shift keeps", bundle: .module)
+                        Picker(selection: $settings.areaShape) {
+                            Text("A square", bundle: .module).tag("")
+                            ForEach(AspectRatio.presets.dropFirst(), id: \.label) { ratio in
+                                Text(ratio.label).tag(ratio.label)
+                            }
+                        } label: {
+                            Text("Shift keeps", bundle: .module)
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        InfoButton(Text("Hold Shift while you drag out an area to keep its shape. Press Tab while choosing an area to type its width and height in pixels; a shape you choose there is the one Shift keeps from then on.", bundle: .module))
+                    }
+                    HStack(spacing: 6) {
                         Toggle(isOn: $settings.allInOneRemembersArea) {
                             Text("All-In-One remembers the last area", bundle: .module)
                         }

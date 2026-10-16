@@ -263,6 +263,8 @@ final class CaptureCoordinator {
         }
         guard !overlay.isActive else { return followUp.finish(nil) }
         overlay.freezesScreen = freezes ?? settings.freezeScreen
+        // What is captured is the screen once the time is up: the frozen one, pointer or not, is only for choosing on.
+        overlay.recapturesLive = true
         overlay.begin(mode: .area) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
             let seconds = delay ?? settings.selfTimerDelay
@@ -362,7 +364,9 @@ final class CaptureCoordinator {
         Task {
             let probe = LatencyProbe("capture.fullscreen")
             do {
-                let frame = try await capturer.captureDisplay(display, dynamicRange: ScreenCapturer.dynamicRange(wantsHDR: wantsHDR, on: display))
+                let frame = try await capturer.captureDisplay(
+                    display, dynamicRange: ScreenCapturer.dynamicRange(wantsHDR: wantsHDR, on: display), showsCursor: settings.screenshotShowsCursor
+                )
                 probe.end()
                 await deliver(frame, appName: app, windowTitle: title, followUp: followUp)
             } catch {
@@ -385,7 +389,7 @@ final class CaptureCoordinator {
     func captureArea(_ rect: CGRect, appName: String?, windowTitle: String? = nil, copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none) async {
         let probe = LatencyProbe("capture.region")
         do {
-            let frame = try await capturer.captureArea(rect, in: displays.layout, wantsHDR: wantsHDR)
+            let frame = try await capturer.captureArea(rect, in: displays.layout, wantsHDR: wantsHDR, showsCursor: settings.screenshotShowsCursor)
             probe.end()
             await deliver(frame, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp)
         } catch {
@@ -493,7 +497,7 @@ final class CaptureCoordinator {
     ) async {
         let probe = LatencyProbe("capture.window")
         do {
-            let frame = try await capturer.captureWindow(target, shadow: settings.windowShadow, layout: displays.layout)
+            let frame = try await capturer.captureWindow(target, shadow: settings.windowShadow, layout: displays.layout, showsCursor: settings.screenshotShowsCursor)
             probe.end()
             let background = await windowBackground(for: frame, shiftHeld: modifiers.contains(.shift))
             // The display's scale: the capture is larger than the window's frame by its shadow.

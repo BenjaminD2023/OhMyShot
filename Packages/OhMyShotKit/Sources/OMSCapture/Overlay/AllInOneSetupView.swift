@@ -19,11 +19,23 @@ public enum AllInOneChoice: Equatable, Sendable {
 /// display. The arrows move the area a point, ten with Shift; with Option they grow or shrink it from its right and
 /// bottom edges. Escape ends an adjustment, then the whole capture.
 ///
+/// Capture Area and Annotate Area open the same frame with Tab, for a size typed or a shape kept: its bar then holds
+/// Capture, the size fields, the ratio chip, and Cancel, and its keys are Return, the arrows, Tab (to the width, to
+/// type it), and Escape. The keys stay with the frame until Tab or a click gives them to a field, so Return captures.
+///
 /// Flipped: points from the display's top-left corner, as the frame's drawing expects.
 final class AllInOneSetupView: NSView {
+    /// What the frame is for: every way to take the area, or Capture Area's size and shape alone.
+    enum Kind {
+        case allInOne
+        case sizing
+    }
+
     /// A way to take the area was chosen: the choice and the area in global points.
     var onChoose: ((AllInOneChoice, CGRect) -> Void)?
     var onCancel: (() -> Void)?
+    /// A shape was chosen on the ratio chip of Capture Area's size control: the shape Shift keeps from now on.
+    var onShapeKept: ((AspectRatio) -> Void)?
 
     private enum Adjustment {
         case moving(start: CGPoint, original: CGRect)
@@ -33,6 +45,7 @@ final class AllInOneSetupView: NSView {
 
     private let display: DisplayInfo
     private let offersUpload: Bool
+    private let kind: Kind
     /// The area in global points.
     private(set) var area: CGRect
     private let chrome = SelectionChromeView()
@@ -41,11 +54,14 @@ final class AllInOneSetupView: NSView {
     /// The shape kept while the area is resized or a size typed; nil for any shape.
     private(set) var ratio: AspectRatio?
 
-    init(display: DisplayInfo, area: CGRect, offersUpload: Bool) {
+    /// `ratio` is the shape already kept when the frame opens; the area is not reshaped to it here.
+    init(display: DisplayInfo, area: CGRect, offersUpload: Bool, kind: Kind = .allInOne, ratio: AspectRatio? = nil) {
         self.display = display
         self.offersUpload = offersUpload
+        self.kind = kind
         self.area = area
-        bar = AllInOneActionBar(offersUpload: offersUpload)
+        self.ratio = ratio
+        bar = AllInOneActionBar(offersUpload: offersUpload, sizingOnly: kind == .sizing)
         super.init(frame: CGRect(origin: .zero, size: display.frame.size))
         chrome.frame = bounds
         chrome.autoresizingMask = [.width, .height]
@@ -73,7 +89,10 @@ final class AllInOneSetupView: NSView {
 
     /// Every key, Upload's only while it is offered.
     private var instructions: String {
-        offersUpload
+        if kind == .sizing {
+            return String(localized: "Press Return to capture the area. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them, and the aspect ratio button keeps a shape. Press Escape to cancel.")
+        }
+        return offersUpload
             ? String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, U uploads, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.")
             : String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.")
     }
@@ -102,6 +121,9 @@ final class AllInOneSetupView: NSView {
 
     /// What the bar shows of the size and the shape, for tests.
     var barSummary: String { bar.shownSummary }
+
+    /// How many ways to take the area the bar offers, for tests.
+    var barChoiceCount: Int { bar.choiceCount }
 
     /// The area's size in pixels.
     private var pixelSize: CGSize {
@@ -135,6 +157,7 @@ final class AllInOneSetupView: NSView {
         if let ratio {
             let local = AreaFrame.local(area, on: display)
             setArea(AreaFrame.shaped(local, to: ratio.value, in: bounds))
+            if kind == .sizing { onShapeKept?(ratio) }
         } else {
             update()
         }
@@ -298,7 +321,8 @@ final class AllInOneSetupView: NSView {
             bar.focusWidth()
         default:
             let character = event.charactersIgnoringModifiers?.lowercased()
-            guard !flags.contains(.command), !flags.contains(.control) else { return super.keyDown(with: event) }
+            // Capture Area's size control has only its own keys: the letters take an area every other way.
+            guard kind == .allInOne, !flags.contains(.command), !flags.contains(.control) else { return super.keyDown(with: event) }
             if character == "f" {
                 // The whole display, at once.
                 choose(.screenshot(nil), area: display.frame)
@@ -314,7 +338,7 @@ final class AllInOneSetupView: NSView {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         // While a size is typed, ⌘C and the others are the field's own.
-        guard flags == .command, !(window?.firstResponder is NSText) else { return super.performKeyEquivalent(with: event) }
+        guard kind == .allInOne, flags == .command, !(window?.firstResponder is NSText) else { return super.performKeyEquivalent(with: event) }
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "c": choose(.screenshot(.copy))
         case "s": choose(.screenshot(.save))
@@ -444,6 +468,9 @@ final class AllInOneActionBar: CapsuleBar {
     /// The size fields' frames in the bar's space, for the frame's cursor.
     var sizeFieldFrames: [CGRect] { sizeFields.fieldFrames.map { sizeFields.convert($0, to: self) } }
 
+    /// How many ways to take the area the bar offers, for tests.
+    var choiceCount: Int { choices.count }
+
     /// What the size fields and the ratio chip show, for tests: "640 × 360 16:9".
     var shownSummary: String {
         "\(sizeFields.shownText) \(ratioChip.attributedTitle.string.isEmpty ? "any" : ratioChip.attributedTitle.string)"
@@ -486,22 +513,26 @@ final class AllInOneActionBar: CapsuleBar {
         if let window, let level { window.level = level }
     }
 
-    init(offersUpload: Bool) {
+    /// `sizingOnly` is Capture Area's size control: Capture, the size, the shape, and Cancel, without the other ways to
+    /// take the area.
+    init(offersUpload: Bool, sizingOnly: Bool = false) {
         super.init()
         let capture = add(.screenshot(nil), symbol: "camera.viewfinder", title: String(localized: "Capture"), help: String(localized: "Capture the area (Return)"))
         setTitle(String(localized: "Capture"), of: capture, emphasized: true)
-        addDivider()
-        add(.screenshot(.copy), symbol: "doc.on.doc", label: String(localized: "Copy"), help: String(localized: "Capture and copy (Command-C)"))
-        add(.screenshot(.save), symbol: "square.and.arrow.down", label: String(localized: "Save"), help: String(localized: "Capture and save to the export folder (Command-S)"))
-        add(.screenshot(.annotate), symbol: "pencil.tip.crop.circle", label: String(localized: "Annotate"), help: String(localized: "Capture and annotate (E)"))
-        add(.screenshot(.pin), symbol: "pin", label: String(localized: "Pin"), help: String(localized: "Capture and pin to the screen (P)"))
-        if offersUpload {
-            add(.screenshot(.upload), symbol: "icloud.and.arrow.up", label: String(localized: "Upload"), help: String(localized: "Capture and upload (U)"))
+        if !sizingOnly {
+            addDivider()
+            add(.screenshot(.copy), symbol: "doc.on.doc", label: String(localized: "Copy"), help: String(localized: "Capture and copy (Command-C)"))
+            add(.screenshot(.save), symbol: "square.and.arrow.down", label: String(localized: "Save"), help: String(localized: "Capture and save to the export folder (Command-S)"))
+            add(.screenshot(.annotate), symbol: "pencil.tip.crop.circle", label: String(localized: "Annotate"), help: String(localized: "Capture and annotate (E)"))
+            add(.screenshot(.pin), symbol: "pin", label: String(localized: "Pin"), help: String(localized: "Capture and pin to the screen (P)"))
+            if offersUpload {
+                add(.screenshot(.upload), symbol: "icloud.and.arrow.up", label: String(localized: "Upload"), help: String(localized: "Capture and upload (U)"))
+            }
+            addDivider()
+            add(.text, symbol: "text.viewfinder", label: String(localized: "Capture Text"), help: String(localized: "Copy the text in the area (O)"))
+            add(.scroll, symbol: "arrow.up.and.down.text.horizontal", label: String(localized: "Scrolling Capture"), help: String(localized: "Capture the area as it scrolls (S)"))
+            add(.record, symbol: "record.circle", label: String(localized: "Record"), help: String(localized: "Record the area (R)"))
         }
-        addDivider()
-        add(.text, symbol: "text.viewfinder", label: String(localized: "Capture Text"), help: String(localized: "Copy the text in the area (O)"))
-        add(.scroll, symbol: "arrow.up.and.down.text.horizontal", label: String(localized: "Scrolling Capture"), help: String(localized: "Capture the area as it scrolls (S)"))
-        add(.record, symbol: "record.circle", label: String(localized: "Record"), help: String(localized: "Record the area (R)"))
         addDivider()
         addView(sizeFields)
         ratioChip = addChip(symbol: "aspectratio", title: nil, help: String(localized: "Keep a shape while resizing"), target: self, action: #selector(ratioClicked))
@@ -513,7 +544,7 @@ final class AllInOneActionBar: CapsuleBar {
         addDivider()
         let cancel = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel (Esc)"), target: self, action: #selector(cancelClicked))
         cancel.setAccessibilityLabel(String(localized: "Cancel"))
-        setAccessibilityLabel(String(localized: "All-In-One"))
+        setAccessibilityLabel(sizingOnly ? String(localized: "Area size") : String(localized: "All-In-One"))
     }
 
     @available(*, unavailable)
