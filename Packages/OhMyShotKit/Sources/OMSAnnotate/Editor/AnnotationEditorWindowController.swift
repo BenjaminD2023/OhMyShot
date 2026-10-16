@@ -68,6 +68,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.onCopy = { [weak self] in self?.copy() }
         content.canvas.onSave = { [weak self] in self?.save() }
         content.canvas.onSaveProject = { [weak self] in self?.saveProject() }
+        content.canvas.onPrint = { [weak self] in self?.printCapture() }
         content.onViewportChange = { [weak self] in self?.updateZoomLabel() }
         session.observe { [weak self] event in
             if event == .history || event == .document { self?.undoChanged() }
@@ -341,6 +342,16 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                     alert.beginSheetModal(for: window, completionHandler: nil)
                 }
             }
+        }
+    }
+
+    /// Prints the capture as it looks now, the print panel coming down from the window. The edits stay unkept,
+    /// as they would were the window left open.
+    func printCapture() {
+        content.canvas.endEditing()
+        Task {
+            guard let image = await session.render() else { return NSSound.beep() }
+            ImagePrinter.print(image, pixelsPerPoint: session.document.scale, title: window?.title ?? "", from: window)
         }
     }
 

@@ -17,6 +17,7 @@ final class CardStackView: NSView {
     var onReveal: ((QuickAccessItem) -> Void)?
     var onRecognizeText: ((QuickAccessItem) -> Void)?
     var onPin: ((QuickAccessItem) -> Void)?
+    var onPrint: ((QuickAccessItem) -> Void)?
     var onMoveToTrash: ((QuickAccessItem) -> Void)?
     var onClose: ((QuickAccessItem) -> Void)?
     /// What the menu offers for uploading, read each time a menu opens (see `UploadMenu`).
@@ -150,6 +151,7 @@ final class CardStackView: NSView {
         card.onReveal = { [weak self, weak card] in card.map { self?.onReveal?($0.item) } }
         card.onRecognizeText = { [weak self, weak card] in card.map { self?.onRecognizeText?($0.item) } }
         card.onPin = { [weak self, weak card] in card.map { self?.onPin?($0.item) } }
+        card.onPrint = { [weak self, weak card] in card.map { self?.onPrint?($0.item) } }
         card.onMoveToTrash = { [weak self, weak card] in card.map { self?.onMoveToTrash?($0.item) } }
         card.onClose = { [weak self, weak card] in card.map { self?.onClose?($0.item) } }
         card.uploadMenu = { [weak self] in self?.uploadMenu() ?? .hidden }
@@ -180,6 +182,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
     var onReveal: (() -> Void)?
     var onRecognizeText: (() -> Void)?
     var onPin: (() -> Void)?
+    var onPrint: (() -> Void)?
     var onMoveToTrash: (() -> Void)?
     var onClose: (() -> Void)?
     var uploadMenu: () -> UploadMenu = { .hidden }
@@ -590,6 +593,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
             add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked))
             add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked))
             add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked))
+            add(String(localized: "Print…", bundle: .module), "printer", #selector(printClicked))
         }
         add(String(localized: "Show in Finder", bundle: .module), "folder", #selector(revealClicked))
         menu.addItem(.separator())
@@ -673,6 +677,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
     @objc private func revealClicked() { onReveal?() }
     @objc private func recognizeTextClicked() { onRecognizeText?() }
     @objc private func pinClicked() { onPin?() }
+    @objc private func printClicked() { onPrint?() }
     @objc private func trashClicked() { onMoveToTrash?() }
     @objc private func closeClicked() { onClose?() }
 

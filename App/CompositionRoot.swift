@@ -1033,6 +1033,18 @@ final class CompositionRoot {
         }
     }
 
+    /// Prints a picture file, the print panel as a sheet on `window` when there is one. A file with no resolution
+    /// of its own is taken at `fallbackScale`, so it prints at the size it was on screen.
+    private func printPicture(fileAt url: URL, fallbackScale: CGFloat, from window: NSWindow? = nil) {
+        Task {
+            guard let loaded = await Self.loadImage(url, fallbackScale: fallbackScale) else {
+                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to print it")
+                return NSSound.beep()
+            }
+            ImagePrinter.print(loaded.image, pixelsPerPoint: loaded.scale, title: url.deletingPathExtension().lastPathComponent, from: window)
+        }
+    }
+
     private func choosePicturesToPin() {
         let chooser = NSOpenPanel()
         chooser.allowedContentTypes = [.image]
@@ -1167,6 +1179,11 @@ final class CompositionRoot {
                 history.delete(entry)
             }
         )
+        actions.print = { [weak self] item in
+            guard let self, item.kind == .screenshot else { return }
+            let scale = displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
+            printPicture(fileAt: item.fileURL, fallbackScale: scale)
+        }
         actions.sharing = makeSharingActions()
         return actions
     }
@@ -1244,6 +1261,11 @@ final class CompositionRoot {
                 self?.sweepWallpaperPictures()
             }
         )
+        historyActions.print = { [weak self] entry, window in
+            guard let self, entry.kind == .screenshot else { return }
+            let scale = entry.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.displays.map(\.pixelsPerPoint).max() ?? 2
+            printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale, from: window)
+        }
         historyActions.sharing.menu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }
         historyActions.sharing.upload = { [weak self] entry, destination in
             guard let self else { return }

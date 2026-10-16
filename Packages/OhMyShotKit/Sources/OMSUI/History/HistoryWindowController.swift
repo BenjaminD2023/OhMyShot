@@ -19,6 +19,8 @@ public struct HistoryActions {
     public var recognizeText: (HistoryItem) -> Void
     /// Keeps the capture on screen as a pin.
     public var pin: (HistoryItem) -> Void
+    /// Prints a screenshot through the print panel, as a sheet on the window.
+    public var print: (HistoryItem, NSWindow?) -> Void = { _, _ in }
     /// Moves the capture to the Trash, where it can be put back from.
     public var moveToTrash: (HistoryItem) -> Void
     /// Uploading, for a person who set up a destination. Left as it is, the window offers none of it.
@@ -98,6 +100,7 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        model.window = window
         let content = NSHostingController(rootView: HistoryView(model: model))
         // The SwiftUI toolbar becomes the window's toolbar; the view sets only the minimum size.
         content.sceneBridgingOptions = [.toolbars]
@@ -221,6 +224,8 @@ final class HistoryModel {
     @ObservationIgnored let settings: SettingsStore
     @ObservationIgnored let actions: HistoryActions
     @ObservationIgnored let expiredCount: (HistoryRetention) -> Int
+    /// The history window, for the print panel to come down from.
+    @ObservationIgnored weak var window: NSWindow?
 
     init(store: HistoryStore, settings: SettingsStore, actions: HistoryActions, expiredCount: @escaping (HistoryRetention) -> Int) {
         self.store = store
@@ -353,6 +358,12 @@ final class HistoryModel {
 
     func quickLook(_ item: HistoryItem) {
         previewURL = store.fileURL(for: item)
+    }
+
+    /// Prints a screenshot; a recording has nothing to print.
+    func print(_ item: HistoryItem) {
+        guard item.kind == .screenshot else { return }
+        actions.print(item, window)
     }
 
     /// Moves the selection through the grid: by one for left and right, by a row for up and down.
@@ -491,6 +502,8 @@ struct HistoryView: View {
             // ⌘C, ⌘S and ⌘⌫ arrive from the main menu as commands; with nothing selected they are disabled.
             .onCommand(#selector(NSText.copy(_:)), perform: selectionCommand(model.actions.copy))
             .onCommand(#selector(NSDocument.save(_:)), perform: selectionCommand(model.actions.save))
+            // ⌘P prints a selected screenshot; a recording has nothing to print.
+            .onCommand(Selector(("printCapture:")), perform: model.selectedItem?.kind == .screenshot ? selectionCommand(model.print) : nil)
             .onCommand(#selector(NSText.delete(_:)), perform: selectionCommand(model.moveToTrash))
             .onChange(of: model.selection) { _, selection in
                 guard let selection else { return }
@@ -756,6 +769,7 @@ struct HistoryCard: View {
                 Button { model.actions.annotate(item) } label: { Text("Annotate", bundle: .module) }
                 Button { model.actions.recognizeText(item) } label: { Text("Recognize Text", bundle: .module) }
                 Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
+                Button { model.print(item) } label: { Text("Print", bundle: .module) }
             }
             Button { Self.share(model.store.fileURL(for: item)) } label: { Text("Share", bundle: .module) }
             if model.actions.sharing.isUploading(item) {
@@ -897,6 +911,7 @@ struct HistoryCard: View {
         if item.kind == .screenshot {
             Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }
             Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
+            Button { model.print(item) } label: { Text("Print…", bundle: .module) }
         }
         Button { model.actions.reveal(item) } label: { Text("Show in Finder", bundle: .module) }
         Divider()

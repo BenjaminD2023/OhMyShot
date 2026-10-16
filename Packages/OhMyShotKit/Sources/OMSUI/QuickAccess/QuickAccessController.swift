@@ -19,6 +19,8 @@ public final class QuickAccessController {
         public var recognizeText: (QuickAccessItem) -> Void
         /// Keeps the capture on screen as a pin.
         public var pin: (QuickAccessItem) -> Void
+        /// Prints the capture's picture through the print panel.
+        public var print: (QuickAccessItem) -> Void = { _ in }
         public var moveToTrash: (QuickAccessItem) -> Void
         /// A card was dismissed without being trashed.
         public var closed: (QuickAccessItem) -> Void
@@ -297,6 +299,7 @@ public final class QuickAccessController {
         stack.onReveal = { [weak self] item in self?.actions.reveal(item) }
         stack.onRecognizeText = { [weak self] item in self?.actions.recognizeText(item) }
         stack.onPin = { [weak self] item in self?.actions.pin(item) }
+        stack.onPrint = { [weak self] item in self?.actions.print(item) }
         stack.onMoveToTrash = { [weak self] item in
             guard let self else { return }
             items.removeAll { $0.id == item.id }

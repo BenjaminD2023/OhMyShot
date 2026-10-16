@@ -21,7 +21,7 @@ public final class HistoryTextReader {
     @ObservationIgnored private let helper: URL?
     @ObservationIgnored private var run: Run?
     /// While the screenshots waiting are being found, before a run starts.
-    @ObservationIgnored private var starting = false
+    @ObservationIgnored private(set) var starting = false
     @ObservationIgnored private var stopped = false
     @ObservationIgnored private var runsAgain: QualityOfService?
     /// Screenshots the reader could not read this time the app runs; not tried again until it next runs.

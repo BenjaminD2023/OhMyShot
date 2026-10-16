@@ -218,6 +218,22 @@ final class PinWindow: NSPanel {
         if isPicture { actions.annotate(pin) }
     }
 
+    /// Prints the picture as it was pinned, at its own size.
+    func printPin() {
+        guard case .image(let image, let scale) = pin.content else { return }
+        ImagePrinter.print(image, pixelsPerPoint: scale, title: String(localized: "Pin", bundle: .module))
+    }
+
+    /// File › Print… while the pin is in front.
+    @objc func printCapture(_ sender: Any?) {
+        printPin()
+    }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(printCapture(_:)) { return isPicture }
+        return super.validateMenuItem(menuItem)
+    }
+
     func recognizePinText() {
         if isPicture { actions.recognizeText(pin) }
     }
@@ -355,6 +371,7 @@ final class PinView: NSView {
             setAccessibilityLabel(String(localized: "Pin, \(Int(CGFloat(image.width) / pictureScale)) by \(Int(CGFloat(image.height) / pictureScale)) points", bundle: .module))
             action(String(localized: "Copy", bundle: .module)) { $0.copyPin() }
             action(String(localized: "Save", bundle: .module)) { $0.savePin() }
+            action(String(localized: "Print", bundle: .module)) { $0.printPin() }
             action(String(localized: "Annotate", bundle: .module)) { $0.annotatePin() }
             action(String(localized: "Recognize Text", bundle: .module)) { $0.recognizePinText() }
         case .text(let text):
@@ -756,6 +773,7 @@ final class PinView: NSView {
             guard liveText != nil || textView != nil else { return false }
             selectAllText()
         case "s" where pin.isPicture: event.modifierFlags.contains(.shift) ? pin.savePinAs() : pin.savePin()
+        case "p" where pin.isPicture && event.modifierFlags.isDisjoint(with: [.shift, .option, .control]): pin.printPin()
         case "w": pin.closePin()
         case "=", "+": pin.setZoom(pin.zoom * 1.25)
         case "-": pin.setZoom(pin.zoom / 1.25)
@@ -830,6 +848,7 @@ final class PinView: NSView {
             }
             menu.addItem(item(String(localized: "Save", bundle: .module), "square.and.arrow.down", key: "s") { pin.savePin() })
             menu.addItem(item(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", key: "s", modifiers: [.command, .shift]) { pin.savePinAs() })
+            menu.addItem(item(String(localized: "Print…", bundle: .module), "printer", key: "p") { pin.printPin() })
             menu.addItem(.separator())
             menu.addItem(item(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle") { pin.annotatePin() })
             menu.addItem(item(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder") { pin.recognizePinText() })

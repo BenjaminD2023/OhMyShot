@@ -34,6 +34,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public var onCopy: (() -> Void)?
     public var onSave: (() -> Void)?
     public var onSaveProject: (() -> Void)?
+    public var onPrint: (() -> Void)?
 
     private enum Drag {
         case creating(id: Annotation.ID, tool: AnnotationTool, start: CGPoint)
@@ -1515,6 +1516,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         onSaveProject?()
     }
 
+    /// ⌘P: the capture as it looks now, marks and background and all.
+    @objc public func printCapture(_ sender: Any?) {
+        onPrint?()
+    }
+
     @objc public override func selectAll(_ sender: Any?) {
         session.selectAll()
     }
@@ -1549,6 +1555,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return !session.document.items.isEmpty
         case #selector(paste(_:)):
             return !isInPlace && Self.offersPictures(.general)
+        case #selector(printCapture(_:)):
+            return onPrint != nil
         default:
             return true
         }

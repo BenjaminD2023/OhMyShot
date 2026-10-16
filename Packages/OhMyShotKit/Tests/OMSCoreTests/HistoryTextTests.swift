@@ -210,7 +210,8 @@ struct HistoryTextReaderTests {
 
     private func settled(_ reader: HistoryTextReader) async {
         for _ in 0..<200 {
-            if reader.reading == 0, ActiveResources.shared.snapshot[.helperProcess] == nil { return }
+            // Not yet started counts as not settled: finding what is waiting runs before the reader does.
+            if !reader.starting, reader.reading == 0, ActiveResources.shared.snapshot[.helperProcess] == nil { return }
             try? await Task.sleep(for: .milliseconds(25))
         }
     }

@@ -24,6 +24,10 @@ enum MainMenu {
         file.addItem(withTitle: String(localized: "Save"), action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
         let project = file.addItem(withTitle: String(localized: "Save a Copy as Project…"), action: Selector(("saveProject:")), keyEquivalent: "s")
         project.keyEquivalentModifierMask = [.command, .shift]
+        file.addItem(.separator())
+        // Answered by the editor and Capture History, which print the capture in front of them.
+        file.addItem(withTitle: String(localized: "Print…"), action: Selector(("printCapture:")), keyEquivalent: "p")
+        file.addItem(.separator())
         let trash = file.addItem(withTitle: String(localized: "Move to Trash"), action: #selector(NSText.delete(_:)), keyEquivalent: "\u{8}")
         trash.keyEquivalentModifierMask = .command
 
