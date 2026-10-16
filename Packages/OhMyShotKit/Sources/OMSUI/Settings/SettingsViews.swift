@@ -121,6 +121,16 @@ struct GeneralSettingsView: View {
                     Toggle(isOn: $launchAtLogin) {
                         Text("Launch at login", bundle: .module)
                     }
+                    .onChange(of: launchAtLogin) { _, enabled in
+                        guard enabled != LoginItem.isEnabled else { return }
+                        do {
+                            try LoginItem.setEnabled(enabled)
+                            loginItemError = nil
+                        } catch {
+                            loginItemError = error.localizedDescription
+                            launchAtLogin = LoginItem.isEnabled
+                        }
+                    }
                     if let loginItemError {
                         Text(loginItemError)
                             .font(.callout)
