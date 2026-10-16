@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import OMSCore
 import QuartzCore
 
@@ -9,6 +10,11 @@ import QuartzCore
 /// this is what it is drawn from. The system's cursor is read as other apps set it (no permission needed);
 /// clicks come from a global monitor (none either); keys need Input Monitoring, as the keystroke display's do.
 /// Times are host-clock seconds, the clock the stream stamps frames with.
+///
+/// Keys are written down so Studio can show them afterwards, whether or not the recording bar showed them
+/// while recording. Keys typed while the system keeps keystrokes private (a password field has focus, an app
+/// has turned on secure input) are never written down: the system keeps them from the monitor, and this
+/// drops any that arrive all the same.
 public final class TelemetryRecorder {
     private var telemetry = StudioTelemetry(width: 0, height: 0, pixelsPerPoint: 1)
     /// What is recorded, in global points.
@@ -16,7 +22,9 @@ public final class TelemetryRecorder {
     private var timer: Timer?
     private var clickMonitor: Any?
     private var keyMonitor: KeyMonitor?
-    private var keyMode: KeystrokeMode?
+    var keyMode: KeystrokeMode?
+    /// Whether the system is keeping keystrokes private right now.
+    var isSecureInputOn: () -> Bool = { IsSecureEventInputEnabled() }
     /// Cursors seen so far by what tells them apart, and the newest.
     private var cursorIndices: [String: Int] = [:]
     private var lastCursorShape: String?
@@ -30,6 +38,18 @@ public final class TelemetryRecorder {
 
     public var isRecording: Bool {
         timer != nil
+    }
+
+    /// The mode a Studio recording writes keys down in, or nil for none: `mode` (Settings' Keystrokes
+    /// choice, under which Shortcuts only never writes typing down) when Input Monitoring allows keys at all and
+    /// either the bar showed them or Settings keeps them for Studio to show later. A window recorded on its own
+    /// keeps them only when the bar showed them: what is typed in other apps is no part of it. The system is
+    /// never asked for Input Monitoring from here, where its prompt would be recorded.
+    public static func keystrokeMode(
+        showsKeystrokes: Bool, keepsForStudio: Bool, recordsWindow: Bool, inputMonitoringAllowed: Bool, mode: KeystrokeMode
+    ) -> KeystrokeMode? {
+        guard inputMonitoringAllowed, showsKeystrokes || (keepsForStudio && !recordsWindow) else { return nil }
+        return mode
     }
 
     /// Starts writing down what happens over `area` (global points); with `keys`, the keys pressed too, as
@@ -102,8 +122,8 @@ public final class TelemetryRecorder {
         telemetry.clicks.append(.init(time: CACurrentMediaTime(), x: place.x, y: place.y, button: button))
     }
 
-    private func press(_ key: Keystroke) {
-        let time = CACurrentMediaTime()
+    func press(_ key: Keystroke, at time: Double = CACurrentMediaTime()) {
+        guard !isSecureInputOn() else { return }
         guard keyMode == .all || KeystrokeCaption.isShortcut(key) else {
             return telemetry.keys.append(.unrecorded(time: time, isRepeat: key.isRepeat))
         }

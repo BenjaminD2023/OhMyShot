@@ -38,10 +38,19 @@ public final class StudioDocument {
         undoManagerProvider?()
     }
 
-    /// The zoom chosen on the timeline, by its identifier.
-    public var selectedZoom: UUID?
+    /// The zoom chosen on the timeline, by its identifier. One thing is chosen at a time, a zoom, a cut, or a
+    /// stretch of the camera's layout: choosing one lets go of the others, so Delete takes away what is shown as chosen.
+    public var selectedZoom: UUID? {
+        didSet { if selectedZoom != nil { selectedCut = nil; selectedSegment = nil } }
+    }
     /// The cut chosen on the timeline, by its start.
-    public var selectedCut: Double?
+    public var selectedCut: Double? {
+        didSet { if selectedCut != nil { selectedZoom = nil; selectedSegment = nil } }
+    }
+    /// The stretch of the camera's layout chosen on the timeline, by its identifier.
+    public var selectedSegment: UUID? {
+        didSet { if selectedSegment != nil { selectedZoom = nil; selectedCut = nil } }
+    }
     /// The movie the preview plays now; nil until it is first made.
     public private(set) var composition: StudioComposition?
     /// The newest composition couldn't be made (the recording couldn't be read).
@@ -77,7 +86,8 @@ public final class StudioDocument {
     ) {
         self.source = source
         self.telemetry = telemetry
-        self.project = project
+        // The times the camera filled what was recorded become stretches on the timeline; the movie is the same.
+        self.project = project.opened(for: telemetry, duration: duration)
         self.duration = duration
         self.recordingSize = recordingSize
         sourceByteCount = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
@@ -91,6 +101,21 @@ public final class StudioDocument {
     /// Whether a camera was recorded beside the recording, so it can be shown.
     public var hasCamera: Bool {
         cameraMovie != nil
+    }
+
+    /// The telemetry the movie is drawn from: the camera's too, only while its movie is there. Without it the
+    /// movie holds the recording alone, however the project lays the camera out (a Side by side movie
+    /// wouldn't leave an empty picture beside the recording). The telemetry itself keeps the camera, for
+    /// `cameraFailed` to say so.
+    var drawnTelemetry: StudioTelemetry {
+        var drawn = telemetry
+        if cameraMovie == nil { drawn.camera = nil }
+        return drawn
+    }
+
+    /// Where everything goes in the movie as the project is now, no larger than `largestSide`.
+    func movieLayout(largestSide: Double = StudioRenderer.largestSide) -> StudioRenderer.Layout {
+        StudioRenderer.layout(recordingSize: recordingSize, project: project, hasCamera: hasCamera, largestSide: largestSide)
     }
 
     /// Whether the camera showed while recording but couldn't be recorded, or its movie is gone since.
@@ -141,10 +166,10 @@ public final class StudioDocument {
 
     private func composition(largestSide: Double) async throws -> StudioComposition {
         let project = project
-        let telemetry = telemetry
+        let telemetry = drawnTelemetry
         let duration = duration
         let size = recordingSize
-        let layout = StudioRenderer.layout(recordingSize: size, project: project, largestSide: largestSide)
+        let layout = movieLayout(largestSide: largestSide)
         var backdrop: CGImage?
         if case .gradient(let name) = project.background {
             backdrop = background(name, layout.canvas)
@@ -170,7 +195,7 @@ public final class StudioDocument {
     /// small change of the window's size films nothing again, between 640 and the export's.
     private func previewLargestSide() -> Double {
         guard let pixels = previewPixels else { return 1920 }
-        let full = StudioRenderer.layout(recordingSize: recordingSize, project: project).canvas
+        let full = movieLayout().canvas
         guard full.width > 0, full.height > 0 else { return 1920 }
         let fit = min(pixels.width / full.width, pixels.height / full.height)
         let side = max(full.width, full.height) * fit
@@ -210,7 +235,7 @@ public final class StudioDocument {
         let kept = StudioComposition.keptSegments(duration: duration, cuts: project.cuts).reduce(0) { $0 + $1.duration }
         return StudioExporter.estimatedByteCount(
             sourceByteCount: sourceByteCount, sourceSize: recordingSize, sourceDuration: duration,
-            canvas: StudioRenderer.layout(recordingSize: recordingSize, project: project).canvas, keptDuration: kept, quality: project.quality
+            canvas: movieLayout().canvas, keptDuration: kept, quality: project.quality
         )
     }
 
@@ -235,8 +260,9 @@ public final class StudioDocument {
     public func addZoom() {
         let length = 2.0
         var start = min(max(time, 0), max(duration - 0.5, 0))
-        if let blocking = project.zooms.first(where: { $0.start <= start && start < $0.end }) { start = blocking.end }
-        let next = project.zooms.filter { $0.start > start }.map(\.start).min() ?? duration
+        // Past every zoom that holds the playhead's place, those that touch included.
+        while let blocking = project.zooms.first(where: { $0.start <= start && start < $0.end }) { start = blocking.end }
+        let next = project.zooms.filter { $0.start >= start }.map(\.start).min() ?? duration
         let end = min(start + length, next, duration)
         guard end - start >= 0.5 else { return }
         let zoom = StudioProject.Zoom(start: start, end: end, scale: AutoZoom.standardScale, isAutomatic: false)
@@ -257,13 +283,98 @@ public final class StudioDocument {
         project.zooms[index] = zoom
     }
 
-    /// Removes the chosen zoom, or takes back the chosen cut.
+    /// Removes the chosen zoom or camera layout, or takes back the chosen cut.
     public func deleteSelection() {
         if let id = selectedZoom {
             removeZoom(id)
+        } else if let id = selectedSegment {
+            removeCameraSegment(id)
         } else if let start = selectedCut {
             restoreCut(at: start)
         }
+    }
+
+    // MARK: Camera layout
+
+    /// Whether stretches of the movie can show the camera another way than its layout does: a camera was
+    /// recorded, and the layout isn't side by side, which widens the whole movie and so can't come and go.
+    public var canChangeLayoutAlongTheTimeline: Bool {
+        hasCamera && project.camera.layout != .sideBySide
+    }
+
+    /// When the camera shows, as the movie will have it: its layout, the stretches of the timeline, and where
+    /// the camera filled what was recorded while the project hasn't taken those as stretches.
+    private var cameraPlan: StudioCameraPlan {
+        StudioCameraPlan(camera: project.camera, segments: project.cameraSegments, recordedFills: telemetry.camera?.fills ?? [])
+    }
+
+    /// Whether the camera shows anywhere in the movie: in its layout, or in a stretch of the timeline. Its
+    /// mirror applies wherever it does.
+    public var showsCamera: Bool {
+        hasCamera && cameraPlan.usesCamera
+    }
+
+    /// Whether the camera's bubble shows anywhere in the movie: its layout is the bubble, or a stretch is. Its
+    /// shape, size, and corner apply wherever it does.
+    public var showsBubble: Bool {
+        let plan = cameraPlan
+        return hasCamera && (plan.base == .pictureInPicture || plan.stretches.contains { $0.layout == .pictureInPicture })
+    }
+
+    /// A stretch of the camera's layout at the playhead, three seconds long, in the room the others leave: camera
+    /// only, or the bubble where the layout is camera only already.
+    public func addCameraSegment() {
+        let length = 3.0
+        var start = min(max(time, 0), max(duration - StudioProject.shortestSegment, 0))
+        // Past every stretch that holds the playhead's place, those that touch included.
+        while let blocking = project.cameraSegments.first(where: { $0.start <= start && start < $0.end }) { start = blocking.end }
+        let next = project.cameraSegments.filter { $0.start >= start }.map(\.start).min() ?? duration
+        let end = min(start + length, next, duration)
+        guard end - start >= StudioProject.shortestSegment else { return }
+        let segment = StudioProject.CameraSegment(
+            start: start, end: end, layout: project.camera.layout == .cameraOnly ? .pictureInPicture : .cameraOnly
+        )
+        change(named: String(localized: "Add Layout", bundle: .module)) {
+            project.cameraSegments = (project.cameraSegments + [segment]).sorted { $0.start < $1.start }
+        }
+        selectedSegment = segment.id
+        selectedZoom = nil
+        selectedCut = nil
+    }
+
+    /// How far a stretch can reach before it meets the one before it or the one after it, or the ends of the recording.
+    public func limits(ofCameraSegment id: UUID) -> ClosedRange<Double> {
+        guard let segment = project.cameraSegments.first(where: { $0.id == id }) else { return 0...duration }
+        let before = project.cameraSegments.filter { $0.id != id && $0.end <= segment.start }.map(\.end).max() ?? 0
+        let after = project.cameraSegments.filter { $0.id != id && $0.start >= segment.end }.map(\.start).min() ?? duration
+        return before...max(before, after)
+    }
+
+    /// Changes a stretch, kept within its limits and at least `StudioProject.shortestSegment` long.
+    public func updateCameraSegment(_ id: UUID, _ change: (inout StudioProject.CameraSegment) -> Void) {
+        guard let index = project.cameraSegments.firstIndex(where: { $0.id == id }) else { return }
+        let limits = limits(ofCameraSegment: id)
+        var segment = project.cameraSegments[index]
+        change(&segment)
+        let shortest = StudioProject.shortestSegment
+        segment.start = min(max(segment.start, limits.lowerBound), limits.upperBound - shortest)
+        segment.end = min(max(segment.end, segment.start + shortest), limits.upperBound)
+        project.cameraSegments[index] = segment
+    }
+
+    /// Shows the camera another way in the chosen stretch, as one step that Undo names.
+    public func setCameraSegmentLayout(_ id: UUID, _ layout: StudioProject.Camera.Layout) {
+        guard let index = project.cameraSegments.firstIndex(where: { $0.id == id }), layout != .sideBySide else { return }
+        change(named: String(localized: "Change Layout", bundle: .module)) {
+            project.cameraSegments[index].layout = layout
+        }
+    }
+
+    public func removeCameraSegment(_ id: UUID) {
+        change(named: String(localized: "Remove Layout", bundle: .module)) {
+            project.cameraSegments.removeAll { $0.id == id }
+        }
+        if selectedSegment == id { selectedSegment = nil }
     }
 
     public func removeZoom(_ id: UUID) {
@@ -382,6 +493,10 @@ public final class StudioDocument {
     private func projectChanged(from old: StudioProject) {
         hasUnexportedChanges = true
         save()
+        // A layout chosen on the timeline that is gone (taken back, or the layout made side by side) is no longer chosen.
+        if let id = selectedSegment, !canChangeLayoutAlongTheTimeline || !project.cameraSegments.contains(where: { $0.id == id }) {
+            selectedSegment = nil
+        }
         // The preview isn't encoded, so the movie's quality is no reason to film it again.
         var seen = project
         seen.quality = old.quality

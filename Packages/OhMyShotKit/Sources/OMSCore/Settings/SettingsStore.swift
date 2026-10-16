@@ -274,6 +274,12 @@ public final class SettingsStore {
         didSet { defaults.set(recordingKeystrokeMode.rawValue, forKey: Key.recordingKeystrokeMode) }
     }
 
+    /// Whether a Studio recording writes down the keys pressed even when the bar's Show Keystrokes is off, so
+    /// Studio can show them afterwards. Which keys is the Keystrokes choice above.
+    public var recordingKeepsKeysForStudio: Bool {
+        didSet { defaults.set(recordingKeepsKeysForStudio, forKey: Key.recordingKeepsKeysForStudio) }
+    }
+
     /// Whether recordings show the camera in a bubble. Chosen on the recording bar.
     public var recordingCamera: Bool {
         didSet { defaults.set(recordingCamera, forKey: Key.recordingCamera) }
@@ -437,6 +443,8 @@ public final class SettingsStore {
             Key.recordingCameraMirrored: true,
             Key.recordingShowsKeystrokes: false,
             Key.recordingKeystrokeMode: KeystrokeMode.all.rawValue,
+            // Off: what is typed is kept only when asked for.
+            Key.recordingKeepsKeysForStudio: false,
             Key.recordingOutput: RecordingOutput.video.rawValue,
             Key.recordingGIFFrameRate: 15,
             Key.replaySound: ReplaySound.all.rawValue,
@@ -487,6 +495,7 @@ public final class SettingsStore {
         )
         recordingShowsKeystrokes = defaults.bool(forKey: Key.recordingShowsKeystrokes)
         recordingKeystrokeMode = defaults.string(forKey: Key.recordingKeystrokeMode).flatMap(KeystrokeMode.init(rawValue:)) ?? .all
+        recordingKeepsKeysForStudio = defaults.bool(forKey: Key.recordingKeepsKeysForStudio)
         recordingOutput = defaults.string(forKey: Key.recordingOutput).flatMap(RecordingOutput.init(rawValue:)) ?? .video
         let gifFrameRate = defaults.integer(forKey: Key.recordingGIFFrameRate)
         recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : 15
@@ -569,6 +578,7 @@ public final class SettingsStore {
         static let recordingCameraMirrored = "recordingCameraMirrored"
         static let recordingShowsKeystrokes = "recordingShowsKeystrokes"
         static let recordingKeystrokeMode = "recordingKeystrokeMode"
+        static let recordingKeepsKeysForStudio = "recordingKeepsKeysForStudio"
         static let recordingOutput = "recordingOutput"
         static let recordingGIFFrameRate = "recordingGIFFrameRate"
         static let replaySound = "replaySound"

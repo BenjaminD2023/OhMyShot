@@ -153,7 +153,7 @@ extension DebugRecordingDemo {
             let cameraMovie = camera ? await syntheticCamera(seconds: duration) : nil
             defer { if let cameraMovie { try? FileManager.default.removeItem(at: cameraMovie) } }
             if cameraMovie != nil { telemetry.camera = StudioTelemetry.Camera(start: 0, bubble: project.camera) }
-            let layout = StudioRenderer.layout(recordingSize: size, project: project)
+            let layout = StudioRenderer.layout(recordingSize: size, project: project, hasCamera: telemetry.camera != nil)
             let background = BackdropGradient.sky.image(width: Int(layout.canvas.width), height: Int(layout.canvas.height))
             let renderer = StudioRenderer(telemetry: telemetry, project: project, duration: duration, recordingSize: size, background: background)
             let started = ContinuousClock.now

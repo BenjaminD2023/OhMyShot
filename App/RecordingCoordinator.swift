@@ -294,10 +294,19 @@ final class RecordingCoordinator {
             recorder.onStreamStopped = { [weak self] error in self?.streamStopped(error) }
             // The pointer is written down from before the first frame, so the movie begins with its place.
             let telemetry = studio ? TelemetryRecorder() : nil
-            // Keys as Settings › Recording › Keystrokes chose: under Shortcuts only, no typing is written down.
+            // Keys as Settings › Recording › Keystrokes chose: under Shortcuts only, no typing is written down. They
+            // are written down with Show Keystrokes off too, for Studio to show afterwards, unless Settings says not
+            // or a window is recorded on its own.
+            let recordsWindow = switch plan.target {
+            case .window: true
+            case .area, .display: false
+            }
             telemetry?.start(
                 area: source.frame, pixelsPerPoint: source.frame.width > 0 ? Double(source.pixelWidth) / source.frame.width : 1,
-                keys: plan.choices.showsKeystrokes && KeyMonitor.isAllowed ? settings.recordingKeystrokeMode : nil
+                keys: TelemetryRecorder.keystrokeMode(
+                    showsKeystrokes: plan.choices.showsKeystrokes, keepsForStudio: settings.recordingKeepsKeysForStudio,
+                    recordsWindow: recordsWindow, inputMonitoringAllowed: KeyMonitor.isAllowed, mode: settings.recordingKeystrokeMode
+                )
             )
             // The camera's frames are taken before the screen's begin, so its movie covers the first frame.
             let cameraWanted = studio && camera.isShowing
@@ -813,7 +822,8 @@ final class RecordingCoordinator {
         // The movie in the history is the project's own while it was made with the project as it is: a change
         // made while the last one was being made, then closed on, isn't in it.
         let made = history.studioMovieProject(of: entry).flatMap { try? JSONDecoder().decode(StudioProject.self, from: $0) }
-        let hasBeenExported = made == project
+        // Compared as Studio opens them: the times the camera filled what was recorded are stretches by then.
+        let hasBeenExported = made?.opened(for: telemetry, duration: duration) == project.opened(for: telemetry, duration: duration)
         let document = StudioDocument(
             source: source, telemetry: telemetry, project: project, duration: duration, recordingSize: size, folder: folder,
             hasBeenExported: hasBeenExported,

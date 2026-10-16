@@ -20,7 +20,7 @@ struct StudioView: View {
                 Divider()
                 TransportBar(document: document, model: model)
                 StudioTimeline(document: document, model: model)
-                    .frame(height: 128)
+                    .frame(height: document.canChangeLayoutAlongTheTimeline ? StudioTimeline.heightWithLayouts : StudioTimeline.height)
             }
             Divider()
             StudioInspector(document: document, swatches: swatches)
@@ -148,6 +148,14 @@ struct TransportBar: View {
                 Label { Text("Add Zoom", bundle: .module) } icon: { Image(systemName: "plus.magnifyingglass") }
             }
             .help(Text("A zoom at the playhead, following the pointer", bundle: .module))
+            if document.canChangeLayoutAlongTheTimeline {
+                Button {
+                    document.addCameraSegment()
+                } label: {
+                    Label { Text("Add Layout", bundle: .module) } icon: { Image(systemName: "rectangle.on.rectangle") }
+                }
+                .help(Text("Shows the camera another way from the playhead: filling the movie, or hidden", bundle: .module))
+            }
             if model.selectedRange == nil, let cut = document.selectedCut {
                 Button {
                     document.restoreCut(at: cut)
@@ -262,6 +270,14 @@ struct StudioInspector: View {
             }
 
             Section {
+                Picker(selection: $document.project.cursor.style) {
+                    Text("As recorded", bundle: .module).tag(StudioProject.Cursor.Style.recorded)
+                    Text("Arrow", bundle: .module).tag(StudioProject.Cursor.Style.arrow)
+                    Text("Highlight", bundle: .module).tag(StudioProject.Cursor.Style.highlight)
+                } label: {
+                    Text("Style", bundle: .module)
+                }
+                .accessibilityLabel(Text("Cursor style", bundle: .module))
                 LabeledSlider(title: Text("Size", bundle: .module), value: $document.project.cursor.size, range: 1...3, reading: { String(format: "%.1f×", $0) }, document: document)
                 LabeledSlider(title: Text("Smoothing", bundle: .module), value: $document.project.cursor.smoothing, range: 0...1, reading: Self.percent, document: document)
                 Toggle(isOn: $document.project.cursor.hidesWhenIdle) { Text("Hide when still", bundle: .module) }
@@ -269,15 +285,50 @@ struct StudioInspector: View {
                 if document.hasKeyPresses {
                     Toggle(isOn: $document.project.cursor.hidesWhileTyping) { Text("Hide while typing", bundle: .module) }
                 }
-                Toggle(isOn: $document.project.cursor.showsClicks) { Text("Show clicks", bundle: .module) }
             } header: {
                 Text("Cursor", bundle: .module)
             }
 
+            Section {
+                Picker(selection: clickChoice) {
+                    Text("None", bundle: .module).tag(ClickChoice.none)
+                    Text("Ring", bundle: .module).tag(ClickChoice.ring)
+                    Text("Ripple", bundle: .module).tag(ClickChoice.ripple)
+                } label: {
+                    Text("Effect", bundle: .module)
+                }
+                .accessibilityLabel(Text("Click effect", bundle: .module))
+                LabeledContent {
+                    HStack(spacing: 0) {
+                        ForEach(StudioProject.ClickColor.allCases, id: \.self) { color in
+                            ClickColorSwatch(color: color, isChosen: document.project.cursor.clickColor == color) {
+                                document.project.cursor.clickColor = color
+                            }
+                        }
+                    }
+                } label: {
+                    Text("Color", bundle: .module)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(Text("Click color", bundle: .module))
+                .disabled(!document.project.cursor.showsClicks)
+            } header: {
+                Text("Clicks", bundle: .module)
+            }
+
             if document.hasCamera {
                 Section {
-                    Toggle(isOn: $document.project.camera.isShown) { Text("Show the camera", bundle: .module) }
-                    Group {
+                    Picker(selection: $document.project.camera.layout) {
+                        Text("Picture in picture", bundle: .module).tag(StudioProject.Camera.Layout.pictureInPicture)
+                        Text("Side by side", bundle: .module).tag(StudioProject.Camera.Layout.sideBySide)
+                        Text("Camera only", bundle: .module).tag(StudioProject.Camera.Layout.cameraOnly)
+                        Text("Screen only", bundle: .module).tag(StudioProject.Camera.Layout.screenOnly)
+                    } label: {
+                        Text("Layout", bundle: .module)
+                    }
+                    .accessibilityLabel(Text("Camera layout", bundle: .module))
+                    // The bubble's own settings, wherever the bubble shows: the movie's layout, or a stretch of the timeline.
+                    if document.showsBubble {
                         // Named apart from the frame's Shape and the cursor's Size for VoiceOver.
                         Picker(selection: $document.project.camera.shape) {
                             Text("Circle", bundle: .module).tag(StudioProject.Camera.Shape.circle)
@@ -303,9 +354,45 @@ struct StudioInspector: View {
                         } label: {
                             Text("Corner", bundle: .module)
                         }
+                    }
+                    if document.project.camera.layout == .sideBySide {
+                        Picker(selection: $document.project.camera.side) {
+                            Text("Left", bundle: .module).tag(StudioProject.Camera.Side.left)
+                            Text("Right", bundle: .module).tag(StudioProject.Camera.Side.right)
+                        } label: {
+                            Text("Side", bundle: .module)
+                        }
+                        .accessibilityLabel(Text("Camera side", bundle: .module))
+                    }
+                    if document.showsCamera {
                         Toggle(isOn: $document.project.camera.mirrored) { Text("Mirror", bundle: .module) }
                     }
-                    .disabled(!document.project.camera.isShown)
+                    // Other layouts for stretches of the movie: not side by side, which widens all of it.
+                    if document.canChangeLayoutAlongTheTimeline {
+                        if let id = document.selectedSegment, let segment = document.project.cameraSegments.first(where: { $0.id == id }) {
+                            Picker(selection: Binding(get: { segment.layout }, set: { document.setCameraSegmentLayout(id, $0) })) {
+                                ForEach(StudioProject.Camera.Layout.stretchLayouts, id: \.self) { layout in
+                                    Text(verbatim: layout.name).tag(layout)
+                                }
+                            } label: {
+                                Text("Chosen stretch", bundle: .module)
+                            }
+                            .accessibilityLabel(Text("Layout of the chosen stretch", bundle: .module))
+                            Button(role: .destructive) {
+                                document.removeCameraSegment(id)
+                            } label: {
+                                Text("Remove Layout", bundle: .module)
+                            }
+                        } else if document.project.cameraSegments.isEmpty {
+                            Text("Add Layout shows the camera another way for a stretch of the movie.", bundle: .module)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Choose a layout on the timeline to change it.", bundle: .module)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 } header: {
                     Text("Camera", bundle: .module)
                 }
@@ -373,7 +460,20 @@ struct StudioInspector: View {
                             Text("Show", bundle: .module)
                         }
                         .disabled(!document.project.showsKeys)
+                        // What was typed is in the project, as typed: Settings can keep shortcuts only, or no keys.
+                        Text("What you typed is kept with this recording, on this Mac. Settings › Recording can keep shortcuts only, or no keys.", bundle: .module)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                     }
+                } header: {
+                    Text("Keys", bundle: .module)
+                }
+            } else if document.telemetry.keystrokeMode == nil {
+                // Keys are written down while recording, when Input Monitoring is on: this recording has none to show.
+                Section {
+                    Text("No keys were kept with this recording. Studio keeps them when Input Monitoring is on and Settings allows it (a window recorded on its own, only with Show Keystrokes on).", bundle: .module)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 } header: {
                     Text("Keys", bundle: .module)
                 }
@@ -398,6 +498,36 @@ struct StudioInspector: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// How clicks show, as the picker has it: none, or an effect. Clicks off are `showsClicks`; the effect is
+    /// kept while they are, so choosing None and then Ripple brings back a ripple.
+    private enum ClickChoice: Hashable {
+        case none
+        case ring
+        case ripple
+    }
+
+    private var clickChoice: Binding<ClickChoice> {
+        Binding {
+            let cursor = document.project.cursor
+            guard cursor.showsClicks else { return .none }
+            return cursor.clickEffect == .ring ? .ring : .ripple
+        } set: { choice in
+            // One change to the project, so Undo takes it back as one.
+            var cursor = document.project.cursor
+            switch choice {
+            case .none:
+                cursor.showsClicks = false
+            case .ring:
+                cursor.showsClicks = true
+                cursor.clickEffect = .ring
+            case .ripple:
+                cursor.showsClicks = true
+                cursor.clickEffect = .ripple
+            }
+            document.project.cursor = cursor
+        }
     }
 
     private var plainColor: Binding<Color> {
@@ -429,6 +559,71 @@ struct StudioInspector: View {
     static let swatchEdgeStrong = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.6) : NSColor(white: 0, alpha: 0.4)
     })
+}
+
+extension StudioProject.Camera.Layout {
+    /// The layouts a stretch of the timeline can take: side by side widens the whole movie, so it is not one.
+    static let stretchLayouts: [StudioProject.Camera.Layout] = [.pictureInPicture, .cameraOnly, .screenOnly]
+
+    var name: String {
+        switch self {
+        case .pictureInPicture: String(localized: "Picture in picture", bundle: .module)
+        case .sideBySide: String(localized: "Side by side", bundle: .module)
+        case .cameraOnly: String(localized: "Camera only", bundle: .module)
+        case .screenOnly: String(localized: "Screen only", bundle: .module)
+        }
+    }
+
+    /// The symbol that stands for the layout on the timeline's chips.
+    var symbol: String {
+        switch self {
+        case .pictureInPicture: "pip"
+        case .sideBySide: "rectangle.split.2x1"
+        case .cameraOnly: "web.camera"
+        case .screenOnly: "display"
+        }
+    }
+}
+
+/// One color for the clicks' effect: a 14 pt disc of the color (the accent as the user has it), edged with the
+/// Capsule Swatch Edge, and ringed by a 2 pt accent line 2 pt outside it while chosen.
+struct ClickColorSwatch: View {
+    let color: StudioProject.ClickColor
+    let isChosen: Bool
+    let choose: () -> Void
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        Button(action: choose) {
+            Circle()
+                .fill(fill)
+                .frame(width: 14, height: 14)
+                .overlay(Circle().strokeBorder(contrast == .increased ? StudioInspector.swatchEdgeStrong : StudioInspector.swatchEdge, lineWidth: contrast == .increased ? 1 : 0.5))
+                .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 2).padding(-4).opacity(isChosen ? 1 : 0))
+                .padding(4)
+        }
+        .buttonStyle(.plain)
+        .help(title)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isChosen ? .isSelected : [])
+    }
+
+    private var fill: Color {
+        color.rgb.map { Color(red: $0.red, green: $0.green, blue: $0.blue) } ?? Color.accentColor
+    }
+
+    private var title: Text {
+        switch color {
+        case .accent: Text("Accent", bundle: .module)
+        case .red: Text("Red", bundle: .module)
+        case .orange: Text("Orange", bundle: .module)
+        case .yellow: Text("Yellow", bundle: .module)
+        case .green: Text("Green", bundle: .module)
+        case .blue: Text("Blue", bundle: .module)
+        case .purple: Text("Purple", bundle: .module)
+        case .white: Text("White", bundle: .module)
+        }
+    }
 }
 
 /// A slider with its title and its reading, the reading in secondary ink with monospaced digits. A drag is

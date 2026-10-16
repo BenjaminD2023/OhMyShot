@@ -2,14 +2,15 @@ import AppKit
 import OMSCore
 import SwiftUI
 
-/// The timeline: a ruler of seconds, the clip with its pictures and its cuts, the zooms above it, and the
-/// playhead.
+/// The timeline: a ruler of seconds, the clip with its pictures and its cuts, the zooms above it, the camera's
+/// layouts under it when the recording has a camera, and the playhead.
 ///
 /// Click anywhere to move the playhead, drag on the ruler to scrub, drag along the clip to choose a stretch for
-/// Cut. A zoom is chosen with a click; its ends drag to change when it starts and stops, its middle to move it.
-/// A cut is chosen with a click; Delete takes it back (or removes a chosen zoom). With the timeline focused,
-/// ← and → move the playhead (⇧ by a second), I and O choose a stretch from or to it, and Delete removes what is
-/// chosen or cuts the chosen stretch. Zooms and cuts have their commands in a menu and for VoiceOver too.
+/// Cut. A zoom or a layout is chosen with a click; its ends drag to change when it starts and stops, its middle
+/// to move it (a layout stays between its neighbors). A cut is chosen with a click; Delete takes it back (or
+/// removes a chosen zoom or layout). With the timeline focused, ← and → move the playhead (⇧ by a second), I and
+/// O choose a stretch from or to it, and Delete removes what is chosen or cuts the chosen stretch. Zooms,
+/// layouts, and cuts have their commands in a menu and for VoiceOver too.
 struct StudioTimeline: View {
     @Bindable var document: StudioDocument
     @Bindable var model: StudioWindowModel
@@ -21,6 +22,12 @@ struct StudioTimeline: View {
     private static let zoomHeight: CGFloat = 26
     private static let clipTop: CGFloat = 64
     private static let clipHeight: CGFloat = 40
+    /// The camera's layouts, as chips under the clip, when it has any: 26 pt high, 6 pt below it.
+    private static let layoutTop: CGFloat = 110
+    private static let layoutHeight: CGFloat = 26
+    /// How tall the timeline is, with and without the lane for the camera's layouts.
+    static let height: CGFloat = 128
+    static let heightWithLayouts: CGFloat = 156
     /// How near a zoom's end a press grabs that end, in points.
     private static let handleReach: CGFloat = 7
     /// How far the keys move the playhead, and VoiceOver a zoom's ends.
@@ -33,6 +40,8 @@ struct StudioTimeline: View {
         case select(from: Double)
         case moveZoom(UUID, grabbedAt: Double, start: Double, end: Double)
         case resizeZoom(UUID, start: Bool)
+        case moveLayout(UUID, grabbedAt: Double, start: Double, end: Double)
+        case resizeLayout(UUID, start: Bool)
     }
 
     @State private var drag: Drag?
@@ -44,6 +53,7 @@ struct StudioTimeline: View {
                 ruler(width: width)
                 zooms(width: width)
                 clip(width: width)
+                if document.canChangeLayoutAlongTheTimeline { layouts(width: width) }
                 playhead(width: width, height: geometry.size.height)
             }
             .contentShape(Rectangle())
@@ -173,6 +183,57 @@ struct StudioTimeline: View {
         .pointerStyle(.frameResize(position: leading ? .leading : .trailing))
     }
 
+    /// The camera's layouts as chips under the clip, like the zooms above it: the chip fill with the layout's
+    /// symbol, and its name where there is room, in label ink; the chosen one ringed in the accent with grips.
+    private func layouts(width: CGFloat) -> some View {
+        ForEach(document.project.cameraSegments) { segment in
+            let left = x(segment.start, width: width), right = x(segment.end, width: width)
+            let chosen = document.selectedSegment == segment.id
+            let shape = RoundedRectangle(cornerRadius: Self.layoutHeight / 2, style: .continuous)
+            shape
+                .fill(contrast == .increased ? Self.chipFillStrong : Self.chipFill)
+                .overlay(shape.strokeBorder(chosen ? Color.accentColor : lineColor, lineWidth: chosen ? 2 : lineWidth))
+                .overlay(
+                    HStack(spacing: 4) {
+                        Image(systemName: segment.layout.symbol)
+                            .font(.system(size: 11, weight: chosen ? .semibold : .regular))
+                        if right - left >= 120 {
+                            Text(verbatim: segment.layout.name)
+                                .font(.system(size: 11, weight: chosen ? .semibold : .regular))
+                                .lineLimit(1)
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                )
+                .overlay(alignment: .leading) { grip(chosen: chosen, leading: true) }
+                .overlay(alignment: .trailing) { grip(chosen: chosen, leading: false) }
+                .frame(width: max(right - left, 8), height: Self.layoutHeight)
+                .contentShape(shape)
+                .contextMenu {
+                    ForEach(StudioProject.Camera.Layout.stretchLayouts, id: \.self) { layout in
+                        Button { document.setCameraSegmentLayout(segment.id, layout) } label: {
+                            Label { Text(verbatim: layout.name) } icon: { Image(systemName: layout.symbol) }
+                        }
+                    }
+                    Divider()
+                    Button { document.removeCameraSegment(segment.id) } label: { Text("Remove Layout", bundle: .module) }
+                }
+                .offset(x: left, y: Self.layoutTop)
+                .accessibilityElement()
+                .accessibilityLabel(Text("\(segment.layout.name), \(TransportBar.format(segment.start)) to \(TransportBar.format(segment.end))", bundle: .module))
+                .accessibilityAddTraits(chosen ? .isSelected : [])
+                .accessibilityAction { choose(layout: segment.id) }
+                .accessibilityAction(named: Text("Remove Layout", bundle: .module)) { document.removeCameraSegment(segment.id) }
+                .accessibilityAction(named: Text("Start Earlier", bundle: .module)) { nudge(layout: segment.id, start: true, by: -Self.zoomStep) }
+                .accessibilityAction(named: Text("Start Later", bundle: .module)) { nudge(layout: segment.id, start: true, by: Self.zoomStep) }
+                .accessibilityAction(named: Text("End Earlier", bundle: .module)) { nudge(layout: segment.id, start: false, by: -Self.zoomStep) }
+                .accessibilityAction(named: Text("End Later", bundle: .module)) { nudge(layout: segment.id, start: false, by: Self.zoomStep) }
+                .accessibilityAction(named: Text("Picture in Picture", bundle: .module)) { document.setCameraSegmentLayout(segment.id, .pictureInPicture) }
+                .accessibilityAction(named: Text("Camera Only", bundle: .module)) { document.setCameraSegmentLayout(segment.id, .cameraOnly) }
+                .accessibilityAction(named: Text("Screen Only", bundle: .module)) { document.setCameraSegmentLayout(segment.id, .screenOnly) }
+        }
+    }
+
     private func clip(width: CGFloat) -> some View {
         let left = x(0, width: width), right = x(document.duration, width: width)
         let clipWidth = max(right - left, 1)
@@ -280,16 +341,30 @@ struct StudioTimeline: View {
     private func choose(zoom id: UUID) {
         document.selectedZoom = id
         document.selectedCut = nil
+        document.selectedSegment = nil
     }
 
     private func choose(cut start: Double) {
         document.selectedCut = start
         document.selectedZoom = nil
+        document.selectedSegment = nil
+    }
+
+    private func choose(layout id: UUID) {
+        document.selectedSegment = id
+        document.selectedZoom = nil
+        document.selectedCut = nil
     }
 
     private func nudge(_ id: UUID, start: Bool, by shift: Double) {
         document.updateZoom(id) { zoom in
             if start { zoom.start = min(zoom.start + shift, zoom.end - 0.3) } else { zoom.end = max(zoom.end + shift, zoom.start + 0.3) }
+        }
+    }
+
+    private func nudge(layout id: UUID, start: Bool, by shift: Double) {
+        document.updateCameraSegment(id) { segment in
+            if start { segment.start += shift } else { segment.end += shift }
         }
     }
 
@@ -302,9 +377,9 @@ struct StudioTimeline: View {
         model.selectedRange = upper - lower > 0.05 ? lower...upper : nil
     }
 
-    /// Delete: the chosen zoom or cut goes, or else the chosen stretch is cut.
+    /// Delete: the chosen zoom, layout, or cut goes, or else the chosen stretch is cut.
     private func removeChosen() {
-        if document.selectedZoom != nil || document.selectedCut != nil {
+        if document.selectedZoom != nil || document.selectedCut != nil || document.selectedSegment != nil {
             document.deleteSelection()
         } else if let range = model.selectedRange {
             document.cut(range)
@@ -336,6 +411,18 @@ struct StudioTimeline: View {
             document.updateZoom(id) { zoom in
                 if start { zoom.start = min(now, zoom.end - 0.3) } else { zoom.end = max(now, zoom.start + 0.3) }
             }
+        case .moveLayout(let id, let grabbedAt, let start, let end):
+            // Kept to the room between its neighbors, whole.
+            let limits = document.limits(ofCameraSegment: id)
+            let shift = min(max(now - grabbedAt, limits.lowerBound - start), limits.upperBound - end)
+            document.updateCameraSegment(id) { segment in
+                segment.start = start + shift
+                segment.end = end + shift
+            }
+        case .resizeLayout(let id, let start):
+            document.updateCameraSegment(id) { segment in
+                if start { segment.start = min(now, segment.end - StudioProject.shortestSegment) } else { segment.end = max(now, segment.start + StudioProject.shortestSegment) }
+            }
         case nil:
             break
         }
@@ -349,11 +436,14 @@ struct StudioTimeline: View {
             let at = time(point.x, width: width)
             if let zoom = zoom(at: point, width: width) {
                 choose(zoom: zoom.id)
-            } else if point.y >= Self.clipTop, let cut = document.project.cuts.first(where: { $0.contains(at) }) {
+            } else if let layout = layout(at: point, width: width) {
+                choose(layout: layout.id)
+            } else if point.y >= Self.clipTop, point.y <= Self.clipTop + Self.clipHeight, let cut = document.project.cuts.first(where: { $0.contains(at) }) {
                 choose(cut: cut.lowerBound)
             } else {
                 document.selectedZoom = nil
                 document.selectedCut = nil
+                document.selectedSegment = nil
             }
             model.selectedRange = nil
             model.controller?.seek(toRecordingTime: at)
@@ -376,8 +466,17 @@ struct StudioTimeline: View {
             if abs(point.x - right) <= Self.handleReach { return .resizeZoom(zoom.id, start: false) }
             return .moveZoom(zoom.id, grabbedAt: at, start: zoom.start, end: zoom.end)
         }
-        if point.y >= Self.clipTop {
+        if let layout = layout(at: point, width: width) {
+            choose(layout: layout.id)
+            document.beginContinuousChange()
+            let left = x(layout.start, width: width), right = x(layout.end, width: width)
+            if abs(point.x - left) <= Self.handleReach { return .resizeLayout(layout.id, start: true) }
+            if abs(point.x - right) <= Self.handleReach { return .resizeLayout(layout.id, start: false) }
+            return .moveLayout(layout.id, grabbedAt: at, start: layout.start, end: layout.end)
+        }
+        if point.y >= Self.clipTop, point.y <= Self.clipTop + Self.clipHeight {
             document.selectedZoom = nil
+            document.selectedSegment = nil
             return .select(from: at)
         }
         return .scrub
@@ -387,6 +486,13 @@ struct StudioTimeline: View {
         guard point.y >= Self.zoomTop, point.y <= Self.zoomTop + Self.zoomHeight else { return nil }
         return document.project.zooms.first { zoom in
             point.x >= x(zoom.start, width: width) - Self.handleReach && point.x <= x(zoom.end, width: width) + Self.handleReach
+        }
+    }
+
+    private func layout(at point: CGPoint, width: CGFloat) -> StudioProject.CameraSegment? {
+        guard document.canChangeLayoutAlongTheTimeline, point.y >= Self.layoutTop, point.y <= Self.layoutTop + Self.layoutHeight else { return nil }
+        return document.project.cameraSegments.first { segment in
+            point.x >= x(segment.start, width: width) - Self.handleReach && point.x <= x(segment.end, width: width) + Self.handleReach
         }
     }
 

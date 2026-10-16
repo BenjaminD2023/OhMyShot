@@ -8,10 +8,11 @@ import OMSCore
 import SwiftUI
 
 /// Films one frame of a Studio recording: the background, the recording framed on it with its shadow and
-/// rounded corners, zoomed where the camera looks, the cursor drawn again over it, a ring at each click, the
-/// camera's bubble in a corner (never zoomed), and the keys pressed at the foot. Core Image, so frames are
-/// drawn on the GPU; what does not change from frame to frame (the background, the shadows, the cursors, the
-/// bubble's ring, each caption) is made once.
+/// rounded corners, zoomed where the camera looks, the cursor drawn again over it (as recorded, as an arrow,
+/// or with a circle of light), an effect at each click, the camera in a bubble in a corner (never zoomed),
+/// in a picture beside the recording, or filling the frame, and the keys pressed at the foot. Core Image, so
+/// frames are drawn on the GPU; what does not change from frame to frame (the background, the shadows, the
+/// cursors, the click effects, the bubble's ring, each caption) is made once.
 ///
 /// Sizes: the recording is framed at its own pixels where it can be, the background around it, so its text
 /// stays as sharp as it was; a movie that would be larger than `largestSide` is filmed smaller to fit.
@@ -21,6 +22,9 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         public let canvas: CGSize
         /// Where the recording sits, in the movie's pixels (y up, as Core Image draws).
         public let frame: CGRect
+        /// Where the camera's own picture sits beside the recording in the side-by-side layout, as tall as the
+        /// recording; nil in the other layouts.
+        public let camera: CGRect?
         /// The movie's pixels per recording pixel.
         public let scale: Double
     }
@@ -35,12 +39,15 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     private let background: CIImage
     private let shadow: CIImage?
     private let mask: CIImage
-    private let cursors: [(image: CIImage, telemetry: StudioTelemetry.Cursor)?]
+    private let cursors: [CursorLook?]
+    /// The arrow drawn for the Arrow style, and the circle of light under the cursor for Highlight.
+    private let arrow: CursorLook?
+    private let halo: CIImage
     private let clicks: [StudioTelemetry.Click]
-    private let captions: [Caption]
-    /// The ring for the main button's clicks, and the dimmer one for the others'.
-    private let rings: (primary: CIImage, secondary: CIImage)
-    /// The camera's bubble; nil without a camera, or with it hidden.
+    let captions: [Caption]
+    /// The click effect's picture for the main button's clicks, and the dimmer one for the others'.
+    private let clickPictures: (primary: CIImage, secondary: CIImage)
+    /// The camera's bubble, picture, or fill of the movie; nil without a camera, or with it hidden.
     let camera: CameraLook?
     private let lock = NSLock()
     /// Caption pictures by their text, made the first time each shows.
@@ -48,27 +55,53 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
 
     /// The longest side a movie is filmed at: 4K's.
     public static let largestSide = 3840.0
-    /// A click's ring, as the rings shown while recording draw it: from 18 to 54 points over 0.4 s, easing
-    /// out as it fades.
-    static let ringDuration = 0.4
-    static let ringSize = 54.0
-    static let ringStart = 18.0 / 54
     /// Room around a caption's capsule for its shadow, in points.
     static let captionRoom = 12.0
 
-    /// How long the camera takes to fill the recording, or to go back to its bubble.
-    static let cameraFade = 0.25
+    /// How long the camera takes to fill the recording, or to go back to its bubble, or any change of layout.
+    static let cameraFade = StudioCameraPlan.fade
 
-    /// The camera's bubble, made once: where it sits (in the movie's pixels, y up), its shape, the shadow
-    /// under it, and the white ring over it, as the bubble on screen draws them.
+    /// The camera's own picture in the side-by-side layout is this wide for each unit of its height (3:4), and
+    /// stands this far from the recording, as a fraction of the recording's height.
+    static let cameraPaneAspect = 3.0 / 4
+    static let cameraPaneGap = 0.025
+
+    /// The circle of light under the cursor in the Highlight style: its diameter in points at the cursor's
+    /// own size, and the color it is made of (a warm yellow at 0.40, holding to 60% of the radius and
+    /// feathering to clear at the edge).
+    static let haloDiameter = 44.0
+    static let haloColor = (red: 1.0, green: 0.85, blue: 0.2)
+    static let haloAlpha = 0.40
+
+    /// The camera, made once: for the bubble, where it sits (in the movie's pixels, y up), its shape, the shadow
+    /// under it, and the white ring over it, as the bubble on screen draws them; for the side-by-side layout,
+    /// where its own picture sits, cut to the recording's corners with the recording's shadow.
     struct CameraLook {
         let bubble: CGRect
         let mask: CIImage
         let shadow: CIImage
         let ring: CIImage
         let mirrored: Bool
-        /// When it fills the recording, in the recording's seconds.
-        let fills: [ClosedRange<Double>]
+        /// When it is in its bubble, when it fills the recording, and when it is neither.
+        let plan: StudioCameraPlan
+        /// Beside the recording, instead of in a bubble or filling it.
+        let pane: Pane?
+
+        struct Pane {
+            let rect: CGRect
+            let mask: CIImage
+            let shadow: CIImage?
+        }
+    }
+
+    /// A cursor's picture and where its hot spot is: from a recording's, or the arrow drawn for the Arrow style.
+    struct CursorLook {
+        let image: CIImage
+        /// Its size, and the hot spot, in points from its top-left corner.
+        let width: Double
+        let height: Double
+        let hotSpotX: Double
+        let hotSpotY: Double
     }
 
     /// A caption of keys and when it shows.
@@ -91,7 +124,7 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         self.recordingSize = recordingSize
         pixelsPerPoint = telemetry.width > 0 ? Double(recordingSize.width) / telemetry.width : telemetry.pixelsPerPoint
         track = StudioTrack(telemetry: telemetry, project: project, duration: duration)
-        let layout = Self.layout(recordingSize: recordingSize, project: project, largestSide: largestSide)
+        let layout = Self.layout(recordingSize: recordingSize, project: project, hasCamera: telemetry.camera != nil, largestSide: largestSide)
         self.layout = layout
         let canvas = CGRect(origin: .zero, size: layout.canvas)
 
@@ -107,33 +140,48 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         }
 
         let radius = project.cornerRadius * pixelsPerPoint * layout.scale
-        let rounded = CIFilter.roundedRectangleGenerator()
-        rounded.extent = layout.frame
-        rounded.radius = Float(radius)
-        rounded.color = .white
-        mask = rounded.outputImage?.cropped(to: layout.frame) ?? CIImage(color: .white).cropped(to: layout.frame)
+        mask = Self.roundedMask(layout.frame, radius: radius)
 
         shadow = Self.shadowImage(frame: layout.frame, radius: radius, strength: project.shadow, unit: pixelsPerPoint * layout.scale, canvas: canvas)
         cursors = telemetry.cursors.map { cursor in
             guard let source = CGImageSourceCreateWithData(cursor.png as CFData, nil),
                   let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
-            return (CIImage(cgImage: image), cursor)
+            return CursorLook(
+                image: CIImage(cgImage: image), width: cursor.width, height: cursor.height, hotSpotX: cursor.hotSpotX, hotSpotY: cursor.hotSpotY
+            )
         }
+        arrow = project.cursor.style == .arrow ? Self.arrowLook() : nil
+        halo = Self.haloImage()
         clicks = telemetry.clicks.sorted { $0.time < $1.time }
         captions = project.showsKeys ? Self.captions(for: telemetry.keys, mode: project.keystrokeMode) : []
-        rings = (Self.ringImage(color: ringColor, strokeAlpha: 0.9), Self.ringImage(color: ringColor, strokeAlpha: 0.55))
+        let effectColor = project.cursor.clickColor.rgb.map { RingColor(red: $0.red, green: $0.green, blue: $0.blue) } ?? ringColor
+        clickPictures = (
+            Self.clickPicture(project.cursor.clickEffect, color: effectColor, strokeAlpha: 0.9),
+            Self.clickPicture(project.cursor.clickEffect, color: effectColor, strokeAlpha: 0.55)
+        )
         let unit = pixelsPerPoint * layout.scale
         let recording = CGSize(width: telemetry.width, height: telemetry.height)
-        camera = project.camera.isShown ? telemetry.camera.map { take in
-            Self.cameraLook(take: take, settings: project.camera, layout: layout, recording: recording, unit: unit)
+        let plan = StudioCameraPlan(camera: project.camera, segments: project.cameraSegments, recordedFills: telemetry.camera?.fills ?? [])
+        camera = plan.usesCamera ? telemetry.camera.map { take in
+            Self.cameraLook(
+                take: take, settings: project.camera, plan: plan, layout: layout, recording: recording, unit: unit, radius: radius,
+                shadowStrength: project.shadow, canvas: canvas
+            )
         } : nil
     }
 
-    /// Where everything goes for a recording `recordingSize` pixels with `project`'s padding and shape.
-    public static func layout(recordingSize: CGSize, project: StudioProject, largestSide: Double = largestSide) -> Layout {
+    /// Where everything goes for a recording `recordingSize` pixels with `project`'s padding and shape. With
+    /// the camera beside the recording (`hasCamera`, which is whether there is a camera's movie to show, and the
+    /// side-by-side layout), the movie is wider by the camera's picture and the gap before it, so the recording
+    /// keeps its own pixels.
+    public static func layout(recordingSize: CGSize, project: StudioProject, hasCamera: Bool, largestSide: Double = largestSide) -> Layout {
         let width = Double(recordingSize.width), height = Double(recordingSize.height)
         let padding = max(0, project.padding) * min(width, height)
-        var canvas = CGSize(width: width + padding * 2, height: height + padding * 2)
+        let beside = hasCamera && project.camera.layout == .sideBySide
+        let gap = beside ? (height * cameraPaneGap).rounded() : 0
+        let cameraWidth = beside ? (height * cameraPaneAspect).rounded() : 0
+        let content = width + gap + cameraWidth
+        var canvas = CGSize(width: content + padding * 2, height: height + padding * 2)
         if let ratio = project.aspect.ratio {
             if canvas.width / canvas.height < ratio {
                 canvas.width = canvas.height * ratio
@@ -142,14 +190,22 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
             }
         }
         let scale = min(1, largestSide / max(canvas.width, canvas.height))
-        let evenWidth = max(2, Int((canvas.width * scale).rounded())) & ~1
+        // Even, rounded up with the camera beside the recording: its picture is cut to the width of the room.
+        let wide = Int((canvas.width * scale).rounded()) + (beside ? 1 : 0)
+        let evenWidth = max(2, wide) & ~1
         let evenHeight = max(2, Int((canvas.height * scale).rounded())) & ~1
         let size = CGSize(width: evenWidth, height: evenHeight)
+        // The recording alone, or with the camera's picture, is centered as one piece.
+        let left = ((size.width - content * scale) / 2).rounded()
+        let top = ((size.height - height * scale) / 2).rounded()
+        let cameraFirst = beside && project.camera.side == .left
         let frame = CGRect(
-            x: ((size.width - width * scale) / 2).rounded(), y: ((size.height - height * scale) / 2).rounded(),
-            width: width * scale, height: height * scale
+            x: left + (cameraFirst ? (cameraWidth + gap) * scale : 0).rounded(), y: top, width: width * scale, height: height * scale
         )
-        return Layout(canvas: size, frame: frame, scale: scale)
+        let cameraRect: CGRect? = beside ? CGRect(
+            x: cameraFirst ? left : left + ((width + gap) * scale).rounded(), y: top, width: cameraWidth * scale, height: height * scale
+        ) : nil
+        return Layout(canvas: size, frame: frame, camera: cameraRect, scale: scale)
     }
 
     /// The movie's frame at `time` (the recording's seconds) from the recording's frame `source` and, when
@@ -166,13 +222,15 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
             CGPoint(x: frame.minX + (x * pixelsPerPoint - shown.x) * k, y: frame.minY + (height - y * pixelsPerPoint - shown.y) * k)
         }
 
-        // The camera, in its bubble or filling the frame. From one to the other, the bubble fades out over the
-        // first half of the change and the frame fills over the second, as the bubble on screen fades out and
-        // in: the person is never shown twice.
+        // The camera, in its bubble, filling the frame, or neither, as the plan has it. From one to the other,
+        // what belongs to the first fades out over the first half of the change and what belongs to the second
+        // fades in over the second, as the bubble on screen fades out and in: the person is never shown twice.
         let picture = camera.flatMap { look in cameraFrame.map { Self.oriented($0, mirrored: look.mirrored) } }
-        let filling = camera.map { Self.fillLevel($0.fills, at: time) } ?? 0
-        let bubbleOpacity = picture == nil ? 0 : max(0, 1 - 2 * filling)
-        let fillOpacity = picture == nil ? 0 : max(0, 2 * filling - 1)
+        let levels = camera?.plan.levels(at: time) ?? StudioCameraPlan.Levels(bubble: 0, fill: 0)
+        // Beside the recording, the camera has a picture of its own: no bubble, and it never fills the frame.
+        let beside = camera?.pane != nil
+        let bubbleOpacity = picture == nil || beside ? 0 : levels.bubble
+        let fillOpacity = picture == nil || beside ? 0 : levels.fill
 
         var scene: CIImage
         if let picture, fillOpacity > 0.999 {
@@ -183,33 +241,39 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
             let views = project.motionBlur ? exposures(at: time) : [shown]
             let exposed = views.count > 1 ? blurred(source, over: views, around: shown) : screen(source, shown)
             scene = exposed.cropped(to: frame)
-            // Rings under the cursor, at each click still showing.
+            // The click effects, at each click still showing.
             if project.cursor.showsClicks {
-                for click in clicks where click.time <= time && time - click.time < Self.ringDuration {
-                    // Easing out, as Core Animation's ease-out does for the rings shown while recording.
-                    let progress = (time - click.time) / Self.ringDuration
-                    let eased = 1 - (1 - progress) * (1 - progress)
-                    let diameter = Self.ringSize * pixelsPerPoint * k * (Self.ringStart + (1 - Self.ringStart) * eased)
+                let effect = project.cursor.clickEffect
+                for click in clicks where click.time <= time && time - click.time < effect.lifetime {
+                    let picture = click.button == .primary ? clickPictures.primary : clickPictures.secondary
                     let point = onMovie(click.x, click.y)
-                    let ring = click.button == .primary ? rings.primary : rings.secondary
-                    let scaled = ring.transformed(by: CGAffineTransform(scaleX: diameter / ring.extent.width, y: diameter / ring.extent.height))
-                    let placed = scaled.transformed(by: CGAffineTransform(translationX: point.x - diameter / 2, y: point.y - diameter / 2))
-                    scene = Self.faded(placed, opacity: 1 - eased).composited(over: scene)
+                    for piece in effect.pieces(age: time - click.time) {
+                        let diameter = effect.diameter * pixelsPerPoint * k * piece.size
+                        let scaled = picture.transformed(by: CGAffineTransform(scaleX: diameter / picture.extent.width, y: diameter / picture.extent.height))
+                        let placed = scaled.transformed(by: CGAffineTransform(translationX: point.x - diameter / 2, y: point.y - diameter / 2))
+                        scene = Self.faded(placed, opacity: piece.opacity).composited(over: scene)
+                    }
                 }
             }
-            // The cursor, its hot spot on the pointer's place.
-            if state.cursorOpacity > 0.01, state.cursor < cursors.count, let cursor = cursors[state.cursor] {
-                let imageScale = cursor.image.extent.width / cursor.telemetry.width
-                let size = project.cursor.size * pixelsPerPoint * k / imageScale
-                let hotSpot = CGPoint(
-                    x: cursor.telemetry.hotSpotX * imageScale * size,
-                    y: (cursor.telemetry.height - cursor.telemetry.hotSpotY) * imageScale * size
-                )
+            // The cursor, its hot spot on the pointer's place, with the circle of light under it in the Highlight style.
+            if state.cursorOpacity > 0.01 {
                 let point = onMovie(state.cursorX, state.cursorY)
-                let placed = cursor.image
-                    .transformed(by: CGAffineTransform(scaleX: size, y: size))
-                    .transformed(by: CGAffineTransform(translationX: point.x - hotSpot.x, y: point.y - hotSpot.y))
-                scene = Self.faded(placed, opacity: state.cursorOpacity).composited(over: scene)
+                if project.cursor.style == .highlight {
+                    let diameter = Self.haloDiameter * project.cursor.size * pixelsPerPoint * k
+                    let scaled = halo.transformed(by: CGAffineTransform(scaleX: diameter / halo.extent.width, y: diameter / halo.extent.height))
+                    let placed = scaled.transformed(by: CGAffineTransform(translationX: point.x - diameter / 2, y: point.y - diameter / 2))
+                    scene = Self.faded(placed, opacity: state.cursorOpacity).composited(over: scene)
+                }
+                let look = project.cursor.style == .arrow ? arrow : (state.cursor < cursors.count ? cursors[state.cursor] : nil)
+                if let look {
+                    let imageScale = look.image.extent.width / look.width
+                    let size = project.cursor.size * pixelsPerPoint * k / imageScale
+                    let hotSpot = CGPoint(x: look.hotSpotX * imageScale * size, y: (look.height - look.hotSpotY) * imageScale * size)
+                    let placed = look.image
+                        .transformed(by: CGAffineTransform(scaleX: size, y: size))
+                        .transformed(by: CGAffineTransform(translationX: point.x - hotSpot.x, y: point.y - hotSpot.y))
+                    scene = Self.faded(placed, opacity: state.cursorOpacity).composited(over: scene)
+                }
             }
             // The camera filling the frame goes over everything in it before the frame's shape is cut: cut apart,
             // the recording showed through along the soft edges.
@@ -223,7 +287,13 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
 
         var movie = background
         if let shadow { movie = shadow.composited(over: movie) }
+        if let pane = camera?.pane, let paneShadow = pane.shadow { movie = paneShadow.composited(over: movie) }
         movie = scene.composited(over: movie)
+        if let pane = camera?.pane, let picture {
+            let inPane = Self.filling(picture, into: pane.rect)
+                .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputMaskImageKey: pane.mask, kCIInputBackgroundImageKey: CIImage.empty()])
+            movie = inPane.composited(over: movie)
+        }
         if let look = camera, let picture, bubbleOpacity > 0.001 { movie = bubble(look, picture: picture, opacity: bubbleOpacity, over: movie) }
         if let caption = caption(at: time) { movie = caption.composited(over: movie) }
         return movie.cropped(to: CGRect(origin: .zero, size: layout.canvas))
@@ -337,18 +407,6 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         return Self.faded(look.ring, opacity: opacity).composited(over: movie)
     }
 
-    /// How far the camera fills the recording at `time`, from 0 (its bubble) to 1, easing over `cameraFade`
-    /// after each change.
-    static func fillLevel(_ fills: [ClosedRange<Double>], at time: Double) -> Double {
-        var level = 0.0
-        for fill in fills where time >= fill.lowerBound {
-            let rising = min(1, (time - fill.lowerBound) / cameraFade)
-            let falling = min(1, max(0, (time - fill.upperBound) / cameraFade))
-            level = max(level, rising - falling)
-        }
-        return min(max(level, 0), 1)
-    }
-
     /// `image` scaled to cover `rect`, centered, and cut to it. Its edge pixels reach past it first: scaled
     /// as it is, its outermost pixels blend with the clear beyond them, and what is under them shows through.
     static func filling(_ image: CIImage, into rect: CGRect) -> CIImage {
@@ -376,7 +434,14 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     /// half the recording's shorter side), 24 points in from the chosen corner of the recording's frame;
     /// circular or a rounded square (continuous corners, a fifth of its side); a white ring 3 points wide just
     /// inside its edge and a soft shadow (black 0.28, 12 points, 4 down), as the bubble on screen has.
-    static func cameraLook(take: StudioTelemetry.Camera, settings: StudioProject.Camera, layout: Layout, recording: CGSize, unit: Double) -> CameraLook {
+    ///
+    /// The `plan` says when it is in its bubble and when it fills the recording's frame; side by side draws the
+    /// camera's picture in its own place instead, cut to the recording's corners (`radius`, in the movie's
+    /// pixels) with the recording's shadow.
+    static func cameraLook(
+        take: StudioTelemetry.Camera, settings: StudioProject.Camera, plan: StudioCameraPlan, layout: Layout, recording: CGSize, unit: Double,
+        radius: Double = 0, shadowStrength: Double = 0, canvas: CGRect = .zero
+    ) -> CameraLook {
         let shorter = Double(min(recording.width, recording.height))
         let sidePoints = min(settings.size, max(shorter / 2, 60))
         let insetPoints = min(24, max(shorter - sidePoints, 0) / 2)
@@ -427,7 +492,22 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
             context.setLineWidth(line)
             context.strokePath()
         }
-        return CameraLook(bubble: bubble, mask: mask, shadow: shadow, ring: ring, mirrored: settings.mirrored, fills: take.fills)
+        let pane = settings.layout == .sideBySide ? layout.camera.map { rect in
+            CameraLook.Pane(
+                rect: rect, mask: roundedMask(rect, radius: radius),
+                shadow: shadowImage(frame: rect, radius: radius, strength: shadowStrength, unit: unit, canvas: canvas)
+            )
+        } : nil
+        return CameraLook(bubble: bubble, mask: mask, shadow: shadow, ring: ring, mirrored: settings.mirrored, plan: plan, pane: pane)
+    }
+
+    /// A white rounded rectangle over `frame`, to cut a picture to its corners.
+    private static func roundedMask(_ frame: CGRect, radius: Double) -> CIImage {
+        let rounded = CIFilter.roundedRectangleGenerator()
+        rounded.extent = frame
+        rounded.radius = Float(radius)
+        rounded.color = .white
+        return rounded.outputImage?.cropped(to: frame) ?? CIImage(color: .white).cropped(to: frame)
     }
 
     /// The keys pressed as captions: each press shows the caption as it stands then, until the next press, or
@@ -472,8 +552,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         // Only a caption's first appearance fades in; one that follows another replaces it at once.
         let follows = captions.contains { $0.end == caption.start && $0.text != caption.text }
         let opacity = min(follows ? 1 : fadeIn, fadeOut)
-        // The capsule's foot 28 points above the recording's, centered; the picture has room around it.
-        let x = (layout.canvas.width - image.extent.width) / 2
+        // The capsule's foot 28 points above the recording's, centered on it; the picture has room around it.
+        let x = layout.frame.midX - image.extent.width / 2
         let y = layout.frame.minY + (28 - Self.captionRoom) * pixelsPerPoint * layout.scale
         return Self.faded(image.transformed(by: CGAffineTransform(translationX: x, y: y)), opacity: opacity)
     }
@@ -533,26 +613,83 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         return CIImage(cgImage: image).transformed(by: CGAffineTransform(translationX: canvas.minX, y: canvas.minY))
     }
 
-    /// A click's ring as the rings shown while recording draw it, drawn once at 256 pixels: a 3-point line
-    /// of the accent (at `strokeAlpha`) over a wash of it, which holds on white pages as on dark ones.
-    private static func ringImage(color: RingColor, strokeAlpha: Double) -> CIImage {
+    /// A click effect's picture at its full spread, drawn once at 256 pixels. The ring is the one shown while
+    /// recording: a 3-point line of the color (at `strokeAlpha`) over a wash of it at 0.18, which holds on
+    /// white pages as on dark ones. The ripple is a bare line of 2 points.
+    private static func clickPicture(_ effect: StudioProject.ClickEffect, color: RingColor, strokeAlpha: Double) -> CIImage {
         let side = 256
         guard let context = CGContext(
             data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return CIImage.empty() }
-        let unit = Double(side) / ringSize
-        let line = 3 * unit
+        let unit = Double(side) / effect.diameter
+        let line = (effect == .ring ? 3 : 2) * unit
         let rect = CGRect(x: 0, y: 0, width: side, height: side).insetBy(dx: 2 * unit, dy: 2 * unit)
-        context.setFillColor(CGColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 0.18))
-        context.fillEllipse(in: rect)
+        if effect == .ring {
+            context.setFillColor(CGColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 0.18))
+            context.fillEllipse(in: rect)
+        }
         context.setStrokeColor(CGColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: strokeAlpha))
         context.setLineWidth(line)
         context.strokeEllipse(in: rect)
         return context.makeImage().map { CIImage(cgImage: $0) } ?? CIImage.empty()
     }
 
-    /// A color for the clicks' rings, in sRGB.
+    /// The arrow drawn for the Arrow style, once, at four pixels a point like the cursors written down: the
+    /// classic pointer, 12 points wide and 19 tall, black with a white edge 1.2 points wide outside it, its tip
+    /// the hot spot. It is drawn here, not taken from the system, so it is sharp at any size.
+    static func arrowLook() -> CursorLook? {
+        let scale = 4.0, margin = 3.0, boxWidth = 12.0, boxHeight = 19.0
+        let width = boxWidth + margin * 2, height = boxHeight + margin * 2
+        guard let context = CGContext(
+            data: nil, width: Int(width * scale), height: Int(height * scale), bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        // Points from the top-left corner, y down.
+        context.translateBy(x: 0, y: height * scale)
+        context.scaleBy(x: scale, y: -scale)
+        context.translateBy(x: margin, y: margin)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: 0))
+        for point in [(0, 16.2), (3.7, 12.7), (6.4, 18.8), (9.0, 17.6), (6.3, 11.8), (11.4, 11.8)] {
+            path.addLine(to: CGPoint(x: point.0, y: point.1))
+        }
+        path.closeSubpath()
+        context.setLineJoin(.round)
+        context.setLineWidth(2.4)
+        context.setStrokeColor(CGColor(gray: 1, alpha: 1))
+        context.addPath(path)
+        context.strokePath()
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.addPath(path)
+        context.fillPath()
+        guard let image = context.makeImage() else { return nil }
+        return CursorLook(image: CIImage(cgImage: image), width: width, height: height, hotSpotX: margin, hotSpotY: margin)
+    }
+
+    /// The circle of light under the cursor in the Highlight style, drawn once at 256 pixels: the halo's color
+    /// at `haloAlpha`, holding to 60% of the radius and feathering to clear at the edge.
+    private static func haloImage() -> CIImage {
+        let side = 256
+        guard let context = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return CIImage.empty() }
+        let color = haloColor
+        let colors = [
+            CGColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: haloAlpha),
+            CGColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: haloAlpha),
+            CGColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 0),
+        ]
+        guard let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors as CFArray, locations: [0, 0.6, 1]) else {
+            return CIImage.empty()
+        }
+        let middle = CGPoint(x: Double(side) / 2, y: Double(side) / 2)
+        context.drawRadialGradient(gradient, startCenter: middle, startRadius: 0, endCenter: middle, endRadius: Double(side) / 2, options: [])
+        return context.makeImage().map { CIImage(cgImage: $0) } ?? CIImage.empty()
+    }
+
+    /// A color for the clicks' effects, in sRGB.
     public struct RingColor: Equatable, Sendable {
         public let red: Double
         public let green: Double

@@ -500,6 +500,14 @@ struct RecordingSettingsView: View {
                     InfoButton(Text("With Show Keystrokes on the recording bar, the keys you press appear near the bottom of the recording. Shortcuts are keys held with Command, Control, or Option, and the function keys. Keys typed into password fields never appear. A window recorded on its own shows none. Needs Input Monitoring.", bundle: .module))
                 }
             }
+            SettingsRow(Text("Studio", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Toggle(isOn: $settings.recordingKeepsKeysForStudio) {
+                        Text("Keep the keys pressed", bundle: .module)
+                    }
+                    InfoButton(Text("A Studio recording writes down the keys you press, even with Show Keystrokes off, so Studio can show them afterwards. Which keys is the Keystrokes choice above: under All keys, what you type is kept as typed, in the recording’s project on this Mac; under Shortcuts only, typing is never written down. Keys typed into password fields are never kept. A window recorded on its own keeps none unless Show Keystrokes is on. Needs Input Monitoring.", bundle: .module))
+                }
+            }
 
             SettingsDivider()
 
