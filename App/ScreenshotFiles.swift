@@ -16,6 +16,8 @@ final class ScreenshotFiles {
     private let history: HistoryStore
     /// When converted copies too old to want were last cleared: at launch, then about hourly while copies are made.
     private var lastSweep = Date.now
+    /// A recording's file in the history was just put on the clipboard, which refers to the file and holds nothing else.
+    var recordingCopied: ((UUID) -> Void)?
 
     init(settings: SettingsStore, history: HistoryStore) {
         self.settings = settings
@@ -58,25 +60,35 @@ final class ScreenshotFiles {
     /// What a saved copy is called.
     private struct Name {
         let text: String
-        /// Whether the pattern gave it, so a file saved under it takes a number.
-        let fromPattern: Bool
+        /// The pattern's name, with the number it took, when the pattern gave it: the number goes back unless the
+        /// file is saved under the name.
+        let reserved: SettingsStore.ReservedFileName?
     }
 
     /// The name a copy of a capture is offered under: the pattern's, with the capture's date, app, and window and the
     /// next number, for a capture named from the pattern; else the name it has, as a picture opened from a file does.
+    /// The number is taken now, before anything waits for a person, so a copy saved meanwhile takes the next.
     private func offeredName(for entry: HistoryItem?, fileURL: URL?) -> Name {
         if let entry, entry.isTemplateNamed == true {
-            return Name(text: settings.nextFileName(date: entry.createdAt, appName: entry.appName, windowTitle: entry.windowTitle), fromPattern: true)
+            let reserved = settings.reserveFileName(date: entry.createdAt, appName: entry.appName, windowTitle: entry.windowTitle)
+            return Name(text: reserved.name, reserved: reserved)
         }
         guard let fileURL else {
-            return Name(text: settings.nextFileName(date: .now, appName: nil, windowTitle: nil), fromPattern: true)
+            let reserved = settings.reserveFileName(date: .now, appName: nil, windowTitle: nil)
+            return Name(text: reserved.name, reserved: reserved)
         }
-        return Name(text: fileURL.deletingPathExtension().lastPathComponent, fromPattern: false)
+        return Name(text: fileURL.deletingPathExtension().lastPathComponent, reserved: nil)
     }
 
-    /// A file is to be saved as `name`: the pattern's counter moves on if the name is the pattern's.
+    /// A file is to be saved as `name`: the number the offered name took stays taken if the name is the pattern's, and
+    /// goes back if it is the person's own.
     private func didName(_ name: String, offered: Name) {
-        if offered.fromPattern { settings.didSaveFile(named: name, offered: offered.text) }
+        if name != offered.text { gaveUp(offered) }
+    }
+
+    /// Nothing is saved under the offered name (cancelled): the number it took goes back.
+    private func gaveUp(_ offered: Name) {
+        if let reserved = offered.reserved { settings.release(reserved) }
     }
 
     private static func folderName(_ directory: URL) -> String {
@@ -112,6 +124,7 @@ final class ScreenshotFiles {
         var name = offered.text
         if asks && settings.asksForFileName {
             guard let typed = await FileNamePrompt.ask(offering: name, fileExtension: fileExtension, folder: Self.folderName(directory)) else {
+                gaveUp(offered)
                 Log.capture.notice("Saving cancelled")
                 return nil
             }
@@ -155,6 +168,7 @@ final class ScreenshotFiles {
         // A capture left as it is is saved as the kind of file it is.
         let preferred = output.isUnchanged ? sourceFormat ?? .png : output.format
         guard let chosen = await SavePanel.ask(name: offered.text, types: SavePanel.pictureTypes(preferring: preferred), directory: settings.exportDirectory) else {
+            gaveUp(offered)
             return nil
         }
         didName(chosen.deletingPathExtension().lastPathComponent, offered: offered)
@@ -181,6 +195,7 @@ final class ScreenshotFiles {
         let output = output
         let offered = offeredName(for: nil, fileURL: nil)
         guard let chosen = await SavePanel.ask(name: offered.text, types: SavePanel.pictureTypes(preferring: output.format), directory: settings.exportDirectory) else {
+            gaveUp(offered)
             return nil
         }
         didName(chosen.deletingPathExtension().lastPathComponent, offered: offered)
@@ -263,7 +278,12 @@ final class ScreenshotFiles {
     /// a file reference instead of the picture when both are offered. A recording, a movie or a GIF, goes as its
     /// file, as Finder's Copy does: a GIF's picture alone would paste as its first frame.
     func copy(fileAt url: URL) {
-        guard !HistoryStore.isRecording(url) else { return PasteboardWriter.write(fileURL: url) }
+        guard !HistoryStore.isRecording(url) else {
+            PasteboardWriter.write(fileURL: url)
+            // After the write, which the clipboard's change count then tells apart from a later copy.
+            if let entry = history.item(forFileAt: url) { recordingCopied?(entry.id) }
+            return
+        }
         // As it has always been: the capture's PNG, as it is.
         if !output.changesPicture, settings.clipboardFormat == .pictureOnly {
             guard

@@ -29,12 +29,29 @@ struct ImageLoaderTests {
         let loaded = try #require(ImageLoader.load(data: data))
         #expect(loaded.image.width == 300 && loaded.image.height == 200)
         #expect(loaded.scale == 2)
+        #expect(!loaded.usesFallbackScale)
     }
 
     @Test func unknownResolutionUsesTheFallback() throws {
         let data = try encoded(width: 300, height: 200, type: .png, properties: [:])
         #expect(try #require(ImageLoader.load(data: data)).scale == 1)
         #expect(try #require(ImageLoader.load(data: data, fallbackScale: 2)).scale == 2)
+    }
+
+    /// The scale a file does not state is the caller's guess, and the loader says so: it is not to be recorded as the
+    /// picture's own.
+    @Test func aScaleTheFileDoesNotStateIsSaidToBeTheFallback() throws {
+        let none = try encoded(width: 300, height: 200, type: .png, properties: [:])
+        #expect(try #require(ImageLoader.load(data: none)).usesFallbackScale)
+        #expect(try #require(ImageLoader.load(data: none, fallbackScale: 2)).usesFallbackScale)
+        // A photo's 72 dpi is no statement of size either.
+        let photo = try encoded(width: 300, height: 200, type: .jpeg, properties: [kCGImagePropertyDPIWidth: 72, kCGImagePropertyDPIHeight: 72])
+        let loaded = try #require(ImageLoader.load(data: photo, fallbackScale: 2))
+        #expect(loaded.usesFallbackScale && loaded.scale == 2)
+        // A resolution of its own is kept, whatever fallback was asked for.
+        let retina = try encoded(width: 300, height: 200, type: .png, properties: [kCGImagePropertyDPIWidth: 144, kCGImagePropertyDPIHeight: 144])
+        let known = try #require(ImageLoader.load(data: retina, fallbackScale: 1))
+        #expect(!known.usesFallbackScale && known.scale == 2)
     }
 
     @Test func photoIsTurnedUpright() throws {

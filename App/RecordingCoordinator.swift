@@ -649,9 +649,7 @@ final class RecordingCoordinator {
     /// A recording's name, from the file name pattern. A recording is the one file it will ever be, so it takes its
     /// number now (a screenshot takes one when a copy is saved), and its saved copy keeps the name.
     private func fileName(startedAt: Date, appName: String?) -> String {
-        let name = settings.nextFileName(date: startedAt, appName: appName, windowTitle: nil)
-        settings.didSaveFile(named: name, offered: name)
-        return name
+        settings.reserveFileName(date: startedAt, appName: appName, windowTitle: nil).name
     }
 
     /// Moves a made file into the history and hands it on as a capture is: copied, saved when Settings
@@ -761,6 +759,11 @@ final class RecordingCoordinator {
 
     /// Open recording windows, by the recording's place in the history.
     private var windows: [UUID: RecordingWindowController] = [:]
+    /// The recordings with a window open (a recording window, or a Studio window that is open or still exporting
+    /// after it closed): they hold their files, which the windows keep edits in.
+    var openRecordingIDs: Set<UUID> { Set(windows.keys).union(studioWindows.keys) }
+    /// A recording's window closed for good, and no longer holds the recording.
+    var windowClosed: ((UUID) -> Void)?
     /// A kept recording changed (edited, or put back as it was made): the composition root refreshes its
     /// card and Capture History.
     var onChanged: ((HistoryItem) -> Void)?
@@ -849,6 +852,7 @@ final class RecordingCoordinator {
         controller.onClose = { [weak self] in
             Task { @MainActor in
                 self?.studioWindows[id] = nil
+                self?.windowClosed?(id)
                 MemoryRelief.returnFreedPages()
             }
         }
@@ -928,6 +932,7 @@ final class RecordingCoordinator {
         controller.onClose = { [weak self] in
             Task { @MainActor in
                 self?.windows[id] = nil
+                self?.windowClosed?(id)
                 MemoryRelief.returnFreedPages()
             }
         }

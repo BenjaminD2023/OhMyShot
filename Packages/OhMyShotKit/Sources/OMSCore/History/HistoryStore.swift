@@ -217,15 +217,19 @@ public final class HistoryStore: Sendable {
     }
 
     /// Shows a marked-up picture in place of the capture, keeping the original (the first time) and the
-    /// marks beside it. Returns the record with the new size.
+    /// marks beside it. `pixelsPerPoint` is kept as the capture's scale when given: the editor's resize scales
+    /// it with the picture, and every reader of the record (saving at 1×, dragging out, pins, printing) goes
+    /// by it. Returns the record with the new size.
     @discardableResult
-    public func replaceImage(of item: HistoryItem, with data: Data, pixelWidth: Int, pixelHeight: Int, annotations: Data) throws -> HistoryItem {
+    public func replaceImage(
+        of item: HistoryItem, with data: Data, pixelWidth: Int, pixelHeight: Int, annotations: Data, pixelsPerPoint: Double? = nil
+    ) throws -> HistoryItem {
         if !hasOriginal(item) {
             try FileManager.default.copyItem(at: fileURL(for: item), to: originalURL(for: item))
         }
         try data.write(to: fileURL(for: item), options: .atomic)
         try annotations.write(to: annotationsURL(for: item), options: .atomic)
-        return try resized(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
+        return try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: item.duration, pixelsPerPoint: pixelsPerPoint)
     }
 
     /// Puts a turned, flipped, or scaled picture in place of a capture that has never been edited. Unlike
@@ -246,16 +250,20 @@ public final class HistoryStore: Sendable {
         case hasOriginal
     }
 
-    /// Puts the capture back as it was taken and forgets its marks. Returns the record with the
+    /// Puts the capture back as it was taken and forgets its marks. `pixelsPerPoint` is kept as the capture's
+    /// scale when given: a resize that was undone in the editor has put it back. Returns the record with the
     /// original's size; unchanged when it was never marked up.
     @discardableResult
-    public func restoreOriginal(of item: HistoryItem) throws -> HistoryItem {
+    public func restoreOriginal(of item: HistoryItem, pixelsPerPoint: Double? = nil) throws -> HistoryItem {
         guard hasOriginal(item) else { return item }
         let original = originalURL(for: item)
         let size = Self.pixelSize(of: original)
         _ = try FileManager.default.replaceItemAt(fileURL(for: item), withItemAt: original)
         try? FileManager.default.removeItem(at: annotationsURL(for: item))
-        return try resized(item, pixelWidth: size?.width ?? item.pixelWidth, pixelHeight: size?.height ?? item.pixelHeight)
+        return try updated(
+            item, pixelWidth: size?.width ?? item.pixelWidth, pixelHeight: size?.height ?? item.pixelHeight, duration: item.duration,
+            pixelsPerPoint: pixelsPerPoint
+        )
     }
 
     /// Keeps an edited recording, the file at `edited` (moved in), in place of the recording, keeping the
@@ -291,10 +299,6 @@ public final class HistoryStore: Sendable {
     /// no longer be changed.
     public func flatten(_ item: HistoryItem) {
         removeExtras(of: item)
-    }
-
-    private func resized(_ item: HistoryItem, pixelWidth: Int, pixelHeight: Int) throws -> HistoryItem {
-        try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: item.duration)
     }
 
     private func updated(_ item: HistoryItem, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval?, pixelsPerPoint: Double? = nil) throws -> HistoryItem {

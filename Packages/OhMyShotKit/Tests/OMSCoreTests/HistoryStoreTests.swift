@@ -223,6 +223,39 @@ struct HistoryStoreTests {
         #expect(store.item(id: restored.id)?.windowTitle == "Apple")
     }
 
+    /// The editor's resize scales the document's scale with the picture, and every reader of the record (saving at 1×,
+    /// dragging out, pins, printing) goes by it: a 2× capture resized to half is 1× in the record too, and 2× again
+    /// once the resize is undone in the editor and the capture put back.
+    @Test func aResizedPictureCarriesItsScaleIntoTheRecord() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(
+            data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 800, pixelHeight: 600, appName: nil, pixelsPerPoint: 2
+        )
+        let resized = try store.replaceImage(of: item, with: Data([2]), pixelWidth: 400, pixelHeight: 300, annotations: Data([9]), pixelsPerPoint: 1)
+        #expect(resized.pixelWidth == 400 && resized.pixelsPerPoint == 1)
+        #expect(store.item(id: item.id)?.pixelsPerPoint == 1)
+        // Marking up again without a new scale leaves the record's as it is.
+        let marked = try store.replaceImage(of: resized, with: Data([3]), pixelWidth: 400, pixelHeight: 300, annotations: Data([9]))
+        #expect(marked.pixelsPerPoint == 1)
+        // The resize undone: the original comes back, at the scale the editor's document has again.
+        let restored = try store.restoreOriginal(of: marked, pixelsPerPoint: 2)
+        #expect(restored.pixelsPerPoint == 2)
+        #expect(store.item(id: item.id)?.pixelsPerPoint == 2)
+        // Restoring without one leaves the record's scale as it is.
+        let again = try store.replaceImage(of: restored, with: Data([2]), pixelWidth: 400, pixelHeight: 300, annotations: Data([9]), pixelsPerPoint: 1)
+        #expect(try store.restoreOriginal(of: again).pixelsPerPoint == 1)
+    }
+
+    /// A capture whose scale is not known stays so: the record gets one only when it is given.
+    @Test func aPictureWithNoScaleKeepsNoneWhenMarked() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 10, pixelHeight: 10, appName: nil)
+        let marked = try store.replaceImage(of: item, with: Data([2]), pixelWidth: 10, pixelHeight: 10, annotations: Data([9]))
+        #expect(marked.pixelsPerPoint == nil && store.item(id: item.id)?.pixelsPerPoint == nil)
+    }
+
     @Test func aRecordFromBeforeTheseFieldsExistedStillReads() throws {
         let store = makeStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }

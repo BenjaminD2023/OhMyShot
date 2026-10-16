@@ -17,6 +17,8 @@ final class AnnotationCoordinator {
     var saveFile: ((URL, Double) async -> URL?)?
     /// A capture's picture changed: its record, and the picture's encoded data.
     var onChange: ((HistoryItem, Data) -> Void)?
+    /// A capture's editor opened (true) or closed (false).
+    var onEditing: ((UUID, Bool) -> Void)?
     /// Saves a copy of a capture's file to the export location; returns where it went.
     var saveCopy: ((HistoryItem, URL) async -> URL?)?
     /// The file to hand to another app when an editor's picture is dragged out, from the picture's file and its scale
@@ -71,10 +73,12 @@ final class AnnotationCoordinator {
                 // Released on the next turn, never inside the window's own close.
                 Task { @MainActor in
                     self?.editors[id] = nil
+                    self?.onEditing?(id, false)
                     MemoryRelief.returnFreedPages()
                 }
             }
             editors[id] = editor
+            onEditing?(id, true)
             editor.show()
         }
     }
@@ -193,11 +197,17 @@ final class AnnotationCoordinator {
         guard let entry = history.item(id: id) else { return nil }
         do {
             let updated: HistoryItem
+            // The document's scale is the picture's: a resize scales it with the pixels, and undoing one scales it back. A
+            // capture that had no scale (a picture from a file that gave none) is not given the one the editor guessed.
+            let scale = entry.pixelsPerPoint == nil ? nil : Double(document.scale)
             if document.isEmpty {
                 // Every mark gone and nothing cropped: the capture is what it was.
-                updated = try history.restoreOriginal(of: entry)
+                updated = try history.restoreOriginal(of: entry, pixelsPerPoint: scale)
             } else {
-                updated = try history.replaceImage(of: entry, with: png, pixelWidth: image.width, pixelHeight: image.height, annotations: try JSONEncoder().encode(document))
+                updated = try history.replaceImage(
+                    of: entry, with: png, pixelWidth: image.width, pixelHeight: image.height, annotations: try JSONEncoder().encode(document),
+                    pixelsPerPoint: scale
+                )
             }
             let file = history.fileURL(for: updated)
             let data = (try? Data(contentsOf: file)) ?? png

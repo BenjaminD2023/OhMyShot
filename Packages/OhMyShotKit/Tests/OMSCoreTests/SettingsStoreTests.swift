@@ -73,19 +73,47 @@ struct FileSettingsTests {
         #expect(settings.nextFileName(date: date, appName: nil, windowTitle: nil) == "Shot 1")
         // Asking for the name takes no number.
         #expect(settings.nextFileName(date: date, appName: nil, windowTitle: nil) == "Shot 1")
-        settings.didSaveFile(named: "Shot 1", offered: "Shot 1")
+        let first = settings.reserveFileName(date: date, appName: nil, windowTitle: nil)
+        #expect(first.name == "Shot 1" && first.number == 1)
         #expect(settings.nextFileName(date: date, appName: nil, windowTitle: nil) == "Shot 2")
-        // A name the person typed is no file of the pattern's.
-        settings.didSaveFile(named: "Receipt", offered: "Shot 2")
+        // A name the person typed is no file of the pattern's: the number goes back.
+        let typed = settings.reserveFileName(date: date, appName: nil, windowTitle: nil)
+        #expect(typed.name == "Shot 2")
+        settings.release(typed)
         #expect(settings.nextFileName(date: date, appName: nil, windowTitle: nil) == "Shot 2")
         // And the count outlives the app.
         #expect(SettingsStore(defaults: defaults).nextFileNumber == 2)
     }
 
+    /// Two files named while the first still waits (its name asked for, a Save As panel up) take two numbers: the number
+    /// is taken at once, not when the file is saved.
+    @Test func filesNamedAtTheSameTimeTakeNumbersOfTheirOwn() throws {
+        let (settings, _, cleanUp) = try makeSettings()
+        defer { cleanUp() }
+        settings.fileNamePattern = "Shot {counter}"
+        let date = Date(timeIntervalSince1970: 1_791_419_110)
+        let first = settings.reserveFileName(date: date, appName: nil, windowTitle: nil)
+        let second = settings.reserveFileName(date: date, appName: nil, windowTitle: nil)
+        let third = settings.reserveFileName(date: date, appName: nil, windowTitle: nil)
+        #expect([first.name, second.name, third.name] == ["Shot 1", "Shot 2", "Shot 3"])
+        // The latest number can be taken back, and is the next file's again.
+        settings.release(third)
+        #expect(settings.nextFileNumber == 3)
+        // One a later file has gone past is left a gap: that file's number stays its own.
+        settings.release(first)
+        #expect(settings.nextFileNumber == 3)
+        let fourth = settings.reserveFileName(date: date, appName: nil, windowTitle: nil)
+        #expect(fourth.name == "Shot 3")
+        #expect(settings.nextFileNumber == 4)
+    }
+
     @Test func aPatternWithNoCounterTakesNoNumbers() throws {
         let (settings, _, cleanUp) = try makeSettings()
         defer { cleanUp() }
-        settings.didSaveFile(named: "OhMyShot", offered: "OhMyShot")
+        let date = Date(timeIntervalSince1970: 1_791_419_110)
+        let reserved = settings.reserveFileName(date: date, appName: nil, windowTitle: nil)
+        #expect(reserved.number == nil)
+        settings.release(reserved)
         #expect(settings.nextFileNumber == 1)
     }
 }

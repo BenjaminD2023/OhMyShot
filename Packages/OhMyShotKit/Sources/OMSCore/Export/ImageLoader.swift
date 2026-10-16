@@ -11,6 +11,9 @@ public enum ImageLoader {
         public let image: CGImage
         /// Pixels per point.
         public let scale: CGFloat
+        /// Whether the file said nothing about its resolution (none, or 72 dpi), so `scale` is the fallback that was
+        /// asked for and not something known of the picture.
+        public let usesFallbackScale: Bool
     }
 
     /// Larger images are scaled down to this many pixels: recognition reads no more from them, and a
@@ -58,8 +61,9 @@ public enum ImageLoader {
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         // PNG stores resolution per meter, so 144 dpi reads back as 143.99: snapped to quarter steps.
         let dpi = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue ?? 72
-        let scale = dpi > 72.5 ? (dpi / 72 * 4).rounded() / 4 : Double(fallbackScale)
+        let isKnown = dpi > 72.5
+        let scale = isKnown ? (dpi / 72 * 4).rounded() / 4 : Double(fallbackScale)
         let decoded = Double(max(image.width, image.height)) / Double(longest)
-        return Loaded(image: image, scale: max(1, scale * decoded))
+        return Loaded(image: image, scale: max(1, scale * decoded), usesFallbackScale: !isKnown)
     }
 }

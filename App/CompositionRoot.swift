@@ -322,6 +322,10 @@ final class CompositionRoot {
             self?.didCapture(item)
         }
         recordings.copiedToClipboard = { [weak self] id in self?.recordingCopied(id) }
+        // A recording copied from its card, History, or its window goes to the clipboard as a reference to its file too.
+        captures.files.recordingCopied = { [weak self] id in self?.recordingCopied(id) }
+        // A recording's window holds the recording while it is open, and lets go of it when it closes.
+        recordings.windowClosed = { [weak self] id in self?.releaseIfUnheld(id) }
         captures.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
         recordings.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
         recordings.onStatus = { [weak self] status in
@@ -393,6 +397,8 @@ final class CompositionRoot {
         annotations.onChange = { [weak self] entry, data in
             self?.pictureChanged(entry, data: data)
         }
+        // A card is not closed by itself under the editor that has its capture open.
+        annotations.onEditing = { [weak self] id, editing in self?.quickAccess.setEditing(editing, for: id) }
         annotations.saveCopy = { [weak self] entry, file in
             guard let self, let saved = await captures.files.saveScreenshot(fileAt: file, entry: entry, asks: true) else { return nil }
             quickAccess.markSaved(entry.id, at: saved)
@@ -728,13 +734,14 @@ final class CompositionRoot {
     /// Open from Clipboard, a shortcut and the URL API's `open-from-clipboard`: the clipboard's picture in the editor,
     /// added to the history first. Beeps when the clipboard holds none.
     private func annotateClipboard() {
-        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
         switch PasteboardImage.read(.general) {
         case .file(let url):
             open([url])
         case .data(let data):
-            guard let loaded = ImageLoader.load(data: data, fallbackScale: scale) else { return NSSound.beep() }
-            Task { await annotate(image: loaded.image, scale: loaded.scale, name: String(localized: "Clipboard")) }
+            // As a file opened with Open With is: at the resolution it says, else one pixel per point. It is named as a
+            // capture is, from the file name pattern.
+            guard let loaded = ImageLoader.load(data: data) else { return NSSound.beep() }
+            Task { await annotate(loaded, name: nil) }
         case nil:
             Log.automation.notice("Open from Clipboard: no picture on the clipboard")
             NSSound.beep()
@@ -843,9 +850,8 @@ final class CompositionRoot {
 
     /// Opens a picture a shortcut hands over in the editor, added to the history first.
     func annotateForShortcut(_ data: Data, name: String) async throws {
-        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
-        guard let loaded = ImageLoader.load(data: data, fallbackScale: scale) else { throw ShortcutError.unreadableImage }
-        await annotate(image: loaded.image, scale: loaded.scale, name: name)
+        guard let loaded = ImageLoader.load(data: data) else { throw ShortcutError.unreadableImage }
+        await annotate(loaded, name: name)
     }
 
     /// Runs a URL API command for a shortcut, which needs no caller's approval: the user made the shortcut.
@@ -876,11 +882,10 @@ final class CompositionRoot {
     private func didCapture(_ item: QuickAccessItem) {
         if settings.afterCapture(for: item.kind).showsQuickAccess {
             quickAccess.add(item)
-        } else if settings.historyRetention == .never, !uploads.uploadingIDs.contains(item.id), item.id != clipboardRecordingID,
-                  let entry = history.item(id: item.id) {
-            // Nothing else holds on to it: a screenshot already went to the clipboard as a picture, and a copy was
-            // saved to the export folder.
-            history.delete(entry)
+        } else {
+            // With history off and no card, nothing else may hold on to it: a screenshot already went to the clipboard
+            // as a picture, and a copy was saved to the export folder. A recording's Studio window, for one, holds it.
+            releaseIfUnheld(item.id)
         }
         removeExpiredHistory()
         readTextSoon()
@@ -952,11 +957,9 @@ final class CompositionRoot {
         settings.afterCapture(for: history.item(id: id)?.kind ?? .screenshot).showsQuickAccess
     }
 
+    /// With history off, a capture lives as long as something holds it (`heldCaptureIDs`); deletes it once nothing does.
     private func releaseIfUnheld(_ id: UUID) {
-        guard
-            settings.historyRetention == .never, !quickAccess.itemIDs.contains(id), !annotations.openCaptureIDs.contains(id),
-            !uploads.uploadingIDs.contains(id), id != clipboardRecordingID, let entry = history.item(id: id)
-        else { return }
+        guard settings.historyRetention == .never, !heldCaptureIDs.contains(id), let entry = history.item(id: id) else { return }
         history.delete(entry)
         historyWindow?.reload()
         sweepWallpaperPictures()
@@ -1027,16 +1030,18 @@ final class CompositionRoot {
             Log.automation.error("Share hand-over refused: \(String(describing: error), privacy: .public)")
             return NSSound.beep()
         }
-        let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
+        // A pin is shown at the size a picture with no resolution of its own had on screen; the editor takes it at one pixel
+        // per point, as it does a file opened with Open With.
+        let pinScale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
         Task {
             var opened = 0
             for url in pictures {
-                guard let picture = await Self.loadImage(url, fallbackScale: scale) else {
+                guard let picture = await Self.loadImage(url, fallbackScale: handoff.action == .pin ? pinScale : 1) else {
                     Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) shared to \(handoff.action.rawValue, privacy: .public) it")
                     continue
                 }
                 switch handoff.action {
-                case .annotate: await annotate(image: picture.image, scale: picture.scale, name: url.deletingPathExtension().lastPathComponent)
+                case .annotate: await annotate(picture, name: url.deletingPathExtension().lastPathComponent)
                 case .pin: pins.pin(picture.image, scale: picture.scale, origin: .clipboard)
                 }
                 opened += 1
@@ -1068,23 +1073,36 @@ final class CompositionRoot {
             NSSound.beep()
             return
         }
-        await annotate(image: loaded.image, scale: loaded.scale, name: url.deletingPathExtension().lastPathComponent)
+        await annotate(loaded, name: url.deletingPathExtension().lastPathComponent)
+    }
+
+    /// Opens a picture from a file or the clipboard in the editor. A picture whose file said nothing of its resolution
+    /// (none, or 72 dpi) is one pixel per point, opened and kept in the history so: saving at 1× leaves it at its size
+    /// rather than halving it on a guess, and a pin or a print shows it at its size too.
+    /// `name`: what it is called in the history; nil names it from the file name pattern, as a capture is.
+    private func annotate(_ loaded: ImageLoader.Loaded, name: String?) async {
+        let scale = loaded.usesFallbackScale ? 1 : loaded.scale
+        await annotate(image: loaded.image, scale: scale, pixelsPerPoint: Double(scale), name: name)
     }
 
     /// Opens a picture with no capture of its own in the editor, added to the history first so its marks
-    /// are kept like a capture's.
-    private func annotate(image: CGImage, scale: CGFloat, name: String) async {
+    /// are kept like a capture's. `pixelsPerPoint` is the scale the history records, nil when the picture has none of its
+    /// own; `scale` is what the editor opens it at.
+    private func annotate(image: CGImage, scale: CGFloat, pixelsPerPoint: Double?, name: String?) async {
+        let date = Date.now
+        let fileName = name ?? settings.nextFileName(date: date, appName: nil, windowTitle: nil)
         do {
             let png = try await ImageExporter.encode(image, as: .png)
             let entry = try history.add(
-                data: png, name: name, fileExtension: ImageExporter.Format.png.fileExtension,
-                kind: .screenshot, pixelWidth: image.width, pixelHeight: image.height, appName: nil, pixelsPerPoint: Double(scale)
+                data: png, name: fileName, fileExtension: ImageExporter.Format.png.fileExtension,
+                kind: .screenshot, pixelWidth: image.width, pixelHeight: image.height, appName: nil, pixelsPerPoint: pixelsPerPoint,
+                isTemplateNamed: name == nil ? true : nil, date: date
             )
             historyWindow?.reload()
             readTextSoon()
             annotations.annotate(entry, scale: scale)
         } catch {
-            Log.capture.error("Adding \(name, privacy: .public) to the history failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Adding \(fileName, privacy: .public) to the history failed: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
         }
     }
@@ -1135,7 +1153,7 @@ final class CompositionRoot {
                 if case .capture(let id) = pin.origin, let entry = history.item(id: id) {
                     annotations.annotate(entry, scale: scale)
                 } else {
-                    Task { await self.annotate(image: image, scale: scale, name: String(localized: "Pin")) }
+                    Task { await self.annotate(image: image, scale: scale, pixelsPerPoint: Double(scale), name: String(localized: "Pin")) }
                 }
             },
             recognizeText: { [weak self] pin in
@@ -1287,7 +1305,7 @@ final class CompositionRoot {
     private func makeQuickAccessActions() -> QuickAccessController.Actions {
         var actions = QuickAccessController.Actions(
             copy: { [weak self] item in self?.captures.files.copy(fileAt: item.fileURL) },
-            save: { [weak self] item in await self?.captures.save(item) },
+            save: { [weak self] item, asks in await self?.captures.save(item, asks: asks) },
             saveAs: { [weak self] item in await self?.captures.saveAs(item) },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
             annotate: { [weak self] item in
@@ -1323,14 +1341,9 @@ final class CompositionRoot {
                 historyWindow?.reload()
                 sweepWallpaperPictures()
             },
-            closed: { [weak self] item in
-                // With history off, a capture lives only as long as its card, or its editor.
-                guard
-                    let self, settings.historyRetention == .never, !annotations.openCaptureIDs.contains(item.id),
-                    !uploads.uploadingIDs.contains(item.id), let entry = history.item(id: item.id)
-                else { return }
-                history.delete(entry)
-            }
+            // With history off, a capture lives only as long as something holds it: its card, its editor or window, an
+            // upload, the clipboard. The card is already out of the stack when this is called.
+            closed: { [weak self] item in self?.releaseIfUnheld(item.id) }
         )
         actions.print = { [weak self] item in
             guard let self, item.kind == .screenshot else { return }
@@ -1341,6 +1354,7 @@ final class CompositionRoot {
         actions.preferences = { [weak self] in self?.settings.quickAccessPreferences ?? QuickAccessPreferences() }
         actions.pictureChangeOffer = { [weak self] item in self?.pictureChanges.offer(for: item) ?? .unsupported }
         actions.changePicture = { [weak self] item, change in self?.pictureChanges.apply(change, to: item) }
+        actions.isBeingEdited = { [weak self] item in self?.annotations.openCaptureIDs.contains(item.id) ?? false }
         actions.sharing = makeSharingActions()
         return actions
     }
@@ -1366,9 +1380,14 @@ final class CompositionRoot {
         history.expired(retention: retention, keeping: heldCaptureIDs).count
     }
 
-    /// Captures something still needs the file of: a card, an open editor, an upload on its way, the clipboard.
+    /// Captures something still needs the file of: a card, an open editor, an open recording window (a Studio one
+    /// included), an upload on its way, the clipboard.
     private var heldCaptureIDs: Set<UUID> {
-        quickAccess.itemIDs.union(annotations.openCaptureIDs).union(uploads.uploadingIDs).union(clipboardRecordingID.map { [$0] } ?? [])
+        quickAccess.itemIDs
+            .union(annotations.openCaptureIDs)
+            .union(recordings.openRecordingIDs)
+            .union(uploads.uploadingIDs)
+            .union(clipboardRecordingID.map { [$0] } ?? [])
     }
 
     private func makeHistoryWindow() -> HistoryWindowController {

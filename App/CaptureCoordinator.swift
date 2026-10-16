@@ -426,10 +426,11 @@ final class CaptureCoordinator {
     // MARK: Saving
 
     /// Saves a copy of a capture to the export location, in the format Settings choose and named from the file name
-    /// pattern; asks for the name first when Settings say so. Nil when it was cancelled or failed.
-    func save(_ item: QuickAccessItem) async -> URL? {
+    /// pattern; asks for the name first when Settings say so and `asks` is true (a save nobody waits at, as a card's
+    /// closing by itself or Save All is, passes false). Nil when it was cancelled or failed.
+    func save(_ item: QuickAccessItem, asks: Bool = true) async -> URL? {
         guard ExportedFiles.isPicture(item.fileURL) else { return save(fileAt: item.fileURL) }
-        return await files.saveScreenshot(fileAt: item.fileURL, asks: true)
+        return await files.saveScreenshot(fileAt: item.fileURL, asks: asks)
     }
 
     /// Saves a copy of a recording's file, or any file that is no screenshot, to the export location, under the file's

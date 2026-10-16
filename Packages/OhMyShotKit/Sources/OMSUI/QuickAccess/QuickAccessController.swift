@@ -8,8 +8,9 @@ public final class QuickAccessController {
     public struct Actions {
         public var copy: (QuickAccessItem) -> Void
         /// Saves a copy to the export location and returns where it went; nil when it was not saved. Converting a
-        /// large capture takes a while, so a card marks itself saved when this returns.
-        public var save: (QuickAccessItem) async -> URL?
+        /// large capture takes a while, so a card marks itself saved when this returns. `asks`: whether it may ask for
+        /// the name first, as Settings say; false for a save nobody waits at (Save All, a card closing by itself).
+        public var save: (QuickAccessItem, _ asks: Bool) async -> URL?
         /// Asks where to save a copy.
         public var saveAs: (QuickAccessItem) async -> URL?
         public var open: (QuickAccessItem) -> Void
@@ -32,6 +33,9 @@ public final class QuickAccessController {
         /// Where the cards stand, how large they are, and when they close by themselves (Settings); read each
         /// time a card appears.
         public var preferences: () -> QuickAccessPreferences = { QuickAccessPreferences() }
+
+        /// Whether the annotation editor has the capture open: a card is not closed by itself under it.
+        public var isBeingEdited: (QuickAccessItem) -> Bool = { _ in false }
 
         /// Turns, flips, or scales the capture's picture, and shows the new one on its card (`update`).
         public var changePicture: (QuickAccessItem, PictureChange) -> Void = { _, _ in }
@@ -64,7 +68,7 @@ public final class QuickAccessController {
 
         public init(
             copy: @escaping (QuickAccessItem) -> Void,
-            save: @escaping (QuickAccessItem) async -> URL?,
+            save: @escaping (QuickAccessItem, _ asks: Bool) async -> URL?,
             saveAs: @escaping (QuickAccessItem) async -> URL?,
             open: @escaping (QuickAccessItem) -> Void,
             annotate: @escaping (QuickAccessItem) -> Void,
@@ -112,8 +116,9 @@ public final class QuickAccessController {
     }
     #endif
     private var stack: CardStackView?
-    /// The captures being saved now.
-    private var saving: Set<UUID> = []
+    /// The saves under way, by capture: a second request for one joins it instead of saving again, so a double ⌘S, or a
+    /// card closing by itself under a Save being asked for, saves once and takes one number.
+    private let saves = SingleFlight<UUID, URL?>()
     private var items: [QuickAccessItem] = []
     private var recentlyClosed: [QuickAccessItem] = []
     /// The display the stack sits on.
@@ -165,6 +170,7 @@ public final class QuickAccessController {
         // A card brought back anew starts its time again; one already up keeps its own.
         schedule.restart(item.id)
         if let upload = actions.sharing.current(item) { hold(.upload, for: item.id, if: upload.holdsCard) }
+        if actions.isBeingEdited(item) { hold(.editor, for: item.id, if: true) }
         reselectIfNeeded()
         updateCountdowns()
     }
@@ -204,6 +210,12 @@ public final class QuickAccessController {
     public func setUpload(_ upload: CardUpload?, for id: UUID) {
         stack?.setUpload(upload, for: id)
         hold(.upload, for: id, if: upload?.holdsCard ?? false)
+    }
+
+    /// The annotation editor opened (or closed) on a capture. A card is not closed by itself while it is open, and has
+    /// at least `CardCountdown.grace` more seconds once it is closed.
+    public func setEditing(_ editing: Bool, for id: UUID) {
+        hold(.editor, for: id, if: editing)
     }
 
     /// Where a capture's card is on screen, if it has one: for a confirmation shown beside it.
@@ -249,16 +261,19 @@ public final class QuickAccessController {
     }
 
     public func dismissAll() {
-        items.forEach(close)
+        // The cards are out of the stack when each is told it closed, so none of them still counts as holding its capture.
+        let closing = items
         items.removeAll()
+        closing.forEach(close)
         refresh()
     }
 
-    /// Saves a copy of every card's capture that has not been saved, as Save does on each.
+    /// Saves a copy of every card's capture that has not been saved, as Save does on each, but under the file name
+    /// pattern without asking: it is one command for many files, which Escape on one would not stop.
     public func saveAll() {
         let unsaved = items.filter { $0.savedURL == nil }
         Task {
-            for item in unsaved { recordSave(of: item, at: await actions.save(item)) }
+            for item in unsaved { await save(item, .quiet) }
         }
     }
 
@@ -365,8 +380,8 @@ public final class QuickAccessController {
     private func makeStack() -> CardStackView {
         let stack = CardStackView()
         stack.onCopy = { [weak self] item in self?.actions.copy(item) }
-        stack.onSave = { [weak self] item in self?.save(item, asking: false) }
-        stack.onSaveAs = { [weak self] item in self?.save(item, asking: true) }
+        stack.onSave = { [weak self] item in Task { await self?.save(item, .save) } }
+        stack.onSaveAs = { [weak self] item in Task { await self?.save(item, .saveAs) } }
         stack.onOpen = { [weak self] item in self?.actions.open(item) }
         stack.onAnnotate = { [weak self] item in self?.actions.annotate(item) }
         stack.onReveal = { [weak self] item in self?.actions.reveal(item) }
@@ -402,15 +417,29 @@ public final class QuickAccessController {
         return stack
     }
 
-    /// Saves a capture, and marks its card saved once it is. A second request for a capture still being saved waits for
-    /// the first.
-    private func save(_ item: QuickAccessItem, asking: Bool) {
-        guard saving.insert(item.id).inserted else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            let url = await asking ? actions.saveAs(item) : actions.save(item)
-            saving.remove(item.id)
+    /// How a capture is saved.
+    private enum SaveKind {
+        /// The card's Save: named from the file name pattern, asking for the name when Settings say so.
+        case save
+        /// Save As…, in the system's panel.
+        case saveAs
+        /// A save nobody waits at (Save All, a card closing by itself): named from the pattern, never asked.
+        case quiet
+    }
+
+    /// Saves a capture, and marks its card saved once it is; the copy's URL, or nil when none was saved. A second
+    /// request for a capture still being saved waits for the first and has its answer, whatever kind it is, so a
+    /// capture is saved once however many ways ask.
+    @discardableResult
+    private func save(_ item: QuickAccessItem, _ kind: SaveKind) async -> URL? {
+        await saves.run(item.id) { [self] in
+            let url = switch kind {
+            case .save: await actions.save(item, true)
+            case .saveAs: await actions.saveAs(item)
+            case .quiet: await actions.save(item, false)
+            }
             recordSave(of: item, at: url)
+            return url
         }
     }
 
@@ -469,11 +498,13 @@ public final class QuickAccessController {
         for id in schedule.takeDue(at: Self.now) {
             guard let item = item(id) else { continue }
             if actions.preferences().closeAction == .saveAndClose, item.savedURL == nil {
-                // The card goes once its copy is saved (which may first ask for a name). A copy that could not be
-                // saved leaves the card, which may be the capture's only holder; it is not tried again.
+                // The card goes once its copy is saved, which never asks for a name: nobody is waiting for it. A copy that
+                // could not be saved leaves the card, which may be the capture's only holder; it is not tried again. A
+                // copy being saved already (by hand) is the one waited for.
                 Task {
-                    guard let url = await actions.save(item) else { return schedule.keepOpen(id) }
-                    recordSave(of: item, at: url)
+                    let saved = await save(item, .quiet)
+                    guard self.item(id) != nil else { return }
+                    guard saved != nil else { return schedule.keepOpen(id) }
                     dismiss(id)
                 }
                 continue
@@ -570,10 +601,10 @@ public final class QuickAccessController {
             stack?.showCopied(item.id)
         case .save:
             // As the card's Save button: a saved card shows the copy in Finder.
-            if item.savedURL != nil { actions.reveal(item) } else { Task { recordSave(of: item, at: await actions.save(item)) } }
+            if item.savedURL != nil { actions.reveal(item) } else { Task { await save(item, .save) } }
         case .saveAs:
             endKeyboard()
-            Task { recordSave(of: item, at: await actions.saveAs(item)) }
+            Task { await save(item, .saveAs) }
         case .annotate:
             endKeyboard()
             actions.annotate(item)

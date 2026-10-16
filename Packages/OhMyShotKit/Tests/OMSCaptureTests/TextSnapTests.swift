@@ -123,15 +123,57 @@ struct SelectionSnappingTests {
     }
 
     /// A corner set to the pixel with the arrow keys stays there: the pointer's next move does not snap it back.
-    @Test func aNudgePlacesEdgesFreelyForTheRestOfTheDrag() {
+    @Test func aNudgePlacesEdgesFreelyForTheRestOfTheDrag() throws {
         var model = SelectionModel(bounds: bounds, pixelsPerPoint: 1)
         model.begin(at: CGPoint(x: 95, y: 585))
         model.drag(to: CGPoint(x: 505, y: 495), snapping: snap)
         #expect(!model.snappedEdges.isEmpty)
+        let snapped = try #require(model.rect)
         model.nudge(by: CGVector(dx: 1, dy: 0))
+        // Gone on from where the snap put the edges: the dragged corner (right, bottom) moves a point, no edge goes back to
+        // the pointer.
+        let nudged = CGRect(x: snapped.minX, y: snapped.minY, width: snapped.width + 1, height: snapped.height)
+        #expect(model.rect == nudged)
         model.drag(to: CGPoint(x: 505, y: 495), snapping: snap)
-        #expect(model.rect == CGRect(x: 95, y: 495, width: 411, height: 90))
+        #expect(model.rect == nudged)
         #expect(model.snappedEdges.isEmpty)
+    }
+
+    /// The first arrow press after a snap moves the dragged corner by its distance and nothing else, whichever corner is
+    /// dragged and which way the key points.
+    @Test func aNudgeAfterASnapMovesOnlyTheDraggedCorner() throws {
+        // Dragged up and to the left of the block's corner: the pointer's corner is the top left.
+        var model = SelectionModel(bounds: bounds, pixelsPerPoint: 1)
+        model.begin(at: CGPoint(x: 505, y: 495))
+        model.drag(to: CGPoint(x: 95, y: 585), snapping: snap)
+        #expect(model.snappedEdges == [.left, .right, .top, .bottom])
+        let snapped = try #require(model.rect)
+        // Down is negative in global points: a point left, and a point down, which shortens the selection.
+        model.nudge(by: CGVector(dx: -1, dy: -1))
+        #expect(model.rect == CGRect(x: snapped.minX - 1, y: snapped.minY, width: snapped.width + 1, height: snapped.height - 1))
+        // The corner stays where the keys put it, that far from the pointer, as the pointer moves on.
+        model.drag(to: CGPoint(x: 105, y: 590))
+        // The corner is that far right of the pointer's 105 (none), and two points below its 590.
+        #expect(model.rect == CGRect(x: 105, y: snapped.minY, width: snapped.maxX - 105, height: 588 - snapped.minY))
+        #expect(model.snappedEdges.isEmpty)
+    }
+
+    /// A key that moves nothing (the corner is at the display's edge) is not a nudge: the selection stays as the snap made
+    /// it, and goes on snapping.
+    @Test func aNudgeThatShowsNothingLeavesTheSnap() throws {
+        // A block that ends 4 points (the snap's margin) short of the display's right edge: its right edge snaps onto it.
+        let edge = TextSnap(blocks: [CGRect(x: 1700, y: 500, width: 296, height: 80)])
+        var model = SelectionModel(bounds: bounds, pixelsPerPoint: 1)
+        model.begin(at: CGPoint(x: 1695, y: 585))
+        model.drag(to: CGPoint(x: 1994, y: 495), snapping: edge)
+        let snapped = try #require(model.rect)
+        #expect(snapped.maxX == bounds.maxX && model.snappedEdges.contains(.right))
+        let edges = model.snappedEdges
+        model.nudge(by: CGVector(dx: 1, dy: 0))
+        #expect(model.rect == snapped && model.snappedEdges == edges && !model.isNudged)
+        // Not set by hand, so the pointer's next move snaps still.
+        model.drag(to: CGPoint(x: 1996, y: 494), snapping: edge)
+        #expect(model.snappedEdges == edges)
     }
 
     @Test func commandPlacesEdgesFreelyForTheRestOfTheDrag() {

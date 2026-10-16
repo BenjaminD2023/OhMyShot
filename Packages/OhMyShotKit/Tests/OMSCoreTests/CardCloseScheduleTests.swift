@@ -97,6 +97,24 @@ struct CardCloseScheduleTests {
         #expect(schedule.timeUntilNextClose(at: 1) == nil)
     }
 
+    /// The editor having a capture open holds its card like an upload does, and the card gets its grace once the editor
+    /// closes. A hold made before the card counted (its editor was open while the card was closed) is there when it starts.
+    @Test func aCardUnderItsEditorIsNotClosed() {
+        var schedule = CardCloseSchedule()
+        schedule.sync(cards: [first], interval: 10, at: 0)
+        schedule.hold(.editor, for: first, if: true, at: 8)
+        #expect(schedule.holds(on: first) == [.editor])
+        #expect(schedule.timeUntilNextClose(at: 500) == nil)
+        #expect(schedule.takeDue(at: 500).isEmpty)
+        schedule.hold(.editor, for: first, if: false, at: 500)
+        #expect(schedule.timeUntilNextClose(at: 500) == CardCountdown.grace)
+        // Opened before the card was counting.
+        schedule.hold(.editor, for: second, if: true, at: 600)
+        schedule.sync(cards: [first, second], interval: 10, at: 600)
+        #expect(schedule.isCounting(second) && schedule.holds(on: second) == [.editor])
+        #expect(schedule.takeDue(at: 700) == [first])
+    }
+
     @Test func aCardBroughtBackStartsItsTimeAgain() {
         var schedule = CardCloseSchedule()
         schedule.sync(cards: [first], interval: 10, at: 0)

@@ -44,7 +44,7 @@ struct FileNameSettings: View {
                 Toggle(isOn: $settings.asksForFileName) {
                     Text("Ask for a name when saving", bundle: .module)
                 }
-                InfoButton(Text("Save, and saving after a capture, ask for the file’s name first, offering the one above. Return saves; Escape doesn’t save. A save started by a URL command or a shortcut never asks.", bundle: .module))
+                InfoButton(Text("Save, and saving after a capture, ask for the file’s name first, offering the one above. Return saves; Escape doesn’t save. A save started by a URL command or a shortcut never asks, nor does Save All or a card that saves itself as it closes.", bundle: .module))
             }
         }
     }

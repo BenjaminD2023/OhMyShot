@@ -101,17 +101,30 @@ public struct SelectionModel: Equatable, Sendable {
     /// the keys then move from. A nudge the selection does not show (the shape held across it, or the room ran out)
     /// is not kept, so no hidden distance builds up for a later release of Shift to bring out. Once nudged, the
     /// selection no longer snaps to text for the rest of the drag.
+    ///
+    /// A selection whose edges snapped to text is nudged from where the snap put them, not from the pointer: the
+    /// edges stay where they were, and only the dragged corner moves, by the key's distance.
     public mutating func nudge(by delta: CGVector, modifiers: Modifiers = []) {
-        guard anchor != nil, let pointer else { return }
-        let before = (rect: rect, offset: cornerOffset)
-        let current = corner(of: pointer)
+        guard let anchor, let pointer else { return }
+        let before = self
         let base = clamped(pointer)
+        var current = corner(of: pointer)
+        let fromSnap = rect != nil && !snappedEdges.isEmpty
+        if let rect, fromSnap {
+            // The snap moved the anchor's edges as well as the pointer's: the selection as shown is the one to go on from.
+            let right = current.x >= anchor.x, up = current.y >= anchor.y
+            self.anchor = CGPoint(x: right ? rect.minX : rect.maxX, y: up ? rect.minY : rect.maxY)
+            current = CGPoint(x: right ? rect.maxX : rect.minX, y: up ? rect.maxY : rect.minY)
+        }
         let target = clamped(CGPoint(x: current.x + delta.dx, y: current.y + delta.dy))
         cornerOffset = CGVector(dx: target.x - base.x, dy: target.y - base.y)
         drag(to: pointer, modifiers: modifiers)
-        if before.rect != nil, rect == before.rect { cornerOffset = before.offset }
+        if before.rect != nil, rect == before.rect {
+            self = before
+            return
+        }
         // Set to the pixel by hand: snapping to text would undo it at the pointer's next move.
-        if isNudged { placedFreely = true }
+        if isNudged || fromSnap { placedFreely = true }
     }
 
     /// Whether the arrow keys have moved the dragged corner off the pointer.
