@@ -9,7 +9,7 @@ import Foundation
 /// `scale` turns them into pixels, so a 4 pt arrow is 8 px wide on a Retina capture and looks as it would
 /// have drawn over the original window.
 nonisolated public struct AnnotationDocument: Codable, Sendable, Equatable {
-    /// The capture's size in pixels.
+    /// The capture's size in pixels, as it was taken.
     public var pixelSize: CGSize
     /// Pixels per point of the screen the capture came from (2 for a Retina capture).
     public var scale: CGFloat
@@ -20,6 +20,10 @@ nonisolated public struct AnnotationDocument: Codable, Sendable, Equatable {
     public var items: [Annotation]
     /// The background the capture sits on, if any. Marks may reach onto it.
     public var backdrop: Backdrop?
+    /// How the capture was turned, flipped, and resized; nil when it is as it was taken. Everything else in
+    /// the document (marks, canvas) is in the pixels of the picture this makes. Left out of the file while
+    /// nil, so documents made before it existed read as they were.
+    public var transform: CaptureTransform?
 
     public init(pixelSize: CGSize, scale: CGFloat, items: [Annotation] = [], backdrop: Backdrop? = nil) {
         self.pixelSize = pixelSize
@@ -29,11 +33,11 @@ nonisolated public struct AnnotationDocument: Codable, Sendable, Equatable {
         self.backdrop = backdrop
     }
 
-    /// The capture itself, in its own pixels.
-    public var imageBounds: CGRect { CGRect(origin: .zero, size: pixelSize) }
+    /// The picture the marks lie on: the capture, turned and resized if it was, in its own pixels.
+    public var imageBounds: CGRect { CGRect(origin: .zero, size: pictureSize) }
 
-    /// Nothing drawn, cropped, or set behind the capture: it is what was taken.
-    public var isEmpty: Bool { items.isEmpty && canvas == imageBounds && backdrop == nil }
+    /// Nothing drawn, cropped, turned, or set behind the capture: it is what was taken.
+    public var isEmpty: Bool { items.isEmpty && canvas == imageBounds && backdrop == nil && transform == nil }
 
     public func index(of id: Annotation.ID) -> Int? {
         items.firstIndex { $0.id == id }
@@ -77,6 +81,8 @@ nonisolated public enum Shape: Codable, Sendable, Equatable {
     case pen(Stroke)
     /// A translucent marker that darkens the picture under it, so text stays legible.
     case highlighter(Stroke)
+    /// The highlighter as a box: a rectangle of marker color multiplied into the picture.
+    case highlightBox(Box)
     /// The highlighter laid along text: a band over each line, each the height of its text.
     case textHighlight(TextHighlight)
     case text(TextBlock)
@@ -128,7 +134,7 @@ nonisolated public struct Line: Codable, Sendable, Equatable {
     }
 }
 
-/// A rectangle or an ellipse. The stroke is centered on the edge of `rect`.
+/// A rectangle, an ellipse, or a highlight box. The stroke is centered on the edge of `rect`.
 nonisolated public struct Box: Codable, Sendable, Equatable {
     public var rect: CGRect
     /// Filled with the color instead of outlined.
@@ -264,10 +270,13 @@ nonisolated public struct PlacedImage: Codable, Sendable, Equatable {
     public var rect: CGRect
     /// Its name in the picture store.
     public var name: String
+    /// How it is turned or flipped in `rect` when the capture was; nil as it is stored.
+    public var orientation: Orientation?
 
-    public init(rect: CGRect, name: String) {
+    public init(rect: CGRect, name: String, orientation: Orientation? = nil) {
         self.rect = rect
         self.name = name
+        self.orientation = orientation
     }
 }
 

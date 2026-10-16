@@ -46,6 +46,7 @@ public final class InPlaceAnnotationView: NSView {
     private var finished = false
     /// What the capsule was last shown for, so a new tool or selection fades it in.
     private var capsuleAnchor: String?
+    private var savedColorsObserver: NSObjectProtocol?
 
     private enum Adjustment {
         case moving(start: CGPoint, original: CGRect)
@@ -96,6 +97,10 @@ public final class InPlaceAnnotationView: NSView {
             return cursor(at: convert(point, from: canvas), overCanvas: true)
         }
         session.observe { [weak self] event in self?.sessionChanged(event) }
+        // A color kept here shows in the capsule at once.
+        savedColorsObserver = NotificationCenter.default.addObserver(forName: SavedColors.didChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshCapsule() }
+        }
         toolbar.select(nil)
         layoutSelection()
         setAccessibilityElement(true)
@@ -107,6 +112,10 @@ public final class InPlaceAnnotationView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    isolated deinit {
+        if let savedColorsObserver { NotificationCenter.default.removeObserver(savedColorsObserver) }
     }
 
     public override var isFlipped: Bool { true }

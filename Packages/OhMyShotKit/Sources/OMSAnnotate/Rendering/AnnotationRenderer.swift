@@ -30,7 +30,7 @@ nonisolated public enum AnnotationRenderer {
             context.setFillColor(color)
             context.addPath(path)
             context.fillPath()
-        case .highlighter, .textHighlight:
+        case .highlighter, .textHighlight, .highlightBox:
             guard let path = MarkPaths.outline(of: item, scale: scale) else { return }
             switch ground {
             case .light:
@@ -104,7 +104,7 @@ nonisolated public enum AnnotationRenderer {
             }
             if item.style.shadow { applyShadow(to: context, scale: scale, flippedBacking: flippedBacking) }
             context.interpolationQuality = .high
-            drawImage(image, in: rect, context: context)
+            drawImage(image, in: rect, orientation: placed.orientation, context: context)
         }
     }
 
@@ -136,8 +136,10 @@ nonisolated public enum AnnotationRenderer {
         flatten(document, base: base)
     }
 
-    /// `render`, on the caller's thread.
+    /// `render`, on the caller's thread. `base` is the capture as it was taken: the picture is made from it
+    /// and the document's turns and size.
     public static func flatten(_ document: AnnotationDocument, base: CGImage) -> CGImage? {
+        guard let base = document.picture(from: base) else { return nil }
         let canvas = document.canvas.standardized.integral
         let layout = document.backdrop == nil ? nil : document.backdropLayout(edges: EdgeAnalysis.of(base, canvas: canvas))
         let output = (layout?.output ?? canvas).integral
@@ -186,7 +188,8 @@ nonisolated public enum AnnotationRenderer {
         return context.makeImage()
     }
 
-    /// The capture and the images combined into it, as they lie under every mark.
+    /// The capture and the images combined into it, as they lie under every mark. `base` is the picture
+    /// (`AnnotationDocument.picture(from:)`), in the document's own pixels.
     static func drawPicture(_ document: AnnotationDocument, base: CGImage, in context: CGContext) {
         drawImage(base, in: document.imageBounds, context: context)
         for item in document.items {
@@ -195,7 +198,8 @@ nonisolated public enum AnnotationRenderer {
     }
 
     /// The capture with the images combined into it, for blurring and pixelating what lies under a
-    /// redaction, and where its top-left corner is in the document; nil when nothing is combined.
+    /// redaction, and where its top-left corner is in the document; nil when nothing is combined. `base` is
+    /// the picture.
     static func redactionSource(_ document: AnnotationDocument, base: CGImage) -> (image: CGImage, origin: CGPoint)? {
         let images = document.items.filter { if case .image = $0.shape { true } else { false } }
         guard !images.isEmpty else { return nil }
@@ -242,6 +246,42 @@ nonisolated public enum AnnotationRenderer {
         context.restoreGState()
     }
 
+    /// Draws an image turned or flipped into `rect` of a y-down user space: `rect` is the size it has once
+    /// held that way.
+    static func drawImage(_ image: CGImage, in rect: CGRect, orientation: Orientation?, context: CGContext) {
+        guard let orientation, !orientation.isIdentity else {
+            drawImage(image, in: rect, context: context)
+            return
+        }
+        let source = CGSize(width: image.width, height: image.height)
+        let held = orientation.size(of: source)
+        context.saveGState()
+        context.translateBy(x: rect.minX, y: rect.minY)
+        context.scaleBy(x: rect.width / held.width, y: rect.height / held.height)
+        context.concatenate(orientation.transform(for: source))
+        drawImage(image, in: CGRect(origin: .zero, size: source), context: context)
+        context.restoreGState()
+    }
+
+    /// `base` held as `orientation` says and scaled to `size` pixels, or nil when no such picture can be made.
+    static func picture(from base: CGImage, orientation: Orientation, size: CGSize) -> CGImage? {
+        let width = Int(size.width)
+        let height = Int(size.height)
+        guard width > 0, height > 0 else { return nil }
+        let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return nil }
+        let held = orientation.size(of: CGSize(width: base.width, height: base.height))
+        // Turning and flipping move whole pixels; only a change of size blends them.
+        context.interpolationQuality = held == size ? .none : .high
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
+        drawImage(base, in: CGRect(origin: .zero, size: size), orientation: orientation, context: context)
+        return context.makeImage()
+    }
+
     /// The mark shadow, sized for the context. Shadow offsets and blurs are in the context's base space:
     /// device pixels with y up, whatever the current transform, so the drop is negative to fall down,
     /// unless the pixels are shown flipped.
@@ -254,6 +294,15 @@ nonisolated public enum AnnotationRenderer {
 }
 
 nonisolated extension AnnotationDocument {
+    /// The picture the marks lie on: `base`, the capture as it was taken, turned, flipped, and resized as
+    /// the document says, in exactly `imageBounds`' pixels. `base` itself while the capture is as taken; nil
+    /// when the picture cannot be made, which the marks, lying in its pixels, must not be drawn on the
+    /// capture instead of.
+    public func picture(from base: CGImage) -> CGImage? {
+        guard let transform, transform.normalized(for: pixelSize) != nil else { return base }
+        return AnnotationRenderer.picture(from: base, orientation: transform.orientation, size: pictureSize)
+    }
+
     /// Every spot, which share one dimming.
     public var spots: [Spot] {
         items.compactMap { item in

@@ -16,7 +16,7 @@ final class ToolRail: NSView {
     /// showing, the picture itself.
     static let groups: [[AnnotationTool]] = [
         [.select],
-        [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter],
+        [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox],
         [.text, .counter],
         [.redact, .spotlight],
         [.crop, .background],
@@ -206,6 +206,7 @@ final class ToolRail: NSView {
         case .ellipse: "circle"
         case .pen: "scribble.variable"
         case .highlighter: "highlighter"
+        case .highlightBox: "rectangle.inset.filled"
         case .text: "textformat"
         case .counter: "1.circle"
         case .redact: "checkerboard.rectangle"
@@ -231,6 +232,7 @@ final class ToolRail: NSView {
         case .ellipse: String(localized: "Ellipse", bundle: .module)
         case .pen: String(localized: "Pen", bundle: .module)
         case .highlighter: String(localized: "Highlighter", bundle: .module)
+        case .highlightBox: String(localized: "Highlight Box", bundle: .module)
         case .text: String(localized: "Text", bundle: .module)
         case .counter: String(localized: "Counter", bundle: .module)
         case .redact: String(localized: "Redact", bundle: .module)

@@ -28,6 +28,10 @@ nonisolated enum MarkPaths {
             let path = CGPath(ellipseIn: box.rect.standardized, transform: nil)
             if box.filled { return path }
             return path.copy(strokingWithWidth: width, lineCap: .butt, lineJoin: .round, miterLimit: 10)
+        case .highlightBox(let box):
+            let rect = box.rect.standardized
+            let radius = max(min(box.cornerRadius * scale, rect.width / 2, rect.height / 2), 0)
+            return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
         case .pen(let stroke), .highlighter(let stroke):
             guard let first = stroke.points.first else { return nil }
             if stroke.points.count == 1 || stroke.points.allSatisfy({ hypot($0.x - first.x, $0.y - first.y) < 0.5 }) {

@@ -53,6 +53,18 @@ enum MainMenu {
             item.tag = Int(action.rawValue)
         }
 
+        // Answered by the annotation editor, which turns, flips, and resizes its picture; off with no editor in front.
+        let image = submenu(String(localized: "Image"), in: menu)
+        let size = image.addItem(withTitle: String(localized: "Image Size…"), action: Selector(("showImageSize:")), keyEquivalent: "i")
+        size.keyEquivalentModifierMask = [.command, .option]
+        image.addItem(.separator())
+        image.addItem(withTitle: String(localized: "Rotate Left"), action: Selector(("rotateLeft:")), keyEquivalent: "l")
+        image.addItem(withTitle: String(localized: "Rotate Right"), action: Selector(("rotateRight:")), keyEquivalent: "r")
+        image.addItem(withTitle: String(localized: "Flip Horizontal"), action: Selector(("flipHorizontal:")), keyEquivalent: "")
+        image.addItem(withTitle: String(localized: "Flip Vertical"), action: Selector(("flipVertical:")), keyEquivalent: "")
+        image.addItem(.separator())
+        image.addItem(withTitle: String(localized: "Lock Canvas"), action: Selector(("toggleCanvasLock:")), keyEquivalent: "")
+
         let window = submenu(String(localized: "Window"), in: menu)
         window.addItem(withTitle: String(localized: "Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         window.addItem(withTitle: String(localized: "Zoom"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")

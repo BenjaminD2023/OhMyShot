@@ -35,6 +35,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public var onSave: (() -> Void)?
     public var onSaveProject: (() -> Void)?
     public var onPrint: (() -> Void)?
+    /// Asks for the size to scale the picture to, which the host shows its own way.
+    public var onImageSize: (() -> Void)?
 
     private enum Drag {
         case creating(id: Annotation.ID, tool: AnnotationTool, start: CGPoint)
@@ -75,6 +77,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var laidOut: Frames?
     /// The images blurs and pixelations were last made over.
     private var redactionImages: [Annotation] = []
+    /// The picture the image layer shows, which a turn, a flip, or a resize replaces.
+    private var shownPicture: CGImage?
     private var markLayers: [Annotation.ID: MarkLayer] = [:]
     private let selectionLayer = SelectionLayer()
     private let cropLayer = CropLayer()
@@ -108,7 +112,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         host.autoresizingMask = [.width, .height]
         addSubview(host)
 
-        imageLayer.contents = session.base
+        imageLayer.contents = session.picture
+        shownPicture = session.picture
         imageLayer.zPosition = -1
         keptLayer.masksToBounds = true
         keptLayer.addSublayer(imageLayer)
@@ -355,7 +360,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         keptLayer.frame = local(frames.picture).offsetBy(dx: -card.minX, dy: -card.minY)
         imageLayer.frame = CGRect(
             x: (session.document.imageBounds.minX - frames.picture.minX) * zoom, y: (session.document.imageBounds.minY - frames.picture.minY) * zoom,
-            width: session.document.pixelSize.width * zoom, height: session.document.pixelSize.height * zoom
+            width: session.document.imageBounds.width * zoom, height: session.document.imageBounds.height * zoom
         )
         // Pixels show as pixels once each covers two or more device pixels; smaller, they blend.
         let devicePerPixel = zoom * (window?.backingScaleFactor ?? 2)
@@ -592,8 +597,20 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case .document:
             CATransaction.begin()
             CATransaction.setDisableActions(true)
+            let picture = showCurrentPicture()
             syncMarks()
-            if frames != laidOut {
+            if picture {
+                // Blurs and highlights read the picture, which is another now.
+                for layer in markLayers.values {
+                    updateRedaction(layer)
+                    updateGround(layer)
+                }
+                if session.tool == .crop {
+                    cropRect = session.document.canvas
+                    cropLayer.frameRect = viewRect(session.document.canvas)
+                }
+            }
+            if frames != laidOut || picture {
                 // What is shown changed (a crop, a background): laid out again at the zoom the person
                 // chose, so a slider never makes a zoomed-in picture jump; a fitted picture fits again.
                 updateViewport()
@@ -654,6 +671,18 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         if event == .tool { updateAccessibility() }
     }
 
+    /// Shows the picture the session has now, fitted to the view, when a turn, a flip, or a resize (or its
+    /// undo) replaced it; true when it did.
+    private func showCurrentPicture() -> Bool {
+        let picture = session.picture
+        guard picture !== shownPicture else { return false }
+        shownPicture = picture
+        imageLayer.contents = picture
+        userZoom = nil
+        focus = nil
+        return true
+    }
+
     private func syncMarks() {
         let document = session.document
         let scale = window?.backingScaleFactor ?? 2
@@ -665,6 +694,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             let layer: MarkLayer
             if let existing = markLayers[item.id] {
                 layer = existing
+                if layer.scale != document.scale {
+                    // Resizing the picture scales what point sizes come to in pixels.
+                    layer.scale = document.scale
+                    layer.setNeedsDisplay()
+                }
                 if layer.mark != item {
                     let reshaped = layer.mark.shape != item.shape
                     layer.mark = item
@@ -702,7 +736,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
         let source = session.redactionSource
         layer.redacted = Redactor.image(
-            for: redaction, id: layer.mark.id, base: source?.image ?? session.base, origin: source?.origin ?? .zero, scale: session.document.scale
+            for: redaction, id: layer.mark.id, base: source?.image ?? session.picture, origin: source?.origin ?? .zero, scale: session.document.scale
         )
     }
 
@@ -710,7 +744,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func updateGround(_ layer: MarkLayer) {
         guard layer.mark.multiplies else { return }
         let source = session.redactionSource
-        layer.ground = HighlightGround.under(layer.mark, in: source?.image ?? session.base, origin: source?.origin ?? .zero, scale: session.document.scale)
+        layer.ground = HighlightGround.under(layer.mark, in: source?.image ?? session.picture, origin: source?.origin ?? .zero, scale: session.document.scale)
     }
 
     /// Makes blurs and pixelations again over images that moved, once a drag has ended, and reads again
@@ -748,6 +782,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         if session.tool != .select { session.select([]) }
         if session.tool == .crop {
             cropRect = session.document.canvas
+            // Each crop starts free: the frame is the whole canvas, which a ratio may not fit.
+            session.setCropRatio(.free)
             cropLayer.isHidden = false
             // The whole capture shows while cropping.
             userZoom = nil
@@ -773,9 +809,32 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         applyCrop(cropRect)
     }
 
+    /// The crop frame with `handle` dragged to `point`: held to the chosen ratio, whatever the keys; with
+    /// none chosen, Shift keeps the shape the frame had (a square when it was only a point).
+    private func croppedRect(_ original: CGRect, dragging handle: Handle, to point: CGPoint, keepingShape shift: Bool) -> CGRect {
+        if let ratio = session.cropRatio.value(forPicture: session.document.imageBounds.size) {
+            return CropRatio.resized(original, dragging: handle, to: point, ratio: ratio)
+        }
+        guard shift else { return Geometry.resized(original, dragging: handle, to: point, keepingAspect: false) }
+        let shape = original.width > 0 && original.height > 0 ? original.width / original.height : 1
+        return CropRatio.resized(original, dragging: handle, to: point, ratio: shape)
+    }
+
+    /// Chooses the shape the crop frame keeps; a fixed one fits the frame to it at once, the largest the
+    /// picture and the canvas have room for, centered. Not the frame as it is: ratios can be tried one
+    /// after another, each the largest of its shape.
+    public func chooseCropRatio(_ ratio: CropRatio) {
+        session.setCropRatio(ratio)
+        guard session.tool == .crop, cropRect != nil, let value = ratio.value(forPicture: session.document.imageBounds.size) else { return }
+        let fitted = CropRatio.fitted(value, in: session.document.imageBounds.union(session.document.canvas.standardized))
+        cropRect = fitted
+        cropLayer.frameRect = viewRect(fitted)
+    }
+
     /// Puts the crop frame back to the whole canvas.
     public func resetCrop() {
         guard session.tool == .crop else { return }
+        session.setCropRatio(.free)
         cropRect = session.document.imageBounds
         cropLayer.frameRect = viewRect(session.document.imageBounds)
         applyCrop(session.document.imageBounds)
@@ -908,7 +967,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         switch tool {
         case .select, .crop, .background:
             break
-        case .arrow, .line, .rectangle, .ellipse, .redact, .spotlight:
+        case .arrow, .line, .rectangle, .ellipse, .highlightBox, .redact, .spotlight:
             session.beginLiveChange()
             drag = .creating(id: UUID(), tool: tool, start: point)
         case .pen:
@@ -995,7 +1054,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case .cropping(let handle, let start, let original):
             var rect: CGRect
             if let handle {
-                rect = Geometry.resized(original, dragging: handle, to: point, keepingAspect: shift)
+                rect = croppedRect(original, dragging: handle, to: point, keepingShape: shift)
             } else {
                 rect = original.offsetBy(dx: point.x - start.x, dy: point.y - start.y)
             }
@@ -1311,6 +1370,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case .line: String(localized: "Add Line", bundle: .module)
         case .rectangle: String(localized: "Add Rectangle", bundle: .module)
         case .ellipse: String(localized: "Add Ellipse", bundle: .module)
+        case .highlightBox: String(localized: "Add Highlight Box", bundle: .module)
         case .redact: String(localized: "Add Redaction", bundle: .module)
         case .spotlight: String(localized: "Add Spotlight", bundle: .module)
         default: String(localized: "Add Mark", bundle: .module)
@@ -1416,6 +1476,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 drag = nil
                 session.cancelLiveChange()
             } else if session.tool == .crop {
+                session.setCropRatio(.free)
                 cropRect = session.document.canvas
                 cropLayer.frameRect = viewRect(session.document.canvas)
             } else if session.tool == .background {
@@ -1521,6 +1582,92 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         onPrint?()
     }
 
+    /// Turns the whole picture, its marks with it.
+    @objc public func rotateLeft(_ sender: Any?) { transformPicture(.rotateLeft) }
+    @objc public func rotateRight(_ sender: Any?) { transformPicture(.rotateRight) }
+    @objc public func flipHorizontal(_ sender: Any?) { transformPicture(.flipHorizontally) }
+    @objc public func flipVertical(_ sender: Any?) { transformPicture(.flipVertically) }
+
+    /// Image Size…
+    @objc public func showImageSize(_ sender: Any?) {
+        guard canTransformPicture else { return }
+        endEditing()
+        onImageSize?()
+    }
+
+    /// The document as the Image Size sheet measures it: with the canvas a crop being chosen would make,
+    /// which resizing makes first. The crop itself waits for Resize, so Cancel leaves it as it was.
+    var documentForImageSize: AnnotationDocument {
+        var document = session.document
+        if let rect = pendingCrop { document.canvas = rect }
+        return document
+    }
+
+    /// The crop frame as `applyCrop` would keep it; nil without one, or too small to crop to.
+    var pendingCrop: CGRect? {
+        guard let cropRect else { return nil }
+        let rect = cropRect.standardized.integral
+        return rect.width >= 4 && rect.height >= 4 ? rect : nil
+    }
+
+    /// Lock Canvas: the canvas stops growing to hold pictures combined past its edges.
+    @objc public func toggleCanvasLock(_ sender: Any?) {
+        guard !isInPlace else { return }
+        session.locksCanvas.toggle()
+    }
+
+    /// Whether the picture can be turned or resized: not in place, where the canvas is the selection, and
+    /// not while something is being dragged.
+    private var canTransformPicture: Bool { !isInPlace && drag == nil }
+
+    private func transformPicture(_ operation: PictureOperation) {
+        guard canTransformPicture else {
+            NSSound.beep()
+            return
+        }
+        endEditing()
+        endingPictureMode { apply(operation) }
+    }
+
+    /// Scales the picture, its marks with it, so the canvas is `size` pixels.
+    public func resizePicture(to size: CGSize) {
+        guard canTransformPicture else { return }
+        endingPictureMode { apply(.resize(to: size)) }
+    }
+
+    /// Runs `change` once a crop or the background in hand is ended, the crop made first so the change
+    /// takes the picture as it will be kept. A crop to make and the change are one undo step, whatever the
+    /// undo manager groups by itself; a group is opened only for a crop, as an empty one still counts as a
+    /// step to undo.
+    private func endingPictureMode(then change: () -> Void) {
+        guard session.tool.isPictureMode else {
+            change()
+            return
+        }
+        let undoManager = session.undoManager
+        let makesCrop = pendingCrop.map { $0 != session.document.canvas } ?? false
+        if makesCrop { undoManager.beginUndoGrouping() }
+        session.leavePictureMode()
+        change()
+        if makesCrop { undoManager.endUndoGrouping() }
+    }
+
+    /// Applies `operation` and tells VoiceOver what was done: the name of the step, and for a resize the
+    /// size it came to.
+    private func apply(_ operation: PictureOperation) {
+        let before = session.document
+        session.apply(operation)
+        guard session.document != before else { return }
+        var announcement = session.undoManager.undoActionName
+        if case .resize = operation {
+            let canvas = session.document.canvas.standardized
+            announcement = String(localized: "Resized to \(Int(canvas.width)) by \(Int(canvas.height)) pixels", bundle: .module)
+        }
+        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
+            .announcement: announcement, .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+        ])
+    }
+
     @objc public override func selectAll(_ sender: Any?) {
         session.selectAll()
     }
@@ -1557,6 +1704,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return !isInPlace && Self.offersPictures(.general)
         case #selector(printCapture(_:)):
             return onPrint != nil
+        case #selector(rotateLeft(_:)), #selector(rotateRight(_:)), #selector(flipHorizontal(_:)), #selector(flipVertical(_:)):
+            return canTransformPicture
+        case #selector(showImageSize(_:)):
+            return canTransformPicture && onImageSize != nil
+        case #selector(toggleCanvasLock(_:)):
+            menuItem.state = session.locksCanvas ? .on : .off
+            return !isInPlace
         default:
             return true
         }

@@ -19,6 +19,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     /// The background's adjustments, while their popover is open.
     private var adjustments: BackdropAdjustments?
     private weak var adjustPopover: NSPopover?
+    private var savedColorsObserver: NSObjectProtocol?
 
     /// The picture last chosen for a background, offered again.
     /// The last picture chosen for a background, offered again beside the colors.
@@ -49,6 +50,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         capsule.onRedactAll = { [weak self] in self?.session.acceptAllRedactionSuggestions() }
         capsule.onRetry = { [weak self] in self?.session.retryReadingForTool() }
         capsule.onCropReset = { [weak self] in self?.canvas.resetCrop() }
+        capsule.onCropRatio = { [weak self] ratio in self?.canvas.chooseCropRatio(ratio) }
         capsule.onCropDone = { [weak self] in
             guard let self else { return }
             canvas.commitCrop()
@@ -63,12 +65,20 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             self?.onViewportChange?()
         }
         session.observe { [weak self] event in self?.sessionChanged(event) }
+        // Colors kept in one editor show in every other.
+        savedColorsObserver = NotificationCenter.default.addObserver(forName: SavedColors.didChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshCapsule() }
+        }
         refreshCapsule()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    isolated deinit {
+        if let savedColorsObserver { NotificationCenter.default.removeObserver(savedColorsObserver) }
     }
 
     override var isFlipped: Bool { true }
@@ -127,7 +137,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             capsule.show(
                 kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
                 suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
-                finding: session.isReadingForTool, failed: session.readingFailedForTool, sized: session.sizeApplies
+                finding: session.isReadingForTool, failed: session.readingFailedForTool, sized: session.sizeApplies, cropRatio: session.cropRatio
             )
         }
         placeCapsule()

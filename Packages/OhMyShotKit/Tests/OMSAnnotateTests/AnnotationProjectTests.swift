@@ -42,6 +42,23 @@ struct AnnotationProjectTests {
         try? FileManager.default.removeItem(at: folder)
     }
 
+    @Test func aProjectIsWrittenInTheOldestFormatThatHoldsIt() throws {
+        func version(of document: AnnotationDocument) throws -> Int? {
+            let data = try AnnotationProject(capture: swatch(8, 4, gray: 1), document: document).data()
+            return (try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])?["version"] as? Int
+        }
+        let plain = AnnotationDocument(pixelSize: CGSize(width: 8, height: 4), scale: 1)
+        #expect(try version(of: plain) == 1)
+        // A turned capture, or a highlight box, would be read wrongly or not at all by an earlier version.
+        #expect(try version(of: #require(plain.applying(.rotateRight))) == 2)
+        var boxed = plain
+        boxed.items = [Annotation(shape: .highlightBox(Box(rect: CGRect(x: 0, y: 0, width: 4, height: 2), filled: true)), style: Style())]
+        #expect(try version(of: boxed) == 2)
+        // Both formats are read.
+        let project = try AnnotationProject.read(AnnotationProject(capture: swatch(8, 4, gray: 1), document: boxed).data())
+        #expect(project.document == boxed)
+    }
+
     @Test func projectsFromANewerVersionAreRefused() throws {
         let data = try AnnotationProject(capture: swatch(4, 4, gray: 1), document: AnnotationDocument(pixelSize: CGSize(width: 4, height: 4), scale: 1)).data()
         var contents = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])

@@ -38,6 +38,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     private let actions: Actions
     private var fileURL: URL
     private var windowLease: ActiveResources.Lease?
+    /// The Image Size sheet, while it is down.
+    private var imageSizeSheet: NSWindow?
 
     /// - Parameters:
     ///   - image: the capture as it was taken.
@@ -50,8 +52,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         model = EditorModel()
         self.actions = actions
         self.fileURL = fileURL
+        let size = Self.preferredSize(for: session.document.pictureSize, scale: session.document.scale)
         let window = NSWindow(
-            contentRect: CGRect(origin: .zero, size: Self.preferredSize(for: image, scale: scale)),
+            contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: true
@@ -59,15 +62,16 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         window.title = title
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.minSize = CGSize(width: 720, height: 560)
+        window.minSize = Self.minimumSize
         super.init(window: window)
         model.controller = self
-        model.thumbnail = image
+        model.thumbnail = session.picture
+        model.locksCanvas = session.locksCanvas
         let hosting = NSHostingController(rootView: EditorView(model: model, content: content))
         hosting.sceneBridgingOptions = [.toolbars]
         hosting.sizingOptions = []
         window.contentViewController = hosting
-        window.setContentSize(Self.preferredSize(for: image, scale: scale))
+        window.setContentSize(size)
         window.center()
         window.delegate = self
 
@@ -75,9 +79,13 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.onSave = { [weak self] in self?.save() }
         content.canvas.onSaveProject = { [weak self] in self?.saveProject() }
         content.canvas.onPrint = { [weak self] in self?.printCapture() }
+        content.canvas.onImageSize = { [weak self] in self?.presentImageSize() }
         content.onViewportChange = { [weak self] in self?.updateZoomLabel() }
         session.observe { [weak self] event in
-            if event == .history || event == .document { self?.undoChanged() }
+            guard let self else { return }
+            if event == .history || event == .document { undoChanged() }
+            if event == .document, model.thumbnail !== session.picture { model.thumbnail = session.picture }
+            if event == .settings { model.locksCanvas = session.locksCanvas }
         }
     }
 
@@ -86,13 +94,18 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         fatalError("init(coder:) is not supported")
     }
 
-    /// The window shows the capture at the size it had on screen, with room for the rail and the capsule,
+    /// The smallest the window goes: room for the rail above the capsule's resting band (under the toolbar's
+    /// 52 pt), and for the widest the style capsule is (the redaction's with a reading that failed and a
+    /// full row of kept colors, 838 pt, beside the rail with 8 pt to spare). A test measures them.
+    static let minimumSize = CGSize(width: 910, height: 640)
+
+    /// The window shows the picture at the size it had on screen, with room for the rail and the capsule,
     /// within most of the screen.
-    private static func preferredSize(for image: CGImage, scale: CGFloat) -> CGSize {
-        let picture = CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
+    private static func preferredSize(for pixels: CGSize, scale: CGFloat) -> CGSize {
+        let picture = CGSize(width: pixels.width / scale, height: pixels.height / scale)
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
-        let width = min(max(picture.width + 72 + 28, 760), visible.width * 0.9)
-        let height = min(max(picture.height + 24 + 62 + 52, 560), visible.height * 0.9)
+        let width = min(max(picture.width + 72 + 28, 920), visible.width * 0.9)
+        let height = min(max(picture.height + 24 + 62 + 52, 660), visible.height * 0.9)
         return CGSize(width: width.rounded(), height: height.rounded())
     }
 
@@ -385,6 +398,41 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         undoChanged()
     }
 
+    // MARK: Picture
+
+    func rotateLeft() { content.canvas.rotateLeft(nil) }
+    func rotateRight() { content.canvas.rotateRight(nil) }
+    func flipHorizontal() { content.canvas.flipHorizontal(nil) }
+    func flipVertical() { content.canvas.flipVertical(nil) }
+    func showImageSize() { content.canvas.showImageSize(nil) }
+    func toggleCanvasLock() { content.canvas.toggleCanvasLock(nil) }
+
+    /// Asks for the size to scale the picture to, on a sheet on the window; scaling it, with its marks, is
+    /// one undo step.
+    private func presentImageSize() {
+        guard let window, window.attachedSheet == nil else { return }
+        let model = ImageSizeModel(document: content.canvas.documentForImageSize)
+        let view = ImageSizeView(
+            model: model,
+            resize: { [weak self] in self?.finishImageSize(model, resizing: true) },
+            cancel: { [weak self] in self?.finishImageSize(model, resizing: false) }
+        )
+        let hosting = NSHostingController(rootView: view)
+        hosting.sizingOptions = .preferredContentSize
+        let sheet = NSWindow(contentViewController: hosting)
+        sheet.title = String(localized: "Image Size", bundle: .module)
+        sheet.styleMask = [.titled]
+        imageSizeSheet = sheet
+        window.beginSheet(sheet)
+    }
+
+    private func finishImageSize(_ model: ImageSizeModel, resizing: Bool) {
+        guard let sheet = imageSizeSheet else { return }
+        imageSizeSheet = nil
+        window?.endSheet(sheet)
+        if resizing, model.canResize { content.canvas.resizePicture(to: model.sizing.size) }
+    }
+
     func zoomToFit() { content.canvas.zoomToFit() }
     func zoomToActualSize() { content.canvas.zoomToActualSize() }
     func zoomIn() { content.canvas.zoomIn() }
@@ -445,8 +493,11 @@ final class EditorModel {
     var zoomLabel = "100%"
     var copied = false
     var saved = false
+    /// Whether the canvas is locked, for the Picture menu's check.
+    var locksCanvas = false
+    /// The picture the drag-out handle shows.
+    var thumbnail: CGImage?
     @ObservationIgnored weak var controller: AnnotationEditorWindowController?
-    @ObservationIgnored var thumbnail: CGImage?
     @ObservationIgnored private var copiedReset: Task<Void, Never>?
     @ObservationIgnored private var savedReset: Task<Void, Never>?
 
@@ -497,6 +548,23 @@ struct EditorView: View {
             }
             .disabled(!model.canRedo)
             .help(Text("Redo (⇧⌘Z)", bundle: .module))
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Button { model.controller?.showImageSize() } label: { Text("Image Size… (⌥⌘I)", bundle: .module) }
+                Divider()
+                Button { model.controller?.rotateLeft() } label: { Text("Rotate Left (⌘L)", bundle: .module) }
+                Button { model.controller?.rotateRight() } label: { Text("Rotate Right (⌘R)", bundle: .module) }
+                Button { model.controller?.flipHorizontal() } label: { Text("Flip Horizontal", bundle: .module) }
+                Button { model.controller?.flipVertical() } label: { Text("Flip Vertical", bundle: .module) }
+                Divider()
+                Toggle(isOn: Binding(get: { model.locksCanvas }, set: { _ in model.controller?.toggleCanvasLock() })) {
+                    Text("Lock Canvas", bundle: .module)
+                }
+            } label: {
+                Label { Text("Picture", bundle: .module) } icon: { Image(systemName: "crop.rotate") }
+            }
+            .help(Text("Resize, turn, or flip the picture", bundle: .module))
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
@@ -574,7 +642,10 @@ struct DragOutHandle: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: DragOutView, context: Context) {}
+    func updateNSView(_ nsView: DragOutView, context: Context) {
+        // The picture turned, flipped, or resized.
+        if nsView.thumbnail !== model.thumbnail { nsView.thumbnail = model.thumbnail }
+    }
 }
 
 final class DragOutView: NSView, NSDraggingSource {

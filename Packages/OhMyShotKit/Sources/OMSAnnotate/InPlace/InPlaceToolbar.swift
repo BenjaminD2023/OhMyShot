@@ -21,7 +21,7 @@ final class InPlaceToolbar: NSView {
 
     /// Pointing and drawing, words and numbers, hiding and showing; as the editor's rail groups them.
     static let toolGroups: [[AnnotationTool]] = [
-        [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter],
+        [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox],
         [.text, .counter],
         [.redact, .spotlight],
     ]

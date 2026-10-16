@@ -44,8 +44,9 @@ nonisolated public enum HighlightGround: Sendable, Equatable {
     }
 
     /// Squares that cover what `item` covers and little else, at most 48 spread evenly over it: along
-    /// each band of a highlight snapped to text, as tall as the band; along a stroke, as wide as it. So a
-    /// long stroke across the picture reads the strip it covers, not the whole box around it.
+    /// each band of a highlight snapped to text, as tall as the band; along a stroke, as wide as it; over
+    /// a box, a grid tiling it. So a long stroke across the picture reads the strip it covers, not the
+    /// whole box around it.
     private static func samples(of item: Annotation, scale: CGFloat) -> [CGRect] {
         var squares: [CGRect] = []
         func along(_ points: [CGPoint], side: CGFloat) {
@@ -77,10 +78,25 @@ nonisolated public enum HighlightGround: Sendable, Equatable {
         case .highlighter(let stroke):
             along(stroke.points, side: max(item.style.lineWidth * scale, 1))
         default:
-            squares = [item.bounds(scale: scale)]
+            squares = grid(over: item.bounds(scale: scale))
         }
         guard squares.count > 48 else { return squares }
         return (0..<48).map { squares[$0 * squares.count / 48] }
+    }
+
+    /// Cells that tile `box`, as near square as its shape allows, a few rows by up to 48 in all, so a wide
+    /// or a tall box is read all over and not by its middle.
+    private static func grid(over box: CGRect) -> [CGRect] {
+        let box = box.standardized
+        guard box.width >= 1, box.height >= 1 else { return [box] }
+        let columns = max(1, min(48, Int((48 * box.width / box.height).squareRoot().rounded())))
+        let rows = max(1, min(48 / columns, Int((CGFloat(columns) * box.height / box.width).rounded())))
+        let cell = CGSize(width: box.width / CGFloat(columns), height: box.height / CGFloat(rows))
+        return (0..<rows).flatMap { row in
+            (0..<columns).map { column in
+                CGRect(x: box.minX + CGFloat(column) * cell.width, y: box.minY + CGFloat(row) * cell.height, width: cell.width, height: cell.height)
+            }
+        }
     }
 }
 

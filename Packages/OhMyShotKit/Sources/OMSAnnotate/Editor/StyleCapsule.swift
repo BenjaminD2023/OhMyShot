@@ -22,6 +22,10 @@ final class StyleCapsule: NSView {
     var onBackdropAdjust: ((NSView) -> Void)?
     /// Show the background presets, from the chip.
     var onBackdropPresets: ((NSView) -> Void)?
+    /// A shape was chosen for the crop frame.
+    var onCropRatio: ((CropRatio) -> Void)?
+    /// The colors a person has kept; the chips beside the inks, and the one that keeps another.
+    var savedColors = SavedColors.shared
 
     static let height: CGFloat = 38
     private static let inset: CGFloat = 4
@@ -39,6 +43,8 @@ final class StyleCapsule: NSView {
     private var failed = false
     /// Whether the size chips mean anything: not for highlights snapped to text.
     private var sized = true
+    /// The shape the crop frame keeps, while the crop is in hand.
+    private var cropRatio = CropRatio.free
     private var chips: [CapsuleChip] = []
     /// What the background controls show, when the background is in hand.
     private var background: BackgroundState?
@@ -152,7 +158,9 @@ final class StyleCapsule: NSView {
     ///     the highlighter snaps to.
     ///   - failed: the last reading for the tool failed, offered again with Try Again.
     ///   - sized: false leaves out the sizes, for highlights snapped to text.
-    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, finding: Bool = false, failed: Bool = false, sized: Bool = true) {
+    ///   - cropRatio: the shape the crop frame keeps, shown while the crop is in hand.
+    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, finding: Bool = false, failed: Bool = false, sized: Bool = true, cropRatio: CropRatio = .free) {
+        self.cropRatio = cropRatio
         self.kind = kind
         self.settings = settings
         self.hasSelection = hasSelection
@@ -181,6 +189,8 @@ final class StyleCapsule: NSView {
 
         if kind == .crop {
             stack.edgeInsets.left = Self.inset
+            add(ratioChip())
+            addDivider()
             add(textChip(String(localized: "Reset", bundle: .module)) { [weak self] in self?.onCropReset?() })
             add(textChip(String(localized: "Done", bundle: .module), prominent: true) { [weak self] in self?.onCropDone?() })
             return
@@ -193,7 +203,7 @@ final class StyleCapsule: NSView {
 
         var sections: [[NSView]] = []
         if usesColor {
-            sections.append(Self.palette.map(colorChip) + [customColorChip()])
+            sections.append(Self.palette.map(colorChip) + savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip())
         }
         let sizes = sizeChips()
         if !sizes.isEmpty { sections.append(sizes) }
@@ -280,8 +290,63 @@ final class StyleCapsule: NSView {
         return chip
     }
 
+    /// A color the person kept, among the inks: chosen again in one click, removed from its menu.
+    private func savedColorChip(_ color: RGBA) -> NSView {
+        let selected = SavedColors.stored(settings.color) == color
+        let name = String(localized: "Saved Color", bundle: .module)
+        let chip = CapsuleChip(image: Self.dot(color, selected: selected), width: 24) { [weak self] in
+            self?.change(String(localized: "Color", bundle: .module)) { $0.color = color }
+        }
+        chip.highlightsSelection = false
+        chip.isSelected = selected
+        chip.setAccessibilityLabel(name)
+        chip.toolTip = name
+        let remove = String(localized: "Remove Saved Color", bundle: .module)
+        let menu = NSMenu()
+        let item = NSMenuItem(title: remove, action: #selector(removeSavedColor(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = color
+        menu.addItem(item)
+        chip.menu = menu
+        chip.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: remove) { [weak self] in
+            self?.savedColors.remove(color)
+            return true
+        }])
+        return chip
+    }
+
+    @objc private func removeSavedColor(_ sender: NSMenuItem) {
+        guard let color = sender.representedObject as? RGBA else { return }
+        savedColors.remove(color)
+    }
+
+    /// Whether the color in use is none of the inks nor a kept one: it has the Other Color chip, and can be kept.
+    private var usesUnsavedColor: Bool {
+        !Self.palette.contains(settings.color.withAlpha(1)) && !savedColors.contains(settings.color)
+    }
+
+    /// Keeps the color in use, when it is one of the person's own that is not kept yet. With the colors full,
+    /// the chip is there but dimmed, and says why.
+    private func saveColorChip() -> [NSView] {
+        // The marker yellow the highlighter and the highlight box start in is theirs, not a color chosen.
+        guard usesUnsavedColor, settings.color.withAlpha(1) != .marker else { return [] }
+        let name = String(localized: "Save Color", bundle: .module)
+        let color = settings.color
+        let image = NSImage(systemSymbolName: "plus", accessibilityDescription: name)?.withSymbolConfiguration(.init(pointSize: 11, weight: .semibold)) ?? NSImage()
+        let chip = CapsuleChip(image: image, width: 24) { [weak self] in
+            self?.savedColors.add(color)
+        }
+        chip.setAccessibilityLabel(name)
+        chip.toolTip = name
+        if savedColors.isFull {
+            chip.isEnabled = false
+            chip.toolTip = String(localized: "Remove a saved color to make room.", bundle: .module)
+        }
+        return [chip]
+    }
+
     private func customColorChip() -> NSView {
-        let isCustom = !Self.palette.contains(settings.color.withAlpha(1))
+        let isCustom = usesUnsavedColor
         let image = isCustom ? Self.dot(settings.color, selected: true) : Self.wheel()
         let chip = CapsuleChip(image: image, width: 24) { [weak self] in self?.pickColor() }
         chip.highlightsSelection = false
@@ -322,7 +387,7 @@ final class StyleCapsule: NSView {
                 chip.setAccessibilityLabel(String(localized: "\(Int(size)) points", bundle: .module))
                 return chip
             }
-        case .redact, .spotlight, .crop, .select, .background:
+        case .redact, .spotlight, .highlightBox, .crop, .select, .background:
             return []
         default:
             let widths: [CGFloat] = switch kind {
@@ -413,6 +478,48 @@ final class StyleCapsule: NSView {
             }
         default:
             return []
+        }
+    }
+
+    // MARK: Crop
+
+    /// The shape of the crop frame: its name, and a menu of the shapes on a click.
+    private func ratioChip() -> CapsuleChip {
+        let name = Self.name(of: cropRatio)
+        let chip = textChip(name + " ▾") {}
+        chip.setAccessibilityLabel(String(localized: "Crop Ratio, \(name)", bundle: .module))
+        chip.toolTip = String(localized: "Crop Ratio", bundle: .module)
+        chip.handlerOverride = { [weak self, weak chip] in
+            guard let chip else { return }
+            self?.showRatios(from: chip)
+        }
+        return chip
+    }
+
+    private func showRatios(from chip: NSView) {
+        let menu = NSMenu()
+        for ratio in CropRatio.presets {
+            let item = NSMenuItem(title: Self.name(of: ratio), action: #selector(ratioChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = ratio
+            item.state = ratio == cropRatio ? .on : .off
+            menu.addItem(item)
+            // Free and the picture's own shape, then the fixed ones.
+            if ratio == .original { menu.addItem(.separator()) }
+        }
+        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: chip.isFlipped ? chip.bounds.maxY + 4 : -4), in: chip)
+    }
+
+    @objc private func ratioChosen(_ sender: NSMenuItem) {
+        guard let ratio = sender.representedObject as? CropRatio else { return }
+        onCropRatio?(ratio)
+    }
+
+    static func name(of ratio: CropRatio) -> String {
+        switch ratio {
+        case .free: String(localized: "Free", bundle: .module)
+        case .original: String(localized: "Original", bundle: .module)
+        case .fixed(let width, let height): "\(width):\(height)"
         }
     }
 

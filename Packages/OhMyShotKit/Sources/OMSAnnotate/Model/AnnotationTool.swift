@@ -10,6 +10,8 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
     case ellipse
     case pen
     case highlighter
+    /// A rectangle of marker color multiplied into the picture.
+    case highlightBox
     case text
     case counter
     case redact
@@ -28,6 +30,7 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
         case .ellipse: "o"
         case .pen: "p"
         case .highlighter: "h"
+        case .highlightBox: "m"
         case .text: "t"
         case .counter: "n"
         case .redact: "b"
@@ -46,7 +49,7 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
     /// Tools that draw a mark by dragging from one corner or end to the other.
     public var dragsShape: Bool {
         switch self {
-        case .arrow, .line, .rectangle, .ellipse, .redact, .spotlight: true
+        case .arrow, .line, .rectangle, .ellipse, .highlightBox, .redact, .spotlight: true
         default: false
         }
     }
@@ -94,6 +97,7 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
     public static func defaults(for tool: AnnotationTool) -> ToolSettings {
         switch tool {
         case .highlighter: ToolSettings(color: .marker, lineWidth: 18, shadow: false)
+        case .highlightBox: ToolSettings(color: .marker, shadow: false, cornerRadius: 2)
         case .redact: ToolSettings(color: .black, shadow: false)
         case .spotlight: ToolSettings(shadow: false)
         case .pen: ToolSettings(lineWidth: 3)
@@ -117,6 +121,7 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
             filled = box.filled
             cornerRadius = box.cornerRadius
         case .ellipse(let box): filled = box.filled
+        case .highlightBox(let box): cornerRadius = box.cornerRadius
         case .text(let block):
             textLook = block.look
             fontSize = block.fontSize
@@ -145,6 +150,9 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         case .ellipse(var box):
             box.filled = filled
             item.shape = .ellipse(box)
+        case .highlightBox(var box):
+            box.cornerRadius = cornerRadius
+            item.shape = .highlightBox(box)
         case .text(var block):
             block.look = textLook
             block.fontSize = fontSize
@@ -180,6 +188,8 @@ nonisolated extension AnnotationTool {
             shape = .rectangle(Box(rect: Geometry.rect(from: start, to: end, square: constrained), filled: settings.filled, cornerRadius: settings.cornerRadius))
         case .ellipse:
             shape = .ellipse(Box(rect: Geometry.rect(from: start, to: end, square: constrained), filled: settings.filled))
+        case .highlightBox:
+            shape = .highlightBox(Box(rect: Geometry.rect(from: start, to: end, square: constrained), filled: true, cornerRadius: settings.cornerRadius))
         case .redact:
             shape = .redaction(Redaction(rect: Geometry.rect(from: start, to: end, square: constrained), method: settings.redaction))
         case .spotlight:

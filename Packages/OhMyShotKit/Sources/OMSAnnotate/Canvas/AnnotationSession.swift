@@ -31,11 +31,43 @@ public final class AnnotationSession {
     /// The capture, as it was taken.
     public let base: CGImage
     public private(set) var document: AnnotationDocument
+    /// The picture the marks lie on: the capture turned, flipped, and resized as the document says, in the
+    /// document's own pixels. `base` itself until the capture is changed that way. Made once for each
+    /// turn and size; every reading of pixels by the document's coordinates goes through it. Turning and
+    /// resizing make it before they are kept (`apply`), so this makes it only for a document opened that
+    /// way or an edit undone or redone; if memory then fails it, the capture stands in.
+    public var picture: CGImage {
+        let transform = document.transform
+        if let pictureCache, pictureCache.transform == transform { return pictureCache.image }
+        let image = document.picture(from: base) ?? base
+        keepPicture(image, for: transform)
+        return image
+    }
+
+    /// Remembers the picture `transform` makes, and lets go of what was read from the one before it.
+    private func keepPicture(_ image: CGImage, for transform: CaptureTransform?) {
+        pictureCache = (transform, image)
+        edgeCache = nil
+        blurCache = nil
+        redactionCache = nil
+    }
+
+    /// Whether the canvas stays the size it is when pictures are combined past its edges, which are then
+    /// cut off, instead of growing to hold them. Kept for the next editor.
+    public var locksCanvas: Bool {
+        didSet {
+            guard locksCanvas != oldValue else { return }
+            defaults.set(locksCanvas, forKey: Self.lockCanvasKey)
+            notify(.settings)
+        }
+    }
+    /// The shape the crop frame keeps while the crop tool is in hand.
+    public private(set) var cropRatio: CropRatio = .free
     public var tool: AnnotationTool {
         didSet {
             guard tool != oldValue else { return }
             // Cropping and the background are passing modes; the next capture opens with a drawing tool.
-            if !tool.isPictureMode, remembersTool { UserDefaults.standard.set(tool.rawValue, forKey: Self.toolKey) }
+            if !tool.isPictureMode, remembersTool { defaults.set(tool.rawValue, forKey: Self.toolKey) }
             if tool.isPictureMode, !oldValue.isPictureMode { toolBeforeMode = oldValue }
             if tool == .redact { findRedactionsIfNeeded() }
             if tool == .highlighter { findTextLinesIfNeeded() }
@@ -85,13 +117,18 @@ public final class AnnotationSession {
     @ObservationIgnored private var liveChangeStart: (document: AnnotationDocument, selection: [Annotation.ID])?
     /// The background last set, which the next one starts from.
     @ObservationIgnored public private(set) var lastBackdrop: Backdrop
-    @ObservationIgnored private var edgeCache: (canvas: CGRect, edges: EdgeAnalysis)?
-    @ObservationIgnored private var blurCache: (canvas: CGRect, image: CGImage?)?
-    @ObservationIgnored private var redactionCache: (images: [Annotation], source: (image: CGImage, origin: CGPoint)?)?
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private var pictureCache: (transform: CaptureTransform?, image: CGImage)?
+    @ObservationIgnored private var edgeCache: (canvas: CGRect, picture: CGImage, edges: EdgeAnalysis)?
+    @ObservationIgnored private var blurCache: (canvas: CGRect, picture: CGImage, image: CGImage?)?
+    @ObservationIgnored private var redactionCache: (images: [Annotation], picture: CGImage, source: (image: CGImage, origin: CGPoint)?)?
+    /// How the capture was turned and sized when the readings were made; a different one makes them stale.
+    @ObservationIgnored private var readingsTransform: CaptureTransform?
 
     private static let toolKey = "annotation.tool"
     private static let settingsKey = "annotation.toolSettings"
     private static let backdropKey = "annotation.backdrop"
+    private static let lockCanvasKey = "annotation.lockCanvas"
 
     /// - Parameters:
     ///   - image: the capture.
@@ -99,8 +136,11 @@ public final class AnnotationSession {
     ///   - document: marks made earlier, when a capture is opened again.
     ///   - tool: the tool to start with, which is then not remembered for the editor; nil starts with the
     ///     editor's last tool.
-    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument? = nil, tool startingTool: AnnotationTool? = nil) {
+    ///   - defaults: where the editor remembers its tool, tool settings, background, and canvas lock.
+    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument? = nil, tool startingTool: AnnotationTool? = nil, defaults: UserDefaults = .standard) {
         base = image
+        self.defaults = defaults
+        locksCanvas = defaults.bool(forKey: Self.lockCanvasKey)
         let size = CGSize(width: image.width, height: image.height)
         if let document, document.pixelSize == size {
             self.document = document
@@ -108,10 +148,10 @@ public final class AnnotationSession {
             self.document = AnnotationDocument(pixelSize: size, scale: scale)
         }
         remembersTool = startingTool == nil
-        let stored = UserDefaults.standard.string(forKey: Self.toolKey).flatMap(AnnotationTool.init(rawValue:))
+        let stored = defaults.string(forKey: Self.toolKey).flatMap(AnnotationTool.init(rawValue:))
         tool = startingTool ?? stored.flatMap { $0.isPictureMode ? nil : $0 } ?? .arrow
-        settings = Self.loadSettings()
-        lastBackdrop = UserDefaults.standard.data(forKey: Self.backdropKey).flatMap { try? JSONDecoder().decode(Backdrop.self, from: $0) } ?? Backdrop()
+        settings = Self.loadSettings(from: defaults)
+        lastBackdrop = defaults.data(forKey: Self.backdropKey).flatMap { try? JSONDecoder().decode(Backdrop.self, from: $0) } ?? Backdrop()
         undoManager.levelsOfUndo = 100
     }
 
@@ -187,6 +227,7 @@ public final class AnnotationSession {
         case .ellipse: .ellipse
         case .pen: .pen
         case .highlighter, .textHighlight: .highlighter
+        case .highlightBox: .highlightBox
         case .text: .text
         case .counter: .counter
         case .redaction: .redact
@@ -196,9 +237,9 @@ public final class AnnotationSession {
         }
     }
 
-    private static func loadSettings() -> [AnnotationTool: ToolSettings] {
+    private static func loadSettings(from defaults: UserDefaults) -> [AnnotationTool: ToolSettings] {
         guard
-            let data = UserDefaults.standard.data(forKey: settingsKey),
+            let data = defaults.data(forKey: settingsKey),
             let stored = try? JSONDecoder().decode([String: ToolSettings].self, from: data)
         else { return [:] }
         return Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in AnnotationTool(rawValue: key).map { ($0, value) } })
@@ -207,7 +248,7 @@ public final class AnnotationSession {
     private func saveSettings() {
         let stored = Dictionary(uniqueKeysWithValues: settings.map { ($0.key.rawValue, $0.value) })
         if let data = try? JSONEncoder().encode(stored) {
-            UserDefaults.standard.set(data, forKey: Self.settingsKey)
+            defaults.set(data, forKey: Self.settingsKey)
         }
     }
 
@@ -243,16 +284,17 @@ public final class AnnotationSession {
         guard backdrop != lastBackdrop else { return }
         lastBackdrop = backdrop
         if let data = try? JSONEncoder().encode(backdrop) {
-            UserDefaults.standard.set(data, forKey: Self.backdropKey)
+            defaults.set(data, forKey: Self.backdropKey)
         }
     }
 
     /// The capture's edge as the canvas keeps it, read once per canvas.
     public var edges: EdgeAnalysis {
         let canvas = document.canvas.standardized
-        if let edgeCache, edgeCache.canvas == canvas { return edgeCache.edges }
-        let edges = EdgeAnalysis.of(base, canvas: canvas)
-        edgeCache = (canvas, edges)
+        let picture = self.picture
+        if let edgeCache, edgeCache.canvas == canvas, edgeCache.picture === picture { return edgeCache.edges }
+        let edges = EdgeAnalysis.of(picture, canvas: canvas)
+        edgeCache = (canvas, picture, edges)
         return edges
     }
 
@@ -264,17 +306,18 @@ public final class AnnotationSession {
     /// The blurred capture a blur background shows, made once per canvas.
     public var blurredCapture: CGImage? {
         let canvas = document.canvas.standardized
-        if let blurCache, blurCache.canvas == canvas { return blurCache.image }
-        let image = BackdropPainter.blurredCapture(base, canvas: canvas)
-        blurCache = (canvas, image)
+        let picture = self.picture
+        if let blurCache, blurCache.canvas == canvas, blurCache.picture === picture { return blurCache.image }
+        let image = BackdropPainter.blurredCapture(picture, canvas: canvas)
+        blurCache = (canvas, picture, image)
         return image
     }
 
     // MARK: Images
 
     /// Combines pictures into the capture, each centered on `point` (pixels) and each later one a
-    /// little down and to the right, the canvas grown to hold them, as one undoable step. `size` is in
-    /// the document's pixels. The new images are selected.
+    /// little down and to the right, the canvas grown to hold them unless it is locked, as one undoable
+    /// step. `size` is in the document's pixels. The new images are selected.
     public func addImages(_ pictures: [(name: String, size: CGSize)], at point: CGPoint) {
         guard !pictures.isEmpty else { return }
         var document = self.document
@@ -289,14 +332,15 @@ public final class AnnotationSession {
             document.items.append(item)
             added.append(item.id)
         }
-        document.canvas = Self.canvas(holdingImagesOf: document)
+        if !locksCanvas { document.canvas = Self.canvas(holdingImagesOf: document) }
         let name = pictures.count == 1 ? String(localized: "Add Image", bundle: .module) : String(localized: "Add Images", bundle: .module)
         commit(document, selecting: added, actionName: name)
     }
 
     /// Grows the canvas to hold every image after one was moved or resized past its edge; part of the
-    /// live change in progress, if any. Never shrinks it: a crop does that.
+    /// live change in progress, if any. Never shrinks it: a crop does that. A locked canvas stays as it is.
     public func growCanvasToHoldImages() {
+        guard !locksCanvas else { return }
         let canvas = Self.canvas(holdingImagesOf: document)
         guard canvas != document.canvas.standardized else { return }
         var document = self.document
@@ -319,9 +363,10 @@ public final class AnnotationSession {
     /// corner is in the document; nil while nothing is combined. Made again only when an image changes.
     public var redactionSource: (image: CGImage, origin: CGPoint)? {
         let images = document.items.filter { if case .image = $0.shape { true } else { false } }
-        if let redactionCache, redactionCache.images == images { return redactionCache.source }
-        let source = AnnotationRenderer.redactionSource(document, base: base)
-        redactionCache = (images, source)
+        let picture = self.picture
+        if let redactionCache, redactionCache.images == images, redactionCache.picture === picture { return redactionCache.source }
+        let source = AnnotationRenderer.redactionSource(document, base: picture)
+        redactionCache = (images, picture, source)
         return source
     }
 
@@ -332,7 +377,7 @@ public final class AnnotationSession {
     /// screen in place reads that area, not the whole display; an editor reads the whole capture unless it
     /// is cropped.
     var readingSource: (image: CGImage, origin: CGPoint) {
-        let source = redactionSource ?? (base, .zero)
+        let source = redactionSource ?? (picture, .zero)
         let bounds = CGRect(origin: source.origin, size: CGSize(width: source.image.width, height: source.image.height))
         let canvas = document.canvas.standardized
         // Room for a selection moved or grown a little after reading, and for lines its edge cuts.
@@ -349,7 +394,7 @@ public final class AnnotationSession {
     private func sharedReading() -> (text: CaptureReading, origin: CGPoint)? {
         guard let read = textReader ?? Self.readText else { return nil }
         let images = self.images
-        let source = redactionSource ?? (base, .zero)
+        let source = redactionSource ?? (picture, .zero)
         let shown = document.canvas.standardized.intersection(
             CGRect(origin: source.origin, size: CGSize(width: source.image.width, height: source.image.height))
         )
@@ -370,6 +415,7 @@ public final class AnnotationSession {
     public func findRedactionsIfNeeded() {
         guard !hasLookedForRedactions, let reading = sharedReading() else { return }
         hasLookedForRedactions = true
+        readingsTransform = document.transform
         redactionsReadOver = images
         isFindingRedactions = true
         couldNotFindRedactions = false
@@ -423,16 +469,18 @@ public final class AnnotationSession {
         document.items.filter { if case .image = $0.shape { true } else { false } }
     }
 
-    /// Forgets what was read of a picture whose combined images have changed since, and reads it again
-    /// for the tool in hand.
+    /// Forgets what was read of a picture whose combined images have changed since, or that was turned,
+    /// flipped, or resized since (readings are in the picture's pixels), and reads it again for the tool in
+    /// hand.
     private func forgetReadingsOfChangedImages() {
         let images = self.images
-        if let reading, reading.images != images { self.reading = nil }
-        if let read = redactionsReadOver, read != images {
+        let turned = document.transform != readingsTransform
+        if let reading, reading.images != images || turned { self.reading = nil }
+        if let read = redactionsReadOver, read != images || turned {
             forgetRedactions()
             if tool == .redact { findRedactionsIfNeeded() } else { notify(.suggestions) }
         }
-        if let read = textLinesReadOver, read != images {
+        if let read = textLinesReadOver, read != images || turned {
             forgetTextLines()
             if tool == .highlighter { findTextLinesIfNeeded() } else { notify(.textLines) }
         }
@@ -509,6 +557,7 @@ public final class AnnotationSession {
     public func findTextLinesIfNeeded() {
         guard !hasLookedForTextLines, let reading = sharedReading() else { return }
         hasLookedForTextLines = true
+        readingsTransform = document.transform
         textLinesReadOver = images
         isFindingTextLines = true
         couldNotFindTextLines = false
@@ -728,6 +777,37 @@ public final class AnnotationSession {
         var document = self.document
         document.canvas = rect.standardized.integral
         commit(document, actionName: String(localized: "Crop", bundle: .module))
+    }
+
+    /// Turns, flips, or resizes the whole picture, the marks and the canvas with it, as one undoable step.
+    /// A resize asks for the canvas's new size in pixels. A picture that cannot be made, such as one too
+    /// large for the memory there is, changes nothing and beeps.
+    public func apply(_ operation: PictureOperation) {
+        guard let updated = document.applying(operation) else { return }
+        // Made before anything is kept, so it is not made twice and a failure leaves the document alone.
+        guard let image = updated.picture(from: base) else {
+            NSSound.beep()
+            return
+        }
+        keepPicture(image, for: updated.transform)
+        commit(updated, actionName: Self.actionName(for: operation))
+    }
+
+    private static func actionName(for operation: PictureOperation) -> String {
+        switch operation {
+        case .rotateRight: String(localized: "Rotate Right", bundle: .module)
+        case .rotateLeft: String(localized: "Rotate Left", bundle: .module)
+        case .flipHorizontally: String(localized: "Flip Horizontal", bundle: .module)
+        case .flipVertically: String(localized: "Flip Vertical", bundle: .module)
+        case .resize: String(localized: "Resize Image", bundle: .module)
+        }
+    }
+
+    /// Chooses the shape the crop frame keeps.
+    public func setCropRatio(_ ratio: CropRatio) {
+        guard ratio != cropRatio else { return }
+        cropRatio = ratio
+        notify(.settings)
     }
 
     /// The finished picture, rendered off the main actor.
