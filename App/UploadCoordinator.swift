@@ -30,6 +30,9 @@ final class UploadCoordinator {
     var pasteboard: NSPasteboard = .general
     /// Brings a capture's card back, so a failure that nobody saw can be retried from it.
     var restoreCard: ((UUID) -> Void)?
+    /// Whether Settings give a capture a card, which is what a failure that nobody saw comes back to. Set by the
+    /// composition root, which knows whether the capture is a screenshot or a recording.
+    var showsCard: ((UUID) -> Bool)?
     #if DEBUG
     /// Told every change of every upload, for scripted checks.
     var debugStatus: ((UUID, UploadStatus?) -> Void)?
@@ -302,7 +305,7 @@ final class UploadCoordinator {
             announce(String(localized: "Upload failed. \(message)"))
             if quickAccess.item(captureID) != nil {
                 NSSound.beep()
-            } else if settings.showQuickAccess {
+            } else if showsCard?(captureID) ?? settings.showQuickAccess {
                 // Nobody saw it: the card comes back with the failure and Retry.
                 restoreCard?(captureID)
             } else {

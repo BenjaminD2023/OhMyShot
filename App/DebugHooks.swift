@@ -1151,9 +1151,12 @@ struct DebugHooks {
                 Log.app.notice("debug.overlay-select \(NSStringFromRect(area), privacy: .public) active=\(overlay.isActive, privacy: .public)")
             }
         case "copy-after-capture":
-            // value=0|1 sets the Dev app's Copy after capture, so a scripted capture leaves the clipboard alone; put it
-            // back afterwards.
-            if let value = Self.intParameter("value", in: url) { settings.copyAfterCapture = value == 1 }
+            // value=0|1 sets the Dev app's Copy after capture and after recording, so a scripted capture leaves the
+            // clipboard alone; put it back afterwards.
+            if let value = Self.intParameter("value", in: url) {
+                settings.copyAfterCapture = value == 1
+                settings.copyAfterRecording = value == 1
+            }
             Log.app.notice("debug.copy-after-capture \(settings.copyAfterCapture, privacy: .public)")
         case "desktop-cover-check":
             // The covers' windows, then the display under the pointer captured as a screenshot is (covers in) and with

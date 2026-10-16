@@ -472,6 +472,12 @@ public final class HistoryStore: Sendable {
         return item
     }
 
+    /// The newest screenshot, or nil when the history holds none: a recording is newer than it, perhaps, but is
+    /// no picture to mark up.
+    public func latestScreenshot() -> HistoryItem? {
+        items().first { $0.kind == .screenshot }
+    }
+
     public func delete(_ item: HistoryItem) {
         try? FileManager.default.removeItem(at: fileURL(for: item))
         try? FileManager.default.removeItem(at: sidecarURL(for: item.id, fileName: item.fileName))

@@ -51,6 +51,8 @@ final class RecordingCoordinator {
     var onRecorded: ((QuickAccessItem) -> Void)?
     /// A recording was kept and Settings says to upload it.
     var uploadKept: ((HistoryItem) -> Void)?
+    /// A recording's file was just put on the clipboard, which refers to the file in the history and holds nothing else.
+    var copiedToClipboard: ((UUID) -> Void)?
     /// The composition root shows it in the menu bar.
     var onStatus: ((Status) -> Void)?
     /// Saves a copy of a kept recording to the export folder, as Save on its card does.
@@ -657,17 +659,22 @@ final class RecordingCoordinator {
         return entry
     }
 
-    /// Hands a kept recording on as a capture is: copied, saved when Settings says so, and given a card.
+    /// Hands a kept recording on as a capture is: copied, saved, uploaded, and given a card as the choices Settings has
+    /// for recordings say.
     private func present(_ entry: HistoryItem, displayID: CGDirectDisplayID) async {
         let url = history.fileURL(for: entry)
-        if settings.copyAfterCapture, !leavesClipboard { PasteboardWriter.write(fileURL: url) }
+        let after = settings.afterCapture(for: .recording)
+        if after.copies, !leavesClipboard {
+            PasteboardWriter.write(fileURL: url)
+            copiedToClipboard?(entry.id)
+        }
         let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: 560) ?? Self.blankThumbnail
         var item = QuickAccessItem(
             id: entry.id, kind: .recording, fileURL: url, thumbnail: thumbnail, pixelWidth: entry.pixelWidth,
             pixelHeight: entry.pixelHeight, displayID: displayID, createdAt: entry.createdAt, duration: entry.duration
         )
-        if settings.saveAfterCapture { item.savedURL = save?(url) }
-        if settings.uploadAfterCapture { uploadKept?(entry) }
+        if after.saves { item.savedURL = save?(url) }
+        if after.uploads { uploadKept?(entry) }
         onRecorded?(item)
     }
 

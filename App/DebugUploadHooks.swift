@@ -128,13 +128,15 @@ extension DebugHooks {
         case "remove-check-captures":
             Log.app.notice("debug.remove-check-captures \(removeCheckCaptures(), privacy: .public)")
         case "upload-after-setting":
-            // value=1|0: Settings' Upload after a capture.
+            // value=1|0: Settings' Upload after a capture and after a recording.
             settings.uploadAfterCapture = value("value") == "1"
+            settings.uploadAfterRecording = value("value") == "1"
             Log.app.notice("debug.upload-after-setting \(settings.uploadAfterCapture, privacy: .public)")
         case "copy-after-setting":
-            // value=1|0: Settings' Copy after a capture, so a scripted capture that goes through the setting
-            // leaves the real clipboard alone.
+            // value=1|0: Settings' Copy after a capture and after a recording, so a scripted capture that goes
+            // through the setting leaves the real clipboard alone.
             settings.copyAfterCapture = value("value") == "1"
+            settings.copyAfterRecording = value("value") == "1"
             Log.app.notice("debug.copy-after-setting \(settings.copyAfterCapture, privacy: .public)")
         case "upload-plain-area":
             // The centered region of the primary display, kept as a plain capture (no follow-up of its own), so

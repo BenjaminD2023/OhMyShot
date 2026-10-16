@@ -202,7 +202,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
                 expiredCount: dependencies.expiredCount
             ))
         case .recording:
-            host(RecordingSettingsView(settings: dependencies.settings))
+            host(RecordingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
         case .tools:
             host(ToolsSettingsView(settings: dependencies.settings))
         case .sharing:
@@ -211,7 +211,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
                 records: dependencies.uploadRecords, actions: dependencies.recordActions
             ))
         case .shortcuts:
-            host(ShortcutsSettingsView())
+            host(ShortcutsSettingsView(destinations: dependencies.destinations))
         case .permissions:
             host(PermissionsSettingsView(permissions: dependencies.permissions, relaunch: dependencies.relaunch))
         case .automation:

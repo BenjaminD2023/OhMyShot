@@ -9,9 +9,15 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case annotateArea
     /// Choose an area and pin it where it is.
     case pinArea
-    case captureFullscreen
+    /// Choose an area and copy it, whatever Settings say about copying.
+    case captureAreaAndCopy
+    /// Choose an area and save a copy of it to the export folder, whatever Settings say about saving.
+    case captureAreaAndSave
+    /// Choose an area and open it in the annotation editor, unlike Annotate Area, which marks it up in place.
+    case captureAreaAndAnnotate
     /// Choose an area and upload it to the default destination. Does nothing but say so when there is none.
     case captureAreaAndUpload
+    case captureFullscreen
     /// Capture the display and upload it to the default destination.
     case captureFullscreenAndUpload
     case captureWindow
@@ -37,6 +43,10 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case openHistory
     /// Copies the newest Quick Access card's capture, so it can be reached without the pointer.
     case copyLatestCapture
+    /// Opens the newest screenshot in the annotation editor, card or no card.
+    case annotateLatestCapture
+    /// Opens the clipboard's picture in the annotation editor.
+    case openFromClipboard
 
     public var name: KeyboardShortcuts.Name {
         KeyboardShortcuts.Name(rawValue)
@@ -49,13 +59,21 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         return false
     }
 
+    /// Whether the shortcut sends its capture to the default destination, so it has no use before one is set up.
+    public var needsUploadDestination: Bool {
+        self == .captureAreaAndUpload || self == .captureFullscreenAndUpload
+    }
+
     public var title: String {
         switch self {
         case .captureArea: String(localized: "Capture Area", bundle: .module)
         case .annotateArea: String(localized: "Annotate Area", bundle: .module)
         case .pinArea: String(localized: "Capture Area and Pin", bundle: .module)
-        case .captureFullscreen: String(localized: "Capture Fullscreen", bundle: .module)
+        case .captureAreaAndCopy: String(localized: "Capture Area and Copy", bundle: .module)
+        case .captureAreaAndSave: String(localized: "Capture Area and Save", bundle: .module)
+        case .captureAreaAndAnnotate: String(localized: "Capture Area and Annotate", bundle: .module)
         case .captureAreaAndUpload: String(localized: "Capture Area and Upload", bundle: .module)
+        case .captureFullscreen: String(localized: "Capture Fullscreen", bundle: .module)
         case .captureFullscreenAndUpload: String(localized: "Capture Fullscreen and Upload", bundle: .module)
         case .captureWindow: String(localized: "Capture Window", bundle: .module)
         case .capturePreviousArea: String(localized: "Capture Previous Area", bundle: .module)
@@ -71,6 +89,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .saveReplay: String(localized: "Save Last 15 Seconds", bundle: .module)
         case .openHistory: String(localized: "Open Capture History", bundle: .module)
         case .copyLatestCapture: String(localized: "Copy Latest Capture", bundle: .module)
+        case .annotateLatestCapture: String(localized: "Annotate Latest Capture", bundle: .module)
+        case .openFromClipboard: String(localized: "Open from Clipboard", bundle: .module)
         }
     }
 }
@@ -149,7 +169,8 @@ public final class HotkeyCenter {
         // The digits are taken; the release build leaves it for the user to choose.
         case .saveReplay: profile == .development ? KeyboardShortcuts.Shortcut(.minus, modifiers: modifiers) : nil
         case .scrollingCapture: profile == .development ? KeyboardShortcuts.Shortcut(.equal, modifiers: modifiers) : nil
-        case .captureWindow, .capturePreviousArea, .selfTimer, .captureAreaAndUpload, .captureFullscreenAndUpload, .captureTextJoined, .openHistory, .copyLatestCapture: nil
+        case .captureWindow, .capturePreviousArea, .selfTimer, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload,
+             .captureFullscreenAndUpload, .captureTextJoined, .openHistory, .copyLatestCapture, .annotateLatestCapture, .openFromClipboard: nil
         }
     }
 }

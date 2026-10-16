@@ -31,6 +31,7 @@ final class CompositionRoot {
             Task { await self.restore(entry) }
         }
         uploads.ended = { [weak self] id, outcome in self?.uploadEnded(id, outcome) }
+        uploads.showsCard = { [weak self] id in self?.showsQuickAccess(forCaptureWith: id) ?? true }
         return uploads
     }()
     private lazy var textCapture = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
@@ -64,6 +65,9 @@ final class CompositionRoot {
     private var historyWindow: HistoryWindowController?
     private var observations: [Task<Void, Never>] = []
     private var pictureSweep: Task<Void, Never>?
+    /// The recording whose file is on the clipboard, and the clipboard's change count when it went there.
+    private var clipboardRecording: (id: UUID, changeCount: Int)?
+    private var clipboardWatch: Task<Void, Never>?
 
     init() {
         #if DEBUG
@@ -121,6 +125,9 @@ final class CompositionRoot {
                 .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
                 .init(title: String(localized: "Annotate Area"), shortcut: .annotateArea) { [weak self] in self?.handle(.annotateArea) },
                 .init(title: String(localized: "Capture Area and Pin"), shortcut: .pinArea) { [weak self] in self?.handle(.pinArea) },
+                .init(title: String(localized: "Capture Area and Copy"), shortcut: .captureAreaAndCopy) { [weak self] in self?.handle(.captureAreaAndCopy) },
+                .init(title: String(localized: "Capture Area and Save"), shortcut: .captureAreaAndSave) { [weak self] in self?.handle(.captureAreaAndSave) },
+                .init(title: String(localized: "Capture Area and Annotate"), shortcut: .captureAreaAndAnnotate) { [weak self] in self?.handle(.captureAreaAndAnnotate) },
                 .init(
                     title: String(localized: "Capture Area and Upload"),
                     shortcut: .captureAreaAndUpload,
@@ -224,6 +231,14 @@ final class CompositionRoot {
             ],
             historyEntries: [
                 .init(title: String(localized: "Annotate Image…")) { [weak self] in self?.chooseFilesToAnnotate() },
+                .init(title: String(localized: "Annotate Latest Capture"), shortcut: .annotateLatestCapture) { [weak self] in self?.handle(.annotateLatestCapture) },
+                .init(
+                    title: String(localized: "Open from Clipboard"),
+                    shortcut: .openFromClipboard,
+                    isEnabled: { PasteboardImage.mayHoldImage(.general) }
+                ) { [weak self] in
+                    self?.handle(.openFromClipboard)
+                },
                 .init(title: String(localized: "Capture History…"), shortcut: .openHistory) { [weak self] in self?.showHistory() },
                 .init(
                     title: String(localized: "Restore Recently Closed"),
@@ -279,6 +294,7 @@ final class CompositionRoot {
         recordings.onRecorded = { [weak self] item in
             self?.didCapture(item)
         }
+        recordings.copiedToClipboard = { [weak self] id in self?.recordingCopied(id) }
         captures.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
         recordings.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
         recordings.onStatus = { [weak self] status in
@@ -518,6 +534,12 @@ final class CompositionRoot {
         case .copyLatestCapture:
             quickAccess.copyLatest()
             return
+        case .annotateLatestCapture:
+            annotateLatestCapture()
+            return
+        case .openFromClipboard:
+            annotateClipboard()
+            return
         default:
             break
         }
@@ -534,6 +556,12 @@ final class CompositionRoot {
             captures.annotateArea()
         case .pinArea:
             captures.pinArea()
+        case .captureAreaAndCopy:
+            captures.captureArea(followUp: CaptureFollowUp(action: .copy))
+        case .captureAreaAndSave:
+            captures.captureArea(followUp: CaptureFollowUp(action: .save))
+        case .captureAreaAndAnnotate:
+            captures.captureArea(followUp: CaptureFollowUp(action: .annotate))
         case .captureFullscreen:
             captures.captureFullscreen()
         case .captureAreaAndUpload:
@@ -667,7 +695,8 @@ final class CompositionRoot {
         desktopIcons.setShown(hidden)
     }
 
-    /// The URL API's `open-from-clipboard`: the clipboard's picture in the editor, added to the history first.
+    /// Open from Clipboard, a shortcut and the URL API's `open-from-clipboard`: the clipboard's picture in the editor,
+    /// added to the history first. Beeps when the clipboard holds none.
     private func annotateClipboard() {
         let scale = displays.layout.display(at: NSEvent.mouseLocation)?.pixelsPerPoint ?? 2
         switch PasteboardImage.read(.general) {
@@ -680,6 +709,16 @@ final class CompositionRoot {
             Log.automation.notice("Open from Clipboard: no picture on the clipboard")
             NSSound.beep()
         }
+    }
+
+    /// Annotate Latest Capture: the newest screenshot in the history, in the editor, whether its card is still up or not.
+    /// Beeps when there is none.
+    private func annotateLatestCapture() {
+        guard let entry = history.latestScreenshot() else {
+            Log.hotkeys.notice("Annotate Latest Capture: no screenshot in the history")
+            return NSSound.beep()
+        }
+        annotate(entry, displayID: quickAccess.item(entry.id)?.displayID)
     }
 
     /// The URL API's `add-quick-access-overlay`: a copy of a picture or a recording joins the history and gets a card,
@@ -805,14 +844,41 @@ final class CompositionRoot {
     // MARK: - Quick Access and history
 
     private func didCapture(_ item: QuickAccessItem) {
-        if settings.showQuickAccess {
+        if settings.afterCapture(for: item.kind).showsQuickAccess {
             quickAccess.add(item)
-        } else if settings.historyRetention == .never, !uploads.uploadingIDs.contains(item.id), let entry = history.item(id: item.id) {
-            // Nothing else holds on to it: it already went to the clipboard or the export folder.
+        } else if settings.historyRetention == .never, !uploads.uploadingIDs.contains(item.id), item.id != clipboardRecordingID,
+                  let entry = history.item(id: item.id) {
+            // Nothing else holds on to it: a screenshot already went to the clipboard as a picture, and a copy was
+            // saved to the export folder.
             history.delete(entry)
         }
         removeExpiredHistory()
         readTextSoon()
+    }
+
+    /// A recording went to the clipboard as a reference to its file in the history, which is all the clipboard has of it.
+    /// With history off, the file stays until the clipboard holds something else, or until the next launch.
+    private func recordingCopied(_ id: UUID) {
+        let former = clipboardRecording?.id
+        clipboardRecording = (id, NSPasteboard.general.changeCount)
+        clipboardWatch?.cancel()
+        clipboardWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                guard let self, !Task.isCancelled else { return }
+                guard clipboardRecordingID == nil else { continue }
+                clipboardRecording = nil
+                releaseIfUnheld(id)
+                return
+            }
+        }
+        if let former, former != id { releaseIfUnheld(former) }
+    }
+
+    /// The recording whose file the clipboard still holds: nothing else has been copied since it was.
+    private var clipboardRecordingID: UUID? {
+        guard let held = clipboardRecording, held.changeCount == NSPasteboard.general.changeCount else { return nil }
+        return held.id
     }
 
     /// Settings' Upload after a capture: to the default destination, when there is one.
@@ -847,14 +913,19 @@ final class CompositionRoot {
     /// of those things: let it go now unless a card (or, after a failure, the card that comes back with Retry),
     /// or the editor, still holds it.
     private func uploadEnded(_ id: UUID, _ outcome: UploadCoordinator.Outcome) {
-        if outcome == .failed, settings.showQuickAccess { return }
+        if outcome == .failed, showsQuickAccess(forCaptureWith: id) { return }
         releaseIfUnheld(id)
+    }
+
+    /// Whether Settings give the capture a card: the choice for screenshots, or for recordings.
+    private func showsQuickAccess(forCaptureWith id: UUID) -> Bool {
+        settings.afterCapture(for: history.item(id: id)?.kind ?? .screenshot).showsQuickAccess
     }
 
     private func releaseIfUnheld(_ id: UUID) {
         guard
             settings.historyRetention == .never, !quickAccess.itemIDs.contains(id), !annotations.openCaptureIDs.contains(id),
-            !uploads.uploadingIDs.contains(id), let entry = history.item(id: id)
+            !uploads.uploadingIDs.contains(id), id != clipboardRecordingID, let entry = history.item(id: id)
         else { return }
         history.delete(entry)
         historyWindow?.reload()
@@ -1222,9 +1293,9 @@ final class CompositionRoot {
         history.expired(retention: retention, keeping: heldCaptureIDs).count
     }
 
-    /// Captures something still needs the file of: a card, an open editor, an upload on its way.
+    /// Captures something still needs the file of: a card, an open editor, an upload on its way, the clipboard.
     private var heldCaptureIDs: Set<UUID> {
-        quickAccess.itemIDs.union(annotations.openCaptureIDs).union(uploads.uploadingIDs)
+        quickAccess.itemIDs.union(annotations.openCaptureIDs).union(uploads.uploadingIDs).union(clipboardRecordingID.map { [$0] } ?? [])
     }
 
     private func makeHistoryWindow() -> HistoryWindowController {

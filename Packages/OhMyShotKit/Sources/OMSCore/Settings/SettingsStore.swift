@@ -52,6 +52,27 @@ public final class SettingsStore {
         didSet { defaults.set(showQuickAccess, forKey: Key.showQuickAccess) }
     }
 
+    /// After a recording: put its file on the clipboard. The four choices for recordings began as the ones for
+    /// screenshots were when recordings first had their own, so no recording is kept differently than before.
+    public var copyAfterRecording: Bool {
+        didSet { defaults.set(copyAfterRecording, forKey: Key.copyAfterRecording) }
+    }
+
+    /// After a recording: show its Quick Access card.
+    public var showRecordingQuickAccess: Bool {
+        didSet { defaults.set(showRecordingQuickAccess, forKey: Key.showRecordingQuickAccess) }
+    }
+
+    /// After a recording: also save a copy to the export location without asking.
+    public var saveAfterRecording: Bool {
+        didSet { defaults.set(saveAfterRecording, forKey: Key.saveAfterRecording) }
+    }
+
+    /// After a recording: also upload it to the default destination; only offered once a destination exists.
+    public var uploadAfterRecording: Bool {
+        didSet { defaults.set(uploadAfterRecording, forKey: Key.uploadAfterRecording) }
+    }
+
     /// How long captures stay in the history.
     public var historyRetention: HistoryRetention {
         didSet { defaults.set(historyRetention.rawValue, forKey: Key.historyRetention) }
@@ -417,9 +438,22 @@ public final class SettingsStore {
         asksForFileName = defaults.bool(forKey: Key.asksForFileName)
         clipboardFormat = defaults.string(forKey: Key.clipboardFormat).flatMap(ClipboardFormat.init(rawValue:)) ?? .pictureOnly
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
+        copyAfterRecording = Self.recordingChoice(Key.copyAfterRecording, startingAs: Key.copyAfterCapture, in: defaults)
+        showRecordingQuickAccess = Self.recordingChoice(Key.showRecordingQuickAccess, startingAs: Key.showQuickAccess, in: defaults)
+        saveAfterRecording = Self.recordingChoice(Key.saveAfterRecording, startingAs: Key.saveAfterCapture, in: defaults)
+        uploadAfterRecording = Self.recordingChoice(Key.uploadAfterRecording, startingAs: Key.uploadAfterCapture, in: defaults)
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
         showTextResult = defaults.bool(forKey: Key.showTextResult)
         translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
+    }
+
+    /// A recording's choice: its own once it has one, else the choice for screenshots as it stands now, kept from then
+    /// on. It is not registered as a default, since a default would stand in for the screenshots' value.
+    private static func recordingChoice(_ key: String, startingAs screenshotKey: String, in defaults: UserDefaults) -> Bool {
+        if let own = defaults.object(forKey: key) as? Bool { return own }
+        let value = defaults.bool(forKey: screenshotKey)
+        defaults.set(value, forKey: key)
+        return value
     }
 
     private enum Key {
@@ -475,6 +509,10 @@ public final class SettingsStore {
         static let asksForFileName = "asksForFileName"
         static let clipboardFormat = "clipboardFormat"
         static let showQuickAccess = "showQuickAccess"
+        static let copyAfterRecording = "copyAfterRecording"
+        static let showRecordingQuickAccess = "showRecordingQuickAccess"
+        static let saveAfterRecording = "saveAfterRecording"
+        static let uploadAfterRecording = "uploadAfterRecording"
         static let historyRetention = "historyRetention"
         static let showTextResult = "showTextResult"
         static let translationTarget = "translationTarget"

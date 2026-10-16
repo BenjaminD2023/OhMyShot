@@ -184,7 +184,7 @@ struct GeneralSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(Text("After capture", bundle: .module)) {
+            SettingsRow(Text("After screenshot", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         HStack(spacing: 14) {
@@ -402,6 +402,8 @@ extension GeneralSettingsView {
 
 struct RecordingSettingsView: View {
     @Bindable var settings: SettingsStore
+    let destinations: UploadDestinationStore
+    private var hasDestination: Bool { !destinations.destinations.isEmpty }
 
     var body: some View {
         SettingsPane {
@@ -504,6 +506,49 @@ struct RecordingSettingsView: View {
                     .labelsHidden()
                     .fixedSize()
                     InfoButton(Text("Choose GIF on the recording bar to keep a recording as an animated GIF, which shows wherever pictures do. GIFs have no sound and are made as large as things were on screen, at most 1920 pixels on their longer side. More frames move more smoothly and make larger files.", bundle: .module))
+                }
+            }
+
+            SettingsDivider()
+
+            SettingsRow(Text("After recording", bundle: .module)) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        HStack(spacing: 14) {
+                            Toggle(isOn: $settings.copyAfterRecording) {
+                                Text("Copy", bundle: .module)
+                            }
+                            Toggle(isOn: $settings.showRecordingQuickAccess) {
+                                Text("Quick Access", bundle: .module)
+                            }
+                            Toggle(isOn: $settings.saveAfterRecording) {
+                                Text("Save", bundle: .module)
+                            }
+                            // Uploading is offered only to a person who has somewhere to upload to.
+                            if hasDestination {
+                                Toggle(isOn: $settings.uploadAfterRecording) {
+                                    Text("Upload", bundle: .module)
+                                }
+                            }
+                        }
+                        InfoButton(hasDestination
+                            ? Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in General. Upload sends it to your default destination.", bundle: .module)
+                            : Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in General.", bundle: .module))
+                    }
+                    if !settings.copyAfterRecording, !settings.showRecordingQuickAccess, !settings.saveAfterRecording, !(hasDestination && settings.uploadAfterRecording) {
+                        Label {
+                            if settings.historyRetention == .never {
+                                Text("Recordings won’t be kept anywhere.", bundle: .module)
+                            } else {
+                                Text("Recordings go only to History.", bundle: .module)
+                            }
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                        }
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -617,18 +662,26 @@ struct ToolsSettingsView: View {
 }
 
 struct ShortcutsSettingsView: View {
-    /// The shortcuts in the order of `CaptureShortcut`, split into the pane's groups.
-    private static let groups: [[CaptureShortcut]] = Dictionary(grouping: CaptureShortcut.allCases.filter(\.isAvailable), by: \.group)
-        .sorted { $0.key < $1.key }
-        .map(\.value)
+    let destinations: UploadDestinationStore
+
+    /// The shortcuts in the order of `CaptureShortcut`, split into the pane's groups. Those that upload are left
+    /// out until a destination is set up, as every upload entry is left out of the capture interface, unless a key
+    /// was chosen for one: it still works, so it stays listed to be changed or cleared.
+    static func groups(hasDestination: Bool, hasKey: (CaptureShortcut) -> Bool) -> [[CaptureShortcut]] {
+        let listed = CaptureShortcut.allCases.filter { $0.isAvailable && (hasDestination || !$0.needsUploadDestination || hasKey($0)) }
+        return Dictionary(grouping: listed, by: \.group)
+            .sorted { $0.key < $1.key }
+            .map(\.value)
+    }
 
     var body: some View {
+        let groups = Self.groups(hasDestination: !destinations.destinations.isEmpty) { KeyboardShortcuts.getShortcut(for: $0.name) != nil }
         SettingsPane(alignment: .leading, spacing: 8) {
-            ForEach(Self.groups.indices, id: \.self) { index in
+            ForEach(groups.indices, id: \.self) { index in
                 if index > 0 {
                     SettingsDivider()
                 }
-                ForEach(Self.groups[index], id: \.self) { shortcut in
+                ForEach(groups[index], id: \.self) { shortcut in
                     SettingsRow(Text(shortcut.title)) {
                         KeyboardShortcuts.Recorder(for: shortcut.name)
                     }
@@ -656,10 +709,11 @@ extension CaptureShortcut {
     /// Which group of the Shortcuts pane the shortcut is listed in.
     fileprivate var group: Int {
         switch self {
-        case .captureArea, .annotateArea, .pinArea, .captureAreaAndUpload, .captureFullscreen, .captureFullscreenAndUpload, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .scrollingCapture, .recordScreen, .saveReplay: 0
+        case .captureArea, .annotateArea, .pinArea, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload, .captureFullscreen,
+             .captureFullscreenAndUpload, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .scrollingCapture, .recordScreen, .saveReplay: 0
         case .captureText, .captureTextJoined, .translateArea: 1
         case .pickColor, .measure: 2
-        case .openHistory, .copyLatestCapture: 3
+        case .openHistory, .copyLatestCapture, .annotateLatestCapture, .openFromClipboard: 3
         }
     }
 }
