@@ -128,6 +128,9 @@ final class CompositionRoot {
                 }
             )
         }
+        // Where the blocks of text on a frozen screen lie, found quickly and never read, for a selection's edges
+        // to snap to when Settings say so.
+        overlay.textBlocks = TextBlockFinder(isOn: { [settings = self.settings] in settings.snapSelectionToText }, find: { await TextBlocks.find(in: $0) })
         if #available(macOS 27, *) {
             replayStorage = ReplayCoordinator(settings: settings, displays: displays, capturer: capturer, permissions: permissions, recordings: recordings)
         }

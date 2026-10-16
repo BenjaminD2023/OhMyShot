@@ -76,6 +76,8 @@ final class OverlayView: NSView {
     private let room = CAShapeLayer()
     private let outline = CAShapeLayer()
     private let border = CAShapeLayer()
+    /// The edges of the selection that snapped to text, drawn over `border` in the accent.
+    private let snapEdges = CAShapeLayer()
     private let sizePill = ReadingCapsule()
     private let crosshairOutline = CAShapeLayer()
     private let crosshair = CAShapeLayer()
@@ -132,7 +134,7 @@ final class OverlayView: NSView {
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
         purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex, measureUnit: MeasureUnit = .points,
-        allInOne: Bool = false
+        allInOne: Bool = false, snapsToText: Bool = false
     ) {
         self.mode = mode
         self.windows = windows
@@ -174,9 +176,12 @@ final class OverlayView: NSView {
         case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.")
         case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.")
         }
-        setAccessibilityHelp(help)
+        setAccessibilityHelp(snapsToText ? help + " " + String(localized: "The selection's edges snap to text; hold Command to place them freely.") : help)
         withoutAnimation {
             applyAppearance()
+            // The panels are reused: the edges in-place annotation hid come back with a new session.
+            border.isHidden = false
+            snapEdges.isHidden = false
             backdrop.contents = nil
             loupeImage.contents = nil
             updateSelectionLayers()
@@ -244,6 +249,12 @@ final class OverlayView: NSView {
     }
 
     #if DEBUG
+    /// Whether the selection's white edge and its snapped edges are showing, for checking what a new session
+    /// brings back after in-place annotation hid them.
+    var debugEdgeLayersShow: (border: Bool, snapped: Bool) {
+        (!border.isHidden, !snapEdges.isHidden)
+    }
+
     /// Drags the ruler's box over `rect` (global space) and lets go, for scripted checks.
     func debugMeasureBox(_ rect: CGRect) {
         let box = local(rect)
@@ -276,7 +287,7 @@ final class OverlayView: NSView {
         isAnnotating = true
         toolbar.isHidden = true
         withoutAnimation {
-            for layer in [room, outline, border, crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer] {
+            for layer in [room, outline, border, snapEdges, crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer] {
                 layer.isHidden = true
             }
         }
@@ -568,6 +579,8 @@ final class OverlayView: NSView {
             line.lineJoin = .round
             line.lineCap = .round
         }
+        snapEdges.fillColor = nil
+        snapEdges.lineCap = .round
 
         let diameter = Theme.Loupe.diameter
         let lensBounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
@@ -615,7 +628,7 @@ final class OverlayView: NSView {
 
         sizePill.setScale(display.backingScale)
         loupePill.setScale(display.backingScale)
-        for sublayer in [backdrop, room, outline, border, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer] {
+        for sublayer in [backdrop, room, outline, border, snapEdges, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer] {
             root.addSublayer(sublayer)
         }
         withoutAnimation {
@@ -654,6 +667,10 @@ final class OverlayView: NSView {
         border.fillColor = text
             ? Theme.cgColor(.selectedTextBackgroundColor, for: effectiveAppearance).copy(alpha: isDark ? 0.45 : 0.35)
             : nil
+        // An edge that snapped is the accent and a half point heavier than the others (a point heavier on the
+        // text selection's thin edge), so it reads without the color.
+        snapEdges.strokeColor = Theme.cgColor(.controlAccentColor, for: effectiveAppearance)
+        snapEdges.lineWidth = border.lineWidth + (text ? 1 : 0.5)
     }
 
     private func updateSelectionLayers() {
@@ -664,6 +681,7 @@ final class OverlayView: NSView {
             room.path = roomPath
             outline.path = nil
             border.path = nil
+            snapEdges.path = nil
             sizePill.layer.isHidden = true
             setAccessibilityValue(nil)
             return
@@ -673,8 +691,10 @@ final class OverlayView: NSView {
         room.path = roomPath
         let edge = CGPath(rect: rect, transform: nil)
         let inset = Self.textSelectionEdge(increasedContrast: increasedContrast) / 2
-        border.path = purpose == .text ? CGPath(rect: rect.integral.insetBy(dx: inset, dy: inset), transform: nil) : edge
+        let drawn = purpose == .text ? rect.integral.insetBy(dx: inset, dy: inset) : rect
+        border.path = purpose == .text ? CGPath(rect: drawn, transform: nil) : edge
         outline.path = edge
+        snapEdges.path = mode == .area ? Self.path(of: selection.snappedEdges, in: drawn) : nil
 
         let text: String
         if mode == .window, let hoveredWindow {
@@ -701,6 +721,17 @@ final class OverlayView: NSView {
             origin.y = toolbar.frame.maxY + 10
         }
         sizePill.layer.frame.origin = origin
+    }
+
+    /// The sides of `rect` that snapped, as lines (the view's y is up, as the selection's is).
+    private static func path(of edges: TextSnap.Edges, in rect: CGRect) -> CGPath? {
+        guard !edges.isEmpty else { return nil }
+        let path = CGMutablePath()
+        if edges.contains(.left) { path.addLines(between: [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.minX, y: rect.maxY)]) }
+        if edges.contains(.right) { path.addLines(between: [CGPoint(x: rect.maxX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.maxY)]) }
+        if edges.contains(.bottom) { path.addLines(between: [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY)]) }
+        if edges.contains(.top) { path.addLines(between: [CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.maxX, y: rect.maxY)]) }
+        return path
     }
 
     private func updatePointer(_ point: CGPoint?) {

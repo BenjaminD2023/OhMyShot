@@ -14,6 +14,9 @@ public struct SelectionModel: Equatable, Sendable {
         public static let square = Modifiers(rawValue: 1 << 0)
         /// Grow from the starting point in every direction (Option).
         public static let fromCenter = Modifiers(rawValue: 1 << 1)
+        /// Leave the edges where the pointer puts them, not snapped to text (Command): for the rest of the drag
+        /// once it has been held, since letting go of it would otherwise throw the edges to the text.
+        public static let unsnapped = Modifiers(rawValue: 1 << 2)
     }
 
     /// The display's frame, or the box around every display; the selection never leaves it.
@@ -29,6 +32,10 @@ public struct SelectionModel: Equatable, Sendable {
     /// How far the arrow keys have moved the dragged corner from the pointer. The corner stays that far from it
     /// for the rest of the drag, so a nudge is not thrown away by the pointer's next move.
     public private(set) var cornerOffset = CGVector.zero
+    /// The edges of `rect` that snapped to text, for the overlay to mark.
+    public private(set) var snappedEdges: TextSnap.Edges = []
+    /// Unsnapped was asked for during this drag: its edges stay where the pointer puts them until the next one.
+    private var placedFreely = false
 
     public init(bounds: CGRect, pixelsPerPoint: CGFloat) {
         self.bounds = bounds
@@ -40,9 +47,14 @@ public struct SelectionModel: Equatable, Sendable {
         rect = nil
         pointer = point
         cornerOffset = .zero
+        snappedEdges = []
+        placedFreely = false
     }
 
-    public mutating func drag(to point: CGPoint, modifiers: Modifiers = []) {
+    /// Drags the selection out to `point`. With `snapping`, edges near the blocks of text it knows move to
+    /// them; a selection kept square or grown from the center, one that has been dragged with `.unsnapped`
+    /// since it began, and one still too small to be a drag have their shape set by the pointer alone.
+    public mutating func drag(to point: CGPoint, modifiers: Modifiers = [], snapping: TextSnap? = nil) {
         guard let anchor else { return }
         pointer = point
         let current = corner(of: point)
@@ -71,14 +83,24 @@ public struct SelectionModel: Equatable, Sendable {
         } else {
             next = CGRect(x: min(anchor.x, anchor.x + dx), y: min(anchor.y, anchor.y + dy), width: abs(dx), height: abs(dy))
         }
+        snappedEdges = []
+        if modifiers.contains(.unsnapped) { placedFreely = true }
+        // A click with a hair of jitter is not a drag to snap: it must stay a click, as it is without snapping.
+        if let snapping, !placedFreely, modifiers.isDisjoint(with: [.square, .fromCenter]), !Self.isClick(pixels(of: snapped(next))) {
+            let result = snapping.snapped(next, within: bounds)
+            next = result.rect
+            snappedEdges = result.edges
+        }
         next = next.intersection(bounds)
         rect = next.isNull ? nil : snapped(next)
+        if rect == nil { snappedEdges = [] }
     }
 
     /// Moves the dragged corner by `delta` while the pointer stays where it is, as the arrow keys do, and draws the
     /// selection again. The corner stops at the bounds; a pointer beyond them leaves the corner at the edge, which
     /// the keys then move from. A nudge the selection does not show (the shape held across it, or the room ran out)
-    /// is not kept, so no hidden distance builds up for a later release of Shift to bring out.
+    /// is not kept, so no hidden distance builds up for a later release of Shift to bring out. Once nudged, the
+    /// selection no longer snaps to text for the rest of the drag.
     public mutating func nudge(by delta: CGVector, modifiers: Modifiers = []) {
         guard anchor != nil, let pointer else { return }
         let before = (rect: rect, offset: cornerOffset)
@@ -88,6 +110,8 @@ public struct SelectionModel: Equatable, Sendable {
         cornerOffset = CGVector(dx: target.x - base.x, dy: target.y - base.y)
         drag(to: pointer, modifiers: modifiers)
         if before.rect != nil, rect == before.rect { cornerOffset = before.offset }
+        // Set to the pixel by hand: snapping to text would undo it at the pointer's next move.
+        if isNudged { placedFreely = true }
     }
 
     /// Whether the arrow keys have moved the dragged corner off the pointer.
@@ -114,6 +138,7 @@ public struct SelectionModel: Equatable, Sendable {
         moved.origin.x = min(max(moved.minX, bounds.minX), bounds.maxX - moved.width)
         moved.origin.y = min(max(moved.minY, bounds.minY), bounds.maxY - moved.height)
         self.rect = snapped(moved)
+        snappedEdges = []
         anchor = anchor.map { CGPoint(x: $0.x + (moved.minX - rect.minX), y: $0.y + (moved.minY - rect.minY)) }
         // The pointer is moving the selection along with it: the dragged corner follows both.
         pointer = pointer.map { CGPoint(x: $0.x + delta.dx, y: $0.y + delta.dy) }
@@ -124,18 +149,26 @@ public struct SelectionModel: Equatable, Sendable {
         rect = nil
         pointer = nil
         cornerOffset = .zero
+        snappedEdges = []
     }
 
     /// The selection's size in framebuffer pixels, which is exactly the captured image's size.
     public var pixelSize: (width: Int, height: Int) {
         guard let rect else { return (0, 0) }
-        return (Int((rect.width * pixelsPerPoint).rounded()), Int((rect.height * pixelsPerPoint).rounded()))
+        return pixels(of: rect)
     }
 
     /// Too small to be a deliberate selection (a click, not a drag).
     public var isTooSmall: Bool {
-        let size = pixelSize
-        return size.width < 4 || size.height < 4
+        Self.isClick(pixelSize)
+    }
+
+    private func pixels(of rect: CGRect) -> (width: Int, height: Int) {
+        (Int((rect.width * pixelsPerPoint).rounded()), Int((rect.height * pixelsPerPoint).rounded()))
+    }
+
+    private static func isClick(_ size: (width: Int, height: Int)) -> Bool {
+        size.width < 4 || size.height < 4
     }
 
     private func clamped(_ point: CGPoint) -> CGPoint {

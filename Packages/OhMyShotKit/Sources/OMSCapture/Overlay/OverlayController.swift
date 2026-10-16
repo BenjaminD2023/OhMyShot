@@ -98,6 +98,9 @@ public final class OverlayController {
     /// A shape chosen on Capture Area's size control, which Shift keeps from now on: whoever keeps the setting sets
     /// `keptShape` to it.
     public var onKeptShapeChange: ((AspectRatio) -> Void)?
+    /// Snaps a selection's edges to the blocks of text on a frozen screen when its `isOn` says so as a session
+    /// begins; set once by whoever has a text detector.
+    public var textBlocks: TextBlockFinder?
     /// A scrolling capture starts as soon as its area is chosen, without the scrolling bar (the URL API's
     /// `start=true`). Set before `begin`; every session ends with it off again.
     public var startsScrollingAtOnce = false
@@ -171,6 +174,12 @@ public final class OverlayController {
     private var spaceHeld = false
     /// The keys held at the drag's last move or change of keys: the arrow keys redraw the selection under them.
     private var dragModifiers: NSEvent.ModifierFlags = []
+    /// Whether this session snaps selections to text, the blocks found so far on each display (global points),
+    /// the snapping they make once any are, and the detections still running.
+    private var snapsToText = false
+    private var textBlocksByDisplay: [CGDirectDisplayID: [CGRect]] = [:]
+    private var textSnap: TextSnap?
+    private var textDetections: [Task<[CGRect], Never>] = []
     /// The pointer in global space, and whether the arrow keys moved the crosshair since the mouse last
     /// did: then a color is taken at the crosshair, not under the hidden pointer.
     private var pointer: CGPoint?
@@ -237,6 +246,9 @@ public final class OverlayController {
         windows = mode == .window ? WindowCatalog.snapshot(layout: layout, excludingPID: windowsExcluded) : []
         let viewMode: OverlayView.Mode = mode == .window ? .window : .area
         let holdsStill = holdsStill
+        // Only a frozen screen holds still for its text to be found; the live one may change under a snapped edge.
+        cancelTextDetections()
+        snapsToText = holdsStill && (purpose == .screenshot || purpose == .text || purpose == .annotate) && textBlocks?.isOn() == true
         for (id, entry) in entries {
             entry.panel.level = OverlayPanel.selectionLevel
             entry.view.reset(
@@ -246,7 +258,8 @@ public final class OverlayController {
                 purpose: purpose,
                 colorFormat: colorFormat,
                 measureUnit: measureUnit,
-                allInOne: isAllInOne
+                allInOne: isAllInOne,
+                snapsToText: snapsToText
             )
         }
         hasInput = false
@@ -554,6 +567,9 @@ public final class OverlayController {
                     probe.end()
                     onFirstFrame()
                 }
+                // After the frame is shown and the overlay has the input, and not waited for: the next display's
+                // frame does not wait for this one's text.
+                findTextBlocks(in: frame, on: display, session: session)
                 if let pending = pendingAnnotation, pending.display == display.id {
                     pendingAnnotation = nil
                     startAnnotating(on: display.id, area: pending.area)
@@ -572,6 +588,33 @@ public final class OverlayController {
     /// why All-In-One's, which may take its area's text, carry none either.
     static func framesShowPointer(_ setting: Bool, purpose: Purpose, holdsStill: Bool, allInOne: Bool = false, recaptured: Bool = false) -> Bool {
         setting && holdsStill && !allInOne && !recaptured && (purpose == .screenshot || purpose == .annotate)
+    }
+
+    /// Finds the blocks of text in a display's frozen frame, off the main actor and at low priority, when this
+    /// session snaps selections to text. Nothing snaps until the blocks are in; a session that has ended, or
+    /// that a new one replaced, drops them.
+    private func findTextBlocks(in frame: CapturedFrame, on display: DisplayInfo, session: Int) {
+        guard snapsToText, let find = textBlocks?.find else { return }
+        let image = frame.image, area = frame.frame, scale = frame.pixelsPerPoint
+        let probe = LatencyProbe("overlay.textblocks")
+        let detection = Task.detached(priority: .utility) { await find(image) }
+        textDetections.append(detection)
+        Task { [weak self] in
+            let found = await detection.value
+            guard !detection.isCancelled else { return }
+            probe.end()
+            guard let self, isActive, session == self.session else { return }
+            textBlocksByDisplay[display.id] = found.map { TextSnap.block(fromPixels: $0, in: area, pixelsPerPoint: scale) }
+            textSnap = TextSnap(blocks: textBlocksByDisplay.values.flatMap(\.self))
+            Log.capture.notice("Text blocks: \(found.count, privacy: .public) found on display \(display.id, privacy: .public)")
+        }
+    }
+
+    private func cancelTextDetections() {
+        textDetections.forEach { $0.cancel() }
+        textDetections = []
+        textBlocksByDisplay = [:]
+        textSnap = nil
     }
 
     /// The first frame normally lands within about 50 ms. If it has not after half a second, macOS is
@@ -732,6 +775,8 @@ public final class OverlayController {
         spaceHeld = false
         pointer = nil
         nudged = false
+        cancelTextDetections()
+        snapsToText = false
         #if DEBUG
         injectedFrames = nil
         #endif
@@ -802,12 +847,29 @@ extension OverlayController {
     }
 
     /// Shift keeps the selection's shape (a square, unless Settings keep another); Option grows it from the center,
-    /// except when copying text, where Option means "open the OCR panel" when the mouse is released.
+    /// except when copying text, where Option means "open the OCR panel" when the mouse is released; Command keeps
+    /// edges from snapping to text for the rest of the drag.
     private func selectionModifiers(_ flags: NSEvent.ModifierFlags) -> SelectionModel.Modifiers {
         var modifiers: SelectionModel.Modifiers = []
         if flags.contains(.shift) { modifiers.insert(.square) }
         if flags.contains(.option), purpose != .text { modifiers.insert(.fromCenter) }
+        // Command places edges freely: the model keeps them so for the rest of the drag.
+        if flags.contains(.command) { modifiers.insert(.unsnapped) }
         return modifiers
+    }
+
+    /// What a drag snaps to now.
+    private var dragSnap: TextSnap? {
+        Self.snap(textSnap, whileChoosing: allInOneMode)
+    }
+
+    /// `snap`, unless All-In-One's first drag is choosing a recording's or a scrolling capture's area: that
+    /// area is live, so it snaps to nothing.
+    static func snap(_ snap: TextSnap?, whileChoosing choice: AllInOneChoice?) -> TextSnap? {
+        switch choice {
+        case .record?, .scroll?: nil
+        case .screenshot?, .text?, nil: snap
+        }
     }
 
     /// Ends the session with an area: handed to in-place annotation, or kept as it was frozen on screen,
@@ -892,7 +954,7 @@ extension OverlayController: OverlayViewDelegate {
         if spaceHeld {
             selection.move(by: CGVector(dx: point.x - last.x, dy: point.y - last.y))
         } else {
-            selection.drag(to: point, modifiers: selectionModifiers(modifiers))
+            selection.drag(to: point, modifiers: selectionModifiers(modifiers), snapping: dragSnap)
         }
         dragPoint = point
         dragTop = max(dragTop, point.y)
@@ -930,7 +992,7 @@ extension OverlayController: OverlayViewDelegate {
     func overlayView(_ view: OverlayView, didChangeModifiers modifiers: NSEvent.ModifierFlags) {
         guard let last = dragPoint, !spaceHeld else { return }
         dragModifiers = modifiers
-        selection.drag(to: last, modifiers: selectionModifiers(modifiers))
+        selection.drag(to: last, modifiers: selectionModifiers(modifiers), snapping: dragSnap)
         showSelection()
     }
 

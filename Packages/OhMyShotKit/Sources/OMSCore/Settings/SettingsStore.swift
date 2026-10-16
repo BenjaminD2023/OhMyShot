@@ -160,6 +160,12 @@ public final class SettingsStore {
         AspectRatio(label: areaShape)
     }
 
+    /// On a frozen screen, the edges of a selection snap to the blocks of text near them. Off by default: it
+    /// pulls edges as the pointer passes, which only a person who wants it should have to put up with.
+    public var snapSelectionToText: Bool {
+        didSet { defaults.set(snapSelectionToText, forKey: Key.snapSelectionToText) }
+    }
+
     /// How long Self-Timer waits, in seconds, between choosing what to capture and capturing it.
     public var selfTimerDelay: Int {
         didSet { defaults.set(selfTimerDelay, forKey: Key.selfTimerDelay) }
@@ -416,6 +422,7 @@ public final class SettingsStore {
             Key.freezeScreen: true,
             Key.screenshotShowsCursor: false,
             Key.areaShape: "",
+            Key.snapSelectionToText: false,
             Key.allInOneRemembersArea: true,
             Key.windowShadow: true,
             Key.selfTimerDelay: 5,
@@ -465,6 +472,7 @@ public final class SettingsStore {
         // Only a shape the picker lists is kept; anything else, a square included, is a square.
         let shape = defaults.string(forKey: Key.areaShape) ?? ""
         areaShape = AspectRatio.presets.dropFirst().contains { $0.label == shape } ? shape : ""
+        snapSelectionToText = defaults.bool(forKey: Key.snapSelectionToText)
         let delay = defaults.integer(forKey: Key.selfTimerDelay)
         selfTimerDelay = Self.selfTimerDelays.contains(delay) ? delay : 5
         pinCornerRadius = min(max(defaults.double(forKey: Key.pinCornerRadius), Self.pinCornerRadii.lowerBound), Self.pinCornerRadii.upperBound)
@@ -553,6 +561,7 @@ public final class SettingsStore {
         static let freezeScreen = "freezeScreen"
         static let screenshotShowsCursor = "screenshotShowsCursor"
         static let areaShape = "areaShape"
+        static let snapSelectionToText = "snapSelectionToText"
         static let selfTimerDelay = "selfTimerDelay"
         static let pinCornerRadius = "pinCornerRadius"
         static let pinShadow = "pinShadow"

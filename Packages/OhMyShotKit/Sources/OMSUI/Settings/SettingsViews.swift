@@ -183,6 +183,12 @@ struct GeneralSettingsView: View {
                         InfoButton(Text("Hold Shift while you drag out an area to keep its shape. Press Tab while choosing an area to type its width and height in pixels; a shape you choose there is the one Shift keeps from then on.", bundle: .module))
                     }
                     HStack(spacing: 6) {
+                        Toggle(isOn: $settings.snapSelectionToText) {
+                            Text("Snap the selection to text", bundle: .module)
+                        }
+                        InfoButton(Text("On a frozen screen, the edges of a selection snap to paragraphs, lists, code, and tables near them, with a little room around. Hold Command while dragging to place the edges freely.", bundle: .module))
+                    }
+                    HStack(spacing: 6) {
                         Toggle(isOn: $settings.allInOneRemembersArea) {
                             Text("All-In-One remembers the last area", bundle: .module)
                         }
