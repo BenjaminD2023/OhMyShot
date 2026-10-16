@@ -49,6 +49,8 @@ final class RecordingCoordinator {
 
     /// Receives every finished recording, already in the history; the composition root shows its card.
     var onRecorded: ((QuickAccessItem) -> Void)?
+    /// A recording was kept and Settings says to upload it.
+    var uploadKept: ((HistoryItem) -> Void)?
     /// The composition root shows it in the menu bar.
     var onStatus: ((Status) -> Void)?
     /// Saves a copy of a kept recording to the export folder, as Save on its card does.
@@ -642,6 +644,7 @@ final class RecordingCoordinator {
             pixelHeight: entry.pixelHeight, displayID: displayID, createdAt: entry.createdAt, duration: entry.duration
         )
         if settings.saveAfterCapture { item.savedURL = save?(url) }
+        if settings.uploadAfterCapture { uploadKept?(entry) }
         onRecorded?(item)
     }
 

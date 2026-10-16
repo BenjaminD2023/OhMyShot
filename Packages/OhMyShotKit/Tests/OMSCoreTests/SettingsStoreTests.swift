@@ -29,3 +29,16 @@ struct CopyLinkSettingTests {
         #expect(!SettingsStore(defaults: defaults).copyLinkAfterUpload)
     }
 }
+
+@MainActor
+struct UploadAfterCaptureSettingTests {
+    @Test func capturesAreNotUploadedUnlessAskedFor() throws {
+        let suite = "OMSCoreTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        #expect(!settings.uploadAfterCapture)
+        settings.uploadAfterCapture = true
+        #expect(SettingsStore(defaults: defaults).uploadAfterCapture)
+    }
+}

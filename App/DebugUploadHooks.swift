@@ -127,6 +127,69 @@ extension DebugHooks {
             NSApp.terminate(nil)
         case "remove-check-captures":
             Log.app.notice("debug.remove-check-captures \(removeCheckCaptures(), privacy: .public)")
+        case "upload-after-setting":
+            // value=1|0: Settings' Upload after a capture.
+            settings.uploadAfterCapture = value("value") == "1"
+            Log.app.notice("debug.upload-after-setting \(settings.uploadAfterCapture, privacy: .public)")
+        case "copy-after-setting":
+            // value=1|0: Settings' Copy after a capture, so a scripted capture that goes through the setting
+            // leaves the real clipboard alone.
+            settings.copyAfterCapture = value("value") == "1"
+            Log.app.notice("debug.copy-after-setting \(settings.copyAfterCapture, privacy: .public)")
+        case "upload-plain-area":
+            // The centered region of the primary display, kept as a plain capture (no follow-up of its own), so
+            // only Settings' Upload decides whether it is uploaded.
+            _ = privatePasteboard()
+            observeUpload(UUID(), pasteboard: uploads.pasteboard, any: true)
+            if let display = displays.layout.primary {
+                let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
+                Task { await captures.captureArea(rect, appName: "Test", copiesToClipboard: false) }
+            }
+        case "upload-hotkey":
+            // name=captureAreaAndUpload|captureFullscreenAndUpload: what the shortcut does, with links going to the
+            // private pasteboard. Capture Fullscreen reads the real screen: turn copy-after-setting off first.
+            _ = privatePasteboard()
+            observeUpload(UUID(), pasteboard: uploads.pasteboard, any: true)
+            if let shortcut = value("name").flatMap(CaptureShortcut.init(rawValue:)) { pressShortcut(shortcut) }
+        case "upload-records":
+            // The finished uploads the records hold, newest first.
+            let records = uploads.records.records
+            Log.app.notice("debug.upload-records \(records.count, privacy: .public)")
+            for record in records.prefix(20) {
+                let expiry = record.expiresAt.map { "expires \($0.formatted(.iso8601))" } ?? "no expiry"
+                Log.app.notice("debug.upload-record \(record.fileName, privacy: .public) to \(record.destinationName, privacy: .public) (\(record.destinationKind, privacy: .public)) capture \(record.captureID?.uuidString.prefix(8) ?? "none", privacy: .public) \(expiry, privacy: .public) removal \(String(describing: record.removal), privacy: .public) \(record.link.absoluteString, privacy: .public)")
+            }
+        case "upload-seed":
+            // Adds a record for the newest capture without uploading: name=, dest=<destination name>, expired=1,
+            // key=<remote key>, link=, deletion=. For states that are hard to reach by uploading.
+            let destination = value("dest").flatMap { name in uploads.destinations.destinations.first { $0.name == name } } ?? uploads.destinations.defaultDestination
+            guard let destination else { return true }
+            let name = value("name") ?? "seeded.png"
+            let result = UploadResult(
+                link: URL(string: value("link") ?? "https://files.example.com/\(name)")!,
+                deletionURL: value("deletion").flatMap(URL.init(string:)), fileName: name,
+                expiresAt: value("expired") == "1" ? .now.addingTimeInterval(-3600) : value("expires").flatMap(Double.init).map { .now.addingTimeInterval($0) },
+                remoteKey: value("key")
+            )
+            uploads.records.add(UploadRecord(captureID: latestCaptureID(), date: .now.addingTimeInterval(-Double(value("ago").flatMap(Int.init) ?? 300)), fileName: name, destination: destination, result: result))
+            Log.app.notice("debug.upload-seed \(name, privacy: .public)")
+        case "upload-forget-all":
+            uploads.forgetAllRecords()
+            Log.app.notice("debug.upload-forget-all left \(uploads.records.records.count, privacy: .public)")
+        case "upload-delete":
+            // Delete from Storage for the newest capture. confirm=yes|no answers the question for itself and logs
+            // what it asked; without it the real alert shows (snapshot it with `snapshot`).
+            let pasteboard = privatePasteboard()
+            _ = pasteboard
+            if let answer = value("confirm") {
+                uploads.confirmDeletion = { title, message, button, _ in
+                    Log.app.notice("debug.upload-delete asked: \(title, privacy: .public) | \(message, privacy: .public) | \(button, privacy: .public)")
+                    return answer == "yes"
+                }
+            }
+            guard let id = latestCaptureID() else { return true }
+            Log.app.notice("debug.upload-delete can \(uploads.canDeleteFromStorage(id), privacy: .public)")
+            uploads.deleteFromStorage(captureID: id)
         case "upload-copy-link-setting":
             settings.copyLinkAfterUpload = value("value") != "0"
             Log.app.notice("debug.upload-copy-link-setting \(settings.copyLinkAfterUpload, privacy: .public)")

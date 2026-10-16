@@ -14,6 +14,10 @@ public final class Uploader: Sendable {
     let resources: ActiveResources
     let makeConfiguration: @Sendable () -> URLSessionConfiguration
     let temporaryDirectory: URL
+    /// Files over this size go to S3 in parts.
+    let multipartThreshold: Int64
+    /// The size of each part, at least; larger files get larger parts so they fit S3's limit of 10,000.
+    let multipartPartSize: Int64
 
     /// - Parameters:
     ///   - sessionConfiguration: Builds the configuration of each upload's session; tests install a
@@ -23,12 +27,16 @@ public final class Uploader: Sendable {
         secrets: any SecretStore,
         resources: ActiveResources = .shared,
         sessionConfiguration: @escaping @Sendable () -> URLSessionConfiguration = Uploader.defaultConfiguration,
-        temporaryDirectory: URL = FileManager.default.temporaryDirectory
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        multipartThreshold: Int64 = 100 * 1024 * 1024,
+        multipartPartSize: Int64 = 16 * 1024 * 1024
     ) {
         self.secrets = secrets
         self.resources = resources
         self.makeConfiguration = sessionConfiguration
         self.temporaryDirectory = temporaryDirectory
+        self.multipartThreshold = multipartThreshold
+        self.multipartPartSize = multipartPartSize
     }
 
     /// No cookies, no cache and no background session: an upload is one request and leaves nothing behind.
@@ -89,6 +97,32 @@ public final class Uploader: Sendable {
             Log.upload.error("Upload to \(destination.kindName, privacy: .public) failed: \(String(describing: type(of: error)), privacy: .public)")
             throw error
         }
+    }
+
+    /// Removes an uploaded file from its storage with a signed DELETE (S3, WebDAV). A file that is already
+    /// gone counts as removed. Records of the other kinds are deleted by opening their deletion address.
+    ///
+    /// - Throws: `UploadError`, or `CancellationError` when the calling task is cancelled.
+    @concurrent
+    public func delete(_ record: UploadRecord, from destination: UploadDestination) async throws {
+        guard let key = record.remoteKey else {
+            throw UploadError.invalidConfiguration(String(localized: "this kind of destination can’t delete files itself"))
+        }
+        let lease = resources.acquire(.upload)
+        defer { lease.end() }
+        let session = URLSession(configuration: makeConfiguration())
+        defer { session.finishTasksAndInvalidate() }
+        let transport = Transport(session: session, progress: nil)
+        Log.upload.notice("Delete from \(destination.kindName, privacy: .public) started")
+        switch destination.configuration {
+        case .s3(let settings):
+            try await deleteFromS3(key: key, destination: destination, settings: settings, transport: transport)
+        case .webDAV(let settings):
+            try await deleteFromWebDAV(key: key, destination: destination, settings: settings, transport: transport)
+        case .customHTTP:
+            throw UploadError.invalidConfiguration(String(localized: "this kind of destination can’t delete files itself"))
+        }
+        Log.upload.notice("Delete from \(destination.kindName, privacy: .public) finished")
     }
 
     // MARK: Helpers shared by the backends

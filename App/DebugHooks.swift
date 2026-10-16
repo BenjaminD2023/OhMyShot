@@ -54,6 +54,8 @@ struct DebugHooks {
     let perform: (AutomationCommand) -> Void
     /// What the URL API's `action=upload` does with a capture just kept.
     let uploadAfterCapture: (HistoryItem) -> Void
+    /// Runs what a global shortcut does, as if its keys were pressed.
+    let pressShortcut: (CaptureShortcut) -> Void
     /// The newest capture's id in the history.
     let latestCaptureID: () -> UUID?
     /// The replay's coordinator on macOS 27, as any object.

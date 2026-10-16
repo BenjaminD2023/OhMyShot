@@ -103,9 +103,11 @@ struct InfoButton: View {
 
 struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
+    let destinations: UploadDestinationStore
     let backgrounds: SettingsDependencies.Backgrounds
     let openHistory: () -> Void
     let expiredCount: (HistoryRetention) -> Int
+    private var hasDestination: Bool { !destinations.destinations.isEmpty }
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
@@ -177,10 +179,18 @@ struct GeneralSettingsView: View {
                             Toggle(isOn: $settings.saveAfterCapture) {
                                 Text("Save", bundle: .module)
                             }
+                            // Uploading is offered only to a person who has somewhere to upload to.
+                            if hasDestination {
+                                Toggle(isOn: $settings.uploadAfterCapture) {
+                                    Text("Upload", bundle: .module)
+                                }
+                            }
                         }
-                        InfoButton(Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below.", bundle: .module))
+                        InfoButton(hasDestination
+                            ? Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below. Upload sends it to your default destination.", bundle: .module)
+                            : Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below.", bundle: .module))
                     }
-                    if !settings.copyAfterCapture, !settings.showQuickAccess, !settings.saveAfterCapture {
+                    if !settings.copyAfterCapture, !settings.showQuickAccess, !settings.saveAfterCapture, !(hasDestination && settings.uploadAfterCapture) {
                         Label {
                             if settings.historyRetention == .never {
                                 Text("Captures won’t be kept anywhere.", bundle: .module)
@@ -542,7 +552,7 @@ extension CaptureShortcut {
     /// Which group of the Shortcuts pane the shortcut is listed in.
     fileprivate var group: Int {
         switch self {
-        case .captureArea, .annotateArea, .pinArea, .captureFullscreen, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .scrollingCapture, .recordScreen, .saveReplay: 0
+        case .captureArea, .annotateArea, .pinArea, .captureAreaAndUpload, .captureFullscreen, .captureFullscreenAndUpload, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .scrollingCapture, .recordScreen, .saveReplay: 0
         case .captureText, .captureTextJoined, .translateArea: 1
         case .pickColor, .measure: 2
         case .openHistory, .copyLatestCapture: 3

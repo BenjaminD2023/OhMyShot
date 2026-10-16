@@ -32,6 +32,13 @@ public struct HistoryActions {
         /// Whether the capture is being uploaded now.
         public var isUploading: (HistoryItem) -> Bool = { _ in false }
         public var cancel: (HistoryItem) -> Void = { _ in }
+        /// Whether an earlier upload of the capture left a link that still works.
+        public var hasLink: (HistoryItem) -> Bool = { _ in false }
+        public var copyLink: (HistoryItem) -> Void = { _ in }
+        /// Whether the capture's upload can be removed from its storage.
+        public var canDeleteFromStorage: (HistoryItem) -> Bool = { _ in false }
+        /// Asks, then removes the capture's upload from its storage.
+        public var deleteFromStorage: (HistoryItem) -> Void = { _ in }
 
         public init() {}
     }
@@ -766,6 +773,12 @@ struct HistoryCard: View {
                     }
                 }
             }
+            if model.actions.sharing.hasLink(item) {
+                Button { model.actions.sharing.copyLink(item) } label: { Text("Copy Link", bundle: .module) }
+            }
+            if model.actions.sharing.canDeleteFromStorage(item) {
+                Button { model.actions.sharing.deleteFromStorage(item) } label: { Text("Delete from Storage", bundle: .module) }
+            }
         }
         .accessibilityAction(named: Text("Move to Trash", bundle: .module)) { model.moveToTrash(item) }
     }
@@ -908,6 +921,12 @@ struct HistoryCard: View {
                     Text("Upload To", bundle: .module)
                 }
             }
+        }
+        if model.actions.sharing.hasLink(item) {
+            Button { model.actions.sharing.copyLink(item) } label: { Text("Copy Link", bundle: .module) }
+        }
+        if model.actions.sharing.canDeleteFromStorage(item) {
+            Button { model.actions.sharing.deleteFromStorage(item) } label: { Text("Delete from Storage…", bundle: .module) }
         }
         Divider()
         Button(role: .destructive) { model.moveToTrash(item) } label: { Text("Move to Trash", bundle: .module) }

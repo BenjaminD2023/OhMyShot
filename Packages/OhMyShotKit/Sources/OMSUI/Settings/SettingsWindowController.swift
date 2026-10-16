@@ -52,6 +52,41 @@ public struct SettingsDependencies {
     public let backgrounds: Backgrounds
     /// The places captures can be uploaded to, which only the Sharing tab shows.
     public let destinations: UploadDestinationStore
+    /// The uploads that finished, which only the Sharing tab lists, and what it can do with each.
+    public let uploadRecords: UploadRecordStore
+    public let recordActions: UploadRecordActions
+
+    /// What Settings › Sharing does with a finished upload.
+    public struct UploadRecordActions {
+        public var copyLink: (UploadRecord) -> Void
+        public var open: (UploadRecord) -> Void
+        public var forget: (UploadRecord) -> Void
+        public var forgetAll: () -> Void
+        /// Whether the file can be removed from its storage from here.
+        public var canDelete: (UploadRecord) -> Bool
+        /// Asks, then removes the file from its storage.
+        public var delete: (UploadRecord) -> Void
+
+        public init(
+            copyLink: @escaping (UploadRecord) -> Void,
+            open: @escaping (UploadRecord) -> Void,
+            forget: @escaping (UploadRecord) -> Void,
+            forgetAll: @escaping () -> Void,
+            canDelete: @escaping (UploadRecord) -> Bool,
+            delete: @escaping (UploadRecord) -> Void
+        ) {
+            self.copyLink = copyLink
+            self.open = open
+            self.forget = forget
+            self.forgetAll = forgetAll
+            self.canDelete = canDelete
+            self.delete = delete
+        }
+
+        public static let none = UploadRecordActions(
+            copyLink: { _ in }, open: { _ in }, forget: { _ in }, forgetAll: {}, canDelete: { _ in false }, delete: { _ in }
+        )
+    }
 
     /// The backgrounds saved in the editor, and the one set on every new screenshot.
     public struct Backgrounds {
@@ -86,6 +121,8 @@ public struct SettingsDependencies {
         openHistory: @escaping () -> Void,
         expiredCount: @escaping (HistoryRetention) -> Int,
         destinations: UploadDestinationStore,
+        uploadRecords: UploadRecordStore,
+        recordActions: UploadRecordActions = .none,
         backgrounds: Backgrounds = .none
     ) {
         self.settings = settings
@@ -96,6 +133,8 @@ public struct SettingsDependencies {
         self.expiredCount = expiredCount
         self.backgrounds = backgrounds
         self.destinations = destinations
+        self.uploadRecords = uploadRecords
+        self.recordActions = recordActions
     }
 }
 
@@ -157,6 +196,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .general:
             host(GeneralSettingsView(
                 settings: dependencies.settings,
+                destinations: dependencies.destinations,
                 backgrounds: dependencies.backgrounds,
                 openHistory: dependencies.openHistory,
                 expiredCount: dependencies.expiredCount
@@ -166,7 +206,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .tools:
             host(ToolsSettingsView(settings: dependencies.settings))
         case .sharing:
-            host(SharingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
+            host(SharingSettingsView(
+                settings: dependencies.settings, destinations: dependencies.destinations,
+                records: dependencies.uploadRecords, actions: dependencies.recordActions
+            ))
         case .shortcuts:
             host(ShortcutsSettingsView())
         case .permissions:

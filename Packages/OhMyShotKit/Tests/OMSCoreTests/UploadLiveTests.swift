@@ -228,6 +228,69 @@ struct UploadLiveTests {
         let file = try makeFile(name: "huge.bin", megabytes: 900)
         let up = try uploader(secrets)
         try await cancelMidway(up, file: file, to: try s3Destination(secrets, prefix: "cancel"), temp: lab.appending(path: "tmp"), label: "s3, 900 MB")
+        // The multipart upload was aborted: no object appeared, and the server holds no parts of it.
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(!FileManager.default.fileExists(atPath: lab.appending(path: "s3root/bk/cancel/cancelled.bin").path()))
+    }
+
+    // MARK: Multipart and delete
+
+    @Test func aMultipartObjectIsByteIdenticalAndItsLinkFetches() async throws {
+        let secrets = InMemorySecretStore()
+        let file = try makeFile(name: "mp-identical.bin", megabytes: 135)
+        let up = try uploader(secrets)
+        let destination = try s3Destination(secrets, prefix: "mp")
+        let progress = Mutex<[Double]>([])
+        let result = try await up.upload(fileAt: file, to: destination, originalName: "mp-identical.bin") { fraction in progress.withLock { $0.append(fraction) } }
+        let stored = lab.appending(path: "s3root/bk/mp/mp-identical.bin")
+        let mine = try await SigV4Signer.sha256(ofFileAt: file)
+        let theirs = try await SigV4Signer.sha256(ofFileAt: stored)
+        #expect(mine == theirs)
+        #expect(result.remoteKey == "mp/mp-identical.bin")
+        print("LIVE multipart 135 MB: stored hash matches \(mine == theirs), \(progress.withLock { $0.count }) progress reports, last \(progress.withLock { $0.last ?? 0 })")
+        #expect(progress.withLock { $0.count } <= 101)
+        // A wrong secret is refused at the first request, with nothing left on the server.
+        let bad = try s3Destination(secrets, secret: "WRONGSECRET", prefix: "mp-bad")
+        await #expect(throws: UploadError.self) { try await up.upload(fileAt: file, to: bad, originalName: "mp-bad.bin") }
+        #expect(!FileManager.default.fileExists(atPath: lab.appending(path: "s3root/bk/mp-bad/mp-bad.bin").path()))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: lab.appending(path: "tmp").path()).isEmpty)
+    }
+
+    @Test func deletingFromS3RemovesTheObjectAndAGoneObjectIsFine() async throws {
+        let secrets = InMemorySecretStore()
+        let file = try makeFile(name: "del-s3.png", megabytes: 1)
+        let up = try uploader(secrets)
+        let destination = try s3Destination(secrets, prefix: "del dir")
+        let result = try await up.upload(fileAt: file, to: destination, originalName: "to remove 微.png")
+        let stored = lab.appending(path: "s3root/bk/del dir/to remove 微.png")
+        #expect(FileManager.default.fileExists(atPath: stored.path(percentEncoded: false)))
+        let record = UploadRecord(captureID: nil, date: .now, fileName: result.fileName, destination: destination, result: result)
+        try await up.delete(record, from: destination)
+        #expect(!FileManager.default.fileExists(atPath: stored.path(percentEncoded: false)))
+        print("LIVE s3 delete: object removed")
+        try await up.delete(record, from: destination)
+        let wrong = try s3Destination(secrets, secret: "WRONGSECRET")
+        var other = wrong
+        other.id = destination.id
+        try secrets.setSecret("WRONGSECRET", field: SecretField.s3SecretAccessKey, of: destination.id)
+        await #expect(throws: UploadError.self) { try await up.delete(record, from: other) }
+    }
+
+    @Test func deletingFromWebDAVRemovesTheFile() async throws {
+        let secrets = InMemorySecretStore()
+        let file = try makeFile(name: "del-dav.png", megabytes: 1)
+        let settings = WebDAVSettings(baseURL: URL(string: "http://127.0.0.1:19001/")!, username: "alice", keyPrefix: "del/d 2")
+        let destination = UploadDestination(name: "live dav", fileNaming: .original, configuration: .webDAV(settings))
+        try secrets.setSecret("wonderland", field: SecretField.webDAVPassword, of: destination.id)
+        let up = try uploader(secrets)
+        let result = try await up.upload(fileAt: file, to: destination, originalName: "gone 微.png")
+        let stored = lab.appending(path: "davroot/del/d 2/gone 微.png")
+        #expect(FileManager.default.fileExists(atPath: stored.path(percentEncoded: false)))
+        let record = UploadRecord(captureID: nil, date: .now, fileName: result.fileName, destination: destination, result: result)
+        try await up.delete(record, from: destination)
+        #expect(!FileManager.default.fileExists(atPath: stored.path(percentEncoded: false)))
+        print("LIVE webdav delete: file removed")
+        try await up.delete(record, from: destination)
     }
 
     /// Cancels once 5% has been sent and checks the transfer stopped, with no temporary file and no lease left.

@@ -13,9 +13,16 @@ import OSLog
 final class UploadCoordinator {
     let destinations: UploadDestinationStore
     let center: UploadCenter
+    /// Every finished upload, for Copy Link later, Settings' list, and deleting from the storage.
+    let records: UploadRecordStore
+    private let uploader: Uploader
     private let settings: SettingsStore
     private let quickAccess: QuickAccessController
     private let copied = CopiedHUD()
+    /// Uploads being deleted from their storage, so a second request waits for the first.
+    private var deleting: Set<UUID> = []
+    /// Asks before a file is removed from its storage; scripted checks answer for themselves.
+    var confirmDeletion: @MainActor (_ title: String, _ message: String, _ button: String, _ destructive: Bool) -> Bool = UploadCoordinator.askToDelete
     /// Whether a capture's link went to the clipboard, for the card's wording and its Copy Link.
     private var linkCopied: Set<UUID> = []
 
@@ -41,12 +48,14 @@ final class UploadCoordinator {
         String(localized: "Set up a destination in Settings › Sharing.")
     }
 
-    init(settings: SettingsStore, quickAccess: QuickAccessController) {
+    init(settings: SettingsStore, quickAccess: QuickAccessController, records: UploadRecordStore = .standard()) {
         self.settings = settings
         self.quickAccess = quickAccess
+        self.records = records
         let secrets = KeychainSecretStore()
         destinations = UploadDestinationStore(secrets: secrets)
-        center = UploadCenter(store: destinations, uploader: Uploader(secrets: secrets))
+        uploader = Uploader(secrets: secrets)
+        center = UploadCenter(store: destinations, uploader: uploader)
         center.onChange = { [weak self] id, status, destinationName in
             self?.changed(id, status, destinationName: destinationName)
         }
@@ -104,17 +113,148 @@ final class UploadCoordinator {
 
     // MARK: Links
 
+    /// The link of a capture's last upload that still works: this session's, or one kept in the records.
+    private func link(for captureID: UUID) -> URL? {
+        center.link(for: captureID) ?? records.link(for: captureID)
+    }
+
+    /// Whether a capture has a link to copy. With no destination set up the capture interface offers nothing
+    /// about uploads, links of earlier uploads included; Settings › Sharing still lists them.
     func hasLink(_ captureID: UUID) -> Bool {
-        center.link(for: captureID) != nil
+        !destinations.destinations.isEmpty && link(for: captureID) != nil
     }
 
     /// Copy Link on a card: the link of the capture's last upload, copied and said so.
     func copyLink(captureID: UUID) {
-        guard let link = center.link(for: captureID) else { return }
+        guard let link = link(for: captureID) else { return }
         write(link)
         linkCopied.insert(captureID)
         quickAccess.setUpload(.finished(linkCopied: true), for: captureID)
         confirm(String(localized: "Link copied"), for: captureID, announcement: String(localized: "Link copied."))
+    }
+
+    // MARK: Records
+
+    /// Copy Link in Settings' list.
+    func copyLink(of record: UploadRecord) {
+        guard !record.isExpired() else { return }
+        write(record.link)
+        announce(String(localized: "Link copied."))
+    }
+
+    func open(_ record: UploadRecord) {
+        NSWorkspace.shared.open(record.link)
+    }
+
+    func forget(_ record: UploadRecord) {
+        records.forget(id: record.id)
+        refreshCard(record)
+    }
+
+    func forgetAllRecords() {
+        let captures = Set(records.records.compactMap(\.captureID))
+        records.forgetAll()
+        for id in captures { quickAccess.setUpload(center.status(for: id).map { cardUpload($0, for: id) }, for: id) }
+    }
+
+    // MARK: Deleting
+
+    /// Whether a capture's newest upload can be removed from its storage, and the card or History should offer
+    /// it: a signed delete needs its destination, a deletion address does not.
+    func canDeleteFromStorage(_ captureID: UUID) -> Bool {
+        guard !destinations.destinations.isEmpty, let record = records.removable(for: captureID) else { return false }
+        return canDelete(record)
+    }
+
+    func canDelete(_ record: UploadRecord) -> Bool {
+        switch record.removal {
+        case .request?: destinations.destination(id: record.destinationID) != nil
+        case .openAddress?: true
+        case nil: false
+        }
+    }
+
+    func deleteFromStorage(captureID: UUID) {
+        guard let record = records.removable(for: captureID) else { return }
+        deleteFromStorage(record)
+    }
+
+    /// Asks, then removes the file from its storage: with a signed request, or by opening the address the server
+    /// gave. The record is forgotten once the file is gone.
+    func deleteFromStorage(_ record: UploadRecord) {
+        guard !deleting.contains(record.id), let removal = record.removal else { return }
+        switch removal {
+        case .openAddress(let address):
+            let asked = confirmDeletion(
+                String(localized: "Open the deletion link for “\(record.fileName)”?"),
+                String(localized: "\(record.destinationName) gave an address that deletes the file when it’s opened. It opens in your browser, and the upload is taken off this list."),
+                String(localized: "Open Link"), false
+            )
+            guard asked else { return }
+            NSWorkspace.shared.open(address)
+            records.forget(id: record.id)
+            refreshCard(record)
+        case .request:
+            guard let destination = destinations.destination(id: record.destinationID) else {
+                announce(String(localized: "That destination was removed, so the file can’t be deleted from here."))
+                return
+            }
+            let asked = confirmDeletion(
+                String(localized: "Delete “\(record.fileName)” from \(destination.name)?"),
+                String(localized: "The file is removed from the storage, and its link stops working. This can’t be undone."),
+                String(localized: "Delete"), true
+            )
+            guard asked else { return }
+            deleting.insert(record.id)
+            Task { [weak self] in
+                guard let self else { return }
+                defer { deleting.remove(record.id) }
+                do {
+                    try await uploader.delete(record, from: destination)
+                    records.forget(id: record.id)
+                    refreshCard(record)
+                    tell(String(localized: "Deleted from storage"), near: record.captureID)
+                    Log.upload.notice("Deleted an upload from \(destination.kindName, privacy: .public)")
+                } catch {
+                    Log.upload.error("Delete failed")
+                    let reason = error.localizedDescription
+                    tell(String(localized: "Couldn’t delete. \(reason)"), near: record.captureID)
+                    NSSound.beep()
+                }
+            }
+        }
+    }
+
+    /// A removed or forgotten upload leaves nothing for its card to claim: the link it offered is gone with it.
+    private func refreshCard(_ record: UploadRecord) {
+        guard let id = record.captureID else { return }
+        if records.link(for: id) == nil { center.forget(captureID: id) }
+        linkCopied.remove(id)
+        quickAccess.setUpload(center.status(for: id).map { cardUpload($0, for: id) }, for: id)
+    }
+
+    /// The reading by the pointer, and aloud.
+    private func tell(_ message: String, near captureID: UUID?) {
+        copied.show(message.count > 90 ? String(message.prefix(89)) + "…" : message, near: NSEvent.mouseLocation)
+        announce(message)
+    }
+
+    private static func askToDelete(title: String, message: String, button: String, destructive: Bool) -> Bool {
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        if destructive {
+            // A removal that can’t be undone is not what Return does: Cancel is the default, and the removal is
+            // the red button beside it.
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            alert.addButton(withTitle: button).hasDestructiveAction = true
+            return alert.runModal() == .alertSecondButtonReturn
+        }
+        alert.addButton(withTitle: button)
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     /// What a card shows of a capture's upload now.
@@ -133,6 +273,7 @@ final class UploadCoordinator {
         } else {
             linkCopied.remove(captureID)
         }
+        records.add(UploadRecord(captureID: captureID, date: .now, fileName: result.fileName, destination: destination, result: result))
         quickAccess.setUpload(.finished(linkCopied: copies), for: captureID)
         let message = copies ? String(localized: "Link copied") : String(localized: "Uploaded")
         confirm(message, for: captureID, announcement: copies

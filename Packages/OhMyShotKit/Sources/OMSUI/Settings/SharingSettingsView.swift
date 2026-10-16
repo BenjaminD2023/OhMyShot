@@ -9,6 +9,8 @@ import UniformTypeIdentifiers
 struct SharingSettingsView: View {
     @Bindable var settings: SettingsStore
     let destinations: UploadDestinationStore
+    let records: UploadRecordStore
+    let actions: SettingsDependencies.UploadRecordActions
     @State private var editing: UploadDestinationDraft?
     @State private var removing: UploadDestination?
     @State private var importProblem: String?
@@ -22,6 +24,9 @@ struct SharingSettingsView: View {
         let name: String
         let notes: [String]
     }
+
+    /// How many finished uploads the list shows; the rest wait behind them.
+    private static let recentLimit = 8
 
     var body: some View {
         SettingsPane {
@@ -48,6 +53,35 @@ struct SharingSettingsView: View {
                         Text("Copy link after upload", bundle: .module)
                     }
                     InfoButton(Text("With this off, the link waits in the capture’s menu: choose Copy Link on its card.", bundle: .module))
+                }
+            }
+
+            if !records.records.isEmpty {
+                SettingsDivider()
+
+                SettingsRow(Text("Recent uploads", bundle: .module)) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        VStack(spacing: 0) {
+                            ForEach(Array(records.records.prefix(Self.recentLimit).enumerated()), id: \.element.id) { index, record in
+                                if index > 0 { Divider() }
+                                RecordRow(record: record, actions: actions)
+                            }
+                        }
+                        .frame(width: 360)
+                        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+                        HStack(spacing: 8) {
+                            if records.records.count > Self.recentLimit {
+                                Text("\(records.records.count - Self.recentLimit) older", bundle: .module)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Button(action: actions.forgetAll) { Text("Forget All", bundle: .module) }
+                                .buttonStyle(.link)
+                                .font(.callout)
+                            InfoButton(Text("Forgetting an upload only takes it off this list. The file stays where it is, and its link keeps working.", bundle: .module))
+                        }
+                    }
                 }
             }
         }
@@ -158,6 +192,60 @@ struct SharingSettingsView: View {
         } catch {
             importProblem = error.localizedDescription
         }
+    }
+}
+
+/// One finished upload in the list: its name, where it went and when, and its actions.
+private struct RecordRow: View {
+    let record: UploadRecord
+    let actions: SettingsDependencies.UploadRecordActions
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(record.fileName)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                subtitle
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Button { actions.copyLink(record) } label: { Text("Copy Link", bundle: .module) }
+                .controlSize(.small)
+                .disabled(record.isExpired())
+            Menu {
+                Button { actions.open(record) } label: { Text("Open in Browser", bundle: .module) }
+                    .disabled(record.isExpired())
+                if actions.canDelete(record) {
+                    // The coordinator asks in an alert, so a card and this list share one question.
+                    Button(role: .destructive) { actions.delete(record) } label: { Text("Delete from Storage…", bundle: .module) }
+                }
+                Divider()
+                Button { actions.forget(record) } label: { Text("Forget", bundle: .module) }
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .controlSize(.small)
+            .fixedSize()
+            .accessibilityLabel(Text("More", bundle: .module))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var subtitle: Text {
+        let when = Text(record.date, format: .relative(presentation: .named))
+        if record.isExpired() { return Text("\(record.destinationName) · \(when) · Expired", bundle: .module) }
+        if let expiry = record.expiresAt {
+            return Text("\(record.destinationName) · \(when) · Expires \(Text(expiry, format: .relative(presentation: .numeric)))", bundle: .module)
+        }
+        return Text("\(record.destinationName) · \(when)", bundle: .module)
     }
 }
 

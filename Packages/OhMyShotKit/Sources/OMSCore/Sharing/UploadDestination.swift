@@ -237,12 +237,15 @@ public struct UploadResult: Equatable, Sendable {
     public var fileName: String
     /// When a presigned link stops working; nil for a link that does not expire.
     public var expiresAt: Date?
+    /// Where the file is in the storage, for the kinds that can delete it with a signed request.
+    public var remoteKey: String?
 
-    public init(link: URL, deletionURL: URL? = nil, thumbnailURL: URL? = nil, fileName: String, expiresAt: Date? = nil) {
+    public init(link: URL, deletionURL: URL? = nil, thumbnailURL: URL? = nil, fileName: String, expiresAt: Date? = nil, remoteKey: String? = nil) {
         self.link = link
         self.deletionURL = deletionURL
         self.thumbnailURL = thumbnailURL
         self.fileName = fileName
         self.expiresAt = expiresAt
+        self.remoteKey = remoteKey
     }
 }

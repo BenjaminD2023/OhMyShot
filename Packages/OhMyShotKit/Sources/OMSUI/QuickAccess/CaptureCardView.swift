@@ -26,6 +26,8 @@ final class CardStackView: NSView {
     var onRetryUpload: ((QuickAccessItem) -> Void)?
     var onCopyLink: ((QuickAccessItem) -> Void)?
     var hasLink: ((QuickAccessItem) -> Bool)?
+    var canDeleteFromStorage: ((QuickAccessItem) -> Bool)?
+    var onDeleteFromStorage: ((QuickAccessItem) -> Void)?
     /// The upload a capture has now, for a card made after it began (restored from Recently Closed).
     var currentUpload: ((QuickAccessItem) -> CardUpload?)?
 
@@ -156,6 +158,8 @@ final class CardStackView: NSView {
         card.onRetryUpload = { [weak self, weak card] in card.map { self?.onRetryUpload?($0.item) } }
         card.onCopyLink = { [weak self, weak card] in card.map { self?.onCopyLink?($0.item) } }
         card.hasLink = { [weak self, weak card] in card.flatMap { self?.hasLink?($0.item) } ?? false }
+        card.canDeleteFromStorage = { [weak self, weak card] in card.flatMap { self?.canDeleteFromStorage?($0.item) } ?? false }
+        card.onDeleteFromStorage = { [weak self, weak card] in card.map { self?.onDeleteFromStorage?($0.item) } }
         card.upload = currentUpload?(item)
         addSubview(card)
         cards[item.id] = card
@@ -184,6 +188,8 @@ final class CaptureCardView: NSView, NSDraggingSource {
     var onRetryUpload: (() -> Void)?
     var onCopyLink: (() -> Void)?
     var hasLink: () -> Bool = { false }
+    var canDeleteFromStorage: () -> Bool = { false }
+    var onDeleteFromStorage: (() -> Void)?
 
     /// The capture's upload, shown in the capsule at the top. A finished one goes again after a moment; the
     /// menu keeps Copy Link.
@@ -420,6 +426,9 @@ final class CaptureCardView: NSView, NSDraggingSource {
             }
         }
         if hasLink() { actions.append(action(String(localized: "Copy Link", bundle: .module)) { [weak self] in self?.onCopyLink?() }) }
+        if canDeleteFromStorage() {
+            actions.append(action(String(localized: "Delete from Storage", bundle: .module)) { [weak self] in self?.onDeleteFromStorage?() })
+        }
         actions.append(action(String(localized: "Move to Trash", bundle: .module)) { [weak self] in self?.onMoveToTrash?() })
         actions.append(action(String(localized: "Close", bundle: .module)) { [weak self] in self?.onClose?() })
         return actions
@@ -630,6 +639,9 @@ final class CaptureCardView: NSView, NSDraggingSource {
         if hasLink() {
             add(String(localized: "Copy Link", bundle: .module), "link", #selector(copyLinkClicked))
         }
+        if canDeleteFromStorage() {
+            add(String(localized: "Delete from Storage…", bundle: .module), "icloud.slash", #selector(deleteFromStorageClicked))
+        }
         menu.addItem(.separator())
     }
 
@@ -638,6 +650,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
     @objc private func cancelUploadClicked() { onCancelUpload?() }
     @objc private func retryUploadClicked() { onRetryUpload?() }
     @objc private func copyLinkClicked() { onCopyLink?() }
+    @objc private func deleteFromStorageClicked() { onDeleteFromStorage?() }
     /// Puts the failure's sentence on the clipboard, for a bug report or a server's owner.
     @objc private func copyErrorClicked() {
         guard case .failed(let message)? = upload else { return }

@@ -18,6 +18,9 @@ final class CaptureCoordinator {
     /// Receives every finished capture, already in the history; the composition root decides whether
     /// it gets a Quick Access card.
     var onCaptured: ((QuickAccessItem) -> Void)?
+    /// A capture was kept and Settings says to upload it: the default destination gets it. Not called when the
+    /// capture came with its own follow-up (`then`), nor for a pin, which is kept without a card.
+    var uploadKept: ((HistoryItem) -> Void)?
     /// Opens a capture in the annotation editor: its record and its pixels per point.
     var openInEditor: ((HistoryItem, CGFloat) -> Void)?
     /// A color taken with C over the magnifier while capturing: where it was, and the keys held then.
@@ -505,7 +508,7 @@ final class CaptureCoordinator {
             Log.capture.notice("Captured \(frame.image.width, privacy: .public)x\(frame.image.height, privacy: .public) into history as \(entry.fileName, privacy: .public)\(marks.map { " with \($0.items.count) mark(s)" } ?? "", privacy: .public)")
             // Before the card, so a follow-up that holds the capture (an upload) is in place when the card
             // decides whether anything else still needs the file.
-            then?(entry)
+            if let then { then(entry) } else if settings.uploadAfterCapture, showsCard { uploadKept?(entry) }
             if showsCard { onCaptured?(item) }
             return entry
         } catch {

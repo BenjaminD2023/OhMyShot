@@ -59,6 +59,26 @@ extension Uploader {
         } else {
             link = target
         }
-        return UploadResult(link: link, fileName: name)
+        return UploadResult(link: link, fileName: name, remoteKey: relativeKey)
+    }
+
+    func deleteFromWebDAV(key: String, destination: UploadDestination, settings: WebDAVSettings, transport: Transport) async throws {
+        guard let scheme = settings.baseURL.scheme?.lowercased(), scheme == "http" || scheme == "https", settings.baseURL.host() != nil else {
+            throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an http or https address"))
+        }
+        let password = (try? secret(SecretField.webDAVPassword, of: destination)) ?? ""
+        let credentials = Data("\(settings.username):\(password)".utf8).base64EncodedString()
+        let base = settings.baseURL.absoluteString.hasSuffix("/") ? String(settings.baseURL.absoluteString.dropLast()) : settings.baseURL.absoluteString
+        guard let target = URL(string: "\(base)/\(SigV4Signer.encodePath(key))") else {
+            throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an address"))
+        }
+        var request = URLRequest(url: target)
+        request.httpMethod = "DELETE"
+        request.setValue("Basic \(credentials)", forHTTPHeaderField: "Authorization")
+        let response = try await transport.send(request)
+        // 404: someone already removed it.
+        guard (200..<300).contains(response.status) || response.status == 404 else {
+            throw Self.failure(status: response.status, message: nil)
+        }
     }
 }

@@ -37,6 +37,10 @@ public final class QuickAccessController {
             public var copyLink: (QuickAccessItem) -> Void = { _ in }
             /// Whether the capture has a link from an upload to copy.
             public var hasLink: (QuickAccessItem) -> Bool = { _ in false }
+            /// Whether the capture's upload can be removed from its storage, and the card offers to.
+            public var canDeleteFromStorage: (QuickAccessItem) -> Bool = { _ in false }
+            /// Asks, then removes the capture's upload from its storage.
+            public var deleteFromStorage: (QuickAccessItem) -> Void = { _ in }
             /// What a capture's upload is now, for a card shown after the upload began.
             public var current: (QuickAccessItem) -> CardUpload? = { _ in nil }
 
@@ -307,6 +311,8 @@ public final class QuickAccessController {
         stack.onRetryUpload = sharing.retry
         stack.onCopyLink = sharing.copyLink
         stack.hasLink = sharing.hasLink
+        stack.canDeleteFromStorage = sharing.canDeleteFromStorage
+        stack.onDeleteFromStorage = sharing.deleteFromStorage
         stack.currentUpload = sharing.current
         let panel = QuickAccessPanel()
         panel.contentView = stack

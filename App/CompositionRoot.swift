@@ -112,6 +112,11 @@ final class CompositionRoot {
                 .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
                 .init(title: String(localized: "Annotate Area"), shortcut: .annotateArea) { [weak self] in self?.handle(.annotateArea) },
                 .init(title: String(localized: "Capture Area and Pin"), shortcut: .pinArea) { [weak self] in self?.handle(.pinArea) },
+                .init(
+                    title: String(localized: "Capture Area and Upload"),
+                    shortcut: .captureAreaAndUpload,
+                    isHidden: { [weak self] in self?.uploads.destinations.menu.isHidden != false }
+                ) { [weak self] in self?.handle(.captureAreaAndUpload) },
                 .init(title: String(localized: "Capture Window"), shortcut: .captureWindow) { [weak self] in self?.handle(.captureWindow) },
                 .init(title: String(localized: "Capture Fullscreen"), shortcut: .captureFullscreen) { [weak self] in self?.handle(.captureFullscreen) },
                 .init(
@@ -254,6 +259,8 @@ final class CompositionRoot {
         recordings.onRecorded = { [weak self] item in
             self?.didCapture(item)
         }
+        captures.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
+        recordings.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
         recordings.onStatus = { [weak self] status in
             guard let self else { return }
             switch status {
@@ -485,6 +492,12 @@ final class CompositionRoot {
             captures.pinArea()
         case .captureFullscreen:
             captures.captureFullscreen()
+        case .captureAreaAndUpload:
+            guard uploads.destinations.defaultDestination != nil else { return uploads.tellNoDestination() }
+            captures.captureArea(then: uploadAfterCapture)
+        case .captureFullscreenAndUpload:
+            guard uploads.destinations.defaultDestination != nil else { return uploads.tellNoDestination() }
+            captures.captureFullscreen(then: uploadAfterCapture)
         case .captureWindow:
             captures.captureWindow()
         case .selfTimer:
@@ -602,6 +615,12 @@ final class CompositionRoot {
         }
         removeExpiredHistory()
         readTextSoon()
+    }
+
+    /// Settings' Upload after a capture: to the default destination, when there is one.
+    private func uploadKept(_ entry: HistoryItem) {
+        guard uploads.destinations.defaultDestination != nil else { return }
+        uploadAfterCapture(entry)
     }
 
     /// The URL API's `action=upload`: the capture just kept goes to the default destination.
@@ -938,6 +957,8 @@ final class CompositionRoot {
         sharing.retry = { [weak self] item in self?.uploads.retry(captureID: item.id) }
         sharing.copyLink = { [weak self] item in self?.uploads.copyLink(captureID: item.id) }
         sharing.hasLink = { [weak self] item in self?.uploads.hasLink(item.id) ?? false }
+        sharing.canDeleteFromStorage = { [weak self] item in self?.uploads.canDeleteFromStorage(item.id) ?? false }
+        sharing.deleteFromStorage = { [weak self] item in self?.uploads.deleteFromStorage(captureID: item.id) }
         sharing.current = { [weak self] item in self?.uploads.cardState(item.id) }
         return sharing
     }
@@ -1005,6 +1026,10 @@ final class CompositionRoot {
         }
         historyActions.sharing.isUploading = { [weak self] entry in self?.uploads.isUploading(entry.id) ?? false }
         historyActions.sharing.cancel = { [weak self] entry in self?.uploads.cancel(captureID: entry.id) }
+        historyActions.sharing.hasLink = { [weak self] entry in self?.uploads.hasLink(entry.id) ?? false }
+        historyActions.sharing.copyLink = { [weak self] entry in self?.uploads.copyLink(captureID: entry.id) }
+        historyActions.sharing.canDeleteFromStorage = { [weak self] entry in self?.uploads.canDeleteFromStorage(entry.id) ?? false }
+        historyActions.sharing.deleteFromStorage = { [weak self] entry in self?.uploads.deleteFromStorage(captureID: entry.id) }
         let controller = HistoryWindowController(
             store: history, settings: settings, actions: historyActions, textReader: textReader,
             expiredCount: { [weak self] retention in self?.expiredCount(for: retention) ?? 0 }
@@ -1068,6 +1093,15 @@ final class CompositionRoot {
             openHistory: { [weak self] in self?.showHistory() },
             expiredCount: { [weak self] retention in self?.expiredCount(for: retention) ?? 0 },
             destinations: uploads.destinations,
+            uploadRecords: uploads.records,
+            recordActions: SettingsDependencies.UploadRecordActions(
+                copyLink: { [weak self] in self?.uploads.copyLink(of: $0) },
+                open: { [weak self] in self?.uploads.open($0) },
+                forget: { [weak self] in self?.uploads.forget($0) },
+                forgetAll: { [weak self] in self?.uploads.forgetAllRecords() },
+                canDelete: { [weak self] in self?.uploads.canDelete($0) ?? false },
+                delete: { [weak self] in self?.uploads.deleteFromStorage($0) }
+            ),
             backgrounds: SettingsDependencies.Backgrounds(
                 presets: { BackdropPresets.shared.all.map { SettingsDependencies.Backgrounds.Choice(id: $0.id, name: $0.name) } },
                 automatic: { BackdropPresets.shared.automatic?.id },
@@ -1169,6 +1203,7 @@ final class CompositionRoot {
             },
             perform: { [weak self] in self?.perform($0) },
             uploadAfterCapture: { [weak self] in self?.uploadAfterCapture($0) },
+            pressShortcut: { [weak self] in self?.handle($0) },
             latestCaptureID: { [weak self] in self?.history.items().first?.id },
             replay: { [weak self] in self?.replayStorage }
         )

@@ -29,6 +29,12 @@ public final class SettingsStore {
         didSet { defaults.set(copyAfterCapture, forKey: Key.copyAfterCapture) }
     }
 
+    /// After a capture: also upload it to the default destination. Off by default, and only offered once a
+    /// destination exists; with none the setting does nothing.
+    public var uploadAfterCapture: Bool {
+        didSet { defaults.set(uploadAfterCapture, forKey: Key.uploadAfterCapture) }
+    }
+
     /// After an upload: put the link on the clipboard. On by default; with it off the link waits on the card
     /// until it is copied from there.
     public var copyLinkAfterUpload: Bool {
@@ -229,6 +235,7 @@ public final class SettingsStore {
             Key.playSounds: true,
             Key.automationEnabled: true,
             Key.copyAfterCapture: true,
+            Key.uploadAfterCapture: false,
             Key.copyLinkAfterUpload: true,
             Key.saveAfterCapture: false,
             Key.showQuickAccess: true,
@@ -307,6 +314,7 @@ public final class SettingsStore {
         recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : 15
         replaySound = defaults.string(forKey: Key.replaySound).flatMap(ReplaySound.init(rawValue:)) ?? .all
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
+        uploadAfterCapture = defaults.bool(forKey: Key.uploadAfterCapture)
         copyLinkAfterUpload = defaults.bool(forKey: Key.copyLinkAfterUpload)
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
@@ -350,6 +358,7 @@ public final class SettingsStore {
         static let recordingGIFFrameRate = "recordingGIFFrameRate"
         static let replaySound = "replaySound"
         static let copyAfterCapture = "copyAfterCapture"
+        static let uploadAfterCapture = "uploadAfterCapture"
         static let copyLinkAfterUpload = "copyLinkAfterUpload"
         static let saveAfterCapture = "saveAfterCapture"
         static let showQuickAccess = "showQuickAccess"

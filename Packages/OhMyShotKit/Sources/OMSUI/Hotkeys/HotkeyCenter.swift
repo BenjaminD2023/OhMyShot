@@ -10,6 +10,10 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     /// Choose an area and pin it where it is.
     case pinArea
     case captureFullscreen
+    /// Choose an area and upload it to the default destination. Does nothing but say so when there is none.
+    case captureAreaAndUpload
+    /// Capture the display and upload it to the default destination.
+    case captureFullscreenAndUpload
     case captureWindow
     case capturePreviousArea
     case allInOne
@@ -51,6 +55,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .annotateArea: String(localized: "Annotate Area", bundle: .module)
         case .pinArea: String(localized: "Capture Area and Pin", bundle: .module)
         case .captureFullscreen: String(localized: "Capture Fullscreen", bundle: .module)
+        case .captureAreaAndUpload: String(localized: "Capture Area and Upload", bundle: .module)
+        case .captureFullscreenAndUpload: String(localized: "Capture Fullscreen and Upload", bundle: .module)
         case .captureWindow: String(localized: "Capture Window", bundle: .module)
         case .capturePreviousArea: String(localized: "Capture Previous Area", bundle: .module)
         case .allInOne: String(localized: "All-In-One", bundle: .module)
@@ -143,7 +149,7 @@ public final class HotkeyCenter {
         // The digits are taken; the release build leaves it for the user to choose.
         case .saveReplay: profile == .development ? KeyboardShortcuts.Shortcut(.minus, modifiers: modifiers) : nil
         case .scrollingCapture: profile == .development ? KeyboardShortcuts.Shortcut(.equal, modifiers: modifiers) : nil
-        case .captureWindow, .capturePreviousArea, .selfTimer, .captureTextJoined, .openHistory, .copyLatestCapture: nil
+        case .captureWindow, .capturePreviousArea, .selfTimer, .captureAreaAndUpload, .captureFullscreenAndUpload, .captureTextJoined, .openHistory, .copyLatestCapture: nil
         }
     }
 }
