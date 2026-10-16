@@ -23,6 +23,9 @@ public struct HistoryActions {
     public var print: (HistoryItem, NSWindow?) -> Void = { _, _ in }
     /// Moves the capture to the Trash, where it can be put back from.
     public var moveToTrash: (HistoryItem) -> Void
+    /// The file to hand to another app when a capture is dragged out: a copy in the format Settings choose, or nil for
+    /// the capture's own file.
+    public var fileToHandOver: (HistoryItem) -> URL? = { _ in nil }
     /// Uploading, for a person who set up a destination. Left as it is, the window offers none of it.
     public var sharing = Sharing()
 
@@ -731,7 +734,7 @@ struct HistoryCard: View {
             .onHover { hovering = $0 }
             // Dragged out as the file, as from a Quick Access card: copied wherever it lands, never moved out
             // of the history.
-            .onDrag { NSItemProvider(object: model.store.fileURL(for: item) as NSURL) }
+            .onDrag { NSItemProvider(object: fileToHandOver as NSURL) }
             .dragConfiguration(DragConfiguration(operationsOutsideApp: .init(allowCopy: true, allowMove: false, allowDelete: false)))
             .onTapGesture(count: 2) { model.actions.restore(item) }
             .simultaneousGesture(TapGesture().onEnded { model.selection = item.id })
@@ -771,7 +774,7 @@ struct HistoryCard: View {
                 Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
                 Button { model.print(item) } label: { Text("Print", bundle: .module) }
             }
-            Button { Self.share(model.store.fileURL(for: item)) } label: { Text("Share", bundle: .module) }
+            Button { Self.share(fileToHandOver) } label: { Text("Share", bundle: .module) }
             if model.actions.sharing.isUploading(item) {
                 Button { model.actions.sharing.cancel(item) } label: { Text("Cancel Upload", bundle: .module) }
             } else {
@@ -801,10 +804,23 @@ struct HistoryCard: View {
         item.fileName.lowercased().hasSuffix(".gif")
     }
 
-    /// The system share sheet over the window, for VoiceOver: the context menu's Share… is a `ShareLink`.
-    private static func share(_ file: URL) {
-        guard let view = NSApp.keyWindow?.contentView ?? NSApp.mainWindow?.contentView else { return }
-        NSSharingServicePicker(items: [file]).show(relativeTo: CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1), of: view, preferredEdge: .minY)
+    /// The capture's file for another app, shared or dragged out: a copy in the format Settings choose, made when it is
+    /// asked for, or the capture's own.
+    private var fileToHandOver: URL {
+        model.actions.fileToHandOver(item) ?? model.store.fileURL(for: item)
+    }
+
+    /// The system share sheet over the window: where the pointer is when the menu's Share… was chosen, else (for
+    /// VoiceOver) the middle. Not a `ShareLink`, which needs its file before the menu opens, so every capture's copy
+    /// would be made then.
+    private static func share(_ file: URL, atPointer: Bool = false) {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow, let view = window.contentView else { return }
+        var anchor = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        if atPointer {
+            let pointer = view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+            if view.bounds.contains(pointer) { anchor = pointer }
+        }
+        NSSharingServicePicker(items: [file]).show(relativeTo: CGRect(x: anchor.x, y: anchor.y, width: 1, height: 1), of: view, preferredEdge: .minY)
     }
 
     private var excerpt: HistorySearch.Excerpt? {
@@ -915,7 +931,7 @@ struct HistoryCard: View {
         }
         Button { model.actions.reveal(item) } label: { Text("Show in Finder", bundle: .module) }
         Divider()
-        ShareLink(item: model.store.fileURL(for: item)) { Text("Share…", bundle: .module) }
+        Button { Self.share(fileToHandOver, atPointer: true) } label: { Text("Share…", bundle: .module) }
         if model.actions.sharing.isUploading(item) {
             Button { model.actions.sharing.cancel(item) } label: { Text("Cancel Upload", bundle: .module) }
         } else {

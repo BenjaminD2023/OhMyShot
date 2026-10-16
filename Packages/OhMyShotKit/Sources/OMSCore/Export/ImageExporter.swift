@@ -32,6 +32,7 @@ public enum ImageExporter {
 
     public enum ExportError: Error, Equatable, Sendable {
         case cannotEncode
+        case cannotRead
     }
 
     /// Encodes an image. Large captures take tens of milliseconds, so this runs off the main actor.

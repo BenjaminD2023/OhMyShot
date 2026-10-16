@@ -43,12 +43,21 @@ public final class ScreenCapturer {
         try await capture(display: display, region: rect, dynamicRange: dynamicRange, showsCursor: showsCursor, includingOwnWindows: false)
     }
 
+    /// The extended-range copy of a capture is asked for only when it is wanted and the display can show more than
+    /// SDR: it costs the capture some time and memory.
+    public static func dynamicRange(wantsHDR: Bool, on display: DisplayInfo) -> DynamicRange {
+        wantsHDR && display.supportsHDR ? .sdrAndHDR : .sdr
+    }
+
     /// Captures an area that may cross displays: each display's part, put together at the sharpest
-    /// display's scale. An area on one display is a plain region capture.
-    public func captureArea(_ rect: CGRect, in layout: DisplayLayout) async throws -> CapturedFrame {
+    /// display's scale. An area on one display is a plain region capture, with its extended-range copy when
+    /// `wantsHDR` and the display has one to give.
+    public func captureArea(_ rect: CGRect, in layout: DisplayLayout, wantsHDR: Bool = false) async throws -> CapturedFrame {
         let displays = layout.displays.filter { !$0.frame.intersection(rect).isEmpty }
         guard let first = displays.first else { throw CaptureError.emptyResult }
-        guard displays.count > 1 else { return try await captureRegion(rect, on: first) }
+        guard displays.count > 1 else {
+            return try await captureRegion(rect, on: first, dynamicRange: Self.dynamicRange(wantsHDR: wantsHDR, on: first))
+        }
         var parts: [CapturedFrame] = []
         for display in displays {
             parts.append(try await captureRegion(rect, on: display))

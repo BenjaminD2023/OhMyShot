@@ -288,6 +288,73 @@ struct GeneralSettingsView: View {
 
             SettingsDivider()
 
+            SettingsRow(Text("Format", bundle: .module)) {
+                HStack(spacing: 8) {
+                    Picker(selection: $settings.screenshotFormat) {
+                        ForEach(ImageExporter.Format.allCases, id: \.self) { format in
+                            Text(verbatim: format.title).tag(format)
+                        }
+                    } label: {
+                        Text("Format", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    Slider(value: $settings.screenshotQuality, in: ScreenshotOutput.qualities, step: 0.05) {
+                        Text("Quality", bundle: .module)
+                    }
+                    .frame(width: 110)
+                    .disabled(settings.screenshotFormat == .png)
+                    // The slider spans 50 to 100 percent, so it would read as 0 to 100 of that.
+                    .accessibilityValue(Text(settings.screenshotQuality, format: .percent.precision(.fractionLength(0))))
+                    Text(settings.screenshotQuality, format: .percent.precision(.fractionLength(0)))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, alignment: .trailing)
+                        .accessibilityHidden(true)
+                    InfoButton(Text("Screenshots you save, drag out, upload, or hand to a shortcut are written in this format; the slider sets how much JPEG and HEIC give up for size. History keeps every capture as a PNG, so editing and reading text are never affected. JPEG has no transparency, so a window’s clear corners turn white. With Freeze the screen and Convert to sRGB off, a HEIC saved as the screenshot is taken also keeps the brightness of an HDR display.", bundle: .module))
+                }
+            }
+            SettingsRow(Text("Pictures", bundle: .module)) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Toggle(isOn: $settings.savesRetinaAtOneX) {
+                            Text("Save Retina screenshots at 1×", bundle: .module)
+                        }
+                        InfoButton(Text("A screenshot taken at 2× is scaled down to its size in points where it leaves the app. The clipboard’s picture follows too.", bundle: .module))
+                    }
+                    HStack(spacing: 6) {
+                        Toggle(isOn: $settings.convertsToSRGB) {
+                            Text("Convert to sRGB", bundle: .module)
+                        }
+                        InfoButton(Text("A wide-gamut display captures in Display P3. Converting makes colors look the same in apps that ignore color profiles.", bundle: .module))
+                    }
+                    HStack(spacing: 6) {
+                        Toggle(isOn: $settings.addsBorder) {
+                            Text("Add a 1 px border", bundle: .module)
+                        }
+                        InfoButton(Text("Draws a faint dark line around the picture’s edge, so a light screenshot shows on a white page. A picture with clear corners or a shadow, like a window’s, gets none.", bundle: .module))
+                    }
+                }
+            }
+            SettingsRow(Text("File name", bundle: .module)) {
+                FileNameSettings(settings: settings)
+            }
+            SettingsRow(Text("Clipboard", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.clipboardFormat) {
+                        Text("Picture only", bundle: .module).tag(ClipboardFormat.pictureOnly)
+                        Text("File and picture", bundle: .module).tag(ClipboardFormat.fileAndPicture)
+                    } label: {
+                        Text("Clipboard", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("File and picture also puts the file on the clipboard, in the format above, so Finder, Mail, and chat apps paste the file while image editors paste the picture. Some apps paste the file where you wanted the picture.", bundle: .module))
+                }
+            }
+
+            SettingsDivider()
+
             SettingsRow(Text("Keep captures", bundle: .module)) {
                 HStack(spacing: 8) {
                     Picker(selection: retentionSelection(settings: settings, expiredCount: expiredCount, request: $retentionRequest)) {

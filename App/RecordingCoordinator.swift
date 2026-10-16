@@ -568,7 +568,7 @@ final class RecordingCoordinator {
             if let telemetry {
                 // Studio: no card or clipboard yet; they come with the first movie exported from its window.
                 let entry = try history.add(
-                    movingFileAt: file.url, name: FilenameTemplate.standard.name(date: draft.info?.startedAt ?? .now, appName: draft.info?.appName ?? plan?.appName),
+                    movingFileAt: file.url, name: fileName(startedAt: draft.info?.startedAt ?? .now, appName: draft.info?.appName ?? plan?.appName),
                     kind: .recording, pixelWidth: file.pixelWidth, pixelHeight: file.pixelHeight, appName: draft.info?.appName ?? plan?.appName,
                     duration: file.duration, pixelsPerPoint: draft.info?.pixelsPerPoint
                 )
@@ -635,12 +635,20 @@ final class RecordingCoordinator {
         )
     }
 
+    /// A recording's name, from the file name pattern. A recording is the one file it will ever be, so it takes its
+    /// number now (a screenshot takes one when a copy is saved), and its saved copy keeps the name.
+    private func fileName(startedAt: Date, appName: String?) -> String {
+        let name = settings.nextFileName(date: startedAt, appName: appName, windowTitle: nil)
+        settings.didSaveFile(named: name, offered: name)
+        return name
+    }
+
     /// Moves a made file into the history and hands it on as a capture is: copied, saved when Settings
     /// says so, and given a card.
     private func deliver(
         _ file: KeptFile, startedAt: Date, appName: String?, pixelsPerPoint: Double?, displayID: CGDirectDisplayID
     ) async throws -> HistoryItem {
-        let name = FilenameTemplate.standard.name(date: startedAt, appName: appName)
+        let name = fileName(startedAt: startedAt, appName: appName)
         let entry = try history.add(
             movingFileAt: file.url, name: name, kind: .recording, pixelWidth: file.pixelWidth, pixelHeight: file.pixelHeight,
             appName: appName, duration: file.duration, pixelsPerPoint: pixelsPerPoint

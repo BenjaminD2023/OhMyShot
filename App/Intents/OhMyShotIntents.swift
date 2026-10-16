@@ -104,10 +104,9 @@ private func capture(_ kind: CompositionRoot.ShortcutCapture, then after: AfterC
         throw ShortcutFailure(error)
     }
     guard let entry else { return .result(value: nil) }
-    let url = root.fileForShortcut(entry)
     // Read now: with Keep Captures at Never, the file goes once its card does.
-    let data = try Data(contentsOf: url)
-    return .result(value: IntentFile(data: data, filename: entry.fileName, type: UTType(filenameExtension: url.pathExtension) ?? .png))
+    let file = try await root.fileForShortcut(entry)
+    return .result(value: IntentFile(data: file.data, filename: file.name, type: file.type))
 }
 
 struct CaptureAreaIntent: AppIntent {

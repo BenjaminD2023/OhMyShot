@@ -265,6 +265,8 @@ final class CompositionRoot {
                 self?.removeExpiredHistory()
             }
         })
+        // The converted copies made for dragging out and uploading, from days ago.
+        Task.detached(priority: .background) { ExportedFiles.removeOld() }
         observations.append(Task { [weak self] in
             for await _ in Observations({ "\(settings.pinCornerRadius) \(settings.pinShadow) \(settings.pinBorder)" }) {
                 self?.pins.appearanceChanged()
@@ -295,8 +297,8 @@ final class CompositionRoot {
         recordings.save = { [weak self] url in
             self?.captures.save(fileAt: url)
         }
-        recordings.copyFile = { url in
-            CaptureFiles.copy(url)
+        recordings.copyFile = { [weak self] url in
+            self?.captures.files.copy(fileAt: url)
         }
         recordings.onChanged = { [weak self] entry in
             self?.recordingChanged(entry)
@@ -349,12 +351,18 @@ final class CompositionRoot {
             self?.pictureChanged(entry, data: data)
         }
         annotations.saveCopy = { [weak self] entry, file in
-            guard let self, let saved = captures.save(fileAt: file) else { return nil }
+            guard let self, let saved = await captures.files.saveScreenshot(fileAt: file, entry: entry, asks: true) else { return nil }
             quickAccess.markSaved(entry.id, at: saved)
             return saved
         }
-        annotations.saveFile = { [weak self] file in
-            self?.captures.save(fileAt: file)
+        annotations.saveFile = { [weak self] file, scale in
+            await self?.captures.files.saveScreenshot(fileAt: file, scale: scale, asks: true)
+        }
+        annotations.fileToHandOver = { [weak self] file, scale in
+            self?.captures.files.fileToHandOver(file, scale: scale) ?? file
+        }
+        annotations.copyPicture = { [weak self] image, png, name, scale in
+            await self?.captures.files.copy(.init(image), png: png, name: name, scale: scale)
         }
 
         displays.onChange = { [weak self] _ in
@@ -529,10 +537,10 @@ final class CompositionRoot {
         case .captureFullscreen:
             captures.captureFullscreen()
         case .captureAreaAndUpload:
-            guard let followUp = followUp(for: .upload) else { return }
+            guard let followUp = followUp(for: .upload, asksForName: true) else { return }
             captures.captureArea(followUp: followUp)
         case .captureFullscreenAndUpload:
-            guard let followUp = followUp(for: .upload) else { return }
+            guard let followUp = followUp(for: .upload, asksForName: true) else { return }
             captures.captureFullscreen(followUp: followUp)
         case .captureWindow:
             captures.captureWindow()
@@ -643,14 +651,15 @@ final class CompositionRoot {
     }
 
     /// The URL API's `action` (or an upload shortcut's) as a capture's follow-up; nil when it cannot be done: an
-    /// upload with no destination, which is said by the pointer.
-    private func followUp(for action: CaptureAction?, done: ((HistoryItem?) -> Void)? = nil) -> CaptureFollowUp? {
+    /// upload with no destination, which is said by the pointer. A URL command never asks for a file name, being
+    /// nobody's to answer; an upload shortcut, pressed at the keyboard, does.
+    private func followUp(for action: CaptureAction?, asksForName: Bool = false, done: ((HistoryItem?) -> Void)? = nil) -> CaptureFollowUp? {
         if action == .upload, uploads.destinations.defaultDestination == nil {
             uploads.tellNoDestination()
             done?(nil)
             return nil
         }
-        return CaptureFollowUp(action: action, done: done)
+        return CaptureFollowUp(action: action, asksForName: asksForName, done: done)
     }
 
     private func setDesktopIconsHidden(_ hidden: Bool) {
@@ -718,7 +727,8 @@ final class CompositionRoot {
         if action == .upload, uploads.destinations.defaultDestination == nil { throw ShortcutError.noUploadDestination }
         return await withCheckedContinuation { continuation in
             let answer = Answer(continuation)
-            let followUp = CaptureFollowUp(action: action) { answer.give($0) }
+            // A shortcut's capture is waited on by a shortcut: nobody is there to name the file.
+            let followUp = CaptureFollowUp(action: action, asksForName: false) { answer.give($0) }
             switch capture {
             case .area: captures.captureArea(followUp: followUp)
             case .window: captures.captureWindow(followUp: followUp)
@@ -731,9 +741,9 @@ final class CompositionRoot {
         }
     }
 
-    /// A kept capture's file, to hand to a shortcut.
-    func fileForShortcut(_ entry: HistoryItem) -> URL {
-        history.fileURL(for: entry)
+    /// A kept capture's picture, to hand to a shortcut: in the format Settings choose.
+    func fileForShortcut(_ entry: HistoryItem) async throws -> (data: Data, name: String, type: UTType) {
+        try await captures.files.shortcutFile(for: entry)
     }
 
     /// A shortcut's Capture Text: the text copied, or nil when none was.
@@ -813,7 +823,24 @@ final class CompositionRoot {
 
     /// The URL API's `action=upload`: the capture just kept goes to the default destination.
     private func uploadAfterCapture(_ entry: HistoryItem) {
-        uploads.upload(captureID: entry.id, fileURL: history.fileURL(for: entry))
+        upload(captureID: entry.id, fileURL: history.fileURL(for: entry))
+    }
+
+    /// Uploads a capture's picture as Settings write it: the capture itself when they leave it as it is, else a copy in
+    /// the chosen format. A capture to be converted is read now, since with History off its file may be gone by the time
+    /// the copy is made.
+    private func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil) {
+        let files = captures.files
+        guard !files.output.isUnchanged, ExportedFiles.isPicture(fileURL), let data = try? Data(contentsOf: fileURL) else {
+            uploads.upload(captureID: captureID, fileURL: fileURL, destinationID: destination)
+            return
+        }
+        let name = fileURL.deletingPathExtension().lastPathComponent
+        let scale = history.item(id: captureID)?.pixelsPerPoint
+        Task {
+            let file = await files.exportedFile(forPictureData: data, named: name, scale: scale) ?? fileURL
+            uploads.upload(captureID: captureID, fileURL: file, destinationID: destination)
+        }
     }
 
     /// An upload ended. With history off a capture lives as long as something shows it, and an upload was one
@@ -911,7 +938,7 @@ final class CompositionRoot {
             let png = try await ImageExporter.encode(image, as: .png)
             let entry = try history.add(
                 data: png, name: name, fileExtension: ImageExporter.Format.png.fileExtension,
-                kind: .screenshot, pixelWidth: image.width, pixelHeight: image.height, appName: nil
+                kind: .screenshot, pixelWidth: image.width, pixelHeight: image.height, appName: nil, pixelsPerPoint: Double(scale)
             )
             historyWindow?.reload()
             readTextSoon()
@@ -949,19 +976,17 @@ final class CompositionRoot {
     /// What a picture pin's menu does; text and color pins copy their own values.
     private func makePinActions() -> PinController.Actions {
         PinController.Actions(
-            copy: { pin in
-                guard case .image(let image, _) = pin.content else { return }
-                Task {
-                    guard let png = try? await ImageExporter.encode(image, as: .png) else { return NSSound.beep() }
-                    PasteboardWriter.write(png: png, image: image)
-                }
+            copy: { [weak self] pin in
+                guard let self, case .image(let image, let scale) = pin.content else { return }
+                // The picture alone, as pins have always copied; it follows the 1×, sRGB, and border settings.
+                Task { await captures.files.copy(.init(image), png: nil, name: String(localized: "Pin"), scale: Double(scale), withFile: false) }
             },
             save: { [weak self] pin in
-                guard let self, case .image(let image, _) = pin.content else { return }
+                guard let self, case .image(let image, let scale) = pin.content else { return }
                 if case .capture(let id) = pin.origin, let entry = history.item(id: id) {
-                    _ = captures.save(fileAt: history.fileURL(for: entry))
+                    Task { _ = await self.captures.files.saveScreenshot(fileAt: self.history.fileURL(for: entry), entry: entry, asks: true) }
                 } else {
-                    Task { _ = await self.captures.save(image: image) }
+                    Task { _ = await self.captures.save(image: image, scale: Double(scale)) }
                 }
             },
             saveAs: { [weak self] pin in self?.savePinAs(pin) },
@@ -1060,21 +1085,8 @@ final class CompositionRoot {
     }
 
     private func savePinAs(_ pin: PinController.Pin) {
-        guard case .image(let image, _) = pin.content else { return }
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = FilenameTemplate.standard.name(date: .now, appName: nil) + "." + ImageExporter.Format.png.fileExtension
-        panel.directoryURL = settings.exportDirectory
-        panel.allowedContentTypes = [.png]
-        NSApp.activate()
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task {
-            do {
-                try await ImageExporter.encode(image, as: .png).write(to: url)
-            } catch {
-                Log.capture.error("Save As failed: \(error.localizedDescription, privacy: .public)")
-                NSSound.beep()
-            }
-        }
+        guard case .image(let image, let scale) = pin.content else { return }
+        Task { _ = await captures.files.saveScreenshotAs(.init(image), scale: Double(scale)) }
     }
 
     /// Decodes off the main actor: a large photo takes a while.
@@ -1134,9 +1146,9 @@ final class CompositionRoot {
 
     private func makeQuickAccessActions() -> QuickAccessController.Actions {
         var actions = QuickAccessController.Actions(
-            copy: { item in CaptureFiles.copy(item.fileURL) },
-            save: { [weak self] item in self?.captures.save(item) },
-            saveAs: { [weak self] item in self?.captures.saveAs(item) },
+            copy: { [weak self] item in self?.captures.files.copy(fileAt: item.fileURL) },
+            save: { [weak self] item in await self?.captures.save(item) },
+            saveAs: { [weak self] item in await self?.captures.saveAs(item) },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
             annotate: { [weak self] item in
                 guard let self, let entry = history.item(id: item.id) else { return }
@@ -1184,6 +1196,7 @@ final class CompositionRoot {
             let scale = displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
             printPicture(fileAt: item.fileURL, fallbackScale: scale)
         }
+        actions.fileToHandOver = { [weak self] item in self?.captures.files.fileToHandOver(item.fileURL) ?? item.fileURL }
         actions.sharing = makeSharingActions()
         return actions
     }
@@ -1193,7 +1206,7 @@ final class CompositionRoot {
     private func makeSharingActions() -> QuickAccessController.Actions.Sharing {
         var sharing = QuickAccessController.Actions.Sharing()
         sharing.menu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }
-        sharing.upload = { [weak self] item, destination in self?.uploads.upload(captureID: item.id, fileURL: item.fileURL, destinationID: destination) }
+        sharing.upload = { [weak self] item, destination in self?.upload(captureID: item.id, fileURL: item.fileURL, to: destination) }
         sharing.cancel = { [weak self] item in self?.uploads.cancel(captureID: item.id) }
         sharing.retry = { [weak self] item in self?.uploads.retry(captureID: item.id) }
         sharing.copyLink = { [weak self] item in self?.uploads.copyLink(captureID: item.id) }
@@ -1219,13 +1232,13 @@ final class CompositionRoot {
             restore: { [weak self] entry in Task { await self?.restore(entry) } },
             copy: { [weak self] entry in
                 guard let self else { return }
-                CaptureFiles.copy(history.fileURL(for: entry))
+                captures.files.copy(fileAt: history.fileURL(for: entry))
             },
             save: { [weak self] entry in
                 guard let self else { return }
                 Task {
                     guard let item = await self.quickAccessItem(for: entry) else { return }
-                    if let url = self.captures.save(item) {
+                    if let url = await self.captures.save(item) {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
                 }
@@ -1269,7 +1282,11 @@ final class CompositionRoot {
         historyActions.sharing.menu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }
         historyActions.sharing.upload = { [weak self] entry, destination in
             guard let self else { return }
-            uploads.upload(captureID: entry.id, fileURL: history.fileURL(for: entry), destinationID: destination)
+            upload(captureID: entry.id, fileURL: history.fileURL(for: entry), to: destination)
+        }
+        historyActions.fileToHandOver = { [weak self] entry in
+            guard let self else { return nil }
+            return captures.files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
         }
         historyActions.sharing.isUploading = { [weak self] entry in self?.uploads.isUploading(entry.id) ?? false }
         historyActions.sharing.cancel = { [weak self] entry in self?.uploads.cancel(captureID: entry.id) }
@@ -1533,24 +1550,5 @@ private extension SettingsTab {
         case "advanced": self = .automation
         default: self = .general
         }
-    }
-}
-
-/// File actions on captures.
-enum CaptureFiles {
-    /// Copies a capture's image. Image only, no file: some apps paste a file reference instead of the
-    /// picture when both are offered. A recording, a movie or a GIF, is copied as its file: a GIF's picture
-    /// alone would paste as its first frame.
-    static func copy(_ url: URL) {
-        if HistoryStore.isRecording(url) { return PasteboardWriter.write(fileURL: url) }
-        guard
-            let data = try? Data(contentsOf: url),
-            let source = CGImageSourceCreateWithData(data as CFData, nil),
-            let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        else {
-            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to copy it")
-            return
-        }
-        PasteboardWriter.write(png: data, image: image)
     }
 }

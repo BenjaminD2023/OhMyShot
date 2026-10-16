@@ -62,6 +62,51 @@ public final class SettingsStore {
         didSet { defaults.set(exportDirectory.path(percentEncoded: false), forKey: Key.exportDirectory) }
     }
 
+    /// The file format screenshots are saved, dragged out, and uploaded in. The history keeps every capture as PNG.
+    public var screenshotFormat: ImageExporter.Format {
+        didSet { defaults.set(screenshotFormat.rawValue, forKey: Key.screenshotFormat) }
+    }
+
+    /// JPEG's and HEIC's quality, 0.5 to 1.
+    public var screenshotQuality: Double {
+        didSet { defaults.set(screenshotQuality, forKey: Key.screenshotQuality) }
+    }
+
+    /// A screenshot taken on a Retina display is scaled down to 1× where it leaves the app.
+    public var savesRetinaAtOneX: Bool {
+        didSet { defaults.set(savesRetinaAtOneX, forKey: Key.savesRetinaAtOneX) }
+    }
+
+    /// A screenshot is converted to sRGB where it leaves the app; a wide-gamut display captures in Display P3.
+    public var convertsToSRGB: Bool {
+        didSet { defaults.set(convertsToSRGB, forKey: Key.convertsToSRGB) }
+    }
+
+    /// A screenshot gets a 1 px border where it leaves the app.
+    public var addsBorder: Bool {
+        didSet { defaults.set(addsBorder, forKey: Key.addsBorder) }
+    }
+
+    /// The pattern saved files are named from: `{date}`, `{time}`, `{app}`, `{window}`, and `{counter}`.
+    public var fileNamePattern: String {
+        didSet { defaults.set(fileNamePattern, forKey: Key.fileNamePattern) }
+    }
+
+    /// The number the next saved file takes for `{counter}`. It counts files saved, and starts at 1.
+    public internal(set) var nextFileNumber: Int {
+        didSet { defaults.set(nextFileNumber, forKey: Key.nextFileNumber) }
+    }
+
+    /// Saving asks for the file's name first, in a small panel that offers the one the pattern gives.
+    public var asksForFileName: Bool {
+        didSet { defaults.set(asksForFileName, forKey: Key.asksForFileName) }
+    }
+
+    /// What a screenshot puts on the clipboard: the picture alone, or the file as well.
+    public var clipboardFormat: ClipboardFormat {
+        didSet { defaults.set(clipboardFormat.rawValue, forKey: Key.clipboardFormat) }
+    }
+
     /// After Capture Text: also show a card with what was copied. Off by default: the selection's
     /// highlight fading out says the text is on the clipboard.
     public var showTextResult: Bool {
@@ -266,6 +311,15 @@ public final class SettingsStore {
             Key.uploadAfterCapture: false,
             Key.copyLinkAfterUpload: true,
             Key.saveAfterCapture: false,
+            Key.screenshotFormat: ImageExporter.Format.png.rawValue,
+            Key.screenshotQuality: ScreenshotOutput.standardQuality,
+            Key.savesRetinaAtOneX: false,
+            Key.convertsToSRGB: false,
+            Key.addsBorder: false,
+            Key.fileNamePattern: FilenameTemplate.standard.pattern,
+            Key.nextFileNumber: 1,
+            Key.asksForFileName: false,
+            Key.clipboardFormat: ClipboardFormat.pictureOnly.rawValue,
             Key.showQuickAccess: true,
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
             Key.showTextResult: false,
@@ -352,6 +406,16 @@ public final class SettingsStore {
         uploadAfterCapture = defaults.bool(forKey: Key.uploadAfterCapture)
         copyLinkAfterUpload = defaults.bool(forKey: Key.copyLinkAfterUpload)
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
+        screenshotFormat = defaults.string(forKey: Key.screenshotFormat).flatMap(ImageExporter.Format.init(rawValue:)) ?? .png
+        let quality = defaults.double(forKey: Key.screenshotQuality)
+        screenshotQuality = min(max(quality, ScreenshotOutput.qualities.lowerBound), ScreenshotOutput.qualities.upperBound)
+        savesRetinaAtOneX = defaults.bool(forKey: Key.savesRetinaAtOneX)
+        convertsToSRGB = defaults.bool(forKey: Key.convertsToSRGB)
+        addsBorder = defaults.bool(forKey: Key.addsBorder)
+        fileNamePattern = defaults.string(forKey: Key.fileNamePattern) ?? FilenameTemplate.standard.pattern
+        nextFileNumber = max(defaults.integer(forKey: Key.nextFileNumber), 1)
+        asksForFileName = defaults.bool(forKey: Key.asksForFileName)
+        clipboardFormat = defaults.string(forKey: Key.clipboardFormat).flatMap(ClipboardFormat.init(rawValue:)) ?? .pictureOnly
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
         showTextResult = defaults.bool(forKey: Key.showTextResult)
@@ -401,6 +465,15 @@ public final class SettingsStore {
         static let uploadAfterCapture = "uploadAfterCapture"
         static let copyLinkAfterUpload = "copyLinkAfterUpload"
         static let saveAfterCapture = "saveAfterCapture"
+        static let screenshotFormat = "screenshotFormat"
+        static let screenshotQuality = "screenshotQuality"
+        static let savesRetinaAtOneX = "savesRetinaAtOneX"
+        static let convertsToSRGB = "convertsToSRGB"
+        static let addsBorder = "addsBorder"
+        static let fileNamePattern = "fileNamePattern"
+        static let nextFileNumber = "nextFileNumber"
+        static let asksForFileName = "asksForFileName"
+        static let clipboardFormat = "clipboardFormat"
         static let showQuickAccess = "showQuickAccess"
         static let historyRetention = "historyRetention"
         static let showTextResult = "showTextResult"

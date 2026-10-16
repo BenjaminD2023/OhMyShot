@@ -20,6 +20,8 @@ final class CardStackView: NSView {
     var onPrint: ((QuickAccessItem) -> Void)?
     var onMoveToTrash: ((QuickAccessItem) -> Void)?
     var onClose: ((QuickAccessItem) -> Void)?
+    /// The file to hand to another app for a capture, dragged out or shared.
+    var fileToHandOver: ((QuickAccessItem) -> URL)?
     /// What the menu offers for uploading, read each time a menu opens (see `UploadMenu`).
     var uploadMenu: () -> UploadMenu = { .hidden }
     var onUpload: ((QuickAccessItem, UUID?) -> Void)?
@@ -154,6 +156,7 @@ final class CardStackView: NSView {
         card.onPrint = { [weak self, weak card] in card.map { self?.onPrint?($0.item) } }
         card.onMoveToTrash = { [weak self, weak card] in card.map { self?.onMoveToTrash?($0.item) } }
         card.onClose = { [weak self, weak card] in card.map { self?.onClose?($0.item) } }
+        card.fileToHandOver = { [weak self, weak card] in card.map { self?.fileToHandOver?($0.item) ?? $0.item.fileURL } }
         card.uploadMenu = { [weak self] in self?.uploadMenu() ?? .hidden }
         card.onUpload = { [weak self, weak card] destination in card.map { self?.onUpload?($0.item, destination) } }
         card.onCancelUpload = { [weak self, weak card] in card.map { self?.onCancelUpload?($0.item) } }
@@ -185,6 +188,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
     var onPrint: (() -> Void)?
     var onMoveToTrash: (() -> Void)?
     var onClose: (() -> Void)?
+    var fileToHandOver: (() -> URL?)?
     var uploadMenu: () -> UploadMenu = { .hidden }
     var onUpload: ((UUID?) -> Void)?
     var onCancelUpload: (() -> Void)?
@@ -537,7 +541,8 @@ final class CaptureCardView: NSView, NSDraggingSource {
         let point = convert(event.locationInWindow, from: nil)
         guard hypot(point.x - start.x, point.y - start.y) > 3 else { return }
         mouseDownPoint = nil
-        let draggingItem = NSDraggingItem(pasteboardWriter: item.fileURL as NSURL)
+        // The file in the format Settings choose, made now when it is not the capture itself.
+        let draggingItem = NSDraggingItem(pasteboardWriter: (fileToHandOver?() ?? item.fileURL) as NSURL)
         draggingItem.setDraggingFrame(bounds, contents: NSImage(cgImage: item.thumbnail, size: bounds.size))
         beginDraggingSession(with: [draggingItem], event: event, source: self)
     }
@@ -666,7 +671,7 @@ final class CaptureCardView: NSView, NSDraggingSource {
     #endif
 
     @objc private func shareClicked() {
-        NSSharingServicePicker(items: [item.fileURL]).show(relativeTo: bounds, of: self, preferredEdge: .maxY)
+        NSSharingServicePicker(items: [fileToHandOver?() ?? item.fileURL]).show(relativeTo: bounds, of: self, preferredEdge: .maxY)
     }
 
     @objc private func copyClicked() { onCopy?() }

@@ -206,4 +206,49 @@ struct HistoryStoreTests {
         try FileManager.default.removeItem(at: store.studioSourceURL(for: item))
         #expect(throws: CocoaError.self) { try store.studioSource(for: item) }
     }
+
+    @Test func aScreenshotKeepsItsScaleItsWindowTitleAndHowItWasNamed() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(
+            data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 800, pixelHeight: 600, appName: "Safari",
+            pixelsPerPoint: 2, windowTitle: "Apple", isTemplateNamed: true
+        )
+        let read = try #require(store.item(id: item.id))
+        #expect(read.pixelsPerPoint == 2 && read.windowTitle == "Apple" && read.isTemplateNamed == true)
+        // Marks drawn in the editor change the picture, not what the record knows of it.
+        let marked = try store.replaceImage(of: item, with: Data([2]), pixelWidth: 900, pixelHeight: 700, annotations: Data("{}".utf8))
+        #expect(marked.pixelsPerPoint == 2 && marked.windowTitle == "Apple" && marked.isTemplateNamed == true)
+        let restored = try store.restoreOriginal(of: marked)
+        #expect(store.item(id: restored.id)?.windowTitle == "Apple")
+    }
+
+    @Test func aRecordFromBeforeTheseFieldsExistedStillReads() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 4, pixelHeight: 4, appName: nil)
+        let read = try #require(store.item(id: item.id))
+        #expect(read.pixelsPerPoint == nil && read.windowTitle == nil && read.isTemplateNamed == nil)
+    }
+
+    @Test func aFilesRecordIsFoundByItsPath() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let first = try store.add(data: Data([1]), name: "Shot", fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        _ = try store.add(data: Data([2]), name: "Other", fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        #expect(store.item(forFileAt: store.fileURL(for: first))?.id == first.id)
+        let outside = FileManager.default.temporaryDirectory.appending(path: "Shot.png")
+        #expect(store.item(forFileAt: outside) == nil)
+    }
+
+    @Test func aFileWithNoRecordOrARecordWithNoFileIsNoCapture() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let kept = try store.add(data: Data([1]), name: "Shot", fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        let stray = store.directory.appending(path: "Stray.png")
+        try Data([3]).write(to: stray)
+        #expect(store.item(forFileAt: stray) == nil)
+        try FileManager.default.removeItem(at: store.fileURL(for: kept))
+        #expect(store.item(forFileAt: store.fileURL(for: kept)) == nil)
+    }
 }

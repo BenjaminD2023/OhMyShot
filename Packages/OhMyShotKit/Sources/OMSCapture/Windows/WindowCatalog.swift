@@ -46,6 +46,29 @@ public enum WindowCatalog {
         }
     }
 
+    /// The title of the front window of the app with process `pid`, read from the window list now: what an area
+    /// taken in that app is named after. Nil when it has none on screen, or no title.
+    public static func frontWindowTitle(ofProcess pid: pid_t) -> String? {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        return frontWindowTitle(ofProcess: pid, in: CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? [])
+    }
+
+    /// The same from a window list, front to back: the first standard window (layer 0) of the process that has a
+    /// title and is more than a sliver.
+    static func frontWindowTitle(ofProcess pid: pid_t, in list: [[String: Any]]) -> String? {
+        for info in list {
+            guard
+                (info[kCGWindowLayer as String] as? Int) == 0, (info[kCGWindowOwnerPID as String] as? pid_t) == pid,
+                (info[kCGWindowAlpha as String] as? CGFloat ?? 1) > 0.01,
+                let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                (bounds["Width"] ?? 0) >= 20, (bounds["Height"] ?? 0) >= 20,
+                let title = info[kCGWindowName as String] as? String, !title.isEmpty
+            else { continue }
+            return title
+        }
+        return nil
+    }
+
     /// The frontmost window under a point in AppKit's global space.
     public static func target(at point: CGPoint, in windows: [WindowTarget]) -> WindowTarget? {
         windows.first { $0.frame.contains(point) }

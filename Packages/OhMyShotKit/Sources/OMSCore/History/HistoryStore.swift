@@ -44,9 +44,16 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
     public let fileName: String
     /// A recording's length.
     public let duration: TimeInterval?
-    /// A recording's pixels per point on the display it was made on, which sizes a GIF made of it as
-    /// things were on screen; nil for captures and recordings from before it was kept.
+    /// The pixels per point of the display the capture was made on: which sizes a GIF made of a recording as
+    /// things were on screen, and says how large a screenshot was, so it can be saved at 1×. Nil for captures and
+    /// recordings from before it was kept.
     public let pixelsPerPoint: Double?
+    /// The title of the window captured, or of the front window when an area was; nil when there was none or it is
+    /// unknown. A saved copy's name can hold it.
+    public let windowTitle: String?
+    /// Whether the file is named from the file name template, so a copy saved later is named from it too (with the
+    /// next number, if it counts). Nil for pictures that came with names of their own.
+    public let isTemplateNamed: Bool?
 
     public init(
         id: UUID = UUID(),
@@ -57,7 +64,9 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
         appName: String?,
         fileName: String,
         duration: TimeInterval? = nil,
-        pixelsPerPoint: Double? = nil
+        pixelsPerPoint: Double? = nil,
+        windowTitle: String? = nil,
+        isTemplateNamed: Bool? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -68,6 +77,8 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
         self.fileName = fileName
         self.duration = duration
         self.pixelsPerPoint = pixelsPerPoint
+        self.windowTitle = windowTitle
+        self.isTemplateNamed = isTemplateNamed
     }
 }
 
@@ -271,7 +282,8 @@ public final class HistoryStore: Sendable {
     private func updated(_ item: HistoryItem, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval?) throws -> HistoryItem {
         let updated = HistoryItem(
             id: item.id, kind: item.kind, createdAt: item.createdAt, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
-            appName: item.appName, fileName: item.fileName, duration: duration, pixelsPerPoint: item.pixelsPerPoint
+            appName: item.appName, fileName: item.fileName, duration: duration, pixelsPerPoint: item.pixelsPerPoint,
+            windowTitle: item.windowTitle, isTemplateNamed: item.isTemplateNamed
         )
         if updated != item {
             try JSONEncoder.history.encode(updated).write(to: sidecarURL(for: item.id, fileName: item.fileName), options: .atomic)
@@ -306,12 +318,15 @@ public final class HistoryStore: Sendable {
         appName: String?,
         duration: TimeInterval? = nil,
         pixelsPerPoint: Double? = nil,
+        windowTitle: String? = nil,
+        isTemplateNamed: Bool? = nil,
         date: Date = .now
     ) throws -> HistoryItem {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let item = HistoryItem(
             kind: kind, createdAt: date, pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: appName,
-            fileName: availableFileName(name, fileExtension: source.pathExtension), duration: duration, pixelsPerPoint: pixelsPerPoint
+            fileName: availableFileName(name, fileExtension: source.pathExtension), duration: duration, pixelsPerPoint: pixelsPerPoint,
+            windowTitle: windowTitle, isTemplateNamed: isTemplateNamed
         )
         try FileManager.default.moveItem(at: source, to: fileURL(for: item))
         try JSONEncoder.history.encode(item).write(to: sidecarURL(for: item.id, fileName: item.fileName), options: .atomic)
@@ -395,6 +410,9 @@ public final class HistoryStore: Sendable {
         pixelHeight: Int,
         appName: String?,
         duration: TimeInterval? = nil,
+        pixelsPerPoint: Double? = nil,
+        windowTitle: String? = nil,
+        isTemplateNamed: Bool? = nil,
         date: Date = .now
     ) throws -> HistoryItem {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -408,7 +426,10 @@ public final class HistoryStore: Sendable {
             pixelHeight: pixelHeight,
             appName: appName,
             fileName: fileName,
-            duration: duration
+            duration: duration,
+            pixelsPerPoint: pixelsPerPoint,
+            windowTitle: windowTitle,
+            isTemplateNamed: isTemplateNamed
         )
         try data.write(to: fileURL(for: item), options: .atomic)
         try JSONEncoder.history.encode(item).write(to: sidecarURL(for: item.id, fileName: fileName), options: .atomic)
@@ -430,6 +451,25 @@ public final class HistoryStore: Sendable {
 
     public func item(id: UUID) -> HistoryItem? {
         items().first { $0.id == id }
+    }
+
+    /// The record whose file is `url`; nil for a file outside the history folder. Reads that record's sidecar alone, not
+    /// the whole folder's, since it is asked at the moment a drag begins.
+    public func item(forFileAt url: URL) -> HistoryItem? {
+        func path(_ url: URL) -> String {
+            var path = url.resolvingSymlinksInPath().path(percentEncoded: false)
+            while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+            return path
+        }
+        let fileName = url.lastPathComponent
+        guard
+            path(url.deletingLastPathComponent()) == path(directory),
+            let data = FileManager.default.contents(atPath: directory.appending(path: "\(fileName).json").path(percentEncoded: false)),
+            let item = try? JSONDecoder.history.decode(HistoryItem.self, from: data),
+            item.fileName == fileName,
+            FileManager.default.fileExists(atPath: fileURL(for: item).path(percentEncoded: false))
+        else { return nil }
+        return item
     }
 
     public func delete(_ item: HistoryItem) {

@@ -13,12 +13,17 @@ final class AnnotationCoordinator {
     private var editors: [UUID: AnnotationEditorWindowController] = [:]
     /// Editors of project files, by file.
     private var projectEditors: [URL: AnnotationEditorWindowController] = [:]
-    /// Saves a copy of a file to the export location; returns where it went.
-    var saveFile: ((URL) -> URL?)?
+    /// Saves a copy of a project's picture to the export location, with the scale it was made at; returns where it went.
+    var saveFile: ((URL, Double) async -> URL?)?
     /// A capture's picture changed: its record, and the picture's encoded data.
     var onChange: ((HistoryItem, Data) -> Void)?
     /// Saves a copy of a capture's file to the export location; returns where it went.
-    var saveCopy: ((HistoryItem, URL) -> URL?)?
+    var saveCopy: ((HistoryItem, URL) async -> URL?)?
+    /// The file to hand to another app when an editor's picture is dragged out, from the picture's file and its scale
+    /// (nil when unknown).
+    var fileToHandOver: ((URL, Double?) -> URL)?
+    /// Puts an editor's picture on the clipboard: the picture, its PNG, its name, and its scale (nil when unknown).
+    var copyPicture: ((CGImage, Data, String, Double?) async -> Void)?
 
     init(history: HistoryStore) {
         self.history = history
@@ -52,12 +57,13 @@ final class AnnotationCoordinator {
                 document: loaded.document,
                 title: (entry.fileName as NSString).deletingPathExtension,
                 fileURL: history.fileURL(for: entry),
-                actions: .init(
+                actions: Self.editorActions(
                     keep: { [weak self] document, png, image in self?.keep(id, document: document, png: png, image: image) },
                     save: { [weak self] file in
                         guard let self, let entry = self.history.item(id: id) else { return nil }
-                        return self.saveCopy?(entry, file)
-                    }
+                        return await self.saveCopy?(entry, file)
+                    },
+                    coordinator: self, name: (entry.fileName as NSString).deletingPathExtension, scale: { [weak self] in self?.history.item(id: id)?.pixelsPerPoint }
                 )
             )
             editor.onClose = { [weak self] in
@@ -70,6 +76,23 @@ final class AnnotationCoordinator {
             editors[id] = editor
             editor.show()
         }
+    }
+
+    /// The editor's actions: keeping and saving as given, and dragging out and copying as the file settings say.
+    private static func editorActions(
+        keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) async -> URL?,
+        coordinator: AnnotationCoordinator, name: String, scale: @escaping () -> Double?
+    ) -> AnnotationEditorWindowController.Actions {
+        var actions = AnnotationEditorWindowController.Actions(keep: keep, save: save)
+        actions.fileToHandOver = { [weak coordinator] file in coordinator?.fileToHandOver?(file, scale()) ?? file }
+        actions.copy = { [weak coordinator] image, png in
+            if let copy = coordinator?.copyPicture {
+                await copy(image, png, name, scale())
+            } else {
+                PasteboardWriter.write(png: png, image: image)
+            }
+        }
+        return actions
     }
 
     /// The captures open in an editor: never expired from under it.
@@ -108,13 +131,14 @@ final class AnnotationCoordinator {
             let capture = opened.project.capture
             let capturePNG = opened.project.capturePNG
             let picture = opened.picture
+            let projectScale = Double(opened.project.document.scale)
             let editor = AnnotationEditorWindowController(
                 image: capture,
                 scale: opened.project.document.scale,
                 document: opened.project.document,
                 title: file.deletingPathExtension().lastPathComponent,
                 fileURL: picture,
-                actions: .init(
+                actions: Self.editorActions(
                     keep: { document, png, _ in
                         do {
                             try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG).write(to: file)
@@ -126,7 +150,8 @@ final class AnnotationCoordinator {
                             return nil
                         }
                     },
-                    save: { [weak self] picture in self?.saveFile?(picture) }
+                    save: { [weak self] picture in await self?.saveFile?(picture, projectScale) },
+                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }
                 )
             )
             editor.onClose = { [weak self] in

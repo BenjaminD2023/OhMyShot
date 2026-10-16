@@ -7,10 +7,11 @@ import OMSCore
 public final class QuickAccessController {
     public struct Actions {
         public var copy: (QuickAccessItem) -> Void
-        /// Saves a copy to the export location and returns where it went.
-        public var save: (QuickAccessItem) -> URL?
+        /// Saves a copy to the export location and returns where it went; nil when it was not saved. Converting a
+        /// large capture takes a while, so a card marks itself saved when this returns.
+        public var save: (QuickAccessItem) async -> URL?
         /// Asks where to save a copy.
-        public var saveAs: (QuickAccessItem) -> URL?
+        public var saveAs: (QuickAccessItem) async -> URL?
         public var open: (QuickAccessItem) -> Void
         /// Opens the capture in the annotation editor.
         public var annotate: (QuickAccessItem) -> Void
@@ -24,6 +25,9 @@ public final class QuickAccessController {
         public var moveToTrash: (QuickAccessItem) -> Void
         /// A card was dismissed without being trashed.
         public var closed: (QuickAccessItem) -> Void
+        /// The file to hand to another app for a capture, when it is dragged out of its card or shared: the capture
+        /// itself, or a copy in the format Settings choose.
+        public var fileToHandOver: (QuickAccessItem) -> URL = { $0.fileURL }
 
         /// Uploading, for a person who set up a destination. Left as it is, the card offers none of it.
         public var sharing = Sharing()
@@ -51,8 +55,8 @@ public final class QuickAccessController {
 
         public init(
             copy: @escaping (QuickAccessItem) -> Void,
-            save: @escaping (QuickAccessItem) -> URL?,
-            saveAs: @escaping (QuickAccessItem) -> URL?,
+            save: @escaping (QuickAccessItem) async -> URL?,
+            saveAs: @escaping (QuickAccessItem) async -> URL?,
             open: @escaping (QuickAccessItem) -> Void,
             annotate: @escaping (QuickAccessItem) -> Void,
             reveal: @escaping (QuickAccessItem) -> Void,
@@ -99,6 +103,8 @@ public final class QuickAccessController {
     }
     #endif
     private var stack: CardStackView?
+    /// The captures being saved now.
+    private var saving: Set<UUID> = []
     private var items: [QuickAccessItem] = []
     private var recentlyClosed: [QuickAccessItem] = []
     /// The display the stack sits on.
@@ -292,8 +298,8 @@ public final class QuickAccessController {
     private func makeStack() -> CardStackView {
         let stack = CardStackView()
         stack.onCopy = { [weak self] item in self?.actions.copy(item) }
-        stack.onSave = { [weak self] item in self?.recordSave(of: item, at: self?.actions.save(item)) }
-        stack.onSaveAs = { [weak self] item in self?.recordSave(of: item, at: self?.actions.saveAs(item)) }
+        stack.onSave = { [weak self] item in self?.save(item, asking: false) }
+        stack.onSaveAs = { [weak self] item in self?.save(item, asking: true) }
         stack.onOpen = { [weak self] item in self?.actions.open(item) }
         stack.onAnnotate = { [weak self] item in self?.actions.annotate(item) }
         stack.onReveal = { [weak self] item in self?.actions.reveal(item) }
@@ -307,6 +313,7 @@ public final class QuickAccessController {
             refresh()
         }
         stack.onClose = { [weak self] item in self?.dismiss(item.id) }
+        stack.fileToHandOver = { [weak self] item in self?.actions.fileToHandOver(item) ?? item.fileURL }
         let sharing = actions.sharing
         stack.uploadMenu = sharing.menu
         stack.onUpload = sharing.upload
@@ -322,6 +329,18 @@ public final class QuickAccessController {
         self.panel = panel
         self.stack = stack
         return stack
+    }
+
+    /// Saves a capture, and marks its card saved once it is. A second request for a capture still being saved waits for
+    /// the first.
+    private func save(_ item: QuickAccessItem, asking: Bool) {
+        guard saving.insert(item.id).inserted else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            let url = await asking ? actions.saveAs(item) : actions.save(item)
+            saving.remove(item.id)
+            recordSave(of: item, at: url)
+        }
     }
 
     private func recordSave(of item: QuickAccessItem, at url: URL?) {

@@ -36,7 +36,7 @@ should happen after a capture:
 | `action`   | What happens                                                                                   |
 |------------|------------------------------------------------------------------------------------------------|
 | `copy`     | The capture is copied, even if Copy after capture is off.                                      |
-| `save`     | A copy is saved to the export folder, even if Save after capture is off.                       |
+| `save`     | A copy is saved to the export folder, even if Save after capture is off. It is written in the format Settings › General chooses, and never asks for a name. |
 | `annotate` | The capture opens in the editor. No Quick Access card, nothing copied.                         |
 | `upload`   | The capture goes to the default upload destination. With none set up, nothing is captured.    |
 | `pin`      | The capture stays on screen as a pin where it was taken. No card, nothing copied.              |
@@ -91,7 +91,7 @@ These actions appear in the Shortcuts app under OhMyShot:
 
 | Action | Input | Output |
 |---|---|---|
-| Capture Area, Capture Window, Capture Fullscreen, Capture Previous Area, Self-Timer | After Capture (optional): Copy, Save, Annotate, Upload, Pin | The screenshot, as a file, or nothing when the capture was cancelled |
+| Capture Area, Capture Window, Capture Fullscreen, Capture Previous Area, Self-Timer | After Capture (optional): Copy, Save, Annotate, Upload, Pin | The screenshot, as a file in the format Settings › General chooses (PNG, JPEG, or HEIC, at 1×, in sRGB, with a border, as set; a save a shortcut asks for never asks for a name), or nothing when the capture was cancelled |
 | Capture Text | Keep Line Breaks | The text copied, or nothing |
 | Recognize Text in Image | An image, Keep Line Breaks | The image's text. Nothing is copied or shown. |
 | Pin Image | An image | |

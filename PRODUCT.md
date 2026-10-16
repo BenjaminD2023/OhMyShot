@@ -32,6 +32,7 @@ Lives in the menu bar and is summoned by global shortcuts dozens of times a day.
 
 - Feature parity with CleanShot X 5.x: capture modes, Quick Access overlay, annotation editor, pins, screen recording including Studio-style auto-zoom, scrolling capture, capture history, and URL-scheme automation compatible with CleanShot's command names.
 - Beyond CleanShot: pixel ruler and screen color picker, pinning anything from the clipboard with text selection on pins and history, translation overlay, OCR tables to Markdown/CSV, OCR-driven redaction suggestions, and text search across capture history.
+- Capture History keeps every screenshot as a lossless PNG of the capture as it was taken, because marking up, OCR, redaction suggestions, and restoring depend on it. The file format (PNG, JPEG, HEIC), Retina to 1×, sRGB, the 1 px border, and the file name apply to the copy that leaves the app: saved, dragged out, uploaded, handed to a shortcut, or on the clipboard. The defaults write what the history holds.
 - Not sandboxed and not on the App Store; distributed through GitHub.
 - No first-party server. Sharing uploads only to user-provided storage (S3-compatible, Cloudflare R2, WebDAV, custom HTTP). Server-side cloud features (password-protected links, expiry, comments, transcription, custom domains, teams) are out of scope.
 - Processing is on-device by default. Cloud OCR models run only with a user-supplied API key the user explicitly enables.

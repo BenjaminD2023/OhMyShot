@@ -15,10 +15,16 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// Keeps the marked-up capture in place of the capture: the PNG, the image, and the document that
         /// recreates it. Returns the file that now holds the capture.
         public var keep: (_ document: AnnotationDocument, _ png: Data, _ image: CGImage) -> URL?
-        /// Saves a copy of the capture's file to the export location; returns where it went.
-        public var save: (_ file: URL) -> URL?
+        /// Saves a copy of the capture's file to the export location; returns where it went, or nil when it was not saved
+        /// (cancelled, or failed, which it has beeped for).
+        public var save: (_ file: URL) async -> URL?
+        /// The file to hand to another app when the capture is dragged out of the window: the capture's file itself, or a
+        /// copy of it in the format Settings choose.
+        public var fileToHandOver: (_ file: URL) -> URL = { $0 }
+        /// Puts the rendered picture on the clipboard: the picture and its PNG. Left as it is, the PNG goes there as it is.
+        public var copy: ((_ image: CGImage, _ png: Data) async -> Void)?
 
-        public init(keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) -> URL?) {
+        public init(keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) async -> URL?) {
             self.keep = keep
             self.save = save
         }
@@ -295,7 +301,11 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                 NSSound.beep()
                 return
             }
-            PasteboardWriter.write(png: png, image: image)
+            if let copy = actions.copy {
+                await copy(image, png)
+            } else {
+                PasteboardWriter.write(png: png, image: image)
+            }
             model.flashCopied()
             NSAccessibility.post(element: content.canvas, notification: .announcementRequested, userInfo: [
                 .announcement: String(localized: "Copied", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
@@ -307,10 +317,13 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     func save() {
         content.canvas.endEditing()
         Task {
-            guard let file = await exportAndKeep(), actions.save(file) != nil else {
+            guard let file = await exportAndKeep() else {
                 NSSound.beep()
                 return
             }
+            // A save that failed has beeped already, and one that was cancelled (Escape in the name alert) did not mean to
+            // save: neither is said again here.
+            guard await actions.save(file) != nil else { return }
             model.flashSaved()
         }
     }
@@ -381,7 +394,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     func fileForDragging() -> URL? {
         content.canvas.endEditing()
         keepNow()
-        return fileURL
+        return actions.fileToHandOver(fileURL)
     }
 
     private func undoChanged() {
