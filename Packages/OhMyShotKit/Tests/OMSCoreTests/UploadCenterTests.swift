@@ -123,14 +123,22 @@ struct UploadCenterTests {
         let rig = try rig(host: "center-e.test")
         defer { rig.cleanup() }
         _ = try addDestination(rig)
-        StubURLProtocol.install(host: rig.host) { _ in Thread.sleep(forTimeInterval: 0.6); return (200, [:], "") }
+        // The storage answers only once the test has cancelled, however slowly the test runs.
+        let arrived = Counter(), answer = DispatchSemaphore(value: 0)
+        StubURLProtocol.install(host: rig.host) { _ in
+            _ = arrived.increment()
+            _ = answer.wait(timeout: .now() + 5)
+            return (200, [:], "")
+        }
         let id = UUID()
         var delivered = 0
         var last: UploadStatus?? = .none
         rig.center.onChange = { _, status, _ in last = .some(status) }
         rig.center.start(captureID: id, fileURL: rig.file, originalName: nil) { _, _ in delivered += 1 }
-        try await Task.sleep(for: .milliseconds(100))
+        try await until { arrived.count > 0 }
         rig.center.cancel(captureID: id)
+        // The stub answers one request at a time: let it go on to the other tests' requests.
+        answer.signal()
         try await until { rig.center.status(for: id) == nil }
         #expect(delivered == 0)
         #expect(last == .some(nil))
@@ -172,6 +180,7 @@ private final class Counter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
     func increment() -> Int { lock.withLock { value += 1; return value } }
+    var count: Int { lock.withLock { value } }
 }
 
 struct UploadMenuTests {

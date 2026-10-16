@@ -131,19 +131,25 @@ struct UploaderMultipartTests {
         let rig = try rig()
         let host = "mp-d.test"
         let target = try s3(host, rig: rig)
+        // The second part is answered only once the test has cancelled, however slowly the test runs.
+        let secondPart = Arrival(), answer = DispatchSemaphore(value: 0)
         StubURLProtocol.install(host: host) { seen in
             let query = seen.url.query() ?? ""
             if seen.method == "POST", query == "uploads=" { return (200, [:], "<UploadId>up-3</UploadId>") }
             if seen.method == "PUT", query.contains("partNumber=2") {
-                Thread.sleep(forTimeInterval: 1.5)
+                secondPart.mark()
+                _ = answer.wait(timeout: .now() + 5)
                 return (200, ["ETag": "\"e\""], "")
             }
             if seen.method == "PUT" { return (200, ["ETag": "\"e\""], "") }
             return (204, [:], "")
         }
         let task = Task { try await rig.uploader.upload(fileAt: rig.file, to: target) }
-        try await Task.sleep(for: .milliseconds(500))
+        for _ in 0..<1000 where !secondPart.isMarked { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(secondPart.isMarked)
         task.cancel()
+        // The stub answers one request at a time: let it go on to the abort, and the other tests' requests.
+        answer.signal()
         await #expect(throws: CancellationError.self) { try await task.value }
         let abort = try #require(StubURLProtocol.requests(host: host).last)
         #expect(abort.method == "DELETE")
@@ -246,4 +252,12 @@ struct UploaderMultipartTests {
         await #expect(throws: UploadError.self) { try await rig.uploader.delete(record, from: target) }
         #expect(record.removal == .openAddress(URL(string: "https://x.test/del")!))
     }
+}
+
+/// Whether a request has reached the stub storage, as the stub's thread marks it.
+private final class Arrival: @unchecked Sendable {
+    private let lock = NSLock()
+    private var marked = false
+    func mark() { lock.withLock { marked = true } }
+    var isMarked: Bool { lock.withLock { marked } }
 }
