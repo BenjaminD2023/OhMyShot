@@ -50,7 +50,7 @@ public enum PNGThumbnail {
     }
 
     /// The PNG filters, undone for the first `length` bytes of a row: the card's part of it.
-    private static func unfilter(
+    static func unfilter(
         _ raw: UnsafePointer<UInt8>, into current: UnsafeMutablePointer<UInt8>, above previous: UnsafePointer<UInt8>, length: Int, bytesPerPixel bpp: Int
     ) {
         let line = raw + 1
@@ -80,7 +80,11 @@ public enum PNGThumbnail {
     struct Header {
         var width = 0, height = 0, bitDepth = 0, colorType = 0
         var interlaced = true
+        /// The compression and filter methods, 0 in every PNG there is.
+        var methods = (compression: -1, filter: -1)
         var colorSpace: CGColorSpace?
+        /// The chunks before the pixels, in order.
+        var chunks: [String] = []
         /// Where the first IDAT chunk's data begins in `data`.
         var pixelsStart = 0
         let data: Data
@@ -96,10 +100,13 @@ public enum PNGThumbnail {
             while !found, offset + 12 <= data.endIndex {
                 let length = Int(data.uint32(at: offset)), body = offset + 8
                 guard body + length + 4 <= data.endIndex else { return nil }
-                switch String(decoding: data[offset + 4 ..< offset + 8], as: UTF8.self) {
+                let name = String(decoding: data[offset + 4 ..< offset + 8], as: UTF8.self)
+                if name != "IDAT" { chunks.append(name) }
+                switch name {
                 case "IHDR" where length == 13:
                     width = Int(data.uint32(at: body)); height = Int(data.uint32(at: body + 4))
                     bitDepth = Int(data[body + 8]); colorType = Int(data[body + 9]); interlaced = data[body + 12] != 0
+                    methods = (Int(data[body + 10]), Int(data[body + 11]))
                 case "iCCP":
                     profile = Self.profile(in: data[body ..< body + length])
                 case "sRGB":

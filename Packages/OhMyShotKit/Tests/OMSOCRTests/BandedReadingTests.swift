@@ -1,7 +1,9 @@
 import CoreGraphics
 import CoreText
 import Foundation
+import ImageIO
 import Testing
+import UniformTypeIdentifiers
 @testable import OMSOCR
 
 /// `VisionPipeline.recognize` over a picture tall enough to be read in bands, with Vision itself.
@@ -58,6 +60,27 @@ struct BandedReadingTests {
             #expect(line.box.minX > 60 && line.box.minX < 120)
         }
         #expect(result.text.split(separator: "\n").count == Self.lines.count)
+    }
+
+    /// The same picture as a PNG, read from the file a band at a time (`PictureText.Bands`): the same lines in the same
+    /// places, with the same confidence, as from the picture decoded.
+    @Test func aTallPNGIsReadFromItsFileAsFromItsPicture() async throws {
+        let url = FileManager.default.temporaryDirectory.appending(path: "banded-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try page(), nil)
+        #expect(CGImageDestinationFinalize(destination))
+        #expect(PictureText.Bands(fileAt: url) != nil)
+
+        var options = VisionPipeline.Options()
+        options.timeout = .seconds(60)
+        let pipeline = VisionPipeline(options: options)
+        let fromFile = try await pipeline.recognize(fileAt: url)
+        let decoded = try await pipeline.recognize(PictureText.image(at: url))
+        #expect(fromFile.lines.count == Self.lines.count)
+        #expect(fromFile.text == decoded.text)
+        #expect(fromFile.lines.map(\.box) == decoded.lines.map(\.box))
+        #expect(fromFile.lines.map(\.confidence) == decoded.lines.map(\.confidence))
     }
 
     /// A 4400 × 1500 picture is read in three columns (0–2048, 1792–3840, 3584–4400). A line from 1300 to past

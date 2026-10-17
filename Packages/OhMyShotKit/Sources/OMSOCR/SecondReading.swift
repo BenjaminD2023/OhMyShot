@@ -235,19 +235,36 @@ public struct PairedReading: OCREngine {
 
     @concurrent
     public func recognize(_ image: CGImage) async throws -> OCRResult {
+        try await recognize(width: image.width, height: image.height, first: { try await first.recognize(image) }, second: { try await second.recognize(image) })
+    }
+
+    /// The picture in the file at `url`, each reading taking it from the file (`VisionPipeline.recognize(fileAt:)`,
+    /// `PPOCRReader.recognize(fileAt:)`) when it is a tall PNG read a band at a time; otherwise decoded once for both.
+    @concurrent
+    public func recognize(fileAt url: URL) async throws -> OCRResult {
+        guard let bands = PictureText.Bands(fileAt: url) else { return try await recognize(PictureText.image(at: url)) }
+        return try await recognize(
+            width: bands.width, height: bands.height,
+            first: { try await first.recognize(fileAt: url) }, second: { try await second.recognize(fileAt: url) }
+        )
+    }
+
+    private func recognize(
+        width: Int, height: Int, first: () async throws -> OCRResult, second: () async throws -> OCRResult
+    ) async throws -> OCRResult {
         let started = ContinuousClock.now
-        let result = try await first.recognize(image)
-        guard SecondReading.wanted(result.lines), PPOCRReader.reads(width: image.width, height: image.height) else { return result }
+        let result = try await first()
+        guard SecondReading.wanted(result.lines), PPOCRReader.reads(width: width, height: height) else { return result }
         let read: [OCRLine]
         do {
-            read = try await second.recognize(image).lines
+            read = try await second().lines
         } catch is CancellationError {
             throw CancellationError()
         } catch {
             return result
         }
         let lines = SecondReading.merged(result.lines, with: read)
-        let text = TextAssembler.assemble(lines, options: first.options.assembly)
+        let text = TextAssembler.assemble(lines, options: self.first.options.assembly)
         return OCRResult(lines: lines, tables: result.tables, text: text, duration: ContinuousClock.now - started)
     }
 }

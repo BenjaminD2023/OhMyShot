@@ -18,20 +18,33 @@ final class PPOCRPixels {
         self.bytes = bytes
     }
 
-    /// `image` drawn at `width` × `height` (its own size when nil). Its pixel values are kept as they are when it is RGB
-    /// (as OpenCV reads a file, with no color matching), and converted to sRGB otherwise.
-    convenience init?(_ image: CGImage, width: Int? = nil, height: Int? = nil) {
-        let width = width ?? image.width, height = height ?? image.height
+    /// The pixels of `region` of `image` (all of it when nil; in its pixels, from its top-left corner). Their values are
+    /// kept as they are when it is RGB (as OpenCV reads a file, with no color matching), and converted to sRGB otherwise.
+    ///
+    /// A region is drawn from the whole picture, moved, never from `image.cropping(to:)`: drawing one crop after another
+    /// of a tall picture grew the footprint by a crop's pixels each time, for as long as the picture lived
+    /// (Docs/perf.md › M6 — The L2 reader on tall pictures).
+    convenience init?(_ image: CGImage, region: CGRect? = nil) {
+        let region = region ?? CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        self.init(width: Int(region.width), height: Int(region.height), space: image.colorSpace) { context in
+            // CG's y goes up from the bottom: the region's top row lands on the bitmap's top row.
+            context.draw(image, in: CGRect(x: -region.minX, y: region.maxY - CGFloat(image.height), width: CGFloat(image.width), height: CGFloat(image.height)))
+        }
+    }
+
+    /// The pixels of a `width` × `height` picture with its colors in `space`, as `draw` draws it into them (CG's
+    /// coordinates, y up from the bottom row) and as above: in `space` when it is RGB, in sRGB otherwise.
+    convenience init?(width: Int, height: Int, space: CGColorSpace?, draw: (CGContext) throws -> Void) rethrows {
         guard width > 0, height > 0 else { return nil }
-        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let space = space.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
         var bytes = [UInt8](repeating: 255, count: width * height * 4)
-        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+        let drawn = try bytes.withUnsafeMutableBytes { buffer -> Bool in
             guard let context = CGContext(
                 data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
                 space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
             ) else { return false }
             context.interpolationQuality = .high
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            try draw(context)
             return true
         }
         guard drawn else { return nil }
@@ -134,6 +147,35 @@ extension MLMultiArray {
         var fill = value
         vDSP_vfill(&fill, array.dataPointer.assumingMemoryBound(to: Float.self), 1, vDSP_Length(3 * height * width))
         return array
+    }
+
+    /// The first `columns` values of each of the first `rows` rows of a 1 × 1 × H × W array, as float32, row after row,
+    /// read where they are (float32 or float16, whatever its row stride).
+    func floats(rows: Int, columns: Int) throws -> [Float] {
+        guard shape.count == 4, strides[3].intValue == 1, rows <= shape[2].intValue, columns <= shape[3].intValue else {
+            throw PPOCRError.unexpectedOutput("a map of \(shape) with strides \(strides) for \(rows) × \(columns)")
+        }
+        var result = [Float](repeating: 0, count: rows * columns)
+        guard rows > 0, columns > 0 else { return result }
+        let rowStride = strides[2].intValue
+        switch dataType {
+        case .float32:
+            let source = dataPointer.assumingMemoryBound(to: Float.self)
+            result.withUnsafeMutableBufferPointer { destination in
+                for row in 0..<rows {
+                    (destination.baseAddress! + row * columns).update(from: source + row * rowStride, count: columns)
+                }
+            }
+        case .float16:
+            result.withUnsafeMutableBufferPointer { destination in
+                var input = vImage_Buffer(data: dataPointer, height: vImagePixelCount(rows), width: vImagePixelCount(columns), rowBytes: rowStride * 2)
+                var output = vImage_Buffer(data: destination.baseAddress!, height: vImagePixelCount(rows), width: vImagePixelCount(columns), rowBytes: columns * 4)
+                _ = vImageConvert_Planar16FtoPlanarF(&input, &output, vImage_Flags(kvImageNoFlags))
+            }
+        default:
+            throw PPOCRError.unexpectedOutput("values of type \(dataType.rawValue)")
+        }
+        return result
     }
 
     /// The array's values as float32, row-major over its shape whatever its strides and its type (float32 or float16).

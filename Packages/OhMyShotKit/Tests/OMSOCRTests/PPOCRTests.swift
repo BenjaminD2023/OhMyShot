@@ -1,8 +1,11 @@
 import CoreGraphics
+import CoreML
 import CoreText
 import Foundation
+import ImageIO
 import OMSPixels
 import Testing
+import UniformTypeIdentifiers
 @testable import OMSOCR
 
 /// L2's reading (PPOCRReader): its geometry, decoding, and pixel work against what PaddleOCR and OpenCV do, and, with
@@ -214,6 +217,59 @@ struct PPOCRTests {
         #expect(crop.bytes[(17 * 20 + 10) * 4] > 200)
     }
 
+    @Test func aRegionIsDrawnAsItsCropWouldBe() throws {
+        // Pieces of a busy picture, drawn from the whole picture moved, byte for byte as from image.cropping(to:), in a
+        // few of the formats a capture or a file can come in.
+        let formats: [(CGColorSpace, UInt32, Int)] = [
+            (CGColorSpace(name: CGColorSpace.displayP3)!, CGImageAlphaInfo.noneSkipLast.rawValue, 4),
+            (CGColorSpace(name: CGColorSpace.sRGB)!, CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue, 4),
+            (CGColorSpace(name: CGColorSpace.genericGrayGamma2_2)!, CGImageAlphaInfo.none.rawValue, 1),
+        ]
+        let width = 300, height = 700
+        for (space, info, components) in formats {
+            var bytes = [UInt8](repeating: 0, count: width * height * components)
+            var seed: UInt32 = 12345
+            for i in bytes.indices {
+                seed = seed &* 1_103_515_245 &+ 12345
+                bytes[i] = UInt8(truncatingIfNeeded: seed >> 16)
+            }
+            if info & CGImageAlphaInfo.premultipliedFirst.rawValue != 0 {
+                // Premultiplied: no channel above its pixel's alpha (the first byte in memory here is blue, the last alpha).
+                for o in stride(from: 0, to: bytes.count, by: 4) { for k in 0..<3 { bytes[o + k] = min(bytes[o + k], bytes[o + 3]) } }
+            }
+            let image = try #require(bytes.withUnsafeMutableBytes { buffer in
+                CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * components, space: space, bitmapInfo: info)?.makeImage()
+            })
+            for region in [CGRect(x: 0, y: 0, width: 300, height: 256), CGRect(x: 0, y: 200, width: 300, height: 500), CGRect(x: 40, y: 333, width: 170, height: 101)] {
+                let drawn = try #require(PPOCRPixels(image, region: region))
+                let crop = try #require(image.cropping(to: region))
+                let cropped = try #require(PPOCRPixels(crop))
+                #expect(drawn.width == cropped.width && drawn.height == cropped.height)
+                #expect(drawn.bytes == cropped.bytes, "\(space.name.map { $0 as String } ?? "?") \(region)")
+            }
+        }
+    }
+
+    @Test func aMapsRowsAreReadWhereTheyAreInHalfAndSingleFloats() throws {
+        // A 1 × 1 × 4 × 6 map whose rows lie 8 values apart; rows 0–2, columns 0–3 of it, as float32.
+        let expected: [Float] = (0..<3).flatMap { row in (0..<4).map { Float(row * 10 + $0) } }
+        for type in [MLMultiArrayDataType.float16, .float32] {
+            let size = type == .float16 ? 2 : 4
+            let memory = UnsafeMutableRawPointer.allocate(byteCount: 4 * 8 * size, alignment: 16)
+            for row in 0..<4 {
+                for column in 0..<8 {
+                    let value = Float(row * 10 + column)
+                    if type == .float16 { memory.storeBytes(of: Float16(value), toByteOffset: (row * 8 + column) * 2, as: Float16.self) } else {
+                        memory.storeBytes(of: value, toByteOffset: (row * 8 + column) * 4, as: Float.self)
+                    }
+                }
+            }
+            let map = try MLMultiArray(dataPointer: memory, shape: [1, 1, 4, 6], dataType: type, strides: [32, 32, 8, 1]) { $0.deallocate() }
+            #expect(try map.floats(rows: 3, columns: 4) == expected)
+            #expect(throws: PPOCRError.self) { try map.floats(rows: 5, columns: 4) }
+        }
+    }
+
     // MARK: The pack's configuration
 
     private static let config = """
@@ -276,6 +332,27 @@ struct PPOCRTests {
         #expect(result.lines.count == 2)
         #expect(text.replacingOccurrences(of: " ", with: "").contains("Modelpacksreadtext"))
         #expect(text.contains("模型包在本机读字"))
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["OMS_L2_PACK"] != nil))
+    func aTallPNGReadsFromItsFileAsFromItsPicture() async throws {
+        let folder = URL(filePath: ProcessInfo.processInfo.environment["OMS_L2_PACK"]!, directoryHint: .isDirectory)
+        let reader = try await PPOCRReader.load(from: folder)
+        // 20 lines, 2860 pixels tall: two pieces, read from the file a band at a time (`PictureText.Bands`).
+        let page = try #require(Self.page((1...20).map { "第\($0)行 模型包在本机读字 line \($0)" }))
+        let url = FileManager.default.temporaryDirectory.appending(path: "l2-tall-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, page, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        #expect(PictureText.Bands(fileAt: url) != nil)
+
+        let fromFile = try await reader.recognize(fileAt: url)
+        let decoded = try await reader.recognize(PictureText.image(at: url))
+        #expect(fromFile.lines.count == 20)
+        #expect(fromFile.lines.map(\.text) == decoded.lines.map(\.text))
+        #expect(fromFile.lines.map(\.box) == decoded.lines.map(\.box))
+        #expect(fromFile.lines.map(\.confidence) == decoded.lines.map(\.confidence))
     }
 
     private static func page(_ lines: [String]) -> CGImage? {

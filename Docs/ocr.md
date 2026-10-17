@@ -973,6 +973,8 @@ The answers were byte for byte the same with both packs, for all 11 pictures in 
   detector's probability map crosses from the Neural Engine too.
 - With version 1, the first piece's recognition alone added 400 MB.
 
+Where that climb came from, and what took it out: › Tall pictures in the L2 reader, below.
+
 `PPOCRTests` (20; 2 new) cover the format-2 configuration rules, the head decoding as `decode` does over its
 softmax, across the 32-step chunks, and a head file's layout and sizes. `aDrawnPageReadsBack` passes with either pack.
 
@@ -989,3 +991,198 @@ MoraxCheng/ohmyshot-ppocrv6-small-coreml, on top of version 1's `f163489`, which
   - L2 is off until version 2 is downloaded there: 15.8 MB, with the consent sheet again.
   - Then the kept texts' reading, `ppocr-v6-small/2/merge-2`, reads the Chinese and Japanese captures again once.
     They come out with the same text.
+
+## Tall pictures in the L2 reader (2026-10-17)
+
+With pack version 2, the tallest capture in the history (3346 × 16811, ten pieces) still took about 800 MB for the
+pack alone. Two things in `PPOCRReader` made the footprint climb piece after piece. Both are gone, and the lines read
+are the same: text, confidence, and box.
+
+**Where the footprint went** (a Release probe of `recognize`'s steps against OMSOCR, `phys_footprint` sampled every
+millisecond, the tallest capture):
+
+- **Each piece's pixels were drawn from `image.cropping(to:)`.** The footprint at the start of each piece was a
+  piece's pixels (26 MB) more than at the last one's, for as long as the picture lived. A probe without Core ML shows
+  it: ten times, draw a piece's crop into `PPOCRPixels`, then make one more array a piece in size. The footprint went
+  from 56 to 275 MB. Drawing the crops alone, or making the two arrays without drawing, stayed flat. Why the two
+  together keep memory wasn't pinned down: malloc's size in use grew by 26 MB with each crop drawn, even where the
+  footprint stayed flat.
+  - `PPOCRPixels(image, region:)` now draws the whole picture, moved so that the region lands in the bitmap. The same
+    probe stays at 82 MB.
+  - The bytes are the crop's, checked for every piece in seven formats: Display P3 RGBX, sRGB RGBA premultiplied
+    with alpha last and first, gray, 16-bit RGBA, CMYK, and 16-bit floats in extended P3. Each was tall (with a short
+    last piece) and wide (cut across), drawn from memory and from a PNG read back as `PictureText.image` reads it.
+    The tallest capture's ten pieces were checked too.
+  - A picture in the extended P3 space draws neither way, as before: `PPOCRPixels`' 8-bit context refuses that space,
+    so L2 finds the picture unreadable.
+- **The detector's map.** Each prediction at 1280 × 4096 grew the footprint by about 40 MB, which came back only
+  later. Reading detection alone, the footprint climbed by 80 MB a piece, to 1.1 GB. `detect` now gives Core ML an
+  array of its own to write the map into (`MLPredictionOptions.outputBackings`): the output's own type from the model's
+  description (16-bit floats here), 1 × 1 × H × W, one for all of a piece's bands. With it, the footprint doesn't
+  climb. A type other than 16- or 32-bit floats would read as before, without one.
+- **The band's part of the map** was copied out of a 32-bit copy of the whole map. It is read straight from the
+  backing now (`MLMultiArray.floats(rows:columns:)`), 9–10 MB less at the peak.
+
+| The tallest capture, the pack alone | Peak (runs) | Lines |
+| --- | --- | --- |
+| Before (the probe's steps) | 793–794 MB (3) | 196 |
+| Pieces drawn from the whole picture | 583 MB (1) | the same |
+| And the map written into a backing, then copied whole | 479–482 MB (6) | the same |
+| And the band's rows read from the backing | 470–473 MB (6) | the same |
+| The shipped path (`PPOCRReader.load`, then `recognize`) | 797–798 MB (2) → 474–476 MB (3); 3.36–3.39 → 3.32–3.36 s | the same |
+
+Tried and dropped, as they didn't lower the peak:
+
+- **Synchronous predictions,** with or without an autorelease pool around each: 853–855 MB, against 793.
+- **One input array for every band** of a reading.
+- **A 16-bit input** (the detector's own input type): a plain array, 502 MB; on an IOSurface pixel buffer, 472 MB.
+- **A backing kept for the whole reading** rather than for a piece: the same peak.
+- **`malloc_zone_pressure_relief`** between pieces: it frees nothing.
+
+**What is left,** about 475 MB on the tallest:
+
+- **The decoded picture.** Once `PictureText.image` has decoded it, the footprint doesn't count it (42 MB just after).
+  Each draw of a piece counts its 215 MB again while the draw lasts, so every piece's peak is its draw: about 255–283 MB
+  before the draw, 470 MB during it.
+- **Freed buffers malloc keeps.** At the end of a reading, vmmap shows 121–181 MB of "Malloc Large (empty)".
+  - With `MallocSpaceEfficient=1` in the environment, the peak is 339 MB, and 67 MB after the reading. With
+    `MallocLargeCache=0` it is 343 MB.
+  - Neither variable is in `man malloc`: they were found as strings in the shared cache. What else they change wasn't
+    looked into; with `MallocLargeCache=0` the process starts at 16 MB instead of 42.
+  - Neither is used. Setting one in the text reader's environment is the user's decision.
+- **The next cut** would be to read a tall PNG's rows piece by piece, as History's thumbnails are read
+  (`PNGThumbnail`), and never hold the whole picture. Done the same day: › Pieces of a tall PNG, from the file, below.
+
+**The text reader,** before and after, as measured in › The recognizer's head on the CPU (Docs/perf.md › M6 — The L2
+reader on tall pictures has the rest):
+
+| Picture | The pack alone | Vision with the pack |
+| --- | --- | --- |
+| The tallest, three runs | 807–812 → 475–480 MB | 940–963 → 750–763 MB |
+| Full-screen captures (10) | 179–332 → 166–329 MB | 323–606 → 319–557 MB |
+| All 11 in one process | — | 973 → 805 MB |
+
+**The benchmark** (`ocr-bench --engine l1+l2`, a fresh copy of the pack for each build, Release): all 40 cases read
+the same, with mean content CER 1.48% and raw 3.33% for both builds. The text reader's answers were byte for byte the
+same for all 11 pictures in both modes.
+
+The answers are the same, so the kept texts' reading, `ppocr-v6-small/2/merge-2`, stays.
+
+**Vision's pieces** are still handed to it as `image.cropping(to:)` (`VisionPipeline.readImage`). In a probe of Vision
+alone on the tallest capture, drawing each piece into a bitmap of its own first lowered the peak from 597–603 MB to
+528–540, and what stays after the reading from 507–511 MB to 290–300. That is left for later: Vision's output with drawn
+pieces wasn't compared, and the benchmark would need to show L1 unchanged.
+
+## Pieces of a tall PNG, from the file (`PictureText.Bands`, `PNGBands`, 2026-10-17)
+
+The text reader no longer decodes a tall PNG whole. `PPOCRReader.recognize(fileAt:)`,
+`VisionPipeline.recognize(fileAt:)` and `PairedReading.recognize(fileAt:)` read each piece's rows from the file as it
+comes, and the text reader hands them the file's path. The answers are byte for byte the same. On the tallest capture in the
+history, the pack alone peaks at 279–287 MB instead of 477–481, and Vision with the pack at 523–556 MB instead of 758–768.
+
+**How a piece is read.** `PNGBands` (OMSPixels) inflates the file's pixels a row at a time, as `PNGThumbnail` does for
+History's cards. It undoes each row's filter and lays the row out as ImageIO lays out the decoded picture:
+
+| The PNG | Laid out (as ImageIO decodes it) |
+| --- | --- |
+| RGBA, 8 bits | RGBA, alpha last, not premultiplied: the file's bytes |
+| RGB, 8 bits | RGBX: a fourth byte of 255 |
+| Gray, or gray with alpha, 8 bits | as in the file |
+| Gray, 1, 2 or 4 bits | one byte a pixel, scaled up to 0–255 |
+| Any of those at 16 bits | 16-bit samples, little-endian |
+| A palette, 1 to 8 bits | one index a byte, in ImageIO's indexed color space |
+
+`PictureText.Bands` asks ImageIO for the picture without decoding it (`kCGImageSourceShouldCache: false`). It reads the
+format, color space, decode array and rendering intent from that, and makes each run of rows a `CGImage` of its own with
+all of them. Every conversion is then CG's own, as before: gray or a palette to sRGB, 16 bits to 8, alpha over white.
+If ImageIO's format isn't the one `PNGBands` laid out, the file is decoded whole instead.
+
+- **L2** draws each piece into its `PPOCRPixels` in strips of at most 4 MB, each strip a picture of its own drawn
+  where it belongs (`Bands.draw`).
+- **Vision** gets each piece as one picture of its rows (`Bands.image(of:)`).
+- **The file** is mapped, not read in: opening the tallest capture (a 13 MB file) this way added 1 MB to the
+  footprint, and inflating every row of it, 10 MB.
+- **Overlapping rows.** Pieces overlap by 256 rows: `PNGBands` keeps the last 256 rows it laid out, and a piece starts
+  among them.
+
+**What is read this way:** a picture in more than one piece, every piece across its whole width (not cut across), not
+interlaced, without a `tRNS` chunk. Before the pixels it may carry iCCP, sRGB, cICP, gAMA, cHRM, sBIT, bKGD, pHYs,
+text and time chunks, and eXIf. Everything else is decoded whole, as before:
+
+- **Interlaced:** Adam7 spreads every row over the whole file, so each piece would inflate most of it again.
+- **`tRNS`:** it turns ImageIO's layout into RGBA.
+- **One piece:** a single piece gains nothing.
+- **Other chunks** (an APNG's, Apple's iDOT): not tried.
+
+A file whose pixels end before its last piece is decoded whole after all (`Bands.Ended`), and read as far as ImageIO
+makes it out.
+
+**The same pixels.** The rows and the drawn pixels were compared byte for byte (a probe, then `PictureBandsTests`):
+
+- **Rows** against ImageIO's decoded picture.
+- **Pixels**, in strips and as one picture a piece, against `PPOCRPixels(image, region:)` of the decoded picture, for
+  every piece of `PictureText.pieces`.
+- **Generated files**, 4700 tall, all five filters: 8- and 16-bit RGBA, RGB, gray, and gray with alpha; gray at 1, 2
+  and 4 bits; palettes at 1, 2, 4 and 8 bits. Also RGBA with a Display P3 profile, an sRGB chunk, cICP for P3 and for
+  PQ, gAMA, gAMA with cHRM, sBIT, bKGD, and text chunks.
+- **Real captures:** the five tallest in the history (8237–16811 tall), and the ten in Tools/ocr-bench/real/source.
+- All the same. Interlaced files, and files with `tRNS` on a palette, RGB or gray, are declined.
+
+**Why strips.** Each L2 piece was first drawn from one picture of its rows. The answers were the same, but the peak
+went up, to 512–527 MB, and the footprint climbed by about 25 MB with every piece and stayed there.
+
+- **Not a leak.** At the end of a reading, malloc's live blocks were the same as with the decoded picture, and every
+  piece's buffer had been freed. With `MallocLargeCache=0`, the same reading peaked at 220–227 MB (the decoded picture's
+  path: 338–341).
+- **Freed blocks malloc keeps dirty.** The 25 MB a piece were dirty pages in malloc's large regions, not blocks in use.
+  The same draws and allocations without Core ML's predictions between them stayed flat.
+- **Where the rows lived mostly didn't matter.** The climb was the same with the rows in a `CFData`, a malloc'd buffer,
+  a mapping of their own, or one buffer kept for every piece, with or without an autorelease pool. The likeliest block
+  is one CG makes to draw a piece's picture, its copy of the rows converted for drawing; that can't be watched from
+  outside.
+- **One case stayed flat and isn't explained:** the rows in an `NSMutableData` with an autorelease pool around making
+  each piece's picture, 291–297 MB, twice. Without the pool an `NSMutableData` climbs too, and for a reason of its own:
+  its `mutableBytes` comes with the data autoreleased, and the reader's task drains no pool until it ends, so every
+  piece's rows stayed to the end.
+- **Drawn in strips,** no block is a piece's size, and the footprint stayed flat however the rows were held. Strips of
+  64 to 512 rows of the tallest capture (0.9–6.8 MB) kept the peak at 272–292 MB; 1024 rows (13.7 MB) climbed again.
+  It stayed flat with malloc's medium zone turned off (`MallocMediumZone=0`, as on a Mac with less memory), at
+  273–285 MB. Strips were kept rather than the pool, whose flat result hung on how the allocator happened to hand out
+  blocks. `Bands.stripBytes` is 4 MB, measured against the larger of a row as read and as drawn. The rows are in a
+  `CFData`, which nothing autoreleases.
+
+**The text reader,** before (e8dc373 with › Tall pictures in the L2 reader above) and after. Built from the shell with
+SwiftPM in Debug, a new process for each reading, peak from `/usr/bin/time -l`, pack version 2 (Docs/perf.md › M6 —
+Pieces of a tall PNG has every run):
+
+| Picture | The pack alone | Vision with the pack |
+| --- | --- | --- |
+| The tallest, 3346 × 16811, ten pieces (three runs) | 477–481 → 279–287 MB | 758–768 → 523–556 MB |
+| The next four in the history, 8237–9875 tall, five or six pieces | 392–448 → 287–311 MB | 568–720 → 458–547 MB |
+| 4K screens, 2574–2579 tall, two pieces (4) | 328–329 → 320–321 MB | 480–558 → 457–533 MB |
+| Screens in one piece (6), read as before | 167–180 → 165–178 MB | 322–421 → 324–419 MB |
+| All 15 in one process (the history read again, twice) | — | 921–932 → 806–808 MB |
+
+- **The same answers,** byte for byte, for all 15 pictures in both modes, and for all 15 in one process.
+- **Vision alone** (a Debug probe, two runs): the tallest went from 618–623 to 388–395 MB. A 4K screen in two pieces
+  went from 396–401 to 388–392 MB at the peak, but kept 333–336 MB after its reading instead of 285–288.
+- **A 4K screen in two pieces with the pack** read once at 480 → 533 MB, and three others lower (558 → 522, 494 → 467,
+  492 → 457). The probe of that capture, three runs each way, gave 536–549 → 523–541 MB.
+
+**Times** (Release, warm, one process per build, the nine pictures in more than one piece read twice, two runs each):
+the pack alone went from p50 2.40 to 2.27 s, as no picture is decoded whole. Vision with the pack went from p50
+4.05–4.14 to 4.12–4.18 s: each reading now inflates the file itself, once for Vision and once for L2, where the
+decoded picture served both.
+
+**The benchmark** (`ocr-bench --engine l1+l2 --real`, Release, a fresh copy of the pack for each build): all 40 cases
+read the same, with mean content CER 1.4842% and raw 3.3305% for both. It reads pictures in memory, so what it checks
+here is the reorganized `recognize(_:)` of the three readers; the files' path is checked by the text reader above.
+
+**Left as it is:**
+
+- **One piece.** A screen in one piece is decoded as before. It would gain little: 4K screens in two pieces, read from
+  their files, took 8 MB less with the pack alone.
+- **Vision's pieces of a picture in memory** (Capture Text, the OCR panel) are still crops, as are the pieces of an
+  interlaced PNG or a JPEG in the text reader.
+- **`tRNS` and interlaced PNGs** could be read too: their layout would have to be RGBA with alpha from the chunk, and
+  Adam7 would need every piece to inflate most of the file again. OhMyShot writes neither.

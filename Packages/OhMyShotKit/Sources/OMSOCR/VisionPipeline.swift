@@ -52,7 +52,30 @@ public struct VisionPipeline: OCREngine {
     @concurrent
     public func recognize(_ image: CGImage) async throws -> OCRResult {
         let started = ContinuousClock.now
-        let lines = try await readImage(image)
+        return assembled(try await readImage(image), started: started)
+    }
+
+    /// The picture in the file at `url`: a tall PNG's pieces are read from the file a band at a time
+    /// (`PictureText.Bands`), the picture never decoded whole; any other picture is decoded and read as above.
+    @concurrent
+    public func recognize(fileAt url: URL) async throws -> OCRResult {
+        let started = ContinuousClock.now
+        if let bands = PictureText.Bands(fileAt: url) {
+            do {
+                let merged = try await readPieces(bands.pieces, size: CGSize(width: bands.width, height: bands.height)) { piece in
+                    guard let band = bands.image(of: piece) else { throw PictureText.Bands.Ended() }
+                    return band
+                }
+                // Bands run across the whole width: no line is cut across them (`joinedAcrossColumns`).
+                return assembled(LineNumbers.removed(from: merged), started: started)
+            } catch is PictureText.Bands.Ended {
+                // Decoded, the picture is read as far as ImageIO makes it out.
+            }
+        }
+        return try await recognize(PictureText.image(at: url))
+    }
+
+    private func assembled(_ lines: [OCRLine], started: ContinuousClock.Instant) -> OCRResult {
         let assembling = ContinuousClock.now
         let ordered = ReadingOrder.sorted(lines)
         let text = TextAssembler.assemble(ordered, options: options.assembly)
@@ -65,19 +88,25 @@ public struct VisionPipeline: OCREngine {
         let size = CGSize(width: image.width, height: image.height)
         let pieces = PictureText.pieces(width: image.width, height: image.height)
         guard pieces.count > 1 else { return try await readPiece(image) }
+        let merged = try await readPieces(pieces, size: size) { image.cropping(to: $0) }
+        let joined = try await joinedAcrossColumns(merged, pieces: pieces, in: image)
+        // A gutter of line numbers is found only with three numbers in view: a piece with fewer left its own.
+        return LineNumbers.removed(from: joined)
+    }
+
+    /// The lines of `pieces` of a picture of `size`, each read as a picture of its own (`part` gives it; none when it
+    /// can't), put together in the picture's coordinates.
+    private func readPieces(_ pieces: [CGRect], size: CGSize, part: (CGRect) throws -> CGImage?) async throws -> [OCRLine] {
         var readings: [[OCRLine]] = []
         for (number, piece) in pieces.enumerated() {
-            guard let part = image.cropping(to: piece) else {
+            guard let part = try part(piece) else {
                 readings.append([])
                 continue
             }
             options.trace?("piece \(number + 1) of \(pieces.count): \(Int(piece.minX)),\(Int(piece.minY)) \(part.width)×\(part.height)")
             readings.append(try await readPiece(part).map { $0.moved(by: piece.origin) })
         }
-        let merged = PieceMerge.merged(readings, pieces: pieces, size: size)
-        let joined = try await joinedAcrossColumns(merged, pieces: pieces, in: image)
-        // A gutter of line numbers is found only with three numbers in view: a piece with fewer left its own.
-        return LineNumbers.removed(from: joined)
+        return PieceMerge.merged(readings, pieces: pieces, size: size)
     }
 
     /// A line that runs across a whole overlap of two columns is cut in both (`PieceMerge.crossings`); each

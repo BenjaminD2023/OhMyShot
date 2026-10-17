@@ -1965,3 +1965,109 @@ has been downloaded again in Settings (Docs/ocr.md › The recognizer's head on 
   footprint climbs with each of its ten pieces, from 280 to 510–640 MB. Version 2 changes only the recognizer.
 - **The head's weights:** the reader holds them as 9 MB of 32-bit floats. Warming peaked at 47 MB, against 22 MB with
   version 1.
+
+## M6 — The L2 reader on tall pictures (2026-10-17)
+
+With pack version 2, two things in `PPOCRReader` made the footprint climb with each piece of a tall picture: drawing
+each piece from `image.cropping(to:)`, and the detector's map, given no array of the reader's to write into. Each
+piece is now drawn from the whole picture, and the detector writes into an output backing (Docs/ocr.md › Tall
+pictures in the L2 reader). The text reader was measured before and after, built from the shell with SwiftPM in Debug,
+pack version 2 for both. Each reading ran in a new process, with the peak from `/usr/bin/time -l`. "Before" is the
+v2 session's code; "after" changes only `PPOCRPixels.swift` and `PPOCRReader.swift`.
+
+| Picture | The pack alone (the OCR panel's second reading) | Vision with the pack (the history's reading) |
+| --- | --- | --- |
+| The tallest capture in the history, 3346 × 16811, three runs | 807–812 → 475–480 MB | 940–963 → 750–763 MB |
+| Full-screen captures, 2000–4112 wide (10), one run each | 179–332 → 166–329 MB | 323–606 → 319–557 MB |
+| All 11 in one process (the history read again) | — | 973 → 805 MB, 74 → 70 s |
+
+| Warm, one process, the full-screen captures three times | p50 | p95 |
+| --- | --- | --- |
+| The pack alone, three runs of each build | 1.22–1.28 → 1.19–1.38 s | 2.06–2.10 → 2.03–2.20 s |
+| Vision with the pack | 2.25 → 2.28 s | 3.49 → 3.44 s |
+| `ocr-bench`, L1 with L2, per case (Release) | 294 → 287 ms | 681 → 675 ms |
+
+- **The same answers:** byte for byte, for all 11 pictures in both modes. `ocr-bench --engine l1+l2` read all 40
+  cases the same, content CER 1.48% and raw 3.33% as before.
+- **Times** are within the runs' own spread. A new process of the other build loaded the models for the Neural Engine
+  again, about 10 s, and Vision's first reading took about 40 s. So the times are from warm runs, not from the new
+  process per reading.
+- **Full-screen captures** are one piece, so they gain only from the output backing and from reading the rows out of
+  it: 2–38 MB less for the pack alone. With Vision, one capture read 24 MB higher (533 → 557 MB), from one run each.
+- **What is left on the tallest,** about 475 MB for the pack alone:
+  - The decoded picture's 215 MB. The footprint counts it again during each piece's draw.
+  - About 120–180 MB of freed buffers that malloc keeps. With the undocumented `MallocSpaceEfficient=1`, the
+    peak was 339 MB in the Release probe. It isn't used.
+- **Vision with the pack** dropped less, by about 200 MB. `VisionPipeline` hands Vision its pieces as
+  `image.cropping(to:)` too. In a Release probe of Vision alone on the tallest capture, a piece at a time:
+  - Cropped: 597–603 MB at the peak, and 507–511 MB after.
+  - Drawn into a bitmap of its own first: 528–540 MB, and 290–300 MB after.
+  - Both read 115 lines over the pieces. Vision's pieces are left as they are for now: their output wasn't compared.
+
+## M6 — Pieces of a tall PNG (2026-10-17)
+
+The text reader now reads a tall PNG's pieces from the file, a band of rows at a time, and never decodes the whole
+picture (Docs/ocr.md › Pieces of a tall PNG, from the file). L2 draws each piece in strips of at most 4 MB, and Vision
+gets each piece as a picture of its own rows. The text reader was measured before and after on 15 pictures: the five
+tallest in the history and the ten in Tools/ocr-bench/real/source. Before is e8dc373 with the L2 tall-picture changes
+above; after adds only this. Both were built from the shell with SwiftPM in Debug, pack version 2. Each reading ran in a
+new process, with the peak from `/usr/bin/time -l`.
+
+| Picture | Pieces | The pack alone | Vision with the pack |
+| --- | --- | --- | --- |
+| 3346 × 16811 (three runs) | 10 | 477, 481, 480 → 287, 284, 279 MB | 764, 768, 758 → 534, 523, 556 MB |
+| 3710 × 9875 | 6 | 448 → 311 MB | 720 → 547 MB |
+| 3499 × 8440 | 5 | 415 → 287 MB | 643 → 472 MB |
+| 3667 × 8418 | 5 | 392 → 292 MB | 644 → 530 MB |
+| 3687 × 8237 | 5 | 424 → 297 MB | 568 → 458 MB |
+| 4109–4112 × 2574–2579 (4) | 2 | 328–329 → 320–321 MB | 480 → 533, 558 → 522, 494 → 467, 492 → 457 MB |
+| Screens 2000–2186 wide (6) | 1 | 167–180 → 165–178 MB | 322–421 → 324–419 MB |
+| All 15 in one process, two runs | | — | 932, 921 → 808, 806 MB; 94–97 s either way |
+
+- **The answers** were byte for byte the same for all 15 pictures in both modes, and in one process. The final code,
+  built again after the runs (names changed only), read the tallest once more: 289 MB alone and 553 MB paired, the
+  same answers. Built in Release, as the app ships the helper, both builds gave the same answers as in Debug, on the
+  tallest (478 → 282 MB alone, 760 → 524 paired) and on a 4K screen in two pieces (322 → 313, 539 → 543).
+- **One piece** is read as before, so those rows show only the runs' own spread: paired, up to 23 MB either way.
+- **Two pieces with the pack:** one of the four read 53 MB higher. A probe of that capture, three runs each way, gave
+  536–549 → 523–541 MB. Vision keeps more after a 4K screen read from its bands (333–336 MB, against 285–288 from the
+  decoded picture), and L2 then reads on top of that.
+- **Debug times** per reading are those of loading the models in a new process: switching between the two builds
+  costs the Neural Engine's compiling again, and Vision's first load. Warm times are below.
+- **An earlier run of the tallest, paired, failed** in both builds alike, with Vision timing out and Core ML's
+  `e5rt_execution_stream_operation_create_precompiled_compute_operation` failing. Another session's benchmark was
+  running beside it, and the Mac had restarted shortly before (contactsd, fileproviderd and ANECompilerService busy).
+  Run again on a quiet Mac, every run read.
+
+| Warm, Release, one process per build, the nine pictures in more than one piece twice (two runs) | min | p50 | max |
+| --- | --- | --- | --- |
+| The pack alone | 1.42 → 1.36–1.37 s | 2.40 → 2.27 s | 4.93–4.94 → 4.73–4.86 s |
+| Vision with the pack | 2.30–2.38 → 2.34–2.40 s | 4.05–4.14 → 4.12–4.18 s | 7.19–7.43 → 7.39–7.49 s |
+
+The pack alone no longer waits for the whole picture to be decoded. Vision with the pack inflates the file twice, once
+for each reading, where one decoded picture served both: about 1% more.
+
+**A probe of where the footprint goes** (`phys_footprint` every millisecond, the pack alone on the tallest, Debug):
+
+| Path | Peak | Shape |
+| --- | --- | --- |
+| The decoded picture, a piece drawn from it | 474–482 MB | ~290 MB between pieces, 480 during each piece's draw |
+| A band's picture drawn whole per piece | 516–527 MB | 125 → 516: up 25 MB with each piece, kept |
+| The same, `MallocLargeCache=0` / `MallocSpaceEfficient=1` | 227 / 220 MB | (the decoded picture's path: 341 / 338) |
+| The same, in an `NSMutableData`, a pool around making each band's picture | 291–297 MB | flat (not explained) |
+| Strips of 64 / 128 / 512 / 1024 / 2048 rows | 292 / 285–290 / 272–273 / 475 / 521 MB | flat up to 512, then climbing |
+| Strips of 16–512 rows, `MallocMediumZone=0` | 273–285 MB | flat |
+| Vision alone, crops of the decoded picture → bands | 618–623 → 388–395 MB | |
+| Vision with the pack, the same | 739–759 → 519–544 MB | |
+
+What climbed with whole bands wasn't memory in use. At the end, malloc's live blocks were Core ML's, as in the decoded
+picture's path. The "Malloc Large" regions held about 230 MB more dirty pages, and every band's buffer had been freed,
+whether it came from a `CFData`, malloc, a mapping of its own, or one buffer reused for every band. So the blocks kept
+are most likely CG's own for drawing a band's picture. The same draws and allocations without Core ML's predictions
+between them stayed flat (179 MB). One variant stayed flat and isn't explained: the band in an `NSMutableData`, with an
+autorelease pool around making its picture (291–297 MB, twice; without the pool it climbs, the data autoreleased by its
+`mutableBytes`). Strips were chosen because they stay flat however the rows are held and with `MallocMediumZone=0`,
+where the pool's result hung on how malloc happened to hand out blocks.
+
+`ocr-bench --engine l1+l2` (Release, with the real screenshots, a fresh copy of the pack for each build): all 40
+outputs the same, content CER 1.4842% and raw 3.3305% for both; p50 291 → 278 ms, p95 677 → 662 ms, one run each.

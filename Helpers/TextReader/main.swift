@@ -91,13 +91,13 @@ for try await line in FileHandle.standardInput.bytes.lines {
             continue
         }
         guard let path = job.path else { throw OCRError.unreadableImage }
-        let image = try PictureText.image(at: URL(filePath: path))
+        let file = URL(filePath: path)
         if job.lines == true, let pack = job.pack {
-            let lines = try await reader(for: pack).recognize(image).lines
+            let lines = try await reader(for: pack).recognize(fileAt: file).lines
             send(Result(id: job.id, lines: lines.map { Line(text: $0.text, box: $0.box, confidence: $0.confidence) }))
             continue
         }
-        let result = try await reading(with: job.pack).recognize(image)
+        let result = try await reading(with: job.pack).recognize(fileAt: file)
         let text = job.joinsWrappedLines.map { TextAssembler.assemble(result.lines, options: .init(joinsWrappedLines: $0)) } ?? result.text
         send(Result(id: job.id, text: text))
     } catch {

@@ -103,4 +103,12 @@ public enum OCRError: Error, Equatable {
 public protocol OCREngine: Sendable {
     var name: String { get }
     func recognize(_ image: CGImage) async throws -> OCRResult
+    /// The text of the picture in the file at `url`; unreadableImage when the file holds none.
+    func recognize(fileAt url: URL) async throws -> OCRResult
+}
+
+extension OCREngine {
+    public func recognize(fileAt url: URL) async throws -> OCRResult {
+        try await recognize(PictureText.image(at: url))
+    }
 }

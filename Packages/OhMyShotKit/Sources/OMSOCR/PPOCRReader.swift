@@ -67,22 +67,42 @@ public final class PPOCRReader: OCREngine, @unchecked Sendable {
     /// puts its own (`PieceMerge`): the pixels of a whole scrolling capture, 3346 × 47,000, would take 630 MB, and
     /// twice that scaled.
     public func recognize(_ image: CGImage) async throws -> OCRResult {
+        try await recognize(width: image.width, height: image.height) { piece in PPOCRPixels(image, region: piece) }
+    }
+
+    /// The picture in the file at `url`: a tall PNG's pieces are read from the file a band at a time
+    /// (`PictureText.Bands`), the picture never decoded whole; any other picture is decoded and read as above.
+    public func recognize(fileAt url: URL) async throws -> OCRResult {
+        if let bands = PictureText.Bands(fileAt: url) {
+            do {
+                return try await recognize(width: bands.width, height: bands.height) { piece in
+                    try PPOCRPixels(width: Int(piece.width), height: Int(piece.height), space: bands.colorSpace) { context in
+                        guard bands.draw(piece, into: context) else { throw PictureText.Bands.Ended() }
+                    }
+                }
+            } catch is PictureText.Bands.Ended {
+                // Decoded, the picture is read as far as ImageIO makes it out.
+            }
+        }
+        return try await recognize(PictureText.image(at: url))
+    }
+
+    /// A `width` × `height` picture read in its pieces, `pixels` giving each piece's (in the piece's own coordinates).
+    private func recognize(width: Int, height: Int, pixels: (CGRect) throws -> PPOCRPixels?) async throws -> OCRResult {
         let started = ContinuousClock.now
-        let pieces = PictureText.pieces(width: image.width, height: image.height)
+        let pieces = PictureText.pieces(width: width, height: height)
         guard pieces.count > 1 else {
-            let lines = try await readPiece(image)
+            guard let original = try pixels(CGRect(x: 0, y: 0, width: width, height: height)) else { throw OCRError.unreadableImage }
+            let lines = try await readPiece(original)
             return OCRResult(lines: lines, text: lines.map(\.text).joined(separator: "\n"), duration: ContinuousClock.now - started)
         }
         var readings: [[OCRLine]] = []
         for piece in pieces {
             try Task.checkCancellation()
-            guard let part = image.cropping(to: piece) else {
-                readings.append([])
-                continue
-            }
-            readings.append(try await readPiece(part).map { $0.moved(by: piece.origin) })
+            guard let original = try pixels(piece) else { throw OCRError.unreadableImage }
+            readings.append(try await readPiece(original).map { $0.moved(by: piece.origin) })
         }
-        let lines = ReadingOrder.sorted(PieceMerge.merged(readings, pieces: pieces, size: CGSize(width: image.width, height: image.height)))
+        let lines = ReadingOrder.sorted(PieceMerge.merged(readings, pieces: pieces, size: CGSize(width: width, height: height)))
         return OCRResult(lines: lines, text: lines.map(\.text).joined(separator: "\n"), duration: ContinuousClock.now - started)
     }
 
@@ -93,8 +113,7 @@ public final class PPOCRReader: OCREngine, @unchecked Sendable {
     }
 
     /// The lines of one piece, in its pixels, in PaddleOCR's reading order.
-    private func readPiece(_ image: CGImage) async throws -> [OCRLine] {
-        guard let original = PPOCRPixels(image) else { throw OCRError.unreadableImage }
+    private func readPiece(_ original: PPOCRPixels) async throws -> [OCRLine] {
         var lines: [OCRLine] = []
         for box in try await detect(original) {
             try Task.checkCancellation()
@@ -121,6 +140,11 @@ public final class PPOCRReader: OCREngine, @unchecked Sendable {
         let scaled = image.scaled(width: scaledWidth, height: scaledHeight)
         let sx = CGFloat(scaledWidth) / CGFloat(width), sy = CGFloat(scaledHeight) / CGFloat(height)
 
+        // The detector writes each band's map into an array of the reader's (Core ML's output backing), one for all the
+        // piece's bands: given none, the footprint grew by about 40 MB with each prediction at 1280 × 4096, and came back
+        // down only later (Docs/perf.md › M6 — The L2 reader on tall pictures).
+        let mapType = detector.modelDescription.outputDescriptionsByName[detection.output]?.multiArrayConstraint?.dataType
+        var backing: (shape: [Int], map: MLMultiArray)?
         var boxes: [[CGPoint]] = []
         for band in PPOCRGeometry.bands(height: scaledHeight, band: detection.band, overlap: detection.overlap) {
             try Task.checkCancellation()
@@ -130,16 +154,19 @@ public final class PPOCRReader: OCREngine, @unchecked Sendable {
             }
             let input = try MLMultiArray.planes(height: shape[0], width: shape[1], filledWith: detection.padding)
             scaled.write(rows: band.top..<band.bottom, into: input, mean: detection.mean, std: detection.std)
-            let output = try await detector.prediction(from: MLDictionaryFeatureProvider(dictionary: [detection.input: MLFeatureValue(multiArray: input)]))
+            let options = MLPredictionOptions()
+            if let mapType, mapType == .float16 || mapType == .float32 {
+                if backing?.shape != shape {
+                    backing = (shape, try MLMultiArray(shape: [1, 1, NSNumber(value: shape[0]), NSNumber(value: shape[1])], dataType: mapType))
+                }
+                options.outputBackings = [detection.output: backing!.map]
+            }
+            let output = try await detector.prediction(from: MLDictionaryFeatureProvider(dictionary: [detection.input: MLFeatureValue(multiArray: input)]), options: options)
             guard let map = output.featureValue(for: detection.output)?.multiArrayValue, map.shape.count == 4,
                   map.shape[2].intValue == shape[0], map.shape[3].intValue == shape[1]
             else { throw PPOCRError.unexpectedOutput("detection output") }
             // The band's own part of the map, row by row.
-            let full = try map.floats()
-            var part = [Float](repeating: 0, count: bandHeight * scaledWidth)
-            for row in 0..<bandHeight {
-                part.replaceSubrange(row * scaledWidth..<(row + 1) * scaledWidth, with: full[(row * shape[1])..<(row * shape[1] + scaledWidth)])
-            }
+            let part = try map.floats(rows: bandHeight, columns: scaledWidth)
             let found = part.withUnsafeBufferPointer { PPOCRGeometry.boxes(in: $0, width: scaledWidth, height: bandHeight, configuration: detection) }
             for box in found {
                 let center = box.map(\.y).reduce(0, +) / 4 + CGFloat(band.top)
