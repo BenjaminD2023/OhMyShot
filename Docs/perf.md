@@ -2071,3 +2071,64 @@ where the pool's result hung on how malloc happened to hand out blocks.
 
 `ocr-bench --engine l1+l2` (Release, with the real screenshots, a fresh copy of the pack for each build): all 40
 outputs the same, content CER 1.4842% and raw 3.3305% for both; p50 291 → 278 ms, p95 677 → 662 ms, one run each.
+
+## M6 — Vision's pieces of a tall picture (2026-10-17)
+
+Same machine. Tried: `VisionPipeline.recognize` handing Vision each piece of a large picture drawn into a bitmap of
+its own (the whole picture drawn moved, in the picture's own kind: Docs/ocr.md › Large selections in bands › Vision's
+pieces stay crops) instead of `image.cropping(to:)`, as the L2 reader draws its pieces. **Not kept.** Measured on
+02f2a88 with the L2 changes then uncommitted (pack version 2's head, the L2 reader's pieces drawn from the whole picture
+moved); `VisionPipeline` is the same in both. The pack was a copy of the installed version 1, the only one left on this
+Mac. A new process per reading: `ledger_phys_footprint_peak` for the probe (Release, outside the repository), `/usr/bin/time
+-l` for the text reader (Debug, built with SwiftPM from the shell). Sizes, times, and hashes only.
+
+| The tallest history capture, 3346 × 16811, 10 pieces | Crops | Drawn |
+| --- | --- | --- |
+| Vision alone, probe: peak, after the reading (3 runs) | 588–605, 497–517 MB | 559–579, 319–339 MB |
+| Vision alone, text reader (3 runs) | 596–615 MB | 575–580 MB |
+| Vision with the pack, probe: at L2's start, peak, after (3 runs) | 525–530, 1201–1206, 814–819 MB | 346–352, 1177–1183, 614–620 MB |
+| Vision with the pack, text reader (3 runs; the history's reading) | 1154–1200 MB | 1175–1183 MB |
+| Vision alone, the picture as a plain bitmap in memory, as a capture comes in the app (probe, 3 runs): peak, after | 572–580, 516–521 MB | 593–610, 545–553 MB |
+| Vision alone, probe: time | 2.85–2.86 s | 2.83–2.92 s |
+| Lines (text, box, confidence) | the same hash, every run | |
+
+The text reader over the other ten captures in `Tools/ocr-bench/real/source` (Debug, a new process per reading, 3 runs
+for a picture read in pieces, 1 for the others):
+
+| Pictures | Vision alone: crops → drawn | Vision with the pack: crops → drawn |
+| --- | --- | --- |
+| The opaque 4K screen, 4109 × 2574 (2 pieces, both drawn) | 373–381 → 326–360 MB | 780–932 → 858–869 MB |
+| Three 4K screens with a few transparent pixels (2 pieces each; crops both ways, drawn first and found not opaque) | 372–399 → 365–400 MB | 710–1028 → 755–982 MB |
+| Six screens 2000–2186 wide (one piece: nothing changes) | 278–313 → 284–317 MB | 684–823 → 685–751 MB |
+| All 11 with the pack in one process (1 run) | — | 1216 → 1143 MB, 74.9 → 76.2 s |
+| Warm, the ten screens ×3 in one process: p50, p95 | 0.78, 1.37 → 0.77, 1.45 s | 2.07, 3.69 → 2.08, 3.78 s |
+
+Answers were hash-identical in every pair that both builds answered. Vision itself failed 8 of 12 readings of two
+one-piece screens, in both builds alike, while the two builds took turns (six `e5rtError` 13 from Espresso, two
+time-outs at 60 s); one of them, read with the pack, never came back from the earlier build in three tries.
+
+### Findings
+
+- **Vision's crops don't pile up.** From the second piece on, each piece starts 5–6 MB above the one before either way
+  (479 → 525 MB with crops, 306 → 350 drawn); the L2 reader's drawn crops added 26 MB a piece. What the crops keep is
+  a constant, about 175 MB from the first crop read on: by its size, the decoded picture's pixels staying counted.
+  `PictureText.image`'s picture counts little until something reads it, then about its size while that lasts
+  (observed, mechanism not pinned down). Drawn pieces count it only while each is drawn.
+- **L2 takes it back.** The pack's reader draws the whole picture for each of its own pieces, so the picture is counted
+  again from L2's first piece: L2 adds 676 MB over its start with Vision's crops, 831 after drawn pieces, and the
+  reading's peak, which is L2's, moves by about 25 MB. In the text reader the ranges overlap; a one-piece screen, which
+  nothing changes, read with the pack at 823 MB in one build and 749 in the other. With pack version 2 the peak is still
+  L2's (750–763 MB in the L2 change's own measurements, against Vision's 600 or so), so the same is expected there; not
+  measured.
+- **In the app it costs.** A capture there is a plain bitmap, counted whole already; a piece of its own is one more
+  piece's copy, about 20–30 MB on the peak. Both ways the footprint climbs about 25 MB a piece there, as if the
+  bitmap's rows were counted again as each piece reads them (observed only).
+- **Vision reads by kind**, so a bitmap of its own changes L1's reading unless it keeps the picture's alpha, layout, and
+  space (Docs/ocr.md › Large selections in bands). The tried version did, and the 12 pieces it drew read exactly as
+  their crops.
+- **What the reading with the pack peaks on** is the decoded picture, counted at L2's peak, plus L2's own memory. The
+  lever left is reading a tall PNG's rows a piece at a time instead of decoding it whole, each piece in the picture's
+  kind.
+- **So "not kept" holds while L2 draws the decoded picture.** If L2 reads a tall PNG from the file instead, nothing in
+  its phase needs the decoded picture counted, and Vision's crops would then keep about 175 MB through it for nothing:
+  drawn pieces could take up to that off the reading's peak. To be measured again then.

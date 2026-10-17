@@ -419,6 +419,35 @@ harness, image decoding included: 3346 × 16811, 2561 → 1286 MB; 3700 × 8000,
 too, and a vertical line longer than that that crosses an edge likewise. Vision also reads a line a little differently
 in two pieces now and then; the ownership rule takes the owner's reading, not the better one.
 
+**Vision's pieces stay crops (2026-10-17).** (Since then, a tall PNG read from its file goes to Vision a band at a
+time, each band a picture of the PNG's own kind (`PictureText.Bands`, Docs/perf.md › M6 — Pieces of a tall PNG): it
+reads as the crops did, byte for byte on the five tallest history captures. What follows holds for a picture already
+decoded.) `recognize` hands Vision each piece as `image.cropping(to:)`. Handing it each piece drawn into a bitmap of
+its own instead, as the L2 reader draws its pieces from the whole picture moved, was tried and not kept: Vision's
+crops do not pile up a piece at a time as L2's drawn crops did, and the reading with the pack, whose peak is L2's,
+came out the same while the L2 reader draws the whole decoded picture; worth measuring again if it stops (Docs/perf.md
+› M6 — Vision's pieces of a tall picture). What it showed about Vision:
+
+- **Vision reads the same pixels differently by their kind.** A PNG decodes with straight alpha, and a bitmap holds
+  only premultiplied alpha. Each of the 10 pieces of the tallest history capture (3346 × 16811, opaque throughout),
+  drawn into a premultiplied bitmap, had the crop's very bytes, yet Vision's lines (text, box, confidence) differed
+  on all 10, and on the first of the two pieces of the one opaque 4K screen (one to three lines more or fewer in a
+  piece). The same bytes labelled straight alpha again read exactly as the crop on every opaque piece; labelled opaque
+  (alpha skipped), they differed on one piece of 12. A crop read twice reads the same, and a crop's bytes copied into a
+  picture of the crop's own kind read as the crop, also on a drawn page with transparent margins and half-transparent
+  text, where premultiplying changes the pixels.
+- **So a bitmap of its own must keep the picture's kind**: straight or premultiplied alpha, bytes per pixel, byte order,
+  space. Anything that hands Vision its own pixels (reading a tall PNG's rows a piece at a time, say) changes L1's
+  reading otherwise. The tried version kept it (drawn premultiplied, handed over straight again where the piece is
+  opaque, the crop where it is not or where no bitmap holds the kind), and then the 12 pieces it drew (the tallest
+  capture's 10, the opaque 4K screen's 2) read as their crops; the other 10 tried (three 4K screens, the drawn page)
+  were the crops.
+- **The same capture as a plain bitmap reads differently too:** the tallest capture drawn into premultiplied BGRA, as a
+  capture comes in the app, read 103 lines and 1351 characters against 105 and 1376 from its PNG, so Capture Text and
+  the history's reading of one capture need not agree.
+- **A screen's PNG is not always opaque:** three of the four 4K screens in `Tools/ocr-bench/real/source` have a few
+  fully transparent pixels (0.02%) in both of their pieces.
+
 ## L2 runtime (spike, 2026-10-09)
 
 The plan's L2 is a model pack for what Vision reads poorly: Chinese-heavy interfaces, vertical text, low

@@ -109,6 +109,40 @@
         }
       }
     },
+    "Chinese and Japanese Text" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texto en chino y japonés"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texte chinois et japonais"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中国語と日本語のテキスト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中文和日文文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中文和日文文字"
+          }
+        }
+      }
+    },
     "Converted from a file written for an older ShareX." : {
       "localizations" : {
         "es" : {
@@ -149,6 +183,36 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Couldn’t download from %1$@. %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo descargar desde %1$@. %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de télécharger depuis %1$@. %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@からダウンロードできませんでした。%2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法从 %1$@ 下载。%2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法從 %1$@ 下載。%2$@"
           }
         }
       }
@@ -800,19 +864,208 @@
       }
     },
     "It answered HTTP %lld." : {
-
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor respondió HTTP %lld."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a répondu HTTP %lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバがHTTP %lldを返しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器返回了 HTTP %lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "伺服器回傳了 HTTP %lld。"
+          }
+        }
+      }
     },
     "It didn’t answer over HTTP." : {
-
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor no respondió por HTTP."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur n’a pas répondu en HTTP."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバがHTTPで応答しませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器没有通过 HTTP 应答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "伺服器沒有透過 HTTP 回應。"
+          }
+        }
+      }
     },
     "It has another file there, of %lld bytes." : {
-
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor tiene otro archivo en esa dirección, de %lld bytes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a un autre fichier à cette adresse, de %lld octets."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバにある同じ場所のファイルは別のもので、サイズは%lldバイトです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器上的这个文件不同，大小为 %lld 字节。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "伺服器上的這個檔案不同，大小為 %lld 位元組。"
+          }
+        }
+      }
     },
     "It sent another part of the file than the one asked for." : {
-
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor envió una parte del archivo distinta de la pedida."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a envoyé une autre partie du fichier que celle demandée."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバが要求したものとは別の部分のファイルを送ってきました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器发来的不是所请求的那部分文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "伺服器傳來的不是所要求的那部分檔案。"
+          }
+        }
+      }
     },
     "It sent more than the file." : {
-
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor envió más datos de los que tiene el archivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le serveur a envoyé plus de données que n’en contient le fichier."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サーバがファイルより多くのデータを送ってきました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器发来的内容比文件本身多。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "伺服器傳來的內容比檔案本身多。"
+          }
+        }
+      }
+    },
+    "PP-OCRv6 small, by PaddlePaddle: reads Chinese and Japanese more accurately than macOS alone, in the OCR panel and in History’s search." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PP-OCRv6 small, de PaddlePaddle: lee chino y japonés con más precisión que macOS por sí solo, al reconocer texto y al buscar en el historial de capturas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PP-OCRv6 small, de PaddlePaddle : lit le chinois et le japonais plus précisément que macOS seul, dans la reconnaissance du texte et la recherche de l’historique des captures."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PP-OCRv6 small（PaddlePaddle製）：テキストの認識とキャプチャ履歴の検索で、中国語と日本語をmacOS単体よりも正確に読み取ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PP-OCRv6 small，由 PaddlePaddle 开发：在识别文字和搜索截图历史时，读中文和日文比 macOS 自带的更准确。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PP-OCRv6 small，由 PaddlePaddle 開發：在辨識文字和搜尋擷取記錄時，讀取中文和日文比 macOS 內建的更準確。"
+          }
+        }
+      }
     },
     "S3-compatible storage" : {
       "localizations" : {
@@ -1087,7 +1340,38 @@
       }
     },
     "The files couldn’t be saved: %@" : {
-
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron guardar los archivos: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d’enregistrer les fichiers : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルを保存できませんでした：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保存这些文件：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法儲存這些檔案：%@"
+          }
+        }
+      }
     },
     "The public address must start with http:// or https://." : {
       "localizations" : {
@@ -1652,6 +1936,36 @@
             "state" : "new",
             "value" : "There isn’t enough space on this Mac: %1$@ is needed, %2$@ is free."
           }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay suficiente espacio en este Mac: se necesitan %1$@ y hay %2$@ libres."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il n’y a pas assez d’espace sur ce Mac : il faut %1$@, et %2$@ sont libres."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacの空き容量が足りません：%1$@が必要で、空きは%2$@です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 Mac 上的空间不足：需要 %1$@，可用 %2$@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台 Mac 上的空間不足：需要 %1$@，可用 %2$@。"
+          }
         }
       }
     },
@@ -1724,7 +2038,38 @@
       }
     },
     "This model pack can’t be downloaded: %@" : {
-
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este paquete de modelos no se puede descargar: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce pack de modèles ne peut pas être téléchargé : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このモデルパックはダウンロードできません：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法下载此模型包：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法下載此模型套件：%@"
+          }
+        }
+      }
     },
     "This uploader is for text or for shortening links, not for images or files." : {
       "localizations" : {
@@ -2339,7 +2684,38 @@
       }
     },
     "“%@” came down damaged twice." : {
-
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” llegó dañado dos veces."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "« %@ » est arrivé endommagé deux fois."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”は2回とも破損した状態でダウンロードされました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”两次下载都已损坏。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」兩次下載都已損毀。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

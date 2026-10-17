@@ -140,8 +140,11 @@ public enum ModelPackCatalog {
     /// reads the packs (`ModelPackCenter.refresh`).
     public static let ppocrV6Small = ModelPack(
         id: "ppocr-v6-small", version: "2",
-        name: "Chinese and Japanese Text",
-        summary: "PP-OCRv6 small, by PaddlePaddle: reads Chinese and Japanese more accurately than macOS alone, in the OCR panel and in History’s search.",
+        name: String(localized: "Chinese and Japanese Text", bundle: .module),
+        summary: String(
+            localized: "PP-OCRv6 small, by PaddlePaddle: reads Chinese and Japanese more accurately than macOS alone, in the OCR panel and in History’s search.",
+            bundle: .module
+        ),
         license: .init(name: "Apache-2.0", file: "LICENSE.txt", url: URL(string: "https://www.apache.org/licenses/LICENSE-2.0")!),
         original: URL(string: "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_safetensors")!,
         host: "Hugging Face",
