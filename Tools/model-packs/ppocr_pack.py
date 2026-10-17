@@ -3,13 +3,16 @@
     python3 -I Tools/model-packs/ppocr_pack.py convert MODELS OUT
         Core ML fp16 ML programs with the pack's enumerated shapes, from the pinned upstream revisions in MODELS
         (each repository in its own folder, as Tools/l2-spike/README.md fetches them), after checking them
-        against the official ONNX exports.
+        against the official ONNX exports. The recognizer ends at its encoder; its last layer, the linear map to
+        the classes, is written apart as head.bin (pack format 2, Docs/ocr.md › The recognizer's head on the CPU).
     python3 -I Tools/model-packs/ppocr_pack.py check OUT CORPUS OUT_JSON [--limit 736]
         Reads the OCR benchmark's corpus (ocr-bench --save) through the pack as the app will: in bands, each
         line kept by the band holding its center, every input padded up to an enumerated shape.
-    python3 -I Tools/model-packs/ppocr_pack.py assemble OUT PACK --license PADDLEOCR_LICENSE --checked CHECK_JSON --reference REF_JSON
-        The pack's files in PACK: the two models, characters.txt, config.json, LICENSE.txt, README.md (with the
-        benchmark's means from the check above and from Tools/l2-spike/run_coreml.py's flexible-size run).
+    python3 -I Tools/model-packs/ppocr_pack.py assemble OUT PACK --license PADDLEOCR_LICENSE --checked CHECK_JSON --reference REF_JSON [--detection EARLIER_PACK]
+        The pack's files in PACK: the two models, head.bin, characters.txt, config.json, LICENSE.txt, README.md (with
+        the benchmark's means from the check above and from Tools/l2-spike/run_coreml.py's flexible-size run). With
+        --detection, det.mlpackage is an earlier pack's, its weights checked to be OUT's: a conversion writes the same
+        weights with another date and other identifiers, and the published files then stay as they were.
 
 Run with the Python environment of Tools/l2-spike (its README), from outside the models' folder.
 """
@@ -49,6 +52,15 @@ REC_HEIGHT = 48
 REC_WIDTHS = [160, 320, 480, 640, 800, 960, 1280, 1600, 2000, 2400, 3200, 4000]
 # DBPostProcess as PaddleX runs PP-OCRv6.
 DET_THRESHOLDS = {"thresh": 0.2, "box_thresh": 0.45, "unclip_ratio": 1.4}
+# The recognizer's head: a linear map from the encoder's HEAD_INPUTS features at each step to CLASSES classes (the CTC
+# blank, the characters, a space), then a softmax. On the Neural Engine its [steps, CLASSES] output crossed to the CPU
+# for the softmax, and Core ML kept that crossing's buffers for every width, about 760 MB over the twelve; so the
+# pack's recognizer ends at the encoder, and the reader applies the head: head.bin holds its weights, CLASSES ×
+# HEAD_INPUTS row by row, then its CLASSES biases, as little-endian 16-bit floats.
+HEAD_INPUTS = 120
+CLASSES = 18710
+# One step of the encoder's output for every 8 pixels of a line's width.
+REC_STRIDE = 8
 
 
 def convert(models, out):
@@ -76,6 +88,16 @@ def convert(models, out):
         def forward(self, x):
             return self.model(pixel_values=x).last_hidden_state
 
+    # The recognizer up to its head: the backbone, then the head's encoder.
+    class Features(torch.nn.Module):
+        def __init__(self, model):
+            super().__init__()
+            self.model = model
+
+        def forward(self, x):
+            features = self.model.model(pixel_values=x).last_hidden_state
+            return self.model.head.encoder(features).last_hidden_state
+
     det_model = PPOCRV6SmallDetForObjectDetection.from_pretrained(os.path.join(models, "PP-OCRv6_small_det_safetensors")).eval()
     rec_model = PPOCRV6SmallRecForTextRecognition.from_pretrained(os.path.join(models, "PP-OCRv6_small_rec_safetensors")).eval()
 
@@ -91,6 +113,18 @@ def convert(models, out):
     assert det_diff < 1e-3 and rec_diff < 1e-3, "the PyTorch weights don't match the ONNX exports"
     # The recognizer's head ends in a softmax, as the ONNX export's does.
     assert np.allclose(rec_torch.sum(-1), 1, atol=1e-3)
+    # The model up to its head, and the head applied as the reader applies it, give the whole model's probabilities.
+    head = rec_model.head.head
+    weight, bias = head.weight.detach().numpy(), head.bias.detach().numpy()
+    assert weight.shape == (CLASSES, HEAD_INPUTS) and bias.shape == (CLASSES,), f"head {weight.shape}, {bias.shape}"
+    features_torch = Features(rec_model)(torch.from_numpy(rec_x)).numpy()
+    assert features_torch.shape == (1, 320 // REC_STRIDE, HEAD_INPUTS), features_torch.shape
+    split_diff = float(np.abs(softmax(features_torch[0] @ weight.T + bias) - rec_torch[0]).max())
+    print(f"the model up to its head, then the head: {split_diff:.2e} from the whole model")
+    assert split_diff < 1e-5
+    # Its weights as the pack keeps them, 16-bit, still choose the ONNX export's class at every step.
+    half = half_head(weight, bias)
+    assert (head_logits(features_torch[0], *half).argmax(-1) == rec_ref[0].argmax(-1)).all()
 
     from coremltools.converters.mil.frontend.torch import ops as torch_ops
     from coremltools.converters.mil.mil import Builder as mb
@@ -120,14 +154,17 @@ def convert(models, out):
     det.license = "Apache-2.0"
     det.save(os.path.join(out, "det.mlpackage"))
     rec = ct.convert(
-        torch.jit.trace(Rec(rec_model).eval(), torch.from_numpy(rec_x)),
+        torch.jit.trace(Features(rec_model).eval(), torch.from_numpy(rec_x)),
         inputs=[ct.TensorType(name="x", shape=ct.EnumeratedShapes(shapes=[(1, 3, REC_HEIGHT, w) for w in REC_WIDTHS], default=(1, 3, REC_HEIGHT, 320)))],
-        outputs=[ct.TensorType(name="probs")], **common,
+        outputs=[ct.TensorType(name="features")], **common,
     )
-    rec.short_description = "PP-OCRv6 small text recognition (CTC), converted to Core ML for OhMyShot"
+    rec.short_description = "PP-OCRv6 small text recognition (CTC) up to its last layer (head.bin), converted to Core ML for OhMyShot"
     rec.license = "Apache-2.0"
     rec.save(os.path.join(out, "rec.mlpackage"))
     print(f"converted in {time.perf_counter() - started:.0f} s")
+    with open(os.path.join(out, "head.bin"), "wb") as f:
+        f.write(half[0].astype("<f2").tobytes() + half[1].astype("<f2").tobytes())
+    assert os.path.getsize(os.path.join(out, "head.bin")) == (CLASSES * HEAD_INPUTS + CLASSES) * 2
     import yaml
     characters = [str(c) for c in yaml.safe_load(open(os.path.join(models, "PP-OCRv6_small_rec_safetensors", "inference.yml")))["PostProcess"]["character_dict"]]
     classes = rec_torch.shape[-1]
@@ -136,6 +173,29 @@ def convert(models, out):
     with open(os.path.join(out, "characters.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(characters) + "\n")
     print(f"{len(characters)} characters, {classes} classes")
+
+
+# ---------------------------------------------------------------- the head, as the reader applies it
+
+def softmax(logits):
+    exp = np.exp(logits - logits.max(-1, keepdims=True))
+    return exp / exp.sum(-1, keepdims=True)
+
+
+def half_head(weight, bias):
+    """The head's weights and biases as head.bin keeps them, 16-bit, read back as 32-bit floats."""
+    return weight.astype(np.float16).astype(np.float32), bias.astype(np.float16).astype(np.float32)
+
+
+def read_head(out):
+    values = np.fromfile(os.path.join(out, "head.bin"), dtype="<f2").astype(np.float32)
+    assert values.size == CLASSES * HEAD_INPUTS + CLASSES, f"head.bin holds {values.size} values"
+    return values[:CLASSES * HEAD_INPUTS].reshape(CLASSES, HEAD_INPUTS), values[CLASSES * HEAD_INPUTS:]
+
+
+def head_logits(features, weight, bias):
+    """[steps, CLASSES] logits of [steps, HEAD_INPUTS] features, in 32-bit floats."""
+    return features.astype(np.float32) @ weight.T + bias
 
 
 # ---------------------------------------------------------------- reading, as the app will
@@ -164,6 +224,7 @@ class Reader:
         self.ppocr = ppocr
         self.det = ct.models.MLModel(os.path.join(out, "det.mlpackage"), compute_units=units)
         self.rec = ct.models.MLModel(os.path.join(out, "rec.mlpackage"), compute_units=units)
+        self.head = read_head(out)
         characters = open(os.path.join(out, "characters.txt"), encoding="utf-8").read().split("\n")[:-1]
         self.characters = ["blank"] + characters + [" "]
         self.widest_line = 0
@@ -186,8 +247,11 @@ class Reader:
         resized = (cv2.resize(crop, (width, REC_HEIGHT)).astype(np.float32) / 255.0 - 0.5) / 0.5
         x = np.zeros((1, 3, REC_HEIGHT, target), dtype=np.float32)
         x[0, :, :, :width] = resized.transpose(2, 0, 1)
-        probs = self.rec.predict({"x": x})["probs"][0]
-        indices, scores = probs.argmax(axis=1), probs.max(axis=1)
+        features = self.rec.predict({"x": x})["features"][0]
+        logits = head_logits(features, *self.head)
+        # The likeliest class at each step, and its softmax probability: 1 / Σ exp(logit - the largest).
+        indices = logits.argmax(axis=1)
+        scores = 1 / np.exp(logits - logits.max(axis=1, keepdims=True)).sum(axis=1)
         keep = np.ones(len(indices), dtype=bool)
         keep[1:] = indices[1:] != indices[:-1]
         keep &= indices != 0
@@ -254,7 +318,8 @@ def main():
         check(sys.argv[2], sys.argv[3], sys.argv[4], limit)
     elif command == "assemble":
         option = lambda name: sys.argv[sys.argv.index(name) + 1]
-        assemble(sys.argv[2], sys.argv[3], option("--license"), option("--checked"), option("--reference"))
+        detection = option("--detection") if "--detection" in sys.argv else None
+        assemble(sys.argv[2], sys.argv[3], option("--license"), option("--checked"), option("--reference"), detection)
     else:
         raise SystemExit(__doc__)
 
@@ -265,7 +330,7 @@ PADDLEOCR_LICENSE = ("https://github.com/PaddlePaddle/PaddleOCR/blob/dab3fe35379
 
 def config():
     return {
-        "format": 1,
+        "format": 2,
         "model": "PP-OCRv6 small",
         "computeUnits": "cpuAndNeuralEngine",
         "detection": {
@@ -282,10 +347,13 @@ def config():
             "unclipRatio": DET_THRESHOLDS["unclip_ratio"], "minSize": 3, "maxCandidates": 3000,
         },
         "recognition": {
-            "file": "rec.mlpackage", "input": "x", "output": "probs",
+            "file": "rec.mlpackage", "input": "x", "output": "features",
             "height": REC_HEIGHT, "widths": REC_WIDTHS,
             "channels": "BGR", "mean": [0.5, 0.5, 0.5], "std": [0.5, 0.5, 0.5],
             "padding": 0,
+            # The model's output, [1, steps, inputs] features, goes through the head (HEAD_INPUTS above) to the classes'
+            # logits, and a softmax gives their probabilities.
+            "head": {"file": "head.bin", "type": "float16", "inputs": HEAD_INPUTS, "classes": CLASSES},
             # CTC over softmax probabilities: class 0 is the blank, 1...n the lines of characters.txt, n + 1 a space.
             "characters": "characters.txt", "blank": 0, "spaceAfterCharacters": True,
             # A crop at least this many times taller than wide is vertical text, turned a quarter to lie as a line.
@@ -307,17 +375,24 @@ def mean_cer(path, key):
     return sum(scored) / len(scored) * 100, len(scored)
 
 
-def assemble(out, pack, license_file, checked, reference):
+def assemble(out, pack, license_file, checked, reference, detection=None):
     pack_cer, count = mean_cer(checked, "cer")
     reference_cer, _ = mean_cer(reference, "cer_l2")
     score = {"pack": pack_cer, "reference": reference_cer, "count": count}
     os.makedirs(pack, exist_ok=True)
-    for name in ("det.mlpackage", "rec.mlpackage"):
+    # A reader compiles the models into the folder it loads (Compiled/): never into the pack that is published.
+    assert not os.path.exists(os.path.join(pack, "Compiled")), f"{pack} was read from"
+    weights = "det.mlpackage/Data/com.apple.CoreML/weights/weight.bin"
+    if detection:
+        same = open(os.path.join(detection, weights), "rb").read() == open(os.path.join(out, weights), "rb").read()
+        assert same, f"{detection}'s detection weights aren't the ones converted"
+    for name, source in (("det.mlpackage", detection or out), ("rec.mlpackage", out)):
         target = os.path.join(pack, name)
         if os.path.exists(target):
             shutil.rmtree(target)
-        shutil.copytree(os.path.join(out, name), target)
-    shutil.copyfile(os.path.join(out, "characters.txt"), os.path.join(pack, "characters.txt"))
+        shutil.copytree(os.path.join(source, name), target)
+    for name in ("head.bin", "characters.txt"):
+        shutil.copyfile(os.path.join(out, name), os.path.join(pack, name))
     with open(os.path.join(pack, "config.json"), "w") as f:
         json.dump(config(), f, indent=2)
         f.write("\n")
@@ -341,8 +416,10 @@ ONNX exports give:
 
 {checks}
 
-The weights were not trained, tuned, or otherwise changed. characters.txt is the recognition model's character list
-from its inference.yml. config.json describes the reading the app does with them.
+The recognition model's last layer, the linear map from its {HEAD_INPUTS} features to its {CLASSES:,} classes, is not in
+rec.mlpackage: its weights and biases are in head.bin, as 16-bit floating point numbers, and the app applies it and the
+softmax after it. The weights were not trained, tuned, or otherwise changed. characters.txt is the recognition model's
+character list from its inference.yml. config.json describes the reading the app does with them.
 
 The license text below is PaddleOCR's own ({PADDLEOCR_LICENSE[0]}).
 
@@ -376,13 +453,19 @@ weights are PaddlePaddle's, unchanged; see LICENSE.txt for the license and what 
 | File | What it is |
 | --- | --- |
 | `det.mlpackage` | Text detection (DB): input `x`, 1 × 3 × H × W, output `prob`, 1 × 1 × H × W. Sizes: {", ".join(f"{h}×{w}" for h, w in DET_SHAPES)}. |
-| `rec.mlpackage` | Text recognition (CTC): input `x`, 1 × 3 × {REC_HEIGHT} × W, output `probs`, softmax over {18710} classes. Widths: {", ".join(map(str, REC_WIDTHS))}. |
+| `rec.mlpackage` | Text recognition (CTC) up to its last layer: input `x`, 1 × 3 × {REC_HEIGHT} × W, output `features`, 1 × W/{REC_STRIDE} × {HEAD_INPUTS}. Widths: {", ".join(map(str, REC_WIDTHS))}. |
+| `head.bin` | The recognizer's last layer, a linear map from the {HEAD_INPUTS} features to {CLASSES:,} classes: its weights ({CLASSES:,} × {HEAD_INPUTS}, row by row), then its {CLASSES:,} biases, little-endian 16-bit floats. A softmax over its output gives the classes' probabilities. |
 | `characters.txt` | The recognition model's characters, one a line: class 1 is the first line; class 0 is the blank and the class after the last line a space. |
 | `config.json` | Pre- and post-processing: normalization, the bands a region is read in, detection thresholds. |
 | `LICENSE.txt` | Apache License 2.0, with what was changed. |
 
 Inputs are padded with zeros up to the smallest listed size that holds them. Run on the CPU and the Neural Engine
 (`.cpuAndNeuralEngine`); macOS 27 beta's GPU path fails on these models.
+
+This is version 2 of the pack (`config.json` format 2). Version 1's recognizer ended in the last layer and its softmax;
+on the Neural Engine its output, a probability for each class at every step, crossed to the CPU, and Core ML kept
+that crossing's memory for every width a reader used. Applied on the CPU instead, the last layer reads the same text
+with a fraction of the memory.
 
 Made with `Tools/model-packs/ppocr_pack.py` from these upstream revisions, and checked against PaddlePaddle's ONNX
 exports of the same models:

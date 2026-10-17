@@ -118,6 +118,53 @@ struct PPOCRTests {
         #expect(abs(score - 0.9) < 1e-6)
     }
 
+    @Test func theHeadDecodesAsTheProbabilitiesOfItsSoftmaxDo() {
+        // A head of 3 inputs and 4 classes, over more steps than it multiplies at once.
+        let classes = ["", "a", "b", " "], inputs = 3, steps = PPOCRHead.chunk * 2 + 7
+        var state: UInt64 = 7
+        func random() -> Float {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            return Float(state >> 40) / Float(1 << 24) * 4 - 2
+        }
+        let weights = (0..<classes.count * inputs).map { _ in random() }, biases = (0..<classes.count).map { _ in random() }
+        let features = (0..<steps * inputs).map { _ in random() }
+        var probabilities: [Float] = []
+        for step in 0..<steps {
+            let logits = (0..<classes.count).map { c in
+                biases[c] + (0..<inputs).reduce(Float(0)) { $0 + weights[c * inputs + $1] * features[step * inputs + $1] }
+            }
+            let exps = logits.map { exp($0 - logits.max()!) }
+            probabilities += exps.map { $0 / exps.reduce(0, +) }
+        }
+        let expected = PPOCRReader.decode(probabilities, steps: steps, classes: classes, blank: 0)
+        let head = PPOCRHead(weights: weights, biases: biases, inputs: inputs)
+        let (text, score) = head.decode(features, steps: steps, classes: classes, blank: 0)
+        #expect(!expected.0.isEmpty)
+        #expect(text == expected.0)
+        #expect(abs(score - expected.1) < 1e-6)
+        #expect(head.decode([], steps: 0, classes: classes, blank: 0) == ("", 0))
+    }
+
+    @Test func aHeadFileHoldsItsWeightsThenItsBiasesAsHalfFloats() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "OMSPPOCRTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        // 2 classes of 2 inputs: weights [[1, 0], [0, 1]], biases [0.5, -0.5].
+        let values: [Float16] = [1, 0, 0, 1, 0.5, -0.5]
+        let file = folder.appending(path: "head.bin")
+        try values.withUnsafeBytes { Data($0) }.write(to: file)
+        let configuration = PPOCRConfiguration.Head(file: "head.bin", type: "float16", inputs: 2, classes: 2)
+        let head = try PPOCRHead(contentsOf: file, configuration, classes: 2)
+        // Features (3, 1): logits 3.5 and 0.5, so class 0 at 1 / (1 + e^-3).
+        let (text, score) = head.decode([3, 1], steps: 1, classes: ["x", "y"], blank: 1)
+        #expect(text == "x")
+        #expect(abs(score - 1 / (1 + exp(-3))) < 1e-6)
+        #expect(throws: PPOCRError.self) { try PPOCRHead(contentsOf: file, configuration, classes: 3) }
+        var longer = configuration
+        longer.inputs = 3
+        #expect(throws: PPOCRError.self) { try PPOCRHead(contentsOf: file, longer, classes: 2) }
+    }
+
     // MARK: Pixels, as OpenCV makes them
 
     @Test func bilinearScalingWeighsAsOpenCVDoes() {
@@ -188,7 +235,19 @@ struct PPOCRTests {
         wrong.detection.band = 2048
         #expect(wrong.problem != nil)
         wrong = configuration
-        wrong.format = 2
+        wrong.format = 3
+        #expect(wrong.problem != nil)
+        // Format 2: the recognizer ends at its features, and the pack has its head.
+        let head = PPOCRConfiguration.Head(file: "head.bin", type: "float16", inputs: 120, classes: 18710)
+        var second = configuration
+        second.format = 2
+        #expect(second.problem != nil)
+        second.recognition.head = head
+        #expect(second.problem == nil)
+        second.recognition.head?.type = "float32"
+        #expect(second.problem != nil)
+        wrong = configuration
+        wrong.recognition.head = head
         #expect(wrong.problem != nil)
         // The tallest and the widest shapes are different ones: a full band has no shape.
         wrong = configuration

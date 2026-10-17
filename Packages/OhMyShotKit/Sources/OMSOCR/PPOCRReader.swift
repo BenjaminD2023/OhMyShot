@@ -9,7 +9,8 @@ import Foundation
 /// The region is scaled (its shorter side up to `shortestSide`, its width down to `maxWidth`, each side to a multiple of
 /// 32) and read in bands; each band is padded up to one of the detector's shapes, and its probabilities become boxes
 /// (DBPostProcess). A box belongs to the band whose core holds its center. Each box is cut out of the region as it was,
-/// straightened, scaled to the recognizer's height, padded up to one of its widths, and decoded (CTC).
+/// straightened, scaled to the recognizer's height, padded up to one of its widths, and decoded (CTC): from the model's
+/// probabilities in a pack of format 1, and from its features through the head (`PPOCRHead`) in one of format 2.
 ///
 /// The models are compiled once into the pack's own folder (`Compiled/`), never to a temporary place: the Neural Engine
 /// keeps what it compiles for a model by its path, so only the first load of a pack takes seconds.
@@ -20,22 +21,25 @@ public final class PPOCRReader: OCREngine, @unchecked Sendable {
     // MLModel predictions may run from any thread; the reader asks one at a time.
     private let detector: MLModel
     private let recognizer: MLModel
+    private let head: PPOCRHead?
 
-    init(configuration: PPOCRConfiguration, classes: [String], detector: MLModel, recognizer: MLModel) {
+    init(configuration: PPOCRConfiguration, classes: [String], detector: MLModel, recognizer: MLModel, head: PPOCRHead? = nil) {
         self.configuration = configuration
         self.classes = classes
         self.detector = detector
         self.recognizer = recognizer
+        self.head = head
     }
 
     /// The reader of the pack installed in `folder`, its models compiled into `folder/Compiled` the first time.
     public static func load(from folder: URL) async throws -> PPOCRReader {
         let configuration = try PPOCRConfiguration.load(from: folder)
         let classes = try PPOCRConfiguration.classes(in: folder, configuration)
+        let head = try configuration.recognition.head.map { try PPOCRHead(contentsOf: folder.appending(path: $0.file), $0, classes: classes.count) }
         let units: MLComputeUnits = configuration.computeUnits == "cpuOnly" ? .cpuOnly : .cpuAndNeuralEngine
         async let detector = model(configuration.detection.file, in: folder, units: units)
         async let recognizer = model(configuration.recognition.file, in: folder, units: units)
-        return try await PPOCRReader(configuration: configuration, classes: classes, detector: detector, recognizer: recognizer)
+        return try await PPOCRReader(configuration: configuration, classes: classes, detector: detector, recognizer: recognizer, head: head)
     }
 
     private static func model(_ file: String, in folder: URL, units: MLComputeUnits) async throws -> MLModel {
@@ -156,12 +160,16 @@ public final class PPOCRReader: OCREngine, @unchecked Sendable {
         let input = try MLMultiArray.planes(height: recognition.height, width: padded, filledWith: recognition.padding)
         line.write(rows: 0..<line.height, into: input, mean: recognition.mean, std: recognition.std)
         let output = try await recognizer.prediction(from: MLDictionaryFeatureProvider(dictionary: [recognition.input: MLFeatureValue(multiArray: input)]))
-        guard let probabilities = output.featureValue(for: recognition.output)?.multiArrayValue, probabilities.shape.count == 3 else {
+        guard let values = output.featureValue(for: recognition.output)?.multiArrayValue, values.shape.count == 3 else {
             throw PPOCRError.unexpectedOutput("recognition output")
         }
-        let steps = probabilities.shape[1].intValue, count = probabilities.shape[2].intValue
+        let steps = values.shape[1].intValue, count = values.shape[2].intValue
+        if let head {
+            guard count == head.inputs else { throw PPOCRError.unexpectedOutput("\(count) features for a head of \(head.inputs)") }
+            return head.decode(try values.floats(), steps: steps, classes: classes, blank: recognition.blank)
+        }
         guard count == classes.count else { throw PPOCRError.unexpectedOutput("\(count) classes for \(classes.count) characters") }
-        return Self.decode(try probabilities.floats(), steps: steps, classes: classes, blank: recognition.blank)
+        return Self.decode(try values.floats(), steps: steps, classes: classes, blank: recognition.blank)
     }
 
     /// CTC's greedy decoding: each step's likeliest class, repeats of one class run together, blanks dropped; the mean of

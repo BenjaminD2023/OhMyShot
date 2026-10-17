@@ -797,8 +797,9 @@ read again after the install, keeps one reader of about 1 GB running for as long
 | --- | --- | --- | --- | --- | --- | --- |
 | Footprint over the loaded model | 13 MB | 15 MB | 42 MB | 103 MB | 257 MB | 1.1–1.5 GB, steady |
 
-It is no leak: 200 predictions at one width added 30 MB. The size likely comes from the output, a probability for
-each of 18,710 classes at every step. None of these moved the reader's peak:
+It is no leak: 200 predictions at one width added 30 MB. The size comes from the output, a probability for each of
+18,710 classes at every step, crossing from the Neural Engine to the CPU (› The recognizer's head on the CPU). None of
+these moved the reader's peak:
 
 - autorelease pools (the synchronous calls in pools took it to 3.4 GB)
 - output buffers of the reader's own
@@ -824,8 +825,8 @@ jobs.
 **Not done yet:**
 
 - **A pack whose recognizer gives each step's likeliest class and its probability**, two values a step instead of
-  18,710. It might shrink the reader's memory, if the probe shows the large buffers are at the output and not inside
-  the model. It would be version 2 of the pack, uploaded anew.
+  18,710. Tried: it didn't shrink the memory. Pack v2 applies the recognizer's last layer on the CPU instead
+  (› The recognizer's head on the CPU).
 - **L2's reading of Latin lines**, which reads arrows and the case of identifiers better than Vision does, and
   Capture Text, Translate Area, and the Shortcuts action, which read with L1 alone.
 
@@ -852,3 +853,139 @@ jobs.
   - **The app afterwards:** 150 MB after four panels. That is mostly freed blocks libmalloc keeps (49 MB large,
     33 MB small), as the panel's Vision reading left 110–125 MB before (Docs/perf.md, M2). Writing a 4K picture as
     TIFF, alone, leaves 1 MB.
+
+## The recognizer's head on the CPU (pack v2, 2026-10-17)
+
+Version 2 of the pack ends the recognizer at its encoder. The reader applies the last layer, the linear map from 120
+features to the 18,710 classes, in Accelerate (`PPOCRHead`). The text is the same as with version 1, and L2 reads a
+little faster. On full-screen captures the text reader needs less than half the memory for the pack alone, and about
+a third less for Vision with the pack.
+
+**Why the memory went** (a probe of the recognizer alone, each of the 12 widths in turn, 60 predictions each,
+`.cpuAndNeuralEngine`). Core ML ran the 18,710-class linear on the Neural Engine and the softmax after it on the CPU,
+so a [steps, 18,710] tensor crossed from the Neural Engine at every width. Core ML keeps that crossing's buffers for
+each width it has used:
+
+| Recognizer | Over the loaded model, all 12 widths | At 4000 wide, p50 |
+| --- | --- | --- |
+| Version 1: probabilities out, [1, steps, 18,710] | +762 MB | 17.7 ms |
+| The likeliest class and its probability out (reduce_max, reduce_argmax) | +755 MB | 15.7 ms |
+| Version 1 on the CPU alone | +187 MB | 29.9 ms |
+| The encoder alone, [1, steps, 120] out | +190 MB | 5.2 ms |
+| The encoder, then the head in Accelerate (version 2) | +99 MB | 15.5 ms |
+
+Tried and dropped:
+
+- **The likeliest class at the output** (`L2 beside L1` › Not done yet): the linear stays on the Neural Engine, and
+  so does the cost.
+- **The head kept in 32-bit floats inside the one model,** so that only it would run on the CPU: Core ML put the whole
+  graph on the CPU (168 operations, none on the Neural Engine).
+- **The recognizer on the CPU** (`.cpuOnly`, the detector left on the Neural Engine). The two drawn pages below were
+  read whole, before `PPOCRReader` read in pieces: 374 and 688 MB, in 2.7 and 9.4 s. The probe's own encoder and head,
+  measured the same way, took 341–356 and 594–601 MB, in 2.4 and 7.7–8.1 s. On the CPU the text also differed, by 6
+  and 18 characters of content, as the CPU rounds 16-bit floats otherwise. It would have needed a setting per model
+  in `config.json` as well, whose hash the catalog pins.
+
+**The pack** (`Tools/model-packs/ppocr_pack.py`, `config.json` format 2):
+
+- **`rec.mlpackage`** outputs `features`, [1, W/8, 120].
+- **`head.bin`** holds the layer's weights, 18,710 × 120 row by row, then its 18,710 biases, as little-endian 16-bit
+  floats (4,527,820 bytes).
+- **`config.json`** names it: `"head": {"file": "head.bin", "type": "float16", "inputs": 120, "classes": 18710}`.
+- **`convert` checks the split:** the encoder's output through the head is 9.3e-6 from the whole model's
+  probabilities. The 16-bit head picks the ONNX export's class at every step.
+- **`check` applies the head in NumPy:** mean content CER 2.40% over the 38 cases scored, as for version 1. No
+  case's CER changed; one real case swaps one wrong character for another.
+- **`assemble --detection <version 1>`** takes the published detector, after checking its weights are the ones
+  converted. A new conversion writes the same weights with another date and other identifiers. So `det.mlpackage`
+  and `characters.txt` are version 1's files, byte for byte.
+- **Size:** 11 files, 15,829,753 bytes, against version 1's 10 files and 15,829,675. The recognizer's weights went
+  from 10,543,020 bytes to 6,015,024 plus the head.
+
+**Reading.** `PPOCRConfiguration` reads format 1 without a head and format 2 with a `float16` head, and refuses
+anything else. `PPOCRReader.load` reads `head.bin` once, checks its size against the head's classes and inputs, and
+checks the classes against the characters. It keeps the weights as 32-bit floats, turned (9 MB). For each line, the
+reader:
+
+1. multiplies 32 steps of features at a time by the weights (`vDSP_mmul`), and adds the biases
+2. takes each step's likeliest class as its largest logit (`vDSP_maxvi`)
+3. works out the softmax only at a step CTC keeps: 1 / Σ exp(logit − the largest)
+
+A format-1 pack reads as before.
+
+**Two drawn pages, whole L2 readings** (`PPOCRReader.load` and `recognize` in a Release probe, in `PictureText`'s
+pieces with `PieceMerge` between them). Three readings each, peak = the ledger's peak footprint:
+
+| Page | Version 1 | Version 2 |
+| --- | --- | --- |
+| 3840 × 2160, dense Chinese, Japanese, and Latin, 122 lines (one piece) | 1484–1495 MB, 3.0–3.1 s | 357–363 MB, 1.9–2.0 s |
+| 2560 × 9000, 549 lines (five pieces) | 1509–1561 MB, 12.0–12.3 s | 323–324 MB, 9.0–9.3 s |
+
+Every line read the same content; 8 lines on each page differ in spaces alone.
+
+**The benchmark** (`ocr-bench --engine l1 --engine l2 --engine l1+l2 --pack DIR --real DIR`, one build, a fresh copy
+of each pack, Release; the second round's times):
+
+| Mean CER, version 1 → version 2 | Content | Raw | Cases worse | Output |
+| --- | --- | --- | --- | --- |
+| L1 with L2, 40 cases | 1.48% → 1.48% | 3.33% → 3.33% | none | identical in 40 |
+| L1 with L2, the 12 real regions downscaled | 4.69% → 4.69% | 9.45% → 9.45% | none | identical in 12 |
+| L2 alone, 40 cases | 7.49% → 7.49% | 11.70% → 11.69% | none | the same content in 40; one case's spaces differ |
+
+| Time per case | p50 | p95 | Max |
+| --- | --- | --- | --- |
+| L2 alone | 126 → 113 ms | 933 → 766 ms | 4032 → 2853 ms |
+| L1 with L2 | 306 → 294 ms | 822 → 778 ms | 7690 → 6345 ms |
+
+**SecondReading's 0.9 gates.** The two packs' line confidences differ:
+
+- **Lines read alike, over the benchmark and the downscaled regions** (52 pictures, 1214 lines, all but two read
+  alike): 0.0127 at most.
+- **Lines between 0.85 and 0.95:** 0.0007 at most (48 lines). The 0.0127 is on a line above 0.95.
+- **The line closest to 0.9:** 0.9005 with version 1, 0.9002 with version 2.
+
+No line crosses 0.9 either way.
+
+**The text reader** (Helpers/TextReader/main.swift, built from the shell with SwiftPM in Debug, the same code for
+both packs, a new process per reading, peak = `/usr/bin/time -l`'s peak footprint, the models compiled; the first
+reading with Vision in a new build, 38 s, was read again). These
+pictures are the full-screen captures and the tallest capture in the history, as in › L2 beside L1. That section's
+numbers came from the app's own build of the reader, so only the two columns here compare exactly.
+
+| Picture | The pack alone (the OCR panel), v1 → v2 | Vision with the pack (the history), v1 → v2 |
+| --- | --- | --- |
+| Full-screen captures, 2000–4112 wide (10) | 464–724 → 174–327 MB, 1.1–2.9 → 1.0–2.3 s | 640–931 → 394–611 MB, 1.7–4.6 → 1.6–3.8 s |
+| Of them, the four 4K ones | 636–724 → 324–327 MB | 816–931 → 603–611 MB |
+| The tallest, 3346 × 16811, four runs | 982–1014 → 806–808 MB, 4.9–5.6 → 4.4–4.7 s | 1145–1232 → 925–981 MB, 7.5–8.4 → 7.1–7.7 s |
+| All 11 in one process, as the history is read again | — | 1236 → 1066 MB, 35.9 → 32.1 s |
+
+| One process, warm, the 10 full-screen captures three times | p50 | p95 |
+| --- | --- | --- |
+| The pack alone | 1.63 → 1.39 s | 2.99 → 2.28 s |
+| Vision with the pack | 2.49 → 2.15 s | 4.22 → 3.72 s |
+
+The answers were byte for byte the same with both packs, for all 11 pictures in both modes.
+
+**On the tallest capture,** what is left is detection, not the recognizer:
+
+- Decoding the picture peaks at 266 MB by itself.
+- The footprint then climbs with each of its ten pieces, 280 to 510–640 MB, all read as 1280 × 4096 bands. The
+  detector's probability map crosses from the Neural Engine too.
+- With version 1, the first piece's recognition alone added 400 MB.
+
+`PPOCRTests` (20; 2 new) cover the format-2 configuration rules, the head decoding as `decode` does over its
+softmax, across the 32-step chunks, and a head file's layout and sizes. `aDrawnPageReadsBack` passes with either pack.
+
+**Published** (2026-10-17, with the user's OK): the 11 files as commit `787b19abc12b19a2b3faa3258777a330036ef222` of
+MoraxCheng/ohmyshot-ppocrv6-small-coreml, on top of version 1's `f163489`, which still serves version 1.
+
+- **Anonymous download at that commit:** every file has its listed size and SHA-256. A `Range` request on `head.bin`
+  answers 206.
+- **Listed:** `ModelPackCatalog.ppocrV6Small` is version 2, its mirror that commit's `resolve/` address.
+  `ModelPackTests.theL2PackIsTheOneUploaded` checks the commit, the 11 files, and their 15,829,753 bytes.
+- **What a build with it does:**
+  - It doesn't read version 1. Version 1's folder is removed as unused when Settings › Tools next reads the packs
+    (`ModelPackCenter.refresh`).
+  - L2 is off until version 2 is downloaded there: 15.8 MB, with the consent sheet again.
+  - Then the kept texts' reading, `ppocr-v6-small/2/merge-2`, reads the Chinese and Japanese captures again once.
+    They come out with the same text.

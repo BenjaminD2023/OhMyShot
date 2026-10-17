@@ -1917,7 +1917,7 @@ where it was, and the pack is read only in the text reader, which exits.
 
 - **The footprint is the recognizer's,** kept by Core ML for each of its enumerated widths a run has used: 13 MB at
   160 wide, 257 MB at 4000, 1.1–1.5 GB with all twelve. It is no leak, and nothing in the reader's code moved it
-  (Docs/ocr.md › L2 beside L1). A pack whose recognizer gives each step's likeliest class alone may shrink it.
+  (Docs/ocr.md › L2 beside L1). Pack v2 cuts it (› M6 — The recognizer's head on the CPU, below).
 - **Reading the history again after an install** keeps one reader of about 1 GB for as long as it has captures to
   read, at background priority.
 - **Release** read the pack alone 0.97–2.23 s on six of the captures, about a tenth faster: the time is the Neural
@@ -1934,3 +1934,34 @@ where it was, and the pack is read only in the text reader, which exits.
   | The OCR panel's second reading, four pictures | 0.35–2.69 s | 381–674 MB | 150 MB after four panels (one panel left 110–125 MB in M2) |
 
 - **For the M6 power gate:** idle numbers with a pack installed are not measured yet.
+
+## M6 — The recognizer's head on the CPU (pack v2, 2026-10-17)
+
+Pack version 2 applies the recognizer's last layer in Accelerate instead of on the Neural Engine (Docs/ocr.md › The
+recognizer's head on the CPU). It was measured against version 1 in the text reader, built from the shell with
+SwiftPM in Debug from the same code for both packs. Each reading ran in a new process, the models already compiled,
+with the peak from `/usr/bin/time -l`. Version 2 is published and listed in the catalog. The app reads it once it
+has been downloaded again in Settings (Docs/ocr.md › The recognizer's head on the CPU › Published).
+
+| Picture | The pack alone (the OCR panel's second reading) | Vision with the pack (the history's reading) |
+| --- | --- | --- |
+| Full-screen captures, 2000–4112 wide (10) | 464–724 → 174–327 MB, 1.1–2.9 → 1.0–2.3 s | 640–931 → 394–611 MB, 1.7–4.6 → 1.6–3.8 s |
+| Of them, the four 4K ones | 636–724 → 324–327 MB | 816–931 → 603–611 MB |
+| The tallest capture in the history, 3346 × 16811, four runs | 982–1014 → 806–808 MB, 4.9–5.6 → 4.4–4.7 s | 1145–1232 → 925–981 MB, 7.5–8.4 → 7.1–7.7 s |
+| All 11 in one process (the history read again) | — | 1236 → 1066 MB, 35.9 → 32.1 s |
+
+| Warm, one process, the full-screen captures three times | p50 | p95 |
+| --- | --- | --- |
+| The pack alone | 1.63 → 1.39 s | 2.99 → 2.28 s |
+| Vision with the pack | 2.49 → 2.15 s | 4.22 → 3.72 s |
+| `ocr-bench`, L2 alone, per case (Release) | 126 → 113 ms | 933 → 766 ms |
+| `ocr-bench`, L1 with L2, per case (Release) | 306 → 294 ms | 822 → 778 ms |
+
+- **The same text:** the reader's answers were byte for byte the same with both packs. `ocr-bench`'s mean content CER
+  stayed at 1.48% with no case worse (Docs/ocr.md).
+- **Full-screen captures** lose most of what Core ML kept for the recognizer's widths: the pack alone now needs no
+  more than Vision alone did (283–405 MB in › M6 — L2 beside L1 in the text reader, the app's own build).
+- **Tall captures** keep more. On the tallest, decoding the picture peaks at 266 MB by itself, and detection's
+  footprint climbs with each of its ten pieces, from 280 to 510–640 MB. Version 2 changes only the recognizer.
+- **The head's weights:** the reader holds them as 9 MB of 32-bit floats. Warming peaked at 47 MB, against 22 MB with
+  version 1.

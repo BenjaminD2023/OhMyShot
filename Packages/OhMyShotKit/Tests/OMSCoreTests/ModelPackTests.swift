@@ -216,10 +216,11 @@ struct ModelPackTests {
     @Test func theL2PackIsTheOneUploaded() {
         let pack = ModelPackCatalog.ppocrV6Small
         // Every mirror names a fixed revision, so a file never changes under its address.
-        #expect(pack.mirrors.allSatisfy { $0.absoluteString.contains("/resolve/f163489663ba2ef788f3389c61d21c7308cc554d/") })
-        #expect(pack.files.count == 10)
-        #expect(pack.size == 15_829_675)
-        #expect(Set(["det.mlpackage/Manifest.json", "rec.mlpackage/Manifest.json", "characters.txt", "config.json"]).isSubset(of: pack.files.map(\.path)))
+        #expect(pack.mirrors.allSatisfy { $0.absoluteString.contains("/resolve/787b19abc12b19a2b3faa3258777a330036ef222/") })
+        #expect(pack.version == "2")
+        #expect(pack.files.count == 11)
+        #expect(pack.size == 15_829_753)
+        #expect(Set(["det.mlpackage/Manifest.json", "rec.mlpackage/Manifest.json", "head.bin", "characters.txt", "config.json"]).isSubset(of: pack.files.map(\.path)))
     }
 
     @Test func aFileIsFetchedByItsPathUnderTheMirror() {

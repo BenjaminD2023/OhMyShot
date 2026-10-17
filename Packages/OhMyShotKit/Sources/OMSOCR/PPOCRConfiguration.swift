@@ -4,6 +4,8 @@ import Foundation
 /// threshold, and normalization the reader uses comes from here, so a pack with other shapes or bands needs no
 /// change to the code.
 public struct PPOCRConfiguration: Decodable, Sendable, Equatable {
+    /// 1: the recognizer gives each class's probability at every step. 2: it gives its encoder's features, and the
+    /// reader applies its last layer (`Recognition.head`) and the softmax (Docs/ocr.md › The recognizer's head on the CPU).
     public var format: Int
     public var model: String
     /// "cpuAndNeuralEngine" or "cpuOnly". Never the GPU, whose path fails on these models on macOS 27 beta.
@@ -56,6 +58,17 @@ public struct PPOCRConfiguration: Decodable, Sendable, Equatable {
         public var spaceAfterCharacters: Bool
         /// A crop this many times taller than wide, or more, is vertical text, turned to lie as a line.
         public var verticalRatio: Double
+        /// Format 2's last layer of the recognizer, which the model's output goes through to the classes.
+        public var head: Head?
+    }
+
+    /// A linear map from `inputs` features at a step to the logits of `classes` classes: in `file`, the weights,
+    /// `classes` × `inputs` row by row, then the `classes` biases, each a `type` ("float16": little-endian 16-bit floats).
+    public struct Head: Decodable, Sendable, Equatable {
+        public var file: String
+        public var type: String
+        public var inputs: Int
+        public var classes: Int
     }
 
     /// The pack's configuration, refused when it is of a format this code doesn't know or makes no sense.
@@ -66,7 +79,14 @@ public struct PPOCRConfiguration: Decodable, Sendable, Equatable {
     }
 
     var problem: String? {
-        guard format == 1 else { return "format \(format) isn't known" }
+        switch (format, recognition.head) {
+        case (1, nil): break
+        case (2, let head?):
+            guard head.type == "float16", head.inputs > 0, head.classes > 0 else { return "a recognizer's head of no known kind" }
+        case (1, _?): return "format 1 with a recognizer's head"
+        case (2, nil): return "format 2 without a recognizer's head"
+        default: return "format \(format) isn't known"
+        }
         guard detection.channels == "BGR", recognition.channels == "BGR" else { return "only BGR channels are read" }
         guard detection.mean.count == 3, detection.std.count == 3, recognition.mean.count == 3, recognition.std.count == 3,
               (detection.std + recognition.std).allSatisfy({ $0 > 0 })

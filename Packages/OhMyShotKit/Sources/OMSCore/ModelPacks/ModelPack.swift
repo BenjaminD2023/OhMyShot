@@ -135,28 +135,31 @@ public enum ModelPackCatalog {
 
     /// PP-OCRv6 small, converted to Core ML by `Tools/model-packs/ppocr_pack.py` and published on Hugging Face
     /// (Docs/ocr.md › The L2 pack): the OCR panel and the history's search read Chinese and Japanese with it beside
-    /// Vision (Docs/ocr.md › L2 beside L1).
+    /// Vision (Docs/ocr.md › L2 beside L1). Version 2 applies the recognizer's last layer on the CPU (Docs/ocr.md › The
+    /// recognizer's head on the CPU). Version 1 isn't read by this build; its folder goes when Settings › Tools next
+    /// reads the packs (`ModelPackCenter.refresh`).
     public static let ppocrV6Small = ModelPack(
-        id: "ppocr-v6-small", version: "1",
+        id: "ppocr-v6-small", version: "2",
         name: "Chinese and Japanese Text",
         summary: "PP-OCRv6 small, by PaddlePaddle: reads Chinese and Japanese more accurately than macOS alone, in the OCR panel and in History’s search.",
         license: .init(name: "Apache-2.0", file: "LICENSE.txt", url: URL(string: "https://www.apache.org/licenses/LICENSE-2.0")!),
         original: URL(string: "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_safetensors")!,
         host: "Hugging Face",
         mirrors: [
-            URL(string: "https://huggingface.co/MoraxCheng/ohmyshot-ppocrv6-small-coreml/resolve/f163489663ba2ef788f3389c61d21c7308cc554d/")!,
+            URL(string: "https://huggingface.co/MoraxCheng/ohmyshot-ppocrv6-small-coreml/resolve/787b19abc12b19a2b3faa3258777a330036ef222/")!,
         ],
         files: [
-            .init(path: "LICENSE.txt", size: 12_908, sha256: "5f7fc4aa305806b58f7af85ebf9e53e6606c123ca072fd4a2c191d28be171b24"),
-            .init(path: "README.md", size: 2_755, sha256: "5651210cd5fae52ce84b66769b10a472b0ea5ce870b62200879a504456fddb8a"),
+            .init(path: "LICENSE.txt", size: 13_152, sha256: "c8e0ae636676938d6f308effebe902feec5c6c98db2a306e759f779e2500b0d2"),
+            .init(path: "README.md", size: 3_405, sha256: "e3b3abd7866b789e1f90c052ba86031fdfc694a3aca64bc1011b7e27aafd979d"),
             .init(path: "characters.txt", size: 74_947, sha256: "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d"),
-            .init(path: "config.json", size: 1_454, sha256: "532d3b8de4a7db91b44d6060d94b7af230e499220b9bf7d30cd44a59e2967844"),
+            .init(path: "config.json", size: 1_573, sha256: "da718a051053ee52587156345219bb486c6173b58e280c1e613af1b7ef92c8f8"),
             .init(path: "det.mlpackage/Data/com.apple.CoreML/model.mlmodel", size: 149_812, sha256: "8ff7967a757094778b2d9904e92cebe57085ee1b41e835c9fe058f65583814e1"),
             .init(path: "det.mlpackage/Data/com.apple.CoreML/weights/weight.bin", size: 4_917_760, sha256: "760b5b4d71b54fae8521b0ed0e9e6472dbfc7dc4daba64127d0f5dd0e43c521f"),
             .init(path: "det.mlpackage/Manifest.json", size: 617, sha256: "51c190e89418bc3bd8d58eb9703a578be8db3ad85e056405169c7865ac9ab667"),
-            .init(path: "rec.mlpackage/Data/com.apple.CoreML/model.mlmodel", size: 125_785, sha256: "b7eea06ca12d55de352406e8154fd5766d035e2a44c72a7e88be34ddf4d9fd47"),
-            .init(path: "rec.mlpackage/Data/com.apple.CoreML/weights/weight.bin", size: 10_543_020, sha256: "737e0cf4201e3d9af0f94a8ced930d0957387c5f97947468f18da5ed89d11f61"),
-            .init(path: "rec.mlpackage/Manifest.json", size: 617, sha256: "ff90ccc14f03204f7684eb7213feaf9faf509395dd18bc9758b6a738b6455986"),
+            .init(path: "head.bin", size: 4_527_820, sha256: "2e46ec25a70df159e08416387a955e29cf6417fe30430432d8fcc749363c70b0"),
+            .init(path: "rec.mlpackage/Data/com.apple.CoreML/model.mlmodel", size: 125_026, sha256: "2cfe1669a442be5359e1c9b6c4b6241791725fb2254d1c19d0522d257c1fc386"),
+            .init(path: "rec.mlpackage/Data/com.apple.CoreML/weights/weight.bin", size: 6_015_024, sha256: "e77f341e2272fb38cfc10e47e11983a457d7a1482a8f642a82247c4c8b552ba0"),
+            .init(path: "rec.mlpackage/Manifest.json", size: 617, sha256: "7f9aac7a4737bead51fc016ebc1cceb14a694a44e64a7bac8ef0edc3dbfab11e"),
         ]
     )
 }
