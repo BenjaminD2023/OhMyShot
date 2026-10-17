@@ -965,6 +965,17 @@ struct AutomationSettingsView: View {
 
 struct AboutSettingsView: View {
     var body: some View {
+        // In a scroll view like the other panes, so the toolbar above stays clear rather than drawing its own
+        // grey background over a pane with nothing to scroll.
+        ScrollView {
+            about
+                .containerRelativeFrame([.horizontal, .vertical])
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(minWidth: paneWidth, maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var about: some View {
         VStack(spacing: 6) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
@@ -981,7 +992,6 @@ struct AboutSettingsView: View {
                 .padding(.top, 6)
         }
         .padding(28)
-        .frame(minWidth: paneWidth, maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private static func info(_ key: String) -> String? {
