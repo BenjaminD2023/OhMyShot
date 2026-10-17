@@ -8,7 +8,9 @@ import UniformTypeIdentifiers
 /// PNG goes on eagerly; TIFF, which some older apps read instead, is produced only if an app asks for
 /// it, because a full-display TIFF is tens of megabytes. Until then only the PNG is held, never the picture's
 /// pixels, which for a long scrolling capture are hundreds of megabytes; past `largestTIFF` pixels no TIFF is
-/// offered at all.
+/// offered at all. Once made, the TIFF stays in the app for as long as the capture is on the clipboard, so it
+/// is compressed (LZW, which every TIFF reader takes): an interface's screenshot comes to a tenth of its pixels'
+/// size or less, a photo's to about a third, for 0.3–0.8 s on the main thread at a 6K display's size.
 public enum PasteboardWriter {
     /// The most pixels a picture offered as TIFF may have: about a 6K display's.
     static let largestTIFF = 24_000_000
@@ -41,6 +43,9 @@ public enum PasteboardWriter {
 }
 
 private final class LazyTIFFProvider: NSObject, NSPasteboardItemDataProvider {
+    /// TIFF's compression tag for LZW.
+    private static let lzw = 5
+
     private let png: Data
 
     init(png: Data) {
@@ -52,7 +57,8 @@ private final class LazyTIFFProvider: NSObject, NSPasteboardItemDataProvider {
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.tiff.identifier as CFString, 1, nil) else { return }
-        CGImageDestinationAddImage(destination, image, nil)
+        let compressed = [kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: Self.lzw]] as CFDictionary
+        CGImageDestinationAddImage(destination, image, compressed)
         guard CGImageDestinationFinalize(destination) else { return }
         item.setData(data as Data, forType: .tiff)
     }

@@ -47,6 +47,32 @@ struct PasteboardWriterTests {
         #expect(urls?.first?.lastPathComponent == "OhMyShot Test.jpg")
     }
 
+    @Test func theTIFFAskedForIsCompressedAndThePicture() throws {
+        let pasteboard = makePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let (image, png) = try picture()
+        PasteboardWriter.write(png: png, image: image, to: pasteboard)
+        let tiff = try #require(pasteboard.data(forType: .tiff))
+        let source = try #require(CGImageSourceCreateWithData(tiff as CFData, nil))
+        let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let fields = try #require(properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any])
+        #expect(fields[kCGImagePropertyTIFFCompression] as? Int == 5)
+        let read = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        #expect(read.width == image.width && read.height == image.height)
+        // The same color as the picture's, drawn the same way.
+        #expect(try color(of: read) == color(of: image))
+    }
+
+    private func color(of image: CGImage) throws -> [UInt8] {
+        let context = try #require(CGContext(
+            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let bytes = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        return Array(UnsafeBufferPointer(start: bytes, count: 4))
+    }
+
     @Test func aFileAloneGoesOnAsFinderCopiesIt() throws {
         let pasteboard = makePasteboard()
         defer { pasteboard.releaseGlobally() }

@@ -1786,3 +1786,92 @@ Release build of the pipeline, warm, over the 18 captures in this Mac's Capture 
   2173 × 4242 once, and the bands of 3499 × 8440 once), against 0.2–0.7 s when it ran normally and on every rerun;
   the app's 30 s timeout then returns no tables without an error. Other processes using Vision at the time cannot
   be ruled out.
+
+## M5 — power gate (2026-10-17)
+
+Debug build of `ba3234b` with this gate's changes, the same machine and displays, a fresh launch. Every step ran
+through the app's own hidden demos (behind the desktop picture, or made up in memory), so nothing of the user's
+was read, shown, or copied: a scrolling capture of the demo window through the coordinator (`debug/scroll-flow`),
+a long one made up in memory, 3346 × 17650 from 137 views (`debug/scroll-long`), a drawn page added to the history,
+read for search by the text reader and found in English and Chinese, then removed (`history-add`,
+`history-search`, `history-remove-tests`), All-In-One's bars (`allinone-render`), each display's desktop picture
+as window backgrounds take it (`wallpaper-check`), and the Shortcuts action Recognize Text in Image on a drawn page
+(`shortcut-recognize`); then 30 s of nothing before a 60 s `Scripts/power-sample.sh`. Footprints are taken a few
+seconds after each step, before and after an event of the app's own (`debug/end-event-wait`, below); the table
+gives the first.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Idle after launch, 60 s | 0.00% CPU, 0 wakeups, 24 MB | 0.0%, < 60, < 30 MB |
+| Footprint after each step: scrolling capture / long scrolling capture / read for search / All-In-One / desktop picture / Recognize Text | 72 / 99 / 59 / 63 / 63 / 119 MB | — |
+| The long scrolling capture: stitching (Debug) / highest footprint | 20.3 s (0.15 s a view) / 505 MB | — |
+| The text reader, reading the page for search | 252 MB at most, in its own process, gone when it exits | gone after use |
+| Idle after the tour, 60 s | 0.00% CPU, 0 wakeups, 119 MB | 0.0%, < 60, < 60 MB |
+| Live resources and the app's own processes after the tour | none | none when idle |
+| Live heap after the tour | 22.7 MB of the default zone's 86.5 MB dirty | — |
+
+The Dev app this gate replaced had been in the user's own use for 6.5 hours (the morning's live checks of M5:
+Settings, History, captures). It stood idle at 101 MB with no live resources.
+
+The idle targets hold, and the app is idle after use: no CPU, no wakeups, nothing live, no helper still running.
+The footprint after use is over its budget, 119 MB against 60, and in-process reading for the Shortcuts action is
+the largest part of it. Without that step this run would have ended at 63 MB, still over the budget. That is one
+run, in a footprint that swung by 40 MB between steps.
+
+- **The Shortcuts action reads text in the app's own process.** It added 56 MB (63 → 119), and Vision's models
+  stay loaded after it (Espresso's and E5RT's objects still alive). This is M2's cost of reading in the app
+  (Capture Text leaves the app at 61–70 MB). The history's search reads in the text reader instead, so the app did
+  not grow on that step.
+- **The rest is the allocator's.** After the tour only 22.7 MB of the default zone's 86.5 MB dirty is allocated
+  (41.6 MB of it in small-block regions with nothing in them), and 25.4 MB sits in empty large blocks, as after the
+  scrolling picture's PNG in M5 — Scrolling capture. `malloc_zone_pressure_relief` returned none of it (101 MB
+  before and after it, after the long capture). With nothing in use, the footprint rose and fell by tens of
+  megabytes between steps as the allocator reused or let go of what it keeps: 99 → 59 MB over the read for
+  search here; 116 → 71 MB at the desktop picture in an earlier run.
+- **A closed editor stayed whole until the app's next event** (found here, not new). Ten seconds after the editor
+  closed, its session, canvas, view model, and content view were still alive; only the window controller had gone.
+  `leaks` traced them to the window through the application's current event (the last event the app took, here
+  one that went to the editor's window) and through stale dispatch continuations. In scripted runs the app is
+  never active, so nothing came until a later hook showed a window; in use, it would be the next click or key
+  press, though that was not checked in use (a click in another app deactivates the app, which is an event
+  too). `MemoryRelief.endEventWait()` now posts an event of the app's own once an editor has
+  been let go. None of the editor was alive 10 s after the close in every run since. With the demo editor, the
+  app went 24 → 98 MB open → 72 MB closed; before the fix it was 128 MB open → 156 MB closed. Part of what stays
+  is the demo's own: the drawn page is made with Core Image, and reading it on the CPU leaves about 30 MB that a
+  real capture would not (M3). For every other step the event changed nothing (72 → 70 MB after the scrolling
+  capture, the same elsewhere): it is not why the footprint stays up.
+- **A capture on the clipboard kept a full-size TIFF in the app** (found here, not new). One of the user's own
+  captures, 2694 × 2385, was on the clipboard during a run. Once an app had asked for TIFF, a 24.5 MB region of
+  the app held it: the uncompressed TIFF, 25.7 MB, kept by the pasteboard item for as long as the capture stays on
+  the clipboard. At `largestTIFF` (24 million pixels) it would be 96 MB. The lazy TIFF is now LZW-compressed. On
+  pictures the app drew itself:
+
+  | Picture | Uncompressed TIFF | LZW |
+  | --- | --- | --- |
+  | 1280 × 6474 scrolled page | 32.4 MB in 33 ms | 3.1 MB in 127 ms |
+  | 1840 × 1396 editor render | 10.0 MB in 14 ms | 1.2 MB in 49 ms |
+  | 2000 × 1240 All-In-One render | 9.7 MB in 5 ms | 134 KB in 30 ms |
+  | 6880 × 2880 drawn interface, PNG decoding included | 79.3 MB in 70 ms | 1.7 MB in 305 ms |
+  | 6880 × 2880 drawn gradients with noise (photo-like), PNG decoding included | 79.3 MB in 152 ms | 30.0 MB in 770 ms |
+
+  The price is time on the main thread, where the TIFF is made when an app asks for it. A clipboard manager asks
+  right after a copy, while the card comes in. For a full 6880 × 2880 display that is 0.3 s for an interface and
+  0.8 s for a photo-like capture, against 0.07–0.15 s uncompressed. PackBits was faster (19 ms) but kept 9.0 of
+  the editor render's 10.0 MB. Deflate made the interface smaller (0.7 MB in 234 ms) but took 2.2 s and 50.7 MB
+  on the photo-like one. The compression and the picture's colors are checked by a test. The app itself was not
+  measured with it, as that takes the real clipboard.
+- **The scrolling demo kept its page after it closed** (the debug demo only). AppKit kept the closed demo window,
+  and with it the page's picture: 31 MB of image and a 33 MB copy in its layer. This left 134 MB after the
+  scrolling capture. The demo now lets the picture go when it closes: 72 MB.
+- **Three of the four runs had the user's own use in them.** The Dev app is now the user's screenshot tool, and
+  the log showed a Capture Area, a Capture Text, and the 2694 × 2385 capture above (pasted) during them. The
+  numbers above are from the fourth run, checked against the log: no hotkey, overlay, or capture between its
+  start and its end. Measuring in an isolated build (M5 — Capture History memory) would avoid this, but such a
+  build has no Screen Recording grant of its own, so it cannot capture.
+
+Not part of this gate, because each shows something on screen, reads the user's own data, or needs a setup this
+session does not have: uploads (the local storage servers belonged to an earlier session's scratchpad, and an
+upload adds a record to the user's upload list), the History window (M5 — Capture History memory: 52–57 MB after
+it closes), printing (the panel shows the real printer), the Share extension (off until the user turns it on),
+Open With (opens a window and adds to the history), All-In-One in a live overlay, and Quick Access cards. The
+design gate and the macOS 26 smoke test were not run either.

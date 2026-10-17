@@ -74,6 +74,7 @@ final class AnnotationCoordinator {
                 Task { @MainActor in
                     self?.editors[id] = nil
                     self?.onEditing?(id, false)
+                    MemoryRelief.endEventWait()
                     MemoryRelief.returnFreedPages()
                 }
             }
@@ -162,6 +163,7 @@ final class AnnotationCoordinator {
             editor.onClose = { [weak self] in
                 Task { @MainActor in
                     self?.projectEditors[file] = nil
+                    MemoryRelief.endEventWait()
                     MemoryRelief.returnFreedPages()
                 }
             }

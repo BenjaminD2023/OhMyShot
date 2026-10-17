@@ -733,7 +733,7 @@ private final class DemoWindow: NSWindow {
     /// Closes the window and lets its page go, which AppKit may hold on to a while with the window.
     func letGo() {
         close()
-        page.layer?.contents = nil
+        page.letGo()
         contentView = nil
     }
 
@@ -1097,6 +1097,12 @@ private final class PageView: NSView {
 
     override func updateLayer() {
         layer?.contents = picture
+    }
+
+    /// Drops the page's picture, which would otherwise stay as long as AppKit keeps the closed window.
+    func letGo() {
+        picture = nil
+        layer?.contents = nil
     }
 
     private static func drawForum(size: CGSize, scale: CGFloat, posts: [ForumPost]) -> CGImage? {

@@ -323,6 +323,11 @@ struct DebugHooks {
             // Hands freed heap pages back now, to tell freed-but-kept memory from memory still in use.
             MemoryRelief.returnFreedPages()
             Log.app.notice("debug.relief done")
+        case "end-event-wait":
+            // An event of the app's own, as the user's next click would bring: what waited on the run loop's
+            // autorelease pool and current event goes. Scripted runs never bring one (the app is never active).
+            MemoryRelief.endEventWait()
+            Log.app.notice("debug.end-event-wait posted")
         case "relaunch":
             Relauncher.relaunch()
         case "editor-demo":

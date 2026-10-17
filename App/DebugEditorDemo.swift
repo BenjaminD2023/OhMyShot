@@ -41,7 +41,10 @@ enum DebugEditorDemo {
             )
         )
         controller.onClose = {
-            Task { @MainActor in editor = nil }
+            Task { @MainActor in
+                editor = nil
+                MemoryRelief.endEventWait()
+            }
         }
         editor = controller
         if hidden { controller.showBehindWallpaper() } else { controller.show() }
