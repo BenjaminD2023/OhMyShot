@@ -52,6 +52,25 @@ final class CompositionRoot {
         return reader
     }()
     private lazy var pins = PinController(settings: settings, actions: makePinActions())
+    /// The model packs the build offers; reads nothing until Settings shows them.
+    private lazy var modelPacks: ModelPackCenter = {
+        let store = ModelPackStore.standard()
+        let center = ModelPackCenter(store: store, downloader: ModelPackDownloader(store: store))
+        // Said aloud, as uploads are: a download outlives the Settings window it started in.
+        center.onInstalled = { pack, _ in
+            Self.announce(String(localized: "“\(pack.name)” installed"))
+        }
+        center.onFailed = { pack, _ in
+            Self.announce(String(localized: "“\(pack.name)” couldn’t download"))
+        }
+        return center
+    }()
+
+    private static func announce(_ message: String) {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
+    }
     private lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
     private lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
     private lazy var recordings = RecordingCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions)
@@ -837,9 +856,30 @@ final class CompositionRoot {
 
     /// The text in a picture a shortcut hands over, read as Capture Text reads it; nothing is copied or shown.
     func textForShortcut(inImage data: Data, keepsLineBreaks: Bool) async throws -> String? {
-        guard let loaded = ImageLoader.load(data: data, fallbackScale: 1) else { throw ShortcutError.unreadableImage }
-        return await textCapture.text(in: loaded.image, joinLines: !keepsLineBreaks)
+        // A picture, without decoding it here.
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
+            throw ShortcutError.unreadableImage
+        }
+        // Read in the text reader, so the app is no larger after it (Docs/perf.md, M5 — power gate).
+        guard let helper = textReaderTool else {
+            guard let loaded = ImageLoader.load(data: data, fallbackScale: 1) else { throw ShortcutError.unreadableImage }
+            return await textCapture.text(in: loaded.image, joinLines: !keepsLineBreaks)
+        }
+        let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Shortcut \(UUID().uuidString)")
+        try data.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        do {
+            let text = try await TextReaderTool.text(ofPictureAt: file, joinsWrappedLines: !keepsLineBreaks, helper: helper)
+            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+        } catch let failure as TextReaderTool.Failure {
+            // As Capture Text's own reading did: no text, rather than an error.
+            Log.capture.error("Recognizing a shortcut's picture failed: \(String(describing: failure), privacy: .public)")
+            return nil
+        }
     }
+
+    /// The text reader inside the app, for readings someone waits on.
+    private var textReaderTool: URL? { Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader") }
 
     /// Pins a picture a shortcut hands over.
     func pinForShortcut(_ data: Data) throws {
@@ -1533,7 +1573,8 @@ final class CompositionRoot {
                 presets: { BackdropPresets.shared.all.map { SettingsDependencies.Backgrounds.Choice(id: $0.id, name: $0.name) } },
                 automatic: { BackdropPresets.shared.automatic?.id },
                 setAutomatic: { BackdropPresets.shared.setAutomatic($0) }
-            )
+            ),
+            modelPacks: modelPacks
         ))
         controller.onClose = { [weak self] in
             Task { @MainActor in
@@ -1547,6 +1588,15 @@ final class CompositionRoot {
     private func makeAutomationController() -> AutomationController {
         #if DEBUG
         let hooks = makeDebugHooks()
+        let modelPackHooks = DebugModelPackHooks(
+            center: { [unowned self] in modelPacks },
+            makeSettings: { [unowned self] in
+                let controller = makeSettingsWindow()
+                controller.onClose = nil
+                return controller
+            },
+            capture: { window, name in await hooks.captureHiddenWindow(window, name: name) }
+        )
         #endif
         return AutomationController(scheme: urlScheme, settings: settings) { [weak self] command in
             self?.perform(command)
@@ -1554,6 +1604,7 @@ final class CompositionRoot {
             self?.receiveShared(handoff)
         } debugHandler: { url in
             #if DEBUG
+            if modelPackHooks.handle(url) { return true }
             hooks.handle(url)
             return true
             #else

@@ -14,6 +14,7 @@ import UniformTypeIdentifiers
 ///   --real DIR         add real screenshots: DIR/NAME.png with its truth in DIR/NAME.txt (keep these
 ///                      outside the repository)
 ///   --save DIR         write each case's image and every engine's output to DIR
+///   --pack DIR         also run L2 ("l2") with the PP-OCR model pack in DIR (Tools/model-packs/ppocr_pack.py)
 ///   --json PATH        write every run, outputs included, as JSON
 ///   --write-baseline   record this run as the baseline for this major macOS version
 ///   --list             list engines and cases, then exit
@@ -65,7 +66,10 @@ struct OCRBench {
         let options = Options(CommandLine.arguments.dropFirst())
         let real = try options.realDirectory.map(Corpus.real(in:)) ?? []
         let corpus = (Corpus.all + real).filter { item in options.cases.isEmpty || options.cases.contains { item.id.hasPrefix($0) } }
-        var selected = options.engines.isEmpty ? engines : (engines + probes).filter { options.engines.contains($0.name) }
+        // L2 from a model pack's folder (Docs/ocr.md › The L2 pack), named "l2".
+        var packs: [any OCREngine] = []
+        if let folder = options.packDirectory { packs.append(try await PPOCRReader.load(from: folder)) }
+        var selected = options.engines.isEmpty ? engines + packs : (engines + probes + packs).filter { options.engines.contains($0.name) }
         if options.trace {
             // Each step and Vision request of L1, on standard error.
             selected = selected.map { engine in
@@ -182,6 +186,8 @@ struct Options {
     var saveDirectory: URL?
     var jsonPath: URL?
     var realDirectory: URL?
+    /// An installed PP-OCR model pack, read as the "l2" engine.
+    var packDirectory: URL?
     var writeBaseline = false
     var list = false
     /// Each step and Vision request of L1, on standard error.
@@ -196,6 +202,7 @@ struct Options {
             case "--save": saveDirectory = iterator.next().map { URL(filePath: $0) }
             case "--json": jsonPath = iterator.next().map { URL(filePath: $0) }
             case "--real": realDirectory = iterator.next().map { URL(filePath: $0, directoryHint: .isDirectory) }
+            case "--pack": packDirectory = iterator.next().map { URL(filePath: $0, directoryHint: .isDirectory) }
             case "--write-baseline": writeBaseline = true
             case "--list": list = true
             case "--trace": trace = true

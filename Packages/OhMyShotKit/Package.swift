@@ -57,6 +57,7 @@ let package = Package(
         // the main actor, so recognition and post-processing never block the UI.
         .target(
             name: "OMSOCR",
+            dependencies: ["OMSPixels"],
             swiftSettings: swiftSettings
         ),
         // The annotation canvas the editor and in-place annotation share. Main-actor by default; the
@@ -90,7 +91,7 @@ let package = Package(
         ),
         .testTarget(
             name: "OMSOCRTests",
-            dependencies: ["OMSOCR"],
+            dependencies: ["OMSOCR", "OMSPixels"],
             swiftSettings: swiftSettings
         ),
         .testTarget(

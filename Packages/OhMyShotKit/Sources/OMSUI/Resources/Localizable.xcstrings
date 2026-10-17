@@ -41,6 +41,16 @@
         }
       }
     },
+    "%@ of %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ of %2$@"
+          }
+        }
+      }
+    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {
@@ -1126,6 +1136,9 @@
           }
         }
       }
+    },
+    "A model pack reads text that macOS reads poorly on its own. It’s downloaded once, from %@, and stays on this Mac; nothing you capture leaves it." : {
+
     },
     "A name is made from this pattern for each capture and each file saved. {date} and {time} are when it was taken; {app} is the app in front; {window} is the window’s title, or the front window’s for an area; {counter} is a number that goes up by one with each file saved." : {
       "localizations" : {
@@ -3507,6 +3520,9 @@
         }
       }
     },
+    "Cancel Download" : {
+
+    },
     "Cancel Upload" : {
       "localizations" : {
         "es" : {
@@ -4254,6 +4270,9 @@
           }
         }
       }
+    },
+    "Checked before it’s used and kept on this Mac; nothing you capture is sent. Remove it any time in Settings › Tools." : {
+
     },
     "Choose" : {
       "localizations" : {
@@ -6151,6 +6170,16 @@
         }
       }
     },
+    "Couldn’t download · %@ of %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn’t download · %1$@ of %2$@"
+          }
+        }
+      }
+    },
     "Couldn’t open this file" : {
       "localizations" : {
         "es" : {
@@ -6797,6 +6826,9 @@
         }
       }
     },
+    "Download" : {
+
+    },
     "Download Languages…" : {
       "localizations" : {
         "es" : {
@@ -6830,6 +6862,12 @@
           }
         }
       }
+    },
+    "Download “%@”?" : {
+
+    },
+    "Downloading %@" : {
+
     },
     "Download…" : {
       "localizations" : {
@@ -8115,6 +8153,9 @@
         }
       }
     },
+    "From" : {
+
+    },
     "From now on, a capture is deleted when its Quick Access card closes, unless you saved it. This can't be undone." : {
       "localizations" : {
         "es" : {
@@ -9147,6 +9188,16 @@
         }
       }
     },
+    "Installed · %@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Installed · %1$@ · %2$@"
+          }
+        }
+      }
+    },
     "It is saved in “%@” as a .%@ file." : {
       "localizations" : {
         "en" : {
@@ -9220,6 +9271,9 @@
           }
         }
       }
+    },
+    "Its %@ are deleted from this Mac. Text is read without it until it’s downloaded again." : {
+
     },
     "Its saved keys and passwords are deleted from the Keychain. Files already uploaded stay where they are." : {
       "localizations" : {
@@ -9798,6 +9852,12 @@
           }
         }
       }
+    },
+    "License" : {
+
+    },
+    "License…" : {
+
     },
     "Line Breaks" : {
       "localizations" : {
@@ -10716,6 +10776,9 @@
           }
         }
       }
+    },
+    "Model packs" : {
+
     },
     "More" : {
       "localizations" : {
@@ -12383,6 +12446,9 @@
         }
       }
     },
+    "Original model" : {
+
+    },
     "Outline" : {
       "localizations" : {
         "es" : {
@@ -12617,6 +12683,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暫停於 %@"
+          }
+        }
+      }
+    },
+    "Paused · %@ of %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Paused · %1$@ of %2$@"
           }
         }
       }
@@ -18329,6 +18405,9 @@
         }
       }
     },
+    "The license isn’t on this Mac." : {
+
+    },
     "The microphone stopped sending sound. It may have been disconnected." : {
       "localizations" : {
         "es" : {
@@ -20618,6 +20697,9 @@
           }
         }
       }
+    },
+    "“%@” License" : {
+
     }
   },
   "version" : "1.0"

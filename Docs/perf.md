@@ -1875,3 +1875,31 @@ upload adds a record to the user's upload list), the History window (M5 — Capt
 it closes), printing (the panel shows the real printer), the Share extension (off until the user turns it on),
 Open With (opens a window and adds to the history), All-In-One in a live overlay, and Quick Access cards. The
 design gate and the macOS 26 smoke test were not run either.
+
+## M6 — Model pack downloads (2026-10-17)
+
+Debug build, the same machine, a fresh launch. A made-up 25 MB pack was served from this Mac at full speed
+(`Tools/model-packs/lab-server.py`), downloaded with `debug/modelpack-act` with Settings closed, then removed
+(Docs/ocr.md › Model packs). No hotkey, overlay, or capture showed in the log during the run.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Idle after launch, 60 s | 0.00% CPU, 0 wakeups, 24 MB (as before the packs) | 0.0%, < 60, < 30 MB |
+| Footprint after the download | 39 MB | — |
+| Idle after it, 60 s | 0.00% CPU, 0 wakeups, 39 MB, no live resources | 0.0%, < 60, < 60 MB |
+
+- **Nothing at launch.** The center is made when Settings or a hook first asks for it. It reads the disk only
+  when the Tools pane appears.
+- **The 15 MB a first download leaves** (24 → 39 MB) was not looked into: it is the first use of the network
+  stack in the process, plus whatever the allocator keeps.
+
+## M6 — Recognize Text in Image, read beside the app (2026-10-17)
+
+Debug build, a fresh launch, `debug/shortcut-recognize` (the Shortcuts action on a drawn page, nothing shown or
+copied). The action now hands the picture to the text reader (`TextReaderTool`) instead of reading it in the app.
+
+| Measurement | Before (M5 — power gate) | Now |
+| --- | --- | --- |
+| The app's footprint across the action | +56 MB, kept (63 → 119 MB) | 24 → 31 MB |
+| The text read | 401 characters, 23 lines | the same |
+| The text reader | — | 252 MB at most, in its own process, gone when it exits |

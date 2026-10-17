@@ -14,6 +14,7 @@ public enum Log {
     public static let display = Logger(subsystem: subsystem, category: "display")
     public static let history = Logger(subsystem: subsystem, category: "history")
     public static let hotkeys = Logger(subsystem: subsystem, category: "hotkeys")
+    public static let modelPacks = Logger(subsystem: subsystem, category: "modelPacks")
     public static let performance = Logger(subsystem: subsystem, category: "performance")
     public static let permissions = Logger(subsystem: subsystem, category: "permissions")
     public static let recording = Logger(subsystem: subsystem, category: "recording")

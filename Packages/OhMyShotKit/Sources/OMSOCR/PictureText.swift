@@ -20,10 +20,15 @@ public enum PictureText {
 
     /// The text of the picture in the file at `url`.
     public static func read(fileAt url: URL, pipeline: VisionPipeline) async throws -> String {
+        try await read(image(at: url), pipeline: pipeline)
+    }
+
+    /// The picture in the file at `url`, decoded.
+    public static func image(at url: URL) throws -> CGImage {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
         else { throw OCRError.unreadableImage }
-        return try await read(image, pipeline: pipeline)
+        return image
     }
 
     public static func read(_ image: CGImage, pipeline: VisionPipeline) async throws -> String {

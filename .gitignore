@@ -3,6 +3,8 @@
 DerivedData/
 Packages/*/.build/
 Tools/*/.build/
+# Model packs as Tools/model-packs/ppocr_pack.py assembles them, before they go to Hugging Face
+Tools/model-packs/build/
 Packages/*/.swiftpm/
 .swiftpm/
 

@@ -20,6 +20,9 @@ public final class ActiveResources: Sendable {
         /// copy of the file with its form around it. Taken when the upload starts, ended when it finishes,
         /// fails or is cancelled.
         case upload
+        /// A model pack on its way from its host: a URL session and the file it writes to. Taken when the
+        /// download starts, ended when it finishes, fails, is paused, or is cancelled.
+        case download
     }
 
     public static let shared = ActiveResources()

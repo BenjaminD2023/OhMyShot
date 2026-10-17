@@ -71,6 +71,8 @@ public struct SettingsDependencies {
     /// The uploads that finished, which only the Sharing tab lists, and what it can do with each.
     public let uploadRecords: UploadRecordStore
     public let recordActions: UploadRecordActions
+    /// The model packs, which only the Tools tab shows, and only when the build offers one.
+    public let modelPacks: ModelPackCenter?
 
     /// What Settings › Sharing does with a finished upload.
     public struct UploadRecordActions {
@@ -139,7 +141,8 @@ public struct SettingsDependencies {
         destinations: UploadDestinationStore,
         uploadRecords: UploadRecordStore,
         recordActions: UploadRecordActions = .none,
-        backgrounds: Backgrounds = .none
+        backgrounds: Backgrounds = .none,
+        modelPacks: ModelPackCenter? = nil
     ) {
         self.settings = settings
         self.permissions = permissions
@@ -151,6 +154,7 @@ public struct SettingsDependencies {
         self.destinations = destinations
         self.uploadRecords = uploadRecords
         self.recordActions = recordActions
+        self.modelPacks = modelPacks
     }
 }
 
@@ -221,6 +225,23 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         navigator.query = query
     }
 
+    #if DEBUG
+    /// For scripted screenshots that show nothing: the window behind the wallpaper in the middle of the main
+    /// display, on `tab`, ordered in without making the app active.
+    public func showBehindWallpaper(_ tab: SettingsTab) {
+        guard let window else { return }
+        navigator.start(at: tab)
+        if windowLease == nil {
+            windowLease = ActiveResources.shared.acquire(.window)
+        }
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+        if let screen = NSScreen.screens.first {
+            window.setFrameOrigin(CGPoint(x: screen.frame.midX - window.frame.width / 2, y: screen.frame.midY - window.frame.height / 2))
+        }
+        window.orderFront(nil)
+    }
+    #endif
+
     public func windowWillClose(_ notification: Notification) {
         windowLease?.end()
         windowLease = nil
@@ -259,7 +280,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .recording:
             host(RecordingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
         case .tools:
-            host(ToolsSettingsView(settings: dependencies.settings))
+            host(ToolsSettingsView(settings: dependencies.settings, modelPacks: dependencies.modelPacks))
         case .sharing:
             host(SharingSettingsView(
                 settings: dependencies.settings, destinations: dependencies.destinations,

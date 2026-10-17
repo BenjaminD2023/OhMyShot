@@ -492,3 +492,196 @@ Runtime is out: its library alone exceeds the app's size budget, it spends ten t
 its Core ML provider recompiles for every size. For M6: a model pack of about 16 MB; compiled and warmed
 in the background once downloaded, so nobody waits the 21 s; a size grid (or tiles) that holds tall and
 wide regions without compiling too many sizes; never `.all` while the GPU path asserts.
+
+## Model packs (M6 step 1, 2026-10-17)
+
+A model pack is a set of files the app downloads to read what Vision reads poorly: a Core ML model and what
+goes with it, its license among them (`OMSCore/ModelPacks`). This step built the pack manager. No pack is
+published yet, so `ModelPackCatalog.packs` is empty and nothing in the app mentions packs (Settings shows the
+row only when the build offers one). The first pack is L2's PP-OCRv6 small (step 2). The process that will
+read with a pack is not built either. Step 2 decides it with L2, its first reader: the text reader extended
+into one reader beside the app, or an XPC service.
+
+**Listing.** Packs are listed in the app, never fetched from a server. Each lists its id and version, a name
+and summary for Settings, its license (a name, a link, and one of its own files holding the text, any NOTICE,
+and what was changed), the original model's page, the host's name, and its files (path, size, SHA-256). It
+also lists mirrors: base addresses tried in order, each naming a fixed revision. The host is Hugging Face, on
+the user's account (decided 2026-10-17); mirrors (hf-mirror.com, ModelScope) can be added to a listing later
+with no change to the code, since a file is its path under any of them and is kept only if it hashes right.
+`ModelPack.problem` refuses a listing with a path that is absolute, empty, `.`, or `..` in any part, a file
+listed twice, a size of 0, a SHA-256 that isn't 64 lowercase hex digits, a license file that isn't one of
+the files, or a mirror that isn't https ending in "/" (http on 127.0.0.1 too, in Debug builds).
+
+**Storage.** `Application Support/<bundle id>/Model Packs/<id>/<version>/` holds an installed version, its
+receipt (`Receipt.json`) written last. A download fills `<version>.download/`, each file arriving as
+`<path>.partial`, renamed once it checks out. The receipt is written into the download's folder and the folder
+is then renamed into place, so a version appears whole or not at all. An installed folder never moves. The
+Neural Engine keeps a compiled model's compilation by its path (L2 runtime), so what step 2 compiles from a
+pack's files stays valid there. Old versions and packs no longer listed are removed when Settings next looks.
+A paused download stays, across relaunches.
+
+**Downloading.** One `URLSession` per download, invalidated when it ends, and an `ActiveResources` lease
+(`.download`) while it runs. Progress is reported about a hundred times over a pack. Before it starts, the
+download checks for room: what is left to fetch plus 200 MB, on the volume. Each file is resumed with a
+`Range` request from the end of its partial file. The partial bytes are hashed first, then each chunk as it
+arrives. Answers are handled as follows:
+
+- **206 starting elsewhere than asked:** fails that mirror.
+- **200 to a range:** the file is started over.
+- **416:** what is there gets checked.
+- **A wrong size or SHA-256:** the file is thrown away and fetched once more from the start, from the next
+  mirror; a second failure fails the download.
+- **A mirror that fails (HTTP status, lost connection):** the next mirror is tried, and the partial file is
+  kept.
+
+Pausing or cancelling ends the task. Cancelling also removes what came.
+
+**Hugging Face answers this.** Probed 2026-10-17 on `PaddlePaddle/PP-OCRv6_small_rec_onnx/resolve/main/inference.onnx`
+(21,159,378 bytes):
+
+- The `resolve` address answers 302 to `us.aws.cdn.hf.co` (Xet).
+- The CDN answers `Range: bytes=1000-1999` with 206, 1000 bytes, and `Content-Range: bytes 1000-1999/21159378`.
+- URLSession keeps the `Range` header across the redirect.
+- The CDN's ETag is the file's SHA-256.
+
+**Asking first.** The first download of a pack opens a sheet with what it is, its size, where it comes from,
+links to its license and the original model, and the license's full text. The license file is fetched alone
+for that (`ModelPackDownloader.license(of:)`) and kept, so the download doesn't fetch it again. A pack whose
+download folder holds only its license counts as not started, so closing the sheet without agreeing never
+turns into a paused download that resumes without asking.
+
+**Checked.**
+
+- **`ModelPackTests` (17 tests, through a `URLProtocol` stub):**
+  - a pack downloads whole and installs
+  - a cut-off download resumes with `Range`
+  - a server ignoring `Range`
+  - a wrong partial file caught and fetched again
+  - a file damaged twice fails
+  - the next mirror after a 503
+  - every mirror down
+  - a full disk stops before any request
+  - cancelling keeps what came and the download goes on later
+  - unused versions and packs removed while a paused download stays
+  - the center's download, pause, resume, and remove
+  - a license read but not agreed to
+  - a failure's reason kept across refreshes
+  - path and listing checks
+- **In the Debug app, against `Tools/model-packs/lab-server.py`** (a made-up 25 MB pack served on 127.0.0.1 with
+  `Range`, at a set speed, dropping one connection on request):
+  - a download cut off at 6 MB, then resumed after a relaunch (`Range: bytes=6029312-`)
+  - paused at 9.9 MB, relaunched, and resumed (`bytes=9961472-`)
+  - installed with every file's SHA-256 right
+  - removed, leaving nothing in `Model Packs/`
+  - Settings rendered behind the wallpaper in every state, light and dark (`debug/modelpack-render`)
+
+## The L2 pack (M6 step 2, 2026-10-17)
+
+PP-OCRv6 small, converted again from PaddlePaddle's pinned revisions on Hugging Face by
+`Tools/model-packs/ppocr_pack.py` (`convert`, `check`, `assemble`; the spike's converted models were gone). The
+PyTorch weights match the ONNX exports to 1.3e-6 (detection) and 5.7e-5 (recognition) before conversion. The pack is
+16 MB in 10 files: the two models as fp16 ML programs, `characters.txt` (18,708 characters; the recognizer's 18,710
+classes are the blank, them, and a space), `config.json` (normalization, bands, thresholds, shapes), `LICENSE.txt`
+(PaddleOCR's Apache-2.0 LICENSE with what was changed; PaddleOCR has no NOTICE), and a model card.
+
+**Shapes, and reading in bands.** The spike's grid (24 detection sizes up to 1600 × 2560) skipped 6 of the 40 cases:
+regions taller or wider than its largest size, such as 2016 × 512, 64 × 2624, and the 4000 × 768 tall page. The pack
+reads a region as L1 reads a large picture instead:
+
+1. The region is scaled so its shorter side is at least 736 and its width at most 4096, each side then rounded to a
+   multiple of 32.
+2. It is cut into bands 1280 tall that overlap by 256. Each line belongs to the band whose core holds its center
+   (`PieceMerge`'s rule).
+3. Each band is padded with zeros up to the smallest of 8 detection shapes that holds it: 640 or 1280 tall, by 640,
+   1280, 2560, or 4096 wide.
+4. Recognition pads a line, 48 tall, up to one of 12 widths from 160 to 4000. The widest line in the benchmark is
+   2470.
+
+Scaling the shorter side up to 736 (transformers' preprocessing) instead of 64 (PaddleX's) read better here.
+
+| Benchmark, 38 cases scored (Korean and vertical Chinese left out) | Mean content CER |
+| --- | --- |
+| Flexible sizes, PaddlePaddle's processing, shorter side 64 / 736 | 2.81% / 2.59% |
+| The spike's grid, shorter side 64: the 32 cases it read (6 skipped) | 2.52% (the pack on the same 32: 1.89%) |
+| The pack, bands, shorter side 64 / 736 | 2.78% / 2.40% |
+
+Every case was read. Against the flexible-size reading at 736, the pack read a few cases worse: the editor with
+its gutter (+2.2 points), 13 px text (+2.3), and the forum title (+1.8). It read the social sidebar much better
+(0.7% against 8.7%; 16.7% at 64).
+
+**Speed, natively** (`Tools/l2-spike/probe.swift`, `.cpuAndNeuralEngine`):
+
+- **Compiling for the Neural Engine on first load:** 5.3 s for detection's 8 shapes and 5.6 s for recognition's 12
+  widths, 11 s in all against the spike's 21 s. A second load takes 34 ms.
+- **Where it runs:** detection entirely on the Neural Engine; recognition 94% there and 6% on the CPU.
+- **Warm detection:** 4 ms at 640 × 640, 16 ms at 1280 × 1280, 49 ms at 1280 × 4096.
+- **Warm recognition:** 2 ms at 320 wide, 8 ms at 1600, 23 ms at 4000.
+
+**Where it reads.** The pack will be read in the text reader, the process beside the app that already reads the
+history's text (decided 2026-10-17), not in an XPC service. The Shortcuts action Recognize Text in Image moved there
+first (`TextReaderTool`): the same text as before (401 characters, 23 lines on the drawn page), the reader at 252 MB
+at most and gone when it exits, and the app 24 → 31 MB, where reading in the app took it from 63 to 119 MB.
+
+**Published** (2026-10-17, with the user's OK on the name and the file list):
+[MoraxCheng/ohmyshot-ppocrv6-small-coreml](https://huggingface.co/MoraxCheng/ohmyshot-ppocrv6-small-coreml), public,
+so the app downloads it without signing in, at commit `f163489663ba2ef788f3389c61d21c7308cc554d`. Checks:
+
+- **Anonymous download at that commit:** every file has its listed size and SHA-256, and a `Range` request on the
+  10 MB weights answers 206.
+- **Listing:** `ModelPackCatalog.ppocrV6Small`, its mirror that commit's `resolve/` address. It is not in `packs`,
+  so Settings doesn't offer it: until the text reader reads with it, it would be 16 MB that change nothing.
+  `debug/modelpack-offer` offers it in Debug builds.
+- **Through the Debug app:** the consent sheet showed the license fetched from Hugging Face; the download took the
+  rest (the license was kept from the sheet); the installed files hashed right. Core ML compiled and loaded both
+  models from the installed folder: 5.5 s and 6.1 s on first load, then warm at 9 ms (detection, 640 × 1280) and
+  5 ms (recognition, 960 wide).
+
+**Read in Swift** (`OMSOCR/PPOCRReader`, 2026-10-17). Every size, threshold, and normalization comes from the pack's
+`config.json` (`PPOCRConfiguration`, which refuses a format or a shape set it can't use). The steps:
+
+- **Models:** compiled once into the pack's own folder (`Compiled/`). The Neural Engine keeps its own compilation of
+  them for readers signed alike: the Release reader loaded in 0.2 s a pack the Debug reader had compiled, so an update
+  of the app shouldn't pay it again. Programs signed otherwise don't share it: the Debug reader took 11 s on a pack
+  that `ocr-bench` and the test runner had compiled. A pack's first read takes those 11 s, so it is to be warmed in the
+  background once installed (`ModelPackCenter.onInstalled`), never on a read someone waits on.
+- **Detection:** the region is scaled and read in bands. Each band is padded up to a shape, and DBPostProcess turns
+  its probabilities into boxes: regions above the threshold (`OMSPixels/BinaryComponents`, built with optimization
+  always), their minimum-area rectangles, their mean probability, and the rectangle grown by the unclip ratio from
+  corners cut to whole pixels, as pyclipper is handed them. The boxes are put in PaddleOCR's reading order.
+- **Recognition:** each box is cut out with a cubic perspective warp, edges extended, and turned a quarter when it is
+  vertical. It is scaled to 48 pixels tall and padded up to a width, and CTC decodes it greedily.
+- **Pixels:** OpenCV's own rules (`OMSPixels/Resample`: `INTER_LINEAR` resizing, `INTER_CUBIC` warping with
+  `BORDER_REPLICATE`, `np.rot90`), so the models get what they got in the Python check. A first port with Core
+  Graphics and vImage scaling read 2.57%. vImage's affine warp counts y up from the bottom row, which first cut every
+  line from the mirrored place.
+
+| Benchmark, the same 40 cases (`ocr-bench --engine l2 --pack DIR`) | Mean content CER, 38 scored |
+| --- | --- |
+| The pack in Python (`ppocr_pack.py check`) | 2.40% |
+| The pack in Swift | 2.60% |
+| Flexible sizes, PaddlePaddle's processing, shorter side 736 | 2.59% |
+
+37 of the 40 cases are within half a point of Python's. Of the three that aren't, the social sidebar reads the same 23
+lines in another order: two boxes a pixel apart fall on either side of PaddleOCR's 10-pixel rule. The other two are
+within a point. The boxes are a pixel or two off Python's, from OpenCV's fixed-point resizing and contour tracing,
+which aren't copied. Swift's p50 is 123 ms and p95 872 ms (Release, warm, both models on the Neural Engine).
+
+**In the text reader.** A job with `"pack": "<an installed pack's folder>"` reads with L2, its reader loaded once a run.
+`TextReaderTool` takes the pack too. Run from the shell over two benchmark pictures:
+
+- **A fresh copy of the pack:** 11.3 s (compiling both models and the Neural Engine's first compile).
+- **Again, in a new process:** 0.37 s for both pictures, the load included.
+- **The reader's footprint:** about 350 MB at most, gone when it exits.
+
+`PPOCRTests` (18) cover the bands, rectangles, order, unclipping, boxes from a made-up map, CTC decoding, the
+resampling against OpenCV's values, the homography, and the configuration. `aDrawnPageReadsBack` reads a drawn page
+end to end when `OMS_L2_PACK` names a pack.
+
+**Not done yet:**
+
+- when L2 reads instead of L1 (the regions L1 reads poorly), and how its lines join L1's. Point it at regions: the
+  reader holds the picture at full size and a scaled copy, about half a gigabyte for a 3346 × 17650 history capture
+- warming a pack in the background once it is installed
+- listing the pack in `packs` once something reads with it
+- `debug/modelpack-l2-read` (the app's own run of the reader with the installed pack), built but not run: the user had
+  the Dev app's Settings open

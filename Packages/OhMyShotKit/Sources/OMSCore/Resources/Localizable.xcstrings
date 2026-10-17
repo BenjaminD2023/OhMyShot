@@ -143,6 +143,16 @@
         }
       }
     },
+    "Couldn’t download from %@. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn’t download from %1$@. %2$@"
+          }
+        }
+      }
+    },
     "Couldn’t find the bucket or folder." : {
       "localizations" : {
         "es" : {
@@ -789,6 +799,21 @@
         }
       }
     },
+    "It answered HTTP %lld." : {
+
+    },
+    "It didn’t answer over HTTP." : {
+
+    },
+    "It has another file there, of %lld bytes." : {
+
+    },
+    "It sent another part of the file than the one asked for." : {
+
+    },
+    "It sent more than the file." : {
+
+    },
     "S3-compatible storage" : {
       "localizations" : {
         "es" : {
@@ -1060,6 +1085,9 @@
           }
         }
       }
+    },
+    "The files couldn’t be saved: %@" : {
+
     },
     "The public address must start with http:// or https://." : {
       "localizations" : {
@@ -1617,6 +1645,16 @@
         }
       }
     },
+    "There isn’t enough space on this Mac: %@ is needed, %@ is free." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "There isn’t enough space on this Mac: %1$@ is needed, %2$@ is free."
+          }
+        }
+      }
+    },
     "This destination isn’t set up correctly: %@" : {
       "localizations" : {
         "es" : {
@@ -1684,6 +1722,9 @@
           }
         }
       }
+    },
+    "This model pack can’t be downloaded: %@" : {
+
     },
     "This uploader is for text or for shortening links, not for images or files." : {
       "localizations" : {
@@ -2296,6 +2337,9 @@
           }
         }
       }
+    },
+    "“%@” came down damaged twice." : {
+
     }
   },
   "version" : "1.0"

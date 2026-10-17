@@ -654,6 +654,7 @@ struct RecordingSettingsView: View {
 
 struct ToolsSettingsView: View {
     @Bindable var settings: SettingsStore
+    var modelPacks: ModelPackCenter?
     @State private var translationTargets: [Locale.Language] = []
 
     var body: some View {
@@ -680,6 +681,9 @@ struct ToolsSettingsView: View {
                     .task { translationTargets = await Translator.targets() }
                     InfoButton(Text("Automatic picks the first of your preferred languages that the text isn’t already in. Translation runs on this Mac; a language is downloaded the first time it’s needed.", bundle: .module))
                 }
+            }
+            if let modelPacks, !modelPacks.isEmpty {
+                ModelPacksRow(center: modelPacks)
             }
 
             SettingsDivider()
