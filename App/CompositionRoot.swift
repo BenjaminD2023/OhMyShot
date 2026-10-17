@@ -1705,8 +1705,8 @@ private extension SettingsTab {
             return
         }
         switch name {
-        // Backgrounds and what happens after a screenshot are in General.
-        case "wallpaper", "screenshots": self = .general
+        // Backgrounds are set where what happens after a screenshot is.
+        case "wallpaper": self = .screenshots
         // The cards have a tab of their own.
         case "quickaccess": self = .quickAccess
         // Pins and the reading tools.

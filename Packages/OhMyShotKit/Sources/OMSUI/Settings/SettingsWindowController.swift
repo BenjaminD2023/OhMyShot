@@ -5,18 +5,29 @@ import SwiftUI
 
 public enum SettingsTab: String, CaseIterable, Sendable {
     case general
+    case capture
+    case screenshots
     case quickAccess
     case recording
     case tools
     case sharing
     case shortcuts
-    case permissions
     case automation
+    case permissions
     case about
+
+    /// The sidebar's groups, in order.
+    static let groups: [[SettingsTab]] = [
+        [.general, .capture, .screenshots, .quickAccess, .recording, .tools],
+        [.sharing, .shortcuts, .automation],
+        [.permissions, .about],
+    ]
 
     var title: String {
         switch self {
         case .general: String(localized: "General", bundle: .module)
+        case .capture: String(localized: "Capture", bundle: .module)
+        case .screenshots: String(localized: "Screenshots", bundle: .module)
         case .quickAccess: String(localized: "Quick Access", bundle: .module)
         case .recording: String(localized: "Recording", bundle: .module)
         case .tools: String(localized: "Tools", bundle: .module)
@@ -31,6 +42,8 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     var symbolName: String {
         switch self {
         case .general: "gearshape"
+        case .capture: "viewfinder"
+        case .screenshots: "photo.on.rectangle"
         case .quickAccess: "rectangle.stack"
         case .recording: "record.circle"
         case .tools: "wrench.and.screwdriver"
@@ -141,35 +154,48 @@ public struct SettingsDependencies {
     }
 }
 
-/// The settings window: AppKit toolbar tabs hosting SwiftUI panes. It is created when opened and
-/// released when closed, so it costs no memory while hidden.
+/// The settings window: a sidebar of the panes beside the chosen one, each a SwiftUI pane. A pane is made the first
+/// time it is chosen; the window is created when opened and released when closed, so it costs no memory while hidden.
 public final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     public var onClose: (() -> Void)?
 
-    private let tabs: NSTabViewController
+    private let selection: SettingsSelection
+    private let detail: SettingsDetailController
     private var windowLease: ActiveResources.Lease?
 
     public init(dependencies: SettingsDependencies) {
-        let tabs = SettingsTabs()
-        tabs.tabStyle = .toolbar
-        for tab in SettingsTab.allCases {
-            let content = Self.makeContent(for: tab, dependencies: dependencies)
-            // The tab view controller passes the selected tab's title on to the window.
-            content.title = tab.title
-            let item = NSTabViewItem(viewController: content)
-            item.identifier = tab.rawValue
-            item.label = tab.title
-            item.image = NSImage(systemSymbolName: tab.symbolName, accessibilityDescription: tab.title)
-            tabs.addTabViewItem(item)
-        }
-        let window = NSWindow(contentViewController: tabs)
-        window.styleMask = [.titled, .closable]
-        window.toolbarStyle = .preference
+        let selection = SettingsSelection()
+        let detail = SettingsDetailController { tab in Self.makeContent(for: tab, dependencies: dependencies) }
+
+        let sidebar = NSHostingController(rootView: SettingsSidebar(selection: selection))
+        sidebar.sizingOptions = []
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        sidebarItem.canCollapse = false
+        sidebarItem.minimumThickness = Self.sidebarWidth
+        sidebarItem.maximumThickness = Self.sidebarWidth
+        let detailItem = NSSplitViewItem(viewController: detail)
+        detailItem.minimumThickness = paneWidth
+        let split = NSSplitViewController()
+        split.addSplitViewItem(sidebarItem)
+        split.addSplitViewItem(detailItem)
+
+        let window = NSWindow(contentViewController: split)
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        // An empty toolbar puts the pane's title beside the sidebar, as in System Settings.
+        window.toolbar = NSToolbar(identifier: "Settings")
+        window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        self.tabs = tabs
+        window.contentMinSize = NSSize(width: Self.sidebarWidth + paneWidth, height: 420)
+        window.setContentSize(NSSize(width: Self.sidebarWidth + paneWidth, height: 640))
+        self.selection = selection
+        self.detail = detail
         super.init(window: window)
         window.delegate = self
         window.center()
+        window.setFrameAutosaveName("Settings")
+
+        selection.onChange = { [weak self] tab in self?.display(tab) }
+        display(selection.tab)
     }
 
     @available(*, unavailable)
@@ -178,15 +204,13 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     }
 
     public func show(_ tab: SettingsTab) {
-        if let index = SettingsTab.allCases.firstIndex(of: tab) {
-            tabs.selectedTabViewItemIndex = index
-        }
+        selection.tab = tab
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }
         showWindow(nil)
         AppActivation.bringForward(window)
-        SettingsTabs.leaveNothingFocused(in: window)
+        Self.leaveNothingFocused(in: window)
     }
 
     public func windowWillClose(_ notification: Notification) {
@@ -195,15 +219,39 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         onClose?()
     }
 
+    private func display(_ tab: SettingsTab) {
+        detail.show(tab)
+        window?.title = tab.title
+        Self.leaveNothingFocused(in: window)
+    }
+
+    private static let sidebarWidth: CGFloat = 200
+
+    /// A pane leaves no control holding the keyboard when it is chosen: AppKit gives it to the first text field
+    /// (the file name pattern in Screenshots), all of it selected, where a stray key would replace it. After AppKit
+    /// has given the keyboard out, the window takes it back.
+    private static func leaveNothingFocused(in window: NSWindow?) {
+        DispatchQueue.main.async { [weak window] in
+            guard let window, window.firstResponder is NSText else { return }
+            window.makeFirstResponder(nil)
+        }
+    }
+
     private static func makeContent(for tab: SettingsTab, dependencies: SettingsDependencies) -> NSViewController {
         switch tab {
         case .general:
             host(GeneralSettingsView(
                 settings: dependencies.settings,
-                destinations: dependencies.destinations,
-                backgrounds: dependencies.backgrounds,
                 openHistory: dependencies.openHistory,
                 expiredCount: dependencies.expiredCount
+            ))
+        case .capture:
+            host(CaptureSettingsView(settings: dependencies.settings))
+        case .screenshots:
+            host(ScreenshotsSettingsView(
+                settings: dependencies.settings,
+                destinations: dependencies.destinations,
+                backgrounds: dependencies.backgrounds
             ))
         case .quickAccess:
             host(QuickAccessSettingsView(settings: dependencies.settings))
@@ -229,24 +277,82 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
 
     private static func host(_ view: some View) -> NSViewController {
         let controller = NSHostingController(rootView: view)
-        controller.sizingOptions = [.preferredContentSize]
+        // The window keeps its size whichever pane is chosen; a pane taller than it scrolls.
+        controller.sizingOptions = []
         return controller
     }
 }
 
-/// The tabs, which leave no control holding the keyboard when one is chosen: AppKit gives it to the first text field
-/// (the file name pattern in General), all of it selected, where a stray key would replace it.
-private final class SettingsTabs: NSTabViewController {
-    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
-        super.tabView(tabView, didSelect: tabViewItem)
-        Self.leaveNothingFocused(in: tabView.window)
+/// The pane the sidebar has chosen.
+@Observable
+private final class SettingsSelection {
+    var tab: SettingsTab = .general {
+        didSet { if tab != oldValue { onChange?(tab) } }
     }
 
-    /// After AppKit has given the keyboard out, the window takes it back.
-    static func leaveNothingFocused(in window: NSWindow?) {
-        DispatchQueue.main.async { [weak window] in
-            guard let window, window.firstResponder is NSText else { return }
-            window.makeFirstResponder(nil)
+    @ObservationIgnored var onChange: ((SettingsTab) -> Void)?
+}
+
+/// The list of panes down the window's left side, in groups.
+private struct SettingsSidebar: View {
+    @Bindable var selection: SettingsSelection
+
+    var body: some View {
+        List(selection: Binding(get: { selection.tab }, set: { if let tab = $0 { selection.tab = tab } })) {
+            ForEach(SettingsTab.groups.indices, id: \.self) { index in
+                Section {
+                    ForEach(SettingsTab.groups[index], id: \.self) { tab in
+                        Label {
+                            Text(tab.title)
+                        } icon: {
+                            Image(systemName: tab.symbolName)
+                        }
+                        .tag(tab)
+                    }
+                }
+            }
         }
+        .listStyle(.sidebar)
+    }
+}
+
+/// Holds the chosen pane, making each the first time it is chosen and keeping it after.
+private final class SettingsDetailController: NSViewController {
+    private let makeContent: (SettingsTab) -> NSViewController
+    private var panes: [SettingsTab: NSViewController] = [:]
+    private var current: NSViewController?
+
+    init(makeContent: @escaping (SettingsTab) -> NSViewController) {
+        self.makeContent = makeContent
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func loadView() {
+        view = NSView()
+    }
+
+    func show(_ tab: SettingsTab) {
+        let pane = panes[tab] ?? {
+            let pane = makeContent(tab)
+            panes[tab] = pane
+            addChild(pane)
+            return pane
+        }()
+        guard pane !== current else { return }
+        current?.view.removeFromSuperview()
+        pane.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(pane.view)
+        NSLayoutConstraint.activate([
+            pane.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            pane.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            pane.view.topAnchor.constraint(equalTo: view.topAnchor),
+            pane.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        current = pane
     }
 }

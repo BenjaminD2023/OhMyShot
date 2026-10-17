@@ -9,15 +9,14 @@ let paneWidth: CGFloat = 520
 
 /// A settings pane in the classic two-column layout: short labels right-aligned in the first column,
 /// controls in the second, and groups split by dividers. Explanations wait behind a help button rather
-/// than sitting under every row. The pane is as tall as its content, so the window fits each tab; a
-/// pane taller than the screen allows stops at that height and scrolls.
+/// than sitting under every row. The pane fills the window beside the sidebar, its rows at the top, and
+/// scrolls when they are taller than the window.
 struct SettingsPane<Rows: View>: View {
     /// How a row's label lines up with its controls: on the first line of text by default, or centered
     /// for controls without text, such as shortcut recorders.
     var alignment: Alignment = .leadingFirstTextBaseline
     var spacing: CGFloat = 12
     @ViewBuilder var rows: Rows
-    @State private var contentHeight: CGFloat?
 
     var body: some View {
         ScrollView {
@@ -29,17 +28,7 @@ struct SettingsPane<Rows: View>: View {
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom
-        } action: { _, height in
-            contentHeight = height.rounded(.up)
-        }
-        .frame(width: paneWidth, height: contentHeight.map { min($0, Self.maxHeight) })
-    }
-
-    /// The screen's height less the window's title bar and toolbar, and a margin.
-    private static var maxHeight: CGFloat {
-        (NSScreen.main?.visibleFrame.height ?? 800) - 140
+        .frame(minWidth: paneWidth, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -101,18 +90,14 @@ struct InfoButton: View {
     }
 }
 
+/// Settings › General: the app itself, and how long captures are kept.
 struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
-    let destinations: UploadDestinationStore
-    let backgrounds: SettingsDependencies.Backgrounds
     let openHistory: () -> Void
     let expiredCount: (HistoryRetention) -> Int
-    private var hasDestination: Bool { !destinations.destinations.isEmpty }
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
-    @State private var backgroundPresets: [SettingsDependencies.Backgrounds.Choice] = []
-    @State private var automaticBackground: UUID?
 
     var body: some View {
         SettingsPane {
@@ -154,6 +139,35 @@ struct GeneralSettingsView: View {
 
             SettingsDivider()
 
+            SettingsRow(Text("Keep captures", bundle: .module)) {
+                HStack(spacing: 8) {
+                    Picker(selection: retentionSelection(settings: settings, expiredCount: expiredCount, request: $retentionRequest)) {
+                        ForEach(HistoryRetention.allCases, id: \.self) { retention in
+                            Text(retention.title).tag(retention)
+                        }
+                    } label: {
+                        Text("Keep captures", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    Button(action: openHistory) {
+                        Text("Open History", bundle: .module)
+                    }
+                }
+            }
+        }
+        .confirmingRetentionChange($retentionRequest) { retention in
+            settings.historyRetention = retention
+        }
+    }
+}
+
+/// Settings › Capture: choosing what to capture, and how a window is taken.
+struct CaptureSettingsView: View {
+    @Bindable var settings: SettingsStore
+
+    var body: some View {
+        SettingsPane {
             SettingsRow(Text("Selecting", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
@@ -210,6 +224,40 @@ struct GeneralSettingsView: View {
 
             SettingsDivider()
 
+            SettingsRow(Text("Windows", bundle: .module)) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle(isOn: $settings.windowShadow) {
+                        Text("Capture the shadow", bundle: .module)
+                    }
+                    HStack(spacing: 6) {
+                        Picker(selection: $settings.windowBackground) {
+                            Text("Same background as screenshots", bundle: .module).tag(WindowBackground.asScreenshots)
+                            Text("No background", bundle: .module).tag(WindowBackground.transparent)
+                            Text("Desktop wallpaper", bundle: .module).tag(WindowBackground.desktopWallpaper)
+                        } label: {
+                            Text("Window background", bundle: .module)
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        InfoButton(Text("Desktop wallpaper puts a window on the desktop picture around it, as the screen shows it. Hold Shift as you click a window to take it the other way: with no background, or on the desktop wallpaper.", bundle: .module))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Settings › Screenshots: where a screenshot goes, and the file and picture it is kept as.
+struct ScreenshotsSettingsView: View {
+    @Bindable var settings: SettingsStore
+    let destinations: UploadDestinationStore
+    let backgrounds: SettingsDependencies.Backgrounds
+    private var hasDestination: Bool { !destinations.destinations.isEmpty }
+    @State private var backgroundPresets: [SettingsDependencies.Backgrounds.Choice] = []
+    @State private var automaticBackground: UUID?
+
+    var body: some View {
+        SettingsPane {
             SettingsRow(Text("After screenshot", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
@@ -292,25 +340,6 @@ struct GeneralSettingsView: View {
                     InfoButton(Text("Puts each new screenshot on a background. Save one as a preset with the editor’s Background tool.", bundle: .module))
                 }
             }
-            SettingsRow(Text("Windows", bundle: .module)) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle(isOn: $settings.windowShadow) {
-                        Text("Capture the shadow", bundle: .module)
-                    }
-                    HStack(spacing: 6) {
-                        Picker(selection: $settings.windowBackground) {
-                            Text("Same background as screenshots", bundle: .module).tag(WindowBackground.asScreenshots)
-                            Text("No background", bundle: .module).tag(WindowBackground.transparent)
-                            Text("Desktop wallpaper", bundle: .module).tag(WindowBackground.desktopWallpaper)
-                        } label: {
-                            Text("Window background", bundle: .module)
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                        InfoButton(Text("Desktop wallpaper puts a window on the desktop picture around it, as the screen shows it. Hold Shift as you click a window to take it the other way: with no background, or on the desktop wallpaper.", bundle: .module))
-                    }
-                }
-            }
 
             SettingsDivider()
 
@@ -378,33 +407,11 @@ struct GeneralSettingsView: View {
                     InfoButton(Text("File and picture also puts the file on the clipboard, in the format above, so Finder, Mail, and chat apps paste the file while image editors paste the picture. Some apps paste the file where you wanted the picture.", bundle: .module))
                 }
             }
-
-            SettingsDivider()
-
-            SettingsRow(Text("Keep captures", bundle: .module)) {
-                HStack(spacing: 8) {
-                    Picker(selection: retentionSelection(settings: settings, expiredCount: expiredCount, request: $retentionRequest)) {
-                        ForEach(HistoryRetention.allCases, id: \.self) { retention in
-                            Text(retention.title).tag(retention)
-                        }
-                    } label: {
-                        Text("Keep captures", bundle: .module)
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-                    Button(action: openHistory) {
-                        Text("Open History", bundle: .module)
-                    }
-                }
-            }
-        }
-        .confirmingRetentionChange($retentionRequest) { retention in
-            settings.historyRetention = retention
         }
     }
 }
 
-extension GeneralSettingsView {
+extension ScreenshotsSettingsView {
     fileprivate var exportPath: String {
         var path = settings.exportDirectory.path(percentEncoded: false)
         if path.count > 1, path.hasSuffix("/") { path.removeLast() }
@@ -580,8 +587,8 @@ struct RecordingSettingsView: View {
                             }
                         }
                         InfoButton(hasDestination
-                            ? Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in General. Upload sends it to your default destination.", bundle: .module)
-                            : Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in General.", bundle: .module))
+                            ? Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in Screenshots. Upload sends it to your default destination.", bundle: .module)
+                            : Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in Screenshots.", bundle: .module))
                     }
                     if !settings.copyAfterRecording, !settings.showRecordingQuickAccess, !settings.saveAfterRecording, !(hasDestination && settings.uploadAfterRecording) {
                         Label {
@@ -932,7 +939,7 @@ struct AboutSettingsView: View {
                 .padding(.top, 6)
         }
         .padding(28)
-        .frame(width: paneWidth)
+        .frame(minWidth: paneWidth, maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private static func info(_ key: String) -> String? {
