@@ -36,12 +36,14 @@ let package = Package(
         .target(
             name: "OMSCore",
             dependencies: ["OMSPixels"],
+            resources: [.process("Resources")],
             swiftSettings: swiftSettings
         ),
         // ScreenCaptureKit, the selection overlay, window catalog, selection model. Main-actor by default.
         .target(
             name: "OMSCapture",
             dependencies: ["OMSCore"],
+            resources: [.process("Resources")],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
         // Menu bar, settings, onboarding, shortcuts, the OCR panel. Main-actor by default.

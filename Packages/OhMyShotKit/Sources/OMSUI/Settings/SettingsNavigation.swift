@@ -25,6 +25,7 @@ extension SettingsTab {
         switch self {
         case .general:
             [
+                String(localized: "Language", bundle: .module),
                 String(localized: "Launch at login", bundle: .module),
                 String(localized: "Menu bar", bundle: .module),
                 String(localized: "Show icon", bundle: .module),

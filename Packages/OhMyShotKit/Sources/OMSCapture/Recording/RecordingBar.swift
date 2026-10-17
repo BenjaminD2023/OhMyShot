@@ -61,8 +61,8 @@ final class RecordingBar: NSView {
         } else {
             container = NSGlassEffectView()
         }
-        recordButton = BarButton(title: String(localized: "Record"), image: NSImage(), target: nil, action: nil)
-        cancelButton = BarButton(title: String(localized: "Cancel"), image: NSImage(), target: nil, action: nil)
+        recordButton = BarButton(title: String(localized: "Record", bundle: .module), image: NSImage(), target: nil, action: nil)
+        cancelButton = BarButton(title: String(localized: "Cancel", bundle: .module), image: NSImage(), target: nil, action: nil)
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false
@@ -101,7 +101,7 @@ final class RecordingBar: NSView {
         update(choices)
         setAccessibilityElement(true)
         setAccessibilityRole(.toolbar)
-        setAccessibilityLabel(String(localized: "Recording"))
+        setAccessibilityLabel(String(localized: "Recording", bundle: .module))
     }
 
     @available(*, unavailable)
@@ -170,15 +170,15 @@ final class RecordingBar: NSView {
             button.state = on ? .on : .off
             button.contentTintColor = on ? .controlAccentColor : enabled && !blocked ? .labelColor : .tertiaryLabelColor
             button.toolTip = !enabled
-                ? toggle == .keystrokes ? String(localized: "A window is recorded on its own, without keys shown over it")
-                : toggle == .camera && studio ? String(localized: "Studio doesn’t add the camera to a window recorded on its own yet")
-                : toggle == .camera ? String(localized: "A window is recorded on its own, without the camera over it")
-                : String(localized: "GIFs have no sound")
+                ? toggle == .keystrokes ? String(localized: "A window is recorded on its own, without keys shown over it", bundle: .module)
+                : toggle == .camera && studio ? String(localized: "Studio doesn’t add the camera to a window recorded on its own yet", bundle: .module)
+                : toggle == .camera ? String(localized: "A window is recorded on its own, without the camera over it", bundle: .module)
+                : String(localized: "GIFs have no sound", bundle: .module)
                 : blocked
-                ? toggle == .keystrokes ? String(localized: "Input Monitoring is off. Turn on OhMyShot in System Settings › Privacy & Security › Input Monitoring.")
-                : String(localized: "Camera access is off. Turn on OhMyShot in System Settings › Privacy & Security › Camera.")
+                ? toggle == .keystrokes ? String(localized: "Input Monitoring is off. Turn on OhMyShot in System Settings › Privacy & Security › Input Monitoring.", bundle: .module)
+                : String(localized: "Camera access is off. Turn on OhMyShot in System Settings › Privacy & Security › Camera.", bundle: .module)
                 : help(for: toggle)
-            button.setAccessibilityValue(on ? String(localized: "On") : String(localized: "Off"))
+            button.setAccessibilityValue(on ? String(localized: "On", bundle: .module) : String(localized: "Off", bundle: .module))
             button.setAccessibilityHelp(button.toolTip)
         }
         applyAppearance()
@@ -222,11 +222,11 @@ final class RecordingBar: NSView {
     private func makeOutput(_ output: RecordingOutput) -> BarButton {
         let (symbol, title, help): (String, String, String) = switch output {
         case .video:
-            ("video", String(localized: "Video"), String(localized: "Keep the recording as an MP4 movie"))
+            ("video", String(localized: "Video", bundle: .module), String(localized: "Keep the recording as an MP4 movie", bundle: .module))
         case .gif:
-            ("photo.stack", String(localized: "GIF"), String(localized: "Keep the recording as an animated GIF, without sound"))
+            ("photo.stack", String(localized: "GIF", bundle: .module), String(localized: "Keep the recording as an animated GIF, without sound", bundle: .module))
         case .studio:
-            ("wand.and.sparkles", String(localized: "Studio"), String(localized: "Record for the Studio window: zooms that follow the pointer, a smooth cursor, and a background"))
+            ("wand.and.sparkles", String(localized: "Studio", bundle: .module), String(localized: "Record for the Studio window: zooms that follow the pointer, a smooth cursor, and a background", bundle: .module))
         }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
@@ -246,21 +246,21 @@ final class RecordingBar: NSView {
 
     private func help(for toggle: Toggle) -> String {
         switch toggle {
-        case .systemAudio: String(localized: "Record what the Mac plays")
-        case .microphone: String(localized: "Choose a microphone to record")
-        case .camera: String(localized: "Show your camera in the recording")
-        case .clicks: String(localized: "Show clicks in the recording")
-        case .keystrokes: String(localized: "Show the keys you press in the recording")
+        case .systemAudio: String(localized: "Record what the Mac plays", bundle: .module)
+        case .microphone: String(localized: "Choose a microphone to record", bundle: .module)
+        case .camera: String(localized: "Show your camera in the recording", bundle: .module)
+        case .clicks: String(localized: "Show clicks in the recording", bundle: .module)
+        case .keystrokes: String(localized: "Show the keys you press in the recording", bundle: .module)
         }
     }
 
     private func makeToggle(_ toggle: Toggle) -> BarButton {
         let (symbol, title): (String, String) = switch toggle {
-        case .systemAudio: ("speaker.wave.2", String(localized: "Computer Audio"))
-        case .microphone: ("mic", String(localized: "Microphone"))
-        case .camera: ("web.camera", String(localized: "Camera"))
-        case .clicks: ("cursorarrow.click.2", String(localized: "Show Clicks"))
-        case .keystrokes: ("keyboard", String(localized: "Show Keystrokes"))
+        case .systemAudio: ("speaker.wave.2", String(localized: "Computer Audio", bundle: .module))
+        case .microphone: ("mic", String(localized: "Microphone", bundle: .module))
+        case .camera: ("web.camera", String(localized: "Camera", bundle: .module))
+        case .clicks: ("cursorarrow.click.2", String(localized: "Show Clicks", bundle: .module))
+        case .keystrokes: ("keyboard", String(localized: "Show Keystrokes", bundle: .module))
         }
         let help = help(for: toggle)
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
@@ -288,26 +288,26 @@ final class RecordingBar: NSView {
         configureChip(recordButton)
         recordButton.imagePosition = .imageLeading
         recordButton.imageHugsTitle = true
-        recordButton.attributedTitle = NSAttributedString(string: String(localized: "Record"), attributes: [
+        recordButton.attributedTitle = NSAttributedString(string: String(localized: "Record", bundle: .module), attributes: [
             .font: Theme.Typeface.label(size: 12, weight: .semibold),
             .foregroundColor: NSColor.labelColor,
         ])
-        recordButton.toolTip = String(localized: "Start recording (Return)")
-        recordButton.setAccessibilityLabel(String(localized: "Record"))
-        recordButton.setAccessibilityHelp(String(localized: "Start recording (Return)"))
+        recordButton.toolTip = String(localized: "Start recording (Return)", bundle: .module)
+        recordButton.setAccessibilityLabel(String(localized: "Record", bundle: .module))
+        recordButton.setAccessibilityHelp(String(localized: "Start recording (Return)", bundle: .module))
         recordButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 92).isActive = true
     }
 
     private func configureCancelButton() {
-        cancelButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: String(localized: "Cancel"))?
+        cancelButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: String(localized: "Cancel", bundle: .module))?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
         cancelButton.target = self
         cancelButton.action = #selector(cancelClicked)
         configureChip(cancelButton)
         cancelButton.imagePosition = .imageOnly
         cancelButton.contentTintColor = .labelColor
-        cancelButton.toolTip = String(localized: "Cancel (Esc)")
-        cancelButton.setAccessibilityLabel(String(localized: "Cancel"))
+        cancelButton.toolTip = String(localized: "Cancel (Esc)", bundle: .module)
+        cancelButton.setAccessibilityLabel(String(localized: "Cancel", bundle: .module))
         cancelButton.widthAnchor.constraint(equalToConstant: Self.chip).isActive = true
     }
 
@@ -368,7 +368,7 @@ final class RecordingBar: NSView {
             if PermissionCenter.hasAsked(.inputMonitoring) {
                 NSSound.beep()
                 NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                    .announcement: String(localized: "Input Monitoring is off. Turn on OhMyShot in System Settings, Privacy and Security, Input Monitoring."),
+                    .announcement: String(localized: "Input Monitoring is off. Turn on OhMyShot in System Settings, Privacy and Security, Input Monitoring.", bundle: .module),
                     .priority: NSAccessibilityPriorityLevel.high.rawValue,
                 ])
             } else {
@@ -388,14 +388,14 @@ final class RecordingBar: NSView {
     private func showMicrophoneMenu(from button: NSButton) {
         let menu = NSMenu()
         let recording = states[.microphone] == true
-        let none = NSMenuItem(title: String(localized: "No Microphone"), action: #selector(microphoneChosen(_:)), keyEquivalent: "")
+        let none = NSMenuItem(title: String(localized: "No Microphone", bundle: .module), action: #selector(microphoneChosen(_:)), keyEquivalent: "")
         none.target = self
         none.state = recording ? .off : .on
         menu.addItem(none)
         menu.addItem(.separator())
         let (devices, defaultID) = Microphones.available()
         if devices.isEmpty {
-            let empty = NSMenuItem(title: String(localized: "No microphone found"), action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: String(localized: "No microphone found", bundle: .module), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
         }
@@ -418,14 +418,14 @@ final class RecordingBar: NSView {
     private func showCameraMenu(from button: NSButton) {
         let menu = NSMenu()
         let showing = states[.camera] == true
-        let none = NSMenuItem(title: String(localized: "No Camera"), action: #selector(cameraChosen(_:)), keyEquivalent: "")
+        let none = NSMenuItem(title: String(localized: "No Camera", bundle: .module), action: #selector(cameraChosen(_:)), keyEquivalent: "")
         none.target = self
         none.state = showing ? .off : .on
         menu.addItem(none)
         menu.addItem(.separator())
         let (devices, defaultID) = Cameras.available()
         if devices.isEmpty {
-            let empty = NSMenuItem(title: String(localized: "No camera found"), action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: String(localized: "No camera found", bundle: .module), action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
         }
@@ -438,21 +438,21 @@ final class RecordingBar: NSView {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        menu.addItem(.sectionHeader(title: String(localized: "Shape")))
+        menu.addItem(.sectionHeader(title: String(localized: "Shape", bundle: .module)))
         for shape in CameraStyle.Shape.allCases {
-            let title = shape == .circle ? String(localized: "Circle") : String(localized: "Rounded Square")
+            let title = shape == .circle ? String(localized: "Circle", bundle: .module) : String(localized: "Rounded Square", bundle: .module)
             let item = NSMenuItem(title: title, action: #selector(cameraShapeChosen(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = shape.rawValue
             item.state = cameraStyle.shape == shape ? .on : .off
             menu.addItem(item)
         }
-        menu.addItem(.sectionHeader(title: String(localized: "Size")))
+        menu.addItem(.sectionHeader(title: String(localized: "Size", bundle: .module)))
         for size in CameraStyle.Size.allCases {
             let title = switch size {
-            case .small: String(localized: "Small")
-            case .medium: String(localized: "Medium")
-            case .large: String(localized: "Large")
+            case .small: String(localized: "Small", bundle: .module)
+            case .medium: String(localized: "Medium", bundle: .module)
+            case .large: String(localized: "Large", bundle: .module)
             }
             let item = NSMenuItem(title: title, action: #selector(cameraSizeChosen(_:)), keyEquivalent: "")
             item.target = self
@@ -461,7 +461,7 @@ final class RecordingBar: NSView {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        let mirror = NSMenuItem(title: String(localized: "Mirror"), action: #selector(cameraMirrorToggled(_:)), keyEquivalent: "")
+        let mirror = NSMenuItem(title: String(localized: "Mirror", bundle: .module), action: #selector(cameraMirrorToggled(_:)), keyEquivalent: "")
         mirror.target = self
         mirror.state = cameraStyle.mirrored ? .on : .off
         menu.addItem(mirror)
@@ -483,7 +483,7 @@ final class RecordingBar: NSView {
             // Chosen all the same, so the chip steps back and says where access is turned on; no bubble shows.
             NSSound.beep()
             NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                .announcement: String(localized: "Camera access is off. Turn on OhMyShot in System Settings, Privacy and Security, Camera."),
+                .announcement: String(localized: "Camera access is off. Turn on OhMyShot in System Settings, Privacy and Security, Camera.", bundle: .module),
                 .priority: NSAccessibilityPriorityLevel.high.rawValue,
             ])
             onCamera?(id)

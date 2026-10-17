@@ -77,7 +77,7 @@ final class AllInOneSetupView: NSView {
         }
         setAccessibilityElement(true)
         setAccessibilityRole(.layoutArea)
-        setAccessibilityLabel(String(localized: "Capture area"))
+        setAccessibilityLabel(String(localized: "Capture area", bundle: .module))
         setAccessibilityHelp(instructions)
         update()
     }
@@ -90,11 +90,11 @@ final class AllInOneSetupView: NSView {
     /// Every key, Upload's only while it is offered.
     private var instructions: String {
         if kind == .sizing {
-            return String(localized: "Press Return to capture the area. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them, and the aspect ratio button keeps a shape. Press Escape to cancel.")
+            return String(localized: "Press Return to capture the area. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them, and the aspect ratio button keeps a shape. Press Escape to cancel.", bundle: .module)
         }
         return offersUpload
-            ? String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, U uploads, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.")
-            : String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.")
+            ? String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, U uploads, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.", bundle: .module)
+            : String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.", bundle: .module)
     }
 
     override var isFlipped: Bool { true }
@@ -465,8 +465,8 @@ final class AllInOneActionBar: CapsuleBar {
             ratioChip.imagePosition = .imageOnly
             squareRatioChip?.isActive = true
         }
-        ratioChip.setAccessibilityLabel(String(localized: "Aspect Ratio"))
-        ratioChip.setAccessibilityValue(ratio?.label ?? String(localized: "Any shape"))
+        ratioChip.setAccessibilityLabel(String(localized: "Aspect Ratio", bundle: .module))
+        ratioChip.setAccessibilityValue(ratio?.label ?? String(localized: "Any shape", bundle: .module))
         setOn(ratio != nil, ratioChip)
     }
 
@@ -488,7 +488,7 @@ final class AllInOneActionBar: CapsuleBar {
 
     @objc private func ratioClicked() {
         let menu = NSMenu()
-        let any = NSMenuItem(title: String(localized: "Any Shape"), action: #selector(ratioChosen(_:)), keyEquivalent: "")
+        let any = NSMenuItem(title: String(localized: "Any Shape", bundle: .module), action: #selector(ratioChosen(_:)), keyEquivalent: "")
         any.target = self
         any.state = ratio == nil ? .on : .off
         menu.addItem(any)
@@ -527,34 +527,34 @@ final class AllInOneActionBar: CapsuleBar {
     /// take the area.
     init(offersUpload: Bool, sizingOnly: Bool = false) {
         super.init()
-        let capture = add(.screenshot(nil), symbol: "camera.viewfinder", title: String(localized: "Capture"), help: String(localized: "Capture the area (Return)"))
-        setTitle(String(localized: "Capture"), of: capture, emphasized: true)
+        let capture = add(.screenshot(nil), symbol: "camera.viewfinder", title: String(localized: "Capture", bundle: .module), help: String(localized: "Capture the area (Return)", bundle: .module))
+        setTitle(String(localized: "Capture", bundle: .module), of: capture, emphasized: true)
         if !sizingOnly {
             addDivider()
-            add(.screenshot(.copy), symbol: "doc.on.doc", label: String(localized: "Copy"), help: String(localized: "Capture and copy (Command-C)"))
-            add(.screenshot(.save), symbol: "square.and.arrow.down", label: String(localized: "Save"), help: String(localized: "Capture and save to the export folder (Command-S)"))
-            add(.screenshot(.annotate), symbol: "pencil.tip.crop.circle", label: String(localized: "Annotate"), help: String(localized: "Capture and annotate (E)"))
-            add(.screenshot(.pin), symbol: "pin", label: String(localized: "Pin"), help: String(localized: "Capture and pin to the screen (P)"))
+            add(.screenshot(.copy), symbol: "doc.on.doc", label: String(localized: "Copy", bundle: .module), help: String(localized: "Capture and copy (Command-C)", bundle: .module))
+            add(.screenshot(.save), symbol: "square.and.arrow.down", label: String(localized: "Save", bundle: .module), help: String(localized: "Capture and save to the export folder (Command-S)", bundle: .module))
+            add(.screenshot(.annotate), symbol: "pencil.tip.crop.circle", label: String(localized: "Annotate", bundle: .module), help: String(localized: "Capture and annotate (E)", bundle: .module))
+            add(.screenshot(.pin), symbol: "pin", label: String(localized: "Pin", bundle: .module), help: String(localized: "Capture and pin to the screen (P)", bundle: .module))
             if offersUpload {
-                add(.screenshot(.upload), symbol: "icloud.and.arrow.up", label: String(localized: "Upload"), help: String(localized: "Capture and upload (U)"))
+                add(.screenshot(.upload), symbol: "icloud.and.arrow.up", label: String(localized: "Upload", bundle: .module), help: String(localized: "Capture and upload (U)", bundle: .module))
             }
             addDivider()
-            add(.text, symbol: "text.viewfinder", label: String(localized: "Capture Text"), help: String(localized: "Copy the text in the area (O)"))
-            add(.scroll, symbol: "arrow.up.and.down.text.horizontal", label: String(localized: "Scrolling Capture"), help: String(localized: "Capture the area as it scrolls (S)"))
-            add(.record, symbol: "record.circle", label: String(localized: "Record"), help: String(localized: "Record the area (R)"))
+            add(.text, symbol: "text.viewfinder", label: String(localized: "Capture Text", bundle: .module), help: String(localized: "Copy the text in the area (O)", bundle: .module))
+            add(.scroll, symbol: "arrow.up.and.down.text.horizontal", label: String(localized: "Scrolling Capture", bundle: .module), help: String(localized: "Capture the area as it scrolls (S)", bundle: .module))
+            add(.record, symbol: "record.circle", label: String(localized: "Record", bundle: .module), help: String(localized: "Record the area (R)", bundle: .module))
         }
         addDivider()
         addView(sizeFields)
-        ratioChip = addChip(symbol: "aspectratio", title: nil, help: String(localized: "Keep a shape while resizing"), target: self, action: #selector(ratioClicked))
-        ratioChip.setAccessibilityLabel(String(localized: "Aspect Ratio"))
-        ratioChip.setAccessibilityValue(String(localized: "Any shape"))
+        ratioChip = addChip(symbol: "aspectratio", title: nil, help: String(localized: "Keep a shape while resizing", bundle: .module), target: self, action: #selector(ratioClicked))
+        ratioChip.setAccessibilityLabel(String(localized: "Aspect Ratio", bundle: .module))
+        ratioChip.setAccessibilityValue(String(localized: "Any shape", bundle: .module))
         squareRatioChip = ratioChip.constraints.first { $0.firstAttribute == .width && $0.secondItem == nil }
         sizeFields.onSize = { [weak self] width, height in self?.onSize?(width, height) }
         sizeFields.onDone = { [weak self] in self?.onDoneTyping?() }
         addDivider()
-        let cancel = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel (Esc)"), target: self, action: #selector(cancelClicked))
-        cancel.setAccessibilityLabel(String(localized: "Cancel"))
-        setAccessibilityLabel(sizingOnly ? String(localized: "Area size") : String(localized: "All-In-One"))
+        let cancel = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel (Esc)", bundle: .module), target: self, action: #selector(cancelClicked))
+        cancel.setAccessibilityLabel(String(localized: "Cancel", bundle: .module))
+        setAccessibilityLabel(sizingOnly ? String(localized: "Area size", bundle: .module) : String(localized: "All-In-One", bundle: .module))
     }
 
     @available(*, unavailable)
@@ -607,8 +607,8 @@ final class AreaSizeFields: NSView, NSTextFieldDelegate {
         // The digits hug the "×", as a reading has them.
         width.alignment = .right
         height.alignment = .left
-        width.setAccessibilityLabel(String(localized: "Width in pixels"))
-        height.setAccessibilityLabel(String(localized: "Height in pixels"))
+        width.setAccessibilityLabel(String(localized: "Width in pixels", bundle: .module))
+        height.setAccessibilityLabel(String(localized: "Height in pixels", bundle: .module))
         width.nextKeyView = height
         times.font = Theme.Typeface.reading(size: 12, weight: .medium)
         times.textColor = .secondaryLabelColor

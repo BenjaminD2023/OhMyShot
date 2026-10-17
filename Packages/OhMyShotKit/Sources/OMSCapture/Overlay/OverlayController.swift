@@ -344,14 +344,14 @@ public final class OverlayController {
         }
         if let id = pointerDisplay?.id, let view = entries[id]?.view {
             let announcement = switch purpose {
-            case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.")
-            case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.")
-            case .screenshot where isAllInOne: String(localized: "All-In-One. Drag over an area, then choose what to do with it.")
-            case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.")
-            case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.")
-            case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.")
-            case .record: String(localized: "Drag over an area to record it, click to record the whole screen, or press Space to choose a window.")
-            case .scroll: String(localized: "Drag over the part that scrolls, or press Space to choose a window.")
+            case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.", bundle: .module)
+            case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.", bundle: .module)
+            case .screenshot where isAllInOne: String(localized: "All-In-One. Drag over an area, then choose what to do with it.", bundle: .module)
+            case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.", bundle: .module)
+            case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.", bundle: .module)
+            case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.", bundle: .module)
+            case .record: String(localized: "Drag over an area to record it, click to record the whole screen, or press Space to choose a window.", bundle: .module)
+            case .scroll: String(localized: "Drag over the part that scrolls, or press Space to choose a window.", bundle: .module)
             }
             NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
                 .announcement: announcement,
@@ -1142,10 +1142,10 @@ extension OverlayController: OverlayViewDelegate {
         }
         for entry in entries.values { entry.view.markPurpose(mark) }
         let announcement = switch next {
-        case .text?: String(localized: "Text. Drag over text to copy it.")
-        case .scroll?: String(localized: "Scrolling capture. Drag over the part that scrolls.")
-        case .record?: String(localized: "Record. Drag over an area to record it.")
-        case .screenshot?, nil: String(localized: "Capture. Drag over an area, then choose what to do with it.")
+        case .text?: String(localized: "Text. Drag over text to copy it.", bundle: .module)
+        case .scroll?: String(localized: "Scrolling capture. Drag over the part that scrolls.", bundle: .module)
+        case .record?: String(localized: "Record. Drag over an area to record it.", bundle: .module)
+        case .screenshot?, nil: String(localized: "Capture. Drag over an area, then choose what to do with it.", bundle: .module)
         }
         NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
             .announcement: announcement, .priority: NSAccessibilityPriorityLevel.high.rawValue,

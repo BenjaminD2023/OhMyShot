@@ -89,7 +89,7 @@ final class AllInOneBar: NSView {
         }
         setAccessibilityElement(true)
         setAccessibilityRole(.toolbar)
-        setAccessibilityLabel(String(localized: "Capture modes"))
+        setAccessibilityLabel(String(localized: "Capture modes", bundle: .module))
         applyAppearance()
     }
 
@@ -195,19 +195,19 @@ final class AllInOneBar: NSView {
     private func makeButton(_ choice: Choice) -> NSButton {
         let (symbol, title, help): (String, String, String) = switch choice {
         case .area:
-            ("rectangle.dashed", String(localized: "Area"), String(localized: "Drag to capture an area"))
+            ("rectangle.dashed", String(localized: "Area", bundle: .module), String(localized: "Drag to capture an area", bundle: .module))
         case .window:
-            ("macwindow", String(localized: "Window"), String(localized: "Click a window to capture it (Space)"))
+            ("macwindow", String(localized: "Window", bundle: .module), String(localized: "Click a window to capture it (Space)", bundle: .module))
         case .fullscreen:
-            ("display", String(localized: "Screen"), String(localized: "Capture this whole screen"))
+            ("display", String(localized: "Screen", bundle: .module), String(localized: "Capture this whole screen", bundle: .module))
         case .text:
-            ("text.viewfinder", String(localized: "Text"), String(localized: "Drag over text to copy it (O)"))
+            ("text.viewfinder", String(localized: "Text", bundle: .module), String(localized: "Drag over text to copy it (O)", bundle: .module))
         case .scroll:
-            ("arrow.up.and.down.text.horizontal", String(localized: "Scrolling"), String(localized: "Drag over the part that scrolls to capture all of it (S)"))
+            ("arrow.up.and.down.text.horizontal", String(localized: "Scrolling", bundle: .module), String(localized: "Drag over the part that scrolls to capture all of it (S)", bundle: .module))
         case .record:
-            ("record.circle", String(localized: "Record"), String(localized: "Drag over an area to record it (R)"))
+            ("record.circle", String(localized: "Record", bundle: .module), String(localized: "Drag over an area to record it (R)", bundle: .module))
         case .cancel:
-            ("xmark", String(localized: "Cancel"), String(localized: "Cancel (Esc)"))
+            ("xmark", String(localized: "Cancel", bundle: .module), String(localized: "Cancel (Esc)", bundle: .module))
         }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))

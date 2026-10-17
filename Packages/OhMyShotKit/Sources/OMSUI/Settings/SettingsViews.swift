@@ -5,7 +5,14 @@ import OMSCore
 import OMSOCR
 import SwiftUI
 
-let paneWidth: CGFloat = 520
+/// The narrowest a settings pane gets, in points: room for its rows in English. A translation whose rows run longer
+/// gives a wider one in its catalog, so nothing in a pane is cut off.
+let paneWidth = CGFloat(Double(String(
+    localized: "SETTINGS_PANE_WIDTH",
+    defaultValue: "520",
+    bundle: .module,
+    comment: "The narrowest a Settings pane gets, in points. Not words: raise the number if your language's rows are cut off."
+)) ?? 520)
 
 /// A settings pane in the classic two-column layout: short labels right-aligned in the first column,
 /// controls in the second, and groups split by dividers. Explanations wait behind a help button rather
@@ -98,9 +105,44 @@ struct GeneralSettingsView: View {
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
+    @State private var language = AppLanguage.chosen ?? ""
 
     var body: some View {
         SettingsPane {
+            SettingsRow(Text("Language", bundle: .module)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Picker(selection: $language) {
+                            Text("System Default", bundle: .module).tag("")
+                            Divider()
+                            ForEach(AppLanguage.available, id: \.self) { code in
+                                Text(verbatim: AppLanguage.displayName(code)).tag(code)
+                            }
+                        } label: {
+                            Text("Language", bundle: .module)
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                        .onChange(of: language) { _, code in
+                            AppLanguage.chosen = code.isEmpty ? nil : code
+                        }
+                        InfoButton(Text("OhMyShot can show itself in a language other than the system’s. Missing your language? Translations are welcome on GitHub.", bundle: .module))
+                    }
+                    if (language.isEmpty ? nil : language) != AppLanguage.atLaunch {
+                        HStack(spacing: 8) {
+                            Text("The new language shows after OhMyShot relaunches.", bundle: .module)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                            Button {
+                                Relauncher.relaunch()
+                            } label: {
+                                Text("Relaunch Now", bundle: .module)
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            }
             SettingsRow(Text("Startup", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle(isOn: $launchAtLogin) {

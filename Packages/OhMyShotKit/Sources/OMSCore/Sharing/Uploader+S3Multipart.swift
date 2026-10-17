@@ -28,7 +28,7 @@ extension Uploader {
         let created = try await transport.send(create)
         try Self.requireS3Success(created)
         guard let uploadID = Self.xmlValue("UploadId", in: created.text), !uploadID.isEmpty else {
-            throw UploadError.server(status: created.status, message: String(localized: "the server didn’t start a multipart upload"))
+            throw UploadError.server(status: created.status, message: String(localized: "the server didn’t start a multipart upload", bundle: .module))
         }
         Log.upload.notice("Multipart upload started, \(partCount, privacy: .public) parts")
 
@@ -53,7 +53,7 @@ extension Uploader {
                 // A part's own progress can end short of its last bytes; the part being done settles it.
                 progress.reporter(done: offset, length: length)?(1)
                 guard let etag = sent.header("ETag") else {
-                    throw UploadError.server(status: sent.status, message: String(localized: "the server didn’t say it kept part \(index + 1)"))
+                    throw UploadError.server(status: sent.status, message: String(localized: "the server didn’t say it kept part \(index + 1)", bundle: .module))
                 }
                 etags.append(etag)
             }

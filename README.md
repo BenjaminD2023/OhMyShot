@@ -40,6 +40,12 @@ them; switch it on in System Settings › General › Login Items & Extensions �
 Open With for images, and a capture's Quick Access card and its row in Capture History can start an email with the
 file attached.
 
+## Languages
+
+OhMyShot is in English, Simplified and Traditional Chinese, Japanese, Spanish, and French. It follows the system's
+language, or the one chosen in Settings › General. To add or improve a translation, you don't need Xcode: see
+[Docs/localization.md](Docs/localization.md).
+
 ## Power budget
 
 Idle means idle. While OhMyShot sits in the menu bar it runs no timers, polls nothing, and holds no capture streams or event taps. Every milestone is gated on measured numbers:

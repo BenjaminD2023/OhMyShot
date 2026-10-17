@@ -46,8 +46,8 @@ final class RecordingSetupView: NSView {
         bar.onCancel = { [weak self] in self?.onCancel?() }
         setAccessibilityElement(true)
         setAccessibilityRole(.layoutArea)
-        setAccessibilityLabel(String(localized: "Recording area"))
-        setAccessibilityHelp(String(localized: "Press Return to start recording, or Escape to cancel."))
+        setAccessibilityLabel(String(localized: "Recording area", bundle: .module))
+        setAccessibilityHelp(String(localized: "Press Return to start recording, or Escape to cancel.", bundle: .module))
         update()
     }
 
@@ -64,7 +64,7 @@ final class RecordingSetupView: NSView {
     func begin() {
         onChange?(target, choices)
         NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "Press Return to start recording, or Escape to cancel."),
+            .announcement: String(localized: "Press Return to start recording, or Escape to cancel.", bundle: .module),
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
         ])
     }

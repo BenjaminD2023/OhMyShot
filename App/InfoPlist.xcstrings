@@ -1,0 +1,174 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSCameraUsageDescription" : {
+      "comment" : "Info.plist: NSCameraUsageDescription",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot shows your camera in a screen recording when you turn it on."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot muestra tu cámara en una grabación de pantalla cuando la activas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot affiche votre caméra dans un enregistrement de l’écran lorsque vous l’activez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オンにすると、OhMyShotは画面収録にカメラの映像を表示します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当你打开摄像头时，OhMyShot 会在录屏中显示你的摄像头画面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當你開啟相機時，OhMyShot 會在螢幕錄影中顯示你的相機畫面。"
+          }
+        }
+      }
+    },
+    "NSHumanReadableCopyright" : {
+      "comment" : "Info.plist: NSHumanReadableCopyright",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copyright © 2026 OhMyShot contributors. Free software under the GNU GPL v3."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copyright © 2026 colaboradores de OhMyShot. Software libre bajo la GNU GPL v3."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copyright © 2026 contributeurs d’OhMyShot. Logiciel libre sous licence GNU GPL v3."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copyright © 2026 OhMyShot contributors. GNU GPL v3に基づくフリーソフトウェアです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版权所有 © 2026 OhMyShot 贡献者。基于 GNU GPL v3 的自由软件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copyright © 2026 OhMyShot 貢獻者。依 GNU GPL v3 授權的自由軟體。"
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "Info.plist: NSLocalNetworkUsageDescription",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot uploads a capture to storage on your network when you share it to a server there."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot sube una captura a un almacenamiento de tu red cuando la compartes con un servidor de esa red."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot téléverse une capture vers un stockage de votre réseau lorsque vous la partagez vers un serveur qui s’y trouve."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ネットワーク上のサーバに共有すると、OhMyShotはそのストレージにキャプチャをアップロードします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当你将截图共享到本地网络中的服务器时，OhMyShot 会将其上传到该存储。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當你將擷取內容分享到區域網路上的伺服器時，OhMyShot 會將其上傳到該儲存空間。"
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription" : {
+      "comment" : "Info.plist: NSMicrophoneUsageDescription",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot records the microphone with a screen recording when you turn it on."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot graba el micrófono junto con una grabación de pantalla cuando lo activas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot enregistre le micro avec un enregistrement de l’écran lorsque vous l’activez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オンにすると、OhMyShotは画面収録と一緒にマイクの音声を録音します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当你打开麦克风时，OhMyShot 会在录屏时录制麦克风声音。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當你開啟麥克風時，OhMyShot 會在螢幕錄影時一併錄製麥克風聲音。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

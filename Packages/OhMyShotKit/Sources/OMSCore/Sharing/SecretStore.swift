@@ -26,7 +26,7 @@ public struct SecretStoreError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         let text = SecCopyErrorMessageString(status, nil) as String? ?? "error \(status)"
-        return String(localized: "The Keychain wouldn’t keep the secret: \(text)")
+        return String(localized: "The Keychain wouldn’t keep the secret: \(text)", bundle: .module)
     }
 }
 

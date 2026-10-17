@@ -13,21 +13,21 @@ public enum ShareXImportError: Error, LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .notAShareXFile:
-            String(localized: "This isn’t a ShareX custom uploader (.sxcu) file.")
+            String(localized: "This isn’t a ShareX custom uploader (.sxcu) file.", bundle: .module)
         case .missingRequestURL:
-            String(localized: "The uploader has no request URL.")
+            String(localized: "The uploader has no request URL.", bundle: .module)
         case .unsupportedMethod(let method):
-            String(localized: "The uploader sends with \(method), which can’t carry a file. OhMyShot supports POST, PUT and PATCH.")
+            String(localized: "The uploader sends with \(method), which can’t carry a file. OhMyShot supports POST, PUT and PATCH.", bundle: .module)
         case .unsupportedBody(let body):
-            String(localized: "The uploader sends its request as \(body), which doesn’t carry a file. OhMyShot supports MultipartFormData and Binary.")
+            String(localized: "The uploader sends its request as \(body), which doesn’t carry a file. OhMyShot supports MultipartFormData and Binary.", bundle: .module)
         case .missingFileFormName:
-            String(localized: "The uploader sends a form but doesn’t say which field the file goes in (FileFormName).")
+            String(localized: "The uploader sends a form but doesn’t say which field the file goes in (FileFormName).", bundle: .module)
         case .notAFileUploader:
-            String(localized: "This uploader is for text or for shortening links, not for images or files.")
+            String(localized: "This uploader is for text or for shortening links, not for images or files.", bundle: .module)
         case .deprecatedResponseType:
-            String(localized: "The uploader uses ShareX’s old “Headers” response type, which ShareX itself doesn’t support any more. Use {header:name} in its URL instead.")
+            String(localized: "The uploader uses ShareX’s old “Headers” response type, which ShareX itself doesn’t support any more. Use {header:name} in its URL instead.", bundle: .module)
         case .template(let field, let error):
-            String(localized: "\(field): \(error.localizedDescription)")
+            String(localized: "\(field): \(error.localizedDescription)", bundle: .module)
         }
     }
 }
@@ -117,10 +117,10 @@ public enum ShareXImporter {
                 break
             }
             version = "13.7.1"
-            notes.append(String(localized: "Converted from a file written for an older ShareX."))
+            notes.append(String(localized: "Converted from a file written for an older ShareX.", bundle: .module))
         }
         if compare(version, "13.7.1") <= 0 {
-            if notes.isEmpty { notes.append(String(localized: "Converted from a file written for an older ShareX.")) }
+            if notes.isEmpty { notes.append(String(localized: "Converted from a file written for an older ShareX.", bundle: .module)) }
             requestURL = migrateOldSyntax(requestURL)
             parameters = parameters.mapValues(migrateOldSyntax)
             arguments = arguments.mapValues(migrateOldSyntax)
@@ -210,7 +210,7 @@ public enum ShareXImporter {
 
         var displayName = name
         if displayName.isEmpty {
-            displayName = URL(string: requestURL.replacingOccurrences(of: "{", with: "").replacingOccurrences(of: "}", with: ""))?.host ?? "Custom uploader"
+            displayName = URL(string: requestURL.replacingOccurrences(of: "{", with: "").replacingOccurrences(of: "}", with: ""))?.host ?? String(localized: "Custom uploader", bundle: .module)
         }
         let destination = UploadDestination(name: displayName, configuration: .customHTTP(settings))
         return ImportedUploader(destination: destination, secrets: secrets, notes: notes)

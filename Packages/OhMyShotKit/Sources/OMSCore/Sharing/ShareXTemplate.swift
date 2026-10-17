@@ -35,25 +35,25 @@ public enum ShareXTemplateError: Error, LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .unsupportedFunction(let name):
-            String(localized: "The template uses {\(name)}, which OhMyShot doesn’t support.")
+            String(localized: "The template uses {\(name)}, which OhMyShot doesn’t support.", bundle: .module)
         case .unavailableHere(let name):
-            String(localized: "{\(name)} reads the server’s answer, so it only works in the link, thumbnail, deletion and error templates.")
+            String(localized: "{\(name)} reads the server’s answer, so it only works in the link, thumbnail, deletion and error templates.", bundle: .module)
         case .missingParameter(let name):
-            String(localized: "{\(name)} needs a value after the colon.")
+            String(localized: "{\(name)} needs a value after the colon.", bundle: .module)
         case .strayCharacter(let character):
-            String(localized: "The template has a “\(String(character))” that isn’t part of a {function}. Write \\\(String(character)) to use it as text.")
+            String(localized: "The template has a “\(String(character))” that isn’t part of a {function}. Write \\\(String(character)) to use it as text.", bundle: .module)
         case .unterminated:
-            String(localized: "The template has a { without a matching }.")
+            String(localized: "The template has a { without a matching }.", bundle: .module)
         case .unsupportedJSONPath(let path):
-            String(localized: "The JSON path “\(path)” uses a form OhMyShot doesn’t support; only names, [0] indexes and ['name'] keys are.")
+            String(localized: "The JSON path “\(path)” uses a form OhMyShot doesn’t support; only names, [0] indexes and ['name'] keys are.", bundle: .module)
         case .invalidRegex(let pattern):
-            String(localized: "The regular expression “\(pattern)” isn’t valid.")
+            String(localized: "The regular expression “\(pattern)” isn’t valid.", bundle: .module)
         case .responseNotJSON:
-            String(localized: "The server’s answer isn’t JSON, so {json:} can’t read it.")
+            String(localized: "The server’s answer isn’t JSON, so {json:} can’t read it.", bundle: .module)
         case .responseNotXML:
-            String(localized: "The server’s answer isn’t XML, so {xml:} can’t read it.")
+            String(localized: "The server’s answer isn’t XML, so {xml:} can’t read it.", bundle: .module)
         case .invalidXPath(let path):
-            String(localized: "The XPath “\(path)” isn’t valid.")
+            String(localized: "The XPath “\(path)” isn’t valid.", bundle: .module)
         }
     }
 }

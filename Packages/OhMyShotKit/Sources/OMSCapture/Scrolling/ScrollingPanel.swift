@@ -96,8 +96,8 @@ public final class ScrollingPanel {
         layout()
         lease = ActiveResources.shared.acquire(.window)
         let announcement = doneKeys.map {
-            String(localized: "Scroll what is under the area to capture it. Click Done, or press \($0) again, when you have all of it.")
-        } ?? String(localized: "Scroll what is under the area to capture it. Click Done when you have all of it.")
+            String(localized: "Scroll what is under the area to capture it. Click Done, or press \($0) again, when you have all of it.", bundle: .module)
+        } ?? String(localized: "Scroll what is under the area to capture it. Click Done when you have all of it.", bundle: .module)
         NSAccessibility.post(element: card, notification: .announcementRequested, userInfo: [
             .announcement: announcement, .priority: NSAccessibilityPriorityLevel.high.rawValue,
         ])
@@ -185,16 +185,16 @@ public final class ScrollingPanel {
 
     private static func text(for hint: Hint) -> String {
         switch hint {
-        case .scrollToBegin: String(localized: "Scroll to capture")
-        case .scrollBack: String(localized: "The views no longer line up. Let the page settle, or scroll back a little.")
-        case .full: String(localized: "This is as long as a capture can be. Click Done to keep it.")
-        case .autoScrolling: String(localized: "Scrolling…")
-        case .autoScrollPaused: String(localized: "Paused")
-        case .noScrollTarget: String(localized: "Auto-scroll couldn’t start for this window. You can still scroll by hand.")
-        case .needsAccessibility: String(localized: "Auto-scroll needs Accessibility. Turn it on in System Settings › Privacy & Security.")
-        case .autoScrollStopped(.click), .autoScrollStopped(.key), .autoScrollStopped(.scroll): String(localized: "Paused")
-        case .autoScrollStopped(.targetClosed): String(localized: "Auto-scroll stopped: the target app closed.")
-        case .autoScrollStopped(.reachedEnd): String(localized: "Auto-scroll stopped: nothing more came into view. Click Done, or scroll on by hand.")
+        case .scrollToBegin: String(localized: "Scroll to capture", bundle: .module)
+        case .scrollBack: String(localized: "The views no longer line up. Let the page settle, or scroll back a little.", bundle: .module)
+        case .full: String(localized: "This is as long as a capture can be. Click Done to keep it.", bundle: .module)
+        case .autoScrolling: String(localized: "Scrolling…", bundle: .module)
+        case .autoScrollPaused: String(localized: "Paused", bundle: .module)
+        case .noScrollTarget: String(localized: "Auto-scroll couldn’t start for this window. You can still scroll by hand.", bundle: .module)
+        case .needsAccessibility: String(localized: "Auto-scroll needs Accessibility. Turn it on in System Settings › Privacy & Security.", bundle: .module)
+        case .autoScrollStopped(.click), .autoScrollStopped(.key), .autoScrollStopped(.scroll): String(localized: "Paused", bundle: .module)
+        case .autoScrollStopped(.targetClosed): String(localized: "Auto-scroll stopped: the target app closed.", bundle: .module)
+        case .autoScrollStopped(.reachedEnd): String(localized: "Auto-scroll stopped: nothing more came into view. Click Done, or scroll on by hand.", bundle: .module)
         }
     }
 
@@ -351,7 +351,7 @@ private final class CardView: NSView {
         addSubview(hintField)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
-        setAccessibilityLabel(String(localized: "Captured so far"))
+        setAccessibilityLabel(String(localized: "Captured so far", bundle: .module))
     }
 
     @available(*, unavailable)
@@ -401,7 +401,7 @@ private final class CardView: NSView {
 /// A native slider, kept visible while automatic scrolling is paused so speed can be set before resuming.
 private final class ScrollSpeedControl: NSView {
     var onChange: ((Double) -> Void)?
-    private let label = NSTextField(labelWithString: String(localized: "Speed"))
+    private let label = NSTextField(labelWithString: String(localized: "Speed", bundle: .module))
     private let value = NSTextField(labelWithString: "1×")
     private let slider = NSSlider(value: 1, minValue: 0.25, maxValue: 2, target: nil, action: nil)
 
@@ -415,8 +415,8 @@ private final class ScrollSpeedControl: NSView {
         slider.isContinuous = true
         slider.target = self
         slider.action = #selector(changed)
-        slider.setAccessibilityLabel(String(localized: "Automatic scrolling speed"))
-        slider.setAccessibilityHelp(String(localized: "From one quarter speed to double speed"))
+        slider.setAccessibilityLabel(String(localized: "Automatic scrolling speed", bundle: .module))
+        slider.setAccessibilityHelp(String(localized: "From one quarter speed to double speed", bundle: .module))
         addSubview(label)
         addSubview(value)
         addSubview(slider)
@@ -455,20 +455,26 @@ private final class ScrollingControls: CapsuleBar {
 
     override init() {
         super.init()
-        let done = addChip(symbol: "checkmark", title: String(localized: "Done"), help: String(localized: "Keep the picture"), target: self, action: #selector(doneClicked))
-        setTitle(String(localized: "Done"), of: done, emphasized: true)
+        let done = addChip(symbol: "checkmark", title: String(localized: "Done", bundle: .module), help: String(localized: "Keep the picture", bundle: .module), target: self, action: #selector(doneClicked))
+        setTitle(String(localized: "Done", bundle: .module), of: done, emphasized: true)
         self.done = done
         let autoScroll = addChip(
-            symbol: Self.symbol(for: .down), title: String(localized: "Auto"), help: Self.help(for: .down, on: false), target: self, action: #selector(autoScrollClicked)
+            symbol: Self.symbol(for: .down), title: String(localized: "Auto", bundle: .module), help: Self.help(for: .down, on: false), target: self, action: #selector(autoScrollClicked)
         )
-        autoScroll.widthAnchor.constraint(equalToConstant: 80).isActive = true
+        // One width for all its titles, so it doesn't jump as they change: the widest's, in whatever language.
+        let titles = [String(localized: "Pause", bundle: .module), String(localized: "Resume", bundle: .module), String(localized: "Auto", bundle: .module)]
+        let widest = titles.map { title -> CGFloat in
+            setTitle(title, of: autoScroll)
+            return autoScroll.fittingSize.width
+        }.max() ?? 0
+        autoScroll.widthAnchor.constraint(equalToConstant: max(80, ceil(widest) + 16)).isActive = true
         autoScroll.setButtonType(.momentaryPushIn)
-        autoScroll.setAccessibilityLabel(String(localized: "Auto-scroll"))
+        autoScroll.setAccessibilityLabel(String(localized: "Auto-scroll", bundle: .module))
         autoScroll.setAccessibilityRole(.button)
         self.autoScroll = autoScroll
         addDivider()
-        _ = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel the scrolling capture"), target: self, action: #selector(cancelClicked))
-        setAccessibilityLabel(String(localized: "Scrolling Capture"))
+        _ = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel the scrolling capture", bundle: .module), target: self, action: #selector(cancelClicked))
+        setAccessibilityLabel(String(localized: "Scrolling Capture", bundle: .module))
     }
 
     @available(*, unavailable)
@@ -478,7 +484,7 @@ private final class ScrollingControls: CapsuleBar {
 
     /// Done's tooltip names the shortcut that also ends the capture.
     func setDoneKeys(_ keys: String?) {
-        let help = keys.map { String(localized: "Keep the picture (\($0))") } ?? String(localized: "Keep the picture")
+        let help = keys.map { String(localized: "Keep the picture (\($0))", bundle: .module) } ?? String(localized: "Keep the picture", bundle: .module)
         done?.toolTip = help
         done?.setAccessibilityHelp(help)
     }
@@ -488,9 +494,9 @@ private final class ScrollingControls: CapsuleBar {
         if on { hasStarted = true }
         guard let autoScroll else { return }
         setOn(on, autoScroll)
-        let title = on ? String(localized: "Pause") : hasStarted ? String(localized: "Resume") : String(localized: "Auto")
+        let title = on ? String(localized: "Pause", bundle: .module) : hasStarted ? String(localized: "Resume", bundle: .module) : String(localized: "Auto", bundle: .module)
         setTitle(title, of: autoScroll)
-        autoScroll.setAccessibilityLabel(on ? String(localized: "Pause automatic scrolling") : hasStarted ? String(localized: "Resume automatic scrolling") : String(localized: "Auto-scroll"))
+        autoScroll.setAccessibilityLabel(on ? String(localized: "Pause automatic scrolling", bundle: .module) : hasStarted ? String(localized: "Resume automatic scrolling", bundle: .module) : String(localized: "Auto-scroll", bundle: .module))
         autoScroll.image = NSImage(systemSymbolName: on ? "pause.fill" : Self.symbol(for: direction), accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
         autoScroll.toolTip = Self.help(for: direction, on: on)
@@ -520,12 +526,12 @@ private final class ScrollingControls: CapsuleBar {
     }
 
     private static func help(for direction: AutoScroller.Direction, on: Bool) -> String {
-        if on { return String(localized: "Pause automatic scrolling") }
+        if on { return String(localized: "Pause automatic scrolling", bundle: .module) }
         return switch direction {
-        case .down: String(localized: "Scroll down automatically")
-        case .up: String(localized: "Scroll up automatically")
-        case .left: String(localized: "Scroll left automatically")
-        case .right: String(localized: "Scroll right automatically")
+        case .down: String(localized: "Scroll down automatically", bundle: .module)
+        case .up: String(localized: "Scroll up automatically", bundle: .module)
+        case .left: String(localized: "Scroll left automatically", bundle: .module)
+        case .right: String(localized: "Scroll right automatically", bundle: .module)
         }
     }
 

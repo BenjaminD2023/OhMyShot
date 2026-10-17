@@ -31,37 +31,37 @@ public enum UploadError: Error, LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .invalidConfiguration(let reason):
-            String(localized: "This destination isn’t set up correctly: \(reason)")
+            String(localized: "This destination isn’t set up correctly: \(reason)", bundle: .module)
         case .secretMissing(let field):
-            String(localized: "A saved secret (\(field)) is missing from the Keychain. Open the destination and enter it again.")
+            String(localized: "A saved secret (\(field)) is missing from the Keychain. Open the destination and enter it again.", bundle: .module)
         case .fileUnreadable:
-            String(localized: "Couldn’t read the file.")
+            String(localized: "Couldn’t read the file.", bundle: .module)
         case .fileTooLarge(let limit):
             if let limit {
-                String(localized: "The file is too large for this server. It accepts files up to \(ByteCountFormatter.string(fromByteCount: limit, countStyle: .file)).")
+                String(localized: "The file is too large for this server. It accepts files up to \(ByteCountFormatter.string(fromByteCount: limit, countStyle: .file)).", bundle: .module)
             } else {
-                String(localized: "The file is too large for this server.")
+                String(localized: "The file is too large for this server.", bundle: .module)
             }
         case .authRejected(let detail):
-            [String(localized: "The server didn’t accept the credentials."), detail].compactMap { $0 }.joined(separator: " ")
+            [String(localized: "The server didn’t accept the credentials.", bundle: .module), detail].compactMap { $0 }.joined(separator: " ")
         case .notFound(let detail):
-            [String(localized: "Couldn’t find the bucket or folder."), detail].compactMap { $0 }.joined(separator: " ")
+            [String(localized: "Couldn’t find the bucket or folder.", bundle: .module), detail].compactMap { $0 }.joined(separator: " ")
         case .unreachable(let host):
-            String(localized: "Couldn’t reach \(host). Check the address and your network connection.")
+            String(localized: "Couldn’t reach \(host). Check the address and your network connection.", bundle: .module)
         case .certificateRejected(let host):
-            String(localized: "The certificate of \(host) isn’t trusted.")
+            String(localized: "The certificate of \(host) isn’t trusted.", bundle: .module)
         case .insecureConnectionBlocked(let host):
-            String(localized: "macOS blocks the unencrypted connection to \(host). Use https, or a server on your local network.")
+            String(localized: "macOS blocks the unencrypted connection to \(host). Use https, or a server on your local network.", bundle: .module)
         case .server(let status, let message):
             if let message, !message.isEmpty {
-                String(localized: "The server answered \(status): \(message)")
+                String(localized: "The server answered \(status): \(message)", bundle: .module)
             } else {
-                String(localized: "The server answered with an error (\(status)).")
+                String(localized: "The server answered with an error (\(status)).", bundle: .module)
             }
         case .linkMissing:
-            String(localized: "The file was uploaded, but the server’s answer has no link to it.")
+            String(localized: "The file was uploaded, but the server’s answer has no link to it.", bundle: .module)
         case .clockSkew:
-            String(localized: "The server says this Mac’s clock is too far off. Check Date & Time in System Settings.")
+            String(localized: "The server says this Mac’s clock is too far off. Check Date & Time in System Settings.", bundle: .module)
         }
     }
 

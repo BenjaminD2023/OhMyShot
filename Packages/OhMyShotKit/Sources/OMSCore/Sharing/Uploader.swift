@@ -106,7 +106,7 @@ public final class Uploader: Sendable {
     @concurrent
     public func delete(_ record: UploadRecord, from destination: UploadDestination) async throws {
         guard let key = record.remoteKey else {
-            throw UploadError.invalidConfiguration(String(localized: "this kind of destination can’t delete files itself"))
+            throw UploadError.invalidConfiguration(String(localized: "this kind of destination can’t delete files itself", bundle: .module))
         }
         let lease = resources.acquire(.upload)
         defer { lease.end() }
@@ -120,7 +120,7 @@ public final class Uploader: Sendable {
         case .webDAV(let settings):
             try await deleteFromWebDAV(key: key, destination: destination, settings: settings, transport: transport)
         case .customHTTP:
-            throw UploadError.invalidConfiguration(String(localized: "this kind of destination can’t delete files itself"))
+            throw UploadError.invalidConfiguration(String(localized: "this kind of destination can’t delete files itself", bundle: .module))
         }
         Log.upload.notice("Delete from \(destination.kindName, privacy: .public) finished")
     }

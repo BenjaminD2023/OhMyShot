@@ -38,7 +38,7 @@ final class ScrollingSetupView: NSView {
         bar.onCancel = { [weak self] in self?.onCancel?() }
         setAccessibilityElement(true)
         setAccessibilityRole(.layoutArea)
-        setAccessibilityLabel(String(localized: "Scrolling capture area"))
+        setAccessibilityLabel(String(localized: "Scrolling capture area", bundle: .module))
         setAccessibilityHelp(Self.instructions)
         update()
     }
@@ -48,7 +48,7 @@ final class ScrollingSetupView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
-    private static let instructions = String(localized: "Press Return to start, then scroll what is under the area. Press Escape to cancel.")
+    private static let instructions = String(localized: "Press Return to start, then scroll what is under the area. Press Escape to cancel.", bundle: .module)
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -231,17 +231,17 @@ final class ScrollingBar: CapsuleBar {
     override init() {
         super.init()
         let start = addChip(
-            symbol: "arrow.up.and.down.text.horizontal", title: String(localized: "Start Capture"),
-            help: String(localized: "Start, then scroll what is under the area (Return)"), target: self, action: #selector(startClicked)
+            symbol: "arrow.up.and.down.text.horizontal", title: String(localized: "Start Capture", bundle: .module),
+            help: String(localized: "Start, then scroll what is under the area (Return)", bundle: .module), target: self, action: #selector(startClicked)
         )
-        setTitle(String(localized: "Start Capture"), of: start, emphasized: true)
+        setTitle(String(localized: "Start Capture", bundle: .module), of: start, emphasized: true)
         _ = addChip(
-            symbol: "arrow.down.circle", title: String(localized: "Auto-scroll"),
-            help: String(localized: "Start scrolling automatically; adjust the speed in the capture panel"), target: self, action: #selector(autoScrollClicked)
+            symbol: "arrow.down.circle", title: String(localized: "Auto-scroll", bundle: .module),
+            help: String(localized: "Start scrolling automatically; adjust the speed in the capture panel", bundle: .module), target: self, action: #selector(autoScrollClicked)
         )
         addDivider()
-        _ = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel (Esc)"), target: self, action: #selector(cancelClicked))
-        setAccessibilityLabel(String(localized: "Scrolling Capture"))
+        _ = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel (Esc)", bundle: .module), target: self, action: #selector(cancelClicked))
+        setAccessibilityLabel(String(localized: "Scrolling Capture", bundle: .module))
     }
 
     @available(*, unavailable)

@@ -114,8 +114,8 @@ final class OverlayView: NSView {
         addSubview(toolbar)
         setAccessibilityElement(true)
         setAccessibilityRole(.layoutArea)
-        setAccessibilityLabel(String(localized: "Capture overlay"))
-        setAccessibilityHelp(String(localized: "Drag to capture an area. Press Space to capture a window instead. Press Escape to cancel."))
+        setAccessibilityLabel(String(localized: "Capture overlay", bundle: .module))
+        setAccessibilityHelp(String(localized: "Drag to capture an area. Press Space to capture a window instead. Press Escape to cancel.", bundle: .module))
     }
 
     @available(*, unavailable)
@@ -167,16 +167,16 @@ final class OverlayView: NSView {
         layoutToolbar()
         window?.invalidateCursorRects(for: self)
         let help = switch purpose {
-        case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.")
-        case .annotate: String(localized: "Drag over an area to mark it up. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to choose a window instead. Press Escape to cancel.")
-        case .screenshot where isAllInOne: String(localized: "Drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, or R to record. Press Escape to cancel.")
-        case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.")
-        case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.")
-        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel.")
-        case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.")
-        case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.")
+        case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
+        case .annotate: String(localized: "Drag over an area to mark it up. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to choose a window instead. Press Escape to cancel.", bundle: .module)
+        case .screenshot where isAllInOne: String(localized: "Drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, or R to record. Press Escape to cancel.", bundle: .module)
+        case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.", bundle: .module)
+        case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
+        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
+        case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
+        case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         }
-        setAccessibilityHelp(snapsToText ? help + " " + String(localized: "The selection's edges snap to text; hold Command to place them freely.") : help)
+        setAccessibilityHelp(snapsToText ? help + " " + String(localized: "The selection's edges snap to text; hold Command to place them freely.", bundle: .module) : help)
         withoutAnimation {
             applyAppearance()
             // The panels are reused: the edges in-place annotation hid come back with a new session.

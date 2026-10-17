@@ -221,7 +221,7 @@ final class MeasureOverlay {
         onRedraw?()
     }
 
-    private var copiedText: String { String(localized: "Copied") }
+    private var copiedText: String { String(localized: "Copied", bundle: .module) }
 
     /// The lines from the pointer, while no box is drawn or shown: a box keeps the screen to itself until a
     /// click clears it, rather than lines running out from its corner.

@@ -28,7 +28,7 @@ extension Uploader {
             }
             if !query.isEmpty { text += (text.contains("?") ? "&" : "?") + query.joined(separator: "&") }
             guard let url = URL(string: text), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https", url.host() != nil else {
-                throw UploadError.invalidConfiguration(String(localized: "the request URL isn’t an http or https address"))
+                throw UploadError.invalidConfiguration(String(localized: "the request URL isn’t an http or https address", bundle: .module))
             }
             var built = URLRequest(url: url)
             built.httpMethod = settings.method.rawValue
@@ -53,7 +53,7 @@ extension Uploader {
             }
         case .multipartFormData:
             guard !settings.fileFormName.isEmpty else {
-                throw UploadError.invalidConfiguration(String(localized: "the form field for the file has no name"))
+                throw UploadError.invalidConfiguration(String(localized: "the form field for the file has no name", bundle: .module))
             }
             var fields: [(name: String, value: String)] = []
             do {

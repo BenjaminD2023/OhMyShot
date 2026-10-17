@@ -20,8 +20,8 @@ struct S3ObjectAddress: Equatable {
     init(settings: S3Settings, key: String) throws {
         guard let scheme = settings.endpoint.scheme?.lowercased(), scheme == "http" || scheme == "https",
               settings.endpoint.host() != nil
-        else { throw UploadError.invalidConfiguration(String(localized: "the endpoint isn’t an http or https address")) }
-        guard !settings.bucket.isEmpty else { throw UploadError.invalidConfiguration(String(localized: "the bucket name is empty")) }
+        else { throw UploadError.invalidConfiguration(String(localized: "the endpoint isn’t an http or https address", bundle: .module)) }
+        guard !settings.bucket.isEmpty else { throw UploadError.invalidConfiguration(String(localized: "the bucket name is empty", bundle: .module)) }
         self.key = key
         self.scheme = scheme
         let base = Uploader.hostWithPort(of: settings.endpoint)
@@ -69,7 +69,7 @@ extension Uploader {
             guard let link = URL(string: "\(address.scheme)://\(address.host)\(address.path)?\(presigned.query)") else { throw UploadError.linkMissing }
             return UploadResult(link: link, fileName: name, expiresAt: now.addingTimeInterval(TimeInterval(seconds)), remoteKey: address.key)
         case .publicURL:
-            guard let url = address.url else { throw UploadError.invalidConfiguration(String(localized: "the endpoint and bucket don’t make an address")) }
+            guard let url = address.url else { throw UploadError.invalidConfiguration(String(localized: "the endpoint and bucket don’t make an address", bundle: .module)) }
             return UploadResult(link: try Self.publicLink(base: settings.publicBaseURL, key: address.key, fallback: url), fileName: name, remoteKey: address.key)
         }
     }
@@ -97,7 +97,7 @@ extension Uploader {
     ) throws -> URLRequest {
         let queryText = SigV4Signer.canonicalQuery(query)
         guard let url = URL(string: "\(address.scheme)://\(address.host)\(address.path)" + (query.isEmpty ? "" : "?\(queryText)")) else {
-            throw UploadError.invalidConfiguration(String(localized: "the endpoint and bucket don’t make an address"))
+            throw UploadError.invalidConfiguration(String(localized: "the endpoint and bucket don’t make an address", bundle: .module))
         }
         let now = Date()
         var signed = [
@@ -152,7 +152,7 @@ extension Uploader {
         guard let base else { return fallback }
         let text = base.absoluteString.hasSuffix("/") ? String(base.absoluteString.dropLast()) : base.absoluteString
         guard let link = URL(string: "\(text)/\(SigV4Signer.encodePath(key))") else {
-            throw UploadError.invalidConfiguration(String(localized: "the public URL isn’t an address"))
+            throw UploadError.invalidConfiguration(String(localized: "the public URL isn’t an address", bundle: .module))
         }
         return link
     }

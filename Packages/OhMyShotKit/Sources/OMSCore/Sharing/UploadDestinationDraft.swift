@@ -135,19 +135,19 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
     /// The kind as the editor's title says it.
     public static func title(for kind: Kind) -> String {
         switch kind {
-        case .amazonS3: String(localized: "Amazon S3")
-        case .s3Compatible: String(localized: "S3-compatible storage")
-        case .webDAV: String(localized: "WebDAV")
-        case .customHTTP: String(localized: "Custom HTTP")
+        case .amazonS3: String(localized: "Amazon S3", bundle: .module)
+        case .s3Compatible: String(localized: "S3-compatible storage", bundle: .module)
+        case .webDAV: String(localized: "WebDAV", bundle: .module)
+        case .customHTTP: String(localized: "Custom HTTP", bundle: .module)
         }
     }
 
     public static func defaultName(for kind: Kind) -> String {
         switch kind {
-        case .amazonS3: String(localized: "Amazon S3")
-        case .s3Compatible: String(localized: "S3-compatible storage")
-        case .webDAV: String(localized: "WebDAV")
-        case .customHTTP: String(localized: "Custom server")
+        case .amazonS3: String(localized: "Amazon S3", bundle: .module)
+        case .s3Compatible: String(localized: "S3-compatible storage", bundle: .module)
+        case .webDAV: String(localized: "WebDAV", bundle: .module)
+        case .customHTTP: String(localized: "Custom server", bundle: .module)
         }
     }
 
@@ -159,7 +159,7 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
     /// The first thing wrong with the form, as a sentence for the person; nil when it can be saved.
     public func firstIssue() -> String? {
         if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return String(localized: "Give the destination a name.")
+            return String(localized: "Give the destination a name.", bundle: .module)
         }
         switch kind {
         case .amazonS3, .s3Compatible:
@@ -173,24 +173,24 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
 
     private func s3Issue() -> String? {
         if kind == .s3Compatible, Self.httpURL(endpoint) == nil {
-            return String(localized: "Enter the endpoint, such as https://s3.example.com.")
+            return String(localized: "Enter the endpoint, such as https://s3.example.com.", bundle: .module)
         }
-        if region.trimmed.isEmpty { return String(localized: "Enter the region.") }
-        if bucket.trimmed.isEmpty { return String(localized: "Enter the bucket name.") }
-        if accessKeyID.trimmed.isEmpty, !isStored(SecretField.s3AccessKeyID) { return String(localized: "Enter the access key ID.") }
-        if secretAccessKey.isEmpty, !isStored(SecretField.s3SecretAccessKey) { return String(localized: "Enter the secret access key.") }
+        if region.trimmed.isEmpty { return String(localized: "Enter the region.", bundle: .module) }
+        if bucket.trimmed.isEmpty { return String(localized: "Enter the bucket name.", bundle: .module) }
+        if accessKeyID.trimmed.isEmpty, !isStored(SecretField.s3AccessKeyID) { return String(localized: "Enter the access key ID.", bundle: .module) }
+        if secretAccessKey.isEmpty, !isStored(SecretField.s3SecretAccessKey) { return String(localized: "Enter the secret access key.", bundle: .module) }
         if !publicBaseURL.trimmed.isEmpty, Self.httpURL(publicBaseURL) == nil {
-            return String(localized: "The public address must start with http:// or https://.")
+            return String(localized: "The public address must start with http:// or https://.", bundle: .module)
         }
         return nil
     }
 
     private func webDAVIssue() -> String? {
-        if Self.httpURL(davURL) == nil { return String(localized: "Enter the folder’s address, starting with http:// or https://.") }
-        if username.trimmed.isEmpty { return String(localized: "Enter the user name.") }
-        if password.isEmpty, !isStored(SecretField.webDAVPassword) { return String(localized: "Enter the password.") }
+        if Self.httpURL(davURL) == nil { return String(localized: "Enter the folder’s address, starting with http:// or https://.", bundle: .module) }
+        if username.trimmed.isEmpty { return String(localized: "Enter the user name.", bundle: .module) }
+        if password.isEmpty, !isStored(SecretField.webDAVPassword) { return String(localized: "Enter the password.", bundle: .module) }
         if !publicBaseURL.trimmed.isEmpty, Self.httpURL(publicBaseURL) == nil {
-            return String(localized: "The public address must start with http:// or https://.")
+            return String(localized: "The public address must start with http:// or https://.", bundle: .module)
         }
         return nil
     }
@@ -198,15 +198,15 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
     private func customIssue() -> String? {
         let address = requestURL.trimmed
         if !(address.lowercased().hasPrefix("http://") || address.lowercased().hasPrefix("https://")) || address.count < 9 {
-            return String(localized: "Enter the upload address, starting with http:// or https://.")
+            return String(localized: "Enter the upload address, starting with http:// or https://.", bundle: .module)
         }
-        if fileFormName.trimmed.isEmpty, bodyType == .multipartFormData { return String(localized: "Enter the name of the form field the file goes in.") }
+        if fileFormName.trimmed.isEmpty, bodyType == .multipartFormData { return String(localized: "Enter the name of the form field the file goes in.", bundle: .module) }
         for rows in [parameters, headers, arguments] {
             let names = rows.map { $0.name.trimmed }
-            if names.contains("") { return String(localized: "Fill in or remove the empty row.") }
-            if Set(names).count != names.count { return String(localized: "Two rows have the same name.") }
+            if names.contains("") { return String(localized: "Fill in or remove the empty row.", bundle: .module) }
+            if Set(names).count != names.count { return String(localized: "Two rows have the same name.", bundle: .module) }
             for row in rows where row.value.isEmpty && !row.isStored {
-                return String(localized: "Enter a value for \(row.name.trimmed).")
+                return String(localized: "Enter a value for \(row.name.trimmed).", bundle: .module)
             }
         }
         return nil

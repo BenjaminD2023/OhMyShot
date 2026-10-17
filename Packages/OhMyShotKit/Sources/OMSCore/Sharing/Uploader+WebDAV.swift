@@ -9,7 +9,7 @@ extension Uploader {
         transport: Transport
     ) async throws -> UploadResult {
         guard let scheme = settings.baseURL.scheme?.lowercased(), scheme == "http" || scheme == "https", settings.baseURL.host() != nil else {
-            throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an http or https address"))
+            throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an http or https address", bundle: .module))
         }
         let password = (try? secret(SecretField.webDAVPassword, of: destination)) ?? ""
         let credentials = Data("\(settings.username):\(password)".utf8).base64EncodedString()
@@ -18,7 +18,7 @@ extension Uploader {
         let folders = Self.normalizedFolder(settings.keyPrefix).split(separator: "/").map(String.init)
         let relativeKey = (folders + [name]).joined(separator: "/")
         guard let target = URL(string: "\(base)/\(SigV4Signer.encodePath(relativeKey))") else {
-            throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an address"))
+            throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an address", bundle: .module))
         }
 
         func request(_ method: String, _ url: URL) -> URLRequest {
@@ -49,7 +49,7 @@ extension Uploader {
             response = try await transport.send(put(), body: fileURL)
         }
         guard response.status == 201 || response.status == 204 || response.status == 200 else {
-            if response.status == 507 { throw UploadError.server(status: 507, message: String(localized: "the server is out of space")) }
+            if response.status == 507 { throw UploadError.server(status: 507, message: String(localized: "the server is out of space", bundle: .module)) }
             throw Self.failure(status: response.status, message: nil)
         }
 
@@ -64,13 +64,13 @@ extension Uploader {
 
     func deleteFromWebDAV(key: String, destination: UploadDestination, settings: WebDAVSettings, transport: Transport) async throws {
         guard let scheme = settings.baseURL.scheme?.lowercased(), scheme == "http" || scheme == "https", settings.baseURL.host() != nil else {
-            throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an http or https address"))
+            throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an http or https address", bundle: .module))
         }
         let password = (try? secret(SecretField.webDAVPassword, of: destination)) ?? ""
         let credentials = Data("\(settings.username):\(password)".utf8).base64EncodedString()
         let base = settings.baseURL.absoluteString.hasSuffix("/") ? String(settings.baseURL.absoluteString.dropLast()) : settings.baseURL.absoluteString
         guard let target = URL(string: "\(base)/\(SigV4Signer.encodePath(key))") else {
-            throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an address"))
+            throw UploadError.invalidConfiguration(String(localized: "the WebDAV address isn’t an address", bundle: .module))
         }
         var request = URLRequest(url: target)
         request.httpMethod = "DELETE"
