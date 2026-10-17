@@ -150,7 +150,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     private var windowLease: ActiveResources.Lease?
 
     public init(dependencies: SettingsDependencies) {
-        let tabs = NSTabViewController()
+        let tabs = SettingsTabs()
         tabs.tabStyle = .toolbar
         for tab in SettingsTab.allCases {
             let content = Self.makeContent(for: tab, dependencies: dependencies)
@@ -186,6 +186,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         }
         showWindow(nil)
         AppActivation.bringForward(window)
+        SettingsTabs.leaveNothingFocused(in: window)
     }
 
     public func windowWillClose(_ notification: Notification) {
@@ -230,5 +231,22 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         let controller = NSHostingController(rootView: view)
         controller.sizingOptions = [.preferredContentSize]
         return controller
+    }
+}
+
+/// The tabs, which leave no control holding the keyboard when one is chosen: AppKit gives it to the first text field
+/// (the file name pattern in General), all of it selected, where a stray key would replace it.
+private final class SettingsTabs: NSTabViewController {
+    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        super.tabView(tabView, didSelect: tabViewItem)
+        Self.leaveNothingFocused(in: tabView.window)
+    }
+
+    /// After AppKit has given the keyboard out, the window takes it back.
+    static func leaveNothingFocused(in window: NSWindow?) {
+        DispatchQueue.main.async { [weak window] in
+            guard let window, window.firstResponder is NSText else { return }
+            window.makeFirstResponder(nil)
+        }
     }
 }

@@ -119,6 +119,15 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
         fatalError("init(coder:) is not supported")
     }
 
+    #if DEBUG
+    /// Prints the selected screenshot as File › Print… does, for scripted checks, which cannot make the window key.
+    public func debugPrintSelection() -> Bool {
+        guard let item = model.selectedItem, item.kind == .screenshot else { return false }
+        model.print(item)
+        return true
+    }
+    #endif
+
     public func show() {
         model.reload()
         if windowLease == nil {

@@ -155,6 +155,10 @@ struct DebugHooks {
             // key=left|right|up|down|return|space|cmd-c|cmd-s|cmd-delete, sent through the window like a
             // real key press.
             let key = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "key" }?.value ?? ""
+            // activate=1 brings the app forward first, so the window is key and a ⌘ key goes as the menu sends it.
+            if URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "activate" }) == true {
+                NSApp.activate()
+            }
             sendKey(key, to: historyWindow())
             if key == "return" {
                 Task {
@@ -1120,10 +1124,12 @@ struct DebugHooks {
             let ahead = Self.intParameter("ahead", in: url) == 1
             let drags = Self.intParameter("drag", in: url) != 0
             let keeps = Self.intParameter("keep", in: url) == 1
+            // hold=1 presses nothing and leaves the frame up, for allinone-act and snapshots; escape ends it.
+            let holds = Self.intParameter("hold", in: url) == 1
             Task {
                 await runAllInOneDemo(
                     area: rect.count == 4 ? CGRect(x: rect[0], y: rect[1], width: rect[2], height: rect[3]) : nil, key: key, ahead: ahead,
-                    drags: drags, keepsArea: keeps
+                    drags: drags, keepsArea: keeps, holds: holds
                 )
             }
         case "allinone-act":
@@ -1212,6 +1218,35 @@ struct DebugHooks {
             // The drawn page delivered as a capture: into the history and a card, never the clipboard.
             if let image = DebugPanelDemo.image(), let display = displays.layout.primary {
                 Task { await captures.deliverDemo(image, displayID: display.id) }
+            }
+        case "history-print":
+            // The selected screenshot printed as File › Print… prints it, the panel a sheet on the window.
+            let controller = historyWindow()?.windowController as? HistoryWindowController
+            Log.app.notice("debug.history-print started=\(controller?.debugPrintSelection() ?? false, privacy: .public)")
+        case "menu-act":
+            // title= a main-menu item's title as shown ("…" included), window= part of the title of the window it goes
+            // to (else the key window), sent as the menu would: for commands with no key or button of their own here.
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+            let title = query?.first { $0.name == "title" }?.value ?? ""
+            let window = query?.first { $0.name == "window" }?.value
+                .flatMap { part in NSApp.windows.first { $0.isVisible && $0.title.contains(part) } } ?? NSApp.keyWindow
+            let item = NSApp.mainMenu.flatMap { Self.menuItem(titled: title, in: $0) }
+            // activate=1 brings the app forward first, so the window is key and the command goes as the menu sends it.
+            if query?.contains(where: { $0.name == "activate" }) == true { NSApp.activate() }
+            window?.makeKeyAndOrderFront(nil)
+            let handled = item?.action.map { action in
+                window?.isKeyWindow == true
+                    ? NSApp.sendAction(action, to: item?.target, from: item)
+                    : window?.firstResponder?.tryToPerform(action, with: item) ?? false
+            } ?? false
+            Log.app.notice("debug.menu-act \(title, privacy: .public) window=\(window?.title ?? "none", privacy: .public) found=\(item != nil, privacy: .public) handled=\(handled, privacy: .public)")
+        case "end-sheets":
+            // Cancel on every sheet open on our windows (a print panel, Image Size), pressed as a person would.
+            for window in NSApp.windows {
+                guard let sheet = window.attachedSheet else { continue }
+                let cancel = Self.button(in: sheet.contentView) { $0.keyEquivalent == "\u{1b}" || $0.title == "Cancel" }
+                if let cancel { cancel.performClick(nil) } else { window.endSheet(sheet, returnCode: .cancel) }
+                Log.app.notice("debug.end-sheets \(window.title, privacy: .public) pressed=\(cancel != nil, privacy: .public)")
             }
         case "qa-annotate":
             quickAccess.annotateLatest()
@@ -1306,6 +1341,7 @@ struct DebugHooks {
             "cmd-s": (1, "s", .command),
             "cmd-delete": (51, "\u{7F}", .command),
             "cmd-f": (3, "f", .command),
+            "cmd-p": (35, "p", .command),
         ]
         guard let entry = table[key] else {
             Log.app.error("debug.history-key: unknown key \(key, privacy: .public)")
@@ -1369,6 +1405,23 @@ struct DebugHooks {
             }
         }
         Log.app.notice("debug.history-click \(times, privacy: .public) at \(Int(point.x), privacy: .public),\(Int(point.y), privacy: .public)")
+    }
+
+    private static func menuItem(titled title: String, in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items {
+            if item.title == title { return item }
+            if let submenu = item.submenu, let found = menuItem(titled: title, in: submenu) { return found }
+        }
+        return nil
+    }
+
+    private static func button(in view: NSView?, where matches: (NSButton) -> Bool) -> NSButton? {
+        guard let view else { return nil }
+        if let button = view as? NSButton, matches(button) { return button }
+        for subview in view.subviews {
+            if let found = button(in: subview, where: matches) { return found }
+        }
+        return nil
     }
 
     private static func menuItem(withKeyEquivalent characters: String, in menu: NSMenu) -> NSMenuItem? {
@@ -1741,7 +1794,7 @@ struct DebugHooks {
         Log.app.notice("debug.freeze-demo kept \(kept.width, privacy: .public)x\(kept.height, privacy: .public) from \(parts.count, privacy: .public) display(s), frozen selection \(expected.image.width, privacy: .public)x\(expected.image.height, privacy: .public), largest channel difference \(difference.map(String.init) ?? "n/a (sizes differ)", privacy: .public)")
     }
 
-    func runAllInOneDemo(area: CGRect?, key: String, ahead: Bool, drags: Bool = true, keepsArea: Bool = false) async {
+    func runAllInOneDemo(area: CGRect?, key: String, ahead: Bool, drags: Bool = true, keepsArea: Bool = false, holds: Bool = false) async {
         let layout = displays.layout
         guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }
         var frames: [CGDirectDisplayID: CapturedFrame] = [:]
@@ -1774,6 +1827,7 @@ struct DebugHooks {
         }
         let framed = overlay.debugAllInOneSetup(nil) ?? "nothing framed"
         Log.app.notice("debug.allinone-demo framed: \(framed, privacy: .public), key window \(NSApp.keyWindow.map { String(describing: type(of: $0)) } ?? "none", privacy: .public), first responder \(NSApp.keyWindow?.firstResponder.map { String(describing: type(of: $0)) } ?? "none", privacy: .public)")
+        if holds { return }
         _ = overlay.debugAllInOneSetup(key)
         try? await Task.sleep(for: .milliseconds(150))
         if overlay.isActive {

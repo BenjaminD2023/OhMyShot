@@ -116,14 +116,18 @@ struct AllInOneSetupTests {
         return (view, window, editor)
     }
 
-    /// Capturing while a width is typed takes the typed width: the click or the key sets it first.
-    @Test func capturingWhileTypingTakesTheTypedSize() throws {
+    /// Return in a field sets the typed width and gives the keyboard back to the frame, capturing nothing; the next
+    /// Return captures the area at that width.
+    @Test func returnInAFieldSetsTheTypedSizeAndTheNextOneCaptures() throws {
         let (view, window, _) = try typing("800")
         var taken: CGRect?
         view.onChoose = { _, area in taken = area }
         _ = view.debugAct("return")
-        #expect(taken?.width == 400)
+        #expect(taken == nil)
+        #expect(view.area.width == 400)
         #expect(window.firstResponder === view)
+        _ = view.debugAct("return")
+        #expect(taken?.width == 400)
     }
 
     /// A width past the display is cut to it, and the field then shows what the area took.

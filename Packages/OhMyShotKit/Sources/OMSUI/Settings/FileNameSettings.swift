@@ -17,16 +17,19 @@ struct FileNameSettings: View {
                 .frame(width: 250)
                 InfoButton(Text("A name is made from this pattern for each capture and each file saved. {date} and {time} are when it was taken; {app} is the app in front; {window} is the window’s title, or the front window’s for an area; {counter} is a number that goes up by one with each file saved.", bundle: .module))
             }
+            // The token's name without its braces, so the five fit the column whole; the braces go in with it.
             HStack(spacing: 4) {
                 ForEach(FilenameTemplate.Token.allCases, id: \.self) { token in
                     Button {
                         insert(token)
                     } label: {
-                        Text(verbatim: token.placeholder)
+                        Text(verbatim: String(token.placeholder.dropFirst().dropLast()))
                             .font(.caption.monospaced())
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .fixedSize()
+                    .help(Text("Insert \(token.placeholder)", bundle: .module))
                     .accessibilityLabel(Text("Insert \(token.placeholder)", bundle: .module))
                 }
             }

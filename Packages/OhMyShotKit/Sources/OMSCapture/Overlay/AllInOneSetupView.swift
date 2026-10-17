@@ -405,15 +405,25 @@ final class AllInOneSetupView: NSView {
             "return": (36, "\r", []), "escape": (53, "\u{1b}", []), "left": (123, "", []), "right": (124, "", []),
             "down": (125, "", []), "up": (126, "", []), "opt-right": (124, "", .option), "shift-down": (125, "", .shift),
             "cmd-c": (8, "c", .command), "cmd-s": (1, "s", .command), "tab": (48, "\t", []),
+            "cmd-a": (0, "a", .command), "cmd-z": (6, "z", .command), "backspace": (51, "\u{7F}", []),
         ]
         let (code, characters, flags) = keys[action] ?? (0, action, [])
         guard let event = NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+            with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: window?.windowNumber ?? 0, context: nil,
             characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
         ) else { return summary }
         if flags.contains(.command) {
-            // As AppKit does: down the window's views, which reaches this view whatever has the keyboard.
+            // As AppKit does: the main menu's key equivalents first (Select All, Undo for a field being typed in),
+            // then down the window's views, which reaches this view whatever has the keyboard.
+            if NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
+                let editor = window?.firstResponder as? NSTextView
+                return summary + " (menu) text=\(editor?.string ?? "-") allowsUndo=\(editor?.allowsUndo ?? false) canUndo=\(editor?.undoManager?.canUndo ?? false)"
+            }
             if let window { _ = window.contentView?.performKeyEquivalent(with: event) } else { _ = performKeyEquivalent(with: event) }
+        } else if let window, window.firstResponder is NSText {
+            // A size being typed: the key goes where a pressed one would, the field's editor.
+            window.firstResponder?.keyDown(with: event)
+            return summary + " typing=\((window.firstResponder as? NSText)?.string ?? "")"
         } else {
             keyDown(with: event)
         }
