@@ -291,6 +291,11 @@ struct DebugHooks {
                 await translateDemo(prose: prose, blank: blank)
                 if controls { textCapture.revealLensControls() }
             }
+        case "panel-file":
+            // path=: the OCR panel on that picture, as Recognize Text in Image… opens it (the window shows on screen).
+            if let path = Self.parameter("path", in: url) {
+                Task { await textCapture.openPanel(forFileAt: URL(filePath: path)) }
+            }
         case "panel-test":
             // The centered region, as Option at the end of a Capture Text drag. Reads the screen: for
             // timing and logs only, never for snapshots.

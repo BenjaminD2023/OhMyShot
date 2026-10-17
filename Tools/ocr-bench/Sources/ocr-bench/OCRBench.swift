@@ -14,7 +14,8 @@ import UniformTypeIdentifiers
 ///   --real DIR         add real screenshots: DIR/NAME.png with its truth in DIR/NAME.txt (keep these
 ///                      outside the repository)
 ///   --save DIR         write each case's image and every engine's output to DIR
-///   --pack DIR         also run L2 ("l2") with the PP-OCR model pack in DIR (Tools/model-packs/ppocr_pack.py)
+///   --pack DIR         also run L2 ("l2") with the PP-OCR model pack in DIR (Tools/model-packs/ppocr_pack.py), and L1
+///                      with L2 beside it ("l1+l2")
 ///   --json PATH        write every run, outputs included, as JSON
 ///   --write-baseline   record this run as the baseline for this major macOS version
 ///   --list             list engines and cases, then exit
@@ -66,9 +67,15 @@ struct OCRBench {
         let options = Options(CommandLine.arguments.dropFirst())
         let real = try options.realDirectory.map(Corpus.real(in:)) ?? []
         let corpus = (Corpus.all + real).filter { item in options.cases.isEmpty || options.cases.contains { item.id.hasPrefix($0) } }
-        // L2 from a model pack's folder (Docs/ocr.md › The L2 pack), named "l2".
+        // L2 from a model pack's folder (Docs/ocr.md › The L2 pack), named "l2", and L1 with L2 beside it, "l1+l2".
         var packs: [any OCREngine] = []
-        if let folder = options.packDirectory { packs.append(try await PPOCRReader.load(from: folder)) }
+        if let folder = options.packDirectory {
+            let reader = try await PPOCRReader.load(from: folder)
+            packs.append(reader)
+            if let l1 = engines.first(where: { $0.name == "l1" }) as? VisionPipeline {
+                packs.append(PairedReading(first: l1, second: reader))
+            }
+        }
         var selected = options.engines.isEmpty ? engines + packs : (engines + probes + packs).filter { options.engines.contains($0.name) }
         if options.trace {
             // Each step and Vision request of L1, on standard error.

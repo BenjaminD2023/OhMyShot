@@ -130,17 +130,16 @@ public struct ModelPack: Codable, Hashable, Identifiable, Sendable {
 
 /// The packs this build of the app offers.
 public enum ModelPackCatalog {
-    /// Empty until the text reader reads with a pack (M6 step 2): a listed pack shows in Settings › Tools, and one
-    /// that changes nothing would be a download for nothing. With nothing here, nothing in the app mentions packs.
-    public static let packs: [ModelPack] = []
+    /// A listed pack shows in Settings › Tools. With nothing here, nothing in the app mentions packs.
+    public static let packs: [ModelPack] = [ppocrV6Small]
 
     /// PP-OCRv6 small, converted to Core ML by `Tools/model-packs/ppocr_pack.py` and published on Hugging Face
-    /// (Docs/ocr.md › The L2 pack). Listed in `packs` once the text reader reads with it; Debug builds can offer it
-    /// before (`debug/modelpack-offer`).
+    /// (Docs/ocr.md › The L2 pack): the OCR panel and the history's search read Chinese and Japanese with it beside
+    /// Vision (Docs/ocr.md › L2 beside L1).
     public static let ppocrV6Small = ModelPack(
         id: "ppocr-v6-small", version: "1",
         name: "Chinese and Japanese Text",
-        summary: "PP-OCRv6 small, by PaddlePaddle: reads Chinese, Japanese, and English text that macOS reads poorly, such as dense interfaces and small type.",
+        summary: "PP-OCRv6 small, by PaddlePaddle: reads Chinese and Japanese more accurately than macOS alone, in the OCR panel and in History’s search.",
         license: .init(name: "Apache-2.0", file: "LICENSE.txt", url: URL(string: "https://www.apache.org/licenses/LICENSE-2.0")!),
         original: URL(string: "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_safetensors")!,
         host: "Hugging Face",

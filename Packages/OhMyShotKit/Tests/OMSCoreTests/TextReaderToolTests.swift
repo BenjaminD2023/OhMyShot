@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import OMSCore
@@ -45,6 +46,29 @@ struct TextReaderToolTests {
             try await TextReaderTool.text(ofPictureAt: URL(filePath: "/tmp/p.png"), joinsWrappedLines: true, helper: reader, resources: resources)
         }
         #expect(resources.isIdle)
+    }
+
+    @Test func thePacksOwnLinesComeBackWithTheirBoxes() async throws {
+        // The job asks for the pack's lines alone, from its folder.
+        let reader = try helper(answering + """
+
+        case "$line" in *'"lines":true'*) ;; *) exit 4 ;; esac
+        case "$line" in *packs*l2*) ;; *) exit 5 ;; esac
+        printf '{"id":"%s","lines":[{"text":"打开设置","box":[[10,20],[120,30]],"confidence":0.98}]}\\n' "$id"
+        """)
+        let resources = ActiveResources()
+        let lines = try await TextReaderTool.lines(ofPictureAt: URL(filePath: "/tmp/p.tiff"), pack: URL(filePath: "/packs/l2"), helper: reader, resources: resources)
+        #expect(lines == [.init(text: "打开设置", box: CGRect(x: 10, y: 20, width: 120, height: 30), confidence: 0.98)])
+        #expect(resources.isIdle)
+    }
+
+    @Test func warmingAPackReadsNoPicture() async throws {
+        let reader = try helper(answering + """
+
+        case "$line" in *'"path"'*) exit 4 ;; *'"warm":true'*) ;; *) exit 5 ;; esac
+        printf '{"id":"%s","text":""}\\n' "$id"
+        """)
+        try await TextReaderTool.warm(pack: URL(filePath: "/packs/l2"), helper: reader, resources: ActiveResources())
     }
 
     @Test func noReaderIsUnavailable() async throws {

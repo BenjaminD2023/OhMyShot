@@ -8,6 +8,10 @@ import OSLog
 /// read: Vision keeps what a recognition used for as long as its process lives (Docs/perf.md, M2), so reading
 /// in the app would leave it at 70 MB or more for good. One run reads every screenshot waiting, one after
 /// another, and exits; one asked for while another runs follows it.
+///
+/// With a model pack installed (`pack`), the reader reads it beside Vision where a capture holds Chinese or Japanese
+/// (L2 beside L1, Docs/ocr.md › L2 beside L1), and the captures read before it was there that hold either are read
+/// again.
 @MainActor
 @Observable
 public final class HistoryTextReader {
@@ -19,6 +23,7 @@ public final class HistoryTextReader {
 
     @ObservationIgnored private let store: HistoryStore
     @ObservationIgnored private let helper: URL?
+    @ObservationIgnored private let pack: () -> TextReaderPack?
     @ObservationIgnored private var run: Run?
     /// While the screenshots waiting are being found, before a run starts.
     @ObservationIgnored private(set) var starting = false
@@ -36,22 +41,31 @@ public final class HistoryTextReader {
         let process: Process
         let priority: QualityOfService
         let lease: ActiveResources.Lease
+        /// The pack the run reads beside Vision, kept with what it reads.
+        let reading: String?
         /// What was sent, by id: the record and its file as it was when sent.
         var sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)]
         var stopped = false
 
-        init(process: Process, priority: QualityOfService, lease: ActiveResources.Lease, sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)]) {
+        init(
+            process: Process, priority: QualityOfService, lease: ActiveResources.Lease, reading: String?,
+            sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)]
+        ) {
             self.process = process
             self.priority = priority
             self.lease = lease
+            self.reading = reading
             self.sent = sent
         }
     }
 
-    /// - Parameter helper: the text reader; nil reads nothing (a build without it).
-    public init(store: HistoryStore, helper: URL?) {
+    /// - Parameters:
+    ///   - helper: the text reader; nil reads nothing (a build without it).
+    ///   - pack: the model pack to read beside Vision, asked as each run starts; nil while none is installed.
+    public init(store: HistoryStore, helper: URL?, pack: @escaping () -> TextReaderPack? = { nil }) {
         self.store = store
         self.helper = helper
+        self.pack = pack
     }
 
     /// Reads, in a few seconds and at background priority, every screenshot waiting: after a capture. Not in
@@ -108,25 +122,26 @@ public final class HistoryTextReader {
         }
         guard let helper, !stopped else { return }
         starting = true
-        let store = store, failed = failed
+        let store = store, failed = failed, pack = pack()
         Task {
             // Off the main actor: a record and a text file for every capture in the history.
-            let waiting = await Self.waiting(in: store, except: failed)
+            let waiting = await Self.waiting(in: store, except: failed, pack: pack)
             starting = false
             guard !stopped else { return }
-            start(helper, reading: waiting, priority: priority)
+            start(helper, reading: waiting, with: pack, priority: priority)
         }
     }
 
     /// The screenshots waiting to be read, with their files as they are now, and the reader's input for them.
     @concurrent
-    private static func waiting(in store: HistoryStore, except failed: Set<UUID>) async -> (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], jobs: Data) {
+    private static func waiting(
+        in store: HistoryStore, except failed: Set<UUID>, pack: TextReaderPack?
+    ) async -> (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], jobs: Data) {
         var sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)] = [:]
         var jobs = Data()
-        for item in store.needingText(store.items()) where !failed.contains(item.id) {
-            guard let stamp = store.stamp(of: item),
-                  var line = try? JSONEncoder().encode(Job(id: item.id.uuidString, path: store.fileURL(for: item).path(percentEncoded: false)))
-            else { continue }
+        for item in store.needingText(store.items(), reading: pack?.reading) where !failed.contains(item.id) {
+            let job = Job(id: item.id.uuidString, path: store.fileURL(for: item).path(percentEncoded: false), pack: pack?.folder.path(percentEncoded: false))
+            guard let stamp = store.stamp(of: item), var line = try? JSONEncoder().encode(job) else { continue }
             line.append(0x0A)
             jobs.append(line)
             sent[item.id.uuidString] = (item, stamp)
@@ -134,7 +149,10 @@ public final class HistoryTextReader {
         return (sent, jobs)
     }
 
-    private func start(_ helper: URL, reading waiting: (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], jobs: Data), priority requested: QualityOfService) {
+    private func start(
+        _ helper: URL, reading waiting: (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], jobs: Data), with pack: TextReaderPack?,
+        priority requested: QualityOfService
+    ) {
         let (sent, jobs) = waiting
         guard !sent.isEmpty else { return runAgainIfAsked() }
         // Asked again at a higher priority while the screenshots were being found: this run is that one.
@@ -162,10 +180,10 @@ public final class HistoryTextReader {
             Log.history.error("The text reader didn't start: \(error.localizedDescription, privacy: .public)")
             return runAgainIfAsked()
         }
-        let run = Run(process: process, priority: priority, lease: ActiveResources.shared.acquire(.helperProcess), sent: sent)
+        let run = Run(process: process, priority: priority, lease: ActiveResources.shared.acquire(.helperProcess), reading: pack?.reading, sent: sent)
         self.run = run
         reading = sent.count
-        Log.history.notice("Reading the text in \(sent.count, privacy: .public) capture(s)")
+        Log.history.notice("Reading the text in \(sent.count, privacy: .public) capture(s)\(pack.map { " with \($0.reading)" } ?? "", privacy: .public)")
 
         // Written off the main actor: the pipe holds 64 KB, and the reader takes a line only when it has read
         // the picture before.
@@ -199,7 +217,7 @@ public final class HistoryTextReader {
             // Unless the capture left the history while it was read.
             guard store.stamp(of: item) != nil else { return }
             do {
-                try store.setText(text, of: item, readFrom: stamp)
+                try store.setText(text, of: item, readFrom: stamp, reading: run.reading)
                 onRead?(item.id)
             } catch {
                 Log.history.error("Keeping the text of \(item.fileName, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
@@ -233,6 +251,7 @@ public final class HistoryTextReader {
     private struct Job: Encodable {
         let id: String
         let path: String
+        let pack: String?
     }
 
     private struct Result: Decodable {

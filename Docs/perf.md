@@ -1903,3 +1903,34 @@ copied). The action now hands the picture to the text reader (`TextReaderTool`) 
 | The app's footprint across the action | +56 MB, kept (63 → 119 MB) | 24 → 31 MB |
 | The text read | 401 characters, 23 lines | the same |
 | The text reader | — | 252 MB at most, in its own process, gone when it exits |
+
+## M6 — L2 beside L1 in the text reader (2026-10-17)
+
+The text reader with the PP-OCRv6 small pack (Docs/ocr.md › L2 beside L1), run from the shell, Debug build, a new
+process each run, the pack's models already compiled. Nothing in the app changes: the panel's Vision reading stays
+where it was, and the pack is read only in the text reader, which exits.
+
+| Picture | Vision alone | The pack alone (the OCR panel's second reading) | Vision with the pack (the history's reading) |
+| --- | --- | --- | --- |
+| Full-screen captures, 2000–4112 wide (10) | 0.6–1.4 s, 283–405 MB | 0.95–2.52 s, 494–810 MB | 1.5–4.1 s, 655–944 MB |
+| The tallest capture in the history, 3346 × 16811 | 3.3 s, 589 MB | 4.8 s, 1009 MB | 7.4 s, 1236 MB |
+
+- **The footprint is the recognizer's,** kept by Core ML for each of its enumerated widths a run has used: 13 MB at
+  160 wide, 257 MB at 4000, 1.1–1.5 GB with all twelve. It is no leak, and nothing in the reader's code moved it
+  (Docs/ocr.md › L2 beside L1). A pack whose recognizer gives each step's likeliest class alone may shrink it.
+- **Reading the history again after an install** keeps one reader of about 1 GB for as long as it has captures to
+  read, at background priority.
+- **Release** read the pack alone 0.97–2.23 s on six of the captures, about a tenth faster: the time is the Neural
+  Engine's.
+- **In the Dev app** (Docs/ocr.md › L2 beside L1 › In the Dev app):
+
+  | Step | Time | The reader at most | The app |
+  | --- | --- | --- | --- |
+  | Download from Hugging Face, 15.8 MB | 18 s | — | 24 MB |
+  | Warming the installed pack | 10.9 s | 24 MB | — |
+  | Reading 46 captures again, background priority | 4 min 31 s | 1073 MB | 26 MB after |
+  | Reading 43 again, utility priority | 96 s | 1494 MB | — |
+  | Five test pictures, read and read again | 39 s and 15 s | 860 and 1111 MB | 24 → 30 MB |
+  | The OCR panel's second reading, four pictures | 0.35–2.69 s | 381–674 MB | 150 MB after four panels (one panel left 110–125 MB in M2) |
+
+- **For the M6 power gate:** idle numbers with a pack installed are not measured yet.

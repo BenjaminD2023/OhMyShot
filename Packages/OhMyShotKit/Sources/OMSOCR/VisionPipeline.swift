@@ -643,7 +643,7 @@ enum Spacing {
     }
 
     /// CJK next to a Latin letter or digit, or a digit next to a letter ("24px"), in either order.
-    private static func isBoundary(_ a: Character, _ b: Character) -> Bool {
+    static func isBoundary(_ a: Character, _ b: Character) -> Bool {
         if Script.isCJK(a) && Script.isLatinOrDigit(b) || Script.isLatinOrDigit(a) && Script.isCJK(b) { return true }
         guard Script.isLatinOrDigit(a), Script.isLatinOrDigit(b) else { return false }
         return a.isNumber != b.isNumber

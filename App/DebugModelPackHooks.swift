@@ -41,15 +41,17 @@ struct DebugModelPackHooks {
                 }
             }
         case "modelpack-offer":
-            // Offers a pack the build lists but doesn't offer yet (`ModelPackCatalog.ppocrV6Small`), from its real host.
+            // Offers the build's L2 pack again (`ModelPackCatalog.ppocrV6Small`), from its real host: after a withdraw.
             center.debugOffer(ModelPackCatalog.ppocrV6Small)
             Task {
                 await center.refresh()
                 logStates()
             }
         case "modelpack-l2-read":
-            // Reads the drawn demo page in the text reader with the installed pack (id=, default the L2 pack), twice:
-            // the first read compiles the models into the pack's folder, the second finds them there. Logs time and size.
+            // Reads the drawn demo page in the text reader with the installed pack (id=, default the L2 pack), twice, as
+            // the OCR panel's second reading does (the pack alone, from a TIFF) and as the history's search does (Vision
+            // with the pack beside it): the first read compiles the models if nothing has, the second finds them. Logs
+            // each reading's time, from starting the reader to its answer, and its size.
             let target = pack ?? ModelPackCatalog.ppocrV6Small
             guard let folder = center.installedFolder(of: target), let png = DebugPanelDemo.png(),
                   let helper = Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader")
@@ -59,13 +61,25 @@ struct DebugModelPackHooks {
             }
             Task {
                 let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot L2 Demo.png")
+                let tiff = FileManager.default.temporaryDirectory.appending(path: "OhMyShot L2 Demo.tiff")
                 try? png.write(to: file)
-                defer { try? FileManager.default.removeItem(at: file) }
+                if let image = NSBitmapImageRep(data: png)?.cgImage,
+                   let destination = CGImageDestinationCreateWithURL(tiff as CFURL, "public.tiff" as CFString, 1, nil) {
+                    CGImageDestinationAddImage(destination, image, nil)
+                    CGImageDestinationFinalize(destination)
+                }
+                defer {
+                    try? FileManager.default.removeItem(at: file)
+                    try? FileManager.default.removeItem(at: tiff)
+                }
                 for run in 1...2 {
-                    let started = ContinuousClock.now
+                    var started = ContinuousClock.now
                     do {
+                        let lines = try await TextReaderTool.lines(ofPictureAt: tiff, pack: folder, helper: helper)
+                        Log.app.notice("debug.modelpack-l2-read run \(run, privacy: .public), the pack alone: \(lines.count, privacy: .public) lines in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+                        started = ContinuousClock.now
                         let text = try await TextReaderTool.text(ofPictureAt: file, joinsWrappedLines: false, pack: folder, helper: helper)
-                        Log.app.notice("debug.modelpack-l2-read run \(run, privacy: .public): \(text.count, privacy: .public) characters, \(text.split(separator: "\n").count, privacy: .public) lines in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+                        Log.app.notice("debug.modelpack-l2-read run \(run, privacy: .public), with Vision: \(text.count, privacy: .public) characters, \(text.split(separator: "\n").count, privacy: .public) lines in \(String(describing: ContinuousClock.now - started), privacy: .public)")
                     } catch {
                         Log.app.error("debug.modelpack-l2-read run \(run, privacy: .public) failed: \(String(describing: error), privacy: .public)")
                     }

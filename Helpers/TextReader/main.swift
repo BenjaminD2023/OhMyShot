@@ -9,25 +9,38 @@
 //
 // Input, on standard input: one JSON object per line, {"id": "…", "path": "/…/picture.png"}, and for a reading
 // assembled as Capture Text assembles it, "joinsWrappedLines": true or false (without it, the text kept for the
-// history's search). With "pack": "/…/Model Packs/<id>/<version>", the picture is read with that PP-OCR model pack
-// (L2, Docs/ocr.md › The L2 pack) instead of Vision; its models are loaded once a run.
+// history's search). With "pack": "/…/Model Packs/<id>/<version>", a PP-OCR model pack reads beside Vision where the
+// picture holds Chinese or Japanese (L2 beside L1, Docs/ocr.md › L2 beside L1); its models are loaded once a run, and
+// a pack that won't load leaves Vision's reading alone. With "lines": true as well, the pack reads the picture alone
+// and the answer holds its lines, for the app to put beside its own reading. With "warm": true and a pack (no path),
+// the pack's models are loaded and nothing is read: their first load compiles them for the Neural Engine.
 // Output, on standard output: one JSON object per line as each picture is read, in order,
-// {"id": "…", "text": "…"} or {"id": "…", "error": "…"}. The process exits once its input ends and every
-// picture is read.
+// {"id": "…", "text": "…"}, {"id": "…", "lines": [{"text": "…", "box": [[x, y], [width, height]], "confidence": 0.9}]},
+// or {"id": "…", "error": "…"}. The process exits once its input ends and every picture is read.
 
+import CoreGraphics
 import Foundation
 import OMSOCR
 
 struct Job: Decodable {
     let id: String
-    let path: String
+    var path: String?
     var joinsWrappedLines: Bool?
     var pack: String?
+    var lines: Bool?
+    var warm: Bool?
+}
+
+struct Line: Encodable {
+    let text: String
+    let box: CGRect
+    let confidence: Float
 }
 
 struct Result: Encodable {
     let id: String
     var text: String?
+    var lines: [Line]?
     var error: String?
 }
 
@@ -48,6 +61,17 @@ func reader(for pack: String) async throws -> PPOCRReader {
     return reader
 }
 
+/// L1, with the pack beside it when it loads.
+func reading(with pack: String?) async -> any OCREngine {
+    guard let pack else { return pipeline }
+    do {
+        return PairedReading(first: pipeline, second: try await reader(for: pack))
+    } catch {
+        FileHandle.standardError.write(Data("The pack at \(pack) didn't load: \(error)\n".utf8))
+        return pipeline
+    }
+}
+
 let encoder = JSONEncoder()
 encoder.outputFormatting = [.withoutEscapingSlashes]
 let output = FileHandle.standardOutput
@@ -61,17 +85,20 @@ func send(_ result: Result) {
 for try await line in FileHandle.standardInput.bytes.lines {
     guard let job = try? JSONDecoder().decode(Job.self, from: Data(line.utf8)) else { continue }
     do {
-        let url = URL(filePath: job.path)
-        let text: String
-        if let pack = job.pack {
-            let lines = try await reader(for: pack).recognize(PictureText.image(at: url)).lines
-            text = job.joinsWrappedLines.map { TextAssembler.assemble(lines, options: .init(joinsWrappedLines: $0)) } ?? lines.map(\.text).joined(separator: "\n")
-        } else if let joins = job.joinsWrappedLines {
-            let lines = try await pipeline.recognize(PictureText.image(at: url)).lines
-            text = TextAssembler.assemble(lines, options: .init(joinsWrappedLines: joins))
-        } else {
-            text = try await PictureText.read(fileAt: url, pipeline: pipeline)
+        if job.warm == true, let pack = job.pack {
+            _ = try await reader(for: pack)
+            send(Result(id: job.id, text: ""))
+            continue
         }
+        guard let path = job.path else { throw OCRError.unreadableImage }
+        let image = try PictureText.image(at: URL(filePath: path))
+        if job.lines == true, let pack = job.pack {
+            let lines = try await reader(for: pack).recognize(image).lines
+            send(Result(id: job.id, lines: lines.map { Line(text: $0.text, box: $0.box, confidence: $0.confidence) }))
+            continue
+        }
+        let result = try await reading(with: job.pack).recognize(image)
+        let text = job.joinsWrappedLines.map { TextAssembler.assemble(result.lines, options: .init(joinsWrappedLines: $0)) } ?? result.text
         send(Result(id: job.id, text: text))
     } catch {
         send(Result(id: job.id, error: String(describing: error)))

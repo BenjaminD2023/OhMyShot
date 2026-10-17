@@ -59,8 +59,37 @@ public final class PPOCRReader: OCREngine, @unchecked Sendable {
 
     // MARK: Reading
 
+    /// A large picture is read in L1's pieces (`PictureText.pieces`), one at a time, and their lines put together as L1
+    /// puts its own (`PieceMerge`): the pixels of a whole scrolling capture, 3346 × 47,000, would take 630 MB, and
+    /// twice that scaled.
     public func recognize(_ image: CGImage) async throws -> OCRResult {
         let started = ContinuousClock.now
+        let pieces = PictureText.pieces(width: image.width, height: image.height)
+        guard pieces.count > 1 else {
+            let lines = try await readPiece(image)
+            return OCRResult(lines: lines, text: lines.map(\.text).joined(separator: "\n"), duration: ContinuousClock.now - started)
+        }
+        var readings: [[OCRLine]] = []
+        for piece in pieces {
+            try Task.checkCancellation()
+            guard let part = image.cropping(to: piece) else {
+                readings.append([])
+                continue
+            }
+            readings.append(try await readPiece(part).map { $0.moved(by: piece.origin) })
+        }
+        let lines = ReadingOrder.sorted(PieceMerge.merged(readings, pieces: pieces, size: CGSize(width: image.width, height: image.height)))
+        return OCRResult(lines: lines, text: lines.map(\.text).joined(separator: "\n"), duration: ContinuousClock.now - started)
+    }
+
+    /// Whether the reader reads a `width` × `height` picture as well as it reads at all: not when L1 would cut it
+    /// across (`PictureText.isCutAcross`), which the reader would scale down to its widest instead, its text with it.
+    public static func reads(width: Int, height: Int) -> Bool {
+        !PictureText.isCutAcross(width: width, height: height)
+    }
+
+    /// The lines of one piece, in its pixels, in PaddleOCR's reading order.
+    private func readPiece(_ image: CGImage) async throws -> [OCRLine] {
         guard let original = PPOCRPixels(image) else { throw OCRError.unreadableImage }
         var lines: [OCRLine] = []
         for box in try await detect(original) {
@@ -72,7 +101,7 @@ public final class PPOCRReader: OCREngine, @unchecked Sendable {
             let bounds = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
             lines.append(OCRLine(text: text, box: bounds, confidence: Float(score)))
         }
-        return OCRResult(lines: lines, text: lines.map(\.text).joined(separator: "\n"), duration: ContinuousClock.now - started)
+        return lines
     }
 
     /// The text boxes in `image`, in reading order, in its pixels.

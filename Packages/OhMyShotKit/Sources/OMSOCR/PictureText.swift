@@ -40,11 +40,17 @@ public enum PictureText {
     /// more than 2.5 times wider than tall and over 4096 pixels wide. Each reaches `overlap` into the next.
     static func pieces(width: Int, height: Int) -> [CGRect] {
         guard width > 0, height > 0 else { return [] }
-        let columns = width > 4096 && Double(width) > Double(height) * 2.5 ? spans(width, length: max(height, band)) : [0..<width]
+        let columns = isCutAcross(width: width, height: height) ? spans(width, length: max(height, band)) : [0..<width]
         let rows = height > band + band / 4 ? spans(height, length: band) : [0..<height]
         return rows.flatMap { row in
             columns.map { column in CGRect(x: column.lowerBound, y: row.lowerBound, width: column.count, height: row.count) }
         }
+    }
+
+    /// Whether a `width` × `height` picture is also cut across, through its lines: over 4096 pixels wide and more than
+    /// 2.5 times wider than tall.
+    static func isCutAcross(width: Int, height: Int) -> Bool {
+        width > 4096 && Double(width) > Double(height) * 2.5
     }
 
     /// `0..<total` in pieces `length` long, each reaching `overlap` into the next.

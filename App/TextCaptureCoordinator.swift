@@ -32,6 +32,9 @@ final class TextCaptureCoordinator {
     private var panel: TextRecognitionWindowController?
     /// The last recognition, so the card can switch between kept and joined line breaks.
     private var last: Recognition?
+    /// The model pack the OCR panel reads with beside Vision, and the text reader that reads with it (L2 beside L1,
+    /// Docs/ocr.md › L2 beside L1); nil while none is installed. Asked as each panel opens.
+    var secondReader: (() -> (pack: TextReaderPack, helper: URL)?)?
 
     private struct Recognition {
         let lines: [OCRLine]
@@ -312,13 +315,79 @@ final class TextCaptureCoordinator {
 
     /// Opens the OCR panel on `image`, read in full: text, tables, links, and codes. `scale` is the
     /// image's pixels per point; `source` names it under the title.
+    ///
+    /// With a model pack installed, a picture whose text holds Chinese or Japanese is read again with it in the text
+    /// reader, and the two readings are put together (`TextAnalysis.withSecondReading`) before the panel shows them.
     func openPanel(image: CGImage, scale: CGFloat, source: String, translating: Bool = false) {
         let controller = panel ?? makePanel()
         panel = controller
         let pipeline = pipeline
+        let second = secondReader?()
         controller.show(image: image, scale: scale, source: source, translating: translating) { image in
-            try await pipeline.analyze(image)
+            let analysis = try await pipeline.analyze(image)
+            guard let second, SecondReading.wanted(analysis.result.lines), PPOCRReader.reads(width: image.width, height: image.height)
+            else { return analysis }
+            let started = ContinuousClock.now
+            guard let lines = await Self.secondReading(of: image, with: second.pack, helper: second.helper) else { return analysis }
+            let merged = analysis.withSecondReading(lines, assembly: pipeline.options.assembly)
+            // Vision's lines keep their boxes; the added ones are sorted in among them.
+            let first = Dictionary(analysis.result.lines.map { ("\($0.box)", $0.text) }) { a, _ in a }
+            let changed = merged.result.lines.count { line in first["\(line.box)"].map { $0 != line.text } ?? false }
+            Log.capture.notice("Second reading: \(lines.count, privacy: .public) lines read, \(changed, privacy: .public) of \(analysis.result.lines.count, privacy: .public) changed, \(merged.result.lines.count - analysis.result.lines.count, privacy: .public) added, in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+            return merged
         }
+    }
+
+    /// How long the panel waits for the second reading once Vision's is done. A pack whose models are compiled answers
+    /// in about half a second (Docs/ocr.md › L2 beside L1); compiling them takes 11 s.
+    nonisolated static let secondReadingWait: Duration = .seconds(3)
+
+    /// The lines the pack reads in `image`, in a run of the text reader, or nil when it can't read them or hasn't
+    /// answered within `secondReadingWait`. The run is not stopped when the wait ends: by then it is most likely
+    /// compiling the pack's models for the Neural Engine (the first read after an install or a system update), and
+    /// stopped, it would start over on every panel.
+    @concurrent
+    private nonisolated static func secondReading(of image: CGImage, with pack: TextReaderPack, helper: URL) async -> [OCRLine]? {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "Second Readings", directoryHint: .isDirectory)
+        let file = folder.appending(path: "\(UUID().uuidString).tiff")
+        // Uncompressed: written and read in a few milliseconds, where PNG takes a tenth of a second for a large picture.
+        guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil,
+              let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.tiff.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+
+        let reading = Task.detached(priority: .userInitiated) { () -> [TextReaderTool.Line]? in
+            defer { try? FileManager.default.removeItem(at: file) }
+            do {
+                return try await TextReaderTool.lines(ofPictureAt: file, pack: pack.folder, helper: helper)
+            } catch {
+                Log.capture.error("The second reading failed: \(String(describing: error), privacy: .public)")
+                return nil
+            }
+        }
+        // Whichever comes first: the reader's answer (nil when it failed), or the end of the wait (nil twice).
+        let (answers, answer) = AsyncStream.makeStream(of: [TextReaderTool.Line]??.self)
+        Task {
+            answer.yield(.some(await reading.value))
+            answer.finish()
+        }
+        Task {
+            try? await Task.sleep(for: secondReadingWait)
+            answer.yield(.none)
+            answer.finish()
+        }
+        var first: [TextReaderTool.Line]??
+        for await answered in answers {
+            first = answered
+            break
+        }
+        guard let answered = first else {
+            // Also when the panel stopped waiting (closed, or read again).
+            if !Task.isCancelled { Log.capture.notice("The second reading didn't answer in time; Vision's reading is shown alone") }
+            return nil
+        }
+        return answered?.map { OCRLine(text: $0.text, box: $0.box, confidence: $0.confidence) }
     }
 
     private func makePanel() -> TextRecognitionWindowController {

@@ -21,6 +21,32 @@ public struct HistoryText: Codable, Equatable, Sendable {
     public var version: Int
     public var stamp: Stamp
     public var text: String
+    /// The model pack read beside Vision when the text was read (`TextReaderPack.reading`); nil when Vision read
+    /// alone. Text read alone is read again once a pack is there, where it holds Chinese or Japanese.
+    public var reading: String?
+
+    public init(version: Int, stamp: Stamp, text: String, reading: String? = nil) {
+        self.version = version
+        self.stamp = stamp
+        self.text = text
+        self.reading = reading
+    }
+
+    /// Whether a pack could read `text` better: two or more of its characters are Han or kana, which L2 reads better
+    /// than Vision (Docs/ocr.md › L2 beside L1). The same test as the text reader's, `SecondReading.wanted`.
+    static func mayReadBetter(_ text: String) -> Bool {
+        var count = 0
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x3040...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x2FA1F:
+                count += 1
+                if count >= 2 { return true }
+            default:
+                break
+            }
+        }
+        return false
+    }
 }
 
 /// Finding captures by the words in them, as people type them rather than as OCR spaced them.

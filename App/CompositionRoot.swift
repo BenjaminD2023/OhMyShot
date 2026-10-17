@@ -34,7 +34,14 @@ final class CompositionRoot {
         uploads.showsCard = { [weak self] id in self?.showsQuickAccess(forCaptureWith: id) ?? true }
         return uploads
     }()
-    private lazy var textCapture = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
+    private lazy var textCapture: TextCaptureCoordinator = {
+        let coordinator = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
+        coordinator.secondReader = { [weak self] in
+            guard let self, let helper = textReaderTool, let pack = secondReadingPack else { return nil }
+            return (pack, helper)
+        }
+        return coordinator
+    }()
     private lazy var annotations = AnnotationCoordinator(history: history)
     /// Turns, flips, and scales pictures from their Quick Access cards.
     private lazy var pictureChanges = PictureChangeCoordinator(
@@ -47,7 +54,7 @@ final class CompositionRoot {
     private var pictureUpdates: Task<Void, Never>?
     /// Reads the text in the history's screenshots for its search, in the text reader beside the app.
     private lazy var textReader: HistoryTextReader = {
-        let reader = HistoryTextReader(store: history, helper: Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader"))
+        let reader = HistoryTextReader(store: history, helper: textReaderTool) { [weak self] in self?.secondReadingPack }
         reader.onRead = { [weak self] id in self?.historyWindow?.textRead(id) }
         return reader
     }()
@@ -57,14 +64,42 @@ final class CompositionRoot {
         let store = ModelPackStore.standard()
         let center = ModelPackCenter(store: store, downloader: ModelPackDownloader(store: store))
         // Said aloud, as uploads are: a download outlives the Settings window it started in.
-        center.onInstalled = { pack, _ in
+        center.onInstalled = { [weak self] pack, folder in
             Self.announce(String(localized: "“\(pack.name)” installed"))
+            self?.packInstalled(pack, in: folder)
         }
         center.onFailed = { pack, _ in
             Self.announce(String(localized: "“\(pack.name)” couldn’t download"))
         }
         return center
     }()
+
+    /// The model pack L2 reads with beside L1 (Docs/ocr.md › L2 beside L1), when it is installed: the OCR panel and the
+    /// history's search read Chinese and Japanese with it.
+    private var secondReadingPack: TextReaderPack? {
+        let pack = ModelPackCatalog.ppocrV6Small
+        // The merge's revision too: text kept from earlier rules is read again.
+        return modelPacks.installedFolder(of: pack).map {
+            TextReaderPack(folder: $0, reading: "\(pack.id)/\(pack.version)/merge-\(SecondReading.revision)")
+        }
+    }
+
+    /// A pack just installed: its models are compiled for the Neural Engine now, in the background, rather than on the
+    /// first reading someone waits on (11 s); then the history's Chinese and Japanese captures are read again with it.
+    private func packInstalled(_ pack: ModelPack, in folder: URL) {
+        guard pack.id == ModelPackCatalog.ppocrV6Small.id, let helper = textReaderTool else { return }
+        Task { [weak self] in
+            let started = ContinuousClock.now
+            do {
+                try await TextReaderTool.warm(pack: folder, helper: helper)
+                Log.modelPacks.notice("Warmed \(pack.id, privacy: .public) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+            } catch {
+                Log.modelPacks.error("Warming \(pack.id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            }
+            guard let self, settings.historyRetention != .never else { return }
+            textReader.readSoon()
+        }
+    }
 
     private static func announce(_ message: String) {
         NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [

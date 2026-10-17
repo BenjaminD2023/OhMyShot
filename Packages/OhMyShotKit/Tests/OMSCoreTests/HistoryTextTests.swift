@@ -83,6 +83,43 @@ struct HistoryTextTests {
         _ = try store.add(data: Data([1]), fileExtension: "mp4", kind: .recording, pixelWidth: 1, pixelHeight: 1, appName: nil, duration: 3)
         #expect(store.needingText(store.items()).isEmpty)
     }
+
+    @Test func onceAPackIsThereOnlyChineseAndJapaneseReadWithoutItAreReadAgain() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let chinese = try screenshot(in: store, 1), japanese = try screenshot(in: store, 2), english = try screenshot(in: store, 3)
+        try read("打开设置", of: chinese, in: store)
+        try read("保存したい", of: japanese, in: store)
+        try read("Open Settings 首", of: english, in: store)
+        // Without a pack, nothing is waiting.
+        #expect(store.needingText(store.items()).isEmpty)
+        let waiting = Set(store.needingText(store.items(), reading: "ppocr-v6-small/1").map(\.id))
+        #expect(waiting == [chinese.id, japanese.id])
+        // The text it reads stays what was found.
+        #expect(store.text(of: chinese) == "打开设置")
+    }
+
+    @Test func textReadWithThePackIsReadAgainOnlyByAnotherVersionOfIt() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try screenshot(in: store)
+        try store.setText("打开设置", of: item, readFrom: #require(store.stamp(of: item)), reading: "ppocr-v6-small/1")
+        #expect(store.needingText(store.items(), reading: "ppocr-v6-small/1").isEmpty)
+        // The pack removed: what it read is kept.
+        #expect(store.needingText(store.items()).isEmpty)
+        #expect(store.needingText(store.items(), reading: "ppocr-v6-small/2").map(\.id) == [item.id])
+    }
+
+    @Test func textKeptBeforeReadingsWereNamedReadsAsVisionAlone() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try screenshot(in: store)
+        let stamp = try #require(store.stamp(of: item))
+        let old = #"{"version":1,"stamp":{"size":\#(stamp.size),"modified":\#(stamp.modified)},"text":"打开设置"}"#
+        try Data(old.utf8).write(to: store.textURL(for: item))
+        #expect(store.text(of: item) == "打开设置")
+        #expect(store.needingText(store.items(), reading: "ppocr-v6-small/1").map(\.id) == [item.id])
+    }
 }
 
 struct HistorySearchTests {

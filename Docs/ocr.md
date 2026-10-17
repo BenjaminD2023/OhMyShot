@@ -677,11 +677,178 @@ which aren't copied. Swift's p50 is 123 ms and p95 872 ms (Release, warm, both m
 resampling against OpenCV's values, the homography, and the configuration. `aDrawnPageReadsBack` reads a drawn page
 end to end when `OMS_L2_PACK` names a pack.
 
+What was left here (when L2 reads, how its lines join L1's, warming, listing the pack) is done in the next section.
+
+## L2 beside L1 (`SecondReading`, M6 step 3, 2026-10-17)
+
+L2 reads as a second reader of L1's lines, never in L1's place. The OCR panel and the history's search use it once
+the pack is installed; Capture Text, Translate Area, the annotation readings, and the Shortcuts action still read
+with L1 alone.
+
+**L1 and L2 compared** (`ocr-bench --engine l1 --engine l2 --pack DIR`, the 28 drawn cases and the 12 real regions).
+L2 alone read worse on the whole, 7.5% mean content CER against L1's 2.0%:
+
+- **No Hangul:** the Korean case read nothing (100%), and the multilingual case lost its Korean line (13.6%).
+- **Vertical text:** read right, but its columns came out left to right.
+- **None of L1's post-processing:** line numbers stayed (the editor with its gutter: 12.2% against 1.5%), and so did
+  icons.
+
+Line by line, with each L2 line paired to the L1 line holding half its box or more, and each scored against the
+nearest line of the truth:
+
+| L1's line | L2 better | Same | L1 better | Characters L2 gained | Characters L2 lost |
+| --- | --- | --- | --- | --- | --- |
+| Han or kana | 45 | 143 | 2 | 86 | 3 |
+| Han or kana with Latin words | 64 | 44 | 2 | 143 | 2 |
+| Latin script alone | 52 | 542 | 43 | 98 | 57 |
+
+In Latin lines the two make different errors. L2 reads `->`, `=>`, and `useLocation` right; L1 reads `|`, `Oct`, and
+a leading `-` right where L2 reads `I`, `0ct`, and nothing. L1's confidence is no guide: Vision gives 0.3, 0.5, or 1.
+
+**The rule** (`SecondReading.merged`). L1 decides which lines there are, where, and in what order. Each L2 line goes
+to the L1 line that holds half its area or more. It goes to none when it also holds half of another L1 line: L2 reads
+a name and the time beside it as one line where L1 reads two. An L1 line with Han or kana and no Hangul takes the text
+of the L2 lines it holds, side by side. It doesn't when those read fewer than four fifths as many characters.
+Latin, Korean, and lines L2 left alone keep L1's text, with one exception (`isMisreadAsHangul`). With Korean among
+the preferred languages, L1 reads the gaps its first pass left with the Korean model, which makes Hangul of small gray
+Chinese type. A line holding Hangul where L2 read two Han or kana characters or more, none of them Hangul, at 0.9 or
+more, takes L2's reading as it is. In a tall chat capture read that way, L2 read Chinese in 22 of L1's 28 Hangul lines.
+On the benchmark's Korean it read nothing at all. An L2 line that no L1 line holds, and that no L1 line covers a
+quarter of, is added when it has two Han or kana characters or more and a confidence of 0.9 or more. L1 had missed
+sidebar entries, buttons such as "回复", and a forum's category names; below 0.9 L2 reads icons as Han ("凶"). A page is
+read again only when L1's lines hold two Han or kana characters or more (`SecondReading.wanted`).
+
+**How the text is written** (`SecondReading.dressed`). L2 reads the characters better and Vision their form, so the
+two readings are aligned character by character, spaces aside and widths folded:
+
+- **Width:** a character both read alike takes L1's form. L2 writes "?", "(", and ")" half-width in Chinese at
+  times, and digits full-width in Japanese ("午後２時").
+- **Spaces:** where Han meets a Latin letter or a digit, they follow L1, which measures them in the ink. L2 leaves
+  most of them out ("降到了10 ms以内") and puts one in where there is none ("打开 App Store"). Elsewhere a space either
+  reading has is kept ("- 已全额支付", where L1 lost it).
+- **Doubled marks:** a mark L2 reads twice where L1 reads it once ("px: ：") is read once.
+- **Ellipsis:** L2's "..." is L1's "…" when L1 reads that.
+- **Icons:** an icon before Chinese text that the two read as different symbols ("$ 开发调优" and "<>开发调优") goes.
+
+The rule was tuned on the 40 cases above, then run once, unchanged, on the 12 real regions shrunk and recompressed
+as a chat app sends them:
+
+| Mean CER, L1 → L1 with L2 | Content | Raw | Cases worse |
+| --- | --- | --- | --- |
+| 28 drawn cases and 12 real regions (tuned on) | 1.99% → 1.48% | 3.78% → 3.33% | none |
+| The 12 real regions downscaled (held out) | 5.76% → 4.69% | 10.32% → 9.45% | none |
+
+The largest gains were all on real regions and dense small type:
+
+| Case | Content CER, L1 → L1 with L2 |
+| --- | --- |
+| A forum's sidebar | 13.2% → 9.6% (downscaled 9.6% → 5.3%) |
+| The same thread | 6.1% → 4.6% |
+| 9 px Chinese | 2.4% → 0% |
+| A Traditional Chinese page | 1.3% → 0% |
+| A social sidebar | 2.0% → 0% |
+
+Korean, vertical Chinese, both code editors, and the terminal listings read exactly as L1 reads them. In the
+benchmark's own process, warm, a case took p50 216 → 297 ms and p95 652 → 766 ms; L2 runs only on pages with Han or
+kana.
+
+**Where it reads:**
+
+- **The history's search.** The text reader reads Vision with the pack beside it (`PairedReading`) when a job names
+  the pack. A pack that won't load, or a reading of it that fails, leaves Vision's reading. The kept text records the
+  pack it was read with (`HistoryText.reading`). Once a pack is installed, captures read without it whose text holds
+  Han or kana are read again; English ones are not. A pack removed leaves what it read, and a new version of it reads
+  again. Older kept texts, which say nothing of a pack, count as read by Vision alone.
+- **The OCR panel.** Vision reads in the app as before: text, tables, and codes. When its lines hold Han or kana, the
+  picture is written to an uncompressed TIFF and the text reader reads it with the pack alone (`TextReaderTool.lines`).
+  Its lines are put beside Vision's in the app (`TextAnalysis.withSecondReading`), and the tables take their cells
+  from the merged lines again. The panel waits 3 s for that reading after Vision's, then shows Vision's alone. The
+  reader isn't stopped when the wait ends. By then it is most likely compiling the models, and stopped, it would start
+  that again on every panel.
+- **Warming.** Once the pack is installed, it is loaded in the text reader at utility priority (`TextReaderTool.warm`)
+  to compile its models for the Neural Engine, and the history is then read as above.
+- **Settings.** `ModelPackCatalog.packs` lists the pack now, so Settings › Tools offers it.
+- **Large pictures:** L2 reads in L1's pieces (`PictureText.pieces`) and merges them with `PieceMerge`. A picture L1
+  cuts across (`PictureText.isCutAcross`) isn't read with L2, which would shrink it to 4096 wide.
+
+**The text reader with the pack** (run from the shell, Debug build unless noted, a new process each run):
+
+| Reading | Time | Peak footprint (resident size for the chat list) |
+| --- | --- | --- |
+| Warming a pack in a folder never compiled | 10.4 s | — |
+| Warming once compiled | 0.05–0.08 s | — |
+| A 366 × 1749 chat list, the pack alone (the panel's reading), compiled | 0.53 s | 172 MB |
+| The same, Vision with the pack (the history's reading) | 0.87 s | 220 MB |
+| The same, Vision alone | 0.35 s | 110 MB |
+| Full-screen captures (2000–4112 wide), the pack alone | 0.95–2.52 s (Release 0.97–2.23 s) | 494–810 MB |
+| The same captures, Vision with the pack | 1.5–4.1 s | 655–944 MB |
+| The same captures, Vision alone | 0.6–1.4 s | 283–405 MB |
+| The tallest capture in the history, 3346 × 16811, the pack alone | 4.8 s | 1009 MB |
+| The same, Vision with the pack | 7.4 s | 1236 MB |
+| The same, Vision alone | 3.3 s | 589 MB |
+
+So the panel shows a Chinese full-screen capture's text 1.7–2.5 s later than before, within its wait. The history,
+read again after the install, keeps one reader of about 1 GB running for as long as there are captures to read.
+
+**Where the memory goes.** Core ML keeps working memory for each of the recognizer's enumerated widths it has used
+(a probe of the recognizer alone, 20 predictions at one width):
+
+| Width | 160 | 320 | 640 | 1600 | 4000 | All 12 in turn |
+| --- | --- | --- | --- | --- | --- | --- |
+| Footprint over the loaded model | 13 MB | 15 MB | 42 MB | 103 MB | 257 MB | 1.1–1.5 GB, steady |
+
+It is no leak: 200 predictions at one width added 30 MB. The size likely comes from the output, a probability for
+each of 18,710 classes at every step. None of these moved the reader's peak:
+
+- autorelease pools (the synchronous calls in pools took it to 3.4 GB)
+- output buffers of the reader's own
+- `malloc_zone_pressure_relief` after each piece
+- decoding a step at a time instead of copying the output whole
+- four widths instead of twelve: 1.50% CER against 1.48%, and no less memory
+
+Turning off libmalloc's large-block cache (`MallocLargeCache=0`) took the history's reading of the tallest capture
+from 1236 to 985 MB. It is undocumented, so it isn't used.
+
+`SecondReadingTests` (16) cover:
+
+- which lines take L2's reading
+- a line two L1 lines share
+- a reading too short
+- pieces side by side and top to bottom
+- the lines L2 adds and those it doesn't
+- widths, spaces, doubled marks, the ellipsis, and icons
+
+`HistoryTextTests` (3 more) cover reading again with a pack. `TextReaderToolTests` (2 more) cover the lines and warming
+jobs.
+
 **Not done yet:**
 
-- when L2 reads instead of L1 (the regions L1 reads poorly), and how its lines join L1's. Point it at regions: the
-  reader holds the picture at full size and a scaled copy, about half a gigabyte for a 3346 × 17650 history capture
-- warming a pack in the background once it is installed
-- listing the pack in `packs` once something reads with it
-- `debug/modelpack-l2-read` (the app's own run of the reader with the installed pack), built but not run: the user had
-  the Dev app's Settings open
+- **A pack whose recognizer gives each step's likeliest class and its probability**, two values a step instead of
+  18,710. It might shrink the reader's memory, if the probe shows the large buffers are at the output and not inside
+  the model. It would be version 2 of the pack, uploaded anew.
+- **L2's reading of Latin lines**, which reads arrows and the case of identifiers better than Vision does, and
+  Capture Text, Translate Area, and the Shortcuts action, which read with L1 alone.
+
+**In the Dev app** (Debug build, 2026-10-17, the pack downloaded through the app with the user's OK):
+
+- **Installing:** the download from Hugging Face took 18 s. Warming took 10.9 s, the reader itself at 24 MB: the
+  Neural Engine compiles in a service of its own. The app stayed at 24–26 MB.
+- **The history read again:**
+  - 46 of 91 captures held Han or kana and were read again, in 4 min 31 s at background priority, the reader at
+    1073 MB at most. 38 of their texts changed, by a median of 11 characters; no English text was touched.
+  - The most changed were tall scrolling captures, whose texts had been kept since earlier versions of L1. In the two
+    most changed, L2 added 110 and 65 lines L1 had missed, most of them small type.
+  - Twelve runs of four Han characters that none of the history's texts held before were each found by the search, in
+    one capture each.
+  - The merge's revision raised (`ppocr-v6-small/1/merge-2`) read 43 of them again at utility priority in 96 s, the
+    reader at 1494 MB at most. The texts came out the same: with English and Chinese preferred, L1 never reads Hangul.
+- **The OCR panel:**
+  - **The drawn demo page:** L2 read its 23 lines in 0.35 s and changed none.
+  - **Three real captures:** 2000 × 1254 took 1.55 s, with 14 of 75 lines changed and 11 added. Two 4K captures took
+    2.0 s (19 of 103 changed) and 2.69 s (8 of 131 changed), the second close to the 3 s wait.
+  - **The reader during these readings:** 381–674 MB at most, 0.6–2.3 s.
+  - **A one-off:** the first real one took 21.5 s in all, L2's part 1.6 s. Opened again it took 2.6 s; not looked
+    into.
+  - **The app afterwards:** 150 MB after four panels. That is mostly freed blocks libmalloc keeps (49 MB large,
+    33 MB small), as the panel's Vision reading left 110–125 MB before (Docs/perf.md, M2). Writing a 4K picture as
+    TIFF, alone, leaves 1 MB.
