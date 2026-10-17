@@ -41,17 +41,17 @@ public enum SettingsTab: String, CaseIterable, Sendable {
 
     var symbolName: String {
         switch self {
-        case .general: "gearshape"
+        case .general: "gearshape.fill"
         case .capture: "viewfinder"
-        case .screenshots: "photo.on.rectangle"
-        case .quickAccess: "rectangle.stack"
-        case .recording: "record.circle"
-        case .tools: "wrench.and.screwdriver"
-        case .sharing: "icloud.and.arrow.up"
+        case .screenshots: "photo.fill.on.rectangle.fill"
+        case .quickAccess: "rectangle.stack.fill"
+        case .recording: "record.circle.fill"
+        case .tools: "wrench.and.screwdriver.fill"
+        case .sharing: "icloud.and.arrow.up.fill"
         case .shortcuts: "command"
-        case .permissions: "hand.raised"
+        case .permissions: "hand.raised.fill"
         case .automation: "point.3.connected.trianglepath.dotted"
-        case .about: "info.circle"
+        case .about: "info"
         }
     }
 }
@@ -154,48 +154,50 @@ public struct SettingsDependencies {
     }
 }
 
-/// The settings window: a sidebar of the panes beside the chosen one, each a SwiftUI pane. A pane is made the first
-/// time it is chosen; the window is created when opened and released when closed, so it costs no memory while hidden.
+/// The settings window: a sidebar of the panes, with a search field, beside the chosen one, each a SwiftUI pane, and
+/// Back and Forward in the toolbar, as in System Settings. A pane is made the first time it is chosen; the window is
+/// created when opened and released when closed, so it costs no memory while hidden.
 public final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     public var onClose: (() -> Void)?
 
-    private let selection: SettingsSelection
-    private let detail: SettingsDetailController
+    private let navigator: SettingsNavigator
     private var windowLease: ActiveResources.Lease?
 
     public init(dependencies: SettingsDependencies) {
-        let selection = SettingsSelection()
-        let detail = SettingsDetailController { tab in Self.makeContent(for: tab, dependencies: dependencies) }
+        let navigator = SettingsNavigator()
+        var panes: [SettingsTab: NSViewController] = [:]
+        let root = SettingsRootView(navigator: navigator) { tab in
+            if let pane = panes[tab] { return pane }
+            let pane = Self.makeContent(for: tab, dependencies: dependencies)
+            panes[tab] = pane
+            return pane
+        }
+        let content = NSHostingController(rootView: root)
+        // The window keeps its size whichever pane is chosen; a pane taller than it scrolls.
+        content.sizingOptions = []
+        // The toolbar's Back and Forward and the pane's title come from SwiftUI.
+        content.sceneBridgingOptions = [.toolbars, .title]
 
-        let sidebar = NSHostingController(rootView: SettingsSidebar(selection: selection))
-        sidebar.sizingOptions = []
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
-        sidebarItem.canCollapse = false
-        sidebarItem.minimumThickness = Self.sidebarWidth
-        sidebarItem.maximumThickness = Self.sidebarWidth
-        let detailItem = NSSplitViewItem(viewController: detail)
-        detailItem.minimumThickness = paneWidth
-        let split = NSSplitViewController()
-        split.addSplitViewItem(sidebarItem)
-        split.addSplitViewItem(detailItem)
-
-        let window = NSWindow(contentViewController: split)
+        let window = NSWindow(contentViewController: content)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        // An empty toolbar puts the pane's title beside the sidebar, as in System Settings.
-        window.toolbar = NSToolbar(identifier: "Settings")
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.contentMinSize = NSSize(width: Self.sidebarWidth + paneWidth, height: 420)
-        window.setContentSize(NSSize(width: Self.sidebarWidth + paneWidth, height: 640))
-        self.selection = selection
-        self.detail = detail
+        let minimum = NSSize(width: sidebarWidth + paneWidth, height: 420)
+        window.contentMinSize = minimum
+        window.setContentSize(NSSize(width: minimum.width, height: 640))
+        self.navigator = navigator
         super.init(window: window)
         window.delegate = self
         window.center()
         window.setFrameAutosaveName("Settings")
+        // A size saved before the sidebar was as wide as it is now would cut its edge off: the content keeps its
+        // width and hangs out of the window on both sides.
+        let restored = window.contentRect(forFrameRect: window.frame).size
+        if restored.width < minimum.width || restored.height < minimum.height {
+            window.setContentSize(NSSize(width: max(restored.width, minimum.width), height: max(restored.height, minimum.height)))
+        }
 
-        selection.onChange = { [weak self] tab in self?.display(tab) }
-        display(selection.tab)
+        navigator.onChange = { [weak window] _ in Self.leaveNothingFocused(in: window) }
     }
 
     @available(*, unavailable)
@@ -204,7 +206,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     }
 
     public func show(_ tab: SettingsTab) {
-        selection.tab = tab
+        // Opened afresh, the window starts at the pane asked for with nothing to go back to.
+        if window?.isVisible == true { navigator.go(to: tab) } else { navigator.start(at: tab) }
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }
@@ -213,26 +216,24 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         Self.leaveNothingFocused(in: window)
     }
 
+    /// Searches the panes, as typing into the sidebar's search field does.
+    public func search(_ query: String) {
+        navigator.query = query
+    }
+
     public func windowWillClose(_ notification: Notification) {
         windowLease?.end()
         windowLease = nil
         onClose?()
     }
 
-    private func display(_ tab: SettingsTab) {
-        detail.show(tab)
-        window?.title = tab.title
-        Self.leaveNothingFocused(in: window)
-    }
-
-    private static let sidebarWidth: CGFloat = 200
-
     /// A pane leaves no control holding the keyboard when it is chosen: AppKit gives it to the first text field
     /// (the file name pattern in Screenshots), all of it selected, where a stray key would replace it. After AppKit
-    /// has given the keyboard out, the window takes it back.
+    /// has given the keyboard out, the window takes it back. The sidebar's search field keeps it.
     private static func leaveNothingFocused(in window: NSWindow?) {
         DispatchQueue.main.async { [weak window] in
-            guard let window, window.firstResponder is NSText else { return }
+            guard let window, let editor = window.firstResponder as? NSText,
+                  !(editor.delegate is NSSearchField) else { return }
             window.makeFirstResponder(nil)
         }
     }
@@ -280,79 +281,5 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         // The window keeps its size whichever pane is chosen; a pane taller than it scrolls.
         controller.sizingOptions = []
         return controller
-    }
-}
-
-/// The pane the sidebar has chosen.
-@Observable
-private final class SettingsSelection {
-    var tab: SettingsTab = .general {
-        didSet { if tab != oldValue { onChange?(tab) } }
-    }
-
-    @ObservationIgnored var onChange: ((SettingsTab) -> Void)?
-}
-
-/// The list of panes down the window's left side, in groups.
-private struct SettingsSidebar: View {
-    @Bindable var selection: SettingsSelection
-
-    var body: some View {
-        List(selection: Binding(get: { selection.tab }, set: { if let tab = $0 { selection.tab = tab } })) {
-            ForEach(SettingsTab.groups.indices, id: \.self) { index in
-                Section {
-                    ForEach(SettingsTab.groups[index], id: \.self) { tab in
-                        Label {
-                            Text(tab.title)
-                        } icon: {
-                            Image(systemName: tab.symbolName)
-                        }
-                        .tag(tab)
-                    }
-                }
-            }
-        }
-        .listStyle(.sidebar)
-    }
-}
-
-/// Holds the chosen pane, making each the first time it is chosen and keeping it after.
-private final class SettingsDetailController: NSViewController {
-    private let makeContent: (SettingsTab) -> NSViewController
-    private var panes: [SettingsTab: NSViewController] = [:]
-    private var current: NSViewController?
-
-    init(makeContent: @escaping (SettingsTab) -> NSViewController) {
-        self.makeContent = makeContent
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    override func loadView() {
-        view = NSView()
-    }
-
-    func show(_ tab: SettingsTab) {
-        let pane = panes[tab] ?? {
-            let pane = makeContent(tab)
-            panes[tab] = pane
-            addChild(pane)
-            return pane
-        }()
-        guard pane !== current else { return }
-        current?.view.removeFromSuperview()
-        pane.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(pane.view)
-        NSLayoutConstraint.activate([
-            pane.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            pane.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            pane.view.topAnchor.constraint(equalTo: view.topAnchor),
-            pane.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        current = pane
     }
 }

@@ -1586,6 +1586,7 @@ final class CompositionRoot {
             captures: captures,
             quickAccess: quickAccess,
             showSettings: { [weak self] tab in self?.showSettings(tab) },
+            searchSettings: { [weak self] query in self?.settingsWindow?.search(query) },
             showOnboarding: { [weak self] in self?.showOnboarding() },
             showHistory: { [weak self] in self?.showHistory() },
             restoreLatestFromHistory: { [weak self] in

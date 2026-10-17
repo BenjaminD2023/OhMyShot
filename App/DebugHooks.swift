@@ -27,6 +27,8 @@ struct DebugHooks {
     let captures: CaptureCoordinator
     let quickAccess: QuickAccessController
     let showSettings: (SettingsTab) -> Void
+    /// Types into the open Settings window's search field.
+    let searchSettings: (String) -> Void
     let showOnboarding: () -> Void
     let showHistory: () -> Void
     let restoreLatestFromHistory: () -> Void
@@ -117,9 +119,13 @@ struct DebugHooks {
             }
         case "snapshot":
             Task { await snapshotWindows() }
+        case "draw-windows":
+            drawWindows()
         case "settings":
             let tab = url.pathComponents.dropFirst(2).first.flatMap(SettingsTab.init(rawValue:)) ?? .general
             showSettings(tab)
+        case "settings-search":
+            searchSettings(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value ?? "")
         case "onboarding":
             showOnboarding()
         case "history":
@@ -1472,6 +1478,66 @@ struct DebugHooks {
             }
         } catch {
             Log.app.error("debug.snapshot failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Every visible window of ours, drawn by the app itself, title bar and toolbar included, as `<title>-drawn.png` in
+    /// the snapshot folder: works without Screen Recording, though materials the window server blends are left plain.
+    func drawWindows() {
+        let directory = Self.snapshotDirectory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for window in NSApp.windows where window.isVisible {
+            guard let frame = window.contentView?.superview, let layer = frame.layer else { continue }
+            let scale = window.backingScaleFactor
+            let size = frame.bounds.size
+            guard let context = CGContext(
+                data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { continue }
+            context.setFillColor(window.backgroundColor.cgColor)
+            context.fill(CGRect(origin: .zero, size: CGSize(width: size.width * scale, height: size.height * scale)))
+            context.scaleBy(x: scale, y: scale)
+            layer.render(in: context)
+            // Glass (a sidebar's, say) is drawn by the window server, and the layers above it with it: draw what is on it.
+            func drawGlass(in view: NSView) {
+                for subview in view.subviews {
+                    if subview is NSGlassEffectView, let content = (subview as! NSGlassEffectView).contentView, let glassLayer = content.layer {
+                        let origin = content.convert(CGPoint.zero, to: frame)
+                        context.saveGState()
+                        context.translateBy(x: origin.x, y: frame.isFlipped ? size.height - origin.y - content.bounds.height : origin.y)
+                        glassLayer.render(in: context)
+                        context.restoreGState()
+                    }
+                    drawGlass(in: subview)
+                }
+            }
+            drawGlass(in: frame)
+            // Lists draw their rows in layers of their own: each list as it draws itself, beside the window's picture.
+            func drawLists(in view: NSView) {
+                for subview in view.subviews {
+                    if let table = subview as? NSTableView, let rep = table.bitmapImageRepForCachingDisplay(in: table.bounds) {
+                        table.cacheDisplay(in: table.bounds, to: rep)
+                        let name = (window.title.isEmpty ? "window-\(window.windowNumber)" : window.title).replacingOccurrences(of: "/", with: "-")
+                        try? rep.representation(using: .png, properties: [:])?.write(to: directory.appending(path: "\(name)-list.png"))
+                    }
+                    drawLists(in: subview)
+                }
+            }
+            drawLists(in: frame)
+            let name = (window.title.isEmpty ? "window-\(window.windowNumber)" : window.title).replacingOccurrences(of: "/", with: "-")
+            let file = directory.appending(path: "\(name)-drawn.png")
+            guard let image = context.makeImage(), let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.png.identifier as CFString, 1, nil) else { continue }
+            CGImageDestinationAddImage(destination, image, nil)
+            guard CGImageDestinationFinalize(destination) else { continue }
+            Log.app.notice("debug.draw-windows \(file.path(percentEncoded: false), privacy: .public)")
+            var lines: [String] = []
+            func walk(_ view: NSView, _ depth: Int) {
+                guard depth < 40 else { return }
+                lines.append(String(repeating: " ", count: depth) + "\(type(of: view)) \(NSStringFromRect(view.frame))\(view.isHidden ? " hidden" : "")")
+                view.subviews.forEach { walk($0, depth + 1) }
+            }
+            walk(frame, 0)
+            try? lines.joined(separator: "\n").write(to: directory.appending(path: "\(name)-tree.txt"), atomically: true, encoding: .utf8)
         }
     }
 
