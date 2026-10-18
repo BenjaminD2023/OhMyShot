@@ -1366,5 +1366,18 @@ STIX. 0.56 s a picture at the median, 0.89 s at p95 (Python).
 it is (1.2 s). In the Dev app the time from the selection's end to the LaTeX was 0.73–0.76 s for a 2x formula, the
 first time after launch as after (Docs/perf.md › M6 — Capture Formula).
 
-**Not done yet:** a formula pane in the OCR panel and a Shortcuts action; handwriting; a cold start with the models
-out of the file cache; the M6 gates.
+**In the OCR panel and Shortcuts** (2026-10-18). The panel's Formulas pane reads what is dragged around on the image,
+cropped from the image's own pixels, each box in a run of the text reader of its own, one at a time (a run peaks at
+about 300 MB); Option at the end of a Capture Formula drag opens the area there (DESIGN.md › OCR Panel). The Shortcuts
+actions Capture Formula and Recognize Formula in Image hand the LaTeX on (Docs/automation.md). The LaTeX now comes
+without the spaces at its ends that upstream's tidying leaves where it unwraps `\text{}`: the tests'
+` 速度 =\frac{ 路程 }{ 时间 }` is `速度 =\frac{ 路程 }{ 时间 }` in the app, and inside it is upstream's as before. In
+the Dev app a box took 0.49–0.68 s, and the test page's three formulas, the dark one too, read as the tests expect
+(Docs/perf.md › M6 — Formulas in the panel, and the M6 power gate).
+
+The decoder's mask is now written as half-precision bits (−∞ is `0xFC00`): Xcode builds the package for Intel too in
+Release, where Swift has no `Float16`, and the Release build had failed since the Swift reader went in. The readings
+are the same (`formulasReadBack` with the installed pack).
+
+**Not done yet:** handwriting; a formula among text found without a box drawn around it, which needs a layout model
+(› L3 spike).

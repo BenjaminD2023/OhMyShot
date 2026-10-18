@@ -106,6 +106,8 @@ These actions appear in the Shortcuts app under OhMyShot:
 | Capture Area, Capture Window, Capture Fullscreen, Capture Previous Area, Self-Timer | After Capture (optional): Copy, Save, Annotate, Upload, Pin | The screenshot, as a file in the format Settings › General chooses (PNG, JPEG, or HEIC, at 1×, in sRGB, with a border, as set; a save a shortcut asks for never asks for a name), or nothing when the capture was cancelled |
 | Capture Text | Keep Line Breaks | The text copied, or nothing |
 | Recognize Text in Image | An image, Keep Line Breaks | The image's text. Nothing is copied or shown. |
+| Capture Formula | | The formula's LaTeX, copied as it is (without `$` around it), or nothing when no whole formula was read |
+| Recognize Formula in Image | An image | The formula's LaTeX, or nothing. Nothing is copied or shown. |
 | Pin Image | An image | |
 | Annotate Image | An image | |
 | Record Screen | | |
@@ -120,7 +122,8 @@ shortcut first.
 Shortcuts need no approval in Settings › Automation, because you built the shortcut yourself. The URL scheme
 being off doesn't affect them. The capture actions wait until the capture is kept, so the next action gets the
 picture. That is what CleanShot's URL API can't do. Actions that capture the screen fail with a message when
-Screen Recording is off.
+Screen Recording is off. The two formula actions are listed whether or not the Math Formulas pack is installed (an
+action's list can't change); without it they fail with a message that says where to download it.
 
 ## Raycast
 

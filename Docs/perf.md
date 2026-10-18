@@ -2170,3 +2170,55 @@ copied. The time runs from the selection's end, the mouse-up, to the LaTeX.
   faster off the CPU. CPU only: 287–310 MB.
 - **Energy** (the spike's Python harness, CPU energy from `proc_pid_rusage`): about 4.3 J a formula on the CPU, 4.8 J
   with the encoder on the GPU.
+
+## M6 — Formulas in the panel, and the M6 power gate (2026-10-18)
+
+Debug build of `327aa45` with the OCR panel's Formulas pane and the two Shortcuts actions, the Dev app with both packs
+installed, a fresh launch. The tour ran through hidden hooks, on the formula tests' three pictures and a page drawn from
+them (prose around them, the dark one on a dark band, 1400 × 900), never the user's own: Capture Formula reading the
+three files (`debug/formula-test`, nothing copied), Recognize Formula in Image's path twice (`debug/shortcut-formula`,
+the same `formulaForShortcut(inImage:)` the action runs), then the page in the OCR panel (`debug/panel-file`, read with
+L2 beside L1), its Formulas pane, three boxes dragged in at once (`debug/panel-state?formula=`), and the panel closed.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Idle after launch, 60 s, two runs | 0.04% and 0.01% CPU (seconds at 0.4–0.6%), 0 wakeups, 24 MB | 0.0%, < 60, < 30 MB |
+| The app after Capture Formula ×3 and the Shortcuts path ×2 | 24 MB | — |
+| A box in the panel, from its drag to its LaTeX | 0.49–0.68 s, one after another | — |
+| The panel open with three formulas / 10 s after it closed | 132 / 120 MB | — |
+| The same page, text only, on a fresh launch | 145 / 115 MB | — |
+| Idle after the tour, 60 s, two runs | 0.06% and 0.01% CPU (one second at 2.4%), 0 wakeups, 120 MB | 0.0%, < 60, < 60 MB |
+| Live resources and the app's own processes after the tour | none (`debug/resources` idle, no text reader) | none when idle |
+
+- **Formulas cost the app nothing.** Every reading runs in the text reader, which exits after it, so Capture Formula
+  and the Shortcuts path left the app at 24 MB. The panel's 115–120 MB after it closes is Vision's, reading the
+  page's text in the app (M2: 110–125 MB): the same page with no formulas left 115 MB. The footprint after use stays
+  over budget for that reason alone, as at the M5 gate.
+- **The CPU wasn't 0.00%** as at the M4 and M5 gates. With 0 wakeups, the busy seconds came with work other processes
+  asked for, as the app's log shows: preference reloads from `cfprefsd`, an AppKit lifecycle message, and the system
+  asking the app for a Spotlight donation for its App Intents (whose list this build changed) after URL events. 87
+  context switches in an idle minute, no timers. The user was at the Mac and trying the panel during these runs.
+- **The text reader on one formula** (`/usr/bin/time -l` from the shell, the 2x quadratic formula):
+
+  | Run | Time | Peak |
+  | --- | --- | --- |
+  | Release reader, warm | 0.66–0.72 s | 298–299 MB |
+  | Debug reader, warm | 0.66–0.67 s | 298 MB |
+  | Release, the dark formula / the Chinese one | 0.61 / 0.48 s | 314 / 299 MB |
+  | Release, the pack's files out of the page cache, models at a new path | 1.35–1.36 s | 315–318 MB |
+  | Release, the same with the files read once first | 1.12 s | 315 MB |
+
+  Release is no faster: the pixel work is built optimized in Debug too, and the rest is Core ML's. Without `sudo
+  purge`, a pack out of the page cache was an APFS clone of it (`cp -c`: the same blocks, none of the cache; `cat`
+  reads its 352 MB in 0.07–0.08 s, 0.04 s warm). A clone is also a new path to Core ML, whose load cache is kept by
+  path: reading the clone's files first leaves 0.46 s of the 0.69 s, Core ML's first load, and the files' 0.2 s.
+  A first reading after a restart, at the installed path with Core ML's cache on disk, should take about 0.9 s; the
+  first load at a new path is what warming pays after an install (› M6 — Capture Formula).
+- **Core ML's cache keeps a copy of the pack for each path** it was loaded from: 157 MB and 195 MB of entries in
+  `~/Library/Caches/io.github.fzlzjerry.ohmyshot.text-reader/com.apple.e5rt.e5bundlecache` (shared by the Debug and
+  Release readers), never removed when the path goes away. The four clones left 1.4 GB, removed afterwards. With
+  the pack's 352 MB folder (its packages and their compiled models), the Math Formulas pack takes about 700 MB of
+  disk, against the 185 MB its row in Settings names; a new version of it would leave its old cache behind.
+
+Not part of this gate: Option at the end of a Capture Formula drag (it needs the overlay over the real screen) and the
+actions run from a real shortcut in the Shortcuts app. The design gate and the macOS 26 smoke test were not run.
