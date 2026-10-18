@@ -43,6 +43,11 @@ public final class FormulaReader: @unchecked Sendable {
     /// check misses ends here, where the cache alone would let it run 7 s.
     public static let defaultDeadline: Duration = .seconds(5)
 
+    /// The decoder's mask, in half precision: −∞ for a position not reached yet, 0 for one it may look at. Written as
+    /// bits: the package is built for Intel too in Release, where Swift has no `Float16`.
+    private static let hidden: UInt16 = 0xFC00
+    private static let shown: UInt16 = 0x0000
+
     public func read(_ image: CGImage, deadline: Duration = defaultDeadline) async throws -> FormulaReading {
         let started = ContinuousClock.now
         let picture = configuration.picture
@@ -61,7 +66,9 @@ public final class FormulaReader: @unchecked Sendable {
         let token = try MLMultiArray(shape: [1, 1], dataType: .int32)
         let position = try MLMultiArray(shape: [1], dataType: .int32)
         let mask = try MLMultiArray(shape: [1, 1, 1, NSNumber(value: d.cache)], dataType: .float16)
-        mask.withUnsafeMutableBufferPointer(ofType: Float16.self) { buffer, _ in buffer.initialize(repeating: -.infinity) }
+        mask.withUnsafeMutableBytes { bytes, _ in
+            for position in 0..<d.cache { bytes.storeBytes(of: Self.hidden, toByteOffset: position * 2, as: UInt16.self) }
+        }
         let inputs = try MLDictionaryFeatureProvider(dictionary: [d.token: token, d.position: position, d.mask: mask, d.keys: keys, d.values: crossValues])
         let state = decoder.makeState()
 
@@ -72,7 +79,7 @@ public final class FormulaReader: @unchecked Sendable {
             try Task.checkCancellation()
             token[0] = NSNumber(value: Int32(last))
             position[0] = NSNumber(value: Int32(step))
-            mask.withUnsafeMutableBufferPointer(ofType: Float16.self) { buffer, _ in buffer[step] = 0 }
+            mask.withUnsafeMutableBytes { bytes, _ in bytes.storeBytes(of: Self.shown, toByteOffset: step * 2, as: UInt16.self) }
             let output = try await decoder.prediction(from: inputs, using: state)
             guard let next = output.featureValue(for: d.next)?.multiArrayValue, next.count > 0 else {
                 throw FormulaError.unexpectedOutput("the decoder gave no \(d.next)")
