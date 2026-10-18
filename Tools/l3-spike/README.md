@@ -13,7 +13,7 @@ L3=/some/scratch/dir            # outside the repository
 uv venv $L3/venv --python 3.13
 uv pip install --python $L3/venv/bin/python --exclude-newer 2026-10-04 \
   torch==2.14.1 torchvision==0.29.1 transformers==5.18.0 coremltools==9.0 mlx==0.32.3 mlx-vlm==0.7.4 \
-  ftfy==6.3.1 numpy pillow safetensors tokenizers "huggingface-hub==1.33.0" psutil
+  ftfy==6.3.1 numpy pillow safetensors tokenizers "huggingface-hub==1.33.0" psutil opencv-python-headless
 swiftc -O -o $L3/energy Tools/l3-spike/energy.swift -lIOReport
 swiftc -O -o $L3/fprobe Tools/l3-spike/fprobe.swift
 ```
@@ -25,6 +25,7 @@ The models, each in its own folder under `$L3/models`, at these revisions (all c
 | PaddlePaddle/PP-FormulaNet_plus-L_safetensors | 6cc004a8e91ea3f3819b05317f40b290cbe99c2b | Apache-2.0 |
 | PaddlePaddle/PaddleOCR-VL-1.6 | c5630abae1d940eafe0697512a0325494b02ab42 | Apache-2.0 |
 | zai-org/GLM-OCR | 2e85a62840ccac27daa451df36c736c4636b8628 | MIT |
+| PaddlePaddle/PP-DocLayoutV3_safetensors | e4f489dc536556fc1be02b973ba06756e0d4a2ac | Apache-2.0 |
 
 ```sh
 PY=$L3/venv/bin/python Tools/l3-spike/fetch.sh PaddlePaddle/PP-FormulaNet_plus-L_safetensors $L3/models/PaddlePaddle_PP-FormulaNet_plus-L_safetensors
