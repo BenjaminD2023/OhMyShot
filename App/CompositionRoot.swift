@@ -44,8 +44,31 @@ final class CompositionRoot {
             guard let self, let helper = textReaderTool, let pack = formulaPack else { return nil }
             return (pack, helper)
         }
+        coordinator.cloud = { [weak self] in self?.panelCloud() }
         return coordinator
     }()
+    /// The cloud models the OCR panel's Read with… sends a picture to (L4, Docs/ocr.md › Cloud models). Their keys are
+    /// read from the Keychain only when a picture is sent or Settings shows them.
+    private lazy var cloudModels = CloudModelStore(secrets: KeychainSecretStore(service: "OhMyShot Cloud Models (\(Log.subsystem))"))
+    #if DEBUG
+    /// Scripted checks' models, in memory, in place of the person's while set.
+    private var demoCloudModels: CloudModelStore?
+    private var shownCloudModels: CloudModelStore { demoCloudModels ?? cloudModels }
+    #else
+    private var shownCloudModels: CloudModelStore { cloudModels }
+    #endif
+
+    /// How the OCR panel reads with a cloud model: a reader over the models' keys, made for each panel window.
+    private func panelCloud() -> TextRecognitionWindowController.Cloud {
+        let store = shownCloudModels
+        let reader = CloudReader(secrets: store.secrets)
+        return .init(store: store) { image, model, progress in
+            #if DEBUG
+            if let stub = DebugCloudDemo.stub(for: model) { return try await stub(progress) }
+            #endif
+            return try await reader.read(image, with: model, progress: progress)
+        }
+    }
     private lazy var annotations = AnnotationCoordinator(history: history)
     /// Turns, flips, and scales pictures from their Quick Access cards.
     private lazy var pictureChanges = PictureChangeCoordinator(
@@ -1703,7 +1726,8 @@ final class CompositionRoot {
                 automatic: { BackdropPresets.shared.automatic?.id },
                 setAutomatic: { BackdropPresets.shared.setAutomatic($0) }
             ),
-            modelPacks: modelPacks
+            modelPacks: modelPacks,
+            cloudModels: shownCloudModels
         ))
         controller.onClose = { [weak self] in
             Task { @MainActor in
@@ -1818,7 +1842,21 @@ final class CompositionRoot {
             latestCaptureID: { [weak self] in self?.history.items().first?.id },
             replay: { [weak self] in self?.replayStorage },
             shortcutFormula: { [weak self] data in try await self?.formulaForShortcut(inImage: data) },
-            shortcutText: { [weak self] data in try await self?.textForShortcut(inImage: data, keepsLineBreaks: true) }
+            shortcutText: { [weak self] data in try await self?.textForShortcut(inImage: data, keepsLineBreaks: true) },
+            setCloudDemo: { [weak self] store in
+                self?.settingsWindow?.close()
+                self?.demoCloudModels = store
+            },
+            addCloudDemoModel: { [weak self] model, key in
+                guard let store = self?.demoCloudModels else {
+                    Log.app.error("debug.cloud-local: turn the demo models on first (cloud-demo?on=1)")
+                    return
+                }
+                try? store.save(model, key: key)
+                store.agree(model)
+                store.markUsed(model)
+                Log.app.notice("debug.cloud-local added \(model.name, privacy: .public) at \(model.address, privacy: .public)")
+            }
         )
     }
 

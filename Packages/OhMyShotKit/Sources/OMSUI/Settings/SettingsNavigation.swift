@@ -84,6 +84,8 @@ extension SettingsTab {
                 String(localized: "Capture Text", bundle: .module),
                 String(localized: "Translate into", bundle: .module),
                 String(localized: "Model packs", bundle: .module),
+                String(localized: "Cloud models", bundle: .module),
+                String(localized: "API key", bundle: .module),
                 String(localized: "Copy colors as", bundle: .module),
                 String(localized: "Measure in", bundle: .module),
                 String(localized: "Pins", bundle: .module),

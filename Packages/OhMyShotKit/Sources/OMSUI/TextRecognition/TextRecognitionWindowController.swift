@@ -37,14 +37,30 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
         }
     }
 
+    /// The cloud models the person set up, and how a picture is read with one (L4, Docs/ocr.md › Cloud models). Only
+    /// a click on Read with… sends a picture, one picture at a time; with no model set up, the panel never mentions it.
+    public struct Cloud {
+        public let store: CloudModelStore
+        /// Reads a picture with a model, telling how many characters have come so far.
+        public let read: @Sendable (CGImage, CloudModel, _ progress: @escaping @Sendable (Int) -> Void) async throws -> CloudReading
+
+        public init(
+            store: CloudModelStore,
+            read: @escaping @Sendable (CGImage, CloudModel, _ progress: @escaping @Sendable (Int) -> Void) async throws -> CloudReading
+        ) {
+            self.store = store
+            self.read = read
+        }
+    }
+
     public var onClose: (() -> Void)?
 
     private let model: TextRecognitionModel
     private var windowLease: ActiveResources.Lease?
 
     /// `translator` is shared, so a language pair's model, slow to load, stays ready from image to image.
-    public init(settings: SettingsStore, translator: Translator) {
-        model = TextRecognitionModel(settings: settings, translator: translator)
+    public init(settings: SettingsStore, translator: Translator, cloud: Cloud? = nil) {
+        model = TextRecognitionModel(settings: settings, translator: translator, cloud: cloud)
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 1040, height: 660),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -115,9 +131,21 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
     #if DEBUG
     /// For scripted screenshots: `pane` text or table, joined lines, a selected or hovered line, an
     /// edited text.
+    /// `cloud`: read (with the first model) or read2 (the second), cancel, accept (the question before sending),
+    /// device or cloud (whose text shows).
     public func preview(
-        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool? = nil, target: String? = nil
+        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool? = nil, target: String? = nil,
+        cloud: String? = nil
     ) {
+        switch cloud {
+        case "read"?: model.cloudModels.first.map(model.readInCloud(with:))
+        case "read2"?: model.cloudModels.dropFirst().first.map(model.readInCloud(with:))
+        case "cancel"?: model.cancelCloudReading()
+        case "accept"?: model.askingToSend.map(model.agreeAndSend)
+        case "device"?: model.show(.device)
+        case "cloud"?: model.show(.cloud)
+        default: break
+        }
         if let target { model.translationChoice = target == "auto" ? "" : target }
         if let translate { model.translates = translate }
         if let pane { model.pane = pane == "table" ? .table : .text }
@@ -156,6 +184,30 @@ final class TextRecognitionModel {
         case csv
     }
 
+    /// Whose reading the text side shows.
+    enum TextSource: Hashable {
+        /// Vision's, with the model packs', on this Mac.
+        case device
+        /// The cloud model's.
+        case cloud
+    }
+
+    /// Reading with a cloud model, for the picture shown.
+    enum CloudState: Equatable {
+        case idle
+        /// Sent, and `characters` of the answer have come.
+        case reading(CloudModel, characters: Int)
+        case read(CloudResult)
+        case failed(CloudModel, message: String, canRetry: Bool)
+    }
+
+    struct CloudResult: Equatable {
+        let model: CloudModel
+        let reading: CloudReading
+        /// The Markdown tables in its text.
+        let tables: [OCRTable]
+    }
+
     /// A translation of what was read, for one choice of target.
     struct Translation {
         /// The setting it was made for: a language, or empty for automatic.
@@ -181,7 +233,8 @@ final class TextRecognitionModel {
     private(set) var scale: CGFloat = 1
     private(set) var phase: Phase = .loading
     private(set) var lines: [OCRLine] = []
-    private(set) var tables: [OCRTable] = []
+    /// The tables Vision read.
+    private(set) var visionTables: [OCRTable] = []
     private(set) var codes: [OCRCode] = []
     private(set) var isCode = false
     /// The text in the editor.
@@ -223,6 +276,15 @@ final class TextRecognitionModel {
     /// How many formulas the formula pack found and is reading, once it said; nil when none are being read.
     private(set) var formulasBeingRead: Int?
 
+    /// Whose reading the text side shows: this Mac's, or the cloud model's once it has read the picture.
+    private(set) var source: TextSource = .device
+    /// Where reading with a cloud model stands for this picture.
+    private(set) var cloud: CloudState = .idle
+    /// A model the person is asked about before the first picture goes to it.
+    var askingToSend: CloudModel?
+    @ObservationIgnored let cloudSetup: TextRecognitionWindowController.Cloud?
+    @ObservationIgnored var cloudTask: Task<Void, Never>?
+
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let translator: Translator
     @ObservationIgnored private var translationTask: Task<Void, Never>?
@@ -237,9 +299,10 @@ final class TextRecognitionModel {
     /// Counts the images loaded, so word from a reading of an earlier one is let go.
     @ObservationIgnored private var generation = 0
 
-    init(settings: SettingsStore, translator: Translator) {
+    init(settings: SettingsStore, translator: Translator, cloud: TextRecognitionWindowController.Cloud? = nil) {
         self.settings = settings
         self.translator = translator
+        cloudSetup = cloud
     }
 
     func load(
@@ -270,13 +333,13 @@ final class TextRecognitionModel {
                 probe.end()
                 guard !Task.isCancelled, let self else { return }
                 lines = result.result.lines
-                tables = result.tables
+                visionTables = result.tables
                 codes = result.codes
                 regenerate()
                 let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                phase = hasText || !codes.isEmpty || !tables.isEmpty ? .ready : .empty
+                phase = hasText || !codes.isEmpty || !visionTables.isEmpty ? .ready : .empty
                 if translates, phase == .ready { translate() }
-                Log.capture.notice("OCR panel read \(self.lines.count, privacy: .public) lines, \(self.tables.count, privacy: .public) tables, \(self.codes.count, privacy: .public) codes, \(self.items.count, privacy: .public) links and contacts")
+                Log.capture.notice("OCR panel read \(self.lines.count, privacy: .public) lines, \(self.visionTables.count, privacy: .public) tables, \(self.codes.count, privacy: .public) codes, \(self.items.count, privacy: .public) links and contacts")
                 if let reading, let formulas { putFormulasIn(reading, with: formulas, image: image) }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -338,7 +401,7 @@ final class TextRecognitionModel {
         translationFailed = false
         download = nil
         lines = []
-        tables = []
+        visionTables = []
         codes = []
         pane = .text
         tableIndex = 0
@@ -350,12 +413,23 @@ final class TextRecognitionModel {
         formulaMerge?.cancel()
         formulaMerge = nil
         formulasBeingRead = nil
+        // Cancelled, the request stops: nothing more of the picture is sent.
+        cloudTask?.cancel()
+        cloudTask = nil
+        cloud = .idle
+        source = .device
+        askingToSend = nil
         replaceText(with: TextAssembler.Assembly())
     }
 
-    /// The text again from what was read, in the current line-break style. Undoable in the editor.
-    private func regenerate() {
-        replaceText(with: TextAssembler.assembly(lines, options: .init(joinsWrappedLines: joinLines)))
+    /// The text again from what was read, in the current line-break style; the cloud model's text as it gave it while
+    /// that is shown. Undoable in the editor.
+    func regenerate() {
+        if source == .cloud, case .read(let result) = cloud {
+            replaceText(with: TextAssembler.Assembly(text: result.reading.text))
+        } else {
+            replaceText(with: TextAssembler.assembly(lines, options: .init(joinsWrappedLines: joinLines)))
+        }
     }
 
     /// Drops the person's edits: the text as read, linked to the image again. Undoable in the editor.
@@ -390,6 +464,12 @@ final class TextRecognitionModel {
         guard !edited, lineRanges.indices.contains(index) else { return }
         selection = lineRanges[index]
         focusRequest += 1
+    }
+
+    /// The tables of the reading shown.
+    var tables: [OCRTable] {
+        if source == .cloud, case .read(let result) = cloud { return result.tables }
+        return visionTables
     }
 
     var currentTable: OCRTable? {
@@ -435,6 +515,104 @@ final class TextRecognitionModel {
             if translates, phase == .ready { translate() }
             announce(String(localized: "Formulas read", bundle: .module))
         }
+    }
+
+    // MARK: Cloud models
+
+    /// The models Read with… offers, the one used last first; empty when none is set up.
+    var cloudModels: [CloudModel] {
+        guard let store = cloudSetup?.store else { return [] }
+        let preferred = store.preferred
+        return (preferred.map { [$0] } ?? []) + store.models.filter { $0.id != preferred?.id }
+    }
+
+    /// Whether the picture can be read with a cloud model: one is set up, and there is a picture.
+    var offersCloud: Bool {
+        image != nil && !cloudModels.isEmpty
+    }
+
+    var isReadingInCloud: Bool {
+        if case .reading = cloud { return true }
+        return false
+    }
+
+    /// Reads the picture with `model`, once the person agreed to send pictures to its host; asks first otherwise.
+    func readInCloud(with model: CloudModel) {
+        guard let setup = cloudSetup, let image, !isReadingInCloud else { return }
+        guard setup.store.isAgreed(model) else {
+            askingToSend = model
+            return
+        }
+        // The translation works on this Mac's reading, with its boxes; the cloud model's has none.
+        if translates { translates = false }
+        setup.store.markUsed(model)
+        cloud = .reading(model, characters: 0)
+        let generation = generation
+        cloudTask = Task { [weak self] in
+            let probe = LatencyProbe("ocr.cloud")
+            do {
+                let reading = try await setup.read(image, model) { characters in
+                    Task { @MainActor in self?.cloudProgress(characters, model: model, generation: generation) }
+                }
+                probe.end()
+                guard !Task.isCancelled, let self, generation == self.generation else { return }
+                cloudDone(reading, with: model)
+            } catch is CancellationError {
+            } catch {
+                guard !Task.isCancelled, let self, generation == self.generation else { return }
+                cloudTask = nil
+                cloud = .failed(model, message: error.localizedDescription, canRetry: (error as? CloudReadingError)?.isWorthRetrying ?? true)
+                announce(String(localized: "Couldn’t read with \(model.name)", bundle: .module))
+            }
+        }
+    }
+
+    /// The person agreed to send pictures to the model's host: this one goes now.
+    func agreeAndSend(_ model: CloudModel) {
+        askingToSend = nil
+        cloudSetup?.store.agree(model)
+        readInCloud(with: model)
+    }
+
+    /// Stops the reading: the request ends, and nothing more of the picture is sent.
+    func cancelCloudReading() {
+        cloudTask?.cancel()
+        cloudTask = nil
+        cloud = .idle
+    }
+
+    private func cloudProgress(_ characters: Int, model: CloudModel, generation: Int) {
+        guard generation == self.generation, case .reading(let reading, _) = cloud, reading.id == model.id else { return }
+        cloud = .reading(model, characters: characters)
+    }
+
+    private func cloudDone(_ reading: CloudReading, with model: CloudModel) {
+        cloudTask = nil
+        let result = CloudResult(model: model, reading: reading, tables: MarkdownTables.tables(in: reading.text))
+        cloud = .read(result)
+        Log.capture.notice("OCR panel read with a cloud model: \(reading.text.count, privacy: .public) characters, \(result.tables.count, privacy: .public) tables, complete \(reading.isComplete, privacy: .public)")
+        guard !reading.text.isEmpty else {
+            announce(String(localized: "\(model.name) found no text", bundle: .module))
+            return
+        }
+        // Vision found nothing, but the model did.
+        if phase == .empty { phase = .ready }
+        show(.cloud)
+        announce(String(localized: "Read by \(model.name)", bundle: .module))
+    }
+
+    /// Shows this Mac's reading or the cloud model's. Edits to the one shown give way to the other's text, undoably.
+    func show(_ newSource: TextSource) {
+        guard newSource != source else { return }
+        if newSource == .cloud {
+            guard case .read(let result) = cloud, !result.reading.text.isEmpty else { return }
+        }
+        source = newSource
+        Log.capture.notice("OCR panel shows the text read \(newSource == .cloud ? "by the cloud model" : "on this Mac", privacy: .public)")
+        tableIndex = 0
+        if tables.isEmpty { pane = .text }
+        hoveredLine = nil
+        regenerate()
     }
 
     // MARK: Translation
@@ -701,6 +879,17 @@ struct TextRecognitionView: View {
         }
         .frame(minWidth: 760, minHeight: 460)
         .toolbar { toolbar }
+        .alert(
+            model.askingToSend.map { Text("Send this picture to \($0.host ?? $0.address)?", bundle: .module) } ?? Text(verbatim: ""),
+            isPresented: Binding(get: { model.askingToSend != nil }, set: { if !$0 { model.askingToSend = nil } }),
+            presenting: model.askingToSend
+        ) { cloud in
+            Button { model.agreeAndSend(cloud) } label: { Text("Send", bundle: .module) }
+                .keyboardShortcut(.defaultAction)
+            Button(role: .cancel) { model.askingToSend = nil } label: { Text("Cancel", bundle: .module) }
+        } message: { cloud in
+            Text("\(cloud.name) reads it there, with \(cloud.model). The picture leaves this Mac each time you choose Read with \(cloud.name); your API key stays in the Keychain.", bundle: .module)
+        }
     }
 
     /// The text side's controls, together over it: what to show, how lines break (text only), Translate
@@ -724,7 +913,7 @@ struct TextRecognitionView: View {
                 .help(Text("Show the text, or the table found in the image", bundle: .module))
             }
         }
-        if model.phase == .ready, model.pane == .text, !model.translates {
+        if model.phase == .ready, model.pane == .text, !model.translates, model.source == .device {
             ToolbarItem(placement: .primaryAction) {
                 // Code always keeps its line breaks, whatever was chosen for the last image.
                 Picker(selection: Binding(get: { model.joinLines && !model.isCode }, set: { model.joinLines = $0 })) {
@@ -754,8 +943,10 @@ struct TextRecognitionView: View {
             }
             .toggleStyle(.button)
             .keyboardShortcut("t", modifiers: [.command, .shift])
-            .disabled(model.phase != .ready && model.phase != .loading)
-            .help(model.translates
+            .disabled((model.phase != .ready && model.phase != .loading) || model.source == .cloud || model.isReadingInCloud)
+            .help(model.source == .cloud
+                ? Text("Translation works on the text read on this Mac", bundle: .module)
+                : model.translates
                 ? Text("Show the text as read (⇧⌘T)", bundle: .module)
                 : Text("Translate the text, and show the translation in the image (⇧⌘T)", bundle: .module))
             if model.translates, model.phase == .ready {
@@ -905,7 +1096,8 @@ struct RecognizedImagePane: View {
         // Snapshots: the closures below run lazily, after a new image may have emptied the model's arrays.
         let lines = model.lines
         let codes = model.codes
-        if model.pane == .text {
+        // The cloud model's text has no boxes on the picture.
+        if model.pane == .text, model.source == .device {
             let selected = model.selectedLines
             let linked = !model.edited
             ForEach(lines.indices, id: \.self) { index in
@@ -987,6 +1179,16 @@ struct TextPane: View {
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if model.offersCloud {
+                    // Handwriting and faint text are what a cloud model may still read.
+                    PanelPlaceholder(
+                        symbol: "text.magnifyingglass",
+                        title: Text("No text found", bundle: .module),
+                        message: Text("Try an image with larger text or more contrast, or read it with a cloud model.", bundle: .module)
+                    ) {
+                        CloudEmptyActions(model: model)
+                            .padding(.top, 6)
+                    }
                 } else {
                     PanelPlaceholder(
                         symbol: "text.magnifyingglass",
@@ -1011,9 +1213,12 @@ struct TextPane: View {
                     if model.edited {
                         EditedNotice(model: model)
                     }
-                    if model.formulasBeingRead != nil {
+                    if model.formulasBeingRead != nil, model.source == .device {
                         FormulaNotice()
                     }
+                }
+                if !model.translates, model.offersCloud {
+                    CloudFooter(model: model)
                 }
                 if !model.items.isEmpty || !model.codes.isEmpty {
                     Divider()

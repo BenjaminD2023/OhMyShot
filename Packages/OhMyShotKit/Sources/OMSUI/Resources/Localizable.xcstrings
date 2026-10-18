@@ -41,6 +41,74 @@
         }
       }
     },
+    "%@ found no text" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no ha encontrado texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’a trouvé aucun texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はテキストを見つけられませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 没有找到文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 沒有找到文字"
+          }
+        }
+      }
+    },
+    "%@ found no text either" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ tampoco ha encontrado texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’a pas trouvé de texte non plus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@もテキストを見つけられませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 也没有找到文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 也沒有找到文字"
+          }
+        }
+      }
+    },
     "%@ of %@" : {
       "localizations" : {
         "en" : {
@@ -77,6 +145,154 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ / %2$@"
+          }
+        }
+      }
+    },
+    "%@ read the test picture in %@ s." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ read the test picture in %2$@ s."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ ha leído la imagen de prueba en %2$@ s."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ a lu l’image de test en %2$@ s."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@がテスト画像を%2$@秒で読み取りました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 用 %2$@ 秒读出了测试图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 用 %2$@ 秒讀出了測試圖片。"
+          }
+        }
+      }
+    },
+    "%@ reads it there, with %@. The picture leaves this Mac each time you choose Read with %@; your API key stays in the Keychain." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ reads it there, with %2$@. The picture leaves this Mac each time you choose Read with %3$@; your API key stays in the Keychain."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ la lee allí, con %2$@. La imagen sale de este Mac cada vez que eliges Leer con %3$@; tu clave de API se queda en el Llavero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ la lit là-bas, avec %2$@. L’image quitte ce Mac chaque fois que vous choisissez Lire avec %3$@ ; votre clé d’API reste dans le trousseau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@がそこで%2$@を使って読み取ります。「%3$@で読み取る」を選ぶたびに画像はこのMacから送信されます。APIキーはキーチェーンに残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 会在那里用 %2$@ 读取它。每次选择“用 %3$@ 读取”，图片都会离开这台 Mac；你的 API 密钥保留在钥匙串中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 會在那裡以 %2$@ 讀取它。每次選擇「用 %3$@ 讀取」，圖片都會離開這台 Mac；你的 API 密鑰保留在鑰匙圈中。"
+          }
+        }
+      }
+    },
+    "%@ stopped before the end of the text" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ se ha detenido antes del final del texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ s’est arrêté avant la fin du texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はテキストの途中で止まりました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 在文字结束前就停止了"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 在文字結束前就停止了"
+          }
+        }
+      }
+    },
+    "%@ tokens" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ tokens"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ jetons"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@トークン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 个 token"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 個 token"
           }
         }
       }
@@ -237,6 +453,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@，%2$@"
+          }
+        }
+      }
+    },
+    "%@…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@…"
           }
         }
       }
@@ -1508,6 +1758,40 @@
         }
       }
     },
+    "API key" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clave de API"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clé d’API"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APIキー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 密鑰"
+          }
+        }
+      }
+    },
     "About" : {
       "localizations" : {
         "es" : {
@@ -1712,6 +1996,40 @@
         }
       }
     },
+    "Add Cloud Model" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir modelo en la nube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un modèle cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウドモデルを追加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加云端模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入雲端模型"
+          }
+        }
+      }
+    },
     "Add Destination" : {
       "localizations" : {
         "es" : {
@@ -1810,6 +2128,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入標頭"
+          }
+        }
+      }
+    },
+    "Add Model" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir modelo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un modèle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデルを追加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入模型"
           }
         }
       }
@@ -2766,6 +3118,40 @@
         }
       }
     },
+    "Anthropic" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic"
+          }
+        }
+      }
+    },
     "Any text" : {
       "localizations" : {
         "es" : {
@@ -3238,6 +3624,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "條碼"
+          }
+        }
+      }
+    },
+    "Base URL" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL base"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL de base"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ベースURL"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基础 URL"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基礎 URL"
           }
         }
       }
@@ -5010,6 +5430,40 @@
         }
       }
     },
+    "Cloud models" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelos en la nube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modèles cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウドモデル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "云端模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雲端模型"
+          }
+        }
+      }
+    },
     "Code isn’t translated" : {
       "localizations" : {
         "es" : {
@@ -6534,6 +6988,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法讀取此影像"
+          }
+        }
+      }
+    },
+    "Couldn’t read with %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido leer con %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de lire avec %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で読み取れませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法用 %@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法用 %@ 讀取"
           }
         }
       }
@@ -9398,6 +9886,40 @@
         }
       }
     },
+    "How the service is spoken to. Most services, and Ollama and LM Studio on this Mac, take OpenAI’s Chat Completions; Claude takes Anthropic’s Messages." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo se habla con el servicio. La mayoría de los servicios, y Ollama y LM Studio en este Mac, aceptan Chat Completions de OpenAI; Claude usa Messages de Anthropic."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La façon de parler au service. La plupart des services, ainsi qu’Ollama et LM Studio sur ce Mac, acceptent les Chat Completions d’OpenAI ; Claude utilise les Messages d’Anthropic."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスとのやり取りの方式です。ほとんどのサービスと、このMac上のOllamaやLM StudioはOpenAIのChat Completionsを受け付けます。ClaudeはAnthropicのMessagesを使います。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与服务通信的方式。大多数服务，以及这台 Mac 上的 Ollama 和 LM Studio，都接受 OpenAI 的 Chat Completions；Claude 使用 Anthropic 的 Messages。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "與服務溝通的方式。大多數服務，以及這台 Mac 上的 Ollama 和 LM Studio，都接受 OpenAI 的 Chat Completions；Claude 使用 Anthropic 的 Messages。"
+          }
+        }
+      }
+    },
     "How to find the link in the server’s answer, as in ShareX: {json:path.to.link}, {response}, {header:Location}. Empty means the whole answer is the link." : {
       "localizations" : {
         "es" : {
@@ -9814,6 +10336,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "它佔用的 %@ 將從這台 Mac 上刪除。重新下載之前，辨識文字時不會用到它。"
+          }
+        }
+      }
+    },
+    "Its API key is deleted from the Keychain." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Su clave de API se elimina del Llavero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sa clé d’API est supprimée du trousseau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APIキーはキーチェーンから削除されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的 API 密钥会从钥匙串中删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的 API 密鑰會從鑰匙圈中刪除。"
           }
         }
       }
@@ -11382,6 +11938,40 @@
         }
       }
     },
+    "Model" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modèle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
+          }
+        }
+      }
+    },
     "Model packs" : {
       "localizations" : {
         "es" : {
@@ -11990,6 +12580,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚無擷取內容"
+          }
+        }
+      }
+    },
+    "No cloud models" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay modelos en la nube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun modèle cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウドモデルはありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有云端模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有雲端模型"
           }
         }
       }
@@ -13010,6 +13634,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 QuickTime Player 中打開"
+          }
+        }
+      }
+    },
+    "OpenAI-compatible" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compatible con OpenAI"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compatible OpenAI"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI互換"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 兼容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 相容"
           }
         }
       }
@@ -14154,6 +14812,40 @@
         }
       }
     },
+    "Protocol" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protocolo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protocole"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロトコル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "协议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "協定"
+          }
+        }
+      }
+    },
     "Public URL" : {
       "localizations" : {
         "es" : {
@@ -14596,6 +15288,222 @@
         }
       }
     },
+    "Read a picture with a model you have an account with, such as Claude, GPT, or Qwen, where this Mac reads it poorly: handwriting, dense tables, complex layouts. Nothing is sent until you choose Read with… in the Recognized Text window; then the picture goes from this Mac straight to the service, which may charge for it. Keys stay in the Keychain." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lee una imagen con un modelo en el que tengas cuenta, como Claude, GPT o Qwen, donde este Mac la lee mal: escritura a mano, tablas densas, maquetaciones complejas. No se envía nada hasta que eliges Leer con… en la ventana Texto reconocido; entonces la imagen va de este Mac directamente al servicio, que puede cobrar por ello. Las claves se quedan en el Llavero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lisez une image avec un modèle pour lequel vous avez un compte, comme Claude, GPT ou Qwen, là où ce Mac la lit mal : écriture manuscrite, tableaux denses, mises en page complexes. Rien n’est envoyé tant que vous ne choisissez pas Lire avec… dans la fenêtre Texte reconnu ; l’image part alors de ce Mac directement vers le service, qui peut la facturer. Les clés restent dans le trousseau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacがうまく読み取れない画像（手書き、細かい表、複雑なレイアウト）を、Claude、GPT、Qwenなど、アカウントを持っているモデルで読み取ります。「認識されたテキスト」ウインドウで「…で読み取る」を選ぶまで何も送信されません。選ぶと画像はこのMacからそのサービスへ直接送られ、料金がかかる場合があります。キーはキーチェーンに残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这台 Mac 读不好的地方（手写、密集的表格、复杂的版式），用你有账户的模型读取图片，比如 Claude、GPT 或通义千问。在“识别的文字”窗口中选择“用…读取”之前，什么都不会发送；选择后，图片直接从这台 Mac 发送到该服务，服务可能会为此收费。密钥保留在钥匙串中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這台 Mac 讀不好的地方（手寫、密集的表格、複雜的版面），用你有帳號的模型讀取圖片，例如 Claude、GPT 或通義千問。在「辨識出的文字」視窗中選擇「用…讀取」之前，什麼都不會傳送；選擇後，圖片會直接從這台 Mac 傳送到該服務，服務可能會為此收費。密鑰保留在鑰匙圈中。"
+          }
+        }
+      }
+    },
+    "Read by %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído por %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu par %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@が読み取りました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 讀取"
+          }
+        }
+      }
+    },
+    "Read by %@ at %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Read by %1$@ at %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído por %1$@ en %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu par %1$@ sur %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@の%1$@が読み取りました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %2$@ 上的 %1$@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %2$@ 上的 %1$@ 讀取"
+          }
+        }
+      }
+    },
+    "Read by %@ at %@: %@ tokens in, %@ out" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Read by %1$@ at %2$@: %3$@ tokens in, %4$@ out"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído por %1$@ en %2$@: %3$@ tokens de entrada, %4$@ de salida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu par %1$@ sur %2$@ : %3$@ jetons en entrée, %4$@ en sortie"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@の%1$@が読み取りました：入力%3$@トークン、出力%4$@トークン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %2$@ 上的 %1$@ 读取：输入 %3$@ 个 token，输出 %4$@ 个"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %2$@ 上的 %1$@ 讀取：輸入 %3$@ 個 token，輸出 %4$@ 個"
+          }
+        }
+      }
+    },
+    "Read on this Mac" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído en este Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu sur ce Mac"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacで読み取り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这台 Mac 上读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這台 Mac 上讀取"
+          }
+        }
+      }
+    },
+    "Read with %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leer con %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire avec %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で読み取る"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 %@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 %@ 讀取"
+          }
+        }
+      }
+    },
     "Reading formulas…" : {
       "localizations" : {
         "es" : {
@@ -14660,6 +15568,80 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "讀取時間過長。"
+          }
+        }
+      }
+    },
+    "Reading with %@… %@ characters" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reading with %1$@… %2$@ characters"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leyendo con %1$@… %2$@ caracteres"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture avec %1$@… %2$@ caractères"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@で読み取り中… %2$@文字"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在用 %1$@ 读取… %2$@ 个字符"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在用 %1$@ 讀取… %2$@ 個字元"
+          }
+        }
+      }
+    },
+    "Reads a small picture of a few words with this model, to check the address, the model, and the key." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lee con este modelo una imagen pequeña con unas palabras, para comprobar la dirección, el modelo y la clave."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lit avec ce modèle une petite image de quelques mots, pour vérifier l’adresse, le modèle et la clé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数語が書かれた小さな画像をこのモデルで読み取り、アドレス、モデル、キーを確認します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用这个模型读取一张有几个词的小图片，以检查地址、模型和密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用這個模型讀取一張有幾個字的小圖片，以檢查位址、模型和密鑰。"
           }
         }
       }
@@ -17138,6 +18120,40 @@
         }
       }
     },
+    "Send" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "送信"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "傳送"
+          }
+        }
+      }
+    },
     "Send by Email" : {
       "localizations" : {
         "es" : {
@@ -17168,6 +18184,268 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "透過電子郵件傳送"
+          }
+        }
+      }
+    },
+    "Send this picture to %@ and read it with %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Send this picture to %1$@ and read it with %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar esta imagen a %1$@ y leerla con %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer cette image à %1$@ et la lire avec %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%1$@に送信して%2$@で読み取ります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这张图片发送到 %1$@，并用 %2$@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這張圖片傳送到 %1$@，並用 %2$@ 讀取"
+          }
+        }
+      }
+    },
+    "Send this picture to %@ and read it with %@. It goes at %lld%% of its size." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Send this picture to %1$@ and read it with %2$@. It goes at %3$lld%% of its size."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar esta imagen a %1$@ y leerla con %2$@. Se envía al %3$lld%% de su tamaño."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer cette image à %1$@ et la lire avec %2$@. Elle part à %3$lld %% de sa taille."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%1$@に送信して%2$@で読み取ります。元のサイズの%3$lld%%で送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这张图片发送到 %1$@，并用 %2$@ 读取。它会以原尺寸的 %3$lld%% 发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這張圖片傳送到 %1$@，並用 %2$@ 讀取。它會以原尺寸的 %3$lld%% 傳送。"
+          }
+        }
+      }
+    },
+    "Send this picture to %@ and read it with %@. It goes in %lld pieces, at %lld%% of its size." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Send this picture to %1$@ and read it with %2$@. It goes in %3$lld pieces, at %4$lld%% of its size."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar esta imagen a %1$@ y leerla con %2$@. Se envía en %3$lld partes, al %4$lld%% de su tamaño."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer cette image à %1$@ et la lire avec %2$@. Elle part en %3$lld morceaux, à %4$lld %% de sa taille."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%1$@に送信して%2$@で読み取ります。%3$lld個に分け、元のサイズの%4$lld%%で送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这张图片发送到 %1$@，并用 %2$@ 读取。它会分成 %3$lld 块，以原尺寸的 %4$lld%% 发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這張圖片傳送到 %1$@，並用 %2$@ 讀取。它會分成 %3$lld 塊，以原尺寸的 %4$lld%% 傳送。"
+          }
+        }
+      }
+    },
+    "Send this picture to %@ and read it with %@. It goes in %lld pieces." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Send this picture to %1$@ and read it with %2$@. It goes in %3$lld pieces."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar esta imagen a %1$@ y leerla con %2$@. Se envía en %3$lld partes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer cette image à %1$@ et la lire avec %2$@. Elle part en %3$lld morceaux."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%1$@に送信して%2$@で読み取ります。%3$lld個に分けて送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这张图片发送到 %1$@，并用 %2$@ 读取。它会分成 %3$lld 块发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這張圖片傳送到 %1$@，並用 %2$@ 讀取。它會分成 %3$lld 塊傳送。"
+          }
+        }
+      }
+    },
+    "Send this picture to %@?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Enviar esta imagen a %@?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer cette image à %@ ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%@に送信しますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要将这张图片发送到 %@ 吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要將這張圖片傳送到 %@ 嗎？"
+          }
+        }
+      }
+    },
+    "Sending to %@…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviando a %@…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoi à %@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@に送信中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在发送到 %@…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在傳送到 %@…"
+          }
+        }
+      }
+    },
+    "Sends a small picture of the words “%@” to the service and checks that the model reads them back. The service may charge for it, as for any request." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envía al servicio una imagen pequeña con las palabras «%@» y comprueba que el modelo las lee. El servicio puede cobrar por ello, como por cualquier solicitud."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoie au service une petite image des mots « %@ » et vérifie que le modèle les relit. Le service peut la facturer, comme toute requête."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」と書かれた小さな画像をサービスに送り、モデルがそれを読み返せるか確認します。ほかのリクエストと同様に料金がかかる場合があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向服务发送一张写着“%@”的小图片，并检查模型能否读回这些词。和任何请求一样，服务可能会为此收费。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向服務傳送一張寫著「%@」的小圖片，並檢查模型能否讀回這些字。和任何請求一樣，服務可能會為此收費。"
           }
         }
       }
@@ -17988,6 +19266,74 @@
         }
       }
     },
+    "Show the text read by" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar el texto leído por"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher le texte lu par"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み取り元を表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示读取者"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示讀取者"
+          }
+        }
+      }
+    },
+    "Show the text read on this Mac, or the text %@ read" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra el texto leído en este Mac o el texto que ha leído %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche le texte lu sur ce Mac, ou le texte lu par %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacで読み取ったテキスト、または%@が読み取ったテキストを表示します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示在这台 Mac 上读取的文字，或 %@ 读取的文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示在這台 Mac 上讀取的文字，或 %@ 讀取的文字"
+          }
+        }
+      }
+    },
     "Show the text, or the table found in the image" : {
       "localizations" : {
         "es" : {
@@ -18520,6 +19866,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止錄製，暫停於 %@"
+          }
+        }
+      }
+    },
+    "Stop reading with %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de leer con %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrêter la lecture avec %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@での読み取りを中止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止用 %@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止用 %@ 讀取"
           }
         }
       }
@@ -19272,6 +20652,74 @@
         }
       }
     },
+    "The model answered, but not with the words in the picture: “%@”. Check that it reads pictures." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo ha respondido, pero no con las palabras de la imagen: «%@». Comprueba que lee imágenes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le modèle a répondu, mais pas avec les mots de l’image : « %@ ». Vérifiez qu’il lit les images."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデルは応答しましたが、画像の語句ではありませんでした：「%@」。画像を読み取れるモデルか確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型回答了，但不是图片中的词：“%@”。请确认它能读取图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型回應了，但不是圖片中的字：「%@」。請確認它能讀取圖片。"
+          }
+        }
+      }
+    },
+    "The name of a model that reads pictures, as the service lists it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El nombre de un modelo que lea imágenes, tal como lo indica el servicio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le nom d’un modèle qui lit les images, tel que le service l’indique."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像を読み取れるモデルの名前を、サービスに表示されているとおりに入力します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "能读取图片的模型的名称，按服务列出的写。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "能讀取圖片的模型名稱，依服務列出的寫。"
+          }
+        }
+      }
+    },
     "The new language shows after OhMyShot relaunches." : {
       "localizations" : {
         "es" : {
@@ -19374,6 +20822,40 @@
         }
       }
     },
+    "The service’s address with its version, as its documentation gives it, such as https://api.openai.com/v1. Plain http:// works only on this Mac or your local network." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dirección del servicio con su versión, tal como la indica su documentación, como https://api.openai.com/v1. http:// sin cifrar solo funciona en este Mac o en tu red local."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’adresse du service avec sa version, telle que sa documentation l’indique, comme https://api.openai.com/v1. http:// sans chiffrement ne fonctionne que sur ce Mac ou votre réseau local."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドキュメントに記載されている、バージョンを含むサービスのアドレスです（例：https://api.openai.com/v1）。http:// はこのMacかローカルネットワーク上でのみ使えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务的地址（含版本），按其文档给出的写，例如 https://api.openai.com/v1。普通的 http:// 只能用于这台 Mac 或本地网络。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務的位址（含版本），依其文件提供的寫，例如 https://api.openai.com/v1。一般的 http:// 只能用於這台 Mac 或區域網路。"
+          }
+        }
+      }
+    },
     "The text in it couldn’t be recognized." : {
       "localizations" : {
         "es" : {
@@ -19438,6 +20920,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法輸入此上傳器"
+          }
+        }
+      }
+    },
+    "This Mac" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce Mac"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMac"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 Mac"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台 Mac"
           }
         }
       }
@@ -20094,6 +21610,40 @@
         }
       }
     },
+    "Translation works on the text read on this Mac" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La traducción funciona con el texto leído en este Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La traduction porte sur le texte lu sur ce Mac"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻訳はこのMacで読み取ったテキストに対してのみ使えます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译只对在这台 Mac 上读取的文字可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻譯只適用於在這台 Mac 上讀取的文字"
+          }
+        }
+      }
+    },
     "Translation, %@" : {
       "localizations" : {
         "es" : {
@@ -20260,6 +21810,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請嘗試更大的區域，或對比更高的文字。"
+          }
+        }
+      }
+    },
+    "Try an image with larger text or more contrast, or read it with a cloud model." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prueba con una imagen con el texto más grande o con más contraste, o léela con un modelo en la nube."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Essayez une image au texte plus grand ou plus contrasté, ou lisez-la avec un modèle cloud."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字が大きい画像やコントラストが高い画像を試すか、クラウドモデルで読み取ってください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "试试文字更大或对比度更高的图片，或用云端模型读取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "試試文字更大或對比度更高的圖片，或用雲端模型讀取。"
           }
         }
       }
@@ -20980,6 +22564,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "WebDAV…"
+          }
+        }
+      }
+    },
+    "What the Recognized Text window’s button calls it: Read with Claude." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo lo llama el botón de la ventana Texto reconocido: Leer con Claude."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le nom que lui donne le bouton de la fenêtre Texte reconnu : Lire avec Claude."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「認識されたテキスト」ウインドウのボタンでの呼び名です（例：Claudeで読み取る）。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“识别的文字”窗口的按钮这样称呼它：用 Claude 读取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「辨識出的文字」視窗的按鈕這樣稱呼它：用 Claude 讀取。"
           }
         }
       }

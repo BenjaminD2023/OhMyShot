@@ -73,6 +73,8 @@ public struct SettingsDependencies {
     public let recordActions: UploadRecordActions
     /// The model packs, which only the Tools tab shows, and only when the build offers one.
     public let modelPacks: ModelPackCenter?
+    /// The cloud models the OCR panel reads with, which only the Tools tab shows.
+    public let cloudModels: CloudModelStore?
 
     /// What Settings › Sharing does with a finished upload.
     public struct UploadRecordActions {
@@ -142,7 +144,8 @@ public struct SettingsDependencies {
         uploadRecords: UploadRecordStore,
         recordActions: UploadRecordActions = .none,
         backgrounds: Backgrounds = .none,
-        modelPacks: ModelPackCenter? = nil
+        modelPacks: ModelPackCenter? = nil,
+        cloudModels: CloudModelStore? = nil
     ) {
         self.settings = settings
         self.permissions = permissions
@@ -155,6 +158,7 @@ public struct SettingsDependencies {
         self.uploadRecords = uploadRecords
         self.recordActions = recordActions
         self.modelPacks = modelPacks
+        self.cloudModels = cloudModels
     }
 }
 
@@ -280,7 +284,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .recording:
             host(RecordingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
         case .tools:
-            host(ToolsSettingsView(settings: dependencies.settings, modelPacks: dependencies.modelPacks))
+            host(ToolsSettingsView(settings: dependencies.settings, modelPacks: dependencies.modelPacks, cloudModels: dependencies.cloudModels))
         case .sharing:
             host(SharingSettingsView(
                 settings: dependencies.settings, destinations: dependencies.destinations,

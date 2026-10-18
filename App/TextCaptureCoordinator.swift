@@ -39,6 +39,8 @@ final class TextCaptureCoordinator {
     /// The formula pack's folder and the text reader that reads with it (Capture Formula, and the formulas among text;
     /// Docs/ocr.md › The formula pack); nil while the pack isn't installed.
     var formulaReader: (() -> (pack: URL, helper: URL)?)?
+    /// The cloud models the panel's Read with… sends a picture to, and how; asked as each panel window opens.
+    var cloud: (() -> TextRecognitionWindowController.Cloud?)?
 
     private struct Recognition {
         let lines: [OCRLine]
@@ -573,7 +575,7 @@ final class TextCaptureCoordinator {
     }
 
     private func makePanel() -> TextRecognitionWindowController {
-        let controller = TextRecognitionWindowController(settings: settings, translator: translator)
+        let controller = TextRecognitionWindowController(settings: settings, translator: translator, cloud: cloud?())
         controller.onClose = { [weak self] in
             // Released on the next turn so the window is not deallocated inside its own delegate call.
             Task { @MainActor in
@@ -721,11 +723,17 @@ final class TextCaptureCoordinator {
 
     /// Sets the open panel's pane, line breaks, selected or hovered line, and whether the text was edited.
     func previewPanelState(
-        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool?, target: String?
+        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool?, target: String?, cloud: String? = nil
     ) {
         panel?.preview(
-            pane: pane, joinLines: joinLines, selectLine: selectLine, hoverLine: hoverLine, edited: edited, translate: translate, target: target
+            pane: pane, joinLines: joinLines, selectLine: selectLine, hoverLine: hoverLine, edited: edited, translate: translate, target: target,
+            cloud: cloud
         )
+    }
+
+    /// Closes the panel, so the next one is made anew (with the cloud models then in place).
+    func closePanel() {
+        panel?.close()
     }
 
     /// Shows a failure to open, as a broken file or an empty clipboard would.

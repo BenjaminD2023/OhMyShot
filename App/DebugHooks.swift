@@ -68,6 +68,10 @@ struct DebugHooks {
     let shortcutFormula: (Data) async throws -> String?
     /// What the Shortcuts action Recognize Text in Image answers for a picture's data, its line breaks kept.
     let shortcutText: (Data) async throws -> String?
+    /// Puts scripted checks' cloud models in place of the person's, or the person's back with nil.
+    let setCloudDemo: (CloudModelStore?) -> Void
+    /// Adds a model to the scripted checks' cloud models, with its key, agreed.
+    let addCloudDemoModel: (CloudModel, String?) -> Void
 
     /// Capture History's search, for scripted checks on the hook's own test pictures.
     struct HistorySearchHooks {
@@ -333,13 +337,15 @@ struct DebugHooks {
             Task { await openPanelDemo(via: value("via"), state: value("state")) }
         case "panel-state":
             // pane=text|table, join=0|1, select=<line>, hover=<line>, edited=1, translate=0|1,
-            // target=auto|<language> (the setting itself: put it back to auto afterwards)
+            // target=auto|<language> (the setting itself: put it back to auto afterwards),
+            // cloud=read|read2|cancel|accept|device|cloud (with the cloud-demo models)
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in items.first { $0.name == name }?.value }
             textCapture.previewPanelState(
                 pane: value("pane"), joinLines: value("join").map { $0 == "1" },
                 selectLine: value("select").flatMap(Int.init), hoverLine: value("hover").flatMap(Int.init),
-                edited: value("edited") == "1", translate: value("translate").map { $0 == "1" }, target: value("target")
+                edited: value("edited") == "1", translate: value("translate").map { $0 == "1" }, target: value("target"),
+                cloud: value("cloud")
             )
         case "translate-demo":
             // Translate Area on a drawn page (never the screen): its lens lies centered on the main
@@ -1343,6 +1349,7 @@ struct DebugHooks {
             if overlay.isActive { overlay.cancel() }
         default:
             if handleUploadHook(hook, url) { return }
+            if handleCloudHook(hook, url) { return }
             Log.app.error("debug.unknown \(hook, privacy: .public)")
         }
     }

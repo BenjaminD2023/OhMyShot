@@ -331,7 +331,7 @@ private struct DestinationRow: View {
 
 /// A row of the editor: a label in a column of fixed width, a field that fills the rest, and a slot at the
 /// right edge for the help button, kept empty where a row has none, so every field ends at the same place.
-private struct EditorRow<Content: View>: View {
+struct EditorRow<Content: View>: View {
     let label: Text
     var info: Text?
     /// Whether the content fills the row (fields) or sits at its start (pop-ups, checkboxes).
@@ -720,14 +720,16 @@ private struct UploadDestinationEditor: View {
 }
 
 /// A secure field for a secret, which says "Saved" instead of showing what the Keychain holds.
-private struct SecretInput: View {
+struct SecretInput: View {
     @Binding var text: String
     let isStored: Bool
     let label: Text
+    /// A secret the form can do without, such as the key of a service on this Mac.
+    var isOptional = false
 
     var body: some View {
         HStack(spacing: 6) {
-            SecureField(text: $text, prompt: isStored ? Text("Saved in Keychain", bundle: .module) : Text("Required", bundle: .module)) { label }
+            SecureField(text: $text, prompt: isStored ? Text("Saved in Keychain", bundle: .module) : isOptional ? Text("Optional", bundle: .module) : Text("Required", bundle: .module)) { label }
                 .labelsHidden()
             // The lock takes the help button's place, so this field ends where the others do.
             ZStack {

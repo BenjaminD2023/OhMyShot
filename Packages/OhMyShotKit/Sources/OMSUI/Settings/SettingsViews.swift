@@ -655,6 +655,7 @@ struct RecordingSettingsView: View {
 struct ToolsSettingsView: View {
     @Bindable var settings: SettingsStore
     var modelPacks: ModelPackCenter?
+    var cloudModels: CloudModelStore?
     @State private var translationTargets: [Locale.Language] = []
 
     var body: some View {
@@ -684,6 +685,9 @@ struct ToolsSettingsView: View {
             }
             if let modelPacks, !modelPacks.isEmpty {
                 ModelPacksRow(center: modelPacks)
+            }
+            if let cloudModels {
+                CloudModelsRow(store: cloudModels)
             }
 
             SettingsDivider()
