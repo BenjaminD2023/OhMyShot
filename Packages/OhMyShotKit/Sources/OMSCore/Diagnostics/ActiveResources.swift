@@ -23,6 +23,9 @@ public final class ActiveResources: Sendable {
         /// A model pack on its way from its host: a URL session and the file it writes to. Taken when the
         /// download starts, ended when it finishes, fails, is paused, or is cancelled.
         case download
+        /// A picture on its way to a cloud model and the text coming back: a URL session. Taken when the request
+        /// starts, ended when the answer is in, fails, or is cancelled.
+        case cloudReading
     }
 
     public static let shared = ActiveResources()
