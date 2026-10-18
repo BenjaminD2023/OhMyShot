@@ -55,7 +55,7 @@ should happen after a capture:
 | `scrolling-capture` | area, `start`, `autoscroll` | Opens Scrolling Capture. With an area, the scrolling bar comes up around it. `start=true` starts the capture without the bar, at once when there is an area. `autoscroll=true` lets the app scroll (needs Accessibility). While a scrolling capture runs, finishes it. |
 | `pin` | `filepath` | Pins the picture at `filepath`. Without one, asks for a file. |
 | `record-screen` | area | Opens Record Screen. With an area, the recording bar comes up around it. While recording, stops. |
-| `capture-text` | `filepath`, area, `linebreaks` | Opens Capture Text. With an area, reads that area at once. With `filepath`, reads the picture's text without showing it. The text is copied. `linebreaks=false` joins wrapped lines. |
+| `capture-text` | `filepath`, area, `linebreaks` | Opens Capture Text. With an area, reads that area at once. With `filepath`, reads the picture's text without showing it. The text is copied, each formula in it as LaTeX (`$…$`, or `$$…$$` on a line of its own) while the Math Formulas pack is installed. `linebreaks=false` joins wrapped lines. |
 | `capture-formula` | `filepath`, area | OhMyShot's own. Opens Capture Formula, which needs the Math Formulas pack (Settings › Tools › Model packs); without it, OhMyShot beeps. With an area, reads that area at once. With `filepath`, reads the picture's formula without showing it. The formula's LaTeX is copied as it is, without `$` around it. |
 | `open-annotate` | `filepath` | Opens the picture or `.ohmyshot` project at `filepath` in the editor. Without one, asks for a file. Pictures are added to Capture History first. |
 | `open-from-clipboard` | | Opens the clipboard's picture in the editor. |
@@ -104,8 +104,8 @@ These actions appear in the Shortcuts app under OhMyShot:
 | Action | Input | Output |
 |---|---|---|
 | Capture Area, Capture Window, Capture Fullscreen, Capture Previous Area, Self-Timer | After Capture (optional): Copy, Save, Annotate, Upload, Pin | The screenshot, as a file in the format Settings › General chooses (PNG, JPEG, or HEIC, at 1×, in sRGB, with a border, as set; a save a shortcut asks for never asks for a name), or nothing when the capture was cancelled |
-| Capture Text | Keep Line Breaks | The text copied, or nothing |
-| Recognize Text in Image | An image, Keep Line Breaks | The image's text. Nothing is copied or shown. |
+| Capture Text | Keep Line Breaks | The text copied, or nothing; formulas as LaTeX while the Math Formulas pack is installed |
+| Recognize Text in Image | An image, Keep Line Breaks | The image's text, formulas as LaTeX while the Math Formulas pack is installed. Nothing is copied or shown. |
 | Capture Formula | | The formula's LaTeX, copied as it is (without `$` around it), or nothing when no whole formula was read |
 | Recognize Formula in Image | An image | The formula's LaTeX, or nothing. Nothing is copied or shown. |
 | Pin Image | An image | |

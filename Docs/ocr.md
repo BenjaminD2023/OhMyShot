@@ -1373,11 +1373,112 @@ actions Capture Formula and Recognize Formula in Image hand the LaTeX on (Docs/a
 without the spaces at its ends that upstream's tidying leaves where it unwraps `\text{}`: the tests'
 ` 速度 =\frac{ 路程 }{ 时间 }` is `速度 =\frac{ 路程 }{ 时间 }` in the app, and inside it is upstream's as before. In
 the Dev app a box took 0.49–0.68 s, and the test page's three formulas, the dark one too, read as the tests expect
-(Docs/perf.md › M6 — Formulas in the panel, and the M6 power gate).
+(Docs/perf.md › M6 — Formulas in the panel, and the M6 power gate). The same day the pane gave way to formulas found
+in the text itself (› Formulas among text).
 
 The decoder's mask is now written as half-precision bits (−∞ is `0xFC00`): Xcode builds the package for Intel too in
 Release, where Swift has no `Float16`, and the Release build had failed since the Swift reader went in. The readings
 are the same (`formulasReadBack` with the installed pack).
 
-**Not done yet:** handwriting; a formula among text found without a box drawn around it, which needs a layout model
-(› L3 spike).
+**Not done yet:** handwriting.
+
+## Formulas among text (M6, 2026-10-18)
+
+Vision reads a formula as text of a sort: on the test page `x = (−b ± √(b²−4ac))/2a` came back as "-6土 v62- 4ac" over
+"2a" with `x =` gone, `速度 = 路程/时间` as "速度二时间" over "路程", and nothing in its reading says which lines those
+are. So the formula pack (version 2) holds a layout model that finds them, and the text Capture Text, the OCR panel,
+and the Shortcuts action Recognize Text in Image read has each formula in it as LaTeX: `$…$` within a line, `$$…$$`
+for one set apart. The panel's Formulas pane, where formulas were dragged around, is gone; Option at the end of a
+Capture Formula drag opens the panel as Capture Text's does. Capture Formula itself is unchanged.
+
+**The layout model.** PP-DocLayoutV3 (Apache-2.0, in transformers as `PPDocLayoutV3ForObjectDetection`, revision
+e4f489d): RT-DETR on an 800 × 800 picture, 300 queries, 25 classes, two of them formulas, `display_formula` (5) and
+`inline_formula` (15). `Tools/model-packs/formula_pack.py layout` converts it to `layout.mlpackage`, each query's class
+logits and box, without the masks and reading order the boxes don't need, with 8-bit weights: 32 MB. What had to change
+for Core ML, each checked against transformers' model (logits within 0.00004, boxes 0.00001):
+
+- the decoder's deformable attention without the batch dimension (always 1): transformers' sampling offsets are rank 6,
+  past Core ML's 5;
+- the boxes the decoder starts from, taken from each query's mask by its rows and columns rather than by a `where`
+  against float32's largest value: Core ML's CPU path got that one wrong, and the unpatched model found 17 of the
+  corpus's 28 formulas on the CPU, all 28 on the GPU;
+- the anchors as constants (their in-place writes don't convert), and `torch.outer` of an int and a float tensor in the
+  encoder's position embedding cast to floats.
+
+On the CPU it takes 113 ms a picture (Python); the GPU 53 ms, the Neural Engine 43 ms, but the Neural Engine moved one box
+(IoU 0.50 against transformers', 0.97 at worst on the CPU) and took 4.5 s to compile: it runs on the CPU, as the formula
+models do.
+
+**Checked** (`check-layout`) on 17 pictures: the corpus `Tools/model-packs/layout_pages.py` draws (a web page with inline
+and display formulas, a chat answer in dark mode, a page in Chinese, notes like the test page, all KaTeX in Chrome at 2x;
+a paper's page from xelatex at 192 dpi) and the 12 real screenshots of Tools/ocr-bench/real. Against transformers' model
+and post-processing at Paddle's threshold, 0.5: 28 of 28 formulas found, none more, every box within IoU 0.96. None on
+the screenshots; a 2633 × 67 terminal line, squashed into the square, scored 0.33 as a display formula (› tiles). It
+misses lone letters in prose ("over *n* samples") and `±i`, which Vision reads well enough.
+
+**The pack**, version 2: the version 1 files unchanged (the formula models were checked then: › The formula pack), plus
+`layout.mlpackage`, its config section, and the license and README naming both models; 13 files, 218,602,440 bytes,
+commit a994339. Settings removes version 1 when it next reads the packs, and the files the two share (same path, size,
+and SHA-256) are carried over to version 2's download first (`ModelPackStore.carryOver`, an APFS clone): in the Dev app 7
+files, 185 MB, came over and the update fetched 34 MB.
+
+**Finding** (`FormulaFinder`). A picture is read whole up to 1800 pixels a side (shrunk at most 2.25 times; the corpus's
+pages, 1640 wide, gave every formula), else in tiles that size reaching 200 pixels into each other; a tile longer than
+twice its height (or the reverse) is padded with the median color of its edges, so a strip isn't squashed into a square.
+Scaled to 800 × 800 with PIL's antialiased bicubic, as transformers' processor scales it. A formula is a query whose
+display or inline class scores 0.5 or more through a sigmoid; detections that are mostly one box (IoU 0.5: two classes
+of one query, two tiles) are one, over both boxes, and one lying mostly inside a larger one goes. Pictures over 40
+megapixels aren't looked in.
+
+**Reading.** Each box, 12% of its height more above and below and 2 pixels to the sides (the reader crops to the ink),
+is read as in Capture Formula; only whole readings count. One at a time: Core ML already spreads one reading over the
+cores, and three at once cut the web page's 8 formulas from 4.1 s to 2.6 s for 20% more CPU time and 945 MB at the peak
+against 394 MB (Docs/perf.md › M6 — Formulas among text). The text reader loads the formula models only once a formula
+was found.
+
+**Into the text** (`FormulaMerge`, `VisionPipeline.lines(_:with:in:)`):
+
+- A formula and the lines on its row that reach it (sharing half the shorter's height, overlapping or within a line's
+  height) become one line, its box over all of them: Vision often reads a row as one line through an inline formula,
+  sometimes as two around it.
+- What the lines hold beside the formulas is read again, each piece alone, stacked in a strip (`LineStrip`), a request a
+  strip, with the Latin model unless CJK letters are a tenth of the lines' text (a formula's glyphs come back as the odd
+  "臺" or "土"). A piece is cut at the blank columns nearest the formula's edge, on the text's side first (a box drawn
+  close left "loss." for "loss" and "lis" for "is"; one drawn wide would cut the period after it), and a quarter of the
+  line's height above and below but not into the lines above and below (a line holding a fraction is tall, and its
+  padding read the line above's subscripts).
+- A piece's text is the line's own where it matches (an edit distance of a third of its length, exact for one or two
+  characters): read without the rest of the line, "由此" came back as "田此", and Vision drops the space after a comma a
+  piece starts on; the L2 pack's reading of the line, in the panel, is kept the same way. Punctuation the piece has at
+  its ends and the match doesn't, a period the line has right before it, and one the line ends on after a formula are
+  kept.
+- `$…$` goes between the pieces, a space either side but not inside brackets or before the punctuation after a word;
+  the comma a formula's box took in goes after it ("$c$，则有" before Chinese), or gives way to the text's own.
+- A formula alone on its row is a line of its own: `$$…$$` when found set apart. A reading with no letter in italic and
+  no command, operator, script, or brace ("2.0", `3.5\mathrm{GB}`, "(1)") leaves the text as Vision read it.
+- The lines are marked (`OCRLine.math`): `TextAssembler` counts only the text around a formula when it looks for code
+  (four lines of LaTeX made the web page a code listing, indented), leaves the LaTeX out of its punctuation fixes, and
+  never joins a display formula to the line before or after it; translation leaves a display formula as it is on the
+  image and reads the text around an inline one as prose.
+
+The test pages read as written, in the three languages, with the Vision lines the tests get:
+
+```text
+Given a loss $L(\theta)$, each step moves the parameters against the gradient, $\theta_{t+1}=\theta_{t}-\eta\nabla L(\theta_{t})$,
+Where $\eta>0$ is the learning rate. For a quadratic $L(x)=\frac{1}{2}x^{\top}Ax$ the iteration converges when
+$\eta<2/\lambda_{\mathrm{m a x}}(A)$.
+$$\mathrm{M S E}=\frac{1}{n}\sum_{i=1}^{n}(y_{i}-\hat{y}_{i})^{2}$$
+直角三角形两条直角边分别为 a、6，斜边为 $c$，则有 $a^{2}+b^{2}=c^{2}$。由此可得斜边长度 $c={\sqrt{a^{2}+b^{2}}}$
+```
+
+("Where" and "a、6" are Vision's.) Putting them in took 0.45–0.6 s after the formulas were read (Debug).
+
+**Where.** The panel shows Vision's reading first; the formulas are found and read from the moment it opens, and come
+into the text once, when they are in, with "Reading formulas…" under the text meanwhile (DESIGN.md › OCR Panel). Capture
+Text waits for them before it copies. Recognize Text in Image reads them in the same run of the text reader
+(`"formulas"` with `"joinsWrappedLines"`). A picture without formulas costs a run of the text reader beside Vision: 0.2 s,
+145 MB at its peak, done by the time Vision is; Capture Text took 249 ms at the median with the pack, 244 ms without.
+
+**Not done yet:** skipping the L2 pack's second reading in the panel when the only CJK characters are Vision's reading of
+formulas (on the web page it ran, as it did before, and now shares the CPU with the formula reading: the text showed
+after 3.7 s); formulas in the history's search text; inline formulas translated with their LaTeX protected.

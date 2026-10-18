@@ -2229,3 +2229,46 @@ L2 beside L1), its Formulas pane, three boxes dragged in at once (`debug/panel-s
 
 Not part of this gate: Option at the end of a Capture Formula drag (it needs the overlay over the real screen) and the
 actions run from a real shortcut in the Shortcuts app. The design gate and the macOS 26 smoke test were not run.
+
+## M6 — Formulas among text (2026-10-18)
+
+Debug build on `1a54954` with the formula pack's version 2 (Docs/ocr.md › Formulas among text), M3 Max, macOS 27.2 beta.
+The Dev app had version 1 installed: Settings' refresh carried its 7 shared files (185 MB) over to version 2's download
+and removed it, and the download fetched the 34 MB left from Hugging Face in about 38 s; warming the three models took
+1.6 s. Pictures: the layout corpus's pages (`Tools/model-packs/layout_pages.py`; the tests' `page-web`, `page-dark`,
+`page-zh`, 1640 × 1120) and the real screenshots of Tools/ocr-bench/real, through hidden hooks (`debug/text-test?path=`,
+`debug/shortcut-text?path=`, `debug/panel-file`), never the user's own; the text reader timed with `/usr/bin/time -l`.
+
+**A run of the text reader** (`"formulas"`):
+
+| Picture | Formulas read at once | Time | CPU time | Peak footprint |
+| --- | --- | --- | --- | --- |
+| x-tweet (none found) | — | 0.20 s | 0.25 s | 145 MB |
+| page-web, 8 formulas | 1 | 4.14 s | 13.3 s | 394 MB |
+| page-web | 2 | 3.03 s | 14.5 s | 694 MB |
+| page-web | 3 | 2.61 s | 16.0 s | 945 MB |
+| page-dark, 5 formulas | 1 | 2.79 s | 8.6 s | 392 MB |
+| page-dark | 3 | 1.85 s | 10.5 s | 949 MB |
+
+- **One at a time.** Core ML already spreads a reading over the cores (3.2 times its wall time in CPU time at one at a
+  time), so reading side by side saved a third of the wait for up to 20% more CPU time and two and a half times the
+  memory. The reader reads one at a time.
+- **No formula, no formula models.** Finding takes the layout model alone (145 MB, 0.2 s); the formula models (185 MB
+  of weights, about 250 MB more at the peak) are loaded only once a formula was found.
+
+**In the app** (Dev, Debug, both packs installed):
+
+| Measurement | Result |
+| --- | --- |
+| Capture Text on x-tweet (no formula), 5 runs: with the pack / without | 249 / 244 ms at the median (321 ms the first time after launch) |
+| Capture Text on page-dark, 5 formulas | 2.88–2.97 s |
+| Recognize Text in Image on page-zh, 6 formulas | 3.22 s |
+| The OCR panel on page-web: Vision's text / the formulas in | 3.69 s / 0.66 s later |
+
+- **A picture without formulas costs about nothing to wait for**: the text reader looks for formulas beside Vision and is
+  done when it is. The 0.25 s of CPU and a short-lived 145 MB process are the price of each Capture Text while the pack
+  is installed.
+- **The panel's text came late on page-web** because Vision read its formulas as CJK here and there ("臺", "入"), which
+  sends the picture to the L2 pack's second reading (two Han or kana characters are enough, as before this change), and
+  that reading now shares the CPU with the formula reading; it waits for at most 3 s. Not addressed yet.
+- **The app stays as it was**: every reading, the layout model's included, runs in the text reader, which exits after it.
