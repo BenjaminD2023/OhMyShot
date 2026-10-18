@@ -1033,6 +1033,74 @@
         }
       }
     },
+    "Math Formulas" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fórmulas matemáticas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formules mathématiques"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数式"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数学公式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "數學公式"
+          }
+        }
+      }
+    },
+    "PP-FormulaNet_plus-L, by PaddlePaddle: Capture Formula copies the formula you select as LaTeX." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PP-FormulaNet_plus-L, de PaddlePaddle: Capturar fórmula copia como LaTeX la fórmula que selecciones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PP-FormulaNet_plus-L, de PaddlePaddle : Capturer une formule copie la formule sélectionnée en LaTeX."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PP-FormulaNet_plus-L（PaddlePaddle製）：「数式をキャプチャ」で、選択した数式をLaTeXとしてコピーします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PP-FormulaNet_plus-L，由 PaddlePaddle 开发：用“截取公式”把选中的公式拷贝为 LaTeX。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PP-FormulaNet_plus-L，由 PaddlePaddle 開發：用「擷取公式」把選取的公式拷貝為 LaTeX。"
+          }
+        }
+      }
+    },
     "PP-OCRv6 small, by PaddlePaddle: reads Chinese and Japanese more accurately than macOS alone, in the OCR panel and in History’s search." : {
       "localizations" : {
         "es" : {

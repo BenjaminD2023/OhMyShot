@@ -206,7 +206,7 @@ struct ModelPackTests {
     }
 
     @Test func everyPackTheBuildOffersIsUsable() {
-        for pack in ModelPackCatalog.packs + [ModelPackCatalog.ppocrV6Small] {
+        for pack in ModelPackCatalog.packs + [ModelPackCatalog.ppocrV6Small, ModelPackCatalog.ppFormulaNetPlusL] {
             #expect(pack.problem == nil, "\(pack.id): \(pack.problem ?? "")")
             #expect(pack.mirrors.first?.host() == "huggingface.co", "\(pack.id) comes from Hugging Face first")
         }
@@ -221,6 +221,15 @@ struct ModelPackTests {
         #expect(pack.files.count == 11)
         #expect(pack.size == 15_829_753)
         #expect(Set(["det.mlpackage/Manifest.json", "rec.mlpackage/Manifest.json", "head.bin", "characters.txt", "config.json"]).isSubset(of: pack.files.map(\.path)))
+    }
+
+    @Test func theFormulaPackIsTheOneUploaded() {
+        let pack = ModelPackCatalog.ppFormulaNetPlusL
+        #expect(pack.mirrors.allSatisfy { $0.absoluteString.contains("/resolve/192ccb089d5a44384f84ad4283317c7692d2dc93/") })
+        #expect(pack.version == "1")
+        #expect(pack.files.count == 10)
+        #expect(pack.size == 184_931_199)
+        #expect(Set(["encoder.mlpackage/Manifest.json", "decoder.mlpackage/Manifest.json", "tokens.txt", "config.json"]).isSubset(of: pack.files.map(\.path)))
     }
 
     @Test func aFileIsFetchedByItsPathUnderTheMirror() {

@@ -1,0 +1,40 @@
+f01	E = m c^{2}
+f02	a^{2} + b^{2} = c^{2}
+f03	x = \frac{-b \pm \sqrt{b^{2} - 4 a c}}{2 a}
+f04	\sum_{i=1}^{n} i = \frac{n (n + 1)}{2}
+f05	\int_{0}^{\infty} e^{-x^{2}} d x = \frac{\sqrt{\pi}}{2}
+f06	\lim_{x \to 0} \frac{\sin x}{x} = 1
+f07	e^{i \pi} + 1 = 0
+f08	f(x) = \sum_{n=0}^{\infty} \frac{f^{(n)}(a)}{n!} (x - a)^{n}
+f09	\nabla \cdot \vec{E} = \frac{\rho}{\varepsilon_{0}}
+f10	\hat{\theta} = \arg\max_{\theta} \log p(x \mid \theta)
+f11	\begin{pmatrix} a & b \\ c & d \end{pmatrix}^{-1} = \frac{1}{a d - b c} \begin{pmatrix} d & -b \\ -c & a \end{pmatrix}
+f12	|x| = \begin{cases} x & x \geq 0 \\ -x & x < 0 \end{cases}
+f13	\mathrm{softmax}(z)_{i} = \frac{e^{z_{i}}}{\sum_{j=1}^{K} e^{z_{j}}}
+f14	\mathcal{L}(\theta) = -\frac{1}{N} \sum_{i=1}^{N} y_{i} \log \hat{y}_{i}
+f15	\binom{n}{k} = \frac{n!}{k! (n - k)!}
+f16	\| x \|_{2} = \sqrt{\sum_{i} x_{i}^{2}}
+f17	\forall \epsilon > 0, \exists \delta > 0 : |x - a| < \delta \Rightarrow |f(x) - f(a)| < \epsilon
+f18	P(A \mid B) = \frac{P(B \mid A) P(A)}{P(B)}
+f19	\oint_{\partial \Sigma} \vec{B} \cdot d \vec{l} = \mu_{0} I
+f20	\frac{\partial^{2} u}{\partial t^{2}} = c^{2} \frac{\partial^{2} u}{\partial x^{2}}
+f21	\mathbb{E}[X] = \int_{-\infty}^{\infty} x f(x) d x
+f22	A \cup (B \cap C) = (A \cup B) \cap (A \cup C)
+f23	\mathrm{Attention}(Q, K, V) = \mathrm{softmax}\left(\frac{Q K^{T}}{\sqrt{d_{k}}}\right) V
+f24	\sqrt[3]{x^{3} + y^{3}} \leq \sqrt{x^{2} + y^{2}}
+f25	\prod_{k=1}^{n} \left(1 + \frac{1}{k}\right) = n + 1
+f26	\det \begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \\ 7 & 8 & 10 \end{bmatrix} = -3
+f27	\bar{x} = \frac{1}{n} \sum_{i=1}^{n} x_{i}, \quad s^{2} = \frac{1}{n - 1} \sum_{i=1}^{n} (x_{i} - \bar{x})^{2}
+f28	\zeta(s) = \sum_{n=1}^{\infty} \frac{1}{n^{s}} = \prod_{p} \frac{1}{1 - p^{-s}}
+f29	\Gamma(z) = \int_{0}^{\infty} t^{z - 1} e^{-t} d t
+f30	\cos^{2} \alpha + \sin^{2} \alpha = 1
+f31	\text{速度} = \frac{\text{路程}}{\text{时间}}
+f32	S = \pi r^{2}, \quad C = 2 \pi r
+f33	\log_{a} (x y) = \log_{a} x + \log_{a} y
+f34	\frac{d}{d x} \left( \frac{u}{v} \right) = \frac{u' v - u v'}{v^{2}}
+f35	x_{n+1} = x_{n} - \frac{f(x_{n})}{f'(x_{n})}
+f36	\vec{a} \times \vec{b} = |\vec{a}| |\vec{b}| \sin \theta \, \vec{n}
+f37	\sigma(x) = \frac{1}{1 + e^{-x}}
+f38	H(X) = -\sum_{x \in \mathcal{X}} p(x) \log_{2} p(x)
+f39	\mathbf{A} \mathbf{x} = \lambda \mathbf{x}
+f40	\iint_{D} (x^{2} + y^{2}) \, d x \, d y
