@@ -61,6 +61,8 @@ targets:
     dependencies:
       - package: OhMyShotKit
         product: OMSOCR
+      - package: OhMyShotKit
+        product: OMSCore
 
   # OhMyShot in any app's Share menu: pictures to annotate or pin, handed over through the Share Inbox (see
   # Extensions/Share/ShareViewController.swift). Sandboxed, as extensions must be; the app is not.

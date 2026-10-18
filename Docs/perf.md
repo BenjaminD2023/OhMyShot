@@ -2219,6 +2219,13 @@ L2 beside L1), its Formulas pane, three boxes dragged in at once (`debug/panel-s
   Release readers), never removed when the path goes away. The four clones left 1.4 GB, removed afterwards. With
   the pack's 352 MB folder (its packages and their compiled models), the Math Formulas pack takes about 700 MB of
   disk, against the 185 MB its row in Settings names; a new version of it would leave its old cache behind.
+  Now, once a pack is removed or an old version cleared away, the app has the reader remove every entry whose model
+  file is gone (a "tidy" job; `CompiledModelCache`), the reader's being the process whose cache it is. An entry's
+  `.e5` description names the model it was made from. Entries made from a copy Core ML keeps in the cache itself (the
+  L2 pack's, for the Neural Engine: 1 MB in all) name none and stay, as do those whose model is still there (Vision's
+  own, the installed packs'). Checked with the reader: a read of a clone took the cache from 703 MB in 39 entries to
+  1.0 GB in 41; with the clone deleted, tidying removed those 2 and left 703 MB in 39, and the installed pack still
+  read warm.
 
 Not part of this gate: Option at the end of a Capture Formula drag (it needs the overlay over the real screen) and the
 actions run from a real shortcut in the Shortcuts app. The design gate and the macOS 26 smoke test were not run.

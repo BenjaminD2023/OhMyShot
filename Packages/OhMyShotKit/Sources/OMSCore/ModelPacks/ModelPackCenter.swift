@@ -28,6 +28,9 @@ public final class ModelPackCenter {
     @ObservationIgnored public var onInstalled: ((ModelPack, URL) -> Void)?
     /// Told when a download fails (not when it is paused or cancelled), with why.
     @ObservationIgnored public var onFailed: ((ModelPack, String) -> Void)?
+    /// Told once installed files are gone: a pack removed, an old version or a pack no longer offered cleared away.
+    /// What was made from them elsewhere (Core ML's cache in the reader) can go too.
+    @ObservationIgnored public var onRemoved: (() -> Void)?
 
     @ObservationIgnored private let store: ModelPackStore
     @ObservationIgnored private let downloader: ModelPackDownloader
@@ -65,7 +68,8 @@ public final class ModelPackCenter {
     /// offered), off the main actor. Downloads under way keep the state they have, and a failed one its reason.
     public func refresh() async {
         let store = store, packs = packs
-        let found = await Self.read(packs, in: store)
+        let (found, removed) = await Self.read(packs, in: store)
+        if removed { onRemoved?() }
         for pack in packs where downloads[pack.id] == nil {
             let state = found[pack.id] ?? .available
             if case .failed(let message, _) = states[pack.id], case .paused(let done) = state {
@@ -76,9 +80,10 @@ public final class ModelPackCenter {
         }
     }
 
+    /// What is on this Mac of each pack, and whether anything installed was removed as unused.
     @concurrent
-    private static func read(_ packs: [ModelPack], in store: ModelPackStore) async -> [String: State] {
-        store.removeUnused(keeping: packs)
+    private static func read(_ packs: [ModelPack], in store: ModelPackStore) async -> (states: [String: State], removed: Bool) {
+        let removed = await removedUnused(keeping: packs, in: store)
         var states: [String: State] = [:]
         for pack in packs {
             if let receipt = store.receipt(of: pack) {
@@ -90,7 +95,7 @@ public final class ModelPackCenter {
                 states[pack.id] = .available
             }
         }
-        return states
+        return (states, removed)
     }
 
     /// The installed pack's folder, or nil when this version isn't installed.
@@ -164,6 +169,7 @@ public final class ModelPackCenter {
             Task {
                 await Self.removing { try store.remove(pack) }
                 states[pack.id] = .available
+                onRemoved?()
             }
         }
     }
@@ -195,7 +201,8 @@ public final class ModelPackCenter {
             states[pack.id] = .installed(receipt)
             onInstalled?(pack, store.folder(of: pack))
             let packs = packs
-            await Self.removing { _ = store.removeUnused(keeping: packs) }
+            let removed = await Self.removedUnused(keeping: packs, in: store)
+            if removed { onRemoved?() }
         case .failure(let error):
             switch download.ending {
             case .cancel:
@@ -204,6 +211,7 @@ public final class ModelPackCenter {
             case .remove:
                 await Self.removing { try store.remove(pack) }
                 states[pack.id] = .available
+                onRemoved?()
             case .pause, nil:
                 let (started, done) = await Self.downloaded(pack, in: store)
                 if error is CancellationError || download.ending == .pause {
@@ -220,6 +228,12 @@ public final class ModelPackCenter {
     @concurrent
     private static func downloaded(_ pack: ModelPack, in store: ModelPackStore) async -> (started: Bool, done: Int64) {
         (store.downloadStarted(pack), store.downloaded(pack))
+    }
+
+    /// Clears away what no listed pack uses; whether anything installed went (not only downloads under way).
+    @concurrent
+    private static func removedUnused(keeping packs: [ModelPack], in store: ModelPackStore) async -> Bool {
+        store.removeUnused(keeping: packs).contains { !$0.hasSuffix(".download") }
     }
 
     @concurrent

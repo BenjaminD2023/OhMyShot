@@ -15,14 +15,17 @@
 // and the answer holds its lines, for the app to put beside its own reading. With "warm": true and a pack (no path),
 // the pack's models are loaded and nothing is read: their first load compiles them for the Neural Engine. With
 // "formula": "/…/Model Packs/<id>/<version>" instead, the formula pack reads the picture as one formula (Capture Formula;
-// Docs/ocr.md › The formula pack), and with "warm" its models are compiled.
+// Docs/ocr.md › The formula pack), and with "warm" its models are compiled. With "tidy": true, nothing is read: what
+// Core ML keeps in this process's Caches folder of models that are gone is removed (CompiledModelCache).
 // Output, on standard output: one JSON object per line as each picture is read, in order,
 // {"id": "…", "text": "…"}, {"id": "…", "lines": [{"text": "…", "box": [[x, y], [width, height]], "confidence": 0.9}]},
-// {"id": "…", "latex": "…", "ending": "end"} (or "repeats", "cacheFull", "deadline": not a whole formula), or
-// {"id": "…", "error": "…"}. The process exits once its input ends and every picture is read.
+// {"id": "…", "latex": "…", "ending": "end"} (or "repeats", "cacheFull", "deadline": not a whole formula),
+// {"id": "…", "removed": 2}, or {"id": "…", "error": "…"}. The process exits once its input ends and every picture is
+// read.
 
 import CoreGraphics
 import Foundation
+import OMSCore
 import OMSOCR
 
 struct Job: Decodable {
@@ -33,6 +36,7 @@ struct Job: Decodable {
     var lines: Bool?
     var warm: Bool?
     var formula: String?
+    var tidy: Bool?
 }
 
 struct Line: Encodable {
@@ -47,6 +51,7 @@ struct Result: Encodable {
     var lines: [Line]?
     var latex: String?
     var ending: String?
+    var removed: Int?
     var error: String?
 }
 
@@ -101,6 +106,12 @@ func send(_ result: Result) {
 for try await line in FileHandle.standardInput.bytes.lines {
     guard let job = try? JSONDecoder().decode(Job.self, from: Data(line.utf8)) else { continue }
     do {
+        if job.tidy == true {
+            // Core ML keeps its cache under the process's bundle identifier, which the Info.plist in this binary names.
+            let removed = Bundle.main.bundleIdentifier.map { CompiledModelCache.removeStale(in: CompiledModelCache.folder(forBundleIdentifier: $0)) }
+            send(Result(id: job.id, removed: removed?.count ?? 0))
+            continue
+        }
         if let pack = job.formula {
             let reader = try await formulaReader(for: pack)
             if job.warm == true {

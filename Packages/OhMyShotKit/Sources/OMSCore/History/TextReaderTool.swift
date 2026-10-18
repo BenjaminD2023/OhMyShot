@@ -122,6 +122,18 @@ public enum TextReaderTool {
         if let error = answer.error { throw Failure.unreadable(error) }
     }
 
+    /// Removes what Core ML keeps in the reader's Caches folder of models that are gone (`CompiledModelCache`), after a
+    /// pack was removed or replaced, reading nothing. Run in the reader, whose cache it is.
+    /// - Returns: how many entries were removed.
+    @concurrent
+    @discardableResult
+    public static func tidy(helper: URL, priority: QualityOfService = .utility, resources: ActiveResources = .shared) async throws -> Int {
+        let job = Job(id: UUID().uuidString, tidy: true)
+        let answer = try await run(job, helper: helper, priority: priority, resources: resources)
+        if let removed = answer.removed { return removed }
+        throw Failure.unreadable(answer.error ?? "")
+    }
+
     private static func run(_ job: Job, helper: URL, priority: QualityOfService, resources: ActiveResources) async throws -> Answer {
         let process = Process()
         process.executableURL = helper
@@ -174,6 +186,7 @@ public enum TextReaderTool {
         var lines: Bool?
         var warm: Bool?
         var formula: String?
+        var tidy: Bool?
     }
 
     private struct Answer: Decodable {
@@ -182,6 +195,7 @@ public enum TextReaderTool {
         let lines: [Line]?
         let latex: String?
         let ending: String?
+        let removed: Int?
         let error: String?
     }
 }

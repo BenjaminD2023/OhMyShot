@@ -75,8 +75,23 @@ final class CompositionRoot {
         center.onFailed = { pack, _ in
             Self.announce(String(localized: "“\(pack.name)” couldn’t download"))
         }
+        center.onRemoved = { [weak self] in self?.tidyReaderCache() }
         return center
     }()
+
+    /// Installed pack files went: what Core ML made of them in the reader's cache, about 350 MB for the formula pack,
+    /// goes too (Docs/perf.md › M6 — Formulas in the panel).
+    private func tidyReaderCache() {
+        guard let helper = textReaderTool else { return }
+        Task {
+            do {
+                let removed = try await TextReaderTool.tidy(helper: helper)
+                Log.modelPacks.notice("Tidied the text reader's Core ML cache: \(removed, privacy: .public) entries removed")
+            } catch {
+                Log.modelPacks.error("Tidying the text reader's Core ML cache failed: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
 
     /// The model pack L2 reads with beside L1 (Docs/ocr.md › L2 beside L1), when it is installed: the OCR panel and the
     /// history's search read Chinese and Japanese with it.

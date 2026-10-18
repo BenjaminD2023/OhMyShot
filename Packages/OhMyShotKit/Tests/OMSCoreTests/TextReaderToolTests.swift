@@ -103,6 +103,17 @@ struct TextReaderToolTests {
         try await TextReaderTool.warm(formula: URL(filePath: "/packs/formula"), helper: reader, resources: ActiveResources())
     }
 
+    @Test func tidyingReadsNothingAndSaysHowMuchWent() async throws {
+        let reader = try helper(answering + """
+
+        case "$line" in *'"path"'*|*'"pack"'*|*'"formula"'*) exit 4 ;; *'"tidy":true'*) ;; *) exit 5 ;; esac
+        printf '{"id":"%s","removed":2}\\n' "$id"
+        """)
+        let resources = ActiveResources()
+        #expect(try await TextReaderTool.tidy(helper: reader, resources: resources) == 2)
+        #expect(resources.isIdle)
+    }
+
     @Test func noReaderIsUnavailable() async throws {
         await #expect(throws: TextReaderTool.Failure.self) {
             try await TextReaderTool.text(

@@ -446,11 +446,34 @@ struct ModelPackTests {
         #expect(installed == rig.store.folder(of: pack))
         #expect(center.installedFolder(of: pack) == rig.store.folder(of: pack))
 
+        var removals = 0
+        center.onRemoved = { removals += 1 }
         center.remove(pack)
         try await waitUntil { center.state(of: pack) == .available && !FileManager.default.fileExists(atPath: rig.store.folder(of: pack).path(percentEncoded: false)) }
+        try await waitUntil { removals == 1 }
         await center.refresh()
         #expect(center.state(of: pack) == .available)
+        // Nothing more was there to clear away.
+        #expect(removals == 1)
         #expect(rig.resources.isIdle)
+    }
+
+    @MainActor
+    @Test func anOldVersionClearedAwayIsTold() async throws {
+        let rig = try rig()
+        let host = "packs-old-version.test"
+        PackStubProtocol.install(host: host, .init(files: rig.files.mapKeys { "org/repo/resolve/abc123/\($0)" }))
+        let old = pack(hosts: [host], files: rig.files, version: "1")
+        _ = try await rig.downloader.download(old)
+        let new = pack(hosts: [host], files: rig.files, version: "2")
+        let center = ModelPackCenter(packs: [new], store: rig.store, downloader: rig.downloader)
+        var removals = 0
+        center.onRemoved = { removals += 1 }
+        await center.refresh()
+        #expect(removals == 1)
+        #expect(rig.store.receipt(of: old) == nil)
+        await center.refresh()
+        #expect(removals == 1)
     }
 
     @MainActor
