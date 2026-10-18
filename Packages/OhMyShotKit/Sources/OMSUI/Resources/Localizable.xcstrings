@@ -1168,6 +1168,7 @@
       }
     },
     "A model pack reads text that macOS reads poorly on its own. It’s downloaded once, from %@, and stays on this Mac; nothing you capture leaves it." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -1197,6 +1198,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型套件能讀出 macOS 自己讀不好的文字。它只需從 %@ 下載一次，之後保存在這台 Mac 上；你擷取的任何內容都不會離開這台 Mac。"
+          }
+        }
+      }
+    },
+    "A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, or math formulas. It’s downloaded once, from %@, and stays on this Mac; nothing you capture leaves it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un paquete de modelos lee lo que macOS lee mal o no puede leer por sí solo, como texto en chino y japonés, o fórmulas matemáticas. Se descarga una vez, desde %@, y se queda en este Mac; nada de lo que capturas sale de él."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un pack de modèles lit ce que macOS lit mal ou ne sait pas lire à lui seul, comme le texte chinois et japonais, ou les formules mathématiques. Il est téléchargé une fois, depuis %@, et reste sur ce Mac ; rien de ce que vous capturez n’en sort."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデルパックは、中国語や日本語のテキスト、数式など、macOS単体ではうまく読み取れない、または読み取れない内容を読み取ります。%@から一度だけダウンロードされ、このMacに保存されます。キャプチャした内容がこのMacから送られることはありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型包能读出 macOS 自己读不好或读不了的内容，比如中文和日文文字、数学公式。它只需从 %@ 下载一次，之后保存在这台 Mac 上；你截取的任何内容都不会离开这台 Mac。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型套件能讀出 macOS 自己讀不好或讀不了的內容，例如中文和日文文字、數學公式。它只需從 %@ 下載一次，之後保存在這台 Mac 上；你擷取的任何內容都不會離開這台 Mac。"
           }
         }
       }
@@ -9677,6 +9712,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這不是 OhMyShot 能讀取的影像。"
+          }
+        }
+      }
+    },
+    "Its %@ are deleted from this Mac. Capture Formula is unavailable until it’s downloaded again." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se eliminan sus %@ de este Mac. Capturar fórmula no estará disponible hasta que lo vuelvas a descargar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ses %@ sont supprimés de ce Mac. Capturer une formule est indisponible jusqu’à ce qu’il soit de nouveau téléchargé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacから%@が削除されます。再度ダウンロードするまで、「数式をキャプチャ」は使えません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它占用的 %@ 将从这台 Mac 上删除。重新下载之前，无法使用“截取公式”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它佔用的 %@ 將從這台 Mac 上刪除。重新下載之前，無法使用「擷取公式」。"
           }
         }
       }
