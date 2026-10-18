@@ -1215,3 +1215,156 @@ here is the reorganized `recognize(_:)` of the three readers; the files' path is
   interlaced PNG or a JPEG in the text reader.
 - **`tRNS` and interlaced PNGs** could be read too: their layout would have to be RGBA with alpha from the chunk, and
   Adam7 would need every piece to inflate most of the file again. OhMyShot writes neither.
+
+## L3 spike (2026-10-18)
+
+The roadmap's L3 is two model packs read only when asked: one for formulas, to LaTeX (planned as PP-FormulaNet_plus-S,
+about 250 MB), and a document VLM for tables, formulas, handwriting, and complex layouts (PaddleOCR-VL-1.6 or GLM-OCR,
+about 2 GB, on MLX). The questions were which models, whether their weights may be published as packs (Apache, MIT, or
+BSD only), and their size, speed, and memory once converted. Harness, corpus, and setup: `Tools/l3-spike/`. M3 Max,
+48 GB, macOS 27.2 beta.
+
+**The corpus.** 40 formulas written for it (`formulas.txt`, from `E=mc^2` to matrices, cases, integrals, and one with
+Chinese in `\text{}`), drawn with xelatex at 1x (96 dpi), 2x (192 dpi), 2x dark (light gray on #1f1f1f), and at 2x in
+STIX Two Math and in TeX Gyre Pagella Math; eight screen-style tables drawn with headless Chrome at 1x and 2x, one dark,
+and the benchmark's two; the benchmark's 38 other cases; and four pictures of growing size (594 × 312, 2000 × 1254,
+4112 × 2579, 1128 × 5950). A formula is scored by its render: the LaTeX read is drawn as its truth is, and counts when
+the pixels are the same (`score.py`; it also gives a token error rate on normalized LaTeX). LaTeX that draws the same
+formula with other markup (`array` for `pmatrix`) counts as wrong. Tables by ocr-bench's rule (each cell in its row
+and column, its content equal), text by ocr-bench's content CER. No handwriting with known text was at hand: it is
+not measured.
+
+**The weights' licenses** (each model's card, and what it was made from):
+
+| Model | Weights | Taken? |
+| --- | --- | --- |
+| PP-FormulaNet_plus-S and -S | Apache-2.0, but only as Paddle inference files: no PyTorch path to Core ML without porting the model by hand | No |
+| PP-FormulaNet_plus-L (182M) | Apache-2.0, safetensors, in transformers (`PPFormulaNetForConditionalGeneration`) | Formula pack |
+| PaddleOCR-VL-1.6 (0.96B) | Apache-2.0, as are what it was made from: ERNIE-4.5-0.3B, Keye-VL, SigLIP so400m | VLM, first choice |
+| GLM-OCR (1.33B) | MIT, said in its README; the repository has no LICENSE file | VLM, second |
+| Texify, Texo, MinerU2.5, HunyuanOCR, models made from Qwen2.5-VL-3B | CC-BY-SA, AGPL, AGPL, Hunyuan's own, Qwen Research (by their cards) | No |
+
+**Formulas.** PP-FormulaNet_plus-L on Core ML (an encoder to each decoder layer's cross-attention keys and values,
+and a stateful decoder step; › The formula pack) reads as transformers' model does, and 8-bit weights read the same
+as 16-bit. The VLMs on MLX (mlx-vlm 0.7.4, 8-bit, their own formula prompts):
+
+| Same render | 2x | 1x | Dark | STIX Two | Pagella |
+| --- | --- | --- | --- | --- | --- |
+| PP-FormulaNet_plus-L | 95% | 82.5% | 95% inverted first; 0% as it is | 75% | 90% |
+| PaddleOCR-VL-1.6 | 90% | 90% | 87.5% | 85% | 85% |
+| GLM-OCR | 87.5% | 87.5% | 85% | 85% | 85% |
+
+PP-FormulaNet reads its own kind of picture best and leans on it: dark pictures loop to the end of its cache unless
+inverted, 1x pictures and other fonts read worse. The VLMs are steadier and faster on a formula (0.15–0.17 s against
+0.43–0.55 s), but run on the GPU at 10–20 W above idle and need 1.7–1.9 GB.
+
+**PP-FormulaNet on each compute unit** (native Core ML, `fprobe.swift`; 8-bit; per picture):
+
+| | Encoder | A decoder step | Peak footprint | First load |
+| --- | --- | --- | --- | --- |
+| CPU | 190 ms | 6.7–6.9 ms | 287–310 MB | 0.5 + 0.3 s after compiling, then 8 + 1 ms |
+| GPU (encoder) | 61 ms | 6.7 ms (CPU) | 904–1156 MB | 0.4 s |
+| Neural Engine (encoder) | 234 ms | 6.8 ms (CPU) | 52 MB, and 817 MB on the Neural Engine | 7.6 s, compiling |
+
+The decoder is no faster on the GPU (8.4 ms) or the Neural Engine. 16-bit: 367 MB (encoder 203, decoder 164); 8-bit:
+184 MB. Energy (CPU energy from `proc_pid_rusage`, the GPU's from IOReport, whose CPU and Neural Engine channels read 0
+on macOS 27.2 beta): about 4.3 J a formula on the CPU, 4.8 J with the encoder on the GPU.
+
+**Document VLMs on MLX** (mlx-vlm 0.7.4, greedy, the vision tower left unquantized; the benchmark's text cases with
+each model's OCR prompt, L1 with L2 reading them at 1.48%):
+
+| | Size | Text CER | Table cells (shape) | Formulas, same render | A table / a formula | MLX peak |
+| --- | --- | --- | --- | --- | --- | --- |
+| PaddleOCR-VL-1.6 bf16 | 1.7 GB | 4.07% | 100% (10 of 10) | 89.2% | 0.46 / 0.19 s | 2.4–2.9 GB |
+| PaddleOCR-VL-1.6 8-bit | 1.0 GB | 4.35% | 100% (10 of 10) | 89.2% | 0.40 / 0.17 s | 1.7–2.2 GB |
+| PaddleOCR-VL-1.6 4-bit | 682 MB | 10.18% | 99.2% (10 of 10) | 85.8% | 0.39 / 0.17 s | 1.3–1.9 GB |
+| GLM-OCR bf16 | 2.1 GB | 5.81% | 84.7% (9 of 10) | 86.7% | 1.27 / 0.20 s | 2.5–3.7 GB |
+| GLM-OCR 8-bit | 1.5 GB | 5.81% | 84.7% (9 of 10) | 86.7% | 0.91 / 0.15 s | 1.9–3.1 GB |
+| GLM-OCR 4-bit | 1.2 GB | 6.13% | 100% (10 of 10) | 86.7% | 0.73 / 0.12 s | 1.6–2.8 GB |
+
+- **Decoding** ran at 290–420 tokens a second (PaddleOCR-VL) and 200–440 (GLM-OCR), the GPU at 10–28 W above idle;
+  energy per picture, the model's load included: PaddleOCR-VL 8-bit 5.0 J a formula, 12.5 J a table, 24.7 J a text
+  region; GLM-OCR 8-bit 3.3, 20.6, and 42.8 J.
+- **Whole screens aren't for PaddleOCR-VL.** Its picture is cut to 1,280 tokens (about a megapixel): the 2000 × 1254
+  and 4K screens looped on one line ("1 个回复") to the 2048-token limit, and the tall page made text up ("第 3 条"
+  read as "茶"). It reads one element at a time; a page needs the element found first, by a layout model
+  (PP-DocLayoutV3, Apache-2.0) or by L1's own blocks (not tried).
+- **GLM-OCR** reads a 4K screen whole (6092 tokens, 14 s, 3.35 GB) and the tall page in 20 s, but not vertical
+  Chinese (100% CER), and gave one 1x table as plain text.
+- **Both** read an emoji as made-up LaTeX.
+
+**A VLM on Core ML** is the slow way. PaddleOCR-VL's language model (ERNIE-4.5-0.3B) converted as a stateful decoder
+(the vision tower, with its dynamic size and 2-D rotary positions, was not): 722 MB at 16-bit per function (one token,
+or 64 at once), 362 MB at 8-bit; 4-bit blocks crashed coremltools 9.0. It decoded 46 tokens a second on the GPU, 31 on
+the CPU, 27 on the Neural Engine (1.38 GB there), against MLX's 290–420 for the whole model; 1024 prompt tokens took
+0.48 s on the GPU. MLX itself is large: the Python wheel's `libmlx.dylib` is 20.1 MB and `mlx.metallib` 181.5 MB,
+past the app's 30 MB on its own, so it would come with the pack. mlx-swift's own build wasn't measured (Xcode 27.2
+beta lacks the Metal Toolchain component). mlx-swift-lm 3.32.3 has GLM-OCR (`GlmOcr.swift`) but not PaddleOCR-VL.
+macOS 27's SDK adds Core AI (`.aimodel`, macOS 27 only); not tried.
+
+**Decided** (2026-10-18): the formula pack is PP-FormulaNet_plus-L, 8-bit, on the CPU (› The formula pack). The VLM
+pack comes later: PaddleOCR-VL-1.6 at 8-bit, on MLX, read an element at a time, which needs a Swift port and MLX in the
+pack; GLM-OCR, which has a Swift port, is the other way. Not measured: handwriting, mlx-swift's size, Core AI, and a
+layout model.
+
+## The formula pack (M6, 2026-10-18)
+
+PP-FormulaNet_plus-L, converted by `Tools/model-packs/formula_pack.py` (`convert`, `check`, `assemble`) from
+PaddlePaddle's revision 6cc004a and published as MoraxCheng/ohmyshot-ppformulanet-plus-l-coreml, commit 192ccb0: 10
+files, 184,931,199 bytes (`ModelPackCatalog.ppFormulaNetPlusL`, "Math Formulas").
+
+**The models.** The model is split where its decoder reads the picture:
+
+- `encoder.mlpackage` takes the picture, 1 × 3 × 768 × 768, through the vision encoder and gives each of the 8 decoder
+  layers' cross-attention keys and values (8 × 1 × 16 × 144 × 32 each), so no step projects them again.
+- `decoder.mlpackage` is one decoding step: the last token, its position, a mask of the positions so far, and those
+  keys and values in; the likeliest next token (and the logits) out. Its own keys and values, up to 1024 steps, are
+  Core ML state (`k_cache`, `v_cache`).
+- Both have 8-bit weights (linear, symmetric, a scale for each output channel) and compute in 16-bit. Two output
+  channels are zeros, with a scale of 0 (the padding token's embedding and the last learned position, neither ever
+  read): quantizing warns of an invalid cast there, and `convert` checks they are the only ones.
+- Checked: the split model against transformers', teacher-forced, differs by 0.001 at most in its logits, the same
+  tokens; Core ML at 8-bit on the CPU against it: the keys' cosine 0.9996, the same token at 16 of 16 steps.
+- `tokens.txt` is the tokenizer's 50,000 tokens in id order, GPT-2's byte-level characters; the first 23 are special
+  and left out of the text. `config.json` holds the picture's preparation, the models' names, the start and end
+  tokens (both 2), and the repeat check.
+
+**`check`** reads the corpus (› L3 spike) through the pack's models on the CPU, with transformers' preparation, and
+decodes and tidies the LaTeX as the app does. On all 200 pictures that text equals upstream's post-processing
+(ftfy changed nothing), and the scores are the spike's: 95% of 2x pictures, 82.5% at 1x, 95% dark, 90% Pagella, 75%
+STIX. 0.56 s a picture at the median, 0.89 s at p95 (Python).
+
+**In Swift** (OMSOCR's `FormulaReader`, in the text reader):
+
+- **The picture** is prepared as transformers' PPFormulaNetImageProcessor prepares it: inverted when its border's mean
+  gray is below 128, its margin cropped (the box of what is darker than 200 once its gray, 0.2989 R + 0.587 G +
+  0.114 B truncated, is stretched to 0–255), scaled so its shorter side is 768 (bilinear), then to fit 768 × 768
+  (bicubic), centered on zeros, and normalized ((v / 255 − 0.7931) / 0.1738). The resizing is PIL's
+  (`Resample.antialiased`, 22-bit fixed-point weights, the rows first, each pass rounded to 8 bits), which torchvision's
+  antialiased resize of 8-bit pixels gives within 1 on about 0.01% of values. `Tools/l3-spike/formula_picture.py` is
+  the same in NumPy: within 2/255 of the processor on 0.03% of values over the corpus, and the Swift preparation
+  equals it value for value (30 pictures, 53 million values). The pixel work is OMSPixels' (`FormulaPixels`), built
+  optimized: 50–100 ms a picture in a Debug build, 250–300 ms before.
+- **A picture 16 times as long as tall or more** is fitted in one bicubic step instead of through its shorter side at
+  768, which would draw a strip 12,288 wide and wider. Six one-line formulas 18–21 times as wide as tall (1x and 2x)
+  read the same both ways, all of them right.
+- **The text** is GPT-2's byte-level decoding (bytes making no character become U+FFFD, as the tokenizer's decoder
+  does) and upstream's tidying (`FormulaText`): Chinese unwrapped from `\text{}`, quotes dropped, and the spaces
+  between tokens taken out but for those a command needs. The 200 readings of `check` decode to upstream's text
+  (`formula-texts.json` in the tests).
+- **A reading stops** at the end token; or when it ends in one run of up to 64 tokens repeated 8 times over (dark
+  pictures read without inversion ran on in runs of up to 28 tokens, one to the cache's end in 8 s; the corpus's right
+  readings repeat a run 6 times at most); or when the cache is full; or after 5 s (about 700 tokens: the one-line
+  formulas took 1.8–2.4 s). Only a reading that reached its end token is a formula.
+- **End to end,** the Swift reader gives `check`'s LaTeX for every picture: 0.59 s at the median, 0.90 s at p95
+  (`swift test`, Debug). From the shell, a run of the text reader takes 0.65 s for a dark formula and peaks at about
+  330 MB; a tweet's screenshot is stopped as it repeats itself after 2.7 s.
+
+**In the app.** Capture Formula reads the frozen frame's pixels under the selection (a 2x formula reads better than a
+1x one) in the text reader, and copies the LaTeX as it is (DESIGN.md › Text Selection; Docs/automation.md for
+`capture-formula`). Its entries show only while the pack is installed, and the pack is compiled in the background once
+it is (1.2 s). In the Dev app the time from the selection's end to the LaTeX was 0.73–0.76 s for a 2x formula, the
+first time after launch as after (Docs/perf.md › M6 — Capture Formula).
+
+**Not done yet:** a formula pane in the OCR panel and a Shortcuts action; handwriting; a cold start with the models
+out of the file cache; the M6 gates.

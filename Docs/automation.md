@@ -10,7 +10,8 @@ Debug builds answer `ohmyshot-dev://` instead, and show up in Shortcuts as "OhMy
 
 The commands and parameters are CleanShot X's
 ([its documentation](https://cleanshot.com/docs-api)). A script written for CleanShot works after you change
-`cleanshot://` to `ohmyshot://`. Unknown parameters are ignored.
+`cleanshot://` to `ohmyshot://`. Unknown parameters are ignored. One command is OhMyShot's own, with no CleanShot
+twin: `capture-formula`.
 
 The first time an app or a script sends a command, OhMyShot asks whether it may. Apps are approved one by one, by
 bundle identifier. Tools that are not apps (`open`, `osascript`, shell scripts) exit before their command arrives,
@@ -55,6 +56,7 @@ should happen after a capture:
 | `pin` | `filepath` | Pins the picture at `filepath`. Without one, asks for a file. |
 | `record-screen` | area | Opens Record Screen. With an area, the recording bar comes up around it. While recording, stops. |
 | `capture-text` | `filepath`, area, `linebreaks` | Opens Capture Text. With an area, reads that area at once. With `filepath`, reads the picture's text without showing it. The text is copied. `linebreaks=false` joins wrapped lines. |
+| `capture-formula` | `filepath`, area | OhMyShot's own. Opens Capture Formula, which needs the Math Formulas pack (Settings › Tools › Model packs); without it, OhMyShot beeps. With an area, reads that area at once. With `filepath`, reads the picture's formula without showing it. The formula's LaTeX is copied as it is, without `$` around it. |
 | `open-annotate` | `filepath` | Opens the picture or `.ohmyshot` project at `filepath` in the editor. Without one, asks for a file. Pictures are added to Capture History first. |
 | `open-from-clipboard` | | Opens the clipboard's picture in the editor. |
 | `toggle-desktop-icons`, `hide-desktop-icons`, `show-desktop-icons` | | Covers the desktop icons with a picture of the wallpaper, or removes the cover. See [Desktop icons](#desktop-icons). |
@@ -69,6 +71,7 @@ sign, not as a space.
 ```sh
 open "ohmyshot://capture-area?x=0&y=0&width=800&height=600&display=1&action=save"
 open "ohmyshot://capture-text?filepath=$HOME/Desktop/receipt.png&linebreaks=false"
+open "ohmyshot://capture-formula?filepath=$HOME/Desktop/equation.png"
 ```
 
 ### Desktop icons

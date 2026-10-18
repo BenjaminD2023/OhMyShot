@@ -2132,3 +2132,41 @@ time-outs at 60 s); one of them, read with the pack, never came back from the ea
 - **So "not kept" holds while L2 draws the decoded picture.** If L2 reads a tall PNG from the file instead, nothing in
   its phase needs the decoded picture counted, and Vision's crops would then keep about 175 MB through it for nothing:
   drawn pieces could take up to that off the reading's peak. To be measured again then.
+
+## M6 — Capture Formula (2026-10-18)
+
+Debug build, the Dev app, the Math Formulas pack (PP-FormulaNet_plus-L, Core ML with 8-bit weights, on the CPU;
+Docs/ocr.md › The formula pack) downloaded through the app with `debug/modelpack-act`. Capture Formula is timed with
+`debug/formula-flow`: the real overlay, frozen frame, and text reader, over drawn screens (a picture of a formula drawn
+at its pixels in the middle of the display, never the real screen), the area chosen without the mouse, nothing
+copied. The time runs from the selection's end, the mouse-up, to the LaTeX.
+
+| Step | Time | The reader at most | The app |
+| --- | --- | --- | --- |
+| Download from Hugging Face, 184.9 MB | 3 min 26 s (0.9–1.4 MB/s) | — | 24 MB |
+| Warming: compiling the two models for the CPU | 1.2 s | 45 MB | — |
+| A 2x formula, the first after launch (and the first after install) | 0.73 s | about 330 MB | 24–25 MB after |
+| The same, five more | 0.74–0.76 s | | |
+| A dark formula | 0.67–0.68 s | | |
+| A one-line formula 21 times as wide as tall (174 characters) | 2.55–2.58 s | 309 MB | |
+| A tweet's screenshot, no formula (stopped as it repeated itself) | 2.50 s | 319 MB | |
+
+- **The reader's peak** is from `/usr/bin/time -l` on the same jobs from the shell. It is gone when the reader exits,
+  after each capture: no reader stays.
+- **The app** stays at 24–25 MB across three readings of files (`debug/formula-test`). After a drawn-screen run it
+  shows 67 MB: a freed 41.7 MB block, one drawn display's frame (4112 × 2658 × 4 bytes) that the hook made with
+  malloc, kept by the allocator (`malloc_zone_pressure_relief` doesn't take it). The overlay's own frozen frames come
+  from ScreenCaptureKit, not malloc; a real drag over the real screen was not measured (computer use can't drive the
+  Dev app).
+- **Where the time goes,** per reading: the encoder 190 ms and 6.7–6.9 ms a token on the CPU (native Core ML probe,
+  `Tools/l3-spike/fprobe.swift`), the rest the reader's start, the models' load (8 ms and
+  1 ms once compiled, 490 ms and 280 ms the first time after compiling), and the picture's preparation (50–100 ms in a
+  Debug build).
+- **Not measured:** a cold start with the models out of the file cache (every run here had them in it; that takes
+  `sudo purge`), a Release build, and idle with the pack installed for the M6 power gate (nothing of it runs between
+  captures).
+- **The other compute units** (native probe, Docs/ocr.md › L3 spike): the encoder takes 61 ms on the GPU but the reader
+  peaks at 1.16 GB, and 234 ms on the Neural Engine with 817 MB there and a 7.6 s first compile; the decoder is no
+  faster off the CPU. CPU only: 287–310 MB.
+- **Energy** (the spike's Python harness, CPU energy from `proc_pid_rusage`): about 4.3 J a formula on the CPU, 4.8 J
+  with the encoder on the GPU.
