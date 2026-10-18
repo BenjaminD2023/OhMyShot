@@ -2393,6 +2393,40 @@
         }
       }
     },
+    "Drag over a formula on screen to copy it as LaTeX. The LaTeX is passed to the next action. Needs the Math Formulas model pack." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra sobre una fórmula de la pantalla para copiarla como LaTeX. El LaTeX pasa a la siguiente acción. Necesita el paquete de modelos “Fórmulas matemáticas”."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faites glisser le pointeur sur une formule à l’écran pour la copier en LaTeX. Le LaTeX est transmis à l’action suivante. Nécessite le pack de modèles Formules mathématiques."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面上の数式をドラッグして選択すると、LaTeXとしてコピーされます。LaTeXは次のアクションに渡されます。「数式」モデルパックが必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在屏幕上拖过公式，将其拷贝为 LaTeX。LaTeX 会传递给下一个操作。需要“数学公式”模型包。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在螢幕上拖移選取公式，將其拷貝為 LaTeX。LaTeX 會傳遞給下一個動作。需要「數學公式」模型套件。"
+          }
+        }
+      }
+    },
     "Drag over text on screen to copy it. The text is passed to the next action." : {
       "localizations" : {
         "es" : {
@@ -4433,6 +4467,40 @@
         }
       }
     },
+    "Read the formula in an image on this Mac as LaTeX, as Capture Formula reads the screen. Nothing is copied. Needs the Math Formulas model pack." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lee como LaTeX la fórmula de una imagen de este Mac, igual que “Capturar fórmula” lee la pantalla. No se copia nada. Necesita el paquete de modelos “Fórmulas matemáticas”."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire en LaTeX la formule d’une image sur ce Mac, comme Capturer une formule lit l’écran. Rien n’est copié. Nécessite le pack de modèles Formules mathématiques."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「数式をキャプチャ」が画面を読み取るのと同じように、このMac上でイメージ内の数式をLaTeXとして読み取ります。何もコピーされません。「数式」モデルパックが必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这台 Mac 上某张图像中的公式读取为 LaTeX，方式与“截取公式”读取屏幕相同。不会拷贝任何内容。需要“数学公式”模型包。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這台 Mac 上影像中的公式讀取為 LaTeX，就像「擷取公式」讀取螢幕一樣。不會拷貝任何內容。需要「數學公式」模型套件。"
+          }
+        }
+      }
+    },
     "Read the text in an image on this Mac, as Capture Text reads the screen. Nothing is copied." : {
       "localizations" : {
         "es" : {
@@ -4463,6 +4531,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "讀取這台 Mac 上影像中的文字，就像「擷取文字」讀取螢幕一樣。不會拷貝任何內容。"
+          }
+        }
+      }
+    },
+    "Reading formulas needs the Math Formulas model pack. Download it in OhMyShot’s Settings › Tools › Model packs." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para leer fórmulas se necesita el paquete de modelos “Fórmulas matemáticas”. Descárgalo en Ajustes › Herramientas › Paquetes de modelos de OhMyShot."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La lecture des formules nécessite le pack de modèles Formules mathématiques. Téléchargez-le dans Réglages › Outils › Packs de modèles d’OhMyShot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数式を読み取るには「数式」モデルパックが必要です。OhMyShotの「設定」›「ツール」›「モデルパック」でダウンロードしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取公式需要“数学公式”模型包。请在 OhMyShot 的“设置 › 工具 › 模型包”中下载。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取公式需要「數學公式」模型套件。請在 OhMyShot 的「設定」›「工具」›「模型套件」中下載。"
+          }
+        }
+      }
+    },
+    "Recognize Formula in Image" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconocer fórmula de una imagen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnaître la formule d’une image"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "イメージの数式を認識"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别图像中的公式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "辨識影像中的公式"
           }
         }
       }
@@ -4633,6 +4769,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "辨識${image}中的文字"
+          }
+        }
+      }
+    },
+    "Recognize the formula in ${image}" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconocer la fórmula de ${image}"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnaître la formule de ${image}"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${image}の数式を認識"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别${image}中的公式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "辨識${image}中的公式"
           }
         }
       }

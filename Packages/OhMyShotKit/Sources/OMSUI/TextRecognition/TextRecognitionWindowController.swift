@@ -56,13 +56,21 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
 
     /// Shows `image` and reads it with `analyze`. `scale` is pixels per point (2 for a Retina capture),
     /// so the image is never drawn larger than it appeared; `source` names it under the title.
-    /// `translating` turns the translation on for it (Translate Area's Open in Panel).
+    /// `translating` turns the translation on for it (Translate Area's Open in Panel). `readFormula` reads a part of
+    /// the image as one formula; with it, the panel offers the Formulas pane, and `formulas` opens it with the whole
+    /// image being read (Option at the end of a Capture Formula drag).
     public func show(
         image: CGImage, scale: CGFloat, source: String, translating: Bool = false,
+        readFormula: (@Sendable (CGImage) async -> TextReaderTool.Formula?)? = nil, formulas: Bool = false,
         analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis
     ) {
-        model.load(image: image, scale: scale, analyze: analyze)
+        model.load(image: image, scale: scale, analyze: analyze, readFormula: readFormula)
         if translating { model.translates = true }
+        if formulas, readFormula != nil {
+            model.translates = false
+            model.pane = .formulas
+            model.readWholeImageAsFormula()
+        }
         present(source: source)
     }
 
@@ -97,10 +105,15 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
     #if DEBUG
     /// For scripted screenshots: `pane` text or table, joined lines, a selected or hovered line, an
     /// edited text.
-    public func preview(pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool? = nil, target: String? = nil) {
+    public func preview(
+        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool? = nil, target: String? = nil,
+        formula: CGRect? = nil, hoverFormula: Int? = nil
+    ) {
         if let target { model.translationChoice = target == "auto" ? "" : target }
         if let translate { model.translates = translate }
-        if let pane { model.pane = pane == "table" ? .table : .text }
+        if let pane { model.pane = pane == "table" ? .table : pane == "formulas" ? .formulas : .text }
+        if let formula { model.addFormula(formula) }
+        if let hoverFormula { model.hoveredFormula = model.formulas.indices.contains(hoverFormula) ? model.formulas[hoverFormula].id : nil }
         if let joinLines { model.joinLines = joinLines }
         if let selectLine { model.selectLine(selectLine) }
         if let hoverLine { model.hoveredLine = hoverLine }
@@ -129,6 +142,26 @@ final class TextRecognitionModel {
     enum Pane: Hashable {
         case text
         case table
+        case formulas
+    }
+
+    /// A part of the image dragged around in the Formulas pane, and what the formula pack read in it.
+    struct FormulaReading: Identifiable, Equatable {
+        enum State: Equatable {
+            case reading
+            case read(String)
+            /// The pack read no whole formula: it stopped a reading that repeated itself or ran too long.
+            case notFound
+        }
+
+        let id: UUID
+        /// In the image's pixels, top-left origin, as the line boxes are.
+        let box: CGRect
+        var state: State
+
+        var latex: String? {
+            if case .read(let latex) = state { latex } else { nil }
+        }
     }
 
     enum TableFormat {
@@ -200,21 +233,36 @@ final class TextRecognitionModel {
     /// A language to download: the view hands it to the system, which asks the person first.
     var download: TranslationSession.Configuration?
 
+    /// The formulas dragged around in the Formulas pane, in the order they were.
+    private(set) var formulas: [FormulaReading] = []
+    /// The formula hovered on the image or in the list; both show it.
+    var hoveredFormula: FormulaReading.ID?
+    /// Whether the panel can read formulas: the formula pack is installed. Set with each image.
+    private(set) var readsFormulas = false
+
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let translator: Translator
     @ObservationIgnored private var translationTask: Task<Void, Never>?
     @ObservationIgnored private var analyze: (@Sendable (CGImage) async throws -> TextAnalysis)?
     @ObservationIgnored private var analysis: Task<Void, Never>?
     @ObservationIgnored private var copiedReset: Task<Void, Never>?
+    @ObservationIgnored private var readFormula: (@Sendable (CGImage) async -> TextReaderTool.Formula?)?
+    /// Reads the formulas waiting, one at a time: each reading is a run of the text reader of about 330 MB.
+    @ObservationIgnored private var formulaQueue: Task<Void, Never>?
 
     init(settings: SettingsStore, translator: Translator) {
         self.settings = settings
         self.translator = translator
     }
 
-    func load(image: CGImage, scale: CGFloat, analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis) {
+    func load(
+        image: CGImage, scale: CGFloat, analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis,
+        readFormula: (@Sendable (CGImage) async -> TextReaderTool.Formula?)? = nil
+    ) {
         analysis?.cancel()
         self.analyze = analyze
+        self.readFormula = readFormula
+        readsFormulas = readFormula != nil
         self.image = image
         self.scale = max(scale, 1)
         phase = .loading
@@ -251,12 +299,14 @@ final class TextRecognitionModel {
     /// Reads the same image again.
     func retry() {
         guard let image, let analyze else { return }
-        load(image: image, scale: scale, analyze: analyze)
+        load(image: image, scale: scale, analyze: analyze, readFormula: readFormula)
     }
 
     func fail(_ failure: TextRecognitionWindowController.OpenFailure) {
         analysis?.cancel()
         analyze = nil
+        readFormula = nil
+        readsFormulas = false
         image = nil
         clearResults()
         phase = switch failure {
@@ -278,6 +328,8 @@ final class TextRecognitionModel {
     func unload() {
         analysis?.cancel()
         analyze = nil
+        readFormula = nil
+        readsFormulas = false
         image = nil
         clearResults()
     }
@@ -295,6 +347,11 @@ final class TextRecognitionModel {
         tableIndex = 0
         hoveredLine = nil
         hoveredCode = nil
+        // Cancelled, a reading ends its run of the text reader.
+        formulaQueue?.cancel()
+        formulaQueue = nil
+        formulas = []
+        hoveredFormula = nil
         replaceText(with: TextAssembler.Assembly())
     }
 
@@ -339,6 +396,78 @@ final class TextRecognitionModel {
 
     var currentTable: OCRTable? {
         tables.indices.contains(tableIndex) ? tables[tableIndex] : tables.first
+    }
+
+    /// The panes the toolbar offers; none when there is only one. Formulas don't wait on the text: an image with no
+    /// text found may still hold one.
+    var panes: [Pane] {
+        guard !translates else { return [] }
+        var panes: [Pane] = []
+        if phase == .ready || (phase == .empty && readsFormulas) { panes.append(.text) }
+        if phase == .ready, !tables.isEmpty { panes.append(.table) }
+        if readsFormulas, phase == .ready || phase == .empty { panes.append(.formulas) }
+        return panes.count > 1 ? panes : []
+    }
+
+    /// Whether the Formulas pane is what the panel shows.
+    var showsFormulas: Bool {
+        readsFormulas && image != nil && !translates && pane == .formulas
+    }
+
+    // MARK: Formulas
+
+    /// Reads the part of the image in `box` (its pixels, top-left origin) as one formula, after any still waiting.
+    func addFormula(_ box: CGRect) {
+        guard let image, readsFormulas else { return }
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        let box = box.standardized.integral.intersection(bounds)
+        guard !box.isNull, box.width >= 4, box.height >= 4 else { return }
+        formulas.append(FormulaReading(id: UUID(), box: box, state: .reading))
+        readWaitingFormulas()
+    }
+
+    /// The whole image as one formula: for an image that is one, and for reading one without dragging.
+    func readWholeImageAsFormula() {
+        guard let image else { return }
+        addFormula(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    }
+
+    /// Takes a formula off the list; one being read is read to its end and the answer dropped.
+    func removeFormula(_ id: FormulaReading.ID) {
+        formulas.removeAll { $0.id == id }
+        if hoveredFormula == id { hoveredFormula = nil }
+    }
+
+    func removeAllFormulas() {
+        formulaQueue?.cancel()
+        formulaQueue = nil
+        formulas = []
+        hoveredFormula = nil
+    }
+
+    private func readWaitingFormulas() {
+        guard formulaQueue == nil, let image, let readFormula else { return }
+        formulaQueue = Task { [weak self] in
+            while let next = self?.formulas.first(where: { $0.state == .reading }) {
+                let probe = LatencyProbe("ocr.panel-formula")
+                let started = ContinuousClock.now
+                var formula: TextReaderTool.Formula?
+                if let part = image.cropping(to: next.box) { formula = await readFormula(part) }
+                probe.end()
+                guard !Task.isCancelled, let self else { return }
+                Log.capture.notice("OCR panel formula: \(formula?.ending ?? "failed", privacy: .public), \(formula?.latex.count ?? 0, privacy: .public) characters, \(Int(next.box.width), privacy: .public)×\(Int(next.box.height), privacy: .public) px, in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+                guard let index = formulas.firstIndex(where: { $0.id == next.id }) else { continue }
+                if let formula, formula.isFormula {
+                    formulas[index].state = .read(formula.latex)
+                    announce(String(localized: "Formula read", bundle: .module))
+                } else {
+                    formulas[index].state = .notFound
+                    announce(String(localized: "No formula found", bundle: .module))
+                }
+            }
+            guard !Task.isCancelled else { return }
+            self?.formulaQueue = nil
+        }
     }
 
     // MARK: Translation
@@ -519,8 +648,9 @@ final class TextRecognitionModel {
         flashCopied(String(localized: "Translation copied", bundle: .module))
     }
 
-    /// What the toolbar's Copy does now: the translation, the table, or the text.
+    /// What the toolbar's Copy does now: the translation, the formulas, the table, or the text.
     var canCopy: Bool {
+        if showsFormulas { return formulas.contains { $0.latex != nil } }
         guard phase == .ready else { return false }
         guard translates else { return true }
         return translation.map { !$0.outcome.translations.isEmpty } ?? false
@@ -529,6 +659,8 @@ final class TextRecognitionModel {
     func copyShown() {
         if translates {
             copyTranslation()
+        } else if showsFormulas {
+            copyFormulas()
         } else if pane == .table {
             copyTable()
         } else {
@@ -545,6 +677,16 @@ final class TextRecognitionModel {
             item.setString(table.markdown, forType: .string)
         }
         flashCopied(String(localized: "Table copied", bundle: .module))
+    }
+
+    /// Every formula read, as LaTeX without `$` around it (as Capture Formula copies one), a blank line between two.
+    func copyFormulas() {
+        let latex = formulas.compactMap(\.latex)
+        guard !latex.isEmpty else { return }
+        write { $0.setString(latex.joined(separator: "\n\n"), forType: .string) }
+        flashCopied(latex.count == 1
+            ? String(localized: "Copied the formula as LaTeX", bundle: .module)
+            : String(localized: "Copied \(latex.count) formulas as LaTeX", bundle: .module))
     }
 
     func copyTable(as format: TableFormat) {
@@ -578,7 +720,7 @@ final class TextRecognitionModel {
 
     /// Copying changes nothing on screen but a symbol; VoiceOver hears it.
     private func announce(_ message: String) {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        guard let window = NSApp?.keyWindow ?? NSApp?.mainWindow else { return }
         NSAccessibility.post(element: window, notification: .announcementRequested, userInfo: [
             .announcement: message,
             .priority: NSAccessibilityPriorityLevel.high.rawValue,
@@ -610,17 +752,23 @@ struct TextRecognitionView: View {
     /// The text side's controls, together over it: what to show, how lines break (text only), Translate
     /// and the language it goes into, and one Copy that is always last.
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        if model.phase == .ready, !model.tables.isEmpty, !model.translates {
+        let panes = model.panes
+        if !panes.isEmpty {
             ToolbarItem(placement: .primaryAction) {
                 Picker(selection: $model.pane) {
-                    Text("Text", bundle: .module).tag(TextRecognitionModel.Pane.text)
-                    Text("Table", bundle: .module).tag(TextRecognitionModel.Pane.table)
+                    ForEach(panes, id: \.self) { pane in
+                        switch pane {
+                        case .text: Text("Text", bundle: .module).tag(pane)
+                        case .table: Text("Table", bundle: .module).tag(pane)
+                        case .formulas: Text("Formulas", bundle: .module).tag(pane)
+                        }
+                    }
                 } label: {
                     Text("Show", bundle: .module)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .help(Text("Show the text, or the table found in the image", bundle: .module))
+                .help(paneHelp(panes))
             }
         }
         if model.phase == .ready, model.pane == .text, !model.translates {
@@ -689,6 +837,14 @@ struct TextRecognitionView: View {
         }
     }
 
+    private func paneHelp(_ panes: [TextRecognitionModel.Pane]) -> Text {
+        switch (panes.contains(.table), panes.contains(.formulas)) {
+        case (true, true): Text("Show the text, the table found in the image, or the formulas you drag over", bundle: .module)
+        case (false, true): Text("Show the text, or the formulas you drag over", bundle: .module)
+        default: Text("Show the text, or the table found in the image", bundle: .module)
+        }
+    }
+
     /// Automatic, with the language it chose once there is a translation.
     private var automaticTarget: Text {
         if let translation = model.translation, translation.choice.isEmpty {
@@ -730,6 +886,8 @@ struct TextRecognitionView: View {
     private var copyHelp: Text {
         if model.translates {
             Text("Copy the translation (⇧⌘C)", bundle: .module)
+        } else if model.showsFormulas {
+            Text("Copy the formulas as LaTeX (⇧⌘C)", bundle: .module)
         } else if model.pane == .table {
             Text("Copy the table; it pastes into Numbers and Excel as cells (⇧⌘C)", bundle: .module)
         } else {
@@ -773,7 +931,9 @@ struct RecognizedImagePane: View {
                             .frame(width: fitted.width, height: fitted.height)
                             .transition(.opacity)
                     }
-                    if model.phase == .ready, !model.translates {
+                    if model.showsFormulas {
+                        FormulaCanvas(model: model, toView: toView, size: fitted)
+                    } else if model.phase == .ready, !model.translates {
                         overlays(toView)
                     }
                 }
@@ -793,6 +953,7 @@ struct RecognizedImagePane: View {
                     ? Text("The image being read", bundle: .module)
                     : Text("The image, with the translation over its text", bundle: .module))
                 .accessibilityValue(model.phase == .ready ? Text("\(model.lines.count) lines of text", bundle: .module) : Text(verbatim: ""))
+                .accessibilityHint(model.showsFormulas ? Text("Drag around a formula to read it as LaTeX", bundle: .module) : Text(verbatim: ""))
             }
         }
         .background(.background.secondary)
@@ -856,11 +1017,260 @@ struct LineBox: View {
     }
 }
 
+/// The Formulas pane's layer over the image: every formula dragged around, outlined in the accent (dashed in
+/// secondary ink where none was found), filled like selected text while it or its row is hovered, breathing while it
+/// is read; and a drag anywhere on the image draws a new one, drawn as Text Selection draws a selection.
+struct FormulaCanvas: View {
+    let model: TextRecognitionModel
+    let toView: CGAffineTransform
+    let size: CGSize
+    @State private var drawing: CGRect?
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        // A snapshot: the closures below run lazily, after a new image may have emptied the model's list.
+        let formulas = model.formulas
+        ZStack(alignment: .topLeading) {
+            Color.clear
+                .contentShape(Rectangle())
+            ForEach(formulas) { formula in
+                FormulaBox(
+                    rect: formula.box.applying(toView).integral,
+                    state: formula.state,
+                    isHovered: model.hoveredFormula == formula.id
+                )
+                .onHover { inside in
+                    if inside { model.hoveredFormula = formula.id } else if model.hoveredFormula == formula.id { model.hoveredFormula = nil }
+                }
+                .contextMenu {
+                    if let latex = formula.latex {
+                        Button { model.copy(latex) } label: { Text("Copy LaTeX", bundle: .module) }
+                    }
+                    Button { model.removeFormula(formula.id) } label: { Text("Remove", bundle: .module) }
+                }
+            }
+            if let drawing {
+                Rectangle()
+                    .fill(Color(nsColor: .selectedTextBackgroundColor).opacity(colorScheme == .dark ? 0.45 : 0.35))
+                    .overlay { Rectangle().strokeBorder(Color.accentColor, lineWidth: contrast == .increased ? 2 : 1) }
+                    .frame(width: drawing.width, height: drawing.height)
+                    .offset(x: drawing.minX, y: drawing.minY)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .pointerStyle(.rectSelection)
+        .gesture(
+            DragGesture(minimumDistance: 3, coordinateSpace: .local)
+                .onChanged { value in drawing = rect(from: value.startLocation, to: value.location) }
+                .onEnded { value in
+                    let rect = rect(from: value.startLocation, to: value.location)
+                    drawing = nil
+                    guard rect.width >= 6, rect.height >= 6 else { return }
+                    model.addFormula(rect.applying(toView.inverted()))
+                }
+        )
+    }
+
+    /// The box between two points, on whole points and within the image.
+    private func rect(from start: CGPoint, to end: CGPoint) -> CGRect {
+        let box = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
+        let clipped = box.integral.intersection(CGRect(origin: .zero, size: size))
+        return clipped.isNull ? .zero : clipped
+    }
+}
+
+/// One formula on the image (DESIGN.md › OCR Panel › Formulas).
+struct FormulaBox: View {
+    let rect: CGRect
+    let state: TextRecognitionModel.FormulaReading.State
+    let isHovered: Bool
+    @State private var dimmed = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let line = contrast == .increased ? 2.0 : 1.0
+        let found = state != .notFound
+        Rectangle()
+            .fill(isHovered ? Color(nsColor: .selectedTextBackgroundColor).opacity(colorScheme == .dark ? 0.45 : 0.35) : Color.clear)
+            .overlay {
+                Rectangle().strokeBorder(
+                    found ? Color.accentColor : Color.secondary,
+                    style: StrokeStyle(lineWidth: line, dash: found ? [] : [4, 3])
+                )
+            }
+            .frame(width: max(rect.width, 2), height: max(rect.height, 2))
+            .contentShape(Rectangle())
+            .opacity(dimmed ? 0.5 : 1)
+            .offset(x: rect.minX, y: rect.minY)
+            .onAppear { breathe() }
+            .onChange(of: state) { breathe() }
+    }
+
+    /// Slowly, as the Text Selection highlight breathes while text is read; not under Reduce Motion.
+    private func breathe() {
+        let reading = state == .reading && !reduceMotion
+        withAnimation(reading ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .easeOut(duration: 0.15)) {
+            dimmed = reading
+        }
+    }
+}
+
+/// The Formulas pane's right side: each formula's LaTeX, or how to read one.
+struct FormulaPane: View {
+    @Bindable var model: TextRecognitionModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if model.formulas.isEmpty {
+                PanelPlaceholder(
+                    symbol: "x.squareroot",
+                    title: Text("Drag over a formula", bundle: .module),
+                    message: Text("Drag on the image around a formula to read it as LaTeX. Each one you read is listed here.", bundle: .module)
+                ) {
+                    Button { model.readWholeImageAsFormula() } label: { Text("Read the Whole Image", bundle: .module) }
+                        .padding(.top, 6)
+                        .help(Text("Read the whole image as one formula", bundle: .module))
+                }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(model.formulas.enumerated()), id: \.element.id) { index, formula in
+                            FormulaRow(model: model, formula: formula, number: index + 1)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 10)
+                }
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack(spacing: 8) {
+                        Text("Drag on the image to read another formula.", bundle: .module)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Button { model.removeAllFormulas() } label: { Text("Remove All", bundle: .module) }
+                            .controlSize(.small)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+    }
+}
+
+/// One formula in the list: its LaTeX in the monospaced face, selectable, with Copy and Remove; a spinner while it is
+/// read; the result card's hint where no formula was found. Hovered, its box on the image fills, and the reverse.
+/// VoiceOver reads it as one element, with Copy and Remove as actions.
+struct FormulaRow: View {
+    let model: TextRecognitionModel
+    let formula: TextRecognitionModel.FormulaReading
+    let number: Int
+    @State private var copied = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let latex = formula.latex {
+                Button { copy(latex) } label: {
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .help(Text("Copy LaTeX", bundle: .module))
+            }
+            Button { model.removeFormula(formula.id) } label: {
+                Image(systemName: "xmark")
+            }
+            .help(Text("Remove", bundle: .module))
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(model.hoveredFormula == formula.id ? (colorScheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.045)) : Color.clear)
+        }
+        .onHover { inside in
+            if inside { model.hoveredFormula = formula.id } else if model.hoveredFormula == formula.id { model.hoveredFormula = nil }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Formula \(number)", bundle: .module))
+        .accessibilityValue(spokenValue)
+        .accessibilityActions {
+            if let latex = formula.latex {
+                Button { copy(latex) } label: { Text("Copy LaTeX", bundle: .module) }
+            }
+            Button { model.removeFormula(formula.id) } label: { Text("Remove", bundle: .module) }
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch formula.state {
+        case .reading:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Reading the formula…", bundle: .module)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        case .read(let latex):
+            Text(verbatim: latex)
+                .font(.system(size: 12, design: .monospaced))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        case .notFound:
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No formula found", bundle: .module)
+                Text("Select just the formula, with a little room around it.", bundle: .module)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var spokenValue: Text {
+        switch formula.state {
+        case .reading: Text("Reading", bundle: .module)
+        case .read(let latex): Text(verbatim: latex)
+        case .notFound: Text("No formula found", bundle: .module)
+        }
+    }
+
+    private func copy(_ latex: String) {
+        model.copy(latex)
+        copied = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            copied = false
+        }
+    }
+}
+
 /// The right side: the text (or a table), then what can be acted on.
 struct TextPane: View {
     @Bindable var model: TextRecognitionModel
 
     var body: some View {
+        VStack(spacing: 0) {
+            if model.showsFormulas {
+                FormulaPane(model: model)
+            } else {
+                phaseContent
+            }
+        }
+        .background(.background)
+    }
+
+    @ViewBuilder private var phaseContent: some View {
         VStack(spacing: 0) {
             switch model.phase {
             case .loading:
@@ -901,7 +1311,6 @@ struct TextPane: View {
                 }
             }
         }
-        .background(.background)
     }
 }
 

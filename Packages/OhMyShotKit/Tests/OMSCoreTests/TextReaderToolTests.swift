@@ -72,12 +72,12 @@ struct TextReaderToolTests {
     }
 
     @Test func aFormulaComesBackWithHowItsReadingEnded() async throws {
-        // The job names the formula pack, not a PP-OCR one.
+        // The job names the formula pack, not a PP-OCR one; the LaTeX comes back without spaces at its ends.
         let reader = try helper(answering + """
 
         case "$line" in *'"formula":"/packs/formula"'*) ;; *) exit 4 ;; esac
         case "$line" in *'"pack"'*) exit 5 ;; esac
-        printf '{"id":"%s","latex":"x^{2}+y^{2}","ending":"end"}\\n' "$id"
+        printf '{"id":"%s","latex":" x^{2}+y^{2} ","ending":"end"}\\n' "$id"
         """)
         let resources = ActiveResources()
         let formula = try await TextReaderTool.formula(ofPictureAt: URL(filePath: "/tmp/f.tiff"), pack: URL(filePath: "/packs/formula"), helper: reader, resources: resources)

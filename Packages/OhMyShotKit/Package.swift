@@ -117,7 +117,7 @@ let package = Package(
         ),
         .testTarget(
             name: "OMSUITests",
-            dependencies: ["OMSUI"],
+            dependencies: ["OMSUI", "OMSOCR"],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
     ]

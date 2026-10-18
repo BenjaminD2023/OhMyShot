@@ -101,14 +101,16 @@ public enum TextReaderTool {
     }
 
     /// The formula the formula pack installed in `pack` reads in the picture at `url` (Capture Formula; Docs/ocr.md ›
-    /// The formula pack).
+    /// The formula pack). Without the spaces at its ends that upstream's tidying leaves where it unwraps `\text{}`.
     @concurrent
     public static func formula(
         ofPictureAt url: URL, pack: URL, helper: URL, priority: QualityOfService = .userInitiated, resources: ActiveResources = .shared
     ) async throws -> Formula {
         let job = Job(id: UUID().uuidString, path: url.path(percentEncoded: false), formula: pack.path(percentEncoded: false))
         let answer = try await run(job, helper: helper, priority: priority, resources: resources)
-        if let latex = answer.latex, let ending = answer.ending { return Formula(latex: latex, ending: ending) }
+        if let latex = answer.latex, let ending = answer.ending {
+            return Formula(latex: latex.trimmingCharacters(in: .whitespacesAndNewlines), ending: ending)
+        }
         throw Failure.unreadable(answer.error ?? "")
     }
 

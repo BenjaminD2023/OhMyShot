@@ -73,11 +73,13 @@ nonisolated enum ShortcutFailure: Error, CustomLocalizedStringResourceConvertibl
     case needsScreenRecording
     case noUploadDestination
     case unreadableImage
+    case needsFormulaPack
 
     init(_ error: any Error) {
         switch error as? CompositionRoot.ShortcutError {
         case .needsScreenRecording: self = .needsScreenRecording
         case .noUploadDestination: self = .noUploadDestination
+        case .needsFormulaPack: self = .needsFormulaPack
         case .unreadableImage, nil: self = .unreadableImage
         }
     }
@@ -87,6 +89,7 @@ nonisolated enum ShortcutFailure: Error, CustomLocalizedStringResourceConvertibl
         case .needsScreenRecording: "OhMyShot needs Screen Recording permission. Turn it on in System Settings › Privacy & Security, then try again."
         case .noUploadDestination: "No upload destination is set up. Add one in OhMyShot’s Settings › Sharing."
         case .unreadableImage: "The image couldn’t be read."
+        case .needsFormulaPack: "Reading formulas needs the Math Formulas model pack. Download it in OhMyShot’s Settings › Tools › Model packs."
         }
     }
 }
@@ -241,6 +244,45 @@ struct RecognizeTextIntent: AppIntent {
         let root = await ShortcutsBridge.current()
         do {
             return .result(value: try await root.textForShortcut(inImage: image.data, keepsLineBreaks: keepsLineBreaks))
+        } catch {
+            throw ShortcutFailure(error)
+        }
+    }
+}
+
+// MARK: - Formulas
+
+struct CaptureFormulaIntent: AppIntent {
+    static let title: LocalizedStringResource = "Capture Formula"
+    static let description = IntentDescription("Drag over a formula on screen to copy it as LaTeX. The LaTeX is passed to the next action. Needs the Math Formulas model pack.")
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<String?> {
+        let root = await ShortcutsBridge.current()
+        do {
+            return .result(value: try await root.captureFormulaForShortcut())
+        } catch {
+            throw ShortcutFailure(error)
+        }
+    }
+}
+
+struct RecognizeFormulaIntent: AppIntent {
+    static let title: LocalizedStringResource = "Recognize Formula in Image"
+    static let description = IntentDescription("Read the formula in an image on this Mac as LaTeX, as Capture Formula reads the screen. Nothing is copied. Needs the Math Formulas model pack.")
+
+    @Parameter(title: "Image", supportedContentTypes: [.image])
+    var image: IntentFile
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Recognize the formula in \(\.$image)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<String?> {
+        let root = await ShortcutsBridge.current()
+        do {
+            return .result(value: try await root.formulaForShortcut(inImage: image.data))
         } catch {
             throw ShortcutFailure(error)
         }

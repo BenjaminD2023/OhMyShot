@@ -64,6 +64,8 @@ struct DebugHooks {
     let latestCaptureID: () -> UUID?
     /// The replay's coordinator on macOS 27, as any object.
     let replay: () -> AnyObject?
+    /// What the Shortcuts action Recognize Formula in Image answers for a picture's data.
+    let shortcutFormula: (Data) async throws -> String?
 
     /// Capture History's search, for scripted checks on the hook's own test pictures.
     struct HistorySearchHooks {
@@ -264,6 +266,20 @@ struct DebugHooks {
                 let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
                 Task { await textCapture.readFormula(region: rect, copiesToClipboard: false) }
             }
+        case "shortcut-formula":
+            // path=<a picture>: what the Shortcuts action Recognize Formula in Image hands on for it, in the log.
+            if let path = Self.parameter("path", in: url) {
+                let shortcutFormula = shortcutFormula
+                Task {
+                    do {
+                        let data = try Data(contentsOf: URL(filePath: path))
+                        let latex = try await shortcutFormula(data)
+                        Log.app.notice("debug.shortcut-formula answered \(latex.map { "“\($0)”" } ?? "nothing", privacy: .public)")
+                    } catch {
+                        Log.app.notice("debug.shortcut-formula failed: \(String(describing: error), privacy: .public)")
+                    }
+                }
+            }
         case "formula-flow":
             // Capture Formula over drawn screens, never the real one: path=<a picture> drawn at its pixels in the middle
             // of the pointer's display (on white; dark=1 on #1f1f1f), chosen without the mouse, kept off the clipboard,
@@ -293,14 +309,20 @@ struct DebugHooks {
             let value = { (name: String) in items.first { $0.name == name }?.value }
             Task { await openPanelDemo(via: value("via"), state: value("state")) }
         case "panel-state":
-            // pane=text|table, join=0|1, select=<line>, hover=<line>, edited=1, translate=0|1,
-            // target=auto|<language> (the setting itself: put it back to auto afterwards)
+            // pane=text|table|formulas, join=0|1, select=<line>, hover=<line>, edited=1, translate=0|1,
+            // target=auto|<language> (the setting itself: put it back to auto afterwards), formula=x,y,w,h (the image's
+            // pixels, top-left origin: read that box as a formula, needs the pack), hover-formula=<index>
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in items.first { $0.name == name }?.value }
+            let formula = value("formula").flatMap { list -> CGRect? in
+                let numbers = list.split(separator: ",").compactMap { Double($0) }
+                return numbers.count == 4 ? CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3]) : nil
+            }
             textCapture.previewPanelState(
                 pane: value("pane"), joinLines: value("join").map { $0 == "1" },
                 selectLine: value("select").flatMap(Int.init), hoverLine: value("hover").flatMap(Int.init),
-                edited: value("edited") == "1", translate: value("translate").map { $0 == "1" }, target: value("target")
+                edited: value("edited") == "1", translate: value("translate").map { $0 == "1" }, target: value("target"),
+                formula: formula, hoverFormula: value("hover-formula").flatMap(Int.init)
             )
         case "translate-demo":
             // Translate Area on a drawn page (never the screen): its lens lies centered on the main

@@ -888,6 +888,7 @@ final class CompositionRoot {
         case needsScreenRecording
         case noUploadDestination
         case unreadableImage
+        case needsFormulaPack
     }
 
     /// A shortcut's capture, run as its keyboard shortcut runs it with `action` after it: the capture's record once it
@@ -952,6 +953,40 @@ final class CompositionRoot {
         } catch let failure as TextReaderTool.Failure {
             // As Capture Text's own reading did: no text, rather than an error.
             Log.capture.error("Recognizing a shortcut's picture failed: \(String(describing: failure), privacy: .public)")
+            return nil
+        }
+    }
+
+    /// A shortcut's Capture Formula: the LaTeX copied, or nil when no formula was.
+    func captureFormulaForShortcut() async throws -> String? {
+        guard permissions.status(of: .screenRecording) == .granted else {
+            showOnboarding()
+            throw ShortcutError.needsScreenRecording
+        }
+        guard formulaPack != nil else { throw ShortcutError.needsFormulaPack }
+        captures.cancelSelfTimer()
+        return await withCheckedContinuation { continuation in
+            let answer = Answer(continuation)
+            textCapture.captureFormula { answer.give($0) }
+        }
+    }
+
+    /// The LaTeX of the formula in a picture a shortcut hands over, read as Capture Formula reads it; nothing is
+    /// copied or shown. Nil when the pack read no whole formula.
+    func formulaForShortcut(inImage data: Data) async throws -> String? {
+        guard let helper = textReaderTool, let pack = formulaPack else { throw ShortcutError.needsFormulaPack }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
+            throw ShortcutError.unreadableImage
+        }
+        let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Shortcut \(UUID().uuidString)")
+        try data.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        do {
+            let formula = try await TextReaderTool.formula(ofPictureAt: file, pack: pack, helper: helper)
+            Log.capture.notice("A shortcut's formula reading ended with \(formula.ending, privacy: .public), \(formula.latex.count, privacy: .public) characters")
+            return formula.isFormula ? formula.latex : nil
+        } catch let failure as TextReaderTool.Failure {
+            Log.capture.error("Reading a shortcut's formula failed: \(String(describing: failure), privacy: .public)")
             return nil
         }
     }
@@ -1765,7 +1800,8 @@ final class CompositionRoot {
             uploadAfterCapture: { [weak self] in self?.uploadAfterCapture($0) },
             pressShortcut: { [weak self] in self?.handle($0) },
             latestCaptureID: { [weak self] in self?.history.items().first?.id },
-            replay: { [weak self] in self?.replayStorage }
+            replay: { [weak self] in self?.replayStorage },
+            shortcutFormula: { [weak self] data in try await self?.formulaForShortcut(inImage: data) }
         )
     }
 
