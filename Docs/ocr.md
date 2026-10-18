@@ -1482,3 +1482,88 @@ Text waits for them before it copies. Recognize Text in Image reads them in the 
 **Not done yet:** skipping the L2 pack's second reading in the panel when the only CJK characters are Vision's reading of
 formulas (on the web page it ran, as it did before, and now shares the CPU with the formula reading: the text showed
 after 3.7 s); formulas in the history's search text; inline formulas translated with their LaTeX protected.
+
+## Cloud models (L4, M6, 2026-10-18)
+
+The roadmap's L4: a model the person has an account with reads a picture when this Mac reads it poorly (handwriting,
+dense tables, complex layouts), only when asked. `CloudModel`, `CloudModelStore`, `CloudPicture`, and `CloudReader` in
+OMSCore (`CloudReading/`), `MarkdownTables` in OMSOCR; the panel's side in OMSUI (`CloudReadingViews.swift`, the
+model's `readInCloud`), the list and editor in Settings › Tools (`CloudModelsSettingsView.swift`). DESIGN.md › OCR
+Panel and › Cloud Models describe what the person sees.
+
+**Only the OCR panel, only on a click.** Read with… in the Recognized Text window sends that picture, once; a new
+picture goes back to this Mac's reading and is sent only on another click. The first picture to a model asks first,
+naming the host, and asks again when the model's address points to another host (`CloudModelStore.isAgreed`, kept as
+"id host"). Capture Text, the history's search, Shortcuts, and the URL scheme never read with a cloud model: any of them
+would send captures without a click in the panel, and the URL scheme would let any approved app do it.
+
+**Two protocols.** OpenAI's Chat Completions (`Authorization: Bearer`, an `image_url` part with a data URL per piece),
+which OpenAI, Alibaba Cloud's Qwen, Ollama, LM Studio, and most others accept; and Anthropic's Messages
+(`x-api-key`, `anthropic-version: 2023-06-01`, a base64 `image` block per piece). Both stream (`"stream": true`), so
+no request sits silent for minutes and the panel counts the characters as they come; each `data:` line is one event's
+JSON, and event names, comments, and blank lines are skipped (`CloudAnswer`). The address carries its version, and only
+`/chat/completions` is added to it (`https://open.bigmodel.cn/api/paas/v4` works as given); Anthropic's gets
+`/v1/messages`, or `/messages` after a `/v1`.
+
+- **What the request leaves out.** No temperature (some models refuse one); for Chat Completions no length limit,
+  which services name differently (`max_tokens`, `max_completion_tokens`); for Messages no thinking setting and no
+  prefill, which current Claude models refuse. Messages asks for at most 16,000 tokens, and `output_config.effort:
+  "low"` for the models that take an effort (Claude 4.6 and later): a transcription needs little thought (not
+  measured for reading). On Anthropic's own API, Claude Fable 5.1, Opus 5.5, Opus 5, and Sonnet 5.5 get
+  `"fallbacks": "default"` with `anthropic-beta: server-side-fallback-2026-07-01`: a declined reading is read again by
+  another model; the switch comes as a `fallback` block, whose `to.model` the status line then names. Other models
+  (Haiku 5.5 takes no fallback) and other addresses (proxies) get neither.
+- **What the answer is read for.** The text only: `delta.content` (not `reasoning_content`), `text_delta` (not thinking
+  or its signature). `finish_reason: "length"` and `stop_reason: "max_tokens"` mark the reading incomplete (the panel
+  shows a warning); `content_filter` and `refusal` are a refusal; an `error` event or chunk mid-stream is the service's
+  error. A fence the model put around all of its answer is taken off.
+- **Errors** say what to fix: 401/403 the key, 404 the address or model, 429 too many requests or the account's limit,
+  503/529 busy (worth trying again), anything else with the service's own message (`{"error": {"message"}}`, or
+  Ollama's `{"error": "…"}`); a lost connection names the host.
+
+**The instruction** (after the pictures, which Anthropic's documentation says read best first): transcribe all the
+text in reading order, exactly as written, keeping language, spelling, punctuation, and line breaks; no translating,
+correcting, summarizing, or describing; tables as Markdown pipe tables, formulas as LaTeX between `$` and `$` (`$$` for
+a formula on its own line, as `FormulaMerge` writes them), code with its indentation, no other Markdown; nothing before
+or after; nothing at all for a picture without text. With several pieces, they are said to be consecutive parts of one
+tall picture, overlapping, to be written once ("Part 1 of 3:" before each).
+
+**The picture** goes at its own pixels: small text is what the model is asked to read, so it is never made smaller to
+its size in points. `CloudPicture.Limits.anthropic` follows Anthropic's vision documentation (2026-10-18): 2576 pixels
+on the long edge and 4784 patches of 28 × 28 (3.75 megapixels) for Claude 4.7 and later, 10 MB per image base64-encoded
+(7.5 MB before encoding), and at most 20 images, past which each must be under 2000 pixels a side. A picture wider than
+2576 is made that wide; a taller one is cut top to bottom into pieces that reach 64 rows into each other, at most 20
+(more would make the picture smaller). Chat Completions services rarely say what they read: 2048 pixels and two
+megapixels a piece, at most 10, is a guess under what the documented ones take. PNG, or JPEG at 0.92–0.75 for a piece
+over the size. All the pieces together keep under what a request takes: Anthropic's is 32 MB, of which the pictures
+take at most 24 MB base64-encoded (16 MB for Chat Completions, a guess); over it, every piece goes as JPEG, and then the
+picture is made smaller until they fit. A 3078 × 9000 picture went to Claude's limits as six pieces of 2576 × 1310 at
+0.84, 709 KB.
+
+**Keys** are in the login Keychain, one generic password per model under the service "OhMyShot Cloud Models" and the
+bundle identifier, never in the defaults or a log; a failure is logged by its kind and status only, since a service's
+message can quote part of the key ("Incorrect API key provided: sk-…abcd"). A service on this Mac or a private network
+(`localhost`, `.local` names, 127/8, 10/8, 172.16/12, 192.168/16, 169.254/16, ::1, fc00::/7, fe80::/10) may take plain
+`http://` and no key; anything else needs https, an address on the internet written as numbers too. macOS let plain
+http through to `127.0.0.1` and `localhost`; an address on the local network wasn't tried (it may bring the Local
+Network question). Settings' Test reads a picture of "Hello from OhMyShot 7421" with the key as typed, before it is saved, and passes
+when the answer holds the number and the app's name.
+
+**Presets** (checked 2026-10-18): Claude (`https://api.anthropic.com`, `claude-opus-5-5`), OpenAI
+(`https://api.openai.com/v1`, no model filled in), Qwen (Alibaba Cloud Model Studio's Beijing address,
+`https://dashscope.aliyuncs.com/compatible-mode/v1`, `qwen3-vl-plus` from its vision page; other regions and the newer
+workspace addresses are typed in), and Ollama (`http://localhost:11434/v1`). GLM (`https://open.bigmodel.cn/api/paas/v4`)
+and OpenRouter work as Other; no official page named a GLM model that reads pictures, and DeepSeek's only vision model
+was reported by others, so neither is a preset.
+
+**Checked:** unit tests for the addresses, the pieces, both requests, both streams (cut at any byte, thinking in
+between, a fallback, a refusal, a length stop, an error mid-stream), errors, the store (keys never in the defaults),
+the tables, and the panel (nothing sent without a click or without the person's yes, a new picture stops a reading,
+formulas read later go into this Mac's text only, translation and the cloud's text take turns). In the Dev app, with
+models kept in memory (`debug/cloud-demo`) and a stand-in server on 127.0.0.1 (`debug/cloud-local`): both protocols
+over plain http to `127.0.0.1` and `localhost`, a 1520 × 1120 picture sent whole and read in 0.40–0.42 s, the tall one
+above in 0.82 s, the app idle after each.
+
+**Not done yet:** a reading with a real service (it needs the person's key); a picture very wide as well as tall (made
+narrower, never cut side by side); translating the cloud model's text; a second reading of a picture after a first
+(Read with sits beside the result only when the model found no text).

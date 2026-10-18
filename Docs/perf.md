@@ -2272,3 +2272,18 @@ and removed it, and the download fetched the 34 MB left from Hugging Face in abo
   sends the picture to the L2 pack's second reading (two Han or kana characters are enough, as before this change), and
   that reading now shares the CPU with the formula reading; it waits for at most 3 s. Not addressed yet.
 - **The app stays as it was**: every reading, the layout model's included, runs in the text reader, which exits after it.
+
+## M6 — Cloud models (2026-10-18)
+
+Reading with a cloud model is a request the person makes from the OCR panel; nothing of it runs otherwise. Each reading
+holds an `ActiveResources` lease (`cloudReading`) and its own ephemeral URL session, invalidated when the answer is in,
+fails, or is cancelled. In the Dev app (Debug, M3 Max) against a stand-in server on 127.0.0.1 that streams an answer
+(Docs/ocr.md › Cloud models):
+
+| Reading | Sent | Time |
+| --- | --- | --- |
+| The demo page, 1520 × 1120, Chat Completions | 1 piece, 156 KB of PNG | 0.42 s |
+| The same, Messages, to `localhost` | 1 piece, 156 KB | 0.40 s |
+| A 3078 × 9000 picture, Messages | 6 pieces of 2576 × 1310, 709 KB | 0.82 s |
+
+`debug/resources` read idle after each. A real service's time is the model's: not measured here.
