@@ -23,13 +23,22 @@ public struct CloudModel: Codable, Hashable, Identifiable, Sendable {
     public var address: String
     /// The model's identifier at the service.
     public var model: String
+    /// The service it was set up from, which Settings' service menu shows.
+    public var preset: Preset?
 
-    public init(id: UUID = UUID(), kind: Kind, name: String, address: String, model: String) {
+    public init(id: UUID = UUID(), kind: Kind, name: String, address: String, model: String, preset: Preset? = nil) {
         self.id = id
         self.kind = kind
         self.name = name
         self.address = address
         self.model = model
+        self.preset = preset
+    }
+
+    /// What the interface calls it: its name, or its host while it has none.
+    public var displayName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? (host ?? String(localized: "Cloud model", bundle: .module)) : trimmed
     }
 
     /// The address requests go to: Chat Completions under the address given, or Anthropic's Messages. Nil when the
@@ -98,9 +107,6 @@ public struct CloudModel: Codable, Hashable, Identifiable, Sendable {
 
     /// Why the model can't be used as it is, in a sentence for the person; nil when it can.
     public func issue(hasKey: Bool) -> String? {
-        if name.trimmingCharacters(in: .whitespaces).isEmpty {
-            return String(localized: "Give it a name.", bundle: .module)
-        }
         guard let endpoint else {
             return String(localized: "The address must start with https://.", bundle: .module)
         }
@@ -120,7 +126,7 @@ public struct CloudModel: Codable, Hashable, Identifiable, Sendable {
 public extension CloudModel {
     /// The services the Add menu starts from, each filled in as its documentation gives it (checked 2026-10-18).
     /// Anything else that speaks Chat Completions starts from `other`.
-    enum Preset: String, CaseIterable, Identifiable, Sendable {
+    enum Preset: String, CaseIterable, Codable, Identifiable, Sendable {
         case anthropic
         case openAI
         case qwen
@@ -165,7 +171,7 @@ public extension CloudModel {
         }
 
         public func makeModel() -> CloudModel {
-            CloudModel(kind: kind, name: self == .other ? "" : title, address: address, model: model)
+            CloudModel(kind: kind, name: self == .other ? "" : title, address: address, model: model, preset: self)
         }
     }
 }

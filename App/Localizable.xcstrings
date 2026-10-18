@@ -35,6 +35,80 @@
         }
       }
     },
+    "%@ couldn’t read it, so this Mac’s reading was copied: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ couldn’t read it, so this Mac’s reading was copied: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ no ha podido leerla, así que se ha copiado lo leído en este Mac: %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ n’a pas pu la lire ; le texte lu sur ce Mac a été copié : %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@で読み取れなかったため、このMacで読み取ったテキストをコピーしました：%2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 读取失败，已拷贝这台 Mac 读取的文字：%2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 讀取失敗，已拷貝這台 Mac 讀取的文字：%2$@"
+          }
+        }
+      }
+    },
+    "%@ found no text, so this Mac’s reading was copied." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no ha encontrado texto, así que se ha copiado lo leído en este Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’a trouvé aucun texte ; le texte lu sur ce Mac a été copié."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はテキストを見つけられなかったため、このMacで読み取ったテキストをコピーしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 没有找到文字，已拷贝这台 Mac 读取的文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 沒有找到文字，已拷貝這台 Mac 讀取的文字。"
+          }
+        }
+      }
+    },
     "%@ gave an address that deletes the file when it’s opened. It opens in your browser, and the upload is taken off this list." : {
       "localizations" : {
         "es" : {
@@ -65,6 +139,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 提供的位址會在開啟時刪除檔案。它會在你的瀏覽器中打開，且此上傳項目會從列表中移除。"
+          }
+        }
+      }
+    },
+    "%@ took too long, so this Mac’s reading was copied." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ha tardado demasiado, así que se ha copiado lo leído en este Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ a mis trop de temps ; le texte lu sur ce Mac a été copié."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@の読み取りに時間がかかりすぎたため、このMacで読み取ったテキストをコピーしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 耗时太久，已拷贝这台 Mac 读取的文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 耗時太久，已拷貝這台 Mac 讀取的文字。"
           }
         }
       }
@@ -4467,6 +4575,40 @@
         }
       }
     },
+    "Read by %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído por %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu par %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@が読み取りました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 讀取"
+          }
+        }
+      }
+    },
     "Read the formula in an image on this Mac as LaTeX, as Capture Formula reads the screen. Nothing is copied. Needs the Math Formulas model pack." : {
       "localizations" : {
         "es" : {
@@ -6815,6 +6957,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "視窗"
+          }
+        }
+      }
+    },
+    "You copied something else while it was read." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiaste otra cosa mientras se leía."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous avez copié autre chose pendant la lecture."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み取り中に別のものがコピーされました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取期间你拷贝了别的内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取期間你拷貝了別的內容。"
           }
         }
       }

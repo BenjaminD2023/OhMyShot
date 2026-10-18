@@ -5,26 +5,25 @@ import Foundation
 import Testing
 @testable import OMSUI
 
-/// Reading with a cloud model in the OCR panel: only when asked, after the person agreed to the service, kept apart
-/// from this Mac's reading, and stopped by a new picture.
+/// Reading with the cloud model in the OCR panel: the toolbar's Read with, or every picture while Settings says so;
+/// kept apart from this Mac's reading, and stopped by a new picture or by turning it off.
 struct OCRPanelCloudTests {
     /// Answers each reading when the test says so.
     private nonisolated final class Service: @unchecked Sendable {
         private let lock = NSLock()
         private var waiting: CheckedContinuation<CloudReading, any Error>?
-        private var _reads: [String] = []
+        private var _reads = 0
 
-        /// The models read with, in order.
-        var reads: [String] { lock.withLock { _reads } }
+        var reads: Int { lock.withLock { _reads } }
         var isWaiting: Bool { lock.withLock { waiting != nil } }
 
         @MainActor func cloud(_ store: CloudModelStore) -> TextRecognitionWindowController.Cloud {
-            .init(store: store) { [self] _, model, progress in
+            .init(store: store) { [self] _, _, progress in
                 progress(12)
                 return try await withTaskCancellationHandler {
                     try await withCheckedThrowingContinuation { continuation in
                         lock.withLock {
-                            _reads.append(model.name)
+                            _reads += 1
                             waiting = continuation
                         }
                     }
@@ -60,14 +59,12 @@ struct OCRPanelCloudTests {
         return context.makeImage()!
     }
 
-    private static func store(agreed: Bool = true, models: Int = 1) -> CloudModelStore {
+    private static func store(everyPicture: Bool = false, key: Bool = true) -> CloudModelStore {
         let defaults = UserDefaults(suiteName: "OCRPanelCloudTests-\(UUID().uuidString)")!
         let store = CloudModelStore(defaults: defaults, secrets: InMemorySecretStore())
-        for preset in [CloudModel.Preset.anthropic, .qwen].prefix(models) {
-            let model = preset.makeModel()
-            try? store.save(model, key: "k")
-            if agreed { store.agree(model) }
-        }
+        store.choose(.anthropic)
+        if key { try? store.setKey("k") }
+        store.readsInPanel = everyPicture
         return store
     }
 
@@ -90,28 +87,31 @@ struct OCRPanelCloudTests {
         }
     }
 
-    @Test func withoutAModelThePanelOffersNothing() async {
-        let model = Self.model(nil)
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
-        await Self.settle { model.phase == .ready }
-        #expect(!model.offersCloud)
-        let empty = Self.model(Service().cloud(Self.store(models: 0)))
-        empty.load(image: Self.image(), scale: 2, analyze: Self.analysis())
-        #expect(!empty.offersCloud)
+    @Test func withoutAUsableModelThereIsNoReadWith() async {
+        let none = Self.model(nil)
+        none.load(image: Self.image(), scale: 2, analyze: Self.analysis())
+        #expect(none.cloudModel == nil)
+        // Set up but without its key: it can't read, so it isn't offered.
+        let keyless = Self.model(Service().cloud(Self.store(key: false)))
+        keyless.load(image: Self.image(), scale: 2, analyze: Self.analysis())
+        #expect(keyless.cloudModel == nil)
+        keyless.readsInCloud = true
+        #expect(!keyless.readsInCloud)
     }
 
-    @Test func aReadingIsShownApartFromThisMacsAndBothCanBeSeen() async {
+    @Test func readWithShowsTheModelsTextAndOffShowsThisMacsAgain() async {
         let service = Service()
         let model = Self.model(service.cloud(Self.store()))
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
         await Self.settle { model.phase == .ready }
-        #expect(model.offersCloud)
-        #expect(service.reads.isEmpty)
+        #expect(model.cloudModel?.name == "Claude")
+        #expect(service.reads == 0)
 
-        model.readInCloud(with: model.cloudModels[0])
+        model.readsInCloud = true
         await Self.settle { service.isWaiting }
-        #expect(service.reads == ["Claude"])
-        await Self.settle { model.cloud == .reading(model.cloudModels[0], characters: 12) }
+        #expect(service.reads == 1)
+        await Self.settle { model.cloud == .reading(characters: 12) }
+        // This Mac's text stays until the model's comes.
         #expect(model.text == "Plan Storage")
 
         service.answer("| Plan | Storage |\n|---|---|\n| Pro | 1 TB |")
@@ -121,42 +121,40 @@ struct OCRPanelCloudTests {
         #expect(model.tables == [OCRTable(rows: [["Plan", "Storage"], ["Pro", "1 TB"]])])
         #expect(model.panes == [.text, .table])
 
-        model.show(.device)
+        model.readsInCloud = false
         #expect(model.text == "Plan Storage")
         #expect(model.tables.isEmpty)
-        #expect(model.panes.isEmpty)
-        model.show(.cloud)
+        model.readsInCloud = true
         #expect(model.text.hasPrefix("| Plan"))
-        // Turned back, nothing is sent again.
-        #expect(service.reads == ["Claude"])
+        // Turned on again, nothing is sent again.
+        #expect(service.reads == 1)
     }
 
-    @Test func theFirstPictureToAServiceWaitsForThePersonsYes() async {
+    @Test func everyPictureIsReadWhenSettingsSaysSo() async {
         let service = Service()
-        let store = Self.store(agreed: false)
-        let model = Self.model(service.cloud(store))
+        let model = Self.model(service.cloud(Self.store(everyPicture: true)))
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
-        await Self.settle { model.phase == .ready }
-        let claude = model.cloudModels[0]
-        model.readInCloud(with: claude)
-        #expect(model.askingToSend == claude)
-        try? await Task.sleep(for: .milliseconds(20))
-        #expect(service.reads.isEmpty)
-        #expect(model.cloud == .idle)
+        #expect(model.readsInCloud)
+        await Self.settle { service.isWaiting && model.phase == .ready }
+        #expect(model.text == "Plan Storage")
+        service.answer("Plan Storage, read in the cloud")
+        await Self.settle { model.source == .cloud }
+        #expect(model.text == "Plan Storage, read in the cloud")
 
-        model.agreeAndSend(claude)
-        await Self.settle { service.isWaiting }
-        #expect(service.reads == ["Claude"])
-        #expect(store.isAgreed(claude))
-        #expect(model.askingToSend == nil)
+        // The next picture is read too, and the last one's reading is gone.
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
+        await Self.settle { service.isWaiting && model.phase == .ready }
+        #expect(service.reads == 2)
+        #expect(model.source == .device)
+        #expect(model.text == "Plan Storage")
     }
 
-    @Test func aNewPictureStopsTheReadingAndNothingCarriesOver() async {
+    @Test func aNewPictureStopsTheReadingAndIsntSentByItself() async {
         let service = Service()
         let model = Self.model(service.cloud(Self.store()))
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
         await Self.settle { model.phase == .ready }
-        model.readInCloud(with: model.cloudModels[0])
+        model.readsInCloud = true
         await Self.settle { service.isWaiting }
 
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
@@ -164,40 +162,44 @@ struct OCRPanelCloudTests {
         await Self.settle { !service.isWaiting }
         #expect(!service.isWaiting)
         #expect(model.cloud == .idle)
-        #expect(model.source == .device)
+        #expect(!model.readsInCloud)
         await Self.settle { model.phase == .ready }
-        #expect(model.text == "Plan Storage")
-        // The next picture isn't sent by itself.
         try? await Task.sleep(for: .milliseconds(20))
-        #expect(service.reads == ["Claude"])
+        #expect(service.reads == 1)
     }
 
-    @Test func cancellingLeavesThisMacsReading() async {
+    @Test func turningItOffStopsTheReading() async {
         let service = Service()
         let model = Self.model(service.cloud(Self.store()))
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
         await Self.settle { model.phase == .ready }
-        model.readInCloud(with: model.cloudModels[0])
+        model.readsInCloud = true
         await Self.settle { service.isWaiting }
-        model.cancelCloudReading()
+        model.readsInCloud = false
         await Self.settle { !service.isWaiting }
         #expect(model.cloud == .idle)
         #expect(model.text == "Plan Storage")
+        // On again, it reads again.
+        model.readsInCloud = true
+        await Self.settle { service.isWaiting }
+        #expect(service.reads == 2)
     }
 
-    @Test func aFailureSaysWhyAndKeepsThisMacsReading() async {
+    @Test func aFailureSaysWhyAndKeepsThisMacsText() async {
         let service = Service()
         let model = Self.model(service.cloud(Self.store()))
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
         await Self.settle { model.phase == .ready }
-        let claude = model.cloudModels[0]
-        model.readInCloud(with: claude)
+        model.readsInCloud = true
         await Self.settle { service.isWaiting }
-        service.fail(CloudReadingError.keyRejected("invalid x-api-key"))
+        service.fail(CloudReadingError.overloaded(nil))
         await Self.settle { if case .failed = model.cloud { true } else { false } }
-        #expect(model.cloud == .failed(claude, message: CloudReadingError.keyRejected("invalid x-api-key").localizedDescription, canRetry: false))
+        #expect(model.cloud == .failed(message: CloudReadingError.overloaded(nil).localizedDescription, canRetry: true))
         #expect(model.source == .device)
         #expect(model.text == "Plan Storage")
+        model.retryCloudReading()
+        await Self.settle { service.isWaiting }
+        #expect(service.reads == 2)
     }
 
     @Test func handwritingVisionMissedComesFromTheCloud() async {
@@ -205,8 +207,7 @@ struct OCRPanelCloudTests {
         let model = Self.model(service.cloud(Self.store()))
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis([]))
         await Self.settle { model.phase == .empty }
-        #expect(model.offersCloud)
-        model.readInCloud(with: model.cloudModels[0])
+        model.readsInCloud = true
         await Self.settle { service.isWaiting }
         service.answer("Dear Ann,\nsee you Tuesday.")
         await Self.settle { model.phase == .ready }
@@ -214,27 +215,27 @@ struct OCRPanelCloudTests {
         #expect(model.text == "Dear Ann,\nsee you Tuesday.")
     }
 
-    @Test func anEmptyAnswerLeavesThisMacsReadingShown() async {
+    @Test func anEmptyAnswerLeavesThisMacsTextShown() async {
         let service = Service()
         let model = Self.model(service.cloud(Self.store()))
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
         await Self.settle { model.phase == .ready }
-        model.readInCloud(with: model.cloudModels[0])
+        model.readsInCloud = true
         await Self.settle { service.isWaiting }
         service.answer("")
         await Self.settle { if case .read = model.cloud { true } else { false } }
+        #expect(model.readsInCloud)
         #expect(model.source == .device)
-        model.show(.cloud)
-        #expect(model.source == .device)
+        #expect(model.text == "Plan Storage")
     }
 
-    @Test func translationAndTheCloudsReadingTakeTurns() async {
+    @Test func translationAndTheCloudTakeTurns() async {
         let service = Service()
         let model = Self.model(service.cloud(Self.store()))
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
         await Self.settle { model.phase == .ready }
         model.translates = true
-        model.readInCloud(with: model.cloudModels[0])
+        model.readsInCloud = true
         #expect(!model.translates)
         await Self.settle { service.isWaiting }
         service.answer("Plan Storage, read in the cloud")
@@ -242,6 +243,9 @@ struct OCRPanelCloudTests {
         // Changing the line breaks doesn't touch the cloud's text.
         model.joinLines = true
         #expect(model.text == "Plan Storage, read in the cloud")
+        model.translates = true
+        #expect(!model.readsInCloud)
+        #expect(model.source == .device)
         model.translates = false
     }
 
@@ -259,27 +263,13 @@ struct OCRPanelCloudTests {
         )
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), formulas: formulas)
         await Self.settle { model.phase == .ready }
-        model.readInCloud(with: model.cloudModels[0])
+        model.readsInCloud = true
         await Self.settle { service.isWaiting }
         service.answer("Plan Storage\n$$x^2$$")
         await Self.settle { model.source == .cloud }
         await Self.settle { model.formulasBeingRead == nil && model.lines.count == 2 }
         #expect(model.text == "Plan Storage\n$$x^2$$")
-        model.show(.device)
+        model.readsInCloud = false
         #expect(model.text == "Plan Storage\n$x^2$")
-    }
-
-    @Test func theModelUsedLastIsOfferedFirst() async {
-        let service = Service()
-        let store = Self.store(models: 2)
-        let model = Self.model(service.cloud(store))
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
-        await Self.settle { model.phase == .ready }
-        #expect(model.cloudModels.map(\.name) == ["Claude", "Qwen"])
-        model.readInCloud(with: model.cloudModels[1])
-        await Self.settle { service.isWaiting }
-        service.answer("x")
-        await Self.settle { model.source == .cloud }
-        #expect(model.cloudModels.map(\.name) == ["Qwen", "Claude"])
     }
 }

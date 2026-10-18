@@ -687,7 +687,7 @@ struct ToolsSettingsView: View {
                 ModelPacksRow(center: modelPacks)
             }
             if let cloudModels {
-                CloudModelsRow(store: cloudModels)
+                CloudReadingRow(store: cloudModels)
             }
 
             SettingsDivider()

@@ -112,7 +112,9 @@ struct CloudModelTests {
         // A service on the internet needs a key; one on this Mac doesn't, unless it's Anthropic's protocol.
         #expect(issue("https://api.example.com/v1") != nil)
         #expect(issue("http://localhost:8080", kind: .anthropic) != nil)
-        #expect(CloudModel(kind: .openAICompatible, name: " ", address: "https://a.test/v1", model: "m").issue(hasKey: true) != nil)
+        // A model without a name is called by its host.
+        #expect(CloudModel(kind: .openAICompatible, name: " ", address: "https://a.test/v1", model: "m").issue(hasKey: true) == nil)
+        #expect(CloudModel(kind: .openAICompatible, name: " ", address: "https://a.test/v1", model: "m").displayName == "a.test")
         #expect(CloudModel(kind: .openAICompatible, name: "a", address: "https://a.test/v1", model: " ").issue(hasKey: true) != nil)
     }
 
@@ -125,6 +127,9 @@ struct CloudModelTests {
         let ollama = CloudModel.Preset.ollama.makeModel()
         #expect(ollama.isLocal && !ollama.needsKey)
         #expect(CloudModel.Preset.other.makeModel().name.isEmpty)
+        #expect(CloudModel.Preset.qwen.makeModel().preset == .qwen)
+        #expect(CloudReader.instruction(pieces: 1, joinsLines: true).contains("Join the lines of each paragraph"))
+        #expect(!CloudReader.instruction(pieces: 1).contains("Join the lines"))
     }
 }
 
@@ -509,54 +514,89 @@ struct CloudModelStoreTests {
         return (CloudModelStore(defaults: defaults, secrets: secrets), defaults, secrets, { defaults.removePersistentDomain(forName: suite) })
     }
 
-    @Test func modelsAreKeptWithoutTheirKeys() throws {
+    @Test func theModelIsKeptWithoutItsKey() throws {
         let (store, defaults, secrets, cleanup) = try makeStore()
         defer { cleanup() }
-        let claude = CloudModel.Preset.anthropic.makeModel()
-        try store.save(claude, key: "sk-ant-secret")
-        #expect(store.preferred == claude)
-        #expect(store.hasKey(claude))
-        let saved = String(decoding: try #require(defaults.data(forKey: "cloudModels")), as: UTF8.self)
+        #expect(store.model == nil && store.usableModel == nil)
+        store.choose(.anthropic)
+        let claude = try #require(store.model)
+        #expect(claude.model == "claude-opus-5-5")
+        // Without its key it can't read yet.
+        #expect(store.usableModel == nil)
+        try store.setKey("sk-ant-secret")
+        #expect(store.hasKey)
+        #expect(store.usableModel == claude)
+        let saved = String(decoding: try #require(defaults.data(forKey: "cloudModel")), as: UTF8.self)
         #expect(saved.contains("claude-opus-5-5"))
         #expect(!saved.contains("sk-ant-secret"))
 
-        // Saved again without a key, it keeps the one it has.
-        var renamed = claude
-        renamed.name = "Claude Opus"
-        try store.save(renamed, key: "")
+        // Edited, it keeps its key; an empty key keeps the saved one.
+        var edited = claude
+        edited.model = "claude-sonnet-5-5"
+        store.update(edited)
+        try store.setKey("  ")
         #expect(secrets.secret(CloudModelStore.keyField, of: claude.id) == "sk-ant-secret")
+        #expect(CloudModelStore(defaults: defaults, secrets: secrets).model == edited)
+    }
 
-        let reopened = CloudModelStore(defaults: defaults, secrets: secrets)
-        #expect(reopened.models == [renamed])
-        store.remove(id: claude.id)
+    @Test func anotherServiceOrOffTakesTheKeyAway() throws {
+        let (store, defaults, secrets, cleanup) = try makeStore()
+        defer { cleanup() }
+        store.choose(.anthropic)
+        try store.setKey("k1")
+        store.readsInPanel = true
+        store.readsCaptureText = true
+        store.choose(.qwen)
+        #expect(store.model?.model == "qwen3-vl-plus")
         #expect(secrets.count == 0)
-        #expect(store.preferred == nil)
+        #expect(store.readsCaptureText)
+        try store.setKey("k2")
+        store.choose(nil)
+        #expect(store.model == nil)
+        #expect(secrets.count == 0)
+        #expect(!store.readsInPanel && !store.readsCaptureText)
+        let reopened = CloudModelStore(defaults: defaults, secrets: secrets)
+        #expect(reopened.model == nil && !reopened.readsCaptureText)
     }
 
-    @Test func agreeingHoldsForTheHostItWasGivenFor() throws {
-        let (store, defaults, secrets, cleanup) = try makeStore()
-        defer { cleanup() }
-        var model = CloudModel.Preset.qwen.makeModel()
-        try store.save(model, key: "k")
-        #expect(!store.isAgreed(model))
-        store.agree(model)
-        #expect(store.isAgreed(model))
-        #expect(CloudModelStore(defaults: defaults, secrets: secrets).isAgreed(model))
-        model.address = "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
-        try store.save(model)
-        #expect(!store.isAgreed(model))
+    @Test func theFirstCutsModelUsedLastIsKeptWithItsKey() throws {
+        let suite = "OMSCoreTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let secrets = InMemorySecretStore()
+        let claude = CloudModel(kind: .anthropic, name: "Claude", address: "https://api.anthropic.com", model: "claude-opus-5-5")
+        let qwen = CloudModel(kind: .openAICompatible, name: "Qwen", address: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen3-vl-plus")
+        defaults.set(try JSONEncoder().encode([qwen, claude]), forKey: "cloudModels")
+        defaults.set(claude.id.uuidString, forKey: "cloudModelPreferred")
+        defaults.set(["\(claude.id.uuidString) api.anthropic.com"], forKey: "cloudModelsAgreed")
+        try secrets.setSecret("sk-ant", field: CloudModelStore.keyField, of: claude.id)
+        try secrets.setSecret("sk-qwen", field: CloudModelStore.keyField, of: qwen.id)
+
+        let store = CloudModelStore(defaults: defaults, secrets: secrets)
+        #expect(store.model?.id == claude.id)
+        #expect(store.model?.preset == .anthropic)
+        #expect(store.hasKey)
+        #expect(store.usableModel != nil)
+        #expect(secrets.count == 1)
+        #expect(defaults.object(forKey: "cloudModels") == nil && defaults.object(forKey: "cloudModelPreferred") == nil && defaults.object(forKey: "cloudModelsAgreed") == nil)
+        // Opened again, it stays as it is.
+        #expect(CloudModelStore(defaults: defaults, secrets: secrets).model?.id == claude.id)
+        #expect(CloudModelStore.preset(of: qwen) == .qwen)
+        #expect(CloudModelStore.preset(of: CloudModel(kind: .openAICompatible, name: "", address: "https://openrouter.ai/api/v1", model: "m")) == .other)
     }
 
-    @Test func thePanelOffersTheModelUsedLast() throws {
-        let (store, defaults, secrets, cleanup) = try makeStore()
+    @Test func captureTextReadsWithItOnlyWhenAskedAndReady() throws {
+        let (store, _, _, cleanup) = try makeStore()
         defer { cleanup() }
-        let one = CloudModel.Preset.anthropic.makeModel(), two = CloudModel.Preset.ollama.makeModel()
-        try store.save(one, key: "k")
-        try store.save(two)
-        #expect(store.preferred == one)
-        store.markUsed(two)
-        #expect(CloudModelStore(defaults: defaults, secrets: secrets).preferred == two)
-        store.remove(id: two.id)
-        #expect(store.preferred == one)
+        store.choose(.ollama)
+        // Its model's name is the person's to give; then, on this Mac, it needs no key.
+        #expect(store.usableModel == nil)
+        var ollama = try #require(store.model)
+        ollama.model = "qwen2.5vl"
+        store.update(ollama)
+        #expect(store.usableModel != nil)
+        #expect(store.captureTextModel == nil)
+        store.readsCaptureText = true
+        #expect(store.captureTextModel?.name == "Ollama")
     }
 }

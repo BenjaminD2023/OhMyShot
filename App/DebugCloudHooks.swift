@@ -32,21 +32,21 @@ nonisolated enum DebugCloudDemo {
         behavior.withLock { $0 = new }
     }
 
-    /// A store of demo models: Claude, and Qwen with `models=2`, both at demo.invalid, with keys in memory.
+    /// A store holding Claude at demo.invalid, its key in memory; `panel` and `captureText` say where it reads by itself.
     @MainActor
-    static func store(models: Int, agreed: Bool) -> CloudModelStore {
+    static func store(panel: Bool, captureText: Bool) -> CloudModelStore {
         let suite = "\(Log.subsystem).debug.cloud"
         UserDefaults().removePersistentDomain(forName: suite)
         let defaults = UserDefaults(suiteName: suite) ?? .standard
         let store = CloudModelStore(defaults: defaults, secrets: InMemorySecretStore())
-        var claude = CloudModel.Preset.anthropic.makeModel()
-        claude.address = "https://\(host)"
-        var qwen = CloudModel.Preset.qwen.makeModel()
-        qwen.address = "https://\(host)/compatible-mode/v1"
-        for model in [claude, qwen].prefix(max(1, models)) {
-            try? store.save(model, key: "demo-key")
-            if agreed { store.agree(model) }
+        store.choose(.anthropic)
+        if var claude = store.model {
+            claude.address = "https://\(host)"
+            store.update(claude)
         }
+        try? store.setKey("demo-key")
+        store.readsInPanel = panel
+        store.readsCaptureText = captureText
         return store
     }
 
@@ -104,29 +104,23 @@ extension DebugHooks {
         func value(_ name: String) -> String? { Self.parameter(name, in: url) }
         switch hook {
         case "cloud-demo":
-            // on=1|0, models=1|2, agreed=0|1 (default 1), behavior=succeed|incomplete|empty|hang|fail|busy. Puts the
-            // demo models in place of the person's for the next panel and Settings window (both are closed first).
+            // on=1|0, panel=1 (every picture in the panel), capture=1 (Capture Text),
+            // behavior=succeed|incomplete|empty|hang|fail|busy. Puts the demo model in place of the person's for the next
+            // panel and Settings window (both are closed first).
             if let behavior = value("behavior").flatMap(DebugCloudDemo.Behavior.init(rawValue:)) {
                 DebugCloudDemo.setBehavior(behavior)
             }
             if let on = value("on") {
                 textCapture.closePanel()
-                setCloudDemo(on == "1" ? DebugCloudDemo.store(models: Int(value("models") ?? "1") ?? 1, agreed: value("agreed") != "0") : nil)
+                setCloudDemo(on == "1" ? DebugCloudDemo.store(panel: value("panel") == "1", captureText: value("capture") == "1") : nil)
                 Log.app.notice("debug.cloud-demo on=\(on, privacy: .public)")
             }
         case "cloud-local":
-            // name=, kind=openai|anthropic, address=http://127.0.0.1:<port>/v1, model=, key=: adds a model at a server on
-            // this Mac to the demo models, agreed (demo models must be on).
+            // name=, kind=openai|anthropic, address=http://127.0.0.1:<port>/v1, model=, key=: makes the demo model one at a
+            // server on this Mac (demo models must be on).
             let kind: CloudModel.Kind = value("kind") == "anthropic" ? .anthropic : .openAICompatible
             let model = CloudModel(kind: kind, name: value("name") ?? "Local", address: value("address") ?? "http://127.0.0.1:19010/v1", model: value("model") ?? "local-vision")
             addCloudDemoModel(model, value("key"))
-        case "cloud-editor":
-            // preset=anthropic|openAI|qwen|ollama|other for a new model, name= for a saved one; none closes it. Settings
-            // › Tools must be open.
-            var info: [String: Any] = [:]
-            if let preset = value("preset") { info["preset"] = preset }
-            if let name = value("name") { info["name"] = name }
-            NotificationCenter.default.post(name: .debugOpenCloudModelEditor, object: nil, userInfo: info)
         default:
             return false
         }

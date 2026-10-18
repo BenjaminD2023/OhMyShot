@@ -69,13 +69,16 @@ public final class CloudReader: Sendable {
 
     /// Reads the text in `image` with `model`.
     ///
-    /// - Parameter progress: Told how many characters have come so far, at most ten times a second, on a background
-    ///   queue.
+    /// - Parameters:
+    ///   - joinsLines: The lines of each paragraph joined, as Capture Text, Joining Lines asks; else the picture's line
+    ///     breaks kept.
+    ///   - progress: Told how many characters have come so far, at most ten times a second, on a background queue.
     /// - Throws: `CloudReadingError`, or `CancellationError` when the calling task is cancelled.
     @concurrent
     public func read(
         _ image: CGImage,
         with model: CloudModel,
+        joinsLines: Bool = false,
         progress: (@Sendable (Int) -> Void)? = nil
     ) async throws -> CloudReading {
         let key = secrets.secret(CloudModelStore.keyField, of: model.id)
@@ -91,7 +94,7 @@ public final class CloudReader: Sendable {
             throw CloudReadingError.pictureUnusable
         }
         let pieces = prepared.pieces
-        let request = try Self.request(for: model, endpoint: endpoint, key: key, pieces: pieces)
+        let request = try Self.request(for: model, endpoint: endpoint, key: key, pieces: pieces, joinsLines: joinsLines)
         try Task.checkCancellation()
 
         let lease = resources.acquire(.cloudReading)
@@ -140,12 +143,16 @@ public final class CloudReader: Sendable {
     // MARK: The request
 
     /// What the model is asked: the whole text once, as written, with structure only where the picture has it.
-    static func instruction(pieces: Int) -> String {
+    static func instruction(pieces: Int, joinsLines: Bool = false) -> String {
         var lines: [String] = []
         if pieces > 1 {
             lines.append("The \(pieces) pictures above are consecutive parts of one tall picture, top to bottom. Each part overlaps the next by a few lines, so text at a join appears in both: write it once.")
         }
-        lines.append("Transcribe all the text in the picture, in reading order, exactly as written. Keep its language, spelling, punctuation, and line breaks. Don’t translate, correct, summarize, or describe it.")
+        if joinsLines {
+            lines.append("Transcribe all the text in the picture, in reading order, exactly as written. Keep its language, spelling, and punctuation. Join the lines of each paragraph into one line, keeping the breaks between paragraphs, headings, list items, table rows, and lines of code. Don’t translate, correct, summarize, or describe it.")
+        } else {
+            lines.append("Transcribe all the text in the picture, in reading order, exactly as written. Keep its language, spelling, punctuation, and line breaks. Don’t translate, correct, summarize, or describe it.")
+        }
         lines.append("Write tables as Markdown pipe tables, mathematical formulas as LaTeX between $ and $ (between $$ and $$ for a formula on a line of its own), and code with its indentation. Use no other Markdown.")
         lines.append("Answer with the transcription only, with nothing before or after it. If the picture has no text, answer with nothing.")
         return lines.joined(separator: "\n")
@@ -159,12 +166,12 @@ public final class CloudReader: Sendable {
     private static let fallbackModels: Set<String> = ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"]
     static let fallbackBeta = "server-side-fallback-2026-07-01"
 
-    static func request(for model: CloudModel, endpoint: URL, key: String?, pieces: [CloudPicture.Piece]) throws -> URLRequest {
+    static func request(for model: CloudModel, endpoint: URL, key: String?, pieces: [CloudPicture.Piece], joinsLines: Bool = false) throws -> URLRequest {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        let instruction = instruction(pieces: pieces.count)
+        let instruction = instruction(pieces: pieces.count, joinsLines: joinsLines)
         let identifier = model.model.trimmingCharacters(in: .whitespaces)
         var body: [String: Any]
         switch model.kind {

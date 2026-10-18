@@ -76,6 +76,7 @@
       }
     },
     "%@ found no text either" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -190,6 +191,7 @@
       }
     },
     "%@ reads it there, with %@. The picture leaves this Mac each time you choose Read with %@; your API key stays in the Keychain." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -458,6 +460,7 @@
       }
     },
     "%@…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -1997,6 +2000,7 @@
       }
     },
     "Add Cloud Model" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -2133,6 +2137,7 @@
       }
     },
     "Add Model" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -3119,6 +3124,7 @@
       }
     },
     "Anthropic" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -4546,6 +4552,40 @@
         }
       }
     },
+    "Capture Text waits for the model’s reading before it copies, and copies this Mac’s reading when the model can’t read it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturar texto espera a la lectura del modelo antes de copiar, y copia lo leído en este Mac cuando el modelo no puede leerla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturer du texte attend la lecture du modèle avant de copier, et copie le texte lu sur ce Mac quand le modèle ne peut pas la lire."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「テキストをキャプチャ」はモデルの読み取りを待ってからコピーし、モデルが読み取れないときはこのMacで読み取ったテキストをコピーします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“截取文字”会等模型读完再拷贝；模型读不了时，拷贝这台 Mac 读取的文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「擷取文字」會等模型讀完再拷貝；模型讀不了時，拷貝這台 Mac 讀取的文字。"
+          }
+        }
+      }
+    },
     "Capture Text, Joining Lines" : {
       "localizations" : {
         "es" : {
@@ -5431,6 +5471,7 @@
       }
     },
     "Cloud models" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -5460,6 +5501,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "雲端模型"
+          }
+        }
+      }
+    },
+    "Cloud reading" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lectura en la nube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture dans le cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウド読み取り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "云端读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雲端讀取"
           }
         }
       }
@@ -8046,6 +8121,40 @@
         }
       }
     },
+    "Every picture in the Recognized Text window" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada imagen en la ventana Texto reconocido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque image de la fenêtre Texte reconnu"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「認識されたテキスト」ウインドウのすべての画像"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“识别的文字”窗口中的每张图片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「辨識出的文字」視窗中的每張圖片"
+          }
+        }
+      }
+    },
     "Expires after" : {
       "localizations" : {
         "es" : {
@@ -9887,6 +9996,7 @@
       }
     },
     "How the service is spoken to. Most services, and Ollama and LM Studio on this Mac, take OpenAI’s Chat Completions; Claude takes Anthropic’s Messages." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -10198,6 +10308,114 @@
         }
       }
     },
+    "It goes at %lld%% of its size." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se envía al %lld%% de su tamaño."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle part à %lld %% de sa taille."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "元のサイズの%lld%%で送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它会以原尺寸的 %lld%% 发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它會以原尺寸的 %lld%% 傳送。"
+          }
+        }
+      }
+    },
+    "It goes in %lld pieces, at %lld%% of its size." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "It goes in %1$lld pieces, at %2$lld%% of its size."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se envía en %1$lld partes, al %2$lld%% de su tamaño."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle part en %1$lld morceaux, à %2$lld %% de sa taille."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld個に分け、元のサイズの%2$lld%%で送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它会分成 %1$lld 块，以原尺寸的 %2$lld%% 发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它會分成 %1$lld 塊，以原尺寸的 %2$lld%% 傳送。"
+          }
+        }
+      }
+    },
+    "It goes in %lld pieces." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se envía en %lld partes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle part en %lld morceaux."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld個に分けて送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它会分成 %lld 块发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它會分成 %lld 塊傳送。"
+          }
+        }
+      }
+    },
     "It is saved in “%@” as a .%@ file." : {
       "localizations" : {
         "en" : {
@@ -10341,6 +10559,7 @@
       }
     },
     "Its API key is deleted from the Keychain." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -12244,6 +12463,40 @@
         }
       }
     },
+    "Neither this Mac nor %@ found text in it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ni este Mac ni %@ han encontrado texto en ella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ni ce Mac ni %@ n’y ont trouvé de texte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacも%@もテキストを見つけられませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 Mac 和 %@ 都没有在其中找到文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台 Mac 和 %@ 都沒有在其中找到文字。"
+          }
+        }
+      }
+    },
     "Never" : {
       "localizations" : {
         "es" : {
@@ -12585,6 +12838,7 @@
       }
     },
     "No cloud models" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -12920,6 +13174,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "現在不要"
+          }
+        }
+      }
+    },
+    "Not copied" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non copié"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーしていません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未拷贝"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未拷貝"
           }
         }
       }
@@ -13639,6 +13927,7 @@
       }
     },
     "OpenAI-compatible" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -14813,6 +15102,7 @@
       }
     },
     "Protocol" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -15289,6 +15579,7 @@
       }
     },
     "Read a picture with a model you have an account with, such as Claude, GPT, or Qwen, where this Mac reads it poorly: handwriting, dense tables, complex layouts. Nothing is sent until you choose Read with… in the Recognized Text window; then the picture goes from this Mac straight to the service, which may charge for it. Keys stay in the Keychain." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -15436,7 +15727,42 @@
         }
       }
     },
+    "Read by itself in" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leer automáticamente en"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire automatiquement dans"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動で読み取る場所"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动读取于"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動讀取於"
+          }
+        }
+      }
+    },
     "Read on this Mac" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -15500,6 +15826,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用 %@ 讀取"
+          }
+        }
+      }
+    },
+    "Read with %@: sends this picture to %@ (⇧⌘R)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Read with %1$@: sends this picture to %2$@ (⇧⌘R)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leer con %1$@: envía esta imagen a %2$@ (⇧⌘R)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire avec %1$@ : envoie cette image à %2$@ (⇧⌘R)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@で読み取る：この画像を%2$@に送信します（⇧⌘R）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 %1$@ 读取：将这张图片发送到 %2$@（⇧⌘R）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 %1$@ 讀取：將這張圖片傳送到 %2$@（⇧⌘R）"
           }
         }
       }
@@ -15613,6 +15979,7 @@
       }
     },
     "Reads a small picture of a few words with this model, to check the address, the model, and the key." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -15642,6 +16009,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用這個模型讀取一張有幾個字的小圖片，以檢查位址、模型和密鑰。"
+          }
+        }
+      }
+    },
+    "Reads pictures with a model you have an account with, such as Claude, GPT, or Qwen, or one on this Mac with Ollama, where this Mac reads them poorly: handwriting, dense tables, complex layouts. The picture goes from this Mac straight to the service, which may charge for it: when you press Read with in the Recognized Text window, and by itself where you turn that on below. Keys stay in the Keychain." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lee imágenes con un modelo en el que tengas cuenta, como Claude, GPT o Qwen, o uno en este Mac con Ollama, donde este Mac las lee mal: escritura a mano, tablas densas, maquetaciones complejas. La imagen va de este Mac directamente al servicio, que puede cobrar por ello: cuando pulsas Leer con en la ventana Texto reconocido, y automáticamente donde lo actives abajo. Las claves se quedan en el Llavero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lit les images avec un modèle pour lequel vous avez un compte, comme Claude, GPT ou Qwen, ou un modèle sur ce Mac avec Ollama, là où ce Mac les lit mal : écriture manuscrite, tableaux denses, mises en page complexes. L’image part de ce Mac directement vers le service, qui peut la facturer : quand vous appuyez sur Lire avec dans la fenêtre Texte reconnu, et automatiquement là où vous l’activez ci-dessous. Les clés restent dans le trousseau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacがうまく読み取れない画像（手書き、細かい表、複雑なレイアウト）を、Claude、GPT、Qwenなどアカウントを持っているモデル、またはこのMac上のOllamaのモデルで読み取ります。画像はこのMacからそのサービスへ直接送られ、料金がかかる場合があります。送信されるのは「認識されたテキスト」ウインドウで「…で読み取る」を押したときと、下で自動読み取りをオンにした場所です。キーはキーチェーンに残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这台 Mac 读不好的地方（手写、密集的表格、复杂的版式），用你有账户的模型读取图片，比如 Claude、GPT 或通义千问，也可以是这台 Mac 上用 Ollama 运行的模型。图片会直接从这台 Mac 发送到该服务，服务可能会为此收费：在“识别的文字”窗口中按“用…读取”时发送，或在下方开启自动读取的地方自动发送。密钥保留在钥匙串中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這台 Mac 讀不好的地方（手寫、密集的表格、複雜的版面），用你有帳號的模型讀取圖片，例如 Claude、GPT 或通義千問，也可以是這台 Mac 上用 Ollama 執行的模型。圖片會直接從這台 Mac 傳送到該服務，服務可能會為此收費：在「辨識出的文字」視窗中按「用…讀取」時傳送，或在下方開啟自動讀取的地方自動傳送。密鑰保留在鑰匙圈中。"
           }
         }
       }
@@ -17536,6 +17937,40 @@
         }
       }
     },
+    "Saved in the Keychain. Type a new key to replace it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardada en el Llavero. Escribe una clave nueva para sustituirla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrée dans le trousseau. Saisissez une nouvelle clé pour la remplacer."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーチェーンに保存済みです。新しいキーを入力すると置き換わります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已存储在钥匙串中。输入新的密钥即可替换。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已儲存在鑰匙圈中。輸入新的密鑰即可取代。"
+          }
+        }
+      }
+    },
     "Saved in the Keychain. Type a new value to replace it." : {
       "localizations" : {
         "es" : {
@@ -18121,6 +18556,7 @@
       }
     },
     "Send" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -18189,6 +18625,7 @@
       }
     },
     "Send this picture to %@ and read it with %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -18229,6 +18666,7 @@
       }
     },
     "Send this picture to %@ and read it with %@. It goes at %lld%% of its size." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -18269,6 +18707,7 @@
       }
     },
     "Send this picture to %@ and read it with %@. It goes in %lld pieces, at %lld%% of its size." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -18309,6 +18748,7 @@
       }
     },
     "Send this picture to %@ and read it with %@. It goes in %lld pieces." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -18349,6 +18789,7 @@
       }
     },
     "Send this picture to %@?" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -18446,6 +18887,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向服務傳送一張寫著「%@」的小圖片，並檢查模型能否讀回這些字。和任何請求一樣，服務可能會為此收費。"
+          }
+        }
+      }
+    },
+    "Sends this picture to %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envía esta imagen a %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoie cette image à %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%@に送信します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这张图片发送到 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這張圖片傳送到 %@"
           }
         }
       }
@@ -19267,6 +19742,7 @@
       }
     },
     "Show the text read by" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -19300,7 +19776,42 @@
         }
       }
     },
+    "Show the text read on this Mac (⇧⌘R)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar el texto leído en este Mac (⇧⌘R)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher le texte lu sur ce Mac (⇧⌘R)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacで読み取ったテキストを表示（⇧⌘R）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示在这台 Mac 上读取的文字（⇧⌘R）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示在這台 Mac 上讀取的文字（⇧⌘R）"
+          }
+        }
+      }
+    },
     "Show the text read on this Mac, or the text %@ read" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -19871,6 +20382,7 @@
       }
     },
     "Stop reading with %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -20002,6 +20514,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "對調文字與背景"
+          }
+        }
+      }
+    },
+    "Switch" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切り替える"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換"
+          }
+        }
+      }
+    },
+    "Switch to %@?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Cambiar a %@?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passer à %@ ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@に切り替えますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要切换到 %@ 吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要切換到 %@ 嗎？"
           }
         }
       }
@@ -20376,6 +20956,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文字釘選：%@"
+          }
+        }
+      }
+    },
+    "The API key saved for %@ is deleted from the Keychain." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de API guardada para %@ se elimina del Llavero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clé d’API enregistrée pour %@ est supprimée du trousseau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@用に保存されたAPIキーはキーチェーンから削除されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为 %@ 存储的 API 密钥会从钥匙串中删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為 %@ 儲存的 API 密鑰會從鑰匙圈中刪除。"
           }
         }
       }
@@ -20823,6 +21437,7 @@
       }
     },
     "The service’s address with its version, as its documentation gives it, such as https://api.openai.com/v1. Plain http:// works only on this Mac or your local network." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -20852,6 +21467,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服務的位址（含版本），依其文件提供的寫，例如 https://api.openai.com/v1。一般的 http:// 只能用於這台 Mac 或區域網路。"
+          }
+        }
+      }
+    },
+    "The service’s address with its version, as its documentation gives it. Plain http:// works only on this Mac or your local network." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dirección del servicio con su versión, tal como la indica su documentación. http:// sin cifrar solo funciona en este Mac o en tu red local."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’adresse du service avec sa version, telle que sa documentation l’indique. http:// sans chiffrement ne fonctionne que sur ce Mac ou votre réseau local."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドキュメントに記載されている、バージョンを含むサービスのアドレスです。http:// はこのMacかローカルネットワーク上でのみ使えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务的地址（含版本），按其文档给出的写。普通的 http:// 只能用于这台 Mac 或本地网络。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務的位址（含版本），依其文件提供的寫。一般的 http:// 只能用於這台 Mac 或區域網路。"
           }
         }
       }
@@ -20925,6 +21574,7 @@
       }
     },
     "This Mac" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -21611,6 +22261,7 @@
       }
     },
     "Translation works on the text read on this Mac" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -21814,7 +22465,42 @@
         }
       }
     },
+    "Try an image with larger text or more contrast, or read it with %@." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prueba con una imagen con el texto más grande o con más contraste, o léela con %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Essayez une image au texte plus grand ou plus contrasté, ou lisez-la avec %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字が大きい画像やコントラストが高い画像を試すか、%@で読み取ってください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "试试文字更大或对比度更高的图片，或用 %@ 读取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "試試文字更大或對比度更高的圖片，或用 %@ 讀取。"
+          }
+        }
+      }
+    },
     "Try an image with larger text or more contrast, or read it with a cloud model." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -21882,6 +22568,40 @@
         }
       }
     },
+    "Turn Off" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフにする"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉"
+          }
+        }
+      }
+    },
     "Turn off Capture History?" : {
       "localizations" : {
         "es" : {
@@ -21912,6 +22632,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要關閉擷取記錄嗎？"
+          }
+        }
+      }
+    },
+    "Turn off cloud reading?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Desactivar la lectura en la nube?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver la lecture dans le cloud ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウド読み取りをオフにしますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要关闭云端读取吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要關閉雲端讀取嗎？"
           }
         }
       }
@@ -22568,7 +23322,42 @@
         }
       }
     },
+    "What the Read with button calls it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo lo llama el botón Leer con."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le nom que lui donne le bouton Lire avec."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「…で読み取る」ボタンでの呼び名です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“用…读取”按钮这样称呼它。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「用…讀取」按鈕這樣稱呼它。"
+          }
+        }
+      }
+    },
     "What the Recognized Text window’s button calls it: Read with Claude." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -22938,6 +23727,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉此選項時，連結會保留在擷取內容的選單中：請在其卡片上選擇「拷貝連結」。"
+          }
+        }
+      }
+    },
+    "Without it, the window’s Read with button sends a picture when you press it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin esto, el botón Leer con de la ventana envía la imagen cuando lo pulsas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sans cela, le bouton Lire avec de la fenêtre envoie l’image quand vous appuyez dessus."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフのときは、ウインドウの「…で読み取る」ボタンを押したときだけ画像を送信します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不勾选时，窗口中的“用…读取”按钮在你按下时才发送图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不勾選時，視窗中的「用…讀取」按鈕在你按下時才傳送圖片。"
           }
         }
       }

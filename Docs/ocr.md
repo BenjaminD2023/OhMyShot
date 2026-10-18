@@ -1486,16 +1486,36 @@ after 3.7 s); formulas in the history's search text; inline formulas translated 
 ## Cloud models (L4, M6, 2026-10-18)
 
 The roadmap's L4: a model the person has an account with reads a picture when this Mac reads it poorly (handwriting,
-dense tables, complex layouts), only when asked. `CloudModel`, `CloudModelStore`, `CloudPicture`, and `CloudReader` in
-OMSCore (`CloudReading/`), `MarkdownTables` in OMSOCR; the panel's side in OMSUI (`CloudReadingViews.swift`, the
-model's `readInCloud`), the list and editor in Settings › Tools (`CloudModelsSettingsView.swift`). DESIGN.md › OCR
-Panel and › Cloud Models describe what the person sees.
+dense tables, complex layouts). `CloudModel`, `CloudModelStore`, `CloudPicture`, and `CloudReader` in OMSCore
+(`CloudReading/`), `MarkdownTables` in OMSOCR; the panel's side in OMSUI (`CloudReadingViews.swift`, the model's
+`readsInCloud`), Settings › Tools › Cloud reading (`CloudReadingSettingsView.swift`), and Capture Text in the app's
+`TextCaptureCoordinator`. DESIGN.md › OCR Panel, › Cloud Reading, and › Text Selection describe what the person sees.
 
-**Only the OCR panel, only on a click.** Read with… in the Recognized Text window sends that picture, once; a new
-picture goes back to this Mac's reading and is sent only on another click. The first picture to a model asks first,
-naming the host, and asks again when the model's address points to another host (`CloudModelStore.isAgreed`, kept as
-"id host"). Capture Text, the history's search, Shortcuts, and the URL scheme never read with a cloud model: any of them
-would send captures without a click in the panel, and the URL scheme would let any approved app do it.
+**One model, woven into the reading there is.** The first cut (34f042b) added a list of models, a sheet to edit one, a
+line under the panel's text with Read with, an alert before the first picture to each host, and a switch between the
+two readings: five surfaces for what is one more reader. It was folded into what was there: one model, set up in place
+in Settings › Tools; in the panel a toolbar toggle beside Translate that behaves as Translate does; and Capture Text,
+which reads with it while Settings says so. Choosing a service in Settings is the person's yes to sending pictures
+there, so nothing asks again; the toggle's tooltip names the host before each picture goes.
+
+**Where it reads.** In the Recognized Text window when Read with is turned on for a picture (kept for that picture;
+the next one starts with it off), or for every picture while Settings' "Every picture in the Recognized Text window"
+is on, sent as the picture opens, beside Vision's reading, which shows until the model's comes. In Capture Text (a
+person's drag or window) while Settings' "Capture Text" is on: sent beside Vision's reading, the highlight holding
+until the model's text is copied (with Joining Lines, the model is asked to join each paragraph's lines); when the
+model fails, finds no text, or takes over 60 s, Vision's reading is copied and the card shows even while it is off, so
+a key that stopped working doesn't make Capture Text read differently without a word. Since the wait can be long, a
+Capture Text started meanwhile cancels the one still waiting, which then copies nothing and leaves the highlight
+alone; and when the clipboard changed while the model read (the person copied something), the text isn't copied
+over it: the card offers Copy instead. The URL API's capture-text, the Shortcuts actions (even the ones that show the
+overlay), and the history's search read on this Mac only: they don't start from the person's own shortcut, and the
+URL scheme would let an approved app send captures.
+
+The first cut's list of models is taken over once (`CloudModelStore.migrateFirstCut`): the model used last, or the
+first, becomes the model with its id, so its key in the Keychain still belongs to it, with the service guessed from
+its protocol and address; the others' keys and the list's defaults go. Whether a key is saved is looked up once and
+then kept, so the interface doesn't ask the Keychain again (a development build's Keychain asks the person after
+each rebuild).
 
 **Two protocols.** OpenAI's Chat Completions (`Authorization: Bearer`, an `image_url` part with a data URL per piece),
 which OpenAI, Alibaba Cloud's Qwen, Ollama, LM Studio, and most others accept; and Anthropic's Messages
@@ -1557,13 +1577,15 @@ and OpenRouter work as Other; no official page named a GLM model that reads pict
 was reported by others, so neither is a preset.
 
 **Checked:** unit tests for the addresses, the pieces, both requests, both streams (cut at any byte, thinking in
-between, a fallback, a refusal, a length stop, an error mid-stream), errors, the store (keys never in the defaults),
-the tables, and the panel (nothing sent without a click or without the person's yes, a new picture stops a reading,
-formulas read later go into this Mac's text only, translation and the cloud's text take turns). In the Dev app, with
-models kept in memory (`debug/cloud-demo`) and a stand-in server on 127.0.0.1 (`debug/cloud-local`): both protocols
-over plain http to `127.0.0.1` and `localhost`, a 1520 × 1120 picture sent whole and read in 0.40–0.42 s, the tall one
-above in 0.82 s, the app idle after each.
+between, a fallback, a refusal, a length stop, an error mid-stream), errors, the store (one model, keys never in the
+defaults, another service or Off taking the key), the tables, and the panel (nothing sent without the toggle or the
+setting, a new picture stops a reading, off stops it, formulas read later go into this Mac's text only, translation
+and the cloud's reading take turns). In the Dev app, with a model kept in memory (`debug/cloud-demo`) and a stand-in
+server on 127.0.0.1 (`debug/cloud-local`): both protocols over plain http to `127.0.0.1` and `localhost`, a 1520 × 1120
+picture sent whole and read in 0.40–0.42 s, the tall one above in 0.82 s, the app idle after each; the toggle, every
+picture, the empty state, Settings' row, and Capture Text reading with the model and falling back with the card's note
+(`debug/text-test?demo=1&cloud=1`).
 
 **Not done yet:** a reading with a real service (it needs the person's key); a picture very wide as well as tall (made
-narrower, never cut side by side); translating the cloud model's text; a second reading of a picture after a first
-(Read with sits beside the result only when the model found no text).
+narrower, never cut side by side); translating the cloud model's text; reading a picture again after a first reading
+(off and on keeps the first); stopping Capture Text's wait with Escape.

@@ -1,24 +1,32 @@
 import Foundation
 import Observation
 
-/// The cloud models the person set up, kept in the app's defaults, with each one's key in the Keychain.
+/// The cloud model the person reads with, kept in the app's defaults with its key in the Keychain, and where it reads
+/// by itself (Docs/ocr.md › Cloud models).
 ///
-/// Also remembers which model the OCR panel offered last, and which services the person agreed to send pictures to:
-/// a model's first picture is sent only after it asks, and asks again once the model points to another host.
+/// One model: choosing a service in Settings › Tools sets it up, and choosing Off removes it and its key. Choosing it
+/// is the person's yes to sending pictures there: from the Recognized Text window's Read with button whenever they
+/// press it, and on its own wherever they turn that on (every picture in that window, or Capture Text).
 @MainActor
 @Observable
 public final class CloudModelStore {
-    public private(set) var models: [CloudModel]
+    /// The model, or nil while cloud reading is off.
+    public private(set) var model: CloudModel?
 
-    /// The model the OCR panel offers first: the one used last, while it exists.
-    public private(set) var preferredID: UUID? {
-        didSet { defaults.set(preferredID?.uuidString, forKey: Key.preferred) }
+    /// Whether every picture in the Recognized Text window is read with the model too, without its button.
+    public var readsInPanel: Bool {
+        didSet { defaults.set(readsInPanel, forKey: Key.readsInPanel) }
     }
 
-    /// "id host" for each model the person agreed to send pictures to, at the host it had then.
-    private var agreed: Set<String> {
-        didSet { defaults.set(agreed.sorted(), forKey: Key.agreed) }
+    /// Whether Capture Text reads with the model (and copies this Mac's reading when it can't).
+    public var readsCaptureText: Bool {
+        didSet { defaults.set(readsCaptureText, forKey: Key.readsCaptureText) }
     }
+
+    /// Whether a key is saved, without bringing its value into the interface: looked up once, then kept as keys are
+    /// stored and removed here, so the interface never asks the Keychain again (a development build's Keychain asks
+    /// the person each time after a rebuild).
+    public private(set) var hasKey = false
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored public let secrets: any SecretStore
@@ -27,99 +35,104 @@ public final class CloudModelStore {
     public nonisolated static let keyField = "apiKey"
 
     private enum Key {
-        static let models = "cloudModels"
-        static let preferred = "cloudModelPreferred"
-        static let agreed = "cloudModelsAgreed"
+        static let model = "cloudModel"
+        static let readsInPanel = "cloudReadsInPanel"
+        static let readsCaptureText = "cloudReadsCaptureText"
+        /// The first cut's list of models, the one used last, and the hosts agreed to (34f042b).
+        static let firstCutModels = "cloudModels"
+        static let firstCutPreferred = "cloudModelPreferred"
+        static let firstCutAgreed = "cloudModelsAgreed"
     }
 
     public init(defaults: UserDefaults = .standard, secrets: any SecretStore) {
         self.defaults = defaults
         self.secrets = secrets
-        let saved = defaults.data(forKey: Key.models)
-            .flatMap { try? JSONDecoder().decode([CloudModel].self, from: $0) } ?? []
-        models = saved
-        let preferred = defaults.string(forKey: Key.preferred).flatMap(UUID.init(uuidString:))
-        preferredID = saved.contains { $0.id == preferred } ? preferred : saved.first?.id
-        agreed = Set(defaults.stringArray(forKey: Key.agreed) ?? [])
+        model = defaults.data(forKey: Key.model).flatMap { try? JSONDecoder().decode(CloudModel.self, from: $0) }
+        readsInPanel = defaults.bool(forKey: Key.readsInPanel)
+        readsCaptureText = defaults.bool(forKey: Key.readsCaptureText)
+        migrateFirstCut()
+        hasKey = model.map { secrets.secret(Self.keyField, of: $0.id) != nil } ?? false
     }
 
-    public func model(id: UUID) -> CloudModel? {
-        models.first { $0.id == id }
-    }
-
-    /// The model the panel offers first.
-    public var preferred: CloudModel? {
-        preferredID.flatMap(model(id:)) ?? models.first
-    }
-
-    /// Adds a model, or replaces the one with the same id, and stores its key.
-    ///
-    /// - Parameter key: The new key; nil or empty keeps the one saved, so a form that shows a saved key as dots need
-    ///   not send it back.
-    /// - Throws: `SecretStoreError` if the Keychain refuses; the model is then not saved.
-    public func save(_ model: CloudModel, key: String? = nil) throws {
-        if let key = key?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty {
-            try secrets.setSecret(key, field: Self.keyField, of: model.id)
+    /// The first cut kept a list of models: the one used last (or the first) becomes the model, with its id, so its key
+    /// in the Keychain still belongs to it; the others' keys go, and so do the list's defaults.
+    private func migrateFirstCut() {
+        guard let data = defaults.data(forKey: Key.firstCutModels) else { return }
+        let listed = (try? JSONDecoder().decode([CloudModel].self, from: data)) ?? []
+        let preferred = defaults.string(forKey: Key.firstCutPreferred).flatMap(UUID.init(uuidString:))
+        if model == nil, var kept = listed.first(where: { $0.id == preferred }) ?? listed.first {
+            kept.preset = kept.preset ?? Self.preset(of: kept)
+            model = kept
+            persist()
         }
-        if let index = models.firstIndex(where: { $0.id == model.id }) {
-            models[index] = model
-        } else {
-            models.append(model)
+        for other in listed where other.id != model?.id {
+            secrets.removeSecret(Self.keyField, of: other.id)
         }
-        if preferredID == nil { preferredID = model.id }
+        defaults.removeObject(forKey: Key.firstCutModels)
+        defaults.removeObject(forKey: Key.firstCutPreferred)
+        defaults.removeObject(forKey: Key.firstCutAgreed)
+    }
+
+    /// The service a model was set up from, by its protocol and address.
+    static func preset(of model: CloudModel) -> CloudModel.Preset {
+        if model.kind == .anthropic { return .anthropic }
+        let host = model.host
+        return [CloudModel.Preset.openAI, .qwen, .ollama].first { preset in
+            preset.makeModel().host == host
+        } ?? .other
+    }
+
+    /// The model, when it can read: set up, with a key where it needs one.
+    public var usableModel: CloudModel? {
+        guard let model, model.issue(hasKey: hasKey) == nil else { return nil }
+        return model
+    }
+
+    /// The model Capture Text reads with, while that is on.
+    public var captureTextModel: CloudModel? {
+        readsCaptureText ? usableModel : nil
+    }
+
+    /// Sets up the model a preset starts, in place of the one there (whose key goes); nil turns cloud reading off,
+    /// removing the model and its key, and where it read by itself.
+    public func choose(_ preset: CloudModel.Preset?) {
+        if let old = model { secrets.removeSecret(Self.keyField, of: old.id) }
+        model = preset?.makeModel()
+        hasKey = false
+        if model == nil {
+            readsInPanel = false
+            readsCaptureText = false
+        }
         persist()
     }
 
-    public func remove(id: UUID) {
-        guard model(id: id) != nil else { return }
-        secrets.removeSecret(Self.keyField, of: id)
-        models.removeAll { $0.id == id }
-        agreed = agreed.filter { !$0.hasPrefix(id.uuidString) }
-        if preferredID == id { preferredID = models.first?.id }
+    /// Keeps the model's name, protocol, address, and model as edited (the same model: its key stays).
+    public func update(_ edited: CloudModel) {
+        guard let model, edited.id == model.id, edited != model else { return }
+        self.model = edited
         persist()
     }
 
-    public func move(fromOffsets source: IndexSet, toOffset target: Int) {
-        var list = models
-        let moving = source.sorted().map { list[$0] }
-        for index in source.sorted(by: >) { list.remove(at: index) }
-        let shift = source.filter { $0 < target }.count
-        list.insert(contentsOf: moving, at: max(0, min(list.count, target - shift)))
-        models = list
-        persist()
+    /// Stores the model's key, replacing the one there. Empty keeps it.
+    /// - Throws: `SecretStoreError` if the Keychain refuses.
+    public func setKey(_ key: String) throws {
+        let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let model, !key.isEmpty else { return }
+        try secrets.setSecret(key, field: Self.keyField, of: model.id)
+        hasKey = true
     }
 
-    /// Whether a key is saved, without bringing its value into the interface.
-    public func hasKey(_ model: CloudModel) -> Bool {
-        secrets.secret(Self.keyField, of: model.id) != nil
-    }
-
-    /// The saved keys, with `key` for this model as though saved: what Settings' Test reads with before Save.
+    /// The saved key, with `key` for this model as though saved: what Settings' Test reads with before it is stored.
     public func secrets(typing key: String?, for model: CloudModel) -> any SecretStore {
         let typed = key?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return DraftSecretStore(typed: typed.isEmpty ? [:] : [Self.keyField: typed], id: model.id, base: secrets)
     }
 
-    /// The panel used this model.
-    public func markUsed(_ model: CloudModel) {
-        guard self.model(id: model.id) != nil else { return }
-        preferredID = model.id
-    }
-
-    /// Whether the person agreed to send pictures to this model's host.
-    public func isAgreed(_ model: CloudModel) -> Bool {
-        agreed.contains(Self.agreement(model))
-    }
-
-    public func agree(_ model: CloudModel) {
-        agreed.insert(Self.agreement(model))
-    }
-
-    private static func agreement(_ model: CloudModel) -> String {
-        "\(model.id.uuidString) \(model.host ?? "")"
-    }
-
     private func persist() {
-        defaults.set(try? JSONEncoder().encode(models), forKey: Key.models)
+        if let model {
+            defaults.set(try? JSONEncoder().encode(model), forKey: Key.model)
+        } else {
+            defaults.removeObject(forKey: Key.model)
+        }
     }
 }

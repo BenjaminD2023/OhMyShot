@@ -1,11 +1,49 @@
 import OMSCore
 import SwiftUI
 
-/// Under the text while a cloud model is set up: whose reading it is, and Read with…, which sends the picture to the
-/// model's service and names the service before it does. While the model reads, its progress and Cancel; once it
-/// has, a switch between this Mac's reading and the model's; after a failure, why, and Try Again.
-struct CloudFooter: View {
-    let model: TextRecognitionModel
+/// The toolbar's Read with, beside Translate and like it a mode: on, the text side shows the cloud model's reading
+/// (the picture is sent the first time); off, this Mac's again. Its tooltip names where the picture goes.
+struct CloudToggle: View {
+    @Bindable var model: TextRecognitionModel
+    let cloud: CloudModel
+
+    var body: some View {
+        Toggle(isOn: $model.readsInCloud) {
+            Label {
+                Text("Read with \(cloud.name)", bundle: .module)
+            } icon: {
+                Image(systemName: "cloud")
+            }
+            .labelStyle(.iconOnly)
+        }
+        .toggleStyle(.button)
+        .keyboardShortcut("r", modifiers: [.command, .shift])
+        .disabled(model.image == nil)
+        .help(help)
+    }
+
+    /// Where the picture goes, and in how many pieces or at what size when it doesn't go whole.
+    private var help: Text {
+        if model.readsInCloud { return Text("Show the text read on this Mac (⇧⌘R)", bundle: .module) }
+        let host = cloud.host ?? cloud.address
+        let sends = Text("Read with \(cloud.name): sends this picture to \(host) (⇧⌘R)", bundle: .module)
+        guard let image = model.image else { return sends }
+        let plan = CloudPicture.plan(width: image.width, height: image.height, limits: .of(cloud.kind))
+        let percent = Int((plan.scale * 100).rounded())
+        switch (plan.pieces.count > 1, plan.scale < 1) {
+        case (true, true): return sends + Text(verbatim: ". ") + Text("It goes in \(plan.pieces.count) pieces, at \(percent)% of its size.", bundle: .module)
+        case (true, false): return sends + Text(verbatim: ". ") + Text("It goes in \(plan.pieces.count) pieces.", bundle: .module)
+        case (false, true): return sends + Text(verbatim: ". ") + Text("It goes at \(percent)% of its size.", bundle: .module)
+        case (false, false): return sends
+        }
+    }
+}
+
+/// Under the text while Read with is on, in the edited notice's style: the reading's progress, who read the text and
+/// what it cost, that the model found nothing (this Mac's text stays), or why it couldn't read, with Try Again.
+struct CloudStatus: View {
+    @Bindable var model: TextRecognitionModel
+    let cloud: CloudModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,54 +60,38 @@ struct CloudFooter: View {
     @ViewBuilder private var content: some View {
         switch model.cloud {
         case .idle:
-            Text("Read on this Mac", bundle: .module)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            ReadWithButton(model: model)
-        case .reading(let cloud, let characters):
+            Spacer(minLength: 0)
+        case .reading(let characters):
             CloudProgress(cloud: cloud, characters: characters)
             Spacer(minLength: 8)
-            Button { model.cancelCloudReading() } label: { Text("Cancel", bundle: .module) }
+            Button { model.readsInCloud = false } label: { Text("Cancel", bundle: .module) }
                 .controlSize(.small)
-                .help(Text("Stop reading with \(cloud.name)", bundle: .module))
         case .read(let result) where result.reading.text.isEmpty:
-            Text("\(result.model.name) found no text", bundle: .module)
+            Text("\(cloud.name) found no text", bundle: .module)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 8)
-            ReadWithButton(model: model)
         case .read(let result):
-            Picker(selection: Binding(get: { model.source }, set: { model.show($0) })) {
-                Text("This Mac", bundle: .module).tag(TextRecognitionModel.TextSource.device)
-                Text(verbatim: result.model.name).tag(TextRecognitionModel.TextSource.cloud)
-            } label: {
-                Text("Show the text read by", bundle: .module)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.small)
-            .fixedSize()
-            .help(Text("Show the text read on this Mac, or the text \(result.model.name) read", bundle: .module))
+            Text("Read by \(cloud.name)", bundle: .module)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             if !result.reading.isComplete {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                    .help(Text("\(result.model.name) stopped before the end of the text", bundle: .module))
-                    .accessibilityLabel(Text("\(result.model.name) stopped before the end of the text", bundle: .module))
+                    .help(Text("\(cloud.name) stopped before the end of the text", bundle: .module))
+                    .accessibilityLabel(Text("\(cloud.name) stopped before the end of the text", bundle: .module))
             }
             Spacer(minLength: 8)
-            if model.source == .cloud {
-                Text(verbatim: Self.summary(result))
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(Self.details(result))
-            }
-        case .failed(let cloud, let message, let canRetry):
+            Text(verbatim: Self.summary(result.reading))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(Self.details(result.reading, host: cloud.host ?? cloud.address))
+        case .failed(let message, let canRetry):
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
                 .accessibilityHidden(true)
@@ -87,25 +109,20 @@ struct CloudFooter: View {
             .accessibilityElement(children: .combine)
             Spacer(minLength: 8)
             if canRetry {
-                Button { model.readInCloud(with: cloud) } label: { Text("Try Again", bundle: .module) }
+                Button { model.retryCloudReading() } label: { Text("Try Again", bundle: .module) }
                     .controlSize(.small)
-            } else {
-                ReadWithButton(model: model)
             }
         }
     }
 
     /// "claude-opus-5-5 · 2,712 tokens": the model that answered, and what the reading cost in tokens.
-    static func summary(_ result: TextRecognitionModel.CloudResult) -> String {
-        let reading = result.reading
+    static func summary(_ reading: CloudReading) -> String {
         guard let input = reading.inputTokens, let output = reading.outputTokens else { return reading.model }
         let tokens = String(localized: "\((input + output).formatted()) tokens", bundle: .module)
         return "\(reading.model) · \(tokens)"
     }
 
-    static func details(_ result: TextRecognitionModel.CloudResult) -> Text {
-        let reading = result.reading
-        let host = result.model.host ?? result.model.address
+    static func details(_ reading: CloudReading, host: String) -> Text {
         if let input = reading.inputTokens, let output = reading.outputTokens {
             return Text("Read by \(reading.model) at \(host): \(input.formatted()) tokens in, \(output.formatted()) out", bundle: .module)
         }
@@ -113,46 +130,48 @@ struct CloudFooter: View {
     }
 }
 
-/// The empty state's actions while Vision found no text: Read with…, then the same progress, failure, and outcome the
-/// footer shows.
-struct CloudEmptyActions: View {
-    let model: TextRecognitionModel
+/// The text side when Vision found no text and a cloud model is set up: Read with as the way on, then the reading's
+/// progress, its failure, or that it found nothing either.
+struct CloudEmptyState: View {
+    @Bindable var model: TextRecognitionModel
+    let cloud: CloudModel
 
     var body: some View {
-        switch model.cloud {
+        switch model.readsInCloud ? model.cloud : .idle {
         case .idle:
-            ReadWithButton(model: model, size: .regular)
-        case .reading(let cloud, let characters):
-            VStack(spacing: 8) {
-                CloudProgress(cloud: cloud, characters: characters)
-                Button { model.cancelCloudReading() } label: { Text("Cancel", bundle: .module) }
-            }
-        case .read(let result):
-            // Only an empty reading leaves the empty state.
-            VStack(spacing: 8) {
-                Text("\(result.model.name) found no text either", bundle: .module)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                if model.cloudModels.count > 1 { ReadWithButton(model: model, size: .regular) }
-            }
-        case .failed(let cloud, let message, let canRetry):
-            VStack(spacing: 8) {
-                Label {
-                    Text("Couldn’t read with \(cloud.name)", bundle: .module)
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            PanelPlaceholder(
+                symbol: "text.magnifyingglass",
+                title: Text("No text found", bundle: .module),
+                message: Text("Try an image with larger text or more contrast, or read it with \(cloud.name).", bundle: .module)
+            ) {
+                Button { model.readsInCloud = true } label: {
+                    Label { Text("Read with \(cloud.name)", bundle: .module) } icon: { Image(systemName: "cloud") }
                 }
-                .font(.callout)
-                Text(verbatim: message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: 360)
+                .padding(.top, 6)
+                .help(Text("Sends this picture to \(cloud.host ?? cloud.address)", bundle: .module))
+            }
+        case .reading(let characters):
+            VStack(spacing: 10) {
+                CloudProgress(cloud: cloud, characters: characters)
+                Button { model.readsInCloud = false } label: { Text("Cancel", bundle: .module) }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .read:
+            // Only an empty reading leaves the empty state.
+            PanelPlaceholder(
+                symbol: "text.magnifyingglass",
+                title: Text("No text found", bundle: .module),
+                message: Text("Neither this Mac nor \(cloud.name) found text in it.", bundle: .module)
+            )
+        case .failed(let message, let canRetry):
+            PanelPlaceholder(
+                symbol: "exclamationmark.triangle",
+                title: Text("Couldn’t read with \(cloud.name)", bundle: .module),
+                message: Text(verbatim: message)
+            ) {
                 if canRetry {
-                    Button { model.readInCloud(with: cloud) } label: { Text("Try Again", bundle: .module) }
-                } else {
-                    ReadWithButton(model: model, size: .regular)
+                    Button { model.retryCloudReading() } label: { Text("Try Again", bundle: .module) }
+                        .padding(.top, 6)
                 }
             }
         }
@@ -181,65 +200,5 @@ private struct CloudProgress: View {
             .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// Read with the model used last, its tooltip naming where the picture goes and how; with more than one model set up,
-/// a menu of the others beside it.
-struct ReadWithButton: View {
-    let model: TextRecognitionModel
-    var size: ControlSize = .small
-
-    var body: some View {
-        let models = model.cloudModels
-        if let first = models.first {
-            if models.count == 1 {
-                Button { model.readInCloud(with: first) } label: { label(first) }
-                    .controlSize(size)
-                    .help(help(first))
-            } else {
-                Menu {
-                    ForEach(models) { cloud in
-                        Button { model.readInCloud(with: cloud) } label: {
-                            Text("Read with \(cloud.name)", bundle: .module)
-                        }
-                        .help(help(cloud))
-                    }
-                } label: {
-                    label(first)
-                } primaryAction: {
-                    model.readInCloud(with: first)
-                }
-                .controlSize(size)
-                .fixedSize()
-                .help(help(first))
-            }
-        }
-    }
-
-    private func label(_ cloud: CloudModel) -> some View {
-        Label {
-            Text("Read with \(cloud.name)", bundle: .module)
-        } icon: {
-            Image(systemName: "cloud")
-        }
-    }
-
-    /// Where the picture goes, with which model, and in how many pieces or at what size when it isn't whole.
-    private func help(_ cloud: CloudModel) -> Text {
-        let host = cloud.host ?? cloud.address
-        guard let image = model.image else { return Text("Send this picture to \(host) and read it with \(cloud.model)", bundle: .module) }
-        let plan = CloudPicture.plan(width: image.width, height: image.height, limits: .of(cloud.kind))
-        let percent = Int((plan.scale * 100).rounded())
-        switch (plan.pieces.count > 1, plan.scale < 1) {
-        case (true, true):
-            return Text("Send this picture to \(host) and read it with \(cloud.model). It goes in \(plan.pieces.count) pieces, at \(percent)% of its size.", bundle: .module)
-        case (true, false):
-            return Text("Send this picture to \(host) and read it with \(cloud.model). It goes in \(plan.pieces.count) pieces.", bundle: .module)
-        case (false, true):
-            return Text("Send this picture to \(host) and read it with \(cloud.model). It goes at \(percent)% of its size.", bundle: .module)
-        case (false, false):
-            return Text("Send this picture to \(host) and read it with \(cloud.model)", bundle: .module)
-        }
     }
 }

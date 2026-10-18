@@ -16,34 +16,41 @@ public final class TextResultHUD {
         case copiedFormula(latex: String)
         /// The formula pack read no whole formula in the selection.
         case noFormula
+        /// The text was read but left off the clipboard, which changed meanwhile; the card's Copy puts it there.
+        case notCopied(text: String)
     }
 
     /// The line-break switch was pressed.
     public var onToggleJoin: (() -> Void)?
+    /// Copy was pressed on a card whose text wasn't copied.
+    public var onCopy: (() -> Void)?
 
     private var panel: TextResultPanel?
     private var card: TextResultCard?
     private var anchor: CGRect = .zero
     private var state: State?
+    private var note: String?
     private var dismissal: Task<Void, Never>?
     private var hovering = false
     private var windowLease: ActiveResources.Lease?
 
     public init() {}
 
-    /// Shows `state` by `selection`, in AppKit's global coordinates.
-    public func show(_ state: State, near selection: CGRect) {
+    /// Shows `state` by `selection`, in AppKit's global coordinates. `note` is a line under the text, such as who read
+    /// it ("Read by Claude"), or why this Mac's reading was copied instead of the cloud model's.
+    public func show(_ state: State, near selection: CGRect, note: String? = nil) {
         anchor = selection
         let isNew = panel == nil
         let panel = self.panel ?? makePanel()
-        card?.show(state)
+        card?.show(state, note: note)
         place(panel)
         if isNew {
             appear(panel)
             if windowLease == nil { windowLease = ActiveResources.shared.acquire(.window) }
         }
-        if state != self.state { announce(state) }
+        if state != self.state || note != self.note { announce(state, note: note) }
         self.state = state
+        self.note = note
         scheduleDismissal()
     }
 
@@ -53,6 +60,7 @@ public final class TextResultHUD {
         self.panel = nil
         card = nil
         state = nil
+        note = nil
         let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Theme.Motion.fade
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
@@ -71,6 +79,7 @@ public final class TextResultHUD {
     private func makePanel() -> TextResultPanel {
         let card = TextResultCard()
         card.onToggleJoin = { [weak self] in self?.onToggleJoin?() }
+        card.onCopy = { [weak self] in self?.onCopy?() }
         card.onClose = { [weak self] in self?.dismiss() }
         card.onHover = { [weak self] inside in
             self?.hovering = inside
@@ -137,6 +146,8 @@ public final class TextResultHUD {
             switch state {
             case .copied, .copiedFormula: .seconds(4)
             case .empty, .noFormula: .seconds(2.5)
+            // The text is only here until it is copied: long enough to reach Copy.
+            case .notCopied: .seconds(10)
             }
         }
         dismissal = Task { [weak self] in
@@ -146,13 +157,15 @@ public final class TextResultHUD {
         }
     }
 
-    private func announce(_ state: State) {
-        let message = switch state {
+    private func announce(_ state: State, note: String?) {
+        let said = switch state {
         case .copied(let text, _, _): TextResultCard.copiedCount(text)
         case .empty: String(localized: "No text found", bundle: .module)
         case .copiedFormula: String(localized: "Copied the formula as LaTeX", bundle: .module)
         case .noFormula: String(localized: "No formula found", bundle: .module)
+        case .notCopied: String(localized: "Not copied", bundle: .module)
         }
+        let message = [said, note].compactMap { $0 }.joined(separator: ". ")
         guard let element = card else { return }
         NSAccessibility.post(element: element, notification: .announcementRequested, userInfo: [
             .announcement: message,
@@ -187,6 +200,7 @@ final class TextResultPanel: NSPanel {
 /// what was copied; and the line-break switch.
 final class TextResultCard: NSView {
     var onToggleJoin: (() -> Void)?
+    var onCopy: (() -> Void)?
     var onClose: (() -> Void)?
     var onHover: ((Bool) -> Void)?
 
@@ -200,9 +214,12 @@ final class TextResultCard: NSView {
     private let count = NSTextField(labelWithString: "")
     private let preview = NSTextField(wrappingLabelWithString: "")
     private let detail = NSTextField(labelWithString: "")
+    /// Who read the text, or why this Mac's reading was copied instead: two lines at most.
+    private let note = NSTextField(wrappingLabelWithString: "")
     private let joinButton = CardButton(style: .chip, title: "", symbolName: "arrow.right.to.line")
     private let closeButton = CardButton(style: .chipIcon, title: String(localized: "Close", bundle: .module), symbolName: "xmark")
     private var state: TextResultHUD.State = .empty
+    private var noteText: String?
 
     override var isFlipped: Bool { true }
 
@@ -232,11 +249,20 @@ final class TextResultCard: NSView {
         preview.cell?.truncatesLastVisibleLine = true
         detail.font = .systemFont(ofSize: 12)
         detail.textColor = .secondaryLabelColor
+        note.font = .systemFont(ofSize: 11)
+        note.textColor = .secondaryLabelColor
+        note.maximumNumberOfLines = 2
+        // Wrapped by words and cut at its second line: a truncating break would measure, and show, one line.
+        note.lineBreakMode = .byWordWrapping
+        note.usesSingleLineMode = false
+        note.cell?.wraps = true
+        note.cell?.isScrollable = false
+        note.cell?.truncatesLastVisibleLine = true
         joinButton.target = self
         joinButton.action = #selector(toggleJoin)
         closeButton.target = self
         closeButton.action = #selector(close)
-        for view in [symbol, title, count, preview, detail, joinButton, closeButton] as [NSView] {
+        for view in [symbol, title, count, preview, detail, note, joinButton, closeButton] as [NSView] {
             addSubview(view)
         }
         setAccessibilityElement(true)
@@ -268,8 +294,11 @@ final class TextResultCard: NSView {
         String(localized: "Copied \(text.count) characters", bundle: .module)
     }
 
-    func show(_ state: TextResultHUD.State) {
+    func show(_ state: TextResultHUD.State, note: String? = nil) {
         self.state = state
+        self.noteText = note
+        self.note.stringValue = note ?? ""
+        self.note.isHidden = note == nil
         let symbolName: String
         switch state {
         case .copied(let text, let joined, let canJoin):
@@ -304,13 +333,24 @@ final class TextResultCard: NSView {
             title.stringValue = String(localized: "No formula found", bundle: .module)
             count.stringValue = ""
             detail.stringValue = String(localized: "Select just the formula, with a little room around it.", bundle: .module)
+        case .notCopied(let text):
+            symbolName = "doc.on.clipboard"
+            title.stringValue = String(localized: "Not copied", bundle: .module)
+            count.stringValue = String(localized: "\(text.count) characters", bundle: .module)
+            preview.stringValue = text
+            preview.font = .systemFont(ofSize: 12)
+            preview.lineBreakMode = .byTruncatingTail
+            // The chip copies instead of switching line breaks.
+            joinButton.title = String(localized: "Copy", bundle: .module)
+            joinButton.symbolName = "doc.on.doc"
+            joinButton.isHidden = false
         }
         symbol.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold).applying(.init(paletteColors: Self.symbolColors(for: state))))
         preview.isHidden = !Self.isCopied(state)
         joinButton.isHidden = joinButton.isHidden || !Self.isCopied(state)
         detail.isHidden = state != .empty && state != .noFormula
-        setAccessibilityLabel([title.stringValue, count.stringValue].filter { !$0.isEmpty }.joined(separator: ", "))
+        setAccessibilityLabel([title.stringValue, count.stringValue, noteText ?? ""].filter { !$0.isEmpty }.joined(separator: ", "))
         needsLayout = true
     }
 
@@ -329,6 +369,7 @@ final class TextResultCard: NSView {
             height += 4 + previewHeight(width: inner)
         }
         if !detail.isHidden { height += 4 + 16 }
+        if !note.isHidden { height += 4 + noteHeight(width: inner) }
         if !joinButton.isHidden { height += 10 + 26 }
         return ceil(height)
     }
@@ -364,6 +405,12 @@ final class TextResultCard: NSView {
             detail.frame = CGRect(x: column - 2, y: y, width: right - column + 2, height: 16)
             y += 16
         }
+        if !note.isHidden {
+            y += 4
+            let height = noteHeight(width: right - column)
+            note.frame = CGRect(x: column - 2, y: y, width: right - column + 2, height: height)
+            y += height
+        }
         if !joinButton.isHidden {
             y += 10
             let size = joinButton.intrinsicContentSize
@@ -388,12 +435,13 @@ final class TextResultCard: NSView {
         case (false, true): CGColor(gray: 0, alpha: 0.35)
         case (false, false): CGColor(gray: 0, alpha: 0.08)
         }
-        show(state)
+        show(state, note: noteText)
     }
 
+    /// Whether the card shows the text read.
     private static func isCopied(_ state: TextResultHUD.State) -> Bool {
         switch state {
-        case .copied, .copiedFormula: true
+        case .copied, .copiedFormula, .notCopied: true
         case .empty, .noFormula: false
         }
     }
@@ -402,8 +450,15 @@ final class TextResultCard: NSView {
     private static func symbolColors(for state: TextResultHUD.State) -> [NSColor] {
         switch state {
         case .copied, .copiedFormula: [.white, .systemGreen]
-        case .empty, .noFormula: [.secondaryLabelColor]
+        case .empty, .noFormula, .notCopied: [.secondaryLabelColor]
         }
+    }
+
+    /// At most two lines of note (the field's own limit), with the room its cell draws them in.
+    private func noteHeight(width: CGFloat) -> CGFloat {
+        let full = note.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        let lineHeight = NSLayoutManager().defaultLineHeight(for: note.font ?? .systemFont(ofSize: 11))
+        return ceil(min(full, lineHeight * 2 + 4))
     }
 
     /// At most three lines of preview; the field truncates what does not fit.
@@ -430,6 +485,8 @@ final class TextResultCard: NSView {
         NSApp.preventWindowOrdering()
     }
 
-    @objc private func toggleJoin() { onToggleJoin?() }
+    @objc private func toggleJoin() {
+        if case .notCopied = state { onCopy?() } else { onToggleJoin?() }
+    }
     @objc private func close() { onClose?() }
 }

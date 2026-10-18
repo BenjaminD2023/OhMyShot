@@ -45,10 +45,11 @@ final class CompositionRoot {
             return (pack, helper)
         }
         coordinator.cloud = { [weak self] in self?.panelCloud() }
+        coordinator.captureTextCloud = { [weak self] in self?.captureTextCloud() }
         return coordinator
     }()
-    /// The cloud models the OCR panel's Read with… sends a picture to (L4, Docs/ocr.md › Cloud models). Their keys are
-    /// read from the Keychain only when a picture is sent or Settings shows them.
+    /// The cloud model the OCR panel's Read with, and Capture Text while Settings says so, send a picture to (L4,
+    /// Docs/ocr.md › Cloud models). Its key is read from the Keychain only when a picture is sent or Settings shows it.
     private lazy var cloudModels = CloudModelStore(secrets: KeychainSecretStore(service: "OhMyShot Cloud Models (\(Log.subsystem))"))
     #if DEBUG
     /// Scripted checks' models, in memory, in place of the person's while set.
@@ -68,6 +69,19 @@ final class CompositionRoot {
             #endif
             return try await reader.read(image, with: model, progress: progress)
         }
+    }
+
+    /// The cloud model Capture Text reads with, while Settings says so, and how.
+    private func captureTextCloud() -> (model: CloudModel, read: @Sendable (CGImage, Bool) async throws -> CloudReading)? {
+        let store = shownCloudModels
+        guard let model = store.captureTextModel else { return nil }
+        let reader = CloudReader(secrets: store.secrets)
+        return (model, { image, joinsLines in
+            #if DEBUG
+            if let stub = DebugCloudDemo.stub(for: model) { return try await stub { _ in } }
+            #endif
+            return try await reader.read(image, with: model, joinsLines: joinsLines)
+        })
     }
     private lazy var annotations = AnnotationCoordinator(history: history)
     /// Turns, flips, and scales pictures from their Quick Access cards.
@@ -805,7 +819,7 @@ final class CompositionRoot {
             if let area {
                 Task { await textCapture.recognize(region: area, joinLines: lineBreaks == false) }
             } else {
-                textCapture.captureText(joinLines: lineBreaks == false)
+                textCapture.captureText(joinLines: lineBreaks == false, allowsCloud: false)
             }
         case .captureFormula(let file?, _):
             Task { await textCapture.readFormula(fileAt: file) }
@@ -968,7 +982,7 @@ final class CompositionRoot {
         captures.cancelSelfTimer()
         return await withCheckedContinuation { continuation in
             let answer = Answer(continuation)
-            textCapture.captureText(joinLines: !keepsLineBreaks) { answer.give($0) }
+            textCapture.captureText(joinLines: !keepsLineBreaks, allowsCloud: false) { answer.give($0) }
         }
     }
 
@@ -1852,10 +1866,15 @@ final class CompositionRoot {
                     Log.app.error("debug.cloud-local: turn the demo models on first (cloud-demo?on=1)")
                     return
                 }
-                try? store.save(model, key: key)
-                store.agree(model)
-                store.markUsed(model)
-                Log.app.notice("debug.cloud-local added \(model.name, privacy: .public) at \(model.address, privacy: .public)")
+                store.choose(.other)
+                guard var local = store.model else { return }
+                local.kind = model.kind
+                local.name = model.name
+                local.address = model.address
+                local.model = model.model
+                store.update(local)
+                if let key { try? store.setKey(key) }
+                Log.app.notice("debug.cloud-local set \(model.name, privacy: .public) at \(model.address, privacy: .public)")
             }
         )
     }

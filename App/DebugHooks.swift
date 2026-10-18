@@ -259,7 +259,17 @@ struct DebugHooks {
             // Capture Text on the same centered region as capture-test, without touching the clipboard; path=<a picture>
             // reads that file instead. The log says how many characters were read, and the formulas put in.
             let join = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "join" && $0.value == "1" } ?? false
-            if let path = Self.parameter("path", in: url) {
+            if Self.parameter("demo", in: url) == "1", let display = displays.layout.primary,
+               let image = DebugPanelDemo.image(blank: Self.parameter("blank", in: url) == "1") {
+                // demo=1: the drawn demo page, as a drag over the middle of the main display reads it; cloud=1 lets the
+                // cloud model read it as a person's drag would (with cloud-demo's model and capture=1).
+                let rect = CGRect(x: display.frame.midX - 380, y: display.frame.midY - 280, width: 760, height: 560)
+                Task {
+                    await textCapture.previewRecognition(of: image, near: rect, joinLines: join, allowsCloud: Self.parameter("cloud", in: url) == "1") { text in
+                        Log.app.notice("debug.text-test read \(text.map { "\($0.count) characters" } ?? "nothing", privacy: .public)")
+                    }
+                }
+            } else if let path = Self.parameter("path", in: url) {
                 Task {
                     await textCapture.recognize(fileAt: URL(filePath: path), joinLines: join, copiesToClipboard: false) { text in
                         Log.app.notice("debug.text-test read \(text.map { "“\($0)”" } ?? "nothing", privacy: .public)")
