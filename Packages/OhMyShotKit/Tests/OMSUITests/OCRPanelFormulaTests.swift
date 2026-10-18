@@ -5,29 +5,45 @@ import OMSCore
 import Testing
 @testable import OMSUI
 
-/// The OCR panel's Formulas pane: what it offers, and how the formulas dragged around are read.
+/// Formulas in the OCR panel's text: found and read beside Vision's reading, then put into the lines as LaTeX.
 struct OCRPanelFormulaTests {
-    /// Answers each reading in turn, when the test says so, and remembers the size of each part it was given.
-    private final class Reader: @unchecked Sendable {
+    /// Answers the reading when the test says so, after saying how many it found; puts each formula in as a line of its
+    /// own, as `$…$`.
+    private nonisolated final class Reader: @unchecked Sendable {
         private let lock = NSLock()
-        private var waiting: [CheckedContinuation<TextReaderTool.Formula?, Never>] = []
-        private var _sizes: [CGSize] = []
+        private var waiting: CheckedContinuation<[FormulaMerge.Formula], Never>?
+        private var _reads = 0
+        private var _merged: [[OCRLine]] = []
 
-        var sizes: [CGSize] { lock.withLock { _sizes } }
-        var pending: Int { lock.withLock { waiting.count } }
+        var reads: Int { lock.withLock { _reads } }
+        var isWaiting: Bool { lock.withLock { waiting != nil } }
+        /// The lines each merge was given.
+        var merged: [[OCRLine]] { lock.withLock { _merged } }
 
-        func read(_ image: CGImage) async -> TextReaderTool.Formula? {
-            await withCheckedContinuation { continuation in
-                lock.withLock {
-                    _sizes.append(CGSize(width: image.width, height: image.height))
-                    waiting.append(continuation)
+        var formulas: TextRecognitionWindowController.Formulas {
+            .init(
+                read: { [self] _, found in
+                    found(1)
+                    return await withCheckedContinuation { continuation in
+                        lock.withLock {
+                            _reads += 1
+                            waiting = continuation
+                        }
+                    }
+                },
+                merge: { [self] lines, formulas, _ in
+                    lock.withLock { _merged.append(lines) }
+                    return lines + formulas.map { OCRLine(text: "$\($0.latex)$", box: $0.box, confidence: 1, math: .inline) }
                 }
-            }
+            )
         }
 
-        func answer(_ formula: TextReaderTool.Formula?) {
-            let continuation = lock.withLock { waiting.isEmpty ? nil : waiting.removeFirst() }
-            continuation?.resume(returning: formula)
+        func answer(_ formulas: [FormulaMerge.Formula]) {
+            let continuation = lock.withLock {
+                defer { waiting = nil }
+                return waiting
+            }
+            continuation?.resume(returning: formulas)
         }
     }
 
@@ -52,6 +68,9 @@ struct OCRPanelFormulaTests {
         }
     }
 
+    private static let line = OCRLine(text: "Euler wrote", box: CGRect(x: 10, y: 10, width: 120, height: 20), confidence: 1)
+    private static let formula = FormulaMerge.Formula(kind: .display, box: CGRect(x: 10, y: 60, width: 200, height: 40), latex: #"e^{i\pi}+1=0"#)
+
     /// Lets the model's tasks run until `condition` holds, or a second has gone by.
     private static func settle(_ condition: () -> Bool) async {
         for _ in 0..<200 where !condition() {
@@ -59,123 +78,82 @@ struct OCRPanelFormulaTests {
         }
     }
 
-    @Test func formulasAreOfferedOnlyWithThePack() async {
-        let without = Self.model()
-        without.load(image: Self.image(), scale: 2, analyze: Self.analysis([OCRLine(text: "E = mc²", box: CGRect(x: 10, y: 10, width: 80, height: 20), confidence: 1)]))
-        await Self.settle { without.phase == .ready }
-        #expect(without.panes.isEmpty)
-
-        let with = Self.model()
+    @Test func formulasComeIntoTheTextOnceRead() async {
+        let model = Self.model()
         let reader = Reader()
-        with.load(image: Self.image(), scale: 2, analyze: Self.analysis([OCRLine(text: "E = mc²", box: CGRect(x: 10, y: 10, width: 80, height: 20), confidence: 1)]), readFormula: reader.read)
-        await Self.settle { with.phase == .ready }
-        #expect(with.panes == [.text, .formulas])
-    }
-
-    @Test func anImageWithNoTextStillOffersFormulas() async {
-        let model = Self.model()
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), readFormula: Reader().read)
-        await Self.settle { model.phase == .empty }
-        #expect(model.panes == [.text, .formulas])
-        model.pane = .formulas
-        #expect(model.showsFormulas)
-    }
-
-    @Test func translatingHidesThePanes() async {
-        let model = Self.model()
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), readFormula: Reader().read)
-        await Self.settle { model.phase == .empty }
-        model.pane = .formulas
-        model.translates = true
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), formulas: reader.formulas)
+        // The reading starts with the image, beside Vision's.
+        await Self.settle { model.phase == .ready && reader.isWaiting && model.formulasBeingRead != nil }
+        #expect(model.text == "Euler wrote")
+        #expect(model.formulasBeingRead == 1)
         #expect(model.panes.isEmpty)
-        #expect(!model.showsFormulas)
-        model.translates = false
+
+        reader.answer([Self.formula])
+        await Self.settle { model.formulasBeingRead == nil && model.lines.count == 2 }
+        #expect(reader.merged == [[Self.line]])
+        #expect(model.text == "Euler wrote\n$e^{i\\pi}+1=0$")
+        // The formula's line is outlined on the image as any other.
+        #expect(model.lineRanges.count == 2)
     }
 
-    @Test func formulasAreReadOneAtATimeInTheOrderTheyWereDrawn() async {
+    @Test func noFormulasLeaveTheTextAsItWas() async {
         let model = Self.model()
         let reader = Reader()
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), readFormula: reader.read)
-        model.pane = .formulas
-        model.addFormula(CGRect(x: 10, y: 10, width: 100, height: 40))
-        model.addFormula(CGRect(x: 200, y: 100, width: 60, height: 30))
-        await Self.settle { reader.pending == 1 }
-        // The second waits while the first is read: one reader run at a time.
-        #expect(reader.sizes == [CGSize(width: 100, height: 40)])
-        #expect(model.formulas.map(\.state) == [.reading, .reading])
-
-        reader.answer(TextReaderTool.Formula(latex: #"\frac{a}{b}"#, ending: "end"))
-        await Self.settle { reader.sizes.count == 2 && reader.pending == 1 }
-        #expect(model.formulas.first?.state == .read(#"\frac{a}{b}"#))
-        #expect(reader.sizes.last == CGSize(width: 60, height: 30))
-        #expect(model.canCopy)
-
-        reader.answer(TextReaderTool.Formula(latex: "x^{x^{x^{x", ending: "repeats"))
-        await Self.settle { model.formulas.last?.state != .reading }
-        #expect(model.formulas.last?.state == .notFound)
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), formulas: reader.formulas)
+        await Self.settle { reader.isWaiting && model.phase == .ready }
+        let revision = model.revision
+        reader.answer([])
+        await Self.settle { model.formulasBeingRead == nil }
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(reader.merged.isEmpty)
+        #expect(model.revision == revision)
+        #expect(model.text == "Euler wrote")
     }
 
-    @Test func aBoxIsKeptWithinTheImageAndATinyOneIsLeftOut() async {
+    @Test func anImageWithNoTextButAFormulaHasText() async {
         let model = Self.model()
         let reader = Reader()
-        model.load(image: Self.image(width: 400, height: 200), scale: 2, analyze: Self.analysis(), readFormula: reader.read)
-        model.addFormula(CGRect(x: 380, y: 150, width: 100, height: 100))
-        model.addFormula(CGRect(x: 10, y: 10, width: 3, height: 30))
-        #expect(model.formulas.map(\.box) == [CGRect(x: 380, y: 150, width: 20, height: 50)])
-        await Self.settle { reader.pending == 1 }
-        #expect(reader.sizes == [CGSize(width: 20, height: 50)])
-        reader.answer(nil)
-        await Self.settle { model.formulas.first?.state != .reading }
-        // A reading that failed is no formula.
-        #expect(model.formulas.first?.state == .notFound)
-        #expect(!model.canCopy)
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), formulas: reader.formulas)
+        await Self.settle { model.phase == .empty && model.formulasBeingRead != nil }
+        reader.answer([Self.formula])
+        await Self.settle { model.phase == .ready }
+        #expect(model.text == "$e^{i\\pi}+1=0$")
     }
 
-    @Test func aFormulaRemovedWhileItIsReadDropsItsAnswerAndTheNextIsRead() async {
+    @Test func editsStayAndRevertBringsTheFormulas() async {
         let model = Self.model()
         let reader = Reader()
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), readFormula: reader.read)
-        model.addFormula(CGRect(x: 0, y: 0, width: 50, height: 50))
-        model.addFormula(CGRect(x: 100, y: 0, width: 50, height: 50))
-        await Self.settle { reader.pending == 1 }
-        let first = model.formulas[0].id
-        model.removeFormula(first)
-        reader.answer(TextReaderTool.Formula(latex: "a", ending: "end"))
-        await Self.settle { reader.sizes.count == 2 }
-        #expect(model.formulas.count == 1 && model.formulas[0].state == .reading)
-        reader.answer(TextReaderTool.Formula(latex: "b", ending: "end"))
-        await Self.settle { model.formulas.first?.state != .reading }
-        #expect(model.formulas.map(\.latex) == ["b"])
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), formulas: reader.formulas)
+        await Self.settle { reader.isWaiting && model.phase == .ready }
+        model.textEdited("Euler wrote, as I recall")
+        reader.answer([Self.formula])
+        await Self.settle { model.formulasBeingRead == nil && model.lines.count == 2 }
+        #expect(model.text == "Euler wrote, as I recall")
+        #expect(model.edited)
+        model.revert()
+        #expect(model.text == "Euler wrote\n$e^{i\\pi}+1=0$")
     }
 
-    @Test func theWholeImageCanBeReadWithoutDragging() {
+    @Test func aNewImageDropsTheLastOnesFormulas() async {
         let model = Self.model()
-        model.load(image: Self.image(width: 300, height: 120), scale: 2, analyze: Self.analysis(), readFormula: Reader().read)
-        model.readWholeImageAsFormula()
-        #expect(model.formulas.map(\.box) == [CGRect(x: 0, y: 0, width: 300, height: 120)])
-    }
-
-    @Test func aNewImageStartsWithNoFormulas() async {
-        let model = Self.model()
-        let reader = Reader()
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), readFormula: reader.read)
-        model.pane = .formulas
-        model.addFormula(CGRect(x: 0, y: 0, width: 50, height: 50))
-        await Self.settle { reader.pending == 1 }
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), readFormula: reader.read)
-        #expect(model.formulas.isEmpty)
-        #expect(model.pane == .text)
-        // The old reading's answer lands nowhere.
-        reader.answer(TextReaderTool.Formula(latex: "a", ending: "end"))
-        try? await Task.sleep(for: .milliseconds(50))
-        #expect(model.formulas.isEmpty)
-    }
-
-    @Test func withoutThePackNothingIsRead() {
-        let model = Self.model()
+        let first = Reader()
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), formulas: first.formulas)
+        await Self.settle { first.isWaiting && model.phase == .ready }
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
-        model.addFormula(CGRect(x: 0, y: 0, width: 50, height: 50))
-        model.readWholeImageAsFormula()
-        #expect(model.formulas.isEmpty)
+        #expect(model.formulasBeingRead == nil)
+        // The old reading's answer lands nowhere.
+        first.answer([Self.formula])
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(first.merged.isEmpty)
+        #expect(model.text.isEmpty)
+        #expect(model.formulasBeingRead == nil)
+    }
+
+    @Test func withoutThePackNothingIsRead() async {
+        let model = Self.model()
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]))
+        await Self.settle { model.phase == .ready }
+        #expect(model.formulasBeingRead == nil)
+        #expect(model.text == "Euler wrote")
     }
 }

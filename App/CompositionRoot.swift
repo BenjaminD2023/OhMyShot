@@ -104,7 +104,8 @@ final class CompositionRoot {
     }
 
     /// The formula pack, when it is installed: Capture Formula reads with it (Docs/ocr.md › The formula pack), and its
-    /// entries show only then.
+    /// entries show only then; the text Capture Text, the OCR panel, and Recognize Text in Image read holds each formula
+    /// as LaTeX (Docs/ocr.md › Formulas among text).
     private var formulaPack: URL? {
         modelPacks.installedFolder(of: ModelPackCatalog.ppFormulaNetPlusL)
     }
@@ -963,7 +964,7 @@ final class CompositionRoot {
         try data.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         do {
-            let text = try await TextReaderTool.text(ofPictureAt: file, joinsWrappedLines: !keepsLineBreaks, helper: helper)
+            let text = try await TextReaderTool.text(ofPictureAt: file, joinsWrappedLines: !keepsLineBreaks, formulas: formulaPack, helper: helper)
             return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
         } catch let failure as TextReaderTool.Failure {
             // As Capture Text's own reading did: no text, rather than an error.
@@ -1816,7 +1817,8 @@ final class CompositionRoot {
             pressShortcut: { [weak self] in self?.handle($0) },
             latestCaptureID: { [weak self] in self?.history.items().first?.id },
             replay: { [weak self] in self?.replayStorage },
-            shortcutFormula: { [weak self] data in try await self?.formulaForShortcut(inImage: data) }
+            shortcutFormula: { [weak self] data in try await self?.formulaForShortcut(inImage: data) },
+            shortcutText: { [weak self] data in try await self?.textForShortcut(inImage: data, keepsLineBreaks: true) }
         )
     }
 

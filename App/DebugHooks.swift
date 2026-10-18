@@ -66,6 +66,8 @@ struct DebugHooks {
     let replay: () -> AnyObject?
     /// What the Shortcuts action Recognize Formula in Image answers for a picture's data.
     let shortcutFormula: (Data) async throws -> String?
+    /// What the Shortcuts action Recognize Text in Image answers for a picture's data, its line breaks kept.
+    let shortcutText: (Data) async throws -> String?
 
     /// Capture History's search, for scripted checks on the hook's own test pictures.
     struct HistorySearchHooks {
@@ -250,9 +252,16 @@ struct DebugHooks {
                 Task { await captures.captureArea(rect, appName: "Test", copiesToClipboard: false) }
             }
         case "text-test":
-            // Capture Text on the same centered region as capture-test, without touching the clipboard.
+            // Capture Text on the same centered region as capture-test, without touching the clipboard; path=<a picture>
+            // reads that file instead. The log says how many characters were read, and the formulas put in.
             let join = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "join" && $0.value == "1" } ?? false
-            if let display = displays.layout.primary {
+            if let path = Self.parameter("path", in: url) {
+                Task {
+                    await textCapture.recognize(fileAt: URL(filePath: path), joinLines: join, copiesToClipboard: false) { text in
+                        Log.app.notice("debug.text-test read \(text.map { "“\($0)”" } ?? "nothing", privacy: .public)")
+                    }
+                }
+            } else if let display = displays.layout.primary {
                 let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
                 Task { await textCapture.recognize(region: rect, joinLines: join, copiesToClipboard: false) }
             }
@@ -277,6 +286,20 @@ struct DebugHooks {
                         Log.app.notice("debug.shortcut-formula answered \(latex.map { "“\($0)”" } ?? "nothing", privacy: .public)")
                     } catch {
                         Log.app.notice("debug.shortcut-formula failed: \(String(describing: error), privacy: .public)")
+                    }
+                }
+            }
+        case "shortcut-text":
+            // path=<a picture>: what the Shortcuts action Recognize Text in Image hands on for it, in the log.
+            if let path = Self.parameter("path", in: url) {
+                let shortcutText = shortcutText
+                Task {
+                    do {
+                        let started = ContinuousClock.now
+                        let text = try await shortcutText(Data(contentsOf: URL(filePath: path)))
+                        Log.app.notice("debug.shortcut-text answered in \(String(describing: ContinuousClock.now - started), privacy: .public): \(text.map { "“\($0)”" } ?? "nothing", privacy: .public)")
+                    } catch {
+                        Log.app.notice("debug.shortcut-text failed: \(String(describing: error), privacy: .public)")
                     }
                 }
             }
@@ -309,20 +332,14 @@ struct DebugHooks {
             let value = { (name: String) in items.first { $0.name == name }?.value }
             Task { await openPanelDemo(via: value("via"), state: value("state")) }
         case "panel-state":
-            // pane=text|table|formulas, join=0|1, select=<line>, hover=<line>, edited=1, translate=0|1,
-            // target=auto|<language> (the setting itself: put it back to auto afterwards), formula=x,y,w,h (the image's
-            // pixels, top-left origin: read that box as a formula, needs the pack), hover-formula=<index>
+            // pane=text|table, join=0|1, select=<line>, hover=<line>, edited=1, translate=0|1,
+            // target=auto|<language> (the setting itself: put it back to auto afterwards)
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in items.first { $0.name == name }?.value }
-            let formula = value("formula").flatMap { list -> CGRect? in
-                let numbers = list.split(separator: ",").compactMap { Double($0) }
-                return numbers.count == 4 ? CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3]) : nil
-            }
             textCapture.previewPanelState(
                 pane: value("pane"), joinLines: value("join").map { $0 == "1" },
                 selectLine: value("select").flatMap(Int.init), hoverLine: value("hover").flatMap(Int.init),
-                edited: value("edited") == "1", translate: value("translate").map { $0 == "1" }, target: value("target"),
-                formula: formula, hoverFormula: value("hover-formula").flatMap(Int.init)
+                edited: value("edited") == "1", translate: value("translate").map { $0 == "1" }, target: value("target")
             )
         case "translate-demo":
             // Translate Area on a drawn page (never the screen): its lens lies centered on the main

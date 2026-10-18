@@ -5,7 +5,8 @@
 // otherwise 40 MB at 70 MB or more for good; this process takes that memory with it when it exits.
 //
 // The Shortcuts action Recognize Text in Image reads here too, for the same reason: the app then stays as small
-// after it as before. So does Capture Formula: the formula pack's models take about 290 MB while they read.
+// after it as before. So do Capture Formula and the formulas found among text: the formula pack's models take about
+// 290 MB while they read.
 //
 // Input, on standard input: one JSON object per line, {"id": "…", "path": "/…/picture.png"}, and for a reading
 // assembled as Capture Text assembles it, "joinsWrappedLines": true or false (without it, the text kept for the
@@ -15,16 +16,21 @@
 // and the answer holds its lines, for the app to put beside its own reading. With "warm": true and a pack (no path),
 // the pack's models are loaded and nothing is read: their first load compiles them for the Neural Engine. With
 // "formula": "/…/Model Packs/<id>/<version>" instead, the formula pack reads the picture as one formula (Capture Formula;
-// Docs/ocr.md › The formula pack), and with "warm" its models are compiled. With "tidy": true, nothing is read: what
-// Core ML keeps in this process's Caches folder of models that are gone is removed (CompiledModelCache).
+// Docs/ocr.md › The formula pack), and with "warm" its models are compiled. With "formulas": the formula pack's folder,
+// the pack finds the formulas in the picture and reads each (Docs/ocr.md › Formulas among text): the answer holds them,
+// after a line {"id": "…", "found": 3} saying how many there are to read; with "joinsWrappedLines" as well, the text is
+// read as above and the formulas put into it, as LaTeX. With "tidy": true, nothing is read: what Core ML keeps in this
+// process's Caches folder of models that are gone is removed (CompiledModelCache).
 // Output, on standard output: one JSON object per line as each picture is read, in order,
 // {"id": "…", "text": "…"}, {"id": "…", "lines": [{"text": "…", "box": [[x, y], [width, height]], "confidence": 0.9}]},
 // {"id": "…", "latex": "…", "ending": "end"} (or "repeats", "cacheFull", "deadline": not a whole formula),
+// {"id": "…", "formulas": [{"kind": "inline", "box": [[x, y], [width, height]], "latex": "…"}]},
 // {"id": "…", "removed": 2}, or {"id": "…", "error": "…"}. The process exits once its input ends and every picture is
 // read.
 
 import CoreGraphics
 import Foundation
+import ImageIO
 import OMSCore
 import OMSOCR
 
@@ -36,6 +42,7 @@ struct Job: Decodable {
     var lines: Bool?
     var warm: Bool?
     var formula: String?
+    var formulas: String?
     var tidy: Bool?
 }
 
@@ -45,12 +52,20 @@ struct Line: Encodable {
     let confidence: Float
 }
 
+struct Formula: Encodable {
+    let kind: String
+    let box: CGRect
+    let latex: String
+}
+
 struct Result: Encodable {
     let id: String
     var text: String?
     var lines: [Line]?
     var latex: String?
     var ending: String?
+    var found: Int?
+    var formulas: [Formula]?
     var removed: Int?
     var error: String?
 }
@@ -80,6 +95,35 @@ func formulaReader(for pack: String) async throws -> FormulaReader {
     let reader = try await FormulaReader.load(from: URL(filePath: pack, directoryHint: .isDirectory))
     formulaReaders[pack] = reader
     return reader
+}
+
+/// The formula packs' layout models, loaded the first time a job asks them to find formulas.
+var formulaFinders: [String: FormulaFinder] = [:]
+
+func formulaFinder(for pack: String) async throws -> FormulaFinder {
+    if let finder = formulaFinders[pack] { return finder }
+    let finder = try await FormulaFinder.load(from: URL(filePath: pack, directoryHint: .isDirectory))
+    formulaFinders[pack] = finder
+    return finder
+}
+
+/// The formulas the pack finds and reads in the picture in `file`, `found` told how many it found; none in a picture too
+/// large to look in (`FormulaFinder.finds`), which isn't decoded for it.
+func formulas(inPictureAt file: URL, pack: String, found: @escaping @Sendable (Int) -> Void) async throws -> (CGImage, [FormulaMerge.Formula])? {
+    guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
+          FormulaFinder.finds(width: width, height: height)
+    else {
+        found(0)
+        return nil
+    }
+    let image = try PictureText.image(at: file)
+    let regions = try await formulaFinder(for: pack).regions(in: image)
+    found(regions.count)
+    // The formula models, 185 MB, are loaded only for a picture that holds a formula.
+    guard !regions.isEmpty else { return (image, []) }
+    return (image, try await formulaReader(for: pack).formulas(in: image, regions: regions))
 }
 
 /// L1, with the pack beside it when it loads.
@@ -115,6 +159,7 @@ for try await line in FileHandle.standardInput.bytes.lines {
         if let pack = job.formula {
             let reader = try await formulaReader(for: pack)
             if job.warm == true {
+                _ = try await formulaFinder(for: pack)
                 send(Result(id: job.id, text: ""))
                 continue
             }
@@ -135,7 +180,16 @@ for try await line in FileHandle.standardInput.bytes.lines {
             send(Result(id: job.id, lines: lines.map { Line(text: $0.text, box: $0.box, confidence: $0.confidence) }))
             continue
         }
-        let result = try await reading(with: job.pack).recognize(fileAt: file)
+        if let pack = job.formulas, job.joinsWrappedLines == nil {
+            let id = job.id
+            let found = try await formulas(inPictureAt: file, pack: pack) { count in Task { @MainActor in send(Result(id: id, found: count)) } }
+            send(Result(id: job.id, formulas: (found?.1 ?? []).map { Formula(kind: $0.kind.rawValue, box: $0.box, latex: $0.latex) }))
+            continue
+        }
+        var result = try await reading(with: job.pack).recognize(fileAt: file)
+        if let pack = job.formulas, let (image, found) = try await formulas(inPictureAt: file, pack: pack, found: { _ in }) {
+            result.lines = await pipeline.lines(result.lines, with: found, in: image)
+        }
         let text = job.joinsWrappedLines.map { TextAssembler.assemble(result.lines, options: .init(joinsWrappedLines: $0)) } ?? result.text
         send(Result(id: job.id, text: text))
     } catch {

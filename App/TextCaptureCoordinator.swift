@@ -7,9 +7,9 @@ import OMSUI
 import OSLog
 import UniformTypeIdentifiers
 
-/// Capture Text: drag over text, or pick a window, and the text goes to the clipboard. The selection stays
-/// highlighted while the text is read and fades once it is copied; a card with the text is optional.
-/// Unlike a screenshot there is no shutter sound and nothing goes to the history.
+/// Capture Text: drag over text, or pick a window, and the text goes to the clipboard, any formula in it as LaTeX while
+/// the formula pack is installed. The selection stays highlighted while the text is read and fades once it is copied; a
+/// card with the text is optional. Unlike a screenshot there is no shutter sound and nothing goes to the history.
 ///
 /// Also opens the OCR panel, for a closer look at an image's text: Option held when the drag ends, a
 /// capture's Recognize Text, an image file, the clipboard, or an image dropped on the menu bar icon. And Capture
@@ -36,8 +36,8 @@ final class TextCaptureCoordinator {
     /// The model pack the OCR panel reads with beside Vision, and the text reader that reads with it (L2 beside L1,
     /// Docs/ocr.md › L2 beside L1); nil while none is installed. Asked as each panel opens.
     var secondReader: (() -> (pack: TextReaderPack, helper: URL)?)?
-    /// The formula pack's folder and the text reader that reads with it (Capture Formula; Docs/ocr.md › The formula
-    /// pack); nil while the pack isn't installed.
+    /// The formula pack's folder and the text reader that reads with it (Capture Formula, and the formulas among text;
+    /// Docs/ocr.md › The formula pack); nil while the pack isn't installed.
     var formulaReader: (() -> (pack: URL, helper: URL)?)?
 
     private struct Recognition {
@@ -149,22 +149,37 @@ final class TextCaptureCoordinator {
         }
     }
 
+    /// With the formula pack installed, the formulas in the picture are found and read in the text reader beside Vision's
+    /// reading, and the text copied holds each as LaTeX (Docs/ocr.md › Formulas among text); the highlight stays on
+    /// until they are in.
     private func recognize(_ image: CGImage, selection: CGRect, joinLines: Bool, copiesToClipboard: Bool, done: ((String?) -> Void)? = nil) async {
         let showsCard = settings.showTextResult
         let probe = LatencyProbe("ocr.recognize")
-        let result: OCRResult
+        let formulas = formulaReader?().map { reader in
+            Task { await Self.formulas(in: image, pack: reader.pack, helper: reader.helper) }
+        }
+        var lines: [OCRLine]
         do {
-            result = try await pipeline.recognize(image)
+            lines = try await pipeline.recognize(image).lines
         } catch {
+            formulas?.cancel()
             Log.capture.error("Capture Text failed to recognize: \(String(describing: error), privacy: .public)")
             highlight.finish(copied: nil, announces: !showsCard)
             if showsCard { hud.show(.empty, near: selection) }
             done?(nil)
             return
         }
+        if let formulas {
+            let started = ContinuousClock.now
+            let found = await formulas.value
+            if !found.isEmpty {
+                lines = await pipeline.lines(lines, with: found, in: image)
+                Log.capture.notice("Capture Text put \(found.count, privacy: .public) formulas into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
+            }
+        }
         probe.end()
 
-        var recognition = Recognition(lines: result.lines, selection: selection, joined: joinLines, copiesToClipboard: copiesToClipboard)
+        var recognition = Recognition(lines: lines, selection: selection, joined: joinLines, copiesToClipboard: copiesToClipboard)
         let text = assemble(recognition)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             last = nil
@@ -178,7 +193,7 @@ final class TextCaptureCoordinator {
         recognition.joined = joinLines
         last = recognition
         highlight.finish(copied: text, announces: !showsCard)
-        Log.capture.notice("Capture Text copied \(text.count, privacy: .public) characters in \(result.lines.count, privacy: .public) lines")
+        Log.capture.notice("Capture Text copied \(text.count, privacy: .public) characters in \(lines.count, privacy: .public) lines")
         if showsCard {
             hud.show(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection)
         }
@@ -217,8 +232,8 @@ final class TextCaptureCoordinator {
     /// Capture Formula: drag over a formula, or pick a window, and its LaTeX goes to the clipboard, as it is (no `$`
     /// around it). The selection stays highlighted while the formula pack reads it in the text reader, on the CPU, and
     /// fades once the LaTeX is copied; the card, when it is on, shows it. Option held as the drag ends opens the area
-    /// in the OCR panel's Formulas pane instead, where more formulas can be dragged around. Without the pack there is
-    /// nothing to read with: a beep. `done` is told the LaTeX copied, or nil. Scripted checks leave the clipboard alone
+    /// in the OCR panel instead, its text with each formula in it as LaTeX. Without the pack there is nothing to read
+    /// with: a beep. `done` is told the LaTeX copied, or nil. Scripted checks leave the clipboard alone
     /// (`copiesToClipboard`) and choose whether the screen freezes (`freezes`, else Settings').
     func captureFormula(copiesToClipboard: Bool = true, freezes: Bool? = nil, done: ((String?) -> Void)? = nil) {
         guard !overlay.isActive else { done?(nil); return }
@@ -234,10 +249,10 @@ final class TextCaptureCoordinator {
             switch outcome {
             case .region(let rect, _, let modifiers, let frozen) where modifiers.contains(.option):
                 done?(nil)
-                Task { await self.openPanel(region: rect, frozen: frozen, formulas: true) }
+                Task { await self.openPanel(region: rect, frozen: frozen) }
             case .window(let target, let modifiers) where modifiers.contains(.option):
                 done?(nil)
-                Task { await self.openPanel(window: target, formulas: true) }
+                Task { await self.openPanel(window: target) }
             case .region(let rect, _, _, let frozen):
                 highlight.show(rect)
                 Task { await self.readFormula(region: rect, frozen: frozen, copiesToClipboard: copiesToClipboard, done: done) }
@@ -316,23 +331,49 @@ final class TextCaptureCoordinator {
     }
 
     /// The formula the pack reads in `image`, in a run of the text reader, or nil when the reader couldn't read it.
-    /// The picture goes to the reader as an uncompressed TIFF, written and read in a few milliseconds.
     @concurrent
     private nonisolated static func formula(in image: CGImage, pack: URL, helper: URL) async -> TextReaderTool.Formula? {
-        let folder = FileManager.default.temporaryDirectory.appending(path: "Formula Readings", directoryHint: .isDirectory)
-        let file = folder.appending(path: "\(UUID().uuidString).tiff")
+        guard let file = formulaPicture(image) else { return nil }
         defer { try? FileManager.default.removeItem(at: file) }
-        guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil,
-              let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.tiff.identifier as CFString, 1, nil)
-        else { return nil }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else { return nil }
         do {
             return try await TextReaderTool.formula(ofPictureAt: file, pack: pack, helper: helper)
         } catch {
             Log.capture.error("Reading a formula failed: \(String(describing: error), privacy: .public)")
             return nil
         }
+    }
+
+    /// The formulas the pack finds in `image` and reads, in a run of the text reader (Docs/ocr.md › Formulas among text);
+    /// none when it can't, or in a picture too large to look in. `found` is told how many there are to read.
+    @concurrent
+    nonisolated static func formulas(
+        in image: CGImage, pack: URL, helper: URL, found: (@Sendable (Int) -> Void)? = nil
+    ) async -> [FormulaMerge.Formula] {
+        guard FormulaFinder.finds(width: image.width, height: image.height), let file = formulaPicture(image) else { return [] }
+        defer { try? FileManager.default.removeItem(at: file) }
+        do {
+            return try await TextReaderTool.formulas(ofPictureAt: file, pack: pack, helper: helper, found: found).map { formula in
+                FormulaMerge.Formula(kind: formula.kind == "display" ? .display : .inline, box: formula.box, latex: formula.latex)
+            }
+        } catch {
+            if !Task.isCancelled { Log.capture.error("Finding formulas failed: \(String(describing: error), privacy: .public)") }
+            return []
+        }
+    }
+
+    /// `image` as an uncompressed TIFF for the text reader, written and read in a few milliseconds; the caller removes it.
+    private nonisolated static func formulaPicture(_ image: CGImage) -> URL? {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "Formula Readings", directoryHint: .isDirectory)
+        let file = folder.appending(path: "\(UUID().uuidString).tiff")
+        guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil,
+              let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.tiff.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            try? FileManager.default.removeItem(at: file)
+            return nil
+        }
+        return file
     }
 
     // MARK: Translate Area
@@ -446,16 +487,14 @@ final class TextCaptureCoordinator {
     /// With a model pack installed, a picture whose text holds Chinese or Japanese is read again with it in the text
     /// reader, and the two readings are put together (`TextAnalysis.withSecondReading`) before the panel shows them.
     ///
-    /// With the formula pack installed, the panel's Formulas pane reads what is dragged around on the image; `formulas`
-    /// opens on it with the whole image being read.
-    func openPanel(image: CGImage, scale: CGFloat, source: String, translating: Bool = false, formulas: Bool = false) {
+    /// With the formula pack installed, the formulas in the picture are found and read in the text reader beside
+    /// Vision's reading, and come into the text as LaTeX once read.
+    func openPanel(image: CGImage, scale: CGFloat, source: String, translating: Bool = false) {
         let controller = panel ?? makePanel()
         panel = controller
         let pipeline = pipeline
         let second = secondReader?()
-        controller.show(
-            image: image, scale: scale, source: source, translating: translating, readFormula: panelFormulaReader(), formulas: formulas
-        ) { image in
+        controller.show(image: image, scale: scale, source: source, translating: translating, formulas: panelFormulas()) { image in
             let analysis = try await pipeline.analyze(image)
             guard let second, SecondReading.wanted(analysis.result.lines), PPOCRReader.reads(width: image.width, height: image.height)
             else { return analysis }
@@ -470,11 +509,15 @@ final class TextCaptureCoordinator {
         }
     }
 
-    /// Reads a part of the panel's image as one formula, in a run of the text reader; nil while the pack isn't
-    /// installed. Asked as each panel opens.
-    private func panelFormulaReader() -> (@Sendable (CGImage) async -> TextReaderTool.Formula?)? {
+    /// How the panel gets the formulas into its text; nil while the formula pack isn't installed. Asked as each panel
+    /// opens.
+    private func panelFormulas() -> TextRecognitionWindowController.Formulas? {
         guard let reader = formulaReader?() else { return nil }
-        return { image in await Self.formula(in: image, pack: reader.pack, helper: reader.helper) }
+        let pipeline = pipeline
+        return .init(
+            read: { image, found in await Self.formulas(in: image, pack: reader.pack, helper: reader.helper, found: found) },
+            merge: { lines, formulas, image in await pipeline.lines(lines, with: formulas, in: image) }
+        )
     }
 
     /// How long the panel waits for the second reading once Vision's is done. A pack whose models are compiled answers
@@ -543,25 +586,22 @@ final class TextCaptureCoordinator {
         return controller
     }
 
-    /// Option held when a Capture Text drag ends, or a Capture Formula drag (`formulas`). Also used by scripted checks.
-    func openPanel(region rect: CGRect, frozen: CapturedFrame? = nil, formulas: Bool = false) async {
+    /// Option held when a Capture Text or Capture Formula drag ends. Also used by scripted checks.
+    func openPanel(region rect: CGRect, frozen: CapturedFrame? = nil) async {
         do {
             let frame = try await capture(rect, frozen: frozen)
-            openPanel(image: frame.image, scale: Self.scale(of: frame), source: String(localized: "Screen Area"), formulas: formulas)
+            openPanel(image: frame.image, scale: Self.scale(of: frame), source: String(localized: "Screen Area"))
         } catch {
             Log.capture.error("Capture Text failed to capture: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
         }
     }
 
-    private func openPanel(window target: WindowTarget, formulas: Bool = false) async {
+    private func openPanel(window target: WindowTarget) async {
         do {
             let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
             let title = target.title.flatMap { $0.isEmpty ? nil : $0 }
-            openPanel(
-                image: frame.image, scale: Self.scale(of: frame), source: title.map { "\(target.ownerName) – \($0)" } ?? target.ownerName,
-                formulas: formulas
-            )
+            openPanel(image: frame.image, scale: Self.scale(of: frame), source: title.map { "\(target.ownerName) – \($0)" } ?? target.ownerName)
         } catch {
             Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
@@ -676,18 +716,15 @@ final class TextCaptureCoordinator {
     func previewPanel(image: CGImage, scale: CGFloat, source: String, analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis) {
         let controller = panel ?? makePanel()
         panel = controller
-        controller.show(image: image, scale: scale, source: source, readFormula: panelFormulaReader(), analyze: analyze)
+        controller.show(image: image, scale: scale, source: source, formulas: panelFormulas(), analyze: analyze)
     }
 
-    /// Sets the open panel's pane, line breaks, selected or hovered line, whether the text was edited, and a formula
-    /// read in a box of the image's pixels.
+    /// Sets the open panel's pane, line breaks, selected or hovered line, and whether the text was edited.
     func previewPanelState(
-        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool?, target: String?,
-        formula: CGRect? = nil, hoverFormula: Int? = nil
+        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool?, target: String?
     ) {
         panel?.preview(
-            pane: pane, joinLines: joinLines, selectLine: selectLine, hoverLine: hoverLine, edited: edited, translate: translate, target: target,
-            formula: formula, hoverFormula: hoverFormula
+            pane: pane, joinLines: joinLines, selectLine: selectLine, hoverLine: hoverLine, edited: edited, translate: translate, target: target
         )
     }
 

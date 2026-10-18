@@ -50,15 +50,50 @@ public enum TextReaderTool {
     /// - Parameters:
     ///   - joinsWrappedLines: whether lines a paragraph wraps onto are joined into one.
     ///   - pack: an installed PP-OCR model pack's folder, to read with it beside Vision (L2 beside L1).
+    ///   - formulas: the installed formula pack's folder, to put the formulas in the picture into the text as LaTeX
+    ///     (Docs/ocr.md › Formulas among text).
     ///   - helper: the text reader.
     @concurrent
     public static func text(
-        ofPictureAt url: URL, joinsWrappedLines: Bool, pack: URL? = nil, helper: URL, priority: QualityOfService = .userInitiated,
-        resources: ActiveResources = .shared
+        ofPictureAt url: URL, joinsWrappedLines: Bool, pack: URL? = nil, formulas: URL? = nil, helper: URL,
+        priority: QualityOfService = .userInitiated, resources: ActiveResources = .shared
     ) async throws -> String {
-        let job = Job(id: UUID().uuidString, path: url.path(percentEncoded: false), joinsWrappedLines: joinsWrappedLines, pack: pack?.path(percentEncoded: false))
+        let job = Job(
+            id: UUID().uuidString, path: url.path(percentEncoded: false), joinsWrappedLines: joinsWrappedLines, pack: pack?.path(percentEncoded: false),
+            formulas: formulas?.path(percentEncoded: false)
+        )
         let answer = try await run(job, helper: helper, priority: priority, resources: resources)
         if let text = answer.text { return text }
+        throw Failure.unreadable(answer.error ?? "")
+    }
+
+    /// A formula the formula pack found in a picture and read whole.
+    public struct FoundFormula: Codable, Sendable, Equatable {
+        /// "display", set apart on a line of its own, or "inline", within text.
+        public var kind: String
+        /// In the picture's pixels, top-left origin.
+        public var box: CGRect
+        public var latex: String
+
+        public init(kind: String, box: CGRect, latex: String) {
+            self.kind = kind
+            self.box = box
+            self.latex = latex
+        }
+    }
+
+    /// The formulas the formula pack installed in `pack` finds in the picture at `url`, each read as LaTeX (Docs/ocr.md ›
+    /// Formulas among text). `found` is told how many there are to read, before they are.
+    @concurrent
+    public static func formulas(
+        ofPictureAt url: URL, pack: URL, helper: URL, found: (@Sendable (Int) -> Void)? = nil, priority: QualityOfService = .userInitiated,
+        resources: ActiveResources = .shared
+    ) async throws -> [FoundFormula] {
+        let job = Job(id: UUID().uuidString, path: url.path(percentEncoded: false), formulas: pack.path(percentEncoded: false))
+        let answer = try await run(job, helper: helper, priority: priority, resources: resources) { progress in
+            if let count = progress.found { found?(count) }
+        }
+        if let formulas = answer.formulas { return formulas }
         throw Failure.unreadable(answer.error ?? "")
     }
 
@@ -134,7 +169,11 @@ public enum TextReaderTool {
         throw Failure.unreadable(answer.error ?? "")
     }
 
-    private static func run(_ job: Job, helper: URL, priority: QualityOfService, resources: ActiveResources) async throws -> Answer {
+    /// Runs the reader on `job`. A line telling how far it got (`Answer.isProgress`) goes to `progress`; the answer is
+    /// the last other line for the job.
+    private static func run(
+        _ job: Job, helper: URL, priority: QualityOfService, resources: ActiveResources, progress: (@Sendable (Answer) -> Void)? = nil
+    ) async throws -> Answer {
         let process = Process()
         process.executableURL = helper
         process.qualityOfService = priority
@@ -166,7 +205,8 @@ public enum TextReaderTool {
         return try await withTaskCancellationHandler {
             var answer: Answer?
             for try await line in output.fileHandleForReading.bytes.lines {
-                if let decoded = try? JSONDecoder().decode(Answer.self, from: Data(line.utf8)), decoded.id == job.id { answer = decoded }
+                guard let decoded = try? JSONDecoder().decode(Answer.self, from: Data(line.utf8)), decoded.id == job.id else { continue }
+                if decoded.isProgress { progress?(decoded) } else { answer = decoded }
             }
             var status: Int32 = -1
             for await code in exited { status = code }
@@ -186,6 +226,7 @@ public enum TextReaderTool {
         var lines: Bool?
         var warm: Bool?
         var formula: String?
+        var formulas: String?
         var tidy: Bool?
     }
 
@@ -195,7 +236,14 @@ public enum TextReaderTool {
         let lines: [Line]?
         let latex: String?
         let ending: String?
+        let found: Int?
+        let formulas: [FoundFormula]?
         let removed: Int?
         let error: String?
+
+        /// How many formulas the reader found, said before it reads them.
+        var isProgress: Bool {
+            found != nil && text == nil && lines == nil && latex == nil && formulas == nil && removed == nil && error == nil
+        }
     }
 }
