@@ -1,10 +1,10 @@
 import AppKit
 import OMSCore
 
-/// The optional card after Capture Text (off by default; the selection's highlight is the usual
-/// feedback): what went to the clipboard, how many characters, and a switch between keeping and joining
-/// line breaks. It floats by the selection without taking focus and goes away by itself; hovering it
-/// holds it.
+/// The optional card after Capture Text and Capture Formula (off by default; the selection's highlight is
+/// the usual feedback): what went to the clipboard, how many characters, and for text a switch between
+/// keeping and joining line breaks. It floats by the selection without taking focus and goes away by
+/// itself; hovering it holds it.
 public final class TextResultHUD {
     public enum State: Equatable {
         /// The text is on the clipboard. `joined` says whether wrapped lines were joined, `canJoin`
@@ -12,6 +12,10 @@ public final class TextResultHUD {
         case copied(text: String, joined: Bool, canJoin: Bool)
         /// Nothing readable in the selection.
         case empty
+        /// The LaTeX of the formula in the selection is on the clipboard.
+        case copiedFormula(latex: String)
+        /// The formula pack read no whole formula in the selection.
+        case noFormula
     }
 
     /// The line-break switch was pressed.
@@ -131,8 +135,8 @@ public final class TextResultHUD {
             .seconds(20)
         } else {
             switch state {
-            case .copied: .seconds(4)
-            case .empty: .seconds(2.5)
+            case .copied, .copiedFormula: .seconds(4)
+            case .empty, .noFormula: .seconds(2.5)
             }
         }
         dismissal = Task { [weak self] in
@@ -146,6 +150,8 @@ public final class TextResultHUD {
         let message = switch state {
         case .copied(let text, _, _): TextResultCard.copiedCount(text)
         case .empty: String(localized: "No text found", bundle: .module)
+        case .copiedFormula: String(localized: "Copied the formula as LaTeX", bundle: .module)
+        case .noFormula: String(localized: "No formula found", bundle: .module)
         }
         guard let element = card else { return }
         NSAccessibility.post(element: element, notification: .announcementRequested, userInfo: [
@@ -276,17 +282,34 @@ final class TextResultCard: NSView {
                 : String(localized: "Join Lines", bundle: .module)
             joinButton.symbolName = joined ? "text.alignleft" : "arrow.right.to.line"
             joinButton.isHidden = !canJoin
+            preview.font = .systemFont(ofSize: 12)
+            preview.lineBreakMode = .byTruncatingTail
         case .empty:
             symbolName = "text.magnifyingglass"
             title.stringValue = String(localized: "No text found", bundle: .module)
             count.stringValue = ""
             detail.stringValue = String(localized: "Try a larger area, or text with more contrast.", bundle: .module)
+        case .copiedFormula(let latex):
+            symbolName = "checkmark.circle.fill"
+            title.stringValue = String(localized: "Copied LaTeX", bundle: .module)
+            count.stringValue = String(localized: "\(latex.count) characters", bundle: .module)
+            preview.stringValue = latex
+            // LaTeX is code: fixed-width, as it would be pasted into an editor, and broken anywhere, since it has few
+            // spaces to break at (by words, a formula was one line cut short).
+            preview.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
+            preview.lineBreakMode = .byCharWrapping
+            joinButton.isHidden = true
+        case .noFormula:
+            symbolName = "x.squareroot"
+            title.stringValue = String(localized: "No formula found", bundle: .module)
+            count.stringValue = ""
+            detail.stringValue = String(localized: "Select just the formula, with a little room around it.", bundle: .module)
         }
         symbol.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold).applying(.init(paletteColors: Self.symbolColors(for: state))))
         preview.isHidden = !Self.isCopied(state)
         joinButton.isHidden = joinButton.isHidden || !Self.isCopied(state)
-        detail.isHidden = state != .empty
+        detail.isHidden = state != .empty && state != .noFormula
         setAccessibilityLabel([title.stringValue, count.stringValue].filter { !$0.isEmpty }.joined(separator: ", "))
         needsLayout = true
     }
@@ -369,15 +392,17 @@ final class TextResultCard: NSView {
     }
 
     private static func isCopied(_ state: TextResultHUD.State) -> Bool {
-        if case .copied = state { return true }
-        return false
+        switch state {
+        case .copied, .copiedFormula: true
+        case .empty, .noFormula: false
+        }
     }
 
     /// A white check in a green disc, as on a saved Quick Access card; otherwise one quiet color.
     private static func symbolColors(for state: TextResultHUD.State) -> [NSColor] {
         switch state {
-        case .copied: [.white, .systemGreen]
-        case .empty: [.secondaryLabelColor]
+        case .copied, .copiedFormula: [.white, .systemGreen]
+        case .empty, .noFormula: [.secondaryLabelColor]
         }
     }
 

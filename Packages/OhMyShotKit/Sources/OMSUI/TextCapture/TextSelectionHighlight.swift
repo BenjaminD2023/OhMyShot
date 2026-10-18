@@ -48,13 +48,17 @@ public final class TextSelectionHighlight {
 
     /// Fades the highlight: slowly once `copied` text is on the clipboard, quickly with a beep when
     /// there was none (`nil`). Instant with Reduce Motion. `announces` tells VoiceOver the count or the
-    /// empty result, for when no card does.
-    public func finish(copied text: String?, announces: Bool) {
+    /// empty result, for when no card does; `formula` says what Capture Formula copied, or didn't.
+    public func finish(copied text: String?, announces: Bool, formula: Bool = false) {
         breathing?.cancel()
         breathing = nil
         if text == nil { NSSound.beep() }
         if announces {
-            let message = text.map(TextResultCard.copiedCount) ?? String(localized: "No text found", bundle: .module)
+            let message = if formula {
+                text == nil ? String(localized: "No formula found", bundle: .module) : String(localized: "Copied the formula as LaTeX", bundle: .module)
+            } else {
+                text.map(TextResultCard.copiedCount) ?? String(localized: "No text found", bundle: .module)
+            }
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
                 .announcement: message,
                 .priority: NSAccessibilityPriorityLevel.high.rawValue,
@@ -73,7 +77,12 @@ public final class TextSelectionHighlight {
         Task { [weak self] in
             if duration > 0 { try? await Task.sleep(for: .seconds(duration)) }
             panel.orderOut(nil)
-            if self?.panel == nil { self?.windowLease = nil }
+            if self?.panel == nil {
+                self?.windowLease = nil
+                // The reading is done by now, and what it used freed (the selection's pixels, a TIFF's buffers): its
+                // pages go back, as the card's do when it goes.
+                MemoryRelief.returnFreedPages()
+            }
         }
     }
 

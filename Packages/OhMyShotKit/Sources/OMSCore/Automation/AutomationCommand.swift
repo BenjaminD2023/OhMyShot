@@ -24,7 +24,7 @@ public struct AutomationRegion: Equatable, Sendable {
 }
 
 /// Every command of CleanShot X's URL API, with the same names and parameters, so scripts and
-/// launchers switch over by changing only the scheme.
+/// launchers switch over by changing only the scheme; and one of OhMyShot's own, `capture-formula`.
 public enum AutomationCommand: Equatable, Sendable {
     case allInOne(AutomationRegion)
     case captureArea(AutomationRegion, action: CaptureAction?)
@@ -36,6 +36,8 @@ public enum AutomationCommand: Equatable, Sendable {
     case pin(file: URL?)
     case recordScreen(AutomationRegion)
     case captureText(file: URL?, region: AutomationRegion, lineBreaks: Bool?)
+    /// OhMyShot's own, with no CleanShot twin: needs the formula pack.
+    case captureFormula(file: URL?, region: AutomationRegion)
     case openAnnotate(file: URL?)
     case openFromClipboard
     case toggleDesktopIcons
@@ -51,7 +53,7 @@ public enum AutomationCommand: Equatable, Sendable {
         switch self {
         case .allInOne, .captureArea, .capturePreviousArea, .captureFullscreen, .captureWindow, .selfTimer, .scrollingCapture, .recordScreen:
             true
-        case .captureText(let file, _, _):
+        case .captureText(let file, _, _), .captureFormula(let file, _):
             file == nil
         case .pin, .openAnnotate, .openFromClipboard, .toggleDesktopIcons, .hideDesktopIcons, .showDesktopIcons, .addQuickAccessOverlay,
              .openHistory, .restoreRecentlyClosed, .openSettings:
@@ -62,7 +64,7 @@ public enum AutomationCommand: Equatable, Sendable {
     /// Files the command would read.
     public var fileURLs: [URL] {
         switch self {
-        case .pin(let file), .openAnnotate(let file), .captureText(let file, _, _):
+        case .pin(let file), .openAnnotate(let file), .captureText(let file, _, _), .captureFormula(let file, _):
             file.map { [$0] } ?? []
         case .addQuickAccessOverlay(let file):
             [file]

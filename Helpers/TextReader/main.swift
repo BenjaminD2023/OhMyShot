@@ -5,7 +5,7 @@
 // otherwise 40 MB at 70 MB or more for good; this process takes that memory with it when it exits.
 //
 // The Shortcuts action Recognize Text in Image reads here too, for the same reason: the app then stays as small
-// after it as before.
+// after it as before. So does Capture Formula: the formula pack's models take about 290 MB while they read.
 //
 // Input, on standard input: one JSON object per line, {"id": "…", "path": "/…/picture.png"}, and for a reading
 // assembled as Capture Text assembles it, "joinsWrappedLines": true or false (without it, the text kept for the
@@ -13,10 +13,13 @@
 // picture holds Chinese or Japanese (L2 beside L1, Docs/ocr.md › L2 beside L1); its models are loaded once a run, and
 // a pack that won't load leaves Vision's reading alone. With "lines": true as well, the pack reads the picture alone
 // and the answer holds its lines, for the app to put beside its own reading. With "warm": true and a pack (no path),
-// the pack's models are loaded and nothing is read: their first load compiles them for the Neural Engine.
+// the pack's models are loaded and nothing is read: their first load compiles them for the Neural Engine. With
+// "formula": "/…/Model Packs/<id>/<version>" instead, the formula pack reads the picture as one formula (Capture Formula;
+// Docs/ocr.md › The formula pack), and with "warm" its models are compiled.
 // Output, on standard output: one JSON object per line as each picture is read, in order,
 // {"id": "…", "text": "…"}, {"id": "…", "lines": [{"text": "…", "box": [[x, y], [width, height]], "confidence": 0.9}]},
-// or {"id": "…", "error": "…"}. The process exits once its input ends and every picture is read.
+// {"id": "…", "latex": "…", "ending": "end"} (or "repeats", "cacheFull", "deadline": not a whole formula), or
+// {"id": "…", "error": "…"}. The process exits once its input ends and every picture is read.
 
 import CoreGraphics
 import Foundation
@@ -29,6 +32,7 @@ struct Job: Decodable {
     var pack: String?
     var lines: Bool?
     var warm: Bool?
+    var formula: String?
 }
 
 struct Line: Encodable {
@@ -41,6 +45,8 @@ struct Result: Encodable {
     let id: String
     var text: String?
     var lines: [Line]?
+    var latex: String?
+    var ending: String?
     var error: String?
 }
 
@@ -58,6 +64,16 @@ func reader(for pack: String) async throws -> PPOCRReader {
     if let reader = packReaders[pack] { return reader }
     let reader = try await PPOCRReader.load(from: URL(filePath: pack, directoryHint: .isDirectory))
     packReaders[pack] = reader
+    return reader
+}
+
+/// The formula packs' readers, loaded the first time a job names them.
+var formulaReaders: [String: FormulaReader] = [:]
+
+func formulaReader(for pack: String) async throws -> FormulaReader {
+    if let reader = formulaReaders[pack] { return reader }
+    let reader = try await FormulaReader.load(from: URL(filePath: pack, directoryHint: .isDirectory))
+    formulaReaders[pack] = reader
     return reader
 }
 
@@ -85,6 +101,17 @@ func send(_ result: Result) {
 for try await line in FileHandle.standardInput.bytes.lines {
     guard let job = try? JSONDecoder().decode(Job.self, from: Data(line.utf8)) else { continue }
     do {
+        if let pack = job.formula {
+            let reader = try await formulaReader(for: pack)
+            if job.warm == true {
+                send(Result(id: job.id, text: ""))
+                continue
+            }
+            guard let path = job.path else { throw OCRError.unreadableImage }
+            let reading = try await reader.read(fileAt: URL(filePath: path))
+            send(Result(id: job.id, latex: reading.latex, ending: reading.ending.rawValue))
+            continue
+        }
         if job.warm == true, let pack = job.pack {
             _ = try await reader(for: pack)
             send(Result(id: job.id, text: ""))

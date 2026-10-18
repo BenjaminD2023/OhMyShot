@@ -287,7 +287,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
                 records: dependencies.uploadRecords, actions: dependencies.recordActions
             ))
         case .shortcuts:
-            host(ShortcutsSettingsView(destinations: dependencies.destinations))
+            host(ShortcutsSettingsView(destinations: dependencies.destinations) { [modelPacks = dependencies.modelPacks] in
+                modelPacks?.installedFolder(of: ModelPackCatalog.ppFormulaNetPlusL) != nil
+            })
         case .permissions:
             host(PermissionsSettingsView(permissions: dependencies.permissions, relaunch: dependencies.relaunch))
         case .automation:

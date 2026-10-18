@@ -17,7 +17,7 @@ public struct TextReaderPack: Sendable, Equatable {
 }
 
 /// One picture read by the text reader for someone waiting on the answer (the Shortcuts action Recognize Text in
-/// Image, the OCR panel's second reading), in a run of its own that exits once it has answered.
+/// Image, the OCR panel's second reading, Capture Formula), in a run of its own that exits once it has answered.
 ///
 /// Vision keeps what a recognition used for as long as its process lives (Docs/perf.md, M2 and M5 — power gate:
 /// the action read in the app left it 56 MB larger for good); read in the text reader, the app stays as it was.
@@ -82,6 +82,44 @@ public enum TextReaderTool {
         if let error = answer.error { throw Failure.unreadable(error) }
     }
 
+    /// What the formula pack read in a picture.
+    public struct Formula: Sendable, Equatable {
+        public var latex: String
+        /// How the reading ended: "end" when the model finished the formula; "repeats", "cacheFull", or "deadline"
+        /// when it was stopped.
+        public var ending: String
+
+        public init(latex: String, ending: String) {
+            self.latex = latex
+            self.ending = ending
+        }
+
+        /// Whether this is a formula to give the person: a whole reading with something in it.
+        public var isFormula: Bool {
+            ending == "end" && !latex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    /// The formula the formula pack installed in `pack` reads in the picture at `url` (Capture Formula; Docs/ocr.md ›
+    /// The formula pack).
+    @concurrent
+    public static func formula(
+        ofPictureAt url: URL, pack: URL, helper: URL, priority: QualityOfService = .userInitiated, resources: ActiveResources = .shared
+    ) async throws -> Formula {
+        let job = Job(id: UUID().uuidString, path: url.path(percentEncoded: false), formula: pack.path(percentEncoded: false))
+        let answer = try await run(job, helper: helper, priority: priority, resources: resources)
+        if let latex = answer.latex, let ending = answer.ending { return Formula(latex: latex, ending: ending) }
+        throw Failure.unreadable(answer.error ?? "")
+    }
+
+    /// Compiles the formula pack's models once, reading nothing, so the first Capture Formula doesn't wait on it.
+    @concurrent
+    public static func warm(formula pack: URL, helper: URL, priority: QualityOfService = .utility, resources: ActiveResources = .shared) async throws {
+        let job = Job(id: UUID().uuidString, warm: true, formula: pack.path(percentEncoded: false))
+        let answer = try await run(job, helper: helper, priority: priority, resources: resources)
+        if let error = answer.error { throw Failure.unreadable(error) }
+    }
+
     private static func run(_ job: Job, helper: URL, priority: QualityOfService, resources: ActiveResources) async throws -> Answer {
         let process = Process()
         process.executableURL = helper
@@ -133,12 +171,15 @@ public enum TextReaderTool {
         var pack: String?
         var lines: Bool?
         var warm: Bool?
+        var formula: String?
     }
 
     private struct Answer: Decodable {
         let id: String
         let text: String?
         let lines: [Line]?
+        let latex: String?
+        let ending: String?
         let error: String?
     }
 }

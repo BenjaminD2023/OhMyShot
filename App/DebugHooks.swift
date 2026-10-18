@@ -254,9 +254,32 @@ struct DebugHooks {
                 let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
                 Task { await textCapture.recognize(region: rect, joinLines: join, copiesToClipboard: false) }
             }
+        case "formula-test":
+            // Capture Formula without touching the clipboard: path=<a picture> reads that file; without it, the same
+            // centered region as capture-test. Needs the formula pack; the log says what was read, and how fast.
+            let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "path" }?.value
+            if let path {
+                Task { await textCapture.readFormula(fileAt: URL(filePath: path), copiesToClipboard: false) }
+            } else if let display = displays.layout.primary {
+                let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
+                Task { await textCapture.readFormula(region: rect, copiesToClipboard: false) }
+            }
+        case "formula-flow":
+            // Capture Formula over drawn screens, never the real one: path=<a picture> drawn at its pixels in the middle
+            // of the pointer's display (on white; dark=1 on #1f1f1f), chosen without the mouse, kept off the clipboard,
+            // times=N in a row. Logs each reading's LaTeX and its time from the selection's end.
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            if let path = items.first(where: { $0.name == "path" })?.value {
+                let dark = items.contains { $0.name == "dark" && $0.value == "1" }
+                Task {
+                    await runFormulaFlow(path: path, dark: dark, times: Self.intParameter("times", in: url) ?? 1)
+                    // The drawn screens are gone now: their pages go back, as the overlay's own do when it closes.
+                    MemoryRelief.returnFreedPages()
+                }
+            }
         case "text-card":
-            // state=copied|empty|single: the optional result card with sample text, by a centered
-            // selection; state=highlight: the selection highlight shown while text is read.
+            // state=copied|empty|single|formula|no-formula: the optional result card with sample text, by a
+            // centered selection; state=highlight: the selection highlight shown while text is read.
             let state = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "state" }?.value ?? "copied"
             if let display = displays.layout.primary {
                 let rect = CGRect(x: display.frame.midX - 210, y: display.frame.midY - 60, width: 420, height: 120)
@@ -1822,6 +1845,61 @@ struct DebugHooks {
     /// A frozen screenshot over drawn screens: the drawn page frozen behind the overlay, an area chosen
     /// without the mouse, and the capture delivered with the clipboard left alone. What is kept must be
     /// the area cut from the frozen frame, pixel for pixel; then the capture and its card are removed.
+    /// `formula-flow`: the picture at `path` on drawn screens, its area chosen with a 12-point margin, read by Capture
+    /// Formula `times` times, each timed from the selection's end (the mouse-up) to the LaTeX.
+    func runFormulaFlow(path: String, dark: Bool, times: Int) async {
+        let layout = displays.layout
+        guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary,
+              let source = CGImageSourceCreateWithURL(URL(filePath: path) as CFURL, nil),
+              let picture = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else {
+            Log.app.error("debug.formula-flow could not read \(path, privacy: .public)")
+            return
+        }
+        let scale = display.pixelsPerPoint
+        let size = CGSize(width: CGFloat(picture.width) / scale, height: CGFloat(picture.height) / scale)
+        // The picture's top-left corner in the display's points from its top-left corner.
+        let origin = CGPoint(x: ((display.frame.width - size.width) / 2).rounded(), y: ((display.frame.height - size.height) / 2).rounded())
+        var frames: [CGDirectDisplayID: CapturedFrame] = [:]
+        for each in layout.displays {
+            let width = Int(each.pixelSize.width), height = Int(each.pixelSize.height)
+            guard let context = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return }
+            context.setFillColor(dark ? CGColor(srgbRed: 0.12, green: 0.12, blue: 0.12, alpha: 1) : CGColor(gray: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            if each.id == display.id {
+                // Core Graphics is y up.
+                context.draw(picture, in: CGRect(x: origin.x * scale, y: (display.frame.height - origin.y - size.height) * scale, width: CGFloat(picture.width), height: CGFloat(picture.height)))
+            }
+            guard let image = context.makeImage() else { return }
+            frames[each.id] = CapturedFrame(image: image, hdrImage: nil, displayID: each.id, frame: each.frame)
+        }
+        let local = CGRect(origin: origin, size: size).insetBy(dx: -12, dy: -12)
+        let rect = CGRect(x: display.frame.minX + local.minX, y: display.frame.maxY - local.maxY, width: local.width, height: local.height)
+        for run in 1...max(times, 1) {
+            overlay.injectedFrames = frames
+            let (answers, answer) = AsyncStream.makeStream(of: String?.self)
+            textCapture.captureFormula(copiesToClipboard: false, freezes: true) { latex in
+                answer.yield(latex)
+                answer.finish()
+            }
+            await waitForOverlayFrames()
+            let started = ContinuousClock.now
+            overlay.simulateSelection(rect)
+            var latex: String?
+            for await value in answers {
+                latex = value
+                break
+            }
+            let elapsed = ContinuousClock.now - started
+            Log.app.notice("debug.formula-flow run \(run, privacy: .public) of \(times, privacy: .public): \(String(describing: elapsed), privacy: .public) from the selection's end to \(latex.map { "\($0.count) characters: \($0)" } ?? "no formula", privacy: .public)")
+            // The highlight fades before the next selection begins.
+            try? await Task.sleep(for: .milliseconds(600))
+        }
+    }
+
     func runFreezeDemo(area: CGRect?, span: Int) async {
         let layout = displays.layout
         guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return }

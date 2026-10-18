@@ -12,7 +12,8 @@ import UniformTypeIdentifiers
 /// Unlike a screenshot there is no shutter sound and nothing goes to the history.
 ///
 /// Also opens the OCR panel, for a closer look at an image's text: Option held when the drag ends, a
-/// capture's Recognize Text, an image file, the clipboard, or an image dropped on the menu bar icon.
+/// capture's Recognize Text, an image file, the clipboard, or an image dropped on the menu bar icon. And Capture
+/// Formula: the same, for a formula, whose LaTeX goes to the clipboard.
 final class TextCaptureCoordinator {
     private let settings: SettingsStore
     private let displays: DisplayTopology
@@ -35,6 +36,9 @@ final class TextCaptureCoordinator {
     /// The model pack the OCR panel reads with beside Vision, and the text reader that reads with it (L2 beside L1,
     /// Docs/ocr.md › L2 beside L1); nil while none is installed. Asked as each panel opens.
     var secondReader: (() -> (pack: TextReaderPack, helper: URL)?)?
+    /// The formula pack's folder and the text reader that reads with it (Capture Formula; Docs/ocr.md › The formula
+    /// pack); nil while the pack isn't installed.
+    var formulaReader: (() -> (pack: URL, helper: URL)?)?
 
     private struct Recognition {
         let lines: [OCRLine]
@@ -206,6 +210,122 @@ final class TextCaptureCoordinator {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+
+    // MARK: Capture Formula
+
+    /// Capture Formula: drag over a formula, or pick a window, and its LaTeX goes to the clipboard, as it is (no `$`
+    /// around it). The selection stays highlighted while the formula pack reads it in the text reader, on the CPU, and
+    /// fades once the LaTeX is copied; the card, when it is on, shows it. Without the pack there is nothing to read
+    /// with: a beep. `done` is told the LaTeX copied, or nil. Scripted checks leave the clipboard alone
+    /// (`copiesToClipboard`) and choose whether the screen freezes (`freezes`, else Settings').
+    func captureFormula(copiesToClipboard: Bool = true, freezes: Bool? = nil, done: ((String?) -> Void)? = nil) {
+        guard !overlay.isActive else { done?(nil); return }
+        guard formulaReader?() != nil else {
+            Log.capture.error("Capture Formula needs the formula pack, which isn't installed")
+            NSSound.beep()
+            done?(nil)
+            return
+        }
+        overlay.freezesScreen = freezes ?? settings.freezeScreen
+        overlay.begin(mode: .area, purpose: .text) { [weak self] outcome in
+            guard let self else { done?(nil); return }
+            switch outcome {
+            case .region(let rect, _, _, let frozen):
+                highlight.show(rect)
+                Task { await self.readFormula(region: rect, frozen: frozen, copiesToClipboard: copiesToClipboard, done: done) }
+            case .window(let target, _):
+                highlight.show(target.frame)
+                Task { await self.readFormula(window: target, done: done) }
+            case .annotated, .color, .record, .scroll, .allInOne, .cancelled:
+                done?(nil)
+            }
+        }
+    }
+
+    /// Reads the formula in a region of a display, as the overlay does after a drag; from the frozen frame, at its
+    /// pixels (a formula drawn at 2x reads better than at 1x: Docs/ocr.md › L3 spike). Also the URL API's
+    /// `capture-formula` with an area. `copiesToClipboard` false leaves the clipboard alone, for scripted checks.
+    func readFormula(region rect: CGRect, frozen: CapturedFrame? = nil, copiesToClipboard: Bool = true, done: ((String?) -> Void)? = nil) async {
+        highlight.show(rect)
+        do {
+            let frame = try await capture(rect, frozen: frozen)
+            await readFormula(frame.image, selection: rect, copiesToClipboard: copiesToClipboard, done: done)
+        } catch {
+            Log.capture.error("Capture Formula failed to capture: \(error.localizedDescription, privacy: .public)")
+            highlight.finish(copied: nil, announces: !settings.showTextResult, formula: true)
+            done?(nil)
+        }
+    }
+
+    private func readFormula(window target: WindowTarget, done: ((String?) -> Void)?) async {
+        highlight.show(target.frame)
+        do {
+            let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
+            await readFormula(frame.image, selection: target.frame, copiesToClipboard: true, done: done)
+        } catch {
+            Log.capture.error("Capture Formula failed to capture the window: \(error.localizedDescription, privacy: .public)")
+            highlight.finish(copied: nil, announces: !settings.showTextResult, formula: true)
+            done?(nil)
+        }
+    }
+
+    /// The URL API's `capture-formula` with a file: its LaTeX goes to the clipboard, the card (when it is on) by the
+    /// pointer.
+    func readFormula(fileAt url: URL, copiesToClipboard: Bool = true, done: ((String?) -> Void)? = nil) async {
+        guard let loaded = await Self.load(.file(url), fallbackScale: 1) else {
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to read its formula")
+            highlight.finish(copied: nil, announces: true, formula: true)
+            done?(nil)
+            return
+        }
+        await readFormula(loaded.image, selection: CGRect(origin: NSEvent.mouseLocation, size: .zero), copiesToClipboard: copiesToClipboard, done: done)
+    }
+
+    private func readFormula(_ image: CGImage, selection: CGRect, copiesToClipboard: Bool, done: ((String?) -> Void)?) async {
+        let showsCard = settings.showTextResult
+        guard let reader = formulaReader?() else {
+            highlight.finish(copied: nil, announces: !showsCard, formula: true)
+            if showsCard { hud.show(.noFormula, near: selection) }
+            done?(nil)
+            return
+        }
+        let probe = LatencyProbe("ocr.formula")
+        let started = ContinuousClock.now
+        let formula = await Self.formula(in: image, pack: reader.pack, helper: reader.helper)
+        probe.end()
+        guard let formula, formula.isFormula else {
+            Log.capture.notice("Capture Formula found no formula (\(formula?.ending ?? "failed", privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+            highlight.finish(copied: nil, announces: !showsCard, formula: true)
+            if showsCard { hud.show(.noFormula, near: selection) }
+            done?(nil)
+            return
+        }
+        if copiesToClipboard { copy(formula.latex) }
+        highlight.finish(copied: formula.latex, announces: !showsCard, formula: true)
+        Log.capture.notice("Capture Formula \(copiesToClipboard ? "copied" : "read", privacy: .public) \(formula.latex.count, privacy: .public) characters of LaTeX in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+        if showsCard { hud.show(.copiedFormula(latex: formula.latex), near: selection) }
+        done?(formula.latex)
+    }
+
+    /// The formula the pack reads in `image`, in a run of the text reader, or nil when the reader couldn't read it.
+    /// The picture goes to the reader as an uncompressed TIFF, written and read in a few milliseconds.
+    @concurrent
+    private nonisolated static func formula(in image: CGImage, pack: URL, helper: URL) async -> TextReaderTool.Formula? {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "Formula Readings", directoryHint: .isDirectory)
+        let file = folder.appending(path: "\(UUID().uuidString).tiff")
+        defer { try? FileManager.default.removeItem(at: file) }
+        guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil,
+              let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.tiff.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        do {
+            return try await TextReaderTool.formula(ofPictureAt: file, pack: pack, helper: helper)
+        } catch {
+            Log.capture.error("Reading a formula failed: \(String(describing: error), privacy: .public)")
+            return nil
+        }
     }
 
     // MARK: Translate Area
@@ -520,6 +640,10 @@ final class TextCaptureCoordinator {
             hud.show(.empty, near: selection)
         case "single":
             hud.show(.copied(text: "7", joined: false, canJoin: false), near: selection)
+        case "formula":
+            hud.show(.copiedFormula(latex: #"\mathrm{Attention}(Q,K,V)=\mathrm{softmax}\left(\frac{QK^{T}}{\sqrt{d_{k}}}\right)V"#), near: selection)
+        case "no-formula":
+            hud.show(.noFormula, near: selection)
         default:
             let sample = "截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。\nPress Copy to put the capture on the clipboard.\n历史记录会保留一周，之后自动删除。\nVersion 0.1.0 (build 42)"
             hud.show(.copied(text: sample, joined: false, canJoin: true), near: selection)

@@ -40,6 +40,10 @@ final class CompositionRoot {
             guard let self, let helper = textReaderTool, let pack = secondReadingPack else { return nil }
             return (pack, helper)
         }
+        coordinator.formulaReader = { [weak self] in
+            guard let self, let helper = textReaderTool, let pack = formulaPack else { return nil }
+            return (pack, helper)
+        }
         return coordinator
     }()
     private lazy var annotations = AnnotationCoordinator(history: history)
@@ -84,10 +88,30 @@ final class CompositionRoot {
         }
     }
 
-    /// A pack just installed: its models are compiled for the Neural Engine now, in the background, rather than on the
-    /// first reading someone waits on (11 s); then the history's Chinese and Japanese captures are read again with it.
+    /// The formula pack, when it is installed: Capture Formula reads with it (Docs/ocr.md › The formula pack), and its
+    /// entries show only then.
+    private var formulaPack: URL? {
+        modelPacks.installedFolder(of: ModelPackCatalog.ppFormulaNetPlusL)
+    }
+
+    /// A pack just installed: its models are compiled now, in the background, rather than on the first reading someone
+    /// waits on. The L2 pack's compile for the Neural Engine (11 s), then the history's Chinese and Japanese captures
+    /// are read again with it; the formula pack's for the CPU (under a second).
     private func packInstalled(_ pack: ModelPack, in folder: URL) {
-        guard pack.id == ModelPackCatalog.ppocrV6Small.id, let helper = textReaderTool else { return }
+        guard let helper = textReaderTool else { return }
+        if pack.id == ModelPackCatalog.ppFormulaNetPlusL.id {
+            Task {
+                let started = ContinuousClock.now
+                do {
+                    try await TextReaderTool.warm(formula: folder, helper: helper)
+                    Log.modelPacks.notice("Warmed \(pack.id, privacy: .public) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+                } catch {
+                    Log.modelPacks.error("Warming \(pack.id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+                }
+            }
+            return
+        }
+        guard pack.id == ModelPackCatalog.ppocrV6Small.id else { return }
         Task { [weak self] in
             let started = ContinuousClock.now
             do {
@@ -247,6 +271,12 @@ final class CompositionRoot {
                 },
             ] + replayEntries() + [
                 .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
+                .init(
+                    title: String(localized: "Capture Formula"), shortcut: .captureFormula,
+                    isHidden: { [weak self] in self?.formulaPack == nil }
+                ) { [weak self] in
+                    self?.handle(.captureFormula)
+                },
                 .init(title: String(localized: "Translate Area"), shortcut: .translateArea) { [weak self] in self?.handle(.translateArea) },
                 .init(title: String(localized: "Pick Color"), shortcut: .pickColor) { [weak self] in self?.handle(.pickColor) },
                 .init(title: String(localized: "Measure"), shortcut: .measure) { [weak self] in self?.handle(.measure) },
@@ -672,6 +702,9 @@ final class CompositionRoot {
         case .captureTextJoined:
             captures.cancelSelfTimer()
             textCapture.captureText(joinLines: true)
+        case .captureFormula:
+            captures.cancelSelfTimer()
+            textCapture.captureFormula()
         case .translateArea:
             captures.cancelSelfTimer()
             textCapture.translateArea()
@@ -734,6 +767,16 @@ final class CompositionRoot {
                 Task { await textCapture.recognize(region: area, joinLines: lineBreaks == false) }
             } else {
                 textCapture.captureText(joinLines: lineBreaks == false)
+            }
+        case .captureFormula(let file?, _):
+            Task { await textCapture.readFormula(fileAt: file) }
+        case .captureFormula(nil, let region):
+            guard let area = area(of: region) else { return }
+            captures.cancelSelfTimer()
+            if let area {
+                Task { await textCapture.readFormula(region: area) }
+            } else {
+                textCapture.captureFormula()
             }
         case .openAnnotate(let file):
             if let file { open([file]) } else { chooseFilesToAnnotate() }

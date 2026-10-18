@@ -30,6 +30,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case captureText
     /// Capture Text with the lines of each paragraph joined.
     case captureTextJoined
+    /// Choose a formula and copy it as LaTeX, read by the formula pack.
+    case captureFormula
     /// Drag over text and its translation covers it, in place.
     case translateArea
     /// Take a color off the frozen screen.
@@ -67,6 +69,11 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         self == .captureAreaAndUpload || self == .captureFullscreenAndUpload
     }
 
+    /// Whether the shortcut reads with the formula pack, so it has no use before the pack is installed.
+    public var needsFormulaPack: Bool {
+        self == .captureFormula
+    }
+
     public var title: String {
         switch self {
         case .captureArea: String(localized: "Capture Area", bundle: .module)
@@ -85,6 +92,7 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .scrollingCapture: String(localized: "Scrolling Capture", bundle: .module)
         case .captureText: String(localized: "Capture Text", bundle: .module)
         case .captureTextJoined: String(localized: "Capture Text, Joining Lines", bundle: .module)
+        case .captureFormula: String(localized: "Capture Formula", bundle: .module)
         case .translateArea: String(localized: "Translate Area", bundle: .module)
         case .pickColor: String(localized: "Pick Color", bundle: .module)
         case .measure: String(localized: "Measure", bundle: .module)
@@ -174,8 +182,8 @@ public final class HotkeyCenter {
         case .saveReplay: profile == .development ? KeyboardShortcuts.Shortcut(.minus, modifiers: modifiers) : nil
         case .scrollingCapture: profile == .development ? KeyboardShortcuts.Shortcut(.equal, modifiers: modifiers) : nil
         case .captureWindow, .capturePreviousArea, .selfTimer, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload,
-             .captureFullscreenAndUpload, .captureTextJoined, .openHistory, .copyLatestCapture, .annotateLatestCapture, .openFromClipboard,
-             .controlQuickAccess: nil
+             .captureFullscreenAndUpload, .captureTextJoined, .captureFormula, .openHistory, .copyLatestCapture, .annotateLatestCapture,
+             .openFromClipboard, .controlQuickAccess: nil
         }
     }
 }

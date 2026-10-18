@@ -71,6 +71,38 @@ struct TextReaderToolTests {
         try await TextReaderTool.warm(pack: URL(filePath: "/packs/l2"), helper: reader, resources: ActiveResources())
     }
 
+    @Test func aFormulaComesBackWithHowItsReadingEnded() async throws {
+        // The job names the formula pack, not a PP-OCR one.
+        let reader = try helper(answering + """
+
+        case "$line" in *'"formula":"/packs/formula"'*) ;; *) exit 4 ;; esac
+        case "$line" in *'"pack"'*) exit 5 ;; esac
+        printf '{"id":"%s","latex":"x^{2}+y^{2}","ending":"end"}\\n' "$id"
+        """)
+        let resources = ActiveResources()
+        let formula = try await TextReaderTool.formula(ofPictureAt: URL(filePath: "/tmp/f.tiff"), pack: URL(filePath: "/packs/formula"), helper: reader, resources: resources)
+        #expect(formula == .init(latex: "x^{2}+y^{2}", ending: "end"))
+        #expect(formula.isFormula)
+        #expect(resources.isIdle)
+    }
+
+    @Test func aStoppedReadingIsNoFormula() async throws {
+        let reader = try helper(answering + "\nprintf '{\"id\":\"%s\",\"latex\":\"0000000000\",\"ending\":\"repeats\"}\\n' \"$id\"")
+        let formula = try await TextReaderTool.formula(ofPictureAt: URL(filePath: "/tmp/f.tiff"), pack: URL(filePath: "/packs/formula"), helper: reader, resources: ActiveResources())
+        #expect(formula.ending == "repeats" && !formula.isFormula)
+        #expect(!TextReaderTool.Formula(latex: " ", ending: "end").isFormula)
+    }
+
+    @Test func warmingTheFormulaPackReadsNoPicture() async throws {
+        let reader = try helper(answering + """
+
+        case "$line" in *'"path"'*) exit 4 ;; *'"warm":true'*) ;; *) exit 5 ;; esac
+        case "$line" in *'"formula":"/packs/formula"'*) ;; *) exit 6 ;; esac
+        printf '{"id":"%s","text":""}\\n' "$id"
+        """)
+        try await TextReaderTool.warm(formula: URL(filePath: "/packs/formula"), helper: reader, resources: ActiveResources())
+    }
+
     @Test func noReaderIsUnavailable() async throws {
         await #expect(throws: TextReaderTool.Failure.self) {
             try await TextReaderTool.text(

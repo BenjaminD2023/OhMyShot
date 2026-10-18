@@ -131,7 +131,7 @@ public struct ModelPack: Codable, Hashable, Identifiable, Sendable {
 /// The packs this build of the app offers.
 public enum ModelPackCatalog {
     /// A listed pack shows in Settings › Tools. With nothing here, nothing in the app mentions packs.
-    public static let packs: [ModelPack] = [ppocrV6Small]
+    public static let packs: [ModelPack] = [ppocrV6Small, ppFormulaNetPlusL]
 
     /// PP-OCRv6 small, converted to Core ML by `Tools/model-packs/ppocr_pack.py` and published on Hugging Face
     /// (Docs/ocr.md › The L2 pack): the OCR panel and the history's search read Chinese and Japanese with it beside
@@ -168,7 +168,7 @@ public enum ModelPackCatalog {
 
     /// PP-FormulaNet_plus-L, converted to Core ML with 8-bit weights by `Tools/model-packs/formula_pack.py` and published
     /// on Hugging Face (Docs/ocr.md › The formula pack): Capture Formula copies the formula in a selection as LaTeX,
-    /// read on the CPU in the text reader. Not in `packs` until the text reader reads it.
+    /// read on the CPU in the text reader. Until it is installed, nothing but Settings › Tools mentions it.
     public static let ppFormulaNetPlusL = ModelPack(
         id: "pp-formulanet-plus-l", version: "1",
         name: String(localized: "Math Formulas", bundle: .module),

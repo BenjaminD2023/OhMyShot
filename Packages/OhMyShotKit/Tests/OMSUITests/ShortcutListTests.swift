@@ -7,7 +7,7 @@ struct ShortcutListTests {
     private static let noKey: (CaptureShortcut) -> Bool = { _ in false }
 
     private static let newShortcuts: [CaptureShortcut] = [
-        .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .annotateLatestCapture, .openFromClipboard,
+        .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .annotateLatestCapture, .openFromClipboard, .captureFormula,
     ]
 
     @Test func theNewShortcutsHaveNoKeysUntilChosen() throws {
@@ -52,13 +52,30 @@ struct ShortcutListTests {
 
     @Test func everyAvailableShortcutIsListedOnceAndNoGroupIsEmpty() {
         for hasDestination in [false, true] {
-            let groups = ShortcutsSettingsView.groups(hasDestination: hasDestination, hasKey: Self.noKey)
-            #expect(!groups.contains { $0.isEmpty })
-            let listed = groups.flatMap { $0 }
-            #expect(Set(listed).count == listed.count)
-            let expected = CaptureShortcut.allCases.filter { $0.isAvailable && (hasDestination || !$0.needsUploadDestination) }
-            #expect(Set(listed) == Set(expected))
+            for hasFormulaPack in [false, true] {
+                let groups = ShortcutsSettingsView.groups(hasDestination: hasDestination, hasFormulaPack: hasFormulaPack, hasKey: Self.noKey)
+                #expect(!groups.contains { $0.isEmpty })
+                let listed = groups.flatMap { $0 }
+                #expect(Set(listed).count == listed.count)
+                let expected = CaptureShortcut.allCases.filter {
+                    $0.isAvailable && (hasDestination || !$0.needsUploadDestination) && (hasFormulaPack || !$0.needsFormulaPack)
+                }
+                #expect(Set(listed) == Set(expected))
+            }
         }
+    }
+
+    @Test func captureFormulaIsListedOnlyOnceThePackIsInstalled() {
+        #expect(CaptureShortcut.allCases.filter(\.needsFormulaPack) == [.captureFormula])
+        let without = Set(ShortcutsSettingsView.groups(hasDestination: true, hasFormulaPack: false, hasKey: Self.noKey).flatMap { $0 })
+        let with = Set(ShortcutsSettingsView.groups(hasDestination: true, hasFormulaPack: true, hasKey: Self.noKey).flatMap { $0 })
+        #expect(with.subtracting(without) == [.captureFormula])
+        // A key chosen while the pack was installed keeps it listed after the pack is removed.
+        let kept = Set(ShortcutsSettingsView.groups(hasDestination: true, hasFormulaPack: false) { $0 == .captureFormula }.flatMap { $0 })
+        #expect(kept.contains(.captureFormula))
+        // Beside Capture Text, in the text group.
+        let textGroup = ShortcutsSettingsView.groups(hasDestination: true, hasFormulaPack: true, hasKey: Self.noKey).first { $0.contains(.captureText) }
+        #expect(textGroup == [.captureText, .captureTextJoined, .captureFormula, .translateArea])
     }
 
     @Test func theAreaShortcutsAreListedTogetherAndInOrder() throws {

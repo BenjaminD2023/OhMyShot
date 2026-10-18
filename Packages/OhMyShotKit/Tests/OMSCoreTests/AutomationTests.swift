@@ -44,6 +44,16 @@ struct AutomationURLParserTests {
         #expect(result == .success(.captureText(file: URL(filePath: "/tmp/shot.png"), region: AutomationRegion(), lineBreaks: false)))
     }
 
+    @Test func captureFormulaReadsAFileOrAnArea() {
+        let file = parse("ohmyshot://capture-formula?filepath=/tmp/formula.png")
+        #expect(file == .success(.captureFormula(file: URL(filePath: "/tmp/formula.png"), region: AutomationRegion())))
+        #expect((try? file.get())?.readsScreen == false)
+        #expect((try? file.get())?.fileURLs == [URL(filePath: "/tmp/formula.png")])
+        let area = parse("ohmyshot://capture-formula?x=10&y=20&width=300&height=60")
+        #expect(area == .success(.captureFormula(file: nil, region: AutomationRegion(rect: CGRect(x: 10, y: 20, width: 300, height: 60)))))
+        #expect((try? area.get())?.readsScreen == true)
+    }
+
     /// As the Raycast extension writes them: every reserved character percent-encoded, a plus as %2B.
     @Test func encodedPathsKeepTheirSpacesAndPlusSigns() {
         let result = parse("ohmyshot://pin?filepath=%2FUsers%2Fme%2FDesktop%2Fa%2Bb%20shot.png")

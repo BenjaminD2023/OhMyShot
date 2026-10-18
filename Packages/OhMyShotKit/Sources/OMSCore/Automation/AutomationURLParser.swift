@@ -73,6 +73,8 @@ public enum AutomationURLParser {
             return .recordScreen(try p.region())
         case "capture-text":
             return .captureText(file: try p.file(), region: try p.region(), lineBreaks: try p.bool("linebreaks"))
+        case "capture-formula":
+            return .captureFormula(file: try p.file(), region: try p.region())
         case "open-annotate":
             return .openAnnotate(file: try p.file())
         case "open-from-clipboard":
