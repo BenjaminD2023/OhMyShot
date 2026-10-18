@@ -103,6 +103,61 @@ public final class FormulaReader: @unchecked Sendable {
     }
 }
 
+extension FormulaReader {
+    /// The formulas `finder` finds in `image`, each read as LaTeX, top to bottom; those not read whole are left out, and
+    /// so are those still waiting at `deadline` (their text then stays as Vision reads it). `found` is told how many
+    /// there are to read before the first is.
+    public func formulas(
+        in image: CGImage, finder: FormulaFinder, deadline: Duration = .seconds(30), found: (@Sendable (Int) -> Void)? = nil
+    ) async throws -> [FormulaMerge.Formula] {
+        let started = ContinuousClock.now
+        let regions = try await finder.regions(in: image)
+        found?(regions.count)
+        return try await formulas(in: image, regions: regions, deadline: deadline - (ContinuousClock.now - started))
+    }
+
+    /// The formulas in `regions` of `image` (as `FormulaFinder` found them), each read as LaTeX, as above.
+    public func formulas(in image: CGImage, regions: [FormulaFinder.Region], deadline: Duration = .seconds(30)) async throws -> [FormulaMerge.Formula] {
+        let started = ContinuousClock.now
+        let readings = try await withThrowingTaskGroup(of: (Int, FormulaReading?).self) { group in
+            var next = 0
+            func readNext() {
+                guard next < regions.count else { return }
+                let index = next
+                next += 1
+                group.addTask {
+                    let left = deadline - (ContinuousClock.now - started)
+                    guard left > .zero, let part = image.cropping(to: Self.crop(of: regions[index].box, in: image)) else { return (index, nil) }
+                    return (index, try await self.read(part, deadline: min(Self.defaultDeadline, left)))
+                }
+            }
+            for _ in 0..<Self.readsAtOnce { readNext() }
+            var readings = [FormulaReading?](repeating: nil, count: regions.count)
+            for try await (index, reading) in group {
+                readings[index] = reading
+                readNext()
+            }
+            return readings
+        }
+        return zip(regions, readings).compactMap { region, reading in
+            guard let reading, reading.isFormula else { return nil }
+            return FormulaMerge.Formula(kind: region.kind, box: region.box, latex: reading.latex)
+        }
+    }
+
+    /// How many formulas are read side by side, each with a decoder state of its own. Core ML spreads one reading over
+    /// the cores already: three at once read 8 formulas in 2.6 s rather than 4.1 s, for 20% more CPU time and 945 MB at
+    /// the peak against 394 MB (Docs/perf.md › M6 — Formulas among text).
+    static let readsAtOnce = 1
+
+    /// What of the picture is read for a formula found in `box`: a little more above and below, where a box drawn
+    /// close may cut an accent or a script, and barely more to the sides, where the words beside an inline formula are.
+    /// The reader crops what it reads to its ink anyway.
+    static func crop(of box: CGRect, in image: CGImage) -> CGRect {
+        box.insetBy(dx: -2, dy: -max(2, box.height * 0.12)).integral.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    }
+}
+
 /// What the formula pack read in a picture.
 public struct FormulaReading: Sendable, Equatable {
     public enum Ending: String, Sendable, Codable {

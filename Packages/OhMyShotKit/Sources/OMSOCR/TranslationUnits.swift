@@ -47,20 +47,28 @@ public enum TranslationUnits {
         var current: [Int] = []
         for index in lines.indices {
             current.append(index)
-            guard index == lines.count - 1 || !wraps[index] || isVertical(lines[index]) || isVertical(lines[index + 1]) else { continue }
+            guard index == lines.count - 1 || !wraps[index] || isVertical(lines[index]) || isVertical(lines[index + 1])
+                || lines[index].math == .display || lines[index + 1].math == .display
+            else { continue }
             let members = current.map { lines[$0] }
-            let texts = members.map { TextAssembler.isCodeLike($0.text) ? TextAssembler.asCode($0.text) : TextAssembler.asProse($0.text) }
+            let texts = members.map { line in
+                line.math != nil ? TextAssembler.withMath(line.text) : TextAssembler.isCodeLike(line.text) ? TextAssembler.asCode(line.text) : TextAssembler.asProse(line.text)
+            }
             let text = TextAssembler.joinWrapped(texts, wraps: members.dropLast().map { _ in true } + [false])
             let box = members.dropFirst().reduce(members[0].box) { $0.union($1.box) }
-            units.append(TranslationUnit(lines: current, text: text, box: box, skip: skip(text, members: members, isCode: isCode, technical: technical)))
+            // A formula's LaTeX is neither code nor figures: what is around it decides.
+            let prose = members.contains { $0.math != nil } ? text.replacing(TextAssembler.mathSpan, with: " ") : text
+            units.append(TranslationUnit(lines: current, text: text, box: box, skip: skip(prose, members: members, isCode: isCode, technical: technical)))
             current = []
         }
         return units
     }
 
     private static func skip(_ text: String, members: [OCRLine], isCode: Bool, technical: Bool) -> TranslationUnit.Skip? {
+        // A formula set apart is left as it is on the image, as code is.
+        if members.count == 1, members[0].math == .display { return .code }
         // A line of code among prose ("let x = 1" in a tutorial) is left as it is too.
-        if isCode || members.count == 1 && TextAssembler.isCodeLike(members[0].text) { return .code }
+        if isCode || members.count == 1 && TextAssembler.isCodeLike(TextAssembler.withoutMath(members[0])) { return .code }
         if members.contains(where: isVertical) { return .vertical }
         if isFigures(text) { return .figures }
         if isLinkAlone(text) { return .link }

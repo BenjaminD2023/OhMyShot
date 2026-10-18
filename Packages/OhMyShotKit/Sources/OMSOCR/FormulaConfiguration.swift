@@ -1,7 +1,7 @@
 import Foundation
 
 /// How the formula pack reads, from its `config.json` (Tools/model-packs/formula_pack.py writes it): the picture's
-/// preparation, the models' input and output names, and the tokens.
+/// preparation, the models' input and output names, the tokens, and the layout model that finds formulas among text.
 public struct FormulaConfiguration: Decodable, Sendable, Equatable {
     public var format: Int
     public var model: String
@@ -11,6 +11,7 @@ public struct FormulaConfiguration: Decodable, Sendable, Equatable {
     public var encoder: Encoder
     public var decoder: Decoder
     public var tokens: Tokens
+    public var layout: Layout
 
     public struct Picture: Decodable, Sendable, Equatable {
         /// A picture whose border's mean gray (0-255) is below this is inverted first: the model reads dark ink on
@@ -68,6 +69,20 @@ public struct FormulaConfiguration: Decodable, Sendable, Equatable {
         public var encoding: String
     }
 
+    /// PP-DocLayoutV3: a picture scaled to `size` × `size` whatever its aspect, value / 255, in; each query's class
+    /// logits and box (center x, center y, width, height, 0-1 of the picture) out.
+    public struct Layout: Decodable, Sendable, Equatable {
+        public var file: String
+        public var input: String
+        public var size: Int
+        public var logits: String
+        public var boxes: String
+        /// The classes that are formulas: "display" (on a line of its own) and "inline" (within text).
+        public var classes: [String: Int]
+        /// A query is a formula where one of those classes scores this or more, through a sigmoid.
+        public var threshold: Float
+    }
+
     public static func load(from folder: URL) throws -> FormulaConfiguration {
         let configuration = try JSONDecoder().decode(FormulaConfiguration.self, from: Data(contentsOf: folder.appending(path: "config.json")))
         if let problem = configuration.problem { throw FormulaError.badPack(problem) }
@@ -76,13 +91,16 @@ public struct FormulaConfiguration: Decodable, Sendable, Equatable {
 
     /// Why the reader can't read with this configuration, or nil when it can.
     var problem: String? {
-        guard format == 1 else { return "format \(format) is not 1" }
+        guard format == 2 else { return "format \(format) is not 2" }
         guard picture.channels == "RGB", picture.mean.count == 3, picture.std.count == 3, picture.std.allSatisfy({ $0 > 0 }) else {
             return "the picture's normalization is not three RGB channels"
         }
         guard picture.size > 0, (0...255).contains(picture.padding) else { return "the picture's size or padding is out of range" }
         guard decoder.cache > 1, decoder.repeats.times > 1, decoder.repeats.longest > 0 else { return "the decoder's cache or repeats are out of range" }
         guard tokens.encoding == "byteLevel", tokens.special >= 0 else { return "tokens are not byte-level" }
+        guard layout.size > 0, layout.classes["display"] != nil, layout.classes["inline"] != nil, (0...1).contains(layout.threshold) else {
+            return "the layout model's size, classes, or threshold are out of range"
+        }
         return nil
     }
 }

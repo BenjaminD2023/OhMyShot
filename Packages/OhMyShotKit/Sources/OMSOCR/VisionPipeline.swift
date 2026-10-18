@@ -733,3 +733,43 @@ extension VisionPipeline {
         return context.makeImage()
     }
 }
+
+extension VisionPipeline {
+    /// `lines` (of `image`) with `formulas` in them, in reading order (`FormulaMerge`): what Vision made of each formula
+    /// gives way to its LaTeX, and the text beside a formula is read again without it. The lines as they were when the
+    /// pieces can't be read.
+    @concurrent
+    public func lines(_ lines: [OCRLine], with formulas: [FormulaMerge.Formula], in image: CGImage) async -> [OCRLine] {
+        let plan = FormulaMerge.plan(lines, formulas: formulas)
+        guard plan.changes else { return lines }
+        let size = CGSize(width: image.width, height: image.height)
+        let crops = FormulaMerge.crops(plan, lines: lines, formulas: formulas, size: size) { InkProfile(image: image, box: $0) }
+        do {
+            let read = try await read(crops: crops.compactMap(\.self), in: image, latin: plan.latin)
+            var texts = read.makeIterator()
+            let pieces = crops.map { $0 == nil ? "" : texts.next() ?? "" }
+            return ReadingOrder.sorted(FormulaMerge.lines(lines, formulas: formulas, plan: plan, pieces: pieces))
+        } catch {
+            options.trace?("formulas: the pieces beside them couldn't be read: \(error)")
+            return lines
+        }
+    }
+
+    /// The text of each of `crops` of `image` (its pixels, top-left origin), each read alone: stacked in strips
+    /// (`LineStrip`), a request a strip, with the Latin model when `latin`. Within a crop, what Vision reads as two lines
+    /// is joined left to right.
+    func read(crops: [CGRect], in image: CGImage, latin: Bool) async throws -> [String] {
+        guard !crops.isEmpty else { return [] }
+        var found = [Int: [OCRLine]]()
+        for batch in LineStrip.batches(of: crops) {
+            guard let strip = LineStrip(source: image, crops: Array(crops[batch])) else { continue }
+            for read in try await readLines(in: strip.image, languages: latin ? Self.english : options.primaryLanguages) {
+                if let row = strip.row(of: read.box) { found[batch.lowerBound + row, default: []].append(read) }
+            }
+        }
+        return crops.indices.map { index in
+            let read = (found[index] ?? []).sorted { $0.box.minX < $1.box.minX }.map(\.text)
+            return FormulaMerge.joined(read.map { ($0, false) })
+        }
+    }
+}

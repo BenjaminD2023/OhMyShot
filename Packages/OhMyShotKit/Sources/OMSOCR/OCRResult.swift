@@ -9,6 +9,14 @@ public struct OCRLine: Sendable, Equatable {
         case topToBottom
     }
 
+    /// Formulas a line holds as LaTeX between `$` signs (`FormulaMerge`).
+    public enum Math: Sendable, Equatable {
+        /// Within its text, as `$…$`.
+        case inline
+        /// The whole line, a formula set apart, as `$$…$$`.
+        case display
+    }
+
     public var text: String
     /// In image pixels, top-left origin.
     public var box: CGRect
@@ -16,13 +24,15 @@ public struct OCRLine: Sendable, Equatable {
     public var direction: Direction?
     /// Whether the text runs on into the next line (a wrapped sentence) rather than ending here.
     public var wrapsToNextLine: Bool?
+    public var math: Math?
 
-    public init(text: String, box: CGRect, confidence: Float, direction: Direction? = nil, wrapsToNextLine: Bool? = nil) {
+    public init(text: String, box: CGRect, confidence: Float, direction: Direction? = nil, wrapsToNextLine: Bool? = nil, math: Math? = nil) {
         self.text = text
         self.box = box
         self.confidence = confidence
         self.direction = direction
         self.wrapsToNextLine = wrapsToNextLine
+        self.math = math
     }
 }
 

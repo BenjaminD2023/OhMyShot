@@ -47,14 +47,14 @@ public enum TextAssembler {
             for (index, indent) in zip(starts, indentation(starts.map { lines[$0] })) { indents[index] = indent }
         }
         let texts = zip(lines, indents).map { line, indent in
-            let text = isCode || isCodeLike(line.text) ? asCode(line.text) : asProse(line.text)
+            let text = line.math != nil ? withMath(line.text) : isCode || isCodeLike(line.text) ? asCode(line.text) : asProse(line.text)
             return String(repeating: " ", count: indent) + text
         }
         let guesses = options.joinsWrappedLines && !isCode ? inferredWraps(lines) : []
         let joins: [Join] = lines.indices.map { index in
             guard index + 1 < lines.count else { return .newLine }
             if let spaces = continuations[index + 1] { return .spaces(spaces) }
-            guard !guesses.isEmpty else { return .newLine }
+            guard !guesses.isEmpty, lines[index].math != .display, lines[index + 1].math != .display else { return .newLine }
             return lines[index].wrapsToNextLine ?? guesses[index] ? .wrap : .newLine
         }
         var assembly = build(texts, joins: joins)
@@ -86,10 +86,30 @@ public enum TextAssembler {
 
     // MARK: Code
 
-    /// A screenshot of code: most of its lines read as code.
+    /// A screenshot of code: most of its lines read as code. A formula's LaTeX is no code: only the text around it
+    /// counts.
     static func isCodeListing(_ lines: [OCRLine]) -> Bool {
-        let codeLines = lines.filter { isCodeLike($0.text) }.count
+        let codeLines = lines.filter { isCodeLike(withoutMath($0)) }.count
         return lines.count >= 2 && Double(codeLines) >= Double(lines.count) * 0.4
+    }
+
+    /// A formula in a line's text, as `FormulaMerge` writes it.
+    nonisolated(unsafe) static let mathSpan = /\$\$[^$]+\$\$|\$[^$]+\$/
+
+    /// The line's text, each formula it holds a space.
+    static func withoutMath(_ line: OCRLine) -> String {
+        line.math == nil ? line.text : line.text.replacing(mathSpan, with: " ")
+    }
+
+    /// A line holding formulas: the text around them as prose, the LaTeX as it is.
+    static func withMath(_ text: String) -> String {
+        var result = ""
+        var rest = text[...]
+        while let span = rest.firstMatch(of: mathSpan) {
+            result += asProse(String(rest[..<span.range.lowerBound])) + span.output
+            rest = rest[span.range.upperBound...]
+        }
+        return result + asProse(String(rest))
     }
 
     static func isCodeLike(_ text: String) -> Bool {

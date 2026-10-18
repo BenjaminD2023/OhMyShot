@@ -152,11 +152,15 @@ struct FormulaTests {
         let configuration = try Self.shippedConfiguration()
         #expect(configuration.problem == nil)
         #expect(configuration.picture.size == 768 && configuration.decoder.cache == 1024 && configuration.tokens.special == 23)
+        #expect(configuration.layout.size == 800 && configuration.layout.classes == ["display": 5, "inline": 15])
         var other = configuration
-        other.format = 2
+        other.format = 1
         #expect(other.problem != nil)
         other = configuration
         other.tokens.encoding = "sentencepiece"
+        #expect(other.problem != nil)
+        other = configuration
+        other.layout.classes = ["display": 5]
         #expect(other.problem != nil)
     }
 
@@ -245,16 +249,18 @@ struct FormulaTests {
         try JSONDecoder().decode(FormulaConfiguration.self, from: Data(shippedConfigurationJSON.utf8))
     }
 
-    /// The pack's config.json, version 1.
+    /// The pack's config.json, version 2.
     static let shippedConfigurationJSON = """
     {
-      "format": 1, "model": "PP-FormulaNet_plus-L", "computeUnits": "cpuOnly",
+      "format": 2, "model": "PP-FormulaNet_plus-L", "computeUnits": "cpuOnly",
       "picture": {"darkBorder": 128, "cropGray": 200, "size": 768, "padding": 0, "channels": "RGB",
                   "mean": [0.7931, 0.7931, 0.7931], "std": [0.1738, 0.1738, 0.1738]},
       "encoder": {"file": "encoder.mlpackage", "input": "pixel_values", "keys": "cross_k", "values": "cross_v"},
       "decoder": {"file": "decoder.mlpackage", "token": "ids", "position": "pos", "mask": "mask", "keys": "cross_k",
                   "values": "cross_v", "next": "next", "cache": 1024, "start": 2, "end": 2, "repeats": {"times": 8, "longest": 64}},
-      "tokens": {"file": "tokens.txt", "special": 23, "encoding": "byteLevel"}
+      "tokens": {"file": "tokens.txt", "special": 23, "encoding": "byteLevel"},
+      "layout": {"file": "layout.mlpackage", "input": "pixel_values", "size": 800, "logits": "logits", "boxes": "boxes",
+                 "classes": {"display": 5, "inline": 15}, "threshold": 0.5}
     }
     """
 }
