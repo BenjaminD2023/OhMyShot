@@ -37,28 +37,9 @@ public final class PPOCRReader: OCREngine, @unchecked Sendable {
         let classes = try PPOCRConfiguration.classes(in: folder, configuration)
         let head = try configuration.recognition.head.map { try PPOCRHead(contentsOf: folder.appending(path: $0.file), $0, classes: classes.count) }
         let units: MLComputeUnits = configuration.computeUnits == "cpuOnly" ? .cpuOnly : .cpuAndNeuralEngine
-        async let detector = model(configuration.detection.file, in: folder, units: units)
-        async let recognizer = model(configuration.recognition.file, in: folder, units: units)
+        async let detector = PackModel.load(configuration.detection.file, in: folder, units: units)
+        async let recognizer = PackModel.load(configuration.recognition.file, in: folder, units: units)
         return try await PPOCRReader(configuration: configuration, classes: classes, detector: detector, recognizer: recognizer, head: head)
-    }
-
-    private static func model(_ file: String, in folder: URL, units: MLComputeUnits) async throws -> MLModel {
-        let compiledFolder = folder.appending(path: "Compiled", directoryHint: .isDirectory)
-        let compiled = compiledFolder.appending(path: (file as NSString).deletingPathExtension + ".mlmodelc", directoryHint: .isDirectory)
-        let manager = FileManager.default
-        if !manager.fileExists(atPath: compiled.path(percentEncoded: false)) {
-            let made = try await MLModel.compileModel(at: folder.appending(path: file))
-            try manager.createDirectory(at: compiledFolder, withIntermediateDirectories: true)
-            do {
-                try manager.moveItem(at: made, to: compiled)
-            } catch where manager.fileExists(atPath: compiled.path(percentEncoded: false)) {
-                // Compiled meanwhile by another reader: that one is kept.
-                try? manager.removeItem(at: made)
-            }
-        }
-        let options = MLModelConfiguration()
-        options.computeUnits = units
-        return try await MLModel.load(contentsOf: compiled, configuration: options)
     }
 
     // MARK: Reading

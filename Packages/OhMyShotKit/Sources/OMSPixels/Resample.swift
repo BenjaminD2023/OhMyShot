@@ -84,6 +84,88 @@ public enum Resample {
     }
 
     /// `np.rot90`: turned a quarter counterclockwise, so the source's last column becomes the first row.
+    /// PIL's resampling filters: a triangle, or a cubic with a = −0.5.
+    public enum Filter: Sendable {
+        case bilinear, bicubic
+    }
+
+    /// PIL's `Image.resize`, which torchvision's antialiased resize of 8-bit pixels gives within 1 on about 0.01% of
+    /// values, so the formula pack reads what transformers' processor gave it (Tools/l3-spike/formula_picture.py): a
+    /// separable filter widened by the scale when shrinking, its weights in 22-bit fixed point, the rows first, then the
+    /// columns, each pass rounded to 8 bits. Every output pixel takes the source pixels its filter covers, none past
+    /// the edge.
+    public static func antialiased(_ source: UnsafeBufferPointer<UInt8>, width: Int, height: Int, toWidth: Int, toHeight: Int, filter: Filter) -> [UInt8] {
+        precondition(source.count >= width * height * 4)
+        guard width > 0, height > 0, toWidth > 0, toHeight > 0 else { return [UInt8](repeating: 0, count: max(toWidth, 0) * max(toHeight, 0) * 4) }
+        let columns = antialiasingTaps(width, toWidth, filter)
+        var middle = [UInt8](repeating: 0, count: toWidth * height * 4)
+        middle.withUnsafeMutableBufferPointer { out in
+            for y in 0..<height {
+                let row = y * width * 4, o = y * toWidth * 4
+                for (x, tap) in columns.enumerated() {
+                    for k in 0..<4 {
+                        var sum = 1 << (fixedBits - 1)
+                        for (i, weight) in tap.weights.enumerated() { sum += weight * Int(source[row + (tap.first + i) * 4 + k]) }
+                        out[o + x * 4 + k] = UInt8(min(max(sum >> fixedBits, 0), 255))
+                    }
+                }
+            }
+        }
+        let rows = antialiasingTaps(height, toHeight, filter)
+        var result = [UInt8](repeating: 0, count: toWidth * toHeight * 4)
+        middle.withUnsafeBufferPointer { middle in
+            result.withUnsafeMutableBufferPointer { out in
+                for (y, tap) in rows.enumerated() {
+                    let o = y * toWidth * 4
+                    for x in 0..<(toWidth * 4) {
+                        var sum = 1 << (fixedBits - 1)
+                        for (i, weight) in tap.weights.enumerated() { sum += weight * Int(middle[(tap.first + i) * toWidth * 4 + x]) }
+                        out[o + x] = UInt8(min(max(sum >> fixedBits, 0), 255))
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    private static let fixedBits = 22
+
+    private struct Tap {
+        let first: Int
+        let weights: [Int]
+    }
+
+    /// For each of `to` output indices, the first of the `count` source indices its filter covers and their weights.
+    private static func antialiasingTaps(_ count: Int, _ to: Int, _ filter: Filter) -> [Tap] {
+        let support: Double = filter == .bilinear ? 1 : 2
+        let scale = Double(count) / Double(to)
+        let widening = max(scale, 1)
+        return (0..<to).map { o in
+            let center = (Double(o) + 0.5) * scale
+            // Truncated, as PIL's (int) cast is.
+            let first = max(Int(center - support * widening + 0.5), 0)
+            let last = min(Int(center + support * widening + 0.5), count)
+            var weights = (first..<last).map { filterValue((Double($0) - center + 0.5) / widening, filter) }
+            let total = weights.reduce(0, +)
+            if total != 0 { weights = weights.map { $0 / total } }
+            let one = Double(1 << fixedBits)
+            return Tap(first: first, weights: weights.map { $0 < 0 ? Int(-0.5 + $0 * one) : Int(0.5 + $0 * one) })
+        }
+    }
+
+    private static func filterValue(_ x: Double, _ filter: Filter) -> Double {
+        let x = abs(x)
+        switch filter {
+        case .bilinear:
+            return max(0, 1 - x)
+        case .bicubic:
+            let a = -0.5
+            if x < 1 { return ((a + 2) * x - (a + 3)) * x * x + 1 }
+            if x < 2 { return (((x - 5) * x + 8) * x - 4) * a }
+            return 0
+        }
+    }
+
     public static func turnedCounterclockwise(_ source: UnsafeBufferPointer<UInt8>, width: Int, height: Int) -> [UInt8] {
         var result = [UInt8](repeating: 0, count: width * height * 4)
         result.withUnsafeMutableBufferPointer { out in

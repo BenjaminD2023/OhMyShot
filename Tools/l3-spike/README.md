@@ -58,6 +58,8 @@ $P $T/formula_coreml.py $M $L3/coreml/formula $L3/corpus out.json cpu cpu _int8
 $P $T/score.py $L3/corpus out.json --render --worst
 $L3/fprobe compile $L3/coreml/formula/encoder.mlpackage $L3/coreml/c   # then decoder.mlpackage
 $L3/fprobe $L3/coreml/c cpu cpu 60                                     # native loads, steps, peak memory
+$P $T/formula_picture.py $L3/corpus "f*_*.png" $M                 # the app's preparation against the processor's
+$P $T/formula_picture.py $L3/corpus "f0[1-6]_*.png" --dump $L3/parity   # for OMSOCRTests' FormulaTests
 
 $P $T/mlx_convert.py $L3/models/PaddlePaddle_PaddleOCR-VL-1.6 $L3/mlx/paddle-8 8   # 16 for bf16, or 4
 L3=$L3 $T/vlm_all.sh paddle-8                                      # text, tables, formulas, with energy

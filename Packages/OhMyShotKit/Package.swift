@@ -92,6 +92,7 @@ let package = Package(
         .testTarget(
             name: "OMSOCRTests",
             dependencies: ["OMSOCR", "OMSPixels"],
+            resources: [.copy("Resources")],
             swiftSettings: swiftSettings
         ),
         .testTarget(
