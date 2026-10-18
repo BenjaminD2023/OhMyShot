@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import OSLog
 
@@ -126,7 +127,9 @@ public struct ModelPackStore: Sendable {
     }
 
     /// Removes what no pack of `catalog` uses: packs it no longer lists, and versions of its packs other than
-    /// the listed one, installed or on their way. The listed version's download in progress stays, paused.
+    /// the listed one, installed or on their way. The listed version's download in progress stays, paused. An installed
+    /// version that goes leaves the listed one, when that isn't installed, the files they share (`carryOver`): an update
+    /// downloads only what changed.
     ///
     /// - Returns: the folders removed, relative to the root.
     @discardableResult
@@ -142,11 +145,49 @@ public struct ModelPackStore: Sendable {
             }
             for entry in (try? manager.contentsOfDirectory(atPath: folder.path(percentEncoded: false))) ?? [] where !entry.hasPrefix(".") {
                 guard entry != pack.version, entry != "\(pack.version).download" else { continue }
-                if (try? manager.removeItem(at: folder.appending(path: entry))) != nil { removed.append("\(id)/\(entry)") }
+                let old = folder.appending(path: entry, directoryHint: .isDirectory)
+                if !entry.hasSuffix(".download"), receipt(of: pack) == nil,
+                   manager.fileExists(atPath: old.appending(path: Self.receiptName).path(percentEncoded: false)) {
+                    let carried = carryOver(from: old, to: pack)
+                    if carried > 0 { Log.modelPacks.notice("Carried \(carried, privacy: .public) files of \(id, privacy: .public) \(entry, privacy: .public) over to \(pack.version, privacy: .public)") }
+                }
+                if (try? manager.removeItem(at: old)) != nil { removed.append("\(id)/\(entry)") }
             }
         }
         if !removed.isEmpty { Log.modelPacks.notice("Removed model pack folders no pack uses: \(removed.joined(separator: ", "), privacy: .public)") }
         return removed
+    }
+
+    /// Copies into `pack`'s download the files the installed version in `folder` has as `pack` lists them (the same path,
+    /// size, and SHA-256) that the download doesn't have yet. APFS clones the copies, which take no room of their own;
+    /// the download takes them as done, as it does a file it fetched.
+    ///
+    /// - Returns: how many files were carried over.
+    @discardableResult
+    func carryOver(from folder: URL, to pack: ModelPack) -> Int {
+        let manager = FileManager.default
+        guard let staging = try? prepareDownload(of: pack) else { return 0 }
+        var carried = 0
+        for file in pack.files {
+            let source = Self.place(file.path, under: folder), target = Self.place(file.path, under: staging)
+            guard Self.contains(folder, source), Self.contains(staging, target), Self.size(of: target) == nil,
+                  Self.size(of: source) == file.size, Self.sha256(of: source) == file.sha256
+            else { continue }
+            try? manager.removeItem(at: Self.partial(of: target))
+            if (try? manager.copyItem(at: source, to: target)) != nil { carried += 1 }
+        }
+        return carried
+    }
+
+    /// The SHA-256 of the file at `url`, read a megabyte at a time, as lowercase hexadecimal; nil when it can't be read.
+    static func sha256(of url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: Paths

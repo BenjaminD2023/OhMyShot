@@ -1067,36 +1067,36 @@
         }
       }
     },
-    "PP-FormulaNet_plus-L, by PaddlePaddle: Capture Formula copies the formula you select as LaTeX." : {
+    "PP-FormulaNet_plus-L and PP-DocLayoutV3, by PaddlePaddle: recognized text holds each formula as LaTeX, and Capture Formula copies the formula you select." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PP-FormulaNet_plus-L, de PaddlePaddle: Capturar fórmula copia como LaTeX la fórmula que selecciones."
+            "value" : "PP-FormulaNet_plus-L y PP-DocLayoutV3, de PaddlePaddle: el texto reconocido incluye cada fórmula en LaTeX, y Capturar fórmula copia la fórmula que selecciones."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PP-FormulaNet_plus-L, de PaddlePaddle : Capturer une formule copie la formule sélectionnée en LaTeX."
+            "value" : "PP-FormulaNet_plus-L et PP-DocLayoutV3, de PaddlePaddle : le texte reconnu contient chaque formule en LaTeX, et Capturer une formule copie la formule sélectionnée."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PP-FormulaNet_plus-L（PaddlePaddle製）：「数式をキャプチャ」で、選択した数式をLaTeXとしてコピーします。"
+            "value" : "PP-FormulaNet_plus-L と PP-DocLayoutV3（PaddlePaddle製）：認識したテキストの数式をLaTeXで表し、「数式をキャプチャ」で選択した数式をLaTeXとしてコピーします。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PP-FormulaNet_plus-L，由 PaddlePaddle 开发：用“截取公式”把选中的公式拷贝为 LaTeX。"
+            "value" : "PP-FormulaNet_plus-L 和 PP-DocLayoutV3，由 PaddlePaddle 开发：识别出的文字里，公式都写成 LaTeX；用“截取公式”可把选中的公式拷贝为 LaTeX。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PP-FormulaNet_plus-L，由 PaddlePaddle 開發：用「擷取公式」把選取的公式拷貝為 LaTeX。"
+            "value" : "PP-FormulaNet_plus-L 和 PP-DocLayoutV3，由 PaddlePaddle 開發：辨識出的文字裡，公式都寫成 LaTeX；用「擷取公式」可把選取的公式拷貝為 LaTeX。"
           }
         }
       }

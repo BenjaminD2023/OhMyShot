@@ -166,32 +166,39 @@ public enum ModelPackCatalog {
         ]
     )
 
-    /// PP-FormulaNet_plus-L, converted to Core ML with 8-bit weights by `Tools/model-packs/formula_pack.py` and published
-    /// on Hugging Face (Docs/ocr.md › The formula pack): Capture Formula copies the formula in a selection as LaTeX,
-    /// read on the CPU in the text reader. Until it is installed, nothing but Settings › Tools mentions it.
+    /// PP-FormulaNet_plus-L and PP-DocLayoutV3, converted to Core ML with 8-bit weights by
+    /// `Tools/model-packs/formula_pack.py` and published on Hugging Face (Docs/ocr.md › The formula pack): the text
+    /// Capture Text, the OCR panel, and Recognize Text in Image read holds each formula as LaTeX (Docs/ocr.md › Formulas
+    /// among text), and Capture Formula copies the formula in a selection, read on the CPU in the text reader. Until it
+    /// is installed, nothing but Settings › Tools mentions it. Version 2 adds the layout model; version 1's folder goes
+    /// when Settings › Tools next reads the packs, the files the two share carried over to version 2's download
+    /// (`ModelPackStore.removeUnused`).
     public static let ppFormulaNetPlusL = ModelPack(
-        id: "pp-formulanet-plus-l", version: "1",
+        id: "pp-formulanet-plus-l", version: "2",
         name: String(localized: "Math Formulas", bundle: .module),
         summary: String(
-            localized: "PP-FormulaNet_plus-L, by PaddlePaddle: Capture Formula copies the formula you select as LaTeX.",
+            localized: "PP-FormulaNet_plus-L and PP-DocLayoutV3, by PaddlePaddle: recognized text holds each formula as LaTeX, and Capture Formula copies the formula you select.",
             bundle: .module
         ),
         license: .init(name: "Apache-2.0", file: "LICENSE.txt", url: URL(string: "https://www.apache.org/licenses/LICENSE-2.0")!),
         original: URL(string: "https://huggingface.co/PaddlePaddle/PP-FormulaNet_plus-L_safetensors")!,
         host: "Hugging Face",
         mirrors: [
-            URL(string: "https://huggingface.co/MoraxCheng/ohmyshot-ppformulanet-plus-l-coreml/resolve/192ccb089d5a44384f84ad4283317c7692d2dc93/")!,
+            URL(string: "https://huggingface.co/MoraxCheng/ohmyshot-ppformulanet-plus-l-coreml/resolve/a994339cda5fe6ba90170981219395dfb025332b/")!,
         ],
         files: [
-            .init(path: "LICENSE.txt", size: 12_886, sha256: "b00a6679ffeade0d7f73215777729a3fec149c6f07ab457be9518da782604a5a"),
-            .init(path: "README.md", size: 2_293, sha256: "167a910054ddf3711c1918417cbcf8f164d76142b61101195c8faa53bcf457e7"),
-            .init(path: "config.json", size: 841, sha256: "0af12109a4916f8d68146a44f527b3f9c6e9ce081bb1ad99cfba9cb7c256152f"),
+            .init(path: "LICENSE.txt", size: 13_357, sha256: "ba28caa1f2207e9975828cd4e3f657ca0f61399dde7de4b2ee7ec18aa35fa6c8"),
+            .init(path: "README.md", size: 3_290, sha256: "eeb466a278c01fbf2eea70a340c24e8b8a90d49a3327e7d336bb29bbe452b268"),
+            .init(path: "config.json", size: 1_068, sha256: "4c3cb1ebce4f5c5278abf381dd7bec0822c7cec1047bd88329df713d9346e1e2"),
             .init(path: "decoder.mlpackage/Data/com.apple.CoreML/model.mlmodel", size: 213_277, sha256: "65076981addc92d1408c7b6d06cfd7eded00d05f8fb2608f28cc5e6d97e55566"),
             .init(path: "decoder.mlpackage/Data/com.apple.CoreML/weights/weight.bin", size: 82_426_720, sha256: "7e3e7ea8340e989d2e0c2b0d0b81955e6c3a2a6da47a83c17bef2f7ed49d712c"),
             .init(path: "decoder.mlpackage/Manifest.json", size: 617, sha256: "109a0d931308b09a23c8914cfd12e6b56c3d033210c3e55ccdf2228a2c7d288a"),
             .init(path: "encoder.mlpackage/Data/com.apple.CoreML/model.mlmodel", size: 248_151, sha256: "001a7421192cd23aca54fe84ab83bfbad0184bc116d48f1b947da57a6237d762"),
             .init(path: "encoder.mlpackage/Data/com.apple.CoreML/weights/weight.bin", size: 101_601_728, sha256: "3c298327ddbbf36e713c5f11422121098eff897abd28918d978b3d2dc161b694"),
             .init(path: "encoder.mlpackage/Manifest.json", size: 617, sha256: "80b712d7f2fd957a5f504df05b50ca1eef829b92a4557e1be491d314f75b388d"),
+            .init(path: "layout.mlpackage/Data/com.apple.CoreML/model.mlmodel", size: 504_449, sha256: "5a29516751c43bda726b44d53771038abe22d24519e69fda170ae41d5bb75c0e"),
+            .init(path: "layout.mlpackage/Data/com.apple.CoreML/weights/weight.bin", size: 33_164_480, sha256: "6c86ccbdef3ff798bd6c3507a115c0f04469afaa48f8ca4b0365070153b595a8"),
+            .init(path: "layout.mlpackage/Manifest.json", size: 617, sha256: "b844a26da844086b3f063cd077518c7d210531921a46cc71b814094bbaa80b3a"),
             .init(path: "tokens.txt", size: 424_069, sha256: "1ad57fdc1a3b0fa2545f9cd241f7caaffec92d73186afffcc3ec67547e2df321"),
         ]
     )

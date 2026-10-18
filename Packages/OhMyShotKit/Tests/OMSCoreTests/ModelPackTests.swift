@@ -225,11 +225,12 @@ struct ModelPackTests {
 
     @Test func theFormulaPackIsTheOneUploaded() {
         let pack = ModelPackCatalog.ppFormulaNetPlusL
-        #expect(pack.mirrors.allSatisfy { $0.absoluteString.contains("/resolve/192ccb089d5a44384f84ad4283317c7692d2dc93/") })
-        #expect(pack.version == "1")
-        #expect(pack.files.count == 10)
-        #expect(pack.size == 184_931_199)
-        #expect(Set(["encoder.mlpackage/Manifest.json", "decoder.mlpackage/Manifest.json", "tokens.txt", "config.json"]).isSubset(of: pack.files.map(\.path)))
+        #expect(pack.mirrors.allSatisfy { $0.absoluteString.contains("/resolve/a994339cda5fe6ba90170981219395dfb025332b/") })
+        #expect(pack.version == "2")
+        #expect(pack.files.count == 13)
+        #expect(pack.size == 218_602_440)
+        #expect(Set(["encoder.mlpackage/Manifest.json", "decoder.mlpackage/Manifest.json", "layout.mlpackage/Manifest.json", "tokens.txt", "config.json"])
+            .isSubset(of: pack.files.map(\.path)))
     }
 
     @Test func aFileIsFetchedByItsPathUnderTheMirror() {
@@ -386,15 +387,47 @@ struct ModelPackTests {
         _ = try await rig.downloader.download(old)
         let gone = pack(hosts: [host], files: rig.files, id: "gone-pack")
         _ = try await rig.downloader.download(gone)
-        let new = pack(hosts: [host], files: rig.files, version: "2")
+        // Version 2 changes the license and the detector; the recognizer it shares with version 1 is carried over.
+        var changed = rig.files
+        changed["LICENSE.txt"] = Data("Apache License 2.0, and what was changed since.".utf8)
+        changed["det.mlpackage/Data/weights/weight.bin"] = Self.bytes(10_000, seed: 4)
+        let new = pack(hosts: [host], files: changed, version: "2")
         _ = try leavePartial(of: new, "LICENSE.txt", rig: rig, bytes: Data([1, 2, 3]))
 
         let removed = rig.store.removeUnused(keeping: [new])
         #expect(Set(removed) == ["gone-pack", "test-pack/1"])
         #expect(rig.store.receipt(of: old) == nil)
-        #expect(rig.store.downloaded(new) == 3)
+        #expect(rig.store.downloaded(new) == 3 + 4321)
         try rig.store.remove(new)
         #expect(rig.store.downloaded(new) == 0)
+    }
+
+    @Test func anUpdateDownloadsOnlyWhatChanged() async throws {
+        let rig = try rig()
+        let host = "packs-update.test"
+        var changed = rig.files
+        changed["det.mlpackage/Data/weights/weight.bin"] = Self.bytes(10_000, seed: 4)
+        changed["layout/weight.bin"] = Self.bytes(2000, seed: 7)
+        let served = rig.files.mapKeys { "org/repo/resolve/abc123/\($0)" }.merging(changed.mapKeys { "org/repo/resolve/def456/\($0)" }) { a, _ in a }
+        PackStubProtocol.install(host: host, .init(files: served))
+        let old = pack(hosts: [host], files: rig.files, version: "1")
+        _ = try await rig.downloader.download(old)
+        // A file of the old version damaged on the disk since isn't carried over.
+        try Data([0]).write(to: rig.store.url(of: old.files.first { $0.path == "rec/model 1.bin" }!, in: old))
+        let listed = pack(hosts: [host], files: changed, version: "2")
+        let new = ModelPack(
+            id: listed.id, version: listed.version, name: listed.name, summary: listed.summary, license: listed.license, original: listed.original,
+            host: listed.host, mirrors: [URL(string: "https://\(host)/org/repo/resolve/def456/")!], files: listed.files
+        )
+
+        rig.store.removeUnused(keeping: [new])
+        #expect(rig.store.downloaded(new) == Int64(changed["LICENSE.txt"]!.count))
+        _ = try await rig.downloader.download(new)
+        let fetched = PackStubProtocol.requests(host: host).filter { $0.path.contains("/def456/") }.map { String($0.path.split(separator: "/def456/").last!) }
+        #expect(Set(fetched) == ["det.mlpackage/Data/weights/weight.bin", "layout/weight.bin", "rec/model 1.bin"])
+        for file in new.files {
+            #expect(try Data(contentsOf: rig.store.url(of: file, in: new)) == changed[file.path])
+        }
     }
 
     @MainActor
