@@ -4552,6 +4552,40 @@
         }
       }
     },
+    "Capture Text and the Recognized Text window ask the app under the selection for the text it shows, through Accessibility, and use its own characters for the lines that read the same, so code, names, and numbers come out as the app has them. Apps that don’t share their text, such as Chrome and most apps built with Electron, are read from the picture alone. Nothing leaves this Mac." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturar texto y la ventana Texto reconocido piden a la app que hay bajo la selección el texto que muestra, mediante Accesibilidad, y usan sus propios caracteres en las líneas que se leen igual, para que el código, los nombres y los números salgan tal como los tiene la app. Las apps que no comparten su texto, como Chrome y la mayoría de las creadas con Electron, se leen solo a partir de la imagen. Nada sale de este Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturer du texte et la fenêtre Texte reconnu demandent à l’app située sous la sélection le texte qu’elle affiche, via l’Accessibilité, et utilisent ses propres caractères pour les lignes qui se lisent de la même façon : le code, les noms et les nombres sortent tels que l’app les a. Les apps qui ne partagent pas leur texte, comme Chrome et la plupart des apps créées avec Electron, sont lues à partir de l’image seule. Rien ne quitte ce Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「テキストをキャプチャ」と「認識されたテキスト」ウインドウは、アクセシビリティを通じて選択範囲の下にあるアプリに表示中のテキストを問い合わせ、読み取り結果が一致する行にはアプリ自身の文字を使います。これにより、コード、名前、数字がアプリのとおりになります。テキストを共有しないアプリ（Chrome や Electron で作られた多くのアプリなど）は、画像からのみ読み取ります。このMacの外には何も送信されません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“截取文字”和“识别的文字”窗口会通过辅助功能向选区下方的 App 询问它显示的文字；读出来一致的行，就使用 App 自己的字符，让代码、名称和数字与 App 中完全一样。不共享文字的 App（例如 Chrome 和大多数用 Electron 构建的 App）只从图片中读取。所有内容都不会离开这台 Mac。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「擷取文字」和「辨識出的文字」視窗會透過輔助使用向選取範圍下方的 App 詢問它顯示的文字；讀出來一致的行，就使用 App 自己的字元，讓程式碼、名稱和數字與 App 中完全一樣。不分享文字的 App（例如 Chrome 和大多數以 Electron 建構的 App）只從圖片中讀取。所有內容都不會離開這台 Mac。"
+          }
+        }
+      }
+    },
     "Capture Text waits for the model’s reading before it copies, and copies this Mac’s reading when the model can’t read it." : {
       "localizations" : {
         "es" : {
@@ -12459,6 +12493,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "為檔案命名"
+          }
+        }
+      }
+    },
+    "Needs Accessibility to ask apps for their text." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Necesita Accesibilidad para pedir el texto a las apps."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nécessite l’Accessibilité pour demander leur texte aux apps."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリにテキストを問い合わせるには「アクセシビリティ」が必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要“辅助功能”权限才能向 App 询问文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要「輔助使用」權限才能向 App 詢問文字。"
           }
         }
       }
@@ -20892,6 +20960,40 @@
         }
       }
     },
+    "Text from apps" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texto de las apps"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texte des apps"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリのテキスト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 中的文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 中的文字"
+          }
+        }
+      }
+    },
     "Text in %@ is shown as read until its languages are downloaded" : {
       "localizations" : {
         "es" : {
@@ -23074,6 +23176,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上傳一張小型測試影像到此目的地。影像會留在該處。"
+          }
+        }
+      }
+    },
+    "Use the app’s own characters" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar los caracteres de la propia app"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utiliser les caractères de l’app elle-même"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリ自身の文字を使う"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 App 自己的字符"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 App 自己的字元"
           }
         }
       }

@@ -284,7 +284,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .recording:
             host(RecordingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
         case .tools:
-            host(ToolsSettingsView(settings: dependencies.settings, modelPacks: dependencies.modelPacks, cloudModels: dependencies.cloudModels))
+            host(ToolsSettingsView(settings: dependencies.settings, permissions: dependencies.permissions, modelPacks: dependencies.modelPacks, cloudModels: dependencies.cloudModels))
         case .sharing:
             host(SharingSettingsView(
                 settings: dependencies.settings, destinations: dependencies.destinations,

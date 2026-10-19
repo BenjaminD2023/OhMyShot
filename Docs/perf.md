@@ -2287,3 +2287,16 @@ fails, or is cancelled. In the Dev app (Debug, M3 Max) against a stand-in server
 | A 3078 × 9000 picture, Messages | 6 pieces of 2576 × 1310, 709 KB | 0.82 s |
 
 `debug/resources` read idle after each. A real service's time is the model's: not measured here.
+
+## M6 — Text from apps (2026-10-19)
+
+Asking the apps for their text (Docs/ocr.md › Text from apps) runs only inside a Capture Text or a Recognized Text
+window reading, after Vision's, while Settings has it on: no observer, no timer, nothing held after. In the Dev app
+(Debug, M3 Max) over a 656 × 422 pt TextEdit window of 9–10 lines:
+
+| Reading | Points asked | Time |
+| --- | --- | --- |
+| First cut, every point along every line | 43–93 | 85–111 ms |
+| Points left unasked once a line is covered | 10–12 | 27–50 ms |
+
+Each question waits 0.1 s at most; the reading stops at 150 ms in Capture Text and 500 ms in the window.

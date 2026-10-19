@@ -269,6 +269,37 @@ struct DebugHooks {
                         Log.app.notice("debug.text-test read \(text.map { "\($0.count) characters" } ?? "nothing", privacy: .public)")
                     }
                 }
+            } else if let window = Self.parameter("window", in: url).flatMap({ CGWindowID($0) }),
+                      let info = (CGWindowListCopyWindowInfo(.optionIncludingWindow, window) as? [[String: Any]])?.first,
+                      let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] {
+                // window=<id>: Capture Text over that window alone, as when it is picked, without touching the clipboard;
+                // apptext=1 turns Text from apps on for the run. The log has the text only when only=<app name> owns the
+                // window: a check must never write down the person's own windows.
+                let owner = info[kCGWindowOwnerName as String] as? String ?? ""
+                let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+                let target = WindowTarget(id: window, frame: displays.layout.flipped(frame), ownerName: owner, title: nil)
+                let shows = Self.parameter("only", in: url) == owner
+                let before = settings.readsAppText
+                if Self.parameter("apptext", in: url) == "1" { settings.readsAppText = true }
+                if Self.parameter("panel", in: url) == "1" {
+                    // panel=1: read as the Recognized Text window reads it, without opening the window.
+                    let analyze = textCapture.analyzer(for: textCapture.place(ofWindow: target))
+                    settings.readsAppText = before
+                    Task { [capturer, displays] in
+                        guard let frame = try? await capturer.captureWindow(target, shadow: false, layout: displays.layout),
+                              let analysis = try? await analyze(frame.image) else { return }
+                        let text = analysis.result.text
+                        Log.app.notice("debug.text-test read in the window's way \(shows ? "“\(text)”" : "\(text.count) characters", privacy: .public)")
+                    }
+                    return
+                }
+                Task {
+                    await textCapture.previewRecognition(ofWindow: target, joinLines: join) { [settings] text in
+                        settings.readsAppText = before
+                        let said = shows ? text.map { "“\($0)”" } : text.map { "\($0.count) characters" }
+                        Log.app.notice("debug.text-test read \(said ?? "nothing", privacy: .public)")
+                    }
+                }
             } else if let path = Self.parameter("path", in: url) {
                 Task {
                     await textCapture.recognize(fileAt: URL(filePath: path), joinLines: join, copiesToClipboard: false) { text in
@@ -1360,6 +1391,7 @@ struct DebugHooks {
         default:
             if handleUploadHook(hook, url) { return }
             if handleCloudHook(hook, url) { return }
+            if handleAppTextHook(hook, url) { return }
             Log.app.error("debug.unknown \(hook, privacy: .public)")
         }
     }

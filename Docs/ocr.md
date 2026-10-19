@@ -1589,3 +1589,78 @@ picture, the empty state, Settings' row, and Capture Text reading with the model
 **Not done yet:** a reading with a real service (it needs the person's key); a picture very wide as well as tall (made
 narrower, never cut side by side); translating the cloud model's text; reading a picture again after a first reading
 (off and on keeps the first); stopping Capture Text's wait with Escape.
+
+## Text from apps (L0, M6, 2026-10-19)
+
+The roadmap's L0: where the selection is over an app that shares its text through Accessibility, the app says which
+characters Vision's lines are. `AppText` in OMSCapture asks the apps; `AppTextMerge` in OMSOCR puts the answers into
+Vision's lines. Settings › Tools › Text from apps turns it on (off by default; turning it on asks for Accessibility,
+which Auto-scroll already uses). It reads in Capture Text (an area, or a picked window) and in the Recognized Text
+window for a picture of the screen (an area, a window, Translate Area's); pictures from files, the clipboard, pins, and
+History have no app under them.
+
+**Asking.** Once Vision has read, each of its lines is asked about at points along its middle: one for a short line,
+else from half a line height in from one end to the other, about four line heights apart, eight at most. At each point
+the app whose window is in front there (the window list, front to back, OhMyShot's own windows left out: the overlay,
+the highlight, and the Recognized Text window are over the very place) is asked for its element at that point
+(`AXUIElementCopyElementAtPosition` on the app's element, which an app answers about its own windows wherever others
+lie); a window above the standard ones may let the one behind it answer when it has nothing there (a drop shelf at the
+top of the screen). A picked window's own app is asked instead, covered or not; a picked window of OhMyShot's own
+(Settings, History, an editor) isn't asked at all. An element of a text view or field
+gives its line at the point (`AXRangeForPosition`, `AXLineForIndex`, `AXRangeForLine`, `AXStringForRange`, and the
+line's bounds); anything else its value or title, up to 8000 characters. Password fields are passed over. Once what was
+found reaches from one end of the line to the other (the text view's line, a paragraph of a web page), the points left
+go unasked: on the check below that took the points from 43–93 to 10–12. Each question waits 0.1 s at most, an app
+that doesn't answer one in time isn't asked again, and nothing is asked past the reading's deadline: 150 ms in Capture
+Text and 500 ms in the window (which shows Vision's reading meanwhile); Vision's reading stands alone for what is left. The apps are asked
+right after Vision's reading, before any wait for the cloud model, while the screen still shows what the picture does.
+The log has numbers only, never the text.
+
+**Putting it together.** Vision decides which lines there are, where, and in what order; the app's text under a line
+can hold more than the line (the rest of a paragraph, a part the selection cut off), so the part of it that reads like
+Vision's line is found with an alignment free to start and end anywhere in it, spaces aside, widths and curly quotes
+folded, and a character Vision mistakes for one of its shape (l, I, 1, | and !; 0, O, and o; 5 and S; 2 and Z; 8 and
+B; dashes; a letter of the other case) costing a quarter of an edit. It is taken when it costs at most a quarter of the
+line's characters in edits (one in lines of four to seven characters, none in shorter ones), and when the app has the
+digits Vision read: none read as another digit, none more, none fewer, none Vision read past either end of the part
+(a count beside a button). Else the line keeps Vision's text, which guards against what the app holds and the screen
+doesn't show (icons' labels, titles cut short with "…", rows scrolled away, placeholders) and against the app having
+changed since the screen froze: a clock at 10:31 that the picture shows at 10:30 stays 10:30. The app's spaces
+are kept within a piece of its text; between pieces (cells of a row, runs a link splits) go Vision's. Two pieces side
+by side that say the same are one (a window's title says itself twice). A line taken is marked exact, and assembly
+leaves its characters and spaces as they are (no full-width marks made half-width in code, no spaces taken out of
+Chinese). A line Vision read that the app doesn't bear out goes when it is a scrap of one the app does: nine tenths of
+it inside that line's box and less than three fifths its height (Vision reads the strokes of Chinese as "TZHУ"). In the
+window, the app's characters go over the second reading's (L2). The cloud model's text, when Capture Text reads with
+one and it comes, is copied as the model read it. Capture Text's card says "Text from TextEdit" when the app's
+characters make up half the text or more.
+
+**Checked** (2026-10-19, a document made for it in TextEdit, 656 × 422 pt on the built-in display; the person's own
+windows were never read for their text): unit tests for the asking (where the points fall in the app's space, a text
+view's line asked for once, pieces left to right, password fields, the app in front and a clear window over it, a
+window's own app, the budget) and the putting together. Vision alone and with TextEdit's text, Capture Text over the
+window (`debug/text-test?window=…&only=TextEdit&apptext=1`, and `panel=1` for the window's reading):
+
+| Vision | With the app's text |
+| --- | --- |
+| `= OhMyShot LO check.txt v` | `OhMyShot L0 check.txt` |
+| `let Il1 = [0, 0, o] // 1 I 1 \| 0 0 o` | `let Il1 = [0, O, o] // l I 1 \| 0 O o` |
+| `func parseconfig(_ url: URL) throws > Config {` | `func parseConfig(_ url: URL) throws -> Config {` |
+| `… Data(contents0f: url) …` / `JSoNDecoder()` | `… Data(contentsOf: url) …` / `JSONDecoder()` |
+| `…「实況文本」…编号 A0-1LI.` | `…「实况文本」…编号 A0-1lI。` |
+| `TZHУ` | (gone) |
+| `… lazy dog - 0123456789.` | `… lazy dog — 0123456789.` |
+| `curly "quotes" and 'single' ones...` | `curly “quotes” and ‘single’ ones…` |
+
+9 of 10 lines taken, 10 points, 27–44 ms. With TextEdit behind WeChat's window, WeChat was asked, answered nothing,
+and TextEdit wasn't asked (`debug/app-text` without `only=`, which writes no text). In an earlier run the person had
+switched apps between the picture and the questions: Vision read another app's window and TextEdit answered; the two
+lines that read alike were the same text, and the rest kept Vision's reading. The window list is read when the apps
+are asked, not when the screen froze. A unit test puts an area on a display beside the primary one, as the person's
+ultrawide is, where Accessibility places it. Settings' row in the Dev app.
+
+**Not done yet:** Chrome and Electron apps share no text until told to turn their accessibility on
+(`AXManualAccessibility`, `AXEnhancedUserInterface`), which changes how another app runs, so they are read from the
+picture; Safari, Notes, Mail, Xcode, and Terminal not tried; a line Vision splits in two keeps one space between its
+parts where the app has several (`[0, O, o]   //` came out with one); lines Vision missed aren't added from the app;
+vertical lines are left alone; the Settings warning line not seen (Accessibility was already on for the Dev app).

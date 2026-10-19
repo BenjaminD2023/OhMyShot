@@ -123,7 +123,10 @@ final class TextCaptureCoordinator {
         highlight.show(rect)
         do {
             let frame = try await capture(rect, frozen: frozen)
-            await recognize(frame.image, selection: rect, joinLines: joinLines, copiesToClipboard: copiesToClipboard, allowsCloud: allowsCloud, done: done)
+            await recognize(
+                frame.image, selection: rect, place: Self.place(of: frame), joinLines: joinLines, copiesToClipboard: copiesToClipboard,
+                allowsCloud: allowsCloud, done: done
+            )
         } catch {
             Log.capture.error("Capture Text failed to capture: \(error.localizedDescription, privacy: .public)")
             highlight.finish(copied: nil, announces: !settings.showTextResult)
@@ -135,13 +138,39 @@ final class TextCaptureCoordinator {
         highlight.show(target.frame)
         do {
             let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
-            await recognize(frame.image, selection: target.frame, joinLines: joinLines, copiesToClipboard: true, allowsCloud: allowsCloud, done: done)
+            await recognize(
+                frame.image, selection: target.frame, place: Self.place(of: frame, window: target), joinLines: joinLines, copiesToClipboard: true,
+                allowsCloud: allowsCloud, done: done
+            )
         } catch {
             Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
             highlight.finish(copied: nil, announces: !settings.showTextResult)
             done?(nil)
         }
     }
+
+    #if DEBUG
+    /// Where a window is on screen, for asking its app for its text (the scale taken from the window's display). For
+    /// scripted checks.
+    func place(ofWindow target: WindowTarget) -> AppTextPlace? {
+        let scale = displays.layout.display(at: CGPoint(x: target.frame.midX, y: target.frame.midY))?.pixelsPerPoint ?? 2
+        guard let owner = WindowCatalog.owner(of: target.id), owner != ProcessInfo.processInfo.processIdentifier else { return nil }
+        return AppTextPlace(frame: target.frame, scale: scale, pid: owner)
+    }
+
+    /// Capture Text over one window, as when it is picked, without touching the clipboard. For scripted checks.
+    func previewRecognition(ofWindow target: WindowTarget, joinLines: Bool, done: @escaping (String?) -> Void) async {
+        do {
+            let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
+            await recognize(
+                frame.image, selection: target.frame, place: Self.place(of: frame, window: target), joinLines: joinLines, copiesToClipboard: false,
+                done: done
+            )
+        } catch {
+            done(nil)
+        }
+    }
+    #endif
 
     /// The URL API's `capture-text` with a file: its text goes to the clipboard as a selection's does, the card (when
     /// it is on) by the pointer. Nothing is highlighted: the picture is not on screen.
@@ -177,8 +206,13 @@ final class TextCaptureCoordinator {
     /// until they are in. While Settings has Capture Text read with the cloud model (and `allowsCloud`), the picture goes
     /// to it beside them, and its text is copied once it comes; when it can't read the picture (or takes over
     /// `cloudWait`), this Mac's reading is copied, and the card says so even when it is off.
+    ///
+    /// While Settings says so, the app under `place` (where the picture was on screen) is asked for the text it shows
+    /// where Vision read its lines, and the lines it shows alike take its characters (L0, Docs/ocr.md › Text from apps);
+    /// the card then says the text came from that app. The cloud model's text, when it comes, is copied as it reads.
     private func recognize(
-        _ image: CGImage, selection: CGRect, joinLines: Bool, copiesToClipboard: Bool, allowsCloud: Bool = false, done: ((String?) -> Void)? = nil
+        _ image: CGImage, selection: CGRect, place: AppTextPlace? = nil, joinLines: Bool, copiesToClipboard: Bool, allowsCloud: Bool = false,
+        done: ((String?) -> Void)? = nil
     ) async {
         let showsCard = settings.showTextResult
         let probe = LatencyProbe("ocr.recognize")
@@ -200,6 +234,8 @@ final class TextCaptureCoordinator {
             Log.capture.error("Capture Text failed to recognize: \(String(describing: error), privacy: .public)")
             visionLines = nil
         }
+        // Asked at once, while the screen still shows what the picture does: before any wait for the cloud model.
+        let appText = Self.appText(for: visionLines, in: settings.readsAppText ? place : nil, layout: displays.layout)
 
         var note: String?
         if let cloud, let cloudReading {
@@ -250,6 +286,14 @@ final class TextCaptureCoordinator {
             done?(nil)
             return
         }
+        var appNote: String?
+        if let appText {
+            let reading = await appText.value
+            let merge = AppTextMerge.merged(lines, with: reading.lines.map { AppTextLine(box: $0.box, pieces: $0.pieces, app: $0.app) })
+            Self.log(reading, merge, of: lines.count, in: "Capture Text")
+            appNote = merge.source.map { String(localized: "Text from \($0)") }
+            lines = merge.lines
+        }
         if let formulas {
             let started = ContinuousClock.now
             let found = await formulas.value
@@ -260,7 +304,8 @@ final class TextCaptureCoordinator {
         }
         probe.end()
 
-        var recognition = Recognition(lines: lines, selection: selection, joined: joinLines, copiesToClipboard: copiesToClipboard, note: note)
+        // The card says where the text came from only when it shows anyway.
+        var recognition = Recognition(lines: lines, selection: selection, joined: joinLines, copiesToClipboard: copiesToClipboard, note: note ?? (showsCard ? appNote : nil))
         let text = assemble(recognition)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             last = nil
@@ -285,9 +330,37 @@ final class TextCaptureCoordinator {
         // The cloud model's failure is said even with the card off: Capture Text would otherwise read differently
         // without a word.
         if showsCard || note != nil {
-            hud.show(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, note: note)
+            hud.show(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, note: recognition.note)
         }
         done?(text)
+    }
+
+    /// Where a picture of the screen was, for asking the apps there for their text; a window's own app for a window.
+    /// Nil for a window of OhMyShot's own (Settings, History, an editor): it isn't asked about its own text.
+    private static func place(of frame: CapturedFrame, window: WindowTarget? = nil) -> AppTextPlace? {
+        let owner = window.flatMap { WindowCatalog.owner(of: $0.id) }
+        if window != nil, owner == nil || owner == ProcessInfo.processInfo.processIdentifier { return nil }
+        return AppTextPlace(frame: frame.frame, scale: scale(of: frame), pid: owner)
+    }
+
+    /// The apps' text at the lines' places (L0), being read for `budget` at most; nil while Settings leaves it off (no
+    /// `place`), while Accessibility is off for OhMyShot, or with no lines to ask about.
+    private nonisolated static func appText(
+        for lines: [OCRLine]?, in place: AppTextPlace?, layout: DisplayLayout, within budget: Duration = .milliseconds(150)
+    ) -> Task<AppTextReading, Never>? {
+        guard let place, let lines, !lines.isEmpty, AppText.isAllowed else { return nil }
+        let boxes = lines.map(\.box)
+        return Task { await AppText.read(boxes, in: place, layout: layout, within: budget) }
+    }
+
+    /// What the apps said, in numbers alone: never their text.
+    private nonisolated static func log(_ reading: AppTextReading, _ merge: AppTextMerge.Merged, of count: Int, in reader: String) {
+        let apps = Set(reading.lines.map(\.app)).count
+        var extra = ""
+        if merge.dropped > 0 { extra += ", \(merge.dropped) scraps dropped" }
+        if reading.outOfTime { extra += ", out of time after \(reading.asked) lines" }
+        if reading.secure > 0 { extra += ", \(reading.secure) over password fields" }
+        Log.capture.notice("\(reader, privacy: .public) took \(merge.taken.count, privacy: .public) of \(count, privacy: .public) lines from \(apps, privacy: .public) apps (\(merge.changed, privacy: .public) changed); \(reading.lines.count, privacy: .public) answered at \(reading.points, privacy: .public) points in \(String(describing: reading.duration), privacy: .public)\(extra, privacy: .public)")
     }
 
     /// The task's outcome, or nil when it takes longer than `limit` (the task goes on; the caller may cancel it).
@@ -556,9 +629,10 @@ final class TextCaptureCoordinator {
     /// the OCR panel, translated, which says why and offers a download or another language: a beep alone
     /// said nothing anyone could act on.
     func translate(_ image: CGImage, scale: CGFloat, over frame: CGRect, source: String, inPanel: Bool) async {
+        let place = AppTextPlace(frame: frame, scale: scale)
         if inPanel {
             highlight.hide()
-            openPanel(image: image, scale: scale, source: source, translating: true)
+            openPanel(image: image, scale: scale, source: source, translating: true, place: place)
             return
         }
         let probe = LatencyProbe("ocr.translate-area")
@@ -571,7 +645,7 @@ final class TextCaptureCoordinator {
                 let skipped = Dictionary(grouping: units.compactMap(\.skip), by: { "\($0)" }).map { "\($1.count) \($0)" }.sorted().joined(separator: ", ")
                 Log.capture.notice("Translate Area translated nothing into \(outcome.target.minimalIdentifier, privacy: .public): \(units.count, privacy: .public) units, skipped \(skipped, privacy: .public), \(outcome.inTarget.count, privacy: .public) already in it, to download \(outcome.needsDownload.map(\.minimalIdentifier), privacy: .public); opening the panel")
                 highlight.hide()
-                openPanel(image: image, scale: scale, source: source, translating: true)
+                openPanel(image: image, scale: scale, source: source, translating: true, place: place)
                 return
             }
             guard let rendering = await TranslationOverlay.render(
@@ -588,7 +662,7 @@ final class TextCaptureCoordinator {
                 language: Translator.identifier(of: outcome.target), summary: "\(sources) → \(Translator.name(of: outcome.target))",
                 shortened: !rendering.truncated.isEmpty
             )
-            lens.onOpenInPanel = { [weak self] in self?.openPanel(image: image, scale: scale, source: source, translating: true) }
+            lens.onOpenInPanel = { [weak self] in self?.openPanel(image: image, scale: scale, source: source, translating: true, place: place) }
             highlight.hide()
             Log.capture.notice("Translate Area translated \(outcome.translations.count, privacy: .public) of \(units.count, privacy: .public) units into \(outcome.target.minimalIdentifier, privacy: .public), \(rendering.truncated.count, privacy: .public) shortened")
         } catch {
@@ -620,23 +694,48 @@ final class TextCaptureCoordinator {
     ///
     /// With the formula pack installed, the formulas in the picture are found and read in the text reader beside
     /// Vision's reading, and come into the text as LaTeX once read.
-    func openPanel(image: CGImage, scale: CGFloat, source: String, translating: Bool = false) {
+    ///
+    /// A picture of the screen (`place`) takes the characters of the apps there for the lines they show alike, while
+    /// Settings says so (L0, Docs/ocr.md › Text from apps); they are asked as soon as Vision has read, and their
+    /// characters go over the second reading's.
+    func openPanel(image: CGImage, scale: CGFloat, source: String, translating: Bool = false, place: AppTextPlace? = nil) {
         let controller = panel ?? makePanel()
         panel = controller
+        controller.show(image: image, scale: scale, source: source, translating: translating, formulas: panelFormulas(), analyze: analyzer(for: place))
+    }
+
+    /// How the panel reads a picture: Vision; the second reading while a pack is installed; and for a picture of the
+    /// screen (`place`), the apps' characters while Settings says so.
+    func analyzer(for place: AppTextPlace?) -> @Sendable (CGImage) async throws -> TextAnalysis {
         let pipeline = pipeline
         let second = secondReader?()
-        controller.show(image: image, scale: scale, source: source, translating: translating, formulas: panelFormulas()) { image in
+        let place = settings.readsAppText ? place : nil
+        let layout = displays.layout
+        return { image in
             let analysis = try await pipeline.analyze(image)
-            guard let second, SecondReading.wanted(analysis.result.lines), PPOCRReader.reads(width: image.width, height: image.height)
-            else { return analysis }
-            let started = ContinuousClock.now
-            guard let lines = await Self.secondReading(of: image, with: second.pack, helper: second.helper) else { return analysis }
-            let merged = analysis.withSecondReading(lines, assembly: pipeline.options.assembly)
-            // Vision's lines keep their boxes; the added ones are sorted in among them.
-            let first = Dictionary(analysis.result.lines.map { ("\($0.box)", $0.text) }) { a, _ in a }
-            let changed = merged.result.lines.count { line in first["\(line.box)"].map { $0 != line.text } ?? false }
-            Log.capture.notice("Second reading: \(lines.count, privacy: .public) lines read, \(changed, privacy: .public) of \(analysis.result.lines.count, privacy: .public) changed, \(merged.result.lines.count - analysis.result.lines.count, privacy: .public) added, in \(String(describing: ContinuousClock.now - started), privacy: .public)")
-            return merged
+            // Longer than Capture Text: the window shows Vision's reading meanwhile.
+            let asking = Self.appText(for: analysis.result.lines, in: place, layout: layout, within: .milliseconds(500))
+            var shown = analysis
+            if let second, SecondReading.wanted(analysis.result.lines), PPOCRReader.reads(width: image.width, height: image.height) {
+                let started = ContinuousClock.now
+                if let lines = await Self.secondReading(of: image, with: second.pack, helper: second.helper) {
+                    let merged = analysis.withSecondReading(lines, assembly: pipeline.options.assembly)
+                    // Vision's lines keep their boxes; the added ones are sorted in among them.
+                    let first = Dictionary(analysis.result.lines.map { ("\($0.box)", $0.text) }) { a, _ in a }
+                    let changed = merged.result.lines.count { line in first["\(line.box)"].map { $0 != line.text } ?? false }
+                    Log.capture.notice("Second reading: \(lines.count, privacy: .public) lines read, \(changed, privacy: .public) of \(analysis.result.lines.count, privacy: .public) changed, \(merged.result.lines.count - analysis.result.lines.count, privacy: .public) added, in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+                    shown = merged
+                }
+            }
+            if let asking {
+                let reading = await asking.value
+                let (merged, merge) = shown.withAppText(
+                    reading.lines.map { AppTextLine(box: $0.box, pieces: $0.pieces, app: $0.app) }, assembly: pipeline.options.assembly
+                )
+                Self.log(reading, merge, of: shown.result.lines.count, in: "The Recognized Text window")
+                shown = merged
+            }
+            return shown
         }
     }
 
@@ -721,7 +820,7 @@ final class TextCaptureCoordinator {
     func openPanel(region rect: CGRect, frozen: CapturedFrame? = nil) async {
         do {
             let frame = try await capture(rect, frozen: frozen)
-            openPanel(image: frame.image, scale: Self.scale(of: frame), source: String(localized: "Screen Area"))
+            openPanel(image: frame.image, scale: Self.scale(of: frame), source: String(localized: "Screen Area"), place: Self.place(of: frame))
         } catch {
             Log.capture.error("Capture Text failed to capture: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
@@ -732,7 +831,10 @@ final class TextCaptureCoordinator {
         do {
             let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
             let title = target.title.flatMap { $0.isEmpty ? nil : $0 }
-            openPanel(image: frame.image, scale: Self.scale(of: frame), source: title.map { "\(target.ownerName) – \($0)" } ?? target.ownerName)
+            openPanel(
+                image: frame.image, scale: Self.scale(of: frame), source: title.map { "\(target.ownerName) – \($0)" } ?? target.ownerName,
+                place: Self.place(of: frame, window: target)
+            )
         } catch {
             Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()

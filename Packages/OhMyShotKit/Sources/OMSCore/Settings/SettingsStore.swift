@@ -134,6 +134,13 @@ public final class SettingsStore {
         didSet { defaults.set(showTextResult, forKey: Key.showTextResult) }
     }
 
+    /// Capture Text and the Recognized Text window take the characters the app under the selection shows, through
+    /// Accessibility, for the lines it shows alike (L0, Docs/ocr.md › Text from apps). Off by default: it needs
+    /// Accessibility, asked for when it is turned on.
+    public var readsAppText: Bool {
+        didSet { defaults.set(readsAppText, forKey: Key.readsAppText) }
+    }
+
     /// The language text is translated into, as "zh-Hans" or "ja"; empty for automatic: the first
     /// preferred language the text is not already in.
     public var translationTarget: String {
@@ -416,6 +423,7 @@ public final class SettingsStore {
             Key.showQuickAccess: true,
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
             Key.showTextResult: false,
+            Key.readsAppText: false,
             Key.translationTarget: "",
             // Frozen by default: a hover card or menu that closes as the pointer leaves it can still be
             // captured, since the screen is taken the moment the shortcut is pressed.
@@ -540,6 +548,7 @@ public final class SettingsStore {
         uploadAfterRecording = Self.recordingChoice(Key.uploadAfterRecording, startingAs: Key.uploadAfterCapture, in: defaults)
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
         showTextResult = defaults.bool(forKey: Key.showTextResult)
+        readsAppText = defaults.bool(forKey: Key.readsAppText)
         translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
     }
 
@@ -621,6 +630,7 @@ public final class SettingsStore {
         static let uploadAfterRecording = "uploadAfterRecording"
         static let historyRetention = "historyRetention"
         static let showTextResult = "showTextResult"
+        static let readsAppText = "readsAppText"
         static let translationTarget = "translationTarget"
     }
 }
