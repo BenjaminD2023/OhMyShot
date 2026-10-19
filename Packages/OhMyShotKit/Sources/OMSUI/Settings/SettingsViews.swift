@@ -692,6 +692,12 @@ struct ToolsSettingsView: View {
                 }
                 .help(Text("A card by the selection with the copied text and a switch for its line breaks.", bundle: .module))
             }
+            SettingsRow(Text("Recognized Text", bundle: .module)) {
+                Toggle(isOn: $settings.textRecognitionWrapsText) {
+                    Text("Wrap text to window", bundle: .module)
+                }
+                .help(Text("Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display.", bundle: .module))
+            }
             SettingsRow(Text("Text from apps", bundle: .module)) {
                 AppTextSetting(settings: settings, permissions: permissions)
             }
