@@ -82,7 +82,7 @@ struct RecognizedTextEditor: NSViewRepresentable {
         if textView.selectedRange() != selection, !coordinator.isReportingSelection {
             coordinator.isApplyingSelection = true
             textView.setSelectedRange(selection)
-            textView.scrollRangeToVisible(selection)
+            OCRTextWrapping.reveal(selection, in: textView)
             coordinator.isApplyingSelection = false
         }
         // A line picked on the image: the text takes focus, so its selection is live and ⌘C copies it.
@@ -306,5 +306,13 @@ enum OCRTextWrapping {
             scrollView.contentView.scroll(to: NSPoint(x: 0, y: scrollView.contentView.bounds.minY))
         }
         scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    /// Scrolls `range` into view once the text has room to show it. The panel applies its selection before SwiftUI
+    /// sizes the editor, and scrolling an empty view moved the text by its insets: with lines not wrapped nothing took
+    /// that back, and every line's first letters stayed hidden.
+    static func reveal(_ range: NSRange, in textView: NSTextView) {
+        guard let clip = textView.enclosingScrollView?.contentView, clip.bounds.width > 0, clip.bounds.height > 0 else { return }
+        textView.scrollRangeToVisible(range)
     }
 }
