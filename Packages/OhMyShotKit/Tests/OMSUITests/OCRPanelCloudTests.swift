@@ -253,21 +253,21 @@ struct OCRPanelCloudTests {
         let service = Service()
         let model = Self.model(service.cloud(Self.store()))
         let formula = FormulaMerge.Formula(kind: .display, box: CGRect(x: 10, y: 60, width: 200, height: 40), latex: "x^2")
-        let formulas = TextRecognitionWindowController.Formulas(
+        let formulas = TextRecognitionWindowController.Elements(
             read: { _, found in
-                found(1)
+                found(.init(formulas: 1, tables: 0))
                 try? await Task.sleep(for: .milliseconds(150))
-                return [formula]
+                return .init(formulas: [formula])
             },
             merge: { lines, formulas, _ in lines + formulas.map { OCRLine(text: "$\($0.latex)$", box: $0.box, confidence: 1, math: .display) } }
         )
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), formulas: formulas)
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), elements: formulas)
         await Self.settle { model.phase == .ready }
         model.readsInCloud = true
         await Self.settle { service.isWaiting }
         service.answer("Plan Storage\n$$x^2$$")
         await Self.settle { model.source == .cloud }
-        await Self.settle { model.formulasBeingRead == nil && model.lines.count == 2 }
+        await Self.settle { model.beingRead == nil && model.lines.count == 2 }
         #expect(model.text == "Plan Storage\n$$x^2$$")
         model.readsInCloud = false
         #expect(model.text == "Plan Storage\n$x^2$")

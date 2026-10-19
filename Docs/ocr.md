@@ -1422,7 +1422,7 @@ commit a994339. Settings removes version 1 when it next reads the packs, and the
 and SHA-256) are carried over to version 2's download first (`ModelPackStore.carryOver`, an APFS clone): in the Dev app 7
 files, 185 MB, came over and the update fetched 34 MB.
 
-**Finding** (`FormulaFinder`). A picture is read whole up to 1800 pixels a side (shrunk at most 2.25 times; the corpus's
+**Finding** (`LayoutFinder`, `FormulaFinder` until the VLM pack had it find tables and charts too). A picture is read whole up to 1800 pixels a side (shrunk at most 2.25 times; the corpus's
 pages, 1640 wide, gave every formula), else in tiles that size reaching 200 pixels into each other; a tile longer than
 twice its height (or the reverse) is padded with the median color of its edges, so a strip isn't squashed into a square.
 Scaled to 800 × 800 with PIL's antialiased bicubic, as transformers' processor scales it. A formula is a query whose
@@ -1664,3 +1664,109 @@ ultrawide is, where Accessibility places it. Settings' row in the Dev app.
 picture; Safari, Notes, Mail, Xcode, and Terminal not tried; a line Vision splits in two keeps one space between its
 parts where the app has several (`[0, O, o]   //` came out with one); lines Vision missed aren't added from the app;
 vertical lines are left alone; the Settings warning line not seen (Accessibility was already on for the Dev app).
+
+## Foundation Models (M6, 2026-10-19)
+
+The roadmap's last M6 item: the system's own model, where there is one. The macOS 27.2 SDK's model sees pictures:
+`SystemLanguageModel.default.capabilities` contains `.vision`, and a prompt takes `Attachment(CGImage)` beside its text.
+On the development Mac (M3 Max, 48 GB, macOS 27.2 beta) it says of itself: AFM 3 Core Advanced, an 8192-token
+context, and among its languages zh-Hans, zh-Hant (TW and HK), ja, ko, and en; but its availability is
+`.unavailable(.deviceNotEligible)` and every request ends with "This device does not support Apple Intelligence", so
+how well and how fast it reads text couldn't be measured (`Tools/l3-spike/fm_probe.swift`, on the benchmark's 28
+pictures). The framework also has `PrivateCloudComputeLanguageModel`, which reads on Apple's servers; it is a cloud
+model and would stand with L4's rules (sent only when the person chose it), not with the readings on this Mac.
+
+**Not done:** anything in the app. Once a Mac that runs the model is at hand: score it on the benchmark (`--save`
+writes the pictures and their truth; `fm_probe` writes the readings) by the bench's character error rate, time it, and
+only then decide where it reads (beside L1 as L2 does, or as the Recognized Text window's own model as the cloud model
+does).
+
+## The VLM pack (L3, M6, 2026-10-19)
+
+The rest of L3: PaddleOCR-VL-1.6 (› L3 spike) reads the tables and charts in a picture. The person chose how it shows:
+like formulas, with no switch: while the pack is installed, the text Capture Text, the OCR panel, and Recognize Text in
+Image read holds each table and chart a row a line, its cells apart by tabs (as a spreadsheet pastes them), in place of
+what Vision read there, and the panel's tables are those it read. Text is still Vision's.
+
+**The Swift port** (`Packages/OhMyShotVLM`, target `OMSVLM`): the model on mlx-swift 0.32.3 alone (no mlx-swift-lm,
+whose models don't include PaddleOCR-VL), written from mlx-vlm 0.7.4's `paddleocr_vl` for one picture: the vision tower
+(SigLIP-like, 27 layers, the learned 27 × 27 position grid stretched bilinearly to the picture's patches, 2-D rotary
+positions, no attention mask for one picture), the 2 × 2 projector, and ERNIE-4.5-0.3B with three-part rotary positions
+(16, 24, and 24 of 64 frequencies for time, row, and column; text has one number in all three, the picture's tokens
+their row and column after the text before them). Weights are loaded as mlx-vlm wrote them, and a module is quantized
+where the file has its `.scales` (every linear layer and embedding but the vision MLP's second layer, whose input, 4304
+wide, isn't a multiple of 64). The picture: PIL's bicubic scaling (OMSPixels' `Resample.antialiased`, as the formula pack's)
+to whole 28-pixel blocks between 144 and 1280 of them (`smart_resize`, Python's rounding of halves to even), (v / 255 −
+0.5) / 0.5. No tokenizer: the pack holds the prompts already tokenized (`prompts.json`) and the tokens as strings
+(`vocabulary.json`), turned back to text as the tokenizer's decoder does (`▁` a space, runs of byte tokens one UTF-8
+string). Greedy, one token at a time, with a key-value cache grown 256 positions at a time; no `compile`.
+
+**Checked** stage by stage against mlx-vlm on the GPU (`vlm-check` against `Tools/l3-spike/vlm_stages.py`): on four bench
+pictures (an English UI, a Chinese chat, a table, Swift code) the pixel values, the prompt's tokens, and the positions are
+equal; the vision tower's output differs by 2% on average (bfloat16, from a last bit of the rotary angles); the tokens
+read are the same, 331 of 331. On the spike's corpus: text in the bench's 40 pictures, content CER 3.97% (Python 4.35%
+over the 38 it finished), tables 261 of 261 cells and 10 of 10 in shape, as Python's; 0.46 s a picture at the median
+against Python's 0.40.
+
+**MLX in the app.** Only the text reader links it: the app's own process never loads MLX. Its precompiled Metal kernels
+(`default.metallib`, 2.4 MB; MLX compiles the rest the first time each is used) are copied into the app's Resources by a
+build phase (a command-line tool has no resources of its own), where MLX finds them through the main bundle. Building
+needs Xcode's Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`, 839 MB); SwiftPM can't compile Metal, so
+`swift build` checks the package and its tests (which need no GPU) but can't run the model (`vlm-check` finds a
+`mlx.metallib` copied beside it). MLX keeps the buffers a reading let go of for the next without bound (three readings
+grew the footprint by 4 GB): the reader caps that cache at 256 MB and empties it after each reading.
+
+**Finding tables and charts.** The formula pack's layout model (PP-DocLayoutV3) has classes for both, 21 (table) and 3
+(chart); the pack holds the same file, with `layout.json` naming those two, and `LayoutFinder` (`FormulaFinder` before)
+finds whichever kinds its packs name. With both packs installed, one run of the model serves both. On the corpus: every
+table of the 12 found (0.95–0.98), none in the 26 other bench pictures, nor any chart; a bar chart at 0.95. On the 12
+real screenshots (counts only), one table: a terminal's `ls -l` listing, which the VLM read whole as 30 rows of 7 cells,
+and which nothing in the text tells from a table (Vision cuts its rows into pieces as it does a table's, and its pieces
+are no more even in width per character than a table's: 7% of them off by more than −20% / +15% from the median, against
+0–13% on the tables). So a picture of the screen taken from a terminal's window (Terminal, iTerm2, Ghostty, Warp, kitty,
+Alacritty, WezTerm, Hyper, Rio, Wave, Termius, Tabby: the picked window's app, or the app whose window is in front at the
+area's middle) has its tables left to Vision, in Capture Text and the panel; a terminal's screenshot opened from a file
+or the clipboard is read as any picture. Drawn interfaces: a Finder list (0.88), a sheet
+(0.97), and a Settings list of names and values (0.57) are tables to it. Each region is read with 8 pixels more around it
+("Table Recognition:" or "Chart Recognition:"); one the model would shrink to less than half (over 4 MP, a tall
+spreadsheet) isn't read. A table comes back as OTSL, a chart as rows with cells apart by " | "; `TableText` makes rows of
+both.
+
+**Into the text** (`TableMerge`). Vision's lines mostly inside the region (0.6 of a line, the region grown 4 px) give way
+to the table's rows, a line each, boxed in bands over the region, marked so that the assembler keeps them as they are
+and never joins them to the lines around (nor counts them as code, nor as a paragraph's right edge). A table or chart is
+taken only when it bears itself out against what Vision read there, else Vision's lines stay (and the log says which
+rule left it):
+
+- its reading ended with the model's end (not its length or the deadline), with two rows and two columns at least;
+- Vision read lines there, and they aren't a code listing, nor mostly the app's own characters (Text from apps: an
+  app's exact text isn't changed for a reading of it);
+- of its runs of digits, 80% at least are among Vision's there (a table only: and 80% of Vision's among its), and of its
+  characters, 75% (both ways for a table). A chart's data holds what its labels say while Vision also read the axis's
+  steps, so only the one way counts there; a chart without its values written on it is read as estimates from its bars,
+  which this leaves out.
+
+Two numbers of 22 that differ still pass: the VLM reads digits better than Vision, and either may be the one wrong. The
+panel's tables: Vision's that lie where a table was taken go, and the tables taken (a chart's data too) come after the
+rest; they have no cell boxes, which nothing in the panel needs. Translated (the panel's Translate, Translate Area), a row is
+left as it is on the image, as a formula set apart is: its box spans the table, and one run of text drawn there would
+cover its cells.
+
+**Where.** Capture Text waits for the tables at most 10 s (`TextCaptureCoordinator.tableWait`) and copies Vision's
+reading of what is left; the panel shows Vision's reading first, with "Reading tables…" (or "Reading formulas and
+tables…") under it, and lets the VLM read for 60 s; Recognize Text in Image reads them in its run of the text reader.
+The history's search text doesn't: it reads in the background, and the VLM takes 2.6 GB. The text reader loads the VLM
+only once a table or chart was found. In the Dev app on the drawn page with a table (a paragraph, the table, a
+paragraph): the copied text is the paragraph, the five rows, and the paragraph, 5.4 s after Vision's reading the first
+time (the weights read from disk for the first time at that path, the kernels compiled), 1.2 s the next; a bar chart's
+data came in as "Jan 42" and so on under its title.
+
+**The pack:** `paddleocr-vl-1.6` version 1, 10 files, 1,123,655,105 bytes, published at
+huggingface.co/MoraxCheng/ohmyshot-paddleocr-vl-1.6-mlx, commit 59c48a3 (`Tools/model-packs/vlm_pack.py`: mlx-vlm's
+conversion of upstream revision c5630ab at 8 bits, byte-identical to the spike's; the layout model's files are the formula
+pack's).
+
+**Not done yet:** a table the selection cuts through is read as what shows, its cut rows included; tables in the history's
+search; the panel's tables have no cell boxes to outline on the picture; text, formulas, seals, and handwriting with the
+VLM (its "OCR:" reads text better than Vision on the bench, but whole screens make it loop, › L3 spike); a reading the
+deadline cut keeps Vision's lines for that table, though the rows read so far may be right.
