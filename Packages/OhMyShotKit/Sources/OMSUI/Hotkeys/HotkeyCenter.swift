@@ -149,6 +149,19 @@ public final class HotkeyCenter {
         KeyboardShortcuts.getShortcut(for: shortcut.name)?.description
     }
 
+    /// The recorder has already saved the new assignment. Give it sole ownership of the keys so one
+    /// press cannot start two actions, including actions currently hidden from the Settings pane.
+    static func clearOtherAssignments(
+        of shortcut: KeyboardShortcuts.Shortcut?,
+        keeping name: KeyboardShortcuts.Name,
+        among names: [KeyboardShortcuts.Name] = CaptureShortcut.allCases.map(\.name)
+    ) {
+        guard let shortcut else { return }
+        for other in names where other != name && KeyboardShortcuts.getShortcut(for: other) == shortcut {
+            KeyboardShortcuts.setShortcut(nil, for: other)
+        }
+    }
+
     /// Starts listening. The handler runs on key down, so the overlay can appear before the keys are
     /// released.
     public func activate(_ handler: @escaping (CaptureShortcut) -> Void) {

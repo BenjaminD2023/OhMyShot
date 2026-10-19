@@ -1,8 +1,39 @@
+import AppKit
 import Foundation
+import KeyboardShortcuts
 import Testing
 @testable import OMSUI
 
 struct ShortcutListTests {
+    @Test func aNewAssignmentTakesTheKeysFromAllPreviousActions() {
+        let names = (0..<4).map { KeyboardShortcuts.Name("OMSUITests-\(UUID().uuidString)-\($0)") }
+        defer { names.forEach { KeyboardShortcuts.setShortcut(nil, for: $0) } }
+        let keys = KeyboardShortcuts.Shortcut(.s, modifiers: [.command, .shift])
+        let unrelatedKeys = KeyboardShortcuts.Shortcut(.t, modifiers: [.command, .shift])
+        for name in names.prefix(3) { KeyboardShortcuts.setShortcut(keys, for: name) }
+        KeyboardShortcuts.setShortcut(unrelatedKeys, for: names[3])
+
+        HotkeyCenter.clearOtherAssignments(of: keys, keeping: names[2], among: names)
+
+        #expect(KeyboardShortcuts.getShortcut(for: names[0]) == nil)
+        #expect(KeyboardShortcuts.getShortcut(for: names[1]) == nil)
+        #expect(KeyboardShortcuts.getShortcut(for: names[2]) == keys)
+        #expect(KeyboardShortcuts.getShortcut(for: names[3]) == unrelatedKeys)
+    }
+
+    @Test func clearingARecorderDoesNotChangeOtherAssignments() {
+        let other = KeyboardShortcuts.Name("OMSUITests-\(UUID().uuidString)")
+        let cleared = KeyboardShortcuts.Name("OMSUITests-\(UUID().uuidString)")
+        defer { KeyboardShortcuts.setShortcut(nil, for: other) }
+        let keys = KeyboardShortcuts.Shortcut(.s, modifiers: [.command, .shift])
+        KeyboardShortcuts.setShortcut(keys, for: other)
+
+        HotkeyCenter.clearOtherAssignments(of: nil, keeping: cleared, among: [other, cleared])
+
+        #expect(KeyboardShortcuts.getShortcut(for: other) == keys)
+        #expect(KeyboardShortcuts.getShortcut(for: cleared) == nil)
+    }
+
     /// Stands in for the keys chosen in Settings, which are kept in the app's own defaults.
     private static let noKey: (CaptureShortcut) -> Bool = { _ in false }
 
