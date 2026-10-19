@@ -20,6 +20,8 @@ let package = Package(
         .library(name: "OMSAnnotate", targets: ["OMSAnnotate"]),
         .library(name: "OMSRecording", targets: ["OMSRecording"]),
         .library(name: "OMSStudio", targets: ["OMSStudio"]),
+        // For the VLM pack's package (Packages/OhMyShotVLM), which resamples pictures as the formula pack does.
+        .library(name: "OMSPixels", targets: ["OMSPixels"]),
     ],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", .upToNextMinor(from: "3.1.0")),

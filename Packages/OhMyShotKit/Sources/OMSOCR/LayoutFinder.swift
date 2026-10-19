@@ -3,21 +3,28 @@ import CoreML
 import Foundation
 import OMSPixels
 
-/// Where the formulas are in a picture: the formula pack's layout model (PP-DocLayoutV3; Docs/ocr.md › Formulas among
-/// text), on the CPU, as Tools/model-packs/formula_pack.py checks it. A formula is a query whose "display" (on a line of
-/// its own) or "inline" (within text) class scores the pack's threshold or more.
+/// Where the formulas, tables, and charts are in a picture: the layout model the formula pack and the VLM pack both hold
+/// (PP-DocLayoutV3; Docs/ocr.md › Formulas among text, › The VLM pack), on the CPU, as Tools/model-packs/formula_pack.py
+/// checks it. A region is a query whose class of a kind the pack names (`Layout.classes`: "display" and "inline" for
+/// formulas, "table" and "chart") scores the pack's threshold or more.
 ///
 /// The model sees 800 × 800 whatever it is given, so a large picture is read in tiles (`tiles`), and a long strip is
 /// padded nearer to a page's shape first. What two tiles both found, or two classes of one query, is found once
 /// (`merged`).
-public final class FormulaFinder: @unchecked Sendable {
-    /// A formula found, in the picture's pixels with a top-left origin.
+public final class LayoutFinder: @unchecked Sendable {
+    /// A formula, table, or chart found, in the picture's pixels with a top-left origin.
     public struct Region: Sendable, Equatable {
-        public enum Kind: String, Sendable, Codable {
-            /// Set apart, on a line of its own.
+        public enum Kind: String, Sendable, Codable, CaseIterable {
+            /// A formula set apart, on a line of its own.
             case display
-            /// Within a line of text.
+            /// A formula within a line of text.
             case inline
+            /// A table: rows and columns of cells.
+            case table
+            /// A chart: bars, lines, or slices with their data.
+            case chart
+
+            public var isFormula: Bool { self == .display || self == .inline }
         }
 
         public var kind: Kind
@@ -47,14 +54,20 @@ public final class FormulaFinder: @unchecked Sendable {
         self.model = model
     }
 
-    /// The finder of the pack installed in `folder`, its model compiled into `folder/Compiled` the first time.
-    public static func load(from folder: URL) async throws -> FormulaFinder {
+    /// The finder of the formula pack installed in `folder`, its model compiled into `folder/Compiled` the first time.
+    public static func load(from folder: URL) async throws -> LayoutFinder {
         let configuration = try FormulaConfiguration.load(from: folder)
-        let model = try await PackModel.load(configuration.layout.file, in: folder, units: PackModel.units(configuration.computeUnits))
-        return FormulaFinder(configuration: configuration.layout, model: model)
+        return try await load(from: folder, layout: configuration.layout, units: configuration.computeUnits)
     }
 
-    /// The formulas in `image`, top to bottom.
+    /// The finder of the layout model `layout` describes in the pack installed in `folder` (the VLM pack's `layout.json`;
+    /// or another pack's model with more kinds named, so that one run finds what two packs read), on `units`.
+    public static func load(from folder: URL, layout: FormulaConfiguration.Layout, units: String) async throws -> LayoutFinder {
+        let model = try await PackModel.load(layout.file, in: folder, units: PackModel.units(units))
+        return LayoutFinder(configuration: layout, model: model)
+    }
+
+    /// The regions in `image` of the kinds the pack names, top to bottom.
     public func regions(in image: CGImage) async throws -> [Region] {
         var found: [Region] = []
         for tile in Self.tiles(width: image.width, height: image.height) {
@@ -151,11 +164,11 @@ public final class FormulaFinder: @unchecked Sendable {
 
     // MARK: Detections
 
-    /// The formulas among one tile's detections, in the picture's pixels: each query's class logits (`classes` a query)
-    /// through a sigmoid, kept where a formula class scores the threshold or more; its box (center and size, 0-1 of the
-    /// canvas) placed on the tile and kept within it.
+    /// The regions among one tile's detections, in the picture's pixels: each query's class logits (`classes` a query)
+    /// through a sigmoid, kept where a class of a kind the pack names scores the threshold or more; its box (center and
+    /// size, 0-1 of the canvas) placed on the tile and kept within it.
     static func regions(logits: [Float], boxes: [Float], classes: Int, layout: FormulaConfiguration.Layout, in tile: Tile) -> [Region] {
-        let kinds: [(Region.Kind, Int)] = [(.display, layout.classes["display"] ?? -1), (.inline, layout.classes["inline"] ?? -1)]
+        let kinds: [(Region.Kind, Int)] = Region.Kind.allCases.compactMap { kind in layout.classes[kind.rawValue].map { (kind, $0) } }
         let queries = min(logits.count / max(classes, 1), boxes.count / 4)
         var found: [Region] = []
         for query in 0..<queries {
@@ -174,10 +187,16 @@ public final class FormulaFinder: @unchecked Sendable {
         return found
     }
 
-    /// Each formula once: detections that are mostly one box (IoU 0.5 or more: two classes of one query, or a formula
-    /// two tiles both found, one of them cut by its edge) are one, of the likeliest's kind, over both boxes; then none
-    /// that lies mostly (0.6 of it) inside a larger one: an inline formula found within a display one, or a cut-off part.
+    /// Each formula, and each table or chart, once: detections of the one family that are mostly one box (IoU 0.5 or
+    /// more: two classes of one query, or a region two tiles both found, one of them cut by its edge) are one, of the
+    /// likeliest's kind, over both boxes; then none that lies mostly (0.6 of it) inside a larger one of its family: an
+    /// inline formula found within a display one, or a cut-off part. A formula in a table's cell stays.
     static func merged(_ regions: [Region]) -> [Region] {
+        let formulas = mergedFamily(regions.filter(\.kind.isFormula))
+        return formulas + mergedFamily(regions.filter { !$0.kind.isFormula })
+    }
+
+    private static func mergedFamily(_ regions: [Region]) -> [Region] {
         var distinct: [Region] = []
         for region in regions.sorted(by: { $0.score > $1.score }) {
             if let same = distinct.firstIndex(where: { intersectionOverUnion($0.box, region.box) >= 0.5 }) {

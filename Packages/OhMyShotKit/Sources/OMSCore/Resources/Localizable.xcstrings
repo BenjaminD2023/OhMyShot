@@ -1306,6 +1306,40 @@
         }
       }
     },
+    "PaddleOCR-VL-1.6 and PP-DocLayoutV3, by PaddlePaddle: recognized text holds each table and chart as rows you can paste into a spreadsheet. Reading one takes about 2.6 GB of memory." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaddleOCR-VL-1.6 y PP-DocLayoutV3, de PaddlePaddle: el texto reconocido incluye cada tabla y gráfico como filas que puedes pegar en una hoja de cálculo. Leer uno requiere unos 2,6 GB de memoria."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaddleOCR-VL-1.6 et PP-DocLayoutV3, de PaddlePaddle : le texte reconnu contient chaque tableau et graphique sous forme de lignes à coller dans un tableur. En lire un demande environ 2,6 Go de mémoire."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaddleOCR-VL-1.6 と PP-DocLayoutV3（PaddlePaddle 製）：認識されたテキストでは、表やグラフが行として入り、そのままスプレッドシートにペーストできます。1つの読み取りに約 2.6 GB のメモリを使います。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaddleOCR-VL-1.6 和 PP-DocLayoutV3，来自 PaddlePaddle：识别出的文字会把每个表格和图表写成行，可以直接粘贴到电子表格中。读取一个约需 2.6 GB 内存。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaddleOCR-VL-1.6 和 PP-DocLayoutV3，來自 PaddlePaddle：辨識出的文字會把每個表格和圖表寫成列，可以直接貼到試算表中。讀取一個約需 2.6 GB 記憶體。"
+          }
+        }
+      }
+    },
     "S3-compatible storage" : {
       "localizations" : {
         "es" : {
@@ -1336,6 +1370,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "S3 相容儲存空間"
+          }
+        }
+      }
+    },
+    "Tables and Charts" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tablas y gráficos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tableaux et graphiques"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表とグラフ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表格和图表"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表格和圖表"
           }
         }
       }

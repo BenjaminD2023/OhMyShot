@@ -34,7 +34,7 @@ struct ModelPacksRow: View {
                 .frame(width: 360)
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
-                InfoButton(Text("A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, or math formulas. It’s downloaded once, from \(hosts), and stays on this Mac; nothing you capture leaves it.", bundle: .module))
+                InfoButton(Text("A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, math formulas, or tables and charts. It’s downloaded once, from \(hosts), and stays on this Mac; nothing you capture leaves it.", bundle: .module))
             }
         }
         .task { await center.refresh() }
@@ -64,9 +64,12 @@ struct ModelPacksRow: View {
                 Text("Remove", bundle: .module)
             }
         } message: { pack in
-            // The L2 pack only reads beside Vision; without the formula pack, Capture Formula has nothing to read with.
+            // The L2 pack only reads beside Vision; without the formula pack, Capture Formula has nothing to read with; the
+            // VLM pack only reads tables and charts in place of Vision's reading.
             if pack.id == ModelPackCatalog.ppFormulaNetPlusL.id {
                 Text("Its \(ModelPackRow.size(pack.size)) are deleted from this Mac. Capture Formula is unavailable until it’s downloaded again.", bundle: .module)
+            } else if pack.id == ModelPackCatalog.paddleOCRVL.id {
+                Text("Its \(ModelPackRow.size(pack.size)) are deleted from this Mac. Tables and charts are read as plain text until it’s downloaded again.", bundle: .module)
             } else {
                 Text("Its \(ModelPackRow.size(pack.size)) are deleted from this Mac. Text is read without it until it’s downloaded again.", bundle: .module)
             }

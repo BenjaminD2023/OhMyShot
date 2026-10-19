@@ -2300,3 +2300,55 @@ window reading, after Vision's, while Settings has it on: no observer, no timer,
 | Points left unasked once a line is covered | 10–12 | 27–50 ms |
 
 Each question waits 0.1 s at most; the reading stops at 150 ms in Capture Text and 500 ms in the window.
+
+## M6 — The VLM pack (2026-10-19)
+
+PaddleOCR-VL on MLX in the text reader (Docs/ocr.md › The VLM pack). Nothing runs unless a picture read while the pack is
+installed holds a table or chart: the layout model runs beside Vision as it does for formulas, and the VLM is loaded
+only after it found one; the reader exits when its reading is done.
+
+**Size.** The app's process doesn't link MLX. The text reader grew from 4.9 MB to 28.6 MB as built (16.1 MB with its
+symbols stripped, as an archive strips them), and the app's Resources gained MLX's `default.metallib`, 2.4 MB: the
+Release app went from 33 MB to 59 MB as built (the main binary is 19.9 MB, 10.1 MB stripped). The pack is 1.12 GB.
+
+**The reader** (Release, M3 Max), a fresh run each, the pack's files already in memory unless said:
+
+| Run | Time | Peak footprint |
+| --- | --- | --- |
+| Loading the model only | 0.22 s | 1.29 GB |
+| A UI picture (35 tokens) | 0.54 s | 2.62 GB |
+| Swift code, 1298 × 454 (118 tokens) | 1.18 s | 2.64 GB |
+| Three pictures (35, 106, 72 tokens) | 1.79 s | 2.62 GB |
+| The same, the first time after the files were written (read from disk, kernels compiled) | 7.27 s | 5.63 GB* |
+| A picture with no VLM job (Vision only), MLX linked | 0.27 s | 235 MB |
+
+\* Before the reader capped MLX's buffer cache (256 MB, emptied after each reading): three readings grew it to 5.6 GB, a
+single one by up to 2 GB; after, three readings peak where one does.
+
+On the spike's corpus (40 bench pictures, "OCR:"): 0.46 s a picture at the median, 3.53 s at the 95th percentile, MLX's
+own peak 2.34 GB; mlx-vlm in Python 0.40 s and 2.99 s. The Swift loop waits for each token before asking the next
+(mlx-vlm overlaps them).
+
+**In the app** (Dev app, Debug): Capture Text over the drawn page with a table put the table into its text 5.4 s after
+Vision's reading the first time and 1.2 s the next; a picture without a table or chart costs the layout model's run
+beside Vision, as with the formula pack. The pack downloaded from Hugging Face at about 10 MB/s (1.12 GB in under two
+minutes).
+
+
+## M6 — Leftovers: lone characters, cut rows, memory pressure (2026-10-19)
+
+Dev app (Debug), both packs installed, the formula tests' web page (English with eight formulas) and the drawn page with
+a table, opened in the OCR panel from their files (Docs/ocr.md › Formulas among text › Since, › The VLM pack).
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| The web page: Vision's text shown (`ocr.analyze`) | 3826 / 3891 ms | 752 / 692 ms |
+| The web page: its formulas in, from the window's opening | about 4.8 s | 4.3 s (5.1 s the first time after a relaunch) |
+| The Chinese page: Vision's text shown, the second reading taken | — | 2954 ms (the second reading 2.4 s, as before) |
+| The table page, memory pressure stood in for as a warning | the table read (1.2–1.7 s) | Vision's lines, no VLM loaded |
+
+- The web page's panel waited 3 s for a second reading of three lone characters that Vision read in its formulas
+  (`SecondReading.wanted`); now it doesn't ask for one.
+- Checking the memory pressure is one `sysctlbyname` call in the text reader, before the VLM would load.
+- Drawing a translation's formulas readable (`MathText`) and putting a changed formula back (`Translator.restoringMath`)
+  work on the units' text only; the web page's translation took 3.4–3.5 s with or without them (the system's model).

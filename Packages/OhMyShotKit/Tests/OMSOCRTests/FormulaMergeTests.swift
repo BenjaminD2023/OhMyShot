@@ -3,14 +3,14 @@ import Foundation
 import Testing
 @testable import OMSOCR
 
-/// Formulas among text: the layout model's tiles and detections (FormulaFinder), and the formulas put into Vision's
+/// Formulas among text: the layout model's tiles and detections (LayoutFinder), and the formulas put into Vision's
 /// lines (FormulaMerge); with OMS_FORMULA_PACK=<an installed formula pack's folder, version 2>, the test pages end to end.
 struct FormulaMergeTests {
     private func line(_ text: String, _ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat = 40, wraps: Bool? = nil) -> OCRLine {
         OCRLine(text: text, box: CGRect(x: x, y: y, width: width, height: height), confidence: 1, wrapsToNextLine: wraps)
     }
 
-    private func formula(_ latex: String, _ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat, _ kind: FormulaFinder.Region.Kind = .inline) -> FormulaMerge.Formula {
+    private func formula(_ latex: String, _ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat, _ kind: LayoutFinder.Region.Kind = .inline) -> FormulaMerge.Formula {
         FormulaMerge.Formula(kind: kind, box: CGRect(x: x, y: y, width: width, height: height), latex: latex)
     }
 
@@ -231,18 +231,18 @@ struct FormulaMergeTests {
     // MARK: Finding
 
     @Test func aScreenSizedPictureIsOneTileAndALargeOneSeveral() {
-        #expect(FormulaFinder.tiles(width: 1400, height: 900) == [.init(area: CGRect(x: 0, y: 0, width: 1400, height: 900), canvas: CGSize(width: 1400, height: 900))])
-        let screen = FormulaFinder.tiles(width: 3024, height: 1964)
+        #expect(LayoutFinder.tiles(width: 1400, height: 900) == [.init(area: CGRect(x: 0, y: 0, width: 1400, height: 900), canvas: CGSize(width: 1400, height: 900))])
+        let screen = LayoutFinder.tiles(width: 3024, height: 1964)
         #expect(screen.count == 4)
         #expect(screen.allSatisfy { $0.area.width <= 1800 && $0.area.height <= 1800 })
         #expect(screen.map(\.area).reduce(CGRect.null) { $0.union($1) } == CGRect(x: 0, y: 0, width: 3024, height: 1964))
         // Neighbors reach into each other.
         #expect(screen[0].area.maxX - screen[1].area.minX >= 200)
         // A strip is padded nearer a page's shape.
-        let strip = FormulaFinder.tiles(width: 2633, height: 67)
+        let strip = LayoutFinder.tiles(width: 2633, height: 67)
         #expect(strip.count == 2)
         #expect(strip.allSatisfy { $0.canvas.height == ($0.area.width / 2).rounded(.up) && $0.canvas.width == $0.area.width })
-        let tall = FormulaFinder.tiles(width: 514, height: 2016)
+        let tall = LayoutFinder.tiles(width: 514, height: 2016)
         #expect(tall.count == 2 && tall[0].canvas.width == (tall[0].area.height / 2).rounded(.up))
     }
 
@@ -257,25 +257,25 @@ struct FormulaMergeTests {
         logits[1 * 25 + 15] = -0.1
         logits[2 * 25 + 22] = 5
         let boxes: [Float] = [0.5, 0.25, 0.5, 0.125, 0.25, 0.25, 0.125, 0.125, 0.5, 0.5, 1, 1]
-        let tile = FormulaFinder.Tile(area: CGRect(x: 100, y: 0, width: 1000, height: 500), canvas: CGSize(width: 1000, height: 500))
-        let found = FormulaFinder.regions(logits: logits, boxes: boxes, classes: 25, layout: layout, in: tile)
+        let tile = LayoutFinder.Tile(area: CGRect(x: 100, y: 0, width: 1000, height: 500), canvas: CGSize(width: 1000, height: 500))
+        let found = LayoutFinder.regions(logits: logits, boxes: boxes, classes: 25, layout: layout, in: tile)
         #expect(found.count == 1)
         #expect(found.first?.kind == .display)
         #expect(found.first?.box == CGRect(x: 350, y: 93.75, width: 500, height: 62.5))
         // On a padded canvas, a box reaching past the tile is kept within it.
-        let padded = FormulaFinder.Tile(area: CGRect(x: 0, y: 0, width: 1000, height: 100), canvas: CGSize(width: 1000, height: 500))
-        let cut = FormulaFinder.regions(logits: logits, boxes: [0.5, 0.125, 0.25, 0.25] + boxes.dropFirst(4), classes: 25, layout: layout, in: padded)
+        let padded = LayoutFinder.Tile(area: CGRect(x: 0, y: 0, width: 1000, height: 100), canvas: CGSize(width: 1000, height: 500))
+        let cut = LayoutFinder.regions(logits: logits, boxes: [0.5, 0.125, 0.25, 0.25] + boxes.dropFirst(4), classes: 25, layout: layout, in: padded)
         #expect(cut.first?.box == CGRect(x: 375, y: 0, width: 250, height: 100))
     }
 
     @Test func eachFormulaIsFoundOnce() {
-        let display = FormulaFinder.Region(kind: .display, box: CGRect(x: 0, y: 0, width: 400, height: 80), score: 0.9)
-        let sameAsInline = FormulaFinder.Region(kind: .inline, box: CGRect(x: 2, y: 1, width: 398, height: 80), score: 0.6)
-        let inside = FormulaFinder.Region(kind: .inline, box: CGRect(x: 100, y: 10, width: 100, height: 40), score: 0.95)
-        let cutByATile = FormulaFinder.Region(kind: .inline, box: CGRect(x: 500, y: 0, width: 60, height: 40), score: 0.99)
-        let whole = FormulaFinder.Region(kind: .inline, box: CGRect(x: 500, y: 0, width: 120, height: 40), score: 0.8)
-        let elsewhere = FormulaFinder.Region(kind: .inline, box: CGRect(x: 0, y: 300, width: 50, height: 40), score: 0.7)
-        let merged = FormulaFinder.merged([display, sameAsInline, inside, cutByATile, whole, elsewhere])
+        let display = LayoutFinder.Region(kind: .display, box: CGRect(x: 0, y: 0, width: 400, height: 80), score: 0.9)
+        let sameAsInline = LayoutFinder.Region(kind: .inline, box: CGRect(x: 2, y: 1, width: 398, height: 80), score: 0.6)
+        let inside = LayoutFinder.Region(kind: .inline, box: CGRect(x: 100, y: 10, width: 100, height: 40), score: 0.95)
+        let cutByATile = LayoutFinder.Region(kind: .inline, box: CGRect(x: 500, y: 0, width: 60, height: 40), score: 0.99)
+        let whole = LayoutFinder.Region(kind: .inline, box: CGRect(x: 500, y: 0, width: 120, height: 40), score: 0.8)
+        let elsewhere = LayoutFinder.Region(kind: .inline, box: CGRect(x: 0, y: 300, width: 50, height: 40), score: 0.7)
+        let merged = LayoutFinder.merged([display, sameAsInline, inside, cutByATile, whole, elsewhere])
         #expect(merged.map(\.box) == [
             CGRect(x: 500, y: 0, width: 120, height: 40), CGRect(x: 0, y: 0, width: 400, height: 81), CGRect(x: 0, y: 300, width: 50, height: 40),
         ])
@@ -291,7 +291,7 @@ struct FormulaMergeTests {
     func thePagesReadWithTheirFormulas() async throws {
         let folder = URL(filePath: Self.environment["OMS_FORMULA_PACK"]!, directoryHint: .isDirectory)
         let reader = try await FormulaReader.load(from: folder)
-        let finder = try await FormulaFinder.load(from: folder)
+        let finder = try await LayoutFinder.load(from: folder)
         let pipeline = VisionPipeline(options: .preferred(["en-US", "zh-Hans"]))
         let expected: [String: [String]] = [
             "page-web": [#"Given a loss $L(\theta)$, each step"#, #"$$\mathrm{M S E}="#, #"prediction $\hat{y}_{i}$ is"#, "Version 2.0 of the library"],

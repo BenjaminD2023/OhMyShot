@@ -96,11 +96,15 @@ public actor Translator {
                 requests += batches.indices.map { batch in
                     TranslationSession.Request(sourceText: batches[batch].map { units[$0].text }.joined(separator: " | "), clientIdentifier: "b\(batch)")
                 }
+                func finished(_ translation: String, of index: Int) -> String {
+                    let tidied = Self.tidied(translation, into: target)
+                    return units[index].hasMath ? Self.restoringMath(tidied, from: units[index].text) : tidied
+                }
                 var unsplit: [Int] = []
                 for response in try await session.translations(from: requests) {
                     guard let identifier = response.clientIdentifier, let number = Int(identifier.dropFirst()) else { continue }
                     if identifier.hasPrefix("u") {
-                        outcome.translations[number] = Self.tidied(response.targetText, into: target)
+                        outcome.translations[number] = finished(response.targetText, of: number)
                         continue
                     }
                     let members = batches[number]
@@ -110,14 +114,14 @@ public actor Translator {
                         unsplit += members
                         continue
                     }
-                    for (index, piece) in zip(members, pieces) { outcome.translations[index] = Self.tidied(piece, into: target) }
+                    for (index, piece) in zip(members, pieces) { outcome.translations[index] = finished(piece, of: index) }
                 }
                 // A batch that came back with its pieces merged or split: one by one after all.
                 if !unsplit.isEmpty {
                     let retries = unsplit.map { TranslationSession.Request(sourceText: units[$0].text, clientIdentifier: String($0)) }
                     for response in try await session.translations(from: retries) {
                         guard let identifier = response.clientIdentifier, let index = Int(identifier) else { continue }
-                        outcome.translations[index] = Self.tidied(response.targetText, into: target)
+                        outcome.translations[index] = finished(response.targetText, of: index)
                     }
                 }
                 outcome.sources.append(source)
@@ -250,6 +254,56 @@ public actor Translator {
             index += 1
         }
         return output
+    }
+
+    /// `translated` with each formula the translator changed put back as `source` wrote it. The system's models keep a
+    /// formula's LaTeX as it is and move it where the sentence needs it: so they did in eighteen of nineteen sentences
+    /// with formulas, from and into English, Chinese, and Japanese; the nineteenth lost a trailing space command
+    /// (`$a\,b\,$` came back as `$a\,b$`). A formula of the translation that the source holds stays; one that it doesn't
+    /// takes the source's formula near it (a few characters apart) when that is the only one near, and stays as
+    /// translated otherwise. Formulas are matched by their text, never by their order: a translation may put them in
+    /// another.
+    static func restoringMath(_ translated: String, from source: String) -> String {
+        var unused = source.matches(of: TextAssembler.mathSpan).map { String($0.output) }
+        let found = translated.matches(of: TextAssembler.mathSpan)
+        guard !unused.isEmpty, !found.isEmpty else { return translated }
+        var kept = Set<Int>()
+        for (index, match) in found.enumerated() {
+            guard let at = unused.firstIndex(of: String(match.output)) else { continue }
+            unused.remove(at: at)
+            kept.insert(index)
+        }
+        var result = ""
+        var rest = translated.startIndex
+        for (index, match) in found.enumerated() {
+            result += translated[rest..<match.range.lowerBound]
+            rest = match.range.upperBound
+            let text = String(match.output)
+            let near = kept.contains(index) ? [] : unused.indices.filter { other in
+                editDistance(text, unused[other]) <= max(2, max(text.count, unused[other].count) / 4)
+            }
+            if near.count == 1 {
+                result += unused.remove(at: near[0])
+            } else {
+                result += text
+            }
+        }
+        return result + translated[rest...]
+    }
+
+    /// How many characters are put in, taken out, or changed to make `a` into `b`.
+    static func editDistance(_ a: String, _ b: String) -> Int {
+        let a = Array(a), b = Array(b)
+        guard !a.isEmpty else { return b.count }
+        var previous = Array(0...b.count)
+        for i in 1...a.count {
+            var row = [i] + Array(repeating: 0, count: b.count)
+            for j in stride(from: 1, through: b.count, by: 1) {
+                row[j] = min(previous[j] + 1, row[j - 1] + 1, previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1))
+            }
+            previous = row
+        }
+        return previous[b.count]
     }
 
     // MARK: Languages

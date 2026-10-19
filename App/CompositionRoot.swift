@@ -44,6 +44,11 @@ final class CompositionRoot {
             guard let self, let helper = textReaderTool, let pack = formulaPack else { return nil }
             return (pack, helper)
         }
+        coordinator.elementReader = { [weak self] in
+            guard let self, let helper = textReaderTool else { return nil }
+            let (formulas, vlm) = (formulaPack, vlmPack)
+            return formulas == nil && vlm == nil ? nil : (formulas, vlm, helper)
+        }
         coordinator.cloud = { [weak self] in self?.panelCloud() }
         coordinator.captureTextCloud = { [weak self] in self?.captureTextCloud() }
         return coordinator
@@ -145,6 +150,12 @@ final class CompositionRoot {
     /// as LaTeX (Docs/ocr.md › Formulas among text).
     private var formulaPack: URL? {
         modelPacks.installedFolder(of: ModelPackCatalog.ppFormulaNetPlusL)
+    }
+
+    /// The VLM pack, when it is installed: the text Capture Text, the OCR panel, and Recognize Text in Image read holds
+    /// the tables and charts in the picture a row a line, as PaddleOCR-VL reads them (Docs/ocr.md › The VLM pack).
+    private var vlmPack: URL? {
+        modelPacks.installedFolder(of: ModelPackCatalog.paddleOCRVL)
     }
 
     /// A pack just installed: its models are compiled now, in the background, rather than on the first reading someone
@@ -1001,7 +1012,10 @@ final class CompositionRoot {
         try data.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         do {
-            let text = try await TextReaderTool.text(ofPictureAt: file, joinsWrappedLines: !keepsLineBreaks, formulas: formulaPack, helper: helper)
+            let text = try await TextReaderTool.text(
+                ofPictureAt: file, joinsWrappedLines: !keepsLineBreaks, formulas: formulaPack, vlm: vlmPack, seconds: TextCaptureCoordinator.panelTableWait,
+                helper: helper
+            )
             return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
         } catch let failure as TextReaderTool.Failure {
             // As Capture Text's own reading did: no text, rather than an error.

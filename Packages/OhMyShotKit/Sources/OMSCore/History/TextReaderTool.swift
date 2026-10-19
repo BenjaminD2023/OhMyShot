@@ -52,15 +52,17 @@ public enum TextReaderTool {
     ///   - pack: an installed PP-OCR model pack's folder, to read with it beside Vision (L2 beside L1).
     ///   - formulas: the installed formula pack's folder, to put the formulas in the picture into the text as LaTeX
     ///     (Docs/ocr.md › Formulas among text).
+    ///   - vlm: the installed VLM pack's folder, to put the tables and charts in the picture into the text, a row a line
+    ///     (Docs/ocr.md › The VLM pack), reading them for `seconds` at most.
     ///   - helper: the text reader.
     @concurrent
     public static func text(
-        ofPictureAt url: URL, joinsWrappedLines: Bool, pack: URL? = nil, formulas: URL? = nil, helper: URL,
-        priority: QualityOfService = .userInitiated, resources: ActiveResources = .shared
+        ofPictureAt url: URL, joinsWrappedLines: Bool, pack: URL? = nil, formulas: URL? = nil, vlm: URL? = nil, seconds: Double? = nil,
+        helper: URL, priority: QualityOfService = .userInitiated, resources: ActiveResources = .shared
     ) async throws -> String {
         let job = Job(
             id: UUID().uuidString, path: url.path(percentEncoded: false), joinsWrappedLines: joinsWrappedLines, pack: pack?.path(percentEncoded: false),
-            formulas: formulas?.path(percentEncoded: false)
+            formulas: formulas?.path(percentEncoded: false), vlm: vlm?.path(percentEncoded: false), seconds: seconds
         )
         let answer = try await run(job, helper: helper, priority: priority, resources: resources)
         if let text = answer.text { return text }
@@ -82,6 +84,24 @@ public enum TextReaderTool {
         }
     }
 
+    /// A table or chart the VLM pack read in a picture, as rows of cells (a chart's data).
+    public struct FoundTable: Codable, Sendable, Equatable {
+        /// "table" or "chart".
+        public var kind: String
+        /// In the picture's pixels, top-left origin.
+        public var box: CGRect
+        public var rows: [[String]]
+        /// Whether the model said it was done, rather than stopping at its length or the deadline.
+        public var whole: Bool
+
+        public init(kind: String, box: CGRect, rows: [[String]], whole: Bool) {
+            self.kind = kind
+            self.box = box
+            self.rows = rows
+            self.whole = whole
+        }
+    }
+
     /// The formulas the formula pack installed in `pack` finds in the picture at `url`, each read as LaTeX (Docs/ocr.md ›
     /// Formulas among text). `found` is told how many there are to read, before they are.
     @concurrent
@@ -89,11 +109,39 @@ public enum TextReaderTool {
         ofPictureAt url: URL, pack: URL, helper: URL, found: (@Sendable (Int) -> Void)? = nil, priority: QualityOfService = .userInitiated,
         resources: ActiveResources = .shared
     ) async throws -> [FoundFormula] {
-        let job = Job(id: UUID().uuidString, path: url.path(percentEncoded: false), formulas: pack.path(percentEncoded: false))
-        let answer = try await run(job, helper: helper, priority: priority, resources: resources) { progress in
-            if let count = progress.found { found?(count) }
+        let counted: (@Sendable (Found) -> Void)? = found.map { found in { @Sendable counts in found(counts.formulas) } }
+        return try await elements(ofPictureAt: url, formulas: pack, helper: helper, found: counted, priority: priority, resources: resources).formulas
+    }
+
+    /// How many formulas, and how many tables and charts, the reader found to read.
+    public struct Found: Sendable, Equatable {
+        public var formulas: Int
+        public var tables: Int
+
+        public init(formulas: Int, tables: Int) {
+            self.formulas = formulas
+            self.tables = tables
         }
-        if let formulas = answer.formulas { return formulas }
+    }
+
+    /// The formulas the formula pack installed in `formulas` reads and the tables and charts the VLM pack installed in
+    /// `vlm` reads in the picture at `url`, found in one run of the layout model (Docs/ocr.md › Formulas among text, ›
+    /// The VLM pack); the VLM reads for `seconds` at most, and not at all while the system is short of memory, when
+    /// `tablesLeft` says how many tables and charts were left to Vision (`pressure` stands in for the system's, to check
+    /// that). `found` is told how many there are to read, before they are.
+    @concurrent
+    public static func elements(
+        ofPictureAt url: URL, formulas: URL? = nil, vlm: URL? = nil, seconds: Double? = nil, pressure: MemoryPressure? = nil, helper: URL,
+        found: (@Sendable (Found) -> Void)? = nil, priority: QualityOfService = .userInitiated, resources: ActiveResources = .shared
+    ) async throws -> (formulas: [FoundFormula], tables: [FoundTable], tablesLeft: Int) {
+        let job = Job(
+            id: UUID().uuidString, path: url.path(percentEncoded: false), formulas: formulas?.path(percentEncoded: false),
+            vlm: vlm?.path(percentEncoded: false), seconds: seconds, pressure: pressure?.name
+        )
+        let answer = try await run(job, helper: helper, priority: priority, resources: resources) { progress in
+            if let count = progress.found { found?(Found(formulas: count - (progress.foundTables ?? 0), tables: progress.foundTables ?? 0)) }
+        }
+        if let formulas = answer.formulas { return (formulas, answer.tables ?? [], answer.tablesLeft ?? 0) }
         throw Failure.unreadable(answer.error ?? "")
     }
 
@@ -228,6 +276,9 @@ public enum TextReaderTool {
         var formula: String?
         var formulas: String?
         var tidy: Bool?
+        var vlm: String?
+        var seconds: Double?
+        var pressure: String?
     }
 
     private struct Answer: Decodable {
@@ -237,13 +288,16 @@ public enum TextReaderTool {
         let latex: String?
         let ending: String?
         let found: Int?
+        let foundTables: Int?
         let formulas: [FoundFormula]?
+        let tables: [FoundTable]?
+        let tablesLeft: Int?
         let removed: Int?
         let error: String?
 
-        /// How many formulas the reader found, said before it reads them.
+        /// How many formulas, tables, and charts the reader found, said before it reads them.
         var isProgress: Bool {
-            found != nil && text == nil && lines == nil && latex == nil && formulas == nil && removed == nil && error == nil
+            found != nil && text == nil && lines == nil && latex == nil && formulas == nil && tables == nil && removed == nil && error == nil
         }
     }
 }

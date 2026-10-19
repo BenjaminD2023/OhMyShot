@@ -54,7 +54,9 @@ public enum TranslationOverlay {
             // reliably (bold Latin is wider, so it reads as a larger size instead), but headings are set
             // bold far more often than not.
             let isHeading = unit.lines.count <= 2 && size >= bodySize * 1.3
-            return Drawn(index: index, text: text, colors: colors, room: room, size: size, bold: isHeading)
+            // A formula drawn as its LaTeX would read as code: drawn readable instead (the text copied keeps the LaTeX).
+            let drawnText = unit.hasMath ? MathText.readable(in: text) : text
+            return Drawn(index: index, text: drawnText, colors: colors, room: room, size: size, bold: isHeading)
         }
         let erasedLines = Set(drawn.flatMap { units[$0.index].lines })
         let kept = lines.indices.filter { !erasedLines.contains($0) }.map { lines[$0].box }

@@ -39,6 +39,16 @@ final class TextCaptureCoordinator {
     /// The formula pack's folder and the text reader that reads with it (Capture Formula, and the formulas among text;
     /// Docs/ocr.md › The formula pack); nil while the pack isn't installed.
     var formulaReader: (() -> (pack: URL, helper: URL)?)?
+    /// The formula pack's and the VLM pack's folders, whichever are installed, and the text reader that reads with them
+    /// (the formulas, tables, and charts among text; Docs/ocr.md › Formulas among text, › The VLM pack); nil while neither
+    /// is installed.
+    var elementReader: (() -> (formulas: URL?, vlm: URL?, helper: URL)?)?
+    /// How long Capture Text lets the VLM read tables and charts before it copies Vision's reading of what is left: a
+    /// table takes 0.2–1.2 s once the model's files are in memory, the first after a restart about 7 s
+    /// (Docs/ocr.md › The VLM pack).
+    nonisolated static let tableWait: Double = 10
+    /// The same in the OCR panel, which shows Vision's reading meanwhile.
+    nonisolated static let panelTableWait: Double = 60
     /// The cloud model the panel's Read with sends a picture to, and how; asked as each panel window opens.
     var cloud: (() -> TextRecognitionWindowController.Cloud?)?
     /// The cloud model Capture Text reads with while Settings says so, and how (joining lines or not); nil otherwise.
@@ -202,8 +212,9 @@ final class TextCaptureCoordinator {
     }
 
     /// With the formula pack installed, the formulas in the picture are found and read in the text reader beside Vision's
-    /// reading, and the text copied holds each as LaTeX (Docs/ocr.md › Formulas among text); the highlight stays on
-    /// until they are in. While Settings has Capture Text read with the cloud model (and `allowsCloud`), the picture goes
+    /// reading, and the text copied holds each as LaTeX (Docs/ocr.md › Formulas among text); with the VLM pack, its tables
+    /// and charts, a row a line, where they bear themselves out (Docs/ocr.md › The VLM pack); the highlight stays on until
+    /// they are in. While Settings has Capture Text read with the cloud model (and `allowsCloud`), the picture goes
     /// to it beside them, and its text is copied once it comes; when it can't read the picture (or takes over
     /// `cloudWait`), this Mac's reading is copied, and the card says so even when it is off.
     ///
@@ -224,8 +235,11 @@ final class TextCaptureCoordinator {
         let cloud = allowsCloud ? captureTextCloud?() : nil
         let cloudReading = cloud.map { cloud in Task { try await cloud.read(image, joinLines) } }
         waitingForCloud = cloudReading
-        let formulas = formulaReader?().map { reader in
-            Task { await Self.formulas(in: image, pack: reader.pack, helper: reader.helper) }
+        let reader = elementReader?()
+        let vlm = reader?.vlm.flatMap { isTerminal(place) ? nil : $0 }
+        if reader?.vlm != nil, vlm == nil { Log.capture.notice("Capture Text leaves the tables to Vision: the picture is of a terminal") }
+        let formulas = reader.map { reader in
+            Task { await Self.elements(in: image, formulas: reader.formulas, vlm: vlm, seconds: Self.tableWait, helper: reader.helper) }
         }
         let visionLines: [OCRLine]?
         do {
@@ -297,9 +311,14 @@ final class TextCaptureCoordinator {
         if let formulas {
             let started = ContinuousClock.now
             let found = await formulas.value
-            if !found.isEmpty {
-                lines = await pipeline.lines(lines, with: found, in: image)
-                Log.capture.notice("Capture Text put \(found.count, privacy: .public) formulas into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
+            if !found.formulas.isEmpty {
+                lines = await pipeline.lines(lines, with: found.formulas, in: image)
+                Log.capture.notice("Capture Text put \(found.formulas.count, privacy: .public) formulas into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
+            }
+            if !found.tables.isEmpty {
+                let merge = TableMerge.merged(lines, with: found.tables, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                lines = merge.lines
+                Self.log(merge, of: found.tables, in: "Capture Text", after: ContinuousClock.now - started)
             }
         }
         probe.end()
@@ -547,22 +566,50 @@ final class TextCaptureCoordinator {
         }
     }
 
-    /// The formulas the pack finds in `image` and reads, in a run of the text reader (Docs/ocr.md › Formulas among text);
-    /// none when it can't, or in a picture too large to look in. `found` is told how many there are to read.
+    /// The formulas the formula pack reads and the tables and charts the VLM pack reads in `image`, in a run of the text
+    /// reader (Docs/ocr.md › Formulas among text, › The VLM pack), the VLM reading for `seconds` at most; none when it
+    /// can't, or in a picture too large to look in. `found` is told how many there are to read.
     @concurrent
-    nonisolated static func formulas(
-        in image: CGImage, pack: URL, helper: URL, found: (@Sendable (Int) -> Void)? = nil
-    ) async -> [FormulaMerge.Formula] {
-        guard FormulaFinder.finds(width: image.width, height: image.height), let file = formulaPicture(image) else { return [] }
+    nonisolated static func elements(
+        in image: CGImage, formulas: URL?, vlm: URL?, seconds: Double, helper: URL,
+        found: (@Sendable (TextRecognitionWindowController.Elements.Counts) -> Void)? = nil
+    ) async -> TextRecognitionWindowController.Elements.Found {
+        guard formulas != nil || vlm != nil, LayoutFinder.finds(width: image.width, height: image.height), let file = formulaPicture(image) else { return .init() }
         defer { try? FileManager.default.removeItem(at: file) }
-        do {
-            return try await TextReaderTool.formulas(ofPictureAt: file, pack: pack, helper: helper, found: found).map { formula in
-                FormulaMerge.Formula(kind: formula.kind == "display" ? .display : .inline, box: formula.box, latex: formula.latex)
-            }
-        } catch {
-            if !Task.isCancelled { Log.capture.error("Finding formulas failed: \(String(describing: error), privacy: .public)") }
-            return []
+        let counted: (@Sendable (TextReaderTool.Found) -> Void)? = found.map { found in
+            { @Sendable counts in found(.init(formulas: counts.formulas, tables: counts.tables)) }
         }
+        var pressure: MemoryPressure?
+        #if DEBUG
+        // debug/memory-pressure: what the reader takes the system's memory pressure to be.
+        pressure = UserDefaults.standard.string(forKey: "debugMemoryPressure").flatMap(MemoryPressure.init(name:))
+        #endif
+        do {
+            let read = try await TextReaderTool.elements(
+                ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, helper: helper, found: counted
+            )
+            if read.tablesLeft > 0 {
+                Log.capture.notice("Left \(read.tablesLeft, privacy: .public) tables and charts as Vision read them: the system is short of memory for the VLM pack")
+            }
+            return .init(
+                formulas: read.formulas.map { formula in
+                    FormulaMerge.Formula(kind: formula.kind == "display" ? .display : .inline, box: formula.box, latex: formula.latex)
+                },
+                tables: read.tables.map { table in
+                    TableMerge.Table(kind: table.kind == "chart" ? .chart : .table, box: table.box, rows: table.rows, isWhole: table.whole)
+                }
+            )
+        } catch {
+            if !Task.isCancelled { Log.capture.error("Finding formulas and tables failed: \(String(describing: error), privacy: .public)") }
+            return .init()
+        }
+    }
+
+    /// What a merge of tables did, in numbers: how many were taken, and why each other was left.
+    nonisolated static func log(_ merge: TableMerge.Merged, of tables: [TableMerge.Table], in surface: String, after elapsed: Duration) {
+        let refusals = merge.refused.map { "\(tables[$0.index].kind.rawValue) \($0.refusal.rawValue)" }.joined(separator: ", ")
+        let cut = merge.cutRows > 0 ? ", \(merge.cutRows) rows the picture's edge cut left as Vision read them" : ""
+        Log.capture.notice("\(surface, privacy: .public) took \(merge.taken.count, privacy: .public) of \(tables.count, privacy: .public) tables and charts read with the VLM pack\(refusals.isEmpty ? "" : " (left: \(refusals))", privacy: .public)\(cut, privacy: .public), \(String(describing: elapsed), privacy: .public) after Vision's reading")
     }
 
     /// `image` as an uncompressed TIFF for the text reader, written and read in a few milliseconds; the caller removes it.
@@ -701,7 +748,38 @@ final class TextCaptureCoordinator {
     func openPanel(image: CGImage, scale: CGFloat, source: String, translating: Bool = false, place: AppTextPlace? = nil) {
         let controller = panel ?? makePanel()
         panel = controller
-        controller.show(image: image, scale: scale, source: source, translating: translating, formulas: panelFormulas(), analyze: analyzer(for: place))
+        controller.show(
+            image: image, scale: scale, source: source, translating: translating, elements: panelElements(readsTables: !isTerminal(place)),
+            analyze: analyzer(for: place)
+        )
+    }
+
+    /// The terminals whose windows keep their text as the program printed it: a listing in columns there (`ls -l`) isn't
+    /// read as a table, which the layout model takes it for (Docs/ocr.md › The VLM pack).
+    nonisolated static let terminals: Set<String> = [
+        "com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty",
+        "org.alacritty", "io.alacritty", "com.github.wez.wezterm", "co.zeit.hyper", "com.raphaelamorim.rio", "dev.commandline.waveterm",
+        "com.termius-dmg.mac", "org.tabby",
+    ]
+
+    /// Whether the picture at `place` (of the screen; none for a file or the clipboard) is of a terminal: a picked
+    /// window's own app, else the app whose standard window is in front at the middle of the area, OhMyShot's own left out.
+    func isTerminal(_ place: AppTextPlace?) -> Bool {
+        guard let place else { return false }
+        let pid = place.pid ?? Optional(place.frame).flatMap { area -> pid_t? in
+            let middle = displays.layout.flipped(CGPoint(x: area.midX, y: area.midY))
+            let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+            return list.lazy.compactMap { info -> pid_t? in
+                guard (info[kCGWindowLayer as String] as? Int) == 0,
+                      let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner != ProcessInfo.processInfo.processIdentifier,
+                      let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                      CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0).contains(middle)
+                else { return nil }
+                return owner
+            }.first
+        }
+        guard let pid, let identifier = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return false }
+        return Self.terminals.contains(identifier)
     }
 
     /// How the panel reads a picture: Vision; the second reading while a pack is installed; and for a picture of the
@@ -739,13 +817,18 @@ final class TextCaptureCoordinator {
         }
     }
 
-    /// How the panel gets the formulas into its text; nil while the formula pack isn't installed. Asked as each panel
+    /// How the panel gets the formulas, tables, and charts into its text; nil while neither the formula pack nor the VLM
+    /// pack is installed. Asked as each panel
     /// opens.
-    private func panelFormulas() -> TextRecognitionWindowController.Formulas? {
-        guard let reader = formulaReader?() else { return nil }
+    private func panelElements(readsTables: Bool = true) -> TextRecognitionWindowController.Elements? {
+        guard let found = elementReader?() else { return nil }
+        let reader = (formulas: found.formulas, vlm: readsTables ? found.vlm : nil, helper: found.helper)
+        guard reader.formulas != nil || reader.vlm != nil else { return nil }
         let pipeline = pipeline
         return .init(
-            read: { image, found in await Self.formulas(in: image, pack: reader.pack, helper: reader.helper, found: found) },
+            read: { image, found in
+                await Self.elements(in: image, formulas: reader.formulas, vlm: reader.vlm, seconds: Self.panelTableWait, helper: reader.helper, found: found)
+            },
             merge: { lines, formulas, image in await pipeline.lines(lines, with: formulas, in: image) }
         )
     }
@@ -953,7 +1036,7 @@ final class TextCaptureCoordinator {
     func previewPanel(image: CGImage, scale: CGFloat, source: String, analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis) {
         let controller = panel ?? makePanel()
         panel = controller
-        controller.show(image: image, scale: scale, source: source, formulas: panelFormulas(), analyze: analyze)
+        controller.show(image: image, scale: scale, source: source, elements: panelElements(), analyze: analyze)
     }
 
     /// Sets the open panel's pane, line breaks, selected or hovered line, and whether the text was edited.
