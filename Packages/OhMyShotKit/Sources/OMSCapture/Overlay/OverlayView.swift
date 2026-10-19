@@ -54,7 +54,6 @@ final class OverlayView: NSView {
     }
 
     weak var delegate: OverlayViewDelegate?
-    var onToolbarVisibilityToggle: (() -> Void)?
     let display: DisplayInfo
 
     private(set) var mode: Mode = .area
@@ -101,9 +100,6 @@ final class OverlayView: NSView {
     private let loupeRim = CAShapeLayer()
     private let loupePill = ReadingCapsule(showsSwatch: true)
     private let toolbar = AllInOneBar()
-    private var offersToolbar = false
-    private(set) var toolbarHiddenByUser = false
-    private var toolbarOrigin: CGPoint?
     /// Copying text gets a lighter overlay than a screenshot: no dimming, no magnifier or readings, the
     /// system crosshair, and a selection drawn like selected text.
     private var purpose: OverlayController.Purpose = .screenshot
@@ -122,8 +118,6 @@ final class OverlayView: NSView {
         wantsLayer = true
         buildLayers()
         toolbar.onSelect = { [weak self] choice in self?.toolbarChose(choice) }
-        toolbar.onMove = { [weak self] delta, point in self?.moveToolbar(by: delta, pointerInWindow: point) }
-        toolbar.onHide = { [weak self] in self?.onToolbarVisibilityToggle?() }
         toolbar.isHidden = true
         addSubview(toolbar)
         setAccessibilityElement(true)
@@ -184,9 +178,6 @@ final class OverlayView: NSView {
             measure = nil
         }
         // The bar first: the size reading below steers clear of it.
-        offersToolbar = showsToolbar
-        toolbarHiddenByUser = false
-        toolbarOrigin = nil
         toolbar.isHidden = !showsToolbar
         toolbar.alphaValue = 1
         toolbar.showModes(isAllInOne)
@@ -204,9 +195,7 @@ final class OverlayView: NSView {
         case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         }
-        var accessibilityHelp = snapsToText ? help + " " + String(localized: "The selection's edges snap to text; hold Command to place them freely.", bundle: .module) : help
-        if showsToolbar { accessibilityHelp += " " + String(localized: "Press H to hide or show the toolbar.", bundle: .module) }
-        setAccessibilityHelp(accessibilityHelp)
+        setAccessibilityHelp(snapsToText ? help + " " + String(localized: "The selection's edges snap to text; hold Command to place them freely.", bundle: .module) : help)
         withoutAnimation {
             layoutLoupe()
             applyAppearance()
@@ -287,14 +276,12 @@ final class OverlayView: NSView {
         (!border.isHidden, !snapEdges.isHidden)
     }
 
+    var debugToolbarFrame: CGRect { toolbar.frame }
+
     var debugPointerLayers: (crosshair: Bool, loupe: CGRect?, colorReading: CGRect?) {
         (!crosshair.isHidden, loupe.isHidden ? nil : loupe.frame,
          loupePill.layer.isHidden ? nil : loupePill.layer.frame)
     }
-
-    var debugToolbarFrame: CGRect { toolbar.frame }
-    var debugToolbarIsHidden: Bool { toolbar.isHidden }
-    func debugMoveToolbar(by delta: CGVector) { moveToolbar(by: delta, pointerInWindow: .zero) }
 
     var debugLoupeCenterColors: (stroke: CGColor?, outline: CGColor?, outlineVisible: Bool) {
         (loupeCenter.strokeColor, loupeCenterOutline.strokeColor, !loupeCenterOutline.isHidden)
@@ -370,38 +357,19 @@ final class OverlayView: NSView {
         if hidesPicker { hasStartedAreaSelection = true }
         if restoresPicker { hasStartedAreaSelection = false }
         let toolbarAlpha: CGFloat = isDragging && selection.rect != nil ? 0 : 1
-        let toolbarVisibilityChanged = !toolbar.isHidden && toolbar.alphaValue != toolbarAlpha
+        // The bar fading or coming back under the pointer hands the pointer between the arrow and the crosshair.
+        let toolbarFades = !toolbar.isHidden && toolbar.alphaValue != toolbarAlpha
         if !toolbar.isHidden { toolbar.alphaValue = toolbarAlpha }
         withoutAnimation {
             updateSelectionLayers()
-            if hidesPicker || restoresPicker || toolbarVisibilityChanged { updatePointer(pointer) }
+            if hidesPicker || restoresPicker || toolbarFades { updatePointer(pointer) }
         }
     }
 
-    /// The controller shares the hidden choice across displays, without making an unavailable bar appear.
-    func setToolbarHidden(_ hidden: Bool) {
-        let changed = toolbarHiddenByUser != hidden
-        toolbarHiddenByUser = hidden
-        toolbar.isHidden = !offersToolbar || hidden || isAnnotating
-        window?.invalidateCursorRects(for: toolbar)
-        withoutAnimation {
-            updateSelectionLayers()
-            updatePointer(pointer)
-        }
-        if changed, offersToolbar {
-            NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                .announcement: hidden
-                    ? String(localized: "Toolbar hidden. Press H to show it.", bundle: .module)
-                    : String(localized: "Toolbar shown.", bundle: .module),
-                .priority: NSAccessibilityPriorityLevel.medium.rawValue,
-            ])
-        }
-    }
-
-    /// Native controls borrow the system cursor from the canvas, including throughout a grip drag.
+    /// Whether the pointer is over the bar, where the system's arrow shows and the crosshair and magnifier don't: the
+    /// bar would cover them, and the pointer would be nowhere to be seen.
     func wantsSystemCursor(at globalPoint: CGPoint) -> Bool {
-        !isAnnotating && !toolbar.isHidden && toolbar.alphaValue > 0
-            && (toolbar.isDragging || toolbar.frame.contains(local(globalPoint)))
+        !isAnnotating && !toolbar.isHidden && toolbar.alphaValue > 0 && toolbar.frame.contains(local(globalPoint))
     }
 
     /// Puts the pointer somewhere without mouse input, for scripted checks; the real (hidden) pointer
@@ -531,12 +499,6 @@ final class OverlayView: NSView {
             return
         }
         let character = event.charactersIgnoringModifiers?.lowercased()
-        if character == "h", purpose == .screenshot || purpose == .annotate || purpose == .record,
-           let onToolbarVisibilityToggle,
-           event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
-            onToolbarVisibilityToggle()
-            return
-        }
         let picks = purpose == .color || purpose == .measure
         if purpose == .measure, let measure,
            event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
@@ -981,24 +943,7 @@ final class OverlayView: NSView {
 
     private func layoutToolbar() {
         let size = toolbar.fittingSize
-        let origin = toolbarOrigin ?? CGPoint(x: (bounds.width - size.width) / 2, y: 40)
-        toolbar.frame = CGRect(
-            x: min(max(origin.x, bounds.minX + 8), max(bounds.minX + 8, bounds.maxX - size.width - 8)),
-            y: min(max(origin.y, bounds.minY + 8), max(bounds.minY + 8, bounds.maxY - size.height - 8)),
-            width: size.width, height: size.height
-        )
-    }
-
-    private func moveToolbar(by delta: CGVector, pointerInWindow: CGPoint) {
-        toolbarOrigin = CGPoint(x: toolbar.frame.minX + delta.dx, y: toolbar.frame.minY + delta.dy)
-        layoutToolbar()
-        toolbarOrigin = toolbar.frame.origin
-        window?.invalidateCursorRects(for: toolbar)
-        withoutAnimation {
-            updateSelectionLayers()
-            updatePointer(convert(pointerInWindow, from: nil))
-        }
-        delegate?.overlayView(self, didMovePointerTo: global(convert(pointerInWindow, from: nil)))
+        toolbar.frame = CGRect(x: (bounds.width - size.width) / 2, y: 40, width: size.width, height: size.height)
     }
 
     /// The captured pixel under a point, counted from the display's top-left corner.

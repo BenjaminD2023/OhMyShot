@@ -138,10 +138,6 @@ public final class OverlayController {
     /// closing after it (Return) rather than staying, with "Copied" in its reading (⌘C).
     public var onCopyMeasurement: ((String, CGPoint?, Bool) -> Void)?
     private let cursorVisibility = OverlayCursorVisibility()
-    /// A session's choice is shared across displays, including the one with no visible bar.
-    private var toolbarHiddenByUser = false
-    /// Mouse input's location, separate from the crosshair the arrow keys may nudge.
-    private var systemCursorPoint: CGPoint?
 
     public private(set) var isActive = false
     /// Whether the overlay has the keyboard and the pointer: at once on a live screen, once the
@@ -219,7 +215,6 @@ public final class OverlayController {
             let panel = OverlayPanel(frame: display.frame)
             let view = OverlayView(display: display)
             view.delegate = self
-            view.onToolbarVisibilityToggle = { [weak self] in self?.toggleToolbarVisibility() }
             panel.contentView = view
             entries[display.id] = Entry(panel: panel, view: view)
         }
@@ -231,8 +226,6 @@ public final class OverlayController {
     public func begin(mode: Mode = .area, purpose: Purpose = .screenshot, choosing area: CGRect? = nil, completion: @escaping (Outcome) -> Void) {
         guard !isActive else { return }
         cursorVisibility.end()
-        toolbarHiddenByUser = false
-        systemCursorPoint = nil
         let beginning = LatencyProbe("overlay.begin")
         let visible = LatencyProbe("overlay.visible")
         let frozen = LatencyProbe("overlay.frozen")
@@ -282,7 +275,6 @@ public final class OverlayController {
                 allInOne: isAllInOne,
                 snapsToText: snapsToText
             )
-            entry.view.setToolbarHidden(false)
         }
         hasInput = false
         // Shown before the overlay takes input, which tells VoiceOver it is there; framed with its bar once the
@@ -360,8 +352,6 @@ public final class OverlayController {
         // On a frozen screen this comes a moment after the session began: the crosshair goes where the
         // pointer is now.
         let pointer = NSEvent.mouseLocation
-        self.pointer = pointer
-        systemCursorPoint = pointer
         for entry in entries.values {
             entry.panel.ignoresMouseEvents = false
             entry.view.movePointer(to: pointer)
@@ -386,8 +376,8 @@ public final class OverlayController {
             entry.panel.makeKey()
             entry.panel.makeFirstResponder(entry.view)
         }
-        // The canvas draws its own pointer; native controls retain the system cursor. This ownership
-        // starts only after taking input, so early tracking events cannot hide the user's pointer.
+        // A screenshot draws its own crosshair and magnifier, but over the bar the system's arrow shows; copying text
+        // keeps the system crosshair. Only once the overlay has input, so an early move never hides the pointer.
         cursorVisibility.begin(drawsPointer: purpose != .text, overControls: wantsSystemCursor(at: pointer))
         CATransaction.flush()
         // A frozen overlay asks for activation a moment after the shortcut, not while handling it: the log
@@ -409,22 +399,13 @@ public final class OverlayController {
         end(.cancelled)
     }
 
+    /// Whether the pointer is over a bar, where the system's arrow shows in place of the drawn crosshair.
     private func wantsSystemCursor(at point: CGPoint) -> Bool {
         entries.values.contains { $0.view.wantsSystemCursor(at: point) }
     }
 
     private func updateCursorVisibility(at point: CGPoint) {
-        systemCursorPoint = point
         cursorVisibility.update(overControls: wantsSystemCursor(at: point))
-    }
-
-    private func toggleToolbarVisibility() {
-        guard isActive else { return }
-        toolbarHiddenByUser.toggle()
-        for entry in entries.values { entry.view.setToolbarHidden(toolbarHiddenByUser) }
-        let point = systemCursorPoint ?? NSEvent.mouseLocation
-        for entry in entries.values { entry.view.movePointer(to: pointer ?? point) }
-        updateCursorVisibility(at: point)
     }
 
     /// Ends in-place annotation: the overlay goes away and the previous app gets the keyboard back.
@@ -463,9 +444,6 @@ public final class OverlayController {
     }
 
     #if DEBUG
-    /// Whether this controller currently owns one native cursor hide, for checks of bar handoffs.
-    public var debugCursorIsHidden: Bool { cursorVisibility.isHidden }
-
     /// Chooses an area as a drag ending there would, without mouse input, for scripted checks. The area
     /// may cross displays.
     public func simulateSelection(_ rect: CGRect) {
@@ -742,7 +720,7 @@ public final class OverlayController {
         entry.panel.makeKey()
         let setup = AllInOneSetupView(
             display: display, area: area, offersUpload: allInOneOffersUpload && !sizing,
-            kind: sizing ? .sizing : .allInOne, ratio: sizing ? ratio : nil, toolbarHidden: toolbarHiddenByUser
+            kind: sizing ? .sizing : .allInOne, ratio: sizing ? ratio : nil
         )
         setup.frame = entry.view.bounds
         setup.onShapeKept = { [weak self] shape in self?.onKeptShapeChange?(shape) }
@@ -804,7 +782,6 @@ public final class OverlayController {
 
     private func end(_ outcome: Outcome) {
         guard isActive else { return }
-        cursorVisibility.end()
         isActive = false
         startsScrollingAtOnce = false
         recapturesLive = false
@@ -826,8 +803,7 @@ public final class OverlayController {
             entry.panel.orderOut(nil)
             entry.view.clear()
         }
-        toolbarHiddenByUser = false
-        systemCursorPoint = nil
+        cursorVisibility.end()
         frameLeases.removeAll()
         windowLease = nil
         windows = []
