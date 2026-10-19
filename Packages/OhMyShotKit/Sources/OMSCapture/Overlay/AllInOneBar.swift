@@ -102,6 +102,12 @@ final class AllInOneBar: NSView {
         stack.fittingSize
     }
 
+    /// The system's arrow over the bar: the overlay shows it there in place of its drawn crosshair.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
     override func layout() {
         super.layout()
         // A full capsule; the buttons inside are capsules too, so the corners stay concentric.

@@ -137,7 +137,7 @@ public final class OverlayController {
     /// The ruler's measurement to copy, where the crosshair is (global space), and whether the overlay is
     /// closing after it (Return) rather than staying, with "Copied" in its reading (⌘C).
     public var onCopyMeasurement: ((String, CGPoint?, Bool) -> Void)?
-    private var hidesCursor = false
+    private let cursorVisibility = OverlayCursorVisibility()
 
     public private(set) var isActive = false
     /// Whether the overlay has the keyboard and the pointer: at once on a live screen, once the
@@ -225,6 +225,7 @@ public final class OverlayController {
     ///   chooses another.
     public func begin(mode: Mode = .area, purpose: Purpose = .screenshot, choosing area: CGRect? = nil, completion: @escaping (Outcome) -> Void) {
         guard !isActive else { return }
+        cursorVisibility.end()
         let beginning = LatencyProbe("overlay.begin")
         let visible = LatencyProbe("overlay.visible")
         let frozen = LatencyProbe("overlay.frozen")
@@ -375,9 +376,9 @@ public final class OverlayController {
             entry.panel.makeKey()
             entry.panel.makeFirstResponder(entry.view)
         }
-        // A screenshot draws its own crosshair and magnifier; copying text keeps the system crosshair.
-        hidesCursor = purpose != .text
-        if hidesCursor { NSCursor.hide() }
+        // A screenshot draws its own crosshair and magnifier, but over the bar the system's arrow shows; copying text
+        // keeps the system crosshair. Only once the overlay has input, so an early move never hides the pointer.
+        cursorVisibility.begin(drawsPointer: purpose != .text, overControls: wantsSystemCursor(at: pointer))
         CATransaction.flush()
         // A frozen overlay asks for activation a moment after the shortcut, not while handling it: the log
         // says whether it was granted, which only a real shortcut press can show.
@@ -396,6 +397,15 @@ public final class OverlayController {
 
     public func cancel() {
         end(.cancelled)
+    }
+
+    /// Whether the pointer is over a bar, where the system's arrow shows in place of the drawn crosshair.
+    private func wantsSystemCursor(at point: CGPoint) -> Bool {
+        entries.values.contains { $0.view.wantsSystemCursor(at: point) }
+    }
+
+    private func updateCursorVisibility(at point: CGPoint) {
+        cursorVisibility.update(overControls: wantsSystemCursor(at: point))
     }
 
     /// Ends in-place annotation: the overlay goes away and the previous app gets the keyboard back.
@@ -643,8 +653,7 @@ public final class OverlayController {
     /// the system's again, for the frame's resize cursors.
     private func startRecordingSetup(on display: DisplayInfo, target: RecordingTarget) {
         guard let entry = entries[display.id] else { return }
-        if hidesCursor { NSCursor.unhide() }
-        hidesCursor = false
+        cursorVisibility.end()
         for (id, other) in entries where id != display.id {
             other.panel.orderOut(nil)
             other.view.clear()
@@ -674,8 +683,7 @@ public final class OverlayController {
         let area = area.intersection(display.frame)
         guard !area.isNull, area.width >= AreaFrame.smallest, area.height >= AreaFrame.smallest else { return }
         if startsScrollingAtOnce { return end(.scroll(area, display: display, autoScrolls: false)) }
-        if hidesCursor { NSCursor.unhide() }
-        hidesCursor = false
+        cursorVisibility.end()
         for (id, other) in entries where id != display.id {
             other.panel.orderOut(nil)
             other.view.clear()
@@ -702,8 +710,7 @@ public final class OverlayController {
         guard let entry = entries[display.id] else { return }
         let area = area.intersection(display.frame)
         guard !area.isNull, area.width >= AreaFrame.smallest, area.height >= AreaFrame.smallest else { return }
-        if hidesCursor { NSCursor.unhide() }
-        hidesCursor = false
+        cursorVisibility.end()
         for (id, other) in entries where id != display.id {
             other.panel.orderOut(nil)
             other.view.clear()
@@ -761,8 +768,7 @@ public final class OverlayController {
             return
         }
         // The pointer is the system's again: marks need the arrow, the I-beam, and the resize cursors.
-        if hidesCursor { NSCursor.unhide() }
-        hidesCursor = false
+        cursorVisibility.end()
         // Only this display stays: the others would start selections of their own.
         for (id, other) in entries where id != displayID {
             other.panel.orderOut(nil)
@@ -797,8 +803,7 @@ public final class OverlayController {
             entry.panel.orderOut(nil)
             entry.view.clear()
         }
-        if hidesCursor { NSCursor.unhide() }
-        hidesCursor = false
+        cursorVisibility.end()
         frameLeases.removeAll()
         windowLease = nil
         windows = []
@@ -959,6 +964,7 @@ extension OverlayController: OverlayViewDelegate {
         spaceHeld = false
         dragModifiers = []
         showSelection()
+        updateCursorVisibility(at: point)
     }
 
     func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) {
@@ -985,6 +991,7 @@ extension OverlayController: OverlayViewDelegate {
         for entry in entries.values {
             entry.view.movePointer(to: shown)
         }
+        updateCursorVisibility(at: point)
     }
 
     func overlayView(_ view: OverlayView, didReleaseWith modifiers: NSEvent.ModifierFlags) {
@@ -994,6 +1001,7 @@ extension OverlayController: OverlayViewDelegate {
         guard let rect = selection.rect, !selection.isTooSmall else {
             selection.reset()
             showSelection()
+            updateCursorVisibility(at: last)
             // A click, not a drag: recording takes the whole display.
             if purpose == .record { startRecordingSetup(on: display, target: .display) }
             return
@@ -1015,6 +1023,7 @@ extension OverlayController: OverlayViewDelegate {
         for entry in entries.values {
             entry.view.movePointer(to: point)
         }
+        updateCursorVisibility(at: point)
     }
 
     func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) {

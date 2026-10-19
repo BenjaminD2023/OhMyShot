@@ -276,6 +276,8 @@ final class OverlayView: NSView {
         (!border.isHidden, !snapEdges.isHidden)
     }
 
+    var debugToolbarFrame: CGRect { toolbar.frame }
+
     var debugPointerLayers: (crosshair: Bool, loupe: CGRect?, colorReading: CGRect?) {
         (!crosshair.isHidden, loupe.isHidden ? nil : loupe.frame,
          loupePill.layer.isHidden ? nil : loupePill.layer.frame)
@@ -354,11 +356,20 @@ final class OverlayView: NSView {
         let restoresPicker = usesCenteredPicker && hasStartedAreaSelection && !isDragging && selection.rect == nil
         if hidesPicker { hasStartedAreaSelection = true }
         if restoresPicker { hasStartedAreaSelection = false }
-        if !toolbar.isHidden { toolbar.alphaValue = isDragging && selection.rect != nil ? 0 : 1 }
+        let toolbarAlpha: CGFloat = isDragging && selection.rect != nil ? 0 : 1
+        // The bar fading or coming back under the pointer hands the pointer between the arrow and the crosshair.
+        let toolbarFades = !toolbar.isHidden && toolbar.alphaValue != toolbarAlpha
+        if !toolbar.isHidden { toolbar.alphaValue = toolbarAlpha }
         withoutAnimation {
             updateSelectionLayers()
-            if hidesPicker || restoresPicker { updatePointer(pointer) }
+            if hidesPicker || restoresPicker || toolbarFades { updatePointer(pointer) }
         }
+    }
+
+    /// Whether the pointer is over the bar, where the system's arrow shows and the crosshair and magnifier don't: the
+    /// bar would cover them, and the pointer would be nowhere to be seen.
+    func wantsSystemCursor(at globalPoint: CGPoint) -> Bool {
+        !isAnnotating && !toolbar.isHidden && toolbar.alphaValue > 0 && toolbar.frame.contains(local(globalPoint))
     }
 
     /// Puts the pointer somewhere without mouse input, for scripted checks; the real (hidden) pointer
@@ -831,6 +842,15 @@ final class OverlayView: NSView {
     private func updatePointer(_ point: CGPoint?) {
         pointer = point
         let pointerLayers: [CALayer] = [crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, loupePill.layer]
+        if let point, wantsSystemCursor(at: global(point)) {
+            pointerLayers.forEach { $0.isHidden = true }
+            if hoveredWindow != nil {
+                hoveredWindow = nil
+                updateSelectionLayers()
+            }
+            measure?.movePointer(to: nil)
+            return
+        }
         if mode == .window {
             let hovered = point.flatMap { WindowCatalog.target(at: global($0), in: windows) }
             if hovered != hoveredWindow {
