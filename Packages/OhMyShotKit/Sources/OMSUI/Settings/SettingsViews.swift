@@ -807,7 +807,7 @@ struct ShortcutsSettingsView: View {
             }
             SettingsDivider()
             VStack(alignment: .leading, spacing: 4) {
-                Text("Choose Use Anyway to override an app menu shortcut. Assigning the same shortcut to another action removes its previous assignment.", bundle: .module)
+                Text("Keys chosen for one action are taken from any other that had them.", bundle: .module)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("macOS keeps ⇧⌘3, ⇧⌘4, and ⇧⌘5 until you turn them off in Keyboard Settings.", bundle: .module)
