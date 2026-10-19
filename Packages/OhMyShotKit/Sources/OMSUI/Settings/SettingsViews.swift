@@ -252,6 +252,31 @@ struct CaptureSettingsView: View {
                     }
                 }
             }
+            SettingsRow(Text("Magnifier", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.captureLoupeStyle) {
+                        ForEach(CaptureLoupeStyle.allCases, id: \.self) { style in
+                            Text(verbatim: style.title).tag(style)
+                        }
+                    } label: {
+                        Text("Magnifier", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    if settings.captureLoupeStyle == .actualSize {
+                        Picker(selection: $settings.captureLoupeSize) {
+                            ForEach(CaptureLoupeSize.allCases, id: \.self) { size in
+                                Text(verbatim: size.title).tag(size)
+                            }
+                        } label: {
+                            Text("Size", bundle: .module)
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                    InfoButton(Text("What the screenshot and Annotate Area overlays show at the pointer before you choose an area. Magnified enlarges the pixels around it, to place an edge on the exact pixel. Actual Size shows them at their own size in a clear circle centered on the pointer, which goes when you start dragging; the crosshair stays.", bundle: .module))
+                }
+            }
             SettingsRow(Text("Self-Timer", bundle: .module)) {
                 Picker(selection: $settings.selfTimerDelay) {
                     ForEach(SettingsStore.selfTimerDelays, id: \.self) { seconds in
