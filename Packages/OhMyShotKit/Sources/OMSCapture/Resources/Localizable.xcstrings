@@ -2285,6 +2285,16 @@
         }
       }
     },
+    "Drag to move toolbar" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖动以移动工具栏"
+          }
+        }
+      }
+    },
     "From one quarter speed to double speed" : {
       "localizations" : {
         "es" : {
@@ -2417,6 +2427,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "高度（像素）"
+          }
+        }
+      }
+    },
+    "Hide toolbar" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏工具栏"
+          }
+        }
+      }
+    },
+    "Hide toolbar (H to show)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏工具栏（按 H 显示）"
           }
         }
       }
@@ -2791,6 +2821,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "鏡像"
+          }
+        }
+      }
+    },
+    "Move toolbar" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移动工具栏"
           }
         }
       }
@@ -3234,6 +3274,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將指標指向物件以測量，或拖移框住它。Command-C 會拷貝測量結果。"
+          }
+        }
+      }
+    },
+    "Press H to hide or show the toolbar." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按 H 隐藏或显示工具栏。"
           }
         }
       }
@@ -4934,6 +4984,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "容差：%@ · T / + / −"
+          }
+        }
+      }
+    },
+    "Toolbar hidden. Press H to show it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工具栏已隐藏。按 H 显示。"
+          }
+        }
+      }
+    },
+    "Toolbar shown." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工具栏已显示。"
           }
         }
       }
