@@ -122,6 +122,10 @@ public final class OverlayController {
     private var chosenAhead: (area: CGRect, display: DisplayInfo)?
     /// The notation picked colors are copied in: the magnifier's reading shows it while picking.
     public var colorFormat: ColorFormat = .hex
+    /// How screenshot and annotation sessions show the pixels at the pointer: magnified, or at their own size.
+    public var captureLoupeStyle: CaptureLoupeStyle = .magnified
+    /// The actual-size lens's size.
+    public var captureLoupeSize: CaptureLoupeSize = .small
     /// What the ruler reads in. Tab switches it during a session, and `onMeasureUnitChange` hears it.
     public var measureUnit: MeasureUnit = .points
     public var onMeasureUnitChange: ((MeasureUnit) -> Void)?
@@ -262,6 +266,8 @@ public final class OverlayController {
                 showsPointer: !holdsStill,
                 purpose: purpose,
                 colorFormat: colorFormat,
+                captureLoupeStyle: captureLoupeStyle,
+                captureLoupeSize: captureLoupeSize,
                 measureUnit: measureUnit,
                 measureTolerance: measureTolerance,
                 measureSnapsToContent: measureSnapsToContent,

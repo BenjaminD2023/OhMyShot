@@ -163,6 +163,16 @@ public final class SettingsStore {
         didSet { defaults.set(screenshotShowsCursor, forKey: Key.screenshotShowsCursor) }
     }
 
+    /// How the capture overlay's magnifier shows the pixels at the pointer: magnified (the default) or at their own size.
+    public var captureLoupeStyle: CaptureLoupeStyle {
+        didSet { defaults.set(captureLoupeStyle.rawValue, forKey: Key.captureLoupeStyle) }
+    }
+
+    /// The actual-size lens's size; Small leaves more of the screen visible.
+    public var captureLoupeSize: CaptureLoupeSize {
+        didSet { defaults.set(captureLoupeSize.rawValue, forKey: Key.captureLoupeSize) }
+    }
+
     /// The shape Shift keeps while an area is dragged out, as "16:9"; empty for a square.
     public var areaShape: String {
         didSet { defaults.set(areaShape, forKey: Key.areaShape) }
@@ -446,6 +456,8 @@ public final class SettingsStore {
             // captured, since the screen is taken the moment the shortcut is pressed.
             Key.freezeScreen: true,
             Key.screenshotShowsCursor: false,
+            Key.captureLoupeStyle: CaptureLoupeStyle.magnified.rawValue,
+            Key.captureLoupeSize: CaptureLoupeSize.small.rawValue,
             Key.areaShape: "",
             Key.snapSelectionToText: false,
             Key.allInOneRemembersArea: true,
@@ -496,6 +508,8 @@ public final class SettingsStore {
             ?? URL.desktopDirectory
         freezeScreen = defaults.bool(forKey: Key.freezeScreen)
         screenshotShowsCursor = defaults.bool(forKey: Key.screenshotShowsCursor)
+        captureLoupeStyle = defaults.string(forKey: Key.captureLoupeStyle).flatMap(CaptureLoupeStyle.init(rawValue:)) ?? .magnified
+        captureLoupeSize = defaults.string(forKey: Key.captureLoupeSize).flatMap(CaptureLoupeSize.init(rawValue:)) ?? .small
         // Only a shape the picker lists is kept; anything else, a square included, is a square.
         let shape = defaults.string(forKey: Key.areaShape) ?? ""
         areaShape = AspectRatio.presets.dropFirst().contains { $0.label == shape } ? shape : ""
@@ -591,6 +605,8 @@ public final class SettingsStore {
         static let exportDirectory = "exportDirectory"
         static let freezeScreen = "freezeScreen"
         static let screenshotShowsCursor = "screenshotShowsCursor"
+        static let captureLoupeStyle = "captureLoupeStyle"
+        static let captureLoupeSize = "captureLoupeSize"
         static let areaShape = "areaShape"
         static let snapSelectionToText = "snapSelectionToText"
         static let selfTimerDelay = "selfTimerDelay"
