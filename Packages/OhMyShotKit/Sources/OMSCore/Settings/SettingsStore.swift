@@ -157,6 +157,11 @@ public final class SettingsStore {
         didSet { defaults.set(screenshotShowsCursor, forKey: Key.screenshotShowsCursor) }
     }
 
+    /// The magnifier at the capture target before the first press; Small leaves more of the screen visible.
+    public var captureLoupeSize: CaptureLoupeSize {
+        didSet { defaults.set(captureLoupeSize.rawValue, forKey: Key.captureLoupeSize) }
+    }
+
     /// The shape Shift keeps while an area is dragged out, as "16:9"; empty for a square.
     public var areaShape: String {
         didSet { defaults.set(areaShape, forKey: Key.areaShape) }
@@ -439,6 +444,7 @@ public final class SettingsStore {
             // captured, since the screen is taken the moment the shortcut is pressed.
             Key.freezeScreen: true,
             Key.screenshotShowsCursor: false,
+            Key.captureLoupeSize: CaptureLoupeSize.small.rawValue,
             Key.areaShape: "",
             Key.snapSelectionToText: false,
             Key.allInOneRemembersArea: true,
@@ -489,6 +495,7 @@ public final class SettingsStore {
             ?? URL.desktopDirectory
         freezeScreen = defaults.bool(forKey: Key.freezeScreen)
         screenshotShowsCursor = defaults.bool(forKey: Key.screenshotShowsCursor)
+        captureLoupeSize = defaults.string(forKey: Key.captureLoupeSize).flatMap(CaptureLoupeSize.init(rawValue:)) ?? .small
         // Only a shape the picker lists is kept; anything else, a square included, is a square.
         let shape = defaults.string(forKey: Key.areaShape) ?? ""
         areaShape = AspectRatio.presets.dropFirst().contains { $0.label == shape } ? shape : ""
@@ -583,6 +590,7 @@ public final class SettingsStore {
         static let exportDirectory = "exportDirectory"
         static let freezeScreen = "freezeScreen"
         static let screenshotShowsCursor = "screenshotShowsCursor"
+        static let captureLoupeSize = "captureLoupeSize"
         static let areaShape = "areaShape"
         static let snapSelectionToText = "snapSelectionToText"
         static let selfTimerDelay = "selfTimerDelay"

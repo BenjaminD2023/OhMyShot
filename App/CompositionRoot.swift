@@ -273,6 +273,7 @@ final class CompositionRoot {
         // Where the blocks of text on a frozen screen lie, found quickly and never read, for a selection's edges
         // to snap to when Settings say so.
         overlay.textBlocks = TextBlockFinder(isOn: { [settings = self.settings] in settings.snapSelectionToText }, find: { await TextBlocks.find(in: $0) })
+        overlay.captureLoupeSize = settings.captureLoupeSize
         if #available(macOS 27, *) {
             replayStorage = ReplayCoordinator(settings: settings, displays: displays, capturer: capturer, permissions: permissions, recordings: recordings)
         }
@@ -430,6 +431,11 @@ final class CompositionRoot {
             for await format in Observations({ settings.colorFormat }) {
                 // Every overlay's magnifier reads in it, not only Pick Color's: C copies it while capturing.
                 self?.overlay.colorFormat = format
+            }
+        })
+        observations.append(Task { [weak self] in
+            for await size in Observations({ settings.captureLoupeSize }) {
+                self?.overlay.captureLoupeSize = size
             }
         })
         observations.append(Task { [weak self] in

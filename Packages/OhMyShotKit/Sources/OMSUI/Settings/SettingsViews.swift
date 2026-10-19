@@ -252,6 +252,20 @@ struct CaptureSettingsView: View {
                     }
                 }
             }
+            SettingsRow(Text("Magnifier size", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.captureLoupeSize) {
+                        ForEach(CaptureLoupeSize.allCases, id: \.self) { size in
+                            Text(verbatim: size.title).tag(size)
+                        }
+                    } label: {
+                        Text("Magnifier size", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("Choose how large the magnifier appears at the pointer before selecting a screenshot area. It hides when you start the selection. The new size applies to your next capture.", bundle: .module))
+                }
+            }
             SettingsRow(Text("Self-Timer", bundle: .module)) {
                 Picker(selection: $settings.selfTimerDelay) {
                     ForEach(SettingsStore.selfTimerDelays, id: \.self) { seconds in

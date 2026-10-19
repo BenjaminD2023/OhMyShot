@@ -65,6 +65,10 @@ final class OverlayView: NSView {
     private var showsReading = false
     private var capturedFrame: CapturedFrame?
     private var pointer: CGPoint?
+    /// Every display receives the first area press, even before the selection has any size. Once it
+    /// begins, the picker stays out of the way until a new capture session resets the view.
+    private var hasStartedAreaSelection = false
+    private var captureLoupeSize: CaptureLoupeSize = .small
     /// Set by `simulate`, so the real (hidden) pointer cannot move a scripted render.
     private var isSimulated = false
     /// In-place annotation has the display: its interface takes the input and draws the selection.
@@ -87,9 +91,10 @@ final class OverlayView: NSView {
     private let loupeImage = CALayer()
     private let loupeGrid = CAShapeLayer()
     private let loupeCenter = CAShapeLayer()
-    /// While picking, the center cell is drawn as the crosshair is, white over a dark outline, so it holds
-    /// over the accent's own color: that cell is what a click copies.
+    /// An opposite-color outline keeps the adaptive center cell visible over neighboring pixels.
     private let loupeCenterOutline = CAShapeLayer()
+    private static let reticleWhite = ScreenColor(srgbRed: 1, green: 1, blue: 1)!
+    private static let reticleBlack = ScreenColor(srgbRed: 0, green: 0, blue: 0)!
     private let loupeRim = CAShapeLayer()
     private let loupePill = ReadingCapsule(showsSwatch: true)
     private let toolbar = AllInOneBar()
@@ -134,7 +139,8 @@ final class OverlayView: NSView {
     /// screen; O, S, and R for text, a scrolling capture, or a recording.
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
-        purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex, measureUnit: MeasureUnit = .points,
+        purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex,
+        captureLoupeSize: CaptureLoupeSize = .small, measureUnit: MeasureUnit = .points,
         measureTolerance: MeasureTolerance = .medium, measureSnapsToContent: Bool = true,
         allInOne: Bool = false, snapsToText: Bool = false
     ) {
@@ -142,12 +148,14 @@ final class OverlayView: NSView {
         self.windows = windows
         hoveredWindow = nil
         selection.reset()
+        hasStartedAreaSelection = false
         showsReading = false
         isSimulated = false
         isAnnotating = false
         capturedFrame = nil
         increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         self.purpose = purpose
+        self.captureLoupeSize = captureLoupeSize
         self.colorFormat = colorFormat
         isAllInOne = allInOne && purpose == .screenshot
         if purpose == .measure {
@@ -186,6 +194,7 @@ final class OverlayView: NSView {
         }
         setAccessibilityHelp(snapsToText ? help + " " + String(localized: "The selection's edges snap to text; hold Command to place them freely.", bundle: .module) : help)
         withoutAnimation {
+            layoutLoupe()
             applyAppearance()
             // The panels are reused: the edges in-place annotation hid come back with a new session.
             border.isHidden = false
@@ -264,6 +273,15 @@ final class OverlayView: NSView {
         (!border.isHidden, !snapEdges.isHidden)
     }
 
+    var debugPointerLayers: (crosshair: Bool, loupe: CGRect?, colorReading: CGRect?) {
+        (!crosshair.isHidden, loupe.isHidden ? nil : loupe.frame,
+         loupePill.layer.isHidden ? nil : loupePill.layer.frame)
+    }
+
+    var debugLoupeCenterColors: (stroke: CGColor?, outline: CGColor?, outlineVisible: Bool) {
+        (loupeCenter.strokeColor, loupeCenterOutline.strokeColor, !loupeCenterOutline.isHidden)
+    }
+
     /// Drags the ruler's box over `rect` (global space) and lets go, for scripted checks.
     func debugMeasureBox(_ rect: CGRect) {
         let box = local(rect)
@@ -324,8 +342,13 @@ final class OverlayView: NSView {
     func show(selection: SelectionModel, showsReading: Bool, isDragging: Bool) {
         self.selection = selection
         self.showsReading = showsReading
+        let hidesPicker = usesCenteredPicker && !hasStartedAreaSelection && (isDragging || selection.rect != nil)
+        if hidesPicker { hasStartedAreaSelection = true }
         if !toolbar.isHidden { toolbar.alphaValue = isDragging && selection.rect != nil ? 0 : 1 }
-        withoutAnimation { updateSelectionLayers() }
+        withoutAnimation {
+            updateSelectionLayers()
+            if hidesPicker { updatePointer(pointer) }
+        }
     }
 
     /// Puts the pointer somewhere without mouse input, for scripted checks; the real (hidden) pointer
@@ -611,29 +634,15 @@ final class OverlayView: NSView {
         snapEdges.fillColor = nil
         snapEdges.lineCap = .round
 
-        let diameter = Theme.Loupe.diameter
-        let lensBounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
-        loupe.bounds = lensBounds
-        loupe.cornerRadius = diameter / 2
+        layoutLoupe()
         loupe.masksToBounds = true
         loupe.backgroundColor = .white
-        loupeImage.frame = lensBounds
         loupeImage.magnificationFilter = .nearest
         loupeImage.contentsGravity = .resize
-        loupeGrid.frame = lensBounds
         loupeGrid.strokeColor = CGColor(gray: 0, alpha: 0.08)
         loupeGrid.lineWidth = 1 / display.backingScale
-        loupeGrid.path = Self.gridPath(size: diameter, cells: Theme.Loupe.pixelsAcross)
-        let cell = diameter / CGFloat(Theme.Loupe.pixelsAcross)
-        loupeCenter.frame = lensBounds
-        loupeCenter.path = CGPath(
-            roundedRect: CGRect(x: (diameter - cell) / 2, y: (diameter - cell) / 2, width: cell, height: cell),
-            cornerWidth: 1.5, cornerHeight: 1.5, transform: nil
-        )
         loupeCenter.fillColor = nil
         loupeCenter.lineWidth = 1.5
-        loupeCenterOutline.frame = lensBounds
-        loupeCenterOutline.path = loupeCenter.path
         loupeCenterOutline.fillColor = nil
         loupeCenterOutline.lineWidth = 3
         loupe.addSublayer(loupeImage)
@@ -642,15 +651,10 @@ final class OverlayView: NSView {
         loupe.addSublayer(loupeCenter)
 
         // A soft shadow under the lens and a white rim around it, both outside the masked lens.
-        loupeShadow.bounds = lensBounds
-        loupeShadow.path = CGPath(ellipseIn: lensBounds, transform: nil)
         loupeShadow.fillColor = .white
-        loupeShadow.shadowPath = loupeShadow.path
         loupeShadow.shadowOpacity = 0.28
         loupeShadow.shadowRadius = 12
         loupeShadow.shadowOffset = CGSize(width: 0, height: -4)
-        loupeRim.bounds = lensBounds
-        loupeRim.path = CGPath(ellipseIn: lensBounds.insetBy(dx: -Theme.Loupe.rimWidth / 2, dy: -Theme.Loupe.rimWidth / 2), transform: nil)
         loupeRim.strokeColor = .white
         loupeRim.fillColor = nil
         loupeRim.lineWidth = Theme.Loupe.rimWidth
@@ -666,6 +670,32 @@ final class OverlayView: NSView {
         }
     }
 
+    private var loupeDiameter: CGFloat { usesCenteredPicker ? captureLoupeSize.diameter : Theme.Loupe.diameter }
+
+    /// Reused views may switch both size and purpose between sessions; keep every lens layer in sync.
+    private func layoutLoupe() {
+        let diameter = loupeDiameter
+        let lensBounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
+        loupe.bounds = lensBounds
+        loupe.cornerRadius = diameter / 2
+        loupeImage.frame = lensBounds
+        loupeGrid.frame = lensBounds
+        loupeGrid.path = Self.gridPath(size: diameter, cells: Theme.Loupe.pixelsAcross)
+        let cell = diameter / CGFloat(Theme.Loupe.pixelsAcross)
+        loupeCenter.frame = lensBounds
+        loupeCenter.path = CGPath(
+            roundedRect: CGRect(x: (diameter - cell) / 2, y: (diameter - cell) / 2, width: cell, height: cell),
+            cornerWidth: 1.5, cornerHeight: 1.5, transform: nil
+        )
+        loupeCenterOutline.frame = lensBounds
+        loupeCenterOutline.path = loupeCenter.path
+        loupeShadow.bounds = lensBounds
+        loupeShadow.path = CGPath(ellipseIn: lensBounds, transform: nil)
+        loupeShadow.shadowPath = loupeShadow.path
+        loupeRim.bounds = lensBounds
+        loupeRim.path = CGPath(ellipseIn: lensBounds.insetBy(dx: -Theme.Loupe.rimWidth / 2, dy: -Theme.Loupe.rimWidth / 2), transform: nil)
+    }
+
     /// Colors that depend on appearance or accessibility settings. Read when a session starts and when
     /// the appearance changes, never per event.
     private func applyAppearance() {
@@ -674,10 +704,14 @@ final class OverlayView: NSView {
         let outlineOpacity = increasedContrast ? Theme.Overlay.outlineOpacityIncreasedContrast : Theme.Overlay.outlineOpacity
         outline.strokeColor = CGColor(gray: 0, alpha: outlineOpacity)
         crosshairOutline.strokeColor = CGColor(gray: 0, alpha: outlineOpacity)
-        let picking = purpose == .color
-        loupeCenter.strokeColor = picking ? .white : Theme.cgColor(.controlAccentColor, for: effectiveAppearance)
-        loupeCenterOutline.strokeColor = CGColor(gray: 0, alpha: outlineOpacity)
-        loupeCenterOutline.isHidden = !picking
+        // Let the original screen show through the centered preview, with an opaque reticle.
+        // Both white backing discs must go as well, or lowering image opacity reveals only white.
+        let translucentPicker = usesCenteredPicker && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        loupeImage.opacity = translucentPicker ? 0.75 : 1
+        loupe.backgroundColor = translucentPicker ? .clear : .white
+        loupeShadow.fillColor = translucentPicker ? .clear : .white
+        loupeShadow.shadowOpacity = translucentPicker ? 0 : 0.28
+        updateLoupeCenter(for: pointer.flatMap { color(at: global($0)) })
         let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         sizePill.applyAppearance(dark: isDark, contrast: increasedContrast)
         loupePill.applyAppearance(dark: isDark, contrast: increasedContrast)
@@ -763,6 +797,25 @@ final class OverlayView: NSView {
         return path
     }
 
+    /// The magnifier's center pixel is the capture target, replacing the separate crosshair until
+    /// the first press. Pick Color and the live recording/scrolling selectors keep their own layout.
+    private var usesCenteredPicker: Bool { purpose == .screenshot || purpose == .annotate }
+
+    /// Choose against the sampled screen pixel, independent of the app's Light/Dark appearance.
+    /// The opposite outline keeps the target legible when its neighboring pixels differ sharply.
+    private func updateLoupeCenter(for color: ScreenColor?) {
+        let picking = usesCenteredPicker || purpose == .color
+        let lightStroke = color.map {
+            $0.wcagContrast(with: Self.reticleWhite) >= $0.wcagContrast(with: Self.reticleBlack)
+        } ?? true
+        loupeCenter.strokeColor = picking
+            ? (lightStroke ? .white : .black)
+            : Theme.cgColor(.controlAccentColor, for: effectiveAppearance)
+        let outlineOpacity = increasedContrast ? Theme.Overlay.outlineOpacityIncreasedContrast : Theme.Overlay.outlineOpacity
+        loupeCenterOutline.strokeColor = CGColor(gray: lightStroke ? 0 : 1, alpha: outlineOpacity)
+        loupeCenterOutline.isHidden = !picking
+    }
+
     private func updatePointer(_ point: CGPoint?) {
         pointer = point
         let pointerLayers: [CALayer] = [crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, loupePill.layer]
@@ -795,18 +848,28 @@ final class OverlayView: NSView {
             return
         }
 
-        // The magnifier sits below and right of the pointer, flipping away from the display's edges.
-        let diameter = Theme.Loupe.diameter
+        if usesCenteredPicker, hasStartedAreaSelection {
+            pointerLayers.forEach { $0.isHidden = true }
+            return
+        }
+
+        // A capture's lens stays centered on the target, including at screen edges. Moving the lens
+        // away to keep it on screen would make its center cell point at the wrong location.
+        let diameter = loupeDiameter
         let offset = Theme.Loupe.offset
-        var center = CGPoint(x: point.x + offset + diameter / 2, y: point.y - offset - diameter / 2)
-        if center.x + diameter / 2 > bounds.maxX - 6 { center.x = point.x - offset - diameter / 2 }
-        if center.y - diameter / 2 - 32 < bounds.minY + 6 { center.y = point.y + offset + diameter / 2 }
+        var center = point
+        if !usesCenteredPicker {
+            center = CGPoint(x: point.x + offset + diameter / 2, y: point.y - offset - diameter / 2)
+            if center.x + diameter / 2 > bounds.maxX - 6 { center.x = point.x - offset - diameter / 2 }
+            if center.y - diameter / 2 - 32 < bounds.minY + 6 { center.y = point.y + offset + diameter / 2 }
+        }
         for layer in [loupe, loupeRim, loupeShadow] { layer.position = center }
 
         let pixel = pixelCoordinate(at: point)
         if let frame = capturedFrame {
             loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image)
             let color = frame.color(atPixel: pixel.x, pixel.y)
+            updateLoupeCenter(for: color)
             loupePill.swatch = color?.cgColor
             // The reading is what a click (or C) copies, in Settings' notation.
             let value = color.map { $0.string(in: colorFormat) }
@@ -814,6 +877,10 @@ final class OverlayView: NSView {
             // VoiceOver hears the color under the crosshair while picking.
             if purpose == .color { setAccessibilityValue(value) }
             for layer in [loupe, loupeRim, loupeShadow] { layer.isHidden = false }
+            if usesCenteredPicker {
+                crosshair.isHidden = true
+                crosshairOutline.isHidden = true
+            }
         } else {
             loupePill.swatch = nil
             loupePill.text = "\(pixel.x), \(pixel.y)"
@@ -824,6 +891,13 @@ final class OverlayView: NSView {
         loupePill.layer.frame.origin = loupe.isHidden
             ? CGPoint(x: point.x + offset, y: point.y - offset - pillSize.height)
             : CGPoint(x: center.x - pillSize.width / 2, y: center.y - diameter / 2 - pillSize.height - 8)
+        if usesCenteredPicker {
+            var origin = loupePill.layer.frame.origin
+            if origin.y < bounds.minY + 6 { origin.y = center.y + diameter / 2 + 8 }
+            origin.x = min(max(origin.x, bounds.minX + 6), max(bounds.minX + 6, bounds.maxX - pillSize.width - 6))
+            origin.y = min(max(origin.y, bounds.minY + 6), max(bounds.minY + 6, bounds.maxY - pillSize.height - 6))
+            loupePill.layer.frame.origin = origin
+        }
     }
 
     private func layoutToolbar() {

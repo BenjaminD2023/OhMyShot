@@ -1,6 +1,40 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Magnifier size" : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magnifier size"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "放大镜大小"
+          }
+        }
+      }
+    },
+    "Choose how large the magnifier appears at the pointer before selecting a screenshot area. It hides when you start the selection. The new size applies to your next capture." : {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose how large the magnifier appears at the pointer before selecting a screenshot area. It hides when you start the selection. The new size applies to your next capture."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调整截图框选前指针处放大镜的大小。开始框选后会自动隐藏，新的大小在下次截图时生效。"
+          }
+        }
+      }
+    },
     "%@ can’t be translated into %@" : {
       "localizations" : {
         "en" : {
