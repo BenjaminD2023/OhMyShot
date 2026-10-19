@@ -17930,23 +17930,6 @@
         }
       }
     },
-    "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设置新打开的文字识别窗口的默认换行方式。各窗口可临时切换，不会修改此设置。自动换行只影响显示。"
-          }
-        }
-      }
-    },
     "SETTINGS_PANE_WIDTH" : {
       "comment" : "The narrowest a Settings pane gets, in points. Not words: raise the number if your language's rows are cut off.",
       "extractionState" : "extracted_with_value",
@@ -19381,6 +19364,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將這張圖片傳送到 %@"
+          }
+        }
+      }
+    },
+    "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Define si las nuevas ventanas Texto reconocido ajustan el texto a su ancho. Puedes cambiarlo en cada ventana sin modificar esta opción. Ajustar el texto solo cambia cómo se muestra."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définit si les nouvelles fenêtres Texte reconnu ajustent le texte à leur largeur. Vous pouvez le changer dans chaque fenêtre sans modifier ce réglage. Le renvoi à la ligne ne change que l’affichage."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しく開く「認識されたテキスト」ウインドウで折り返すかどうかを設定します。この設定を変えずに、ウインドウごとに切り替えることもできます。折り返しは表示だけを変えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设定新打开的“识别的文字”窗口是否自动换行。每个窗口都可以单独切换，不会改动这项设置。换行只影响显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定新開啟的「辨識出的文字」視窗是否自動換行。每個視窗都可以單獨切換，不會更動這項設定。換行只影響顯示。"
           }
         }
       }
@@ -24395,53 +24412,104 @@
         }
       }
     },
-    "Wrap long lines in this window without changing the text you copy": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wrap long lines in this window without changing the text you copy"
+    "Wrap Text" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustar texto"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在当前窗口中折行显示长文本，不改变复制的内容"
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renvoi à la ligne"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストを折り返す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动换行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動換行"
           }
         }
       }
     },
-    "Wrap Text": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wrap Text"
+    "Wrap long lines in this window without changing the text you copy" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajusta las líneas largas en esta ventana sin cambiar el texto que copias"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自动换行"
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renvoie les longues lignes à la ligne dans cette fenêtre, sans changer le texte que vous copiez"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このウインドウで長い行を折り返します。コピーするテキストは変わりません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这个窗口中让长行自动换行，不改变拷贝的文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這個視窗中讓長行自動換行，不改變拷貝的文字"
           }
         }
       }
     },
-    "Wrap text to window": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wrap text to window"
+    "Wrap text to window" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustar el texto a la ventana"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自动换行"
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajuster le texte à la fenêtre"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウに合わせて折り返す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按窗口宽度换行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "依視窗寬度換行"
           }
         }
       }
