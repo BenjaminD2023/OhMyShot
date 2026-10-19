@@ -9,7 +9,8 @@ A native macOS capture tool — screenshots, recordings, annotation, pins, and o
 ## Requirements
 
 - macOS 26 or later on Apple silicon
-- Xcode 26 or later
+- Xcode 26 or later, with its Metal Toolchain (MLX, which the VLM pack reads with, has Metal kernels to compile):
+  `xcodebuild -downloadComponent MetalToolchain`
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 
 ## Build and run
@@ -17,7 +18,7 @@ A native macOS capture tool — screenshots, recordings, annotation, pins, and o
 ```sh
 Scripts/bootstrap.sh   # generate OhMyShot.xcodeproj from project.yml (build.sh and run.sh do it again when project.yml has changed)
 Scripts/run.sh         # build the Debug app ("OhMyShot Dev") and launch it
-swift test --package-path Packages/OhMyShotKit
+Scripts/test.sh        # both packages' unit tests (OhMyShotKit, OhMyShotVLM)
 ```
 
 Debug builds use their own bundle identifier (`….ohmyshot.dev`), URL scheme (`ohmyshot-dev://`), and default shortcuts (⌃⌥⌘ plus a digit), so they can run next to a release build without fighting over permissions or shortcuts.

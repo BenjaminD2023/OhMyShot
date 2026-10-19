@@ -32,17 +32,18 @@ public struct HistoryText: Codable, Equatable, Sendable {
         self.reading = reading
     }
 
-    /// Whether a pack could read `text` better: two or more of its characters are Han or kana, which L2 reads better
-    /// than Vision (Docs/ocr.md › L2 beside L1). The same test as the text reader's, `SecondReading.wanted`.
+    /// Whether a pack could read `text` better: two of its characters or more are Han or kana side by side (spaces between
+    /// them allowed), which L2 reads better than Vision (Docs/ocr.md › L2 beside L1); one alone is Vision's reading of
+    /// a symbol or an icon. The same test as the text reader's, `SecondReading.wanted`.
     static func mayReadBetter(_ text: String) -> Bool {
-        var count = 0
-        for scalar in text.unicodeScalars {
+        var run = 0
+        for scalar in text.unicodeScalars where scalar != " " && scalar != "\u{3000}" {
             switch scalar.value {
             case 0x3040...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x2FA1F:
-                count += 1
-                if count >= 2 { return true }
+                run += 1
+                if run >= 2 { return true }
             default:
-                break
+                run = 0
             }
         }
         return false

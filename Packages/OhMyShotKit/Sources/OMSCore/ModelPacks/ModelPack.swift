@@ -131,7 +131,7 @@ public struct ModelPack: Codable, Hashable, Identifiable, Sendable {
 /// The packs this build of the app offers.
 public enum ModelPackCatalog {
     /// A listed pack shows in Settings › Tools. With nothing here, nothing in the app mentions packs.
-    public static let packs: [ModelPack] = [ppocrV6Small, ppFormulaNetPlusL]
+    public static let packs: [ModelPack] = [ppocrV6Small, ppFormulaNetPlusL, paddleOCRVL]
 
     /// PP-OCRv6 small, converted to Core ML by `Tools/model-packs/ppocr_pack.py` and published on Hugging Face
     /// (Docs/ocr.md › The L2 pack): the OCR panel and the history's search read Chinese and Japanese with it beside
@@ -200,6 +200,38 @@ public enum ModelPackCatalog {
             .init(path: "layout.mlpackage/Data/com.apple.CoreML/weights/weight.bin", size: 33_164_480, sha256: "6c86ccbdef3ff798bd6c3507a115c0f04469afaa48f8ca4b0365070153b595a8"),
             .init(path: "layout.mlpackage/Manifest.json", size: 617, sha256: "b844a26da844086b3f063cd077518c7d210531921a46cc71b814094bbaa80b3a"),
             .init(path: "tokens.txt", size: 424_069, sha256: "1ad57fdc1a3b0fa2545f9cd241f7caaffec92d73186afffcc3ec67547e2df321"),
+        ]
+    )
+
+    /// PaddleOCR-VL-1.6 on MLX with 8-bit weights, and PP-DocLayoutV3 (the formula pack's file), made by
+    ///  and published on Hugging Face (Docs/ocr.md › The VLM pack): the text Capture Text,
+    /// the OCR panel, and Recognize Text in Image read holds the tables and charts in a picture a row a line, read in the
+    /// text reader (Packages/OhMyShotVLM), and the panel shows them as tables. Until it is installed, nothing but
+    /// Settings › Tools mentions it.
+    public static let paddleOCRVL = ModelPack(
+        id: "paddleocr-vl-1.6", version: "1",
+        name: String(localized: "Tables and Charts", bundle: .module),
+        summary: String(
+            localized: "PaddleOCR-VL-1.6 and PP-DocLayoutV3, by PaddlePaddle: recognized text holds each table and chart as rows you can paste into a spreadsheet. Reading one takes about 2.6 GB of memory.",
+            bundle: .module
+        ),
+        license: .init(name: "Apache-2.0", file: "LICENSE.txt", url: URL(string: "https://www.apache.org/licenses/LICENSE-2.0")!),
+        original: URL(string: "https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6")!,
+        host: "Hugging Face",
+        mirrors: [
+            URL(string: "https://huggingface.co/MoraxCheng/ohmyshot-paddleocr-vl-1.6-mlx/resolve/59c48a3af69917b4baa5468ae5aa43b22ec51e52/")!,
+        ],
+        files: [
+            .init(path: "LICENSE.txt", size: 12_820, sha256: "439061fae6525b51c683e74f725b072110e7d1c0172f533dc2aaedc414730192"),
+            .init(path: "README.md", size: 3_013, sha256: "1f860c7e030748d80732676f6ed74a5b14846460765c5058bfa1bba805e524ef"),
+            .init(path: "config.json", size: 2_676, sha256: "45b2be187cfff706db3f67e959020f99223a131baceb6af2f9a4c932999d726f"),
+            .init(path: "layout.json", size: 256, sha256: "2f89e2ae42f686cd6a6a99bd5985267f1cfe97bf83fee4adf03d44453731290d"),
+            .init(path: "layout.mlpackage/Data/com.apple.CoreML/model.mlmodel", size: 504_449, sha256: "5a29516751c43bda726b44d53771038abe22d24519e69fda170ae41d5bb75c0e"),
+            .init(path: "layout.mlpackage/Data/com.apple.CoreML/weights/weight.bin", size: 33_164_480, sha256: "6c86ccbdef3ff798bd6c3507a115c0f04469afaa48f8ca4b0365070153b595a8"),
+            .init(path: "layout.mlpackage/Manifest.json", size: 617, sha256: "b844a26da844086b3f063cd077518c7d210531921a46cc71b814094bbaa80b3a"),
+            .init(path: "model.safetensors", size: 1_088_866_630, sha256: "3abce24b6c447cce0e56ae9fd7464d507c4b288080bdc92526a07668c3a0a0e7"),
+            .init(path: "prompts.json", size: 705, sha256: "cda18d25b83d00028630edcaf2a824fe603d251f876dd7adfc455c143d5b7d4b"),
+            .init(path: "vocabulary.json", size: 1_099_459, sha256: "55b3ac02fbe7e643b4edb10c172712be5e6acceba40126d18fd23aa25b91f15a"),
         ]
     )
 }

@@ -56,7 +56,8 @@ public enum TextAssembler {
         let joins: [Join] = lines.indices.map { index in
             guard index + 1 < lines.count else { return .newLine }
             if let spaces = continuations[index + 1] { return .spaces(spaces) }
-            guard !guesses.isEmpty, lines[index].math != .display, lines[index + 1].math != .display else { return .newLine }
+            guard !guesses.isEmpty, lines[index].math != .display, lines[index + 1].math != .display,
+                  !lines[index].isTableRow, !lines[index + 1].isTableRow else { return .newLine }
             return lines[index].wrapsToNextLine ?? guesses[index] ? .wrap : .newLine
         }
         var assembly = build(texts, joins: joins)
@@ -89,8 +90,9 @@ public enum TextAssembler {
     // MARK: Code
 
     /// A screenshot of code: most of its lines read as code. A formula's LaTeX is no code: only the text around it
-    /// counts.
+    /// counts; nor is a table's row.
     static func isCodeListing(_ lines: [OCRLine]) -> Bool {
+        let lines = lines.filter { !$0.isTableRow }
         let codeLines = lines.filter { isCodeLike(withoutMath($0)) }.count
         return lines.count >= 2 && Double(codeLines) >= Double(lines.count) * 0.4
     }
@@ -238,9 +240,10 @@ public enum TextAssembler {
             let sameLeft = abs(next.box.minX - line.box.minX) < lineHeight * 0.8
             let gap = next.box.minY - line.box.maxY
             guard sameLeft, gap >= -lineHeight * 0.3, gap < lineHeight * 0.9 else { return false }
-            // The paragraph's right edge: the widest of the neighboring lines that share this left edge.
+            // The paragraph's right edge: the widest of the neighboring lines that share this left edge (a table's rows,
+            // boxed across the whole table, aren't the paragraph's).
             let neighbors = lines.indices
-                .filter { abs($0 - index) <= 3 && abs(lines[$0].box.minX - line.box.minX) < lineHeight * 0.8 }
+                .filter { abs($0 - index) <= 3 && abs(lines[$0].box.minX - line.box.minX) < lineHeight * 0.8 && !lines[$0].isTableRow }
             let rightEdge = neighbors.map { lines[$0].box.maxX }.max() ?? line.box.maxX
             let width = rightEdge - line.box.minX
             guard width > 0, line.box.maxX - line.box.minX >= width * 0.85 else { return false }

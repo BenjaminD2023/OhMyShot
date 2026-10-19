@@ -400,6 +400,12 @@ struct DebugHooks {
                 await translateDemo(prose: prose, blank: blank)
                 if controls { textCapture.revealLensControls() }
             }
+        case "memory-pressure":
+            // level=normal|warning|critical: what the text reader takes the system's memory pressure to be when it reads
+            // tables and charts (warning or critical leaves them to Vision); off: the system's own again.
+            let level = Self.parameter("level", in: url).flatMap(MemoryPressure.init(name:))
+            UserDefaults.standard.set(level?.name, forKey: "debugMemoryPressure")
+            Log.app.notice("debug.memory-pressure \(level?.name ?? "system's", privacy: .public) (system: \(MemoryPressure.current().name, privacy: .public))")
         case "panel-file":
             // path=: the OCR panel on that picture, as Recognize Text in Image… opens it (the window shows on screen).
             if let path = Self.parameter("path", in: url) {

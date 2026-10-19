@@ -20,12 +20,21 @@
 // the pack finds the formulas in the picture and reads each (Docs/ocr.md › Formulas among text): the answer holds them,
 // after a line {"id": "…", "found": 3} saying how many there are to read; with "joinsWrappedLines" as well, the text is
 // read as above and the formulas put into it, as LaTeX. With "tidy": true, nothing is read: what Core ML keeps in this
-// process's Caches folder of models that are gone is removed (CompiledModelCache).
+// process's Caches folder of models that are gone is removed (CompiledModelCache). With "vlm": the VLM pack's folder,
+// alone or beside "formulas", the tables and charts the layout model finds are read with the VLM too (Docs/ocr.md › The
+// VLM pack), one layout run serving both packs: the answer holds them as rows of cells, and with "joinsWrappedLines"
+// the text holds those that bear themselves out against Vision's reading, a row a line; "seconds" is how long the VLM
+// may read before what is left stays as Vision read it. With the system's memory pressure past normal (or "pressure":
+// "warning" or "critical" said for it), the VLM isn't loaded and the tables and charts stay as Vision read them, the
+// answer saying how many with "tablesLeft". With "vlm" and "task": "ocr", "table", "formula", or "chart",
+// the VLM reads the whole picture as that; with "warm" its model is loaded and nothing is read.
 // Output, on standard output: one JSON object per line as each picture is read, in order,
 // {"id": "…", "text": "…"}, {"id": "…", "lines": [{"text": "…", "box": [[x, y], [width, height]], "confidence": 0.9}]},
 // {"id": "…", "latex": "…", "ending": "end"} (or "repeats", "cacheFull", "deadline": not a whole formula),
-// {"id": "…", "formulas": [{"kind": "inline", "box": [[x, y], [width, height]], "latex": "…"}]},
-// {"id": "…", "removed": 2}, or {"id": "…", "error": "…"}. The process exits once its input ends and every picture is
+// {"id": "…", "found": 3, "foundTables": 1} first for those, {"id": "…", "formulas": [{"kind": "inline", "box": [[x, y], [width, height]], "latex": "…"}], "tables": [{"kind":
+// "table", "box": …, "rows": [["…"]], "whole": true}], "tablesLeft": 1},
+// {"id": "…", "removed": 2}, {"id": "…", "text": "…", "ending": "end"} (or "length", "stopped") for the VLM pack, or
+// {"id": "…", "error": "…"}. The process exits once its input ends and every picture is
 // read.
 
 import CoreGraphics
@@ -33,6 +42,7 @@ import Foundation
 import ImageIO
 import OMSCore
 import OMSOCR
+import OMSVLM
 
 struct Job: Decodable {
     let id: String
@@ -44,28 +54,46 @@ struct Job: Decodable {
     var formula: String?
     var formulas: String?
     var tidy: Bool?
+    var vlm: String?
+    var task: String?
+    var seconds: Double?
+    /// What to take the system's memory pressure to be, by name (`MemoryPressure`), rather than ask the kernel: for checking
+    /// what happens when it is pressed.
+    var pressure: String?
 }
 
-struct Line: Encodable {
+nonisolated struct Line: Encodable {
     let text: String
     let box: CGRect
     let confidence: Float
 }
 
-struct Formula: Encodable {
+nonisolated struct Formula: Encodable {
     let kind: String
     let box: CGRect
     let latex: String
 }
 
-struct Result: Encodable {
+nonisolated struct Table: Encodable {
+    let kind: String
+    let box: CGRect
+    let rows: [[String]]
+    let whole: Bool
+}
+
+nonisolated struct Result: Encodable {
     let id: String
     var text: String?
     var lines: [Line]?
     var latex: String?
     var ending: String?
     var found: Int?
+    /// Of `found`, how many are tables and charts.
+    var foundTables: Int?
     var formulas: [Formula]?
+    var tables: [Table]?
+    /// Tables and charts found but left to Vision, the system being short of memory for the VLM.
+    var tablesLeft: Int?
     var removed: Int?
     var error: String?
 }
@@ -97,33 +125,98 @@ func formulaReader(for pack: String) async throws -> FormulaReader {
     return reader
 }
 
-/// The formula packs' layout models, loaded the first time a job asks them to find formulas.
-var formulaFinders: [String: FormulaFinder] = [:]
+/// The VLM packs' readers, loaded the first time a job names them.
+var vlmReaders: [String: PaddleOCRVLReader] = [:]
 
-func formulaFinder(for pack: String) async throws -> FormulaFinder {
-    if let finder = formulaFinders[pack] { return finder }
-    let finder = try await FormulaFinder.load(from: URL(filePath: pack, directoryHint: .isDirectory))
-    formulaFinders[pack] = finder
+func vlmReader(for pack: String) throws -> PaddleOCRVLReader {
+    if let reader = vlmReaders[pack] { return reader }
+    let reader = try PaddleOCRVLReader.load(from: URL(filePath: pack, directoryHint: .isDirectory))
+    vlmReaders[pack] = reader
+    return reader
+}
+
+/// The VLM pack's layout model: the formula pack's own (the same file) with its kinds, as `layout.json` says them.
+struct VLMLayout: Decodable {
+    let layout: FormulaConfiguration.Layout
+    let computeUnits: String
+}
+
+/// The layout models, loaded the first time a job asks them to find what its packs read: one model, from the formula pack
+/// when there is one, finding the formula pack's kinds and the VLM pack's both.
+var layoutFinders: [String: LayoutFinder] = [:]
+
+func layoutFinder(formulas: String?, vlm: String?) async throws -> LayoutFinder {
+    let key = "\(formulas ?? "")\n\(vlm ?? "")"
+    if let finder = layoutFinders[key] { return finder }
+    var found: (folder: String, layout: FormulaConfiguration.Layout, units: String)?
+    if let formulas {
+        let configuration = try FormulaConfiguration.load(from: URL(filePath: formulas, directoryHint: .isDirectory))
+        found = (formulas, configuration.layout, configuration.computeUnits)
+    }
+    if let vlm {
+        let own = try JSONDecoder().decode(VLMLayout.self, from: Data(contentsOf: URL(filePath: vlm).appending(path: "layout.json")))
+        if found == nil {
+            found = (vlm, own.layout, own.computeUnits)
+        } else {
+            found!.layout.classes.merge(own.layout.classes) { formula, _ in formula }
+        }
+    }
+    guard let (folder, layout, units) = found else { throw OCRError.unreadableImage }
+    let finder = try await LayoutFinder.load(from: URL(filePath: folder, directoryHint: .isDirectory), layout: layout, units: units)
+    layoutFinders[key] = finder
     return finder
 }
 
-/// The formulas the pack finds and reads in the picture in `file`, `found` told how many it found; none in a picture too
-/// large to look in (`FormulaFinder.finds`), which isn't decoded for it.
-func formulas(inPictureAt file: URL, pack: String, found: @escaping @Sendable (Int) -> Void) async throws -> (CGImage, [FormulaMerge.Formula])? {
+/// The formulas the formula pack reads and the tables and charts the VLM pack reads in the picture in `file`, as one
+/// layout run finds them, `found` told how many formulas and how many tables there are to read; none in a picture too large to look in
+/// (`LayoutFinder.finds`), which isn't decoded for it. The VLM reads until `seconds` have gone, and tables and charts
+/// still waiting then are left out; with the system's memory `pressure` past normal, the VLM isn't loaded at all and
+/// every table and chart is left out (`left`).
+func elements(
+    inPictureAt file: URL, formulas formulaPack: String?, vlm vlmPack: String?, seconds: Double?, pressure: MemoryPressure,
+    found: @escaping @Sendable (Int, Int) -> Void
+) async throws -> (image: CGImage, formulas: [FormulaMerge.Formula], tables: [TableMerge.Table], left: Int)? {
+    let started = ContinuousClock.now
     guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
           let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
-          FormulaFinder.finds(width: width, height: height)
+          LayoutFinder.finds(width: width, height: height)
     else {
-        found(0)
+        found(0, 0)
         return nil
     }
     let image = try PictureText.image(at: file)
-    let regions = try await formulaFinder(for: pack).regions(in: image)
-    found(regions.count)
-    // The formula models, 185 MB, are loaded only for a picture that holds a formula.
-    guard !regions.isEmpty else { return (image, []) }
-    return (image, try await formulaReader(for: pack).formulas(in: image, regions: regions))
+    let regions = try await layoutFinder(formulas: formulaPack, vlm: vlmPack).regions(in: image)
+    let formulaRegions = formulaPack == nil ? [] : regions.filter(\.kind.isFormula)
+    var tableRegions = vlmPack == nil ? [] : regions.filter { !$0.kind.isFormula }
+    // The VLM's 2.6 GB would push other apps' memory out to disk when the system is short of it already.
+    let left = pressure > .normal ? tableRegions.count : 0
+    if left > 0 { tableRegions = [] }
+    found(formulaRegions.count, tableRegions.count)
+    // The formula models, 185 MB, are loaded only for a picture that holds a formula; the VLM, 1.1 GB, for one that holds a
+    // table or chart.
+    var formulas: [FormulaMerge.Formula] = []
+    if let formulaPack, !formulaRegions.isEmpty {
+        formulas = try await formulaReader(for: formulaPack).formulas(in: image, regions: formulaRegions)
+    }
+    var tables: [TableMerge.Table] = []
+    if let vlmPack, !tableRegions.isEmpty {
+        let reader = try vlmReader(for: vlmPack)
+        let deadline = seconds.map { started + .milliseconds(Int($0 * 1000)) }
+        for region in tableRegions {
+            if let deadline, ContinuousClock.now >= deadline { break }
+            let chart = region.kind == .chart
+            guard let reading = try reader.read(image, region: region.box, task: chart ? .chart : .table, deadline: deadline) else { continue }
+            let rows = chart ? TableText.rows(chart: reading.text) : TableText.rows(otsl: reading.text)
+            tables.append(TableMerge.Table(kind: chart ? .chart : .table, box: region.box, rows: rows, isWhole: reading.ending == .end))
+        }
+    }
+    return (image, formulas, tables, left)
+}
+
+/// The system's memory pressure, or what the job says to take it to be.
+func pressure(for job: Job) -> MemoryPressure {
+    job.pressure.flatMap(MemoryPressure.init(name:)) ?? MemoryPressure.current()
 }
 
 /// L1, with the pack beside it when it loads.
@@ -141,6 +234,16 @@ let encoder = JSONEncoder()
 encoder.outputFormatting = [.withoutEscapingSlashes]
 let output = FileHandle.standardOutput
 
+/// A line written at once, from whatever is running: how many formulas and tables there are to read goes out before
+/// they are read, while the VLM keeps this actor busy.
+nonisolated func sendNow(_ result: Result) {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.withoutEscapingSlashes]
+    guard var line = try? encoder.encode(result) else { return }
+    line.append(0x0A)
+    FileHandle.standardOutput.write(line)
+}
+
 func send(_ result: Result) {
     guard var line = try? encoder.encode(result) else { return }
     line.append(0x0A)
@@ -156,10 +259,21 @@ for try await line in FileHandle.standardInput.bytes.lines {
             send(Result(id: job.id, removed: removed?.count ?? 0))
             continue
         }
+        if let pack = job.vlm, job.task != nil || job.warm == true {
+            let reader = try vlmReader(for: pack)
+            if job.warm == true {
+                send(Result(id: job.id, text: ""))
+                continue
+            }
+            guard let path = job.path, let task = job.task.flatMap(PaddleOCRVLReader.Task.init(rawValue:)) else { throw OCRError.unreadableImage }
+            let reading = try reader.read(fileAt: URL(filePath: path), task: task)
+            send(Result(id: job.id, text: reading.text, ending: reading.ending.rawValue))
+            continue
+        }
         if let pack = job.formula {
             let reader = try await formulaReader(for: pack)
             if job.warm == true {
-                _ = try await formulaFinder(for: pack)
+                _ = try await layoutFinder(formulas: pack, vlm: nil)
                 send(Result(id: job.id, text: ""))
                 continue
             }
@@ -180,15 +294,31 @@ for try await line in FileHandle.standardInput.bytes.lines {
             send(Result(id: job.id, lines: lines.map { Line(text: $0.text, box: $0.box, confidence: $0.confidence) }))
             continue
         }
-        if let pack = job.formulas, job.joinsWrappedLines == nil {
+        if job.formulas != nil || job.vlm != nil, job.joinsWrappedLines == nil {
             let id = job.id
-            let found = try await formulas(inPictureAt: file, pack: pack) { count in Task { @MainActor in send(Result(id: id, found: count)) } }
-            send(Result(id: job.id, formulas: (found?.1 ?? []).map { Formula(kind: $0.kind.rawValue, box: $0.box, latex: $0.latex) }))
+            let found = try await elements(
+                inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, pressure: pressure(for: job)
+            ) { formulas, tables in
+                sendNow(Result(id: id, found: formulas + tables, foundTables: tables))
+            }
+            send(Result(
+                id: job.id,
+                formulas: (found?.formulas ?? []).map { Formula(kind: $0.kind.rawValue, box: $0.box, latex: $0.latex) },
+                tables: (found?.tables ?? []).map { Table(kind: $0.kind.rawValue, box: $0.box, rows: $0.rows, whole: $0.isWhole) },
+                tablesLeft: found.map { $0.left > 0 ? $0.left : nil } ?? nil
+            ))
             continue
         }
         var result = try await reading(with: job.pack).recognize(fileAt: file)
-        if let pack = job.formulas, let (image, found) = try await formulas(inPictureAt: file, pack: pack, found: { _ in }) {
-            result.lines = await pipeline.lines(result.lines, with: found, in: image)
+        if job.formulas != nil || job.vlm != nil,
+           let found = try await elements(
+               inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, pressure: pressure(for: job), found: { _, _ in }
+           ) {
+            if !found.formulas.isEmpty { result.lines = await pipeline.lines(result.lines, with: found.formulas, in: found.image) }
+            if !found.tables.isEmpty {
+                let picture = CGRect(x: 0, y: 0, width: found.image.width, height: found.image.height)
+                result.lines = TableMerge.merged(result.lines, with: found.tables, in: picture).lines
+            }
         }
         let text = job.joinsWrappedLines.map { TextAssembler.assemble(result.lines, options: .init(joinsWrappedLines: $0)) } ?? result.text
         send(Result(id: job.id, text: text))
