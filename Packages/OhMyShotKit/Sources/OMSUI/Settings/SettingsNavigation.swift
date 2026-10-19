@@ -90,6 +90,9 @@ extension SettingsTab {
                 String(localized: "API key", bundle: .module),
                 String(localized: "Copy colors as", bundle: .module),
                 String(localized: "Measure in", bundle: .module),
+                String(localized: "Measurement snapping", bundle: .module),
+                String(localized: "Snap selections to content", bundle: .module),
+                String(localized: "Edge tolerance", bundle: .module),
                 String(localized: "Pins", bundle: .module),
                 String(localized: "Show in screenshots", bundle: .module),
             ]

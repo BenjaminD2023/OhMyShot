@@ -1,6 +1,114 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ · Finding edges…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Buscando bordes…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Recherche des bords…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · エッジを検出中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 正在查找边缘…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 正在尋找邊緣…"
+          }
+        }
+      }
+    },
+    "%@. Finding edges…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@. Buscando bordes…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@. Recherche des bords…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@。エッジを検出中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@。正在查找边缘…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@。正在尋找邊緣…"
+          }
+        }
+      }
+    },
+    "%@. Tolerance: %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@. Tolerance: %2$@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@. Tolerancia: %2$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@. Tolérance : %2$@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@。許容範囲：%2$@。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@。容差：%2$@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@。容差：%2$@。"
+          }
+        }
+      }
+    },
     "A window is recorded on its own, without keys shown over it" : {
       "localizations" : {
         "es" : {
@@ -3027,7 +3135,42 @@
         }
       }
     },
+    "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Señala algo para medirlo o arrastra un recuadro a su alrededor. Comando + C copia la medida, Retorno la copia y cierra, y Tabulador alterna entre puntos y píxeles. T recorre la tolerancia de bordes; más y menos la ajustan. Las flechas mueven un píxel. Pulsa Escape para cancelar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pointez un élément pour le mesurer, ou tracez un cadre autour de lui. Commande-C copie la mesure, Retour la copie et ferme, et Tab bascule entre points et pixels. T fait défiler la tolérance des bords ; plus et moins l’ajustent. Les touches fléchées déplacent d’un pixel. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "計測したいものをポイントするか、ドラッグして囲みます。command + Cで計測値をコピー、returnキーでコピーして閉じ、tabキーでポイントとピクセルを切り替えます。Tキーでエッジの許容範囲を切り替え、プラスキーとマイナスキーで調整します。矢印キーで1ピクセルずつ移動します。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指向某个对象进行测量，或拖出一个框将其围住。Command-C 拷贝测量结果，返回键拷贝并关闭，Tab 键在点和像素之间切换。T 键循环切换边缘容差，加号和减号键调整容差。方向键可移动一个像素。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將指標指向物件以測量，或拖移框住它。Command-C 會拷貝測量結果，Return 鍵會拷貝並關閉，Tab 鍵可在點與像素之間切換。T 鍵可循環切換邊緣容差，加號與減號鍵可調整容差。方向鍵可移動一個像素。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
     "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -4757,6 +4900,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "擷取內容已達長度上限。請按一下「完成」以保留。"
+          }
+        }
+      }
+    },
+    "Tolerance: %@ · T / + / −" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tolerancia: %@ · T / + / −"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tolérance : %@ · T / + / −"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "許容範囲：%@ · T / + / −"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "容差：%@ · T / + / −"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "容差：%@ · T / + / −"
           }
         }
       }

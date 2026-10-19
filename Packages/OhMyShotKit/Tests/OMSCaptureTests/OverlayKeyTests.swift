@@ -32,6 +32,7 @@ struct OverlayKeyTests {
         func overlayViewDidRequestSizing(_ view: OverlayView) { heard.append("size") }
         func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) { heard.append("copy") }
         func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) { heard.append("unit") }
+        func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance) { heard.append("tolerance \(tolerance.rawValue)") }
         func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice) { heard.append("mode \(choice)") }
     }
 
@@ -160,5 +161,19 @@ struct OverlayKeyTests {
             #expect(!result.heard.contains("pick") && !result.passedOn, "key \(key): \(result.heard)")
         }
         #expect(try press(48, in: .measure).heard == ["unit"])
+    }
+
+    @Test func toleranceKeysBelongOnlyToMeasureWithoutCommandModifiers() throws {
+        let keys: [(UInt16, String, String)] = [(17, "t", "high"), (24, "=", "high"), (24, "+", "high"), (27, "-", "low")]
+        for (code, character, expected) in keys {
+            let result = try press(code, characters: character, in: .measure)
+            #expect(result.heard == ["tolerance \(expected)"] && !result.passedOn)
+            for purpose in [OverlayController.Purpose.screenshot, .annotate, .color, .text, .record, .scroll] {
+                #expect(try press(code, characters: character, in: purpose).heard.isEmpty)
+            }
+            for modifier: NSEvent.ModifierFlags in [.command, .control, .option] {
+                #expect(try press(code, characters: character, modifiers: modifier, in: .measure).heard.isEmpty)
+            }
+        }
     }
 }

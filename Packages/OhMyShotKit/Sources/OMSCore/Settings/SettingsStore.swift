@@ -214,6 +214,16 @@ public final class SettingsStore {
         didSet { defaults.set(measureUnit.rawValue, forKey: Key.measureUnit) }
     }
 
+    /// How readily the ruler detects pixel boundaries; adjusted while measuring and remembered.
+    public var measureTolerance: MeasureTolerance {
+        didSet { defaults.set(measureTolerance.rawValue, forKey: Key.measureTolerance) }
+    }
+
+    /// Whether drawn measurement boxes shrink to the content they enclose.
+    public var measureSnapsToContent: Bool {
+        didSet { defaults.set(measureSnapsToContent, forKey: Key.measureSnapsToContent) }
+    }
+
     // MARK: Recording
 
     /// Frames per second recordings aim for; Low Power Mode records at 30 whatever this says.
@@ -440,6 +450,8 @@ public final class SettingsStore {
             Key.pinsAppearInCaptures: true,
             Key.colorFormat: ColorFormat.hex.rawValue,
             Key.measureUnit: MeasureUnit.points.rawValue,
+            Key.measureTolerance: MeasureTolerance.medium.rawValue,
+            Key.measureSnapsToContent: true,
             Key.recordingFrameRate: 60,
             Key.recordingPrefersHEVC: false,
             Key.recordingCountdown: 3,
@@ -489,6 +501,8 @@ public final class SettingsStore {
         pinsAppearInCaptures = defaults.bool(forKey: Key.pinsAppearInCaptures)
         colorFormat = defaults.string(forKey: Key.colorFormat).flatMap(ColorFormat.init(rawValue:)) ?? .hex
         measureUnit = defaults.string(forKey: Key.measureUnit).flatMap(MeasureUnit.init(rawValue:)) ?? .points
+        measureTolerance = defaults.string(forKey: Key.measureTolerance).flatMap(MeasureTolerance.init(rawValue:)) ?? .medium
+        measureSnapsToContent = defaults.bool(forKey: Key.measureSnapsToContent)
         let frameRate = defaults.integer(forKey: Key.recordingFrameRate)
         recordingFrameRate = Self.recordingFrameRates.contains(frameRate) ? frameRate : 60
         recordingPrefersHEVC = defaults.bool(forKey: Key.recordingPrefersHEVC)
@@ -578,6 +592,8 @@ public final class SettingsStore {
         static let pinsAppearInCaptures = "pinsAppearInCaptures"
         static let colorFormat = "colorFormat"
         static let measureUnit = "measureUnit"
+        static let measureTolerance = "measureTolerance"
+        static let measureSnapsToContent = "measureSnapsToContent"
         static let recordingFrameRate = "recordingFrameRate"
         static let recordingPrefersHEVC = "recordingPrefersHEVC"
         static let recordingCountdown = "recordingCountdown"

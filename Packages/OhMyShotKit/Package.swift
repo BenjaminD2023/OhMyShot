@@ -44,7 +44,7 @@ let package = Package(
         // ScreenCaptureKit, the selection overlay, window catalog, selection model. Main-actor by default.
         .target(
             name: "OMSCapture",
-            dependencies: ["OMSCore"],
+            dependencies: ["OMSCore", "OMSPixels"],
             resources: [.process("Resources")],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
