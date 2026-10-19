@@ -47,7 +47,9 @@ public enum TextAssembler {
             for (index, indent) in zip(starts, indentation(starts.map { lines[$0] })) { indents[index] = indent }
         }
         let texts = zip(lines, indents).map { line, indent in
-            let text = line.math != nil ? withMath(line.text) : isCode || isCodeLike(line.text) ? asCode(line.text) : asProse(line.text)
+            let text = line.math != nil ? withMath(line.text)
+                : line.isExact ? line.text
+                : isCode || isCodeLike(line.text) ? asCode(line.text) : asProse(line.text)
             return String(repeating: " ", count: indent) + text
         }
         let guesses = options.joinsWrappedLines && !isCode ? inferredWraps(lines) : []

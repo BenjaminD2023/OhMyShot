@@ -196,7 +196,7 @@ public enum SecondReading {
 
     /// A character with its width folded: full-width forms and the punctuation Chinese writes full-width as their
     /// half-width twins. Marks that differ in shape ("「" and "“") stay apart.
-    private static func folded(_ character: Character) -> Character {
+    static func folded(_ character: Character) -> Character {
         if character == "⋯" { return "…" }
         if let half = Punctuation.halfWidth[character] { return half }
         if character.unicodeScalars.count == 1, let scalar = character.unicodeScalars.first,
