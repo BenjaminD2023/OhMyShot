@@ -164,6 +164,7 @@ public final class QuickAccessController {
         let target = QuickAccessPlacement.display(forCaptureOn: item.displayID, pointerOn: Self.pointerDisplayID(), followsPointer: preferences.onPointerDisplay)
         present(entering: item.id, on: target)
         panel?.orderFrontRegardless()
+        stack?.updatePointerHover()
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }
@@ -350,6 +351,7 @@ public final class QuickAccessController {
                 panel?.setFrame(frame, display: true)
             }
         }
+        stack.updatePointerHover()
         // The display actually used, so a stack moved off a removed display stays where it now is.
         self.displayID = screen.cgDirectDisplayID ?? displayID
     }

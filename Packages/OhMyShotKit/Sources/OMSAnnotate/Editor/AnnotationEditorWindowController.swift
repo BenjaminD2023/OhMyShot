@@ -300,9 +300,11 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// Keeps the edits at once, on this thread: for quitting with the editor open.
     public func keepNow() {
         content.canvas.endEditing()
-        guard session.hasUnkeptChanges, let image = AnnotationRenderer.flatten(session.document, base: session.base), let png = Self.png(image) else { return }
-        if let url = actions.keep(session.document, png, image) { fileURL = url }
-        session.markKept()
+        let document = session.document
+        guard session.hasUnkeptChanges, let image = AnnotationRenderer.flatten(document, base: session.base), let png = Self.png(image),
+              let url = actions.keep(document, png, image) else { return }
+        fileURL = url
+        if session.document == document { session.markKept() }
     }
 
     // MARK: Actions
@@ -310,20 +312,20 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     func copy() {
         content.canvas.endEditing()
         Task {
-            guard let (image, png) = await render() else {
+            guard let rendered = await render() else {
                 NSSound.beep()
                 return
             }
             if let copy = actions.copy {
-                await copy(image, png)
+                await copy(rendered.image, rendered.png)
             } else {
-                PasteboardWriter.write(png: png, image: image)
+                PasteboardWriter.write(png: rendered.png, image: rendered.image)
             }
             model.flashCopied()
             NSAccessibility.post(element: content.canvas, notification: .announcementRequested, userInfo: [
                 .announcement: String(localized: "Copied", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
             ])
-            keep(png: png, image: image)
+            _ = keep(rendered)
         }
     }
 
@@ -442,6 +444,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     func fileForDragging() -> URL? {
         content.canvas.endEditing()
         keepNow()
+        // Edits that could not be kept are not in the file: handing it over would drop them.
+        guard !session.hasUnkeptChanges else { return nil }
         return actions.fileToHandOver(fileURL)
     }
 
@@ -457,24 +461,35 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     // MARK: Export
 
-    private func render() async -> (CGImage, Data)? {
-        guard let image = await session.render(), let png = try? await ImageExporter.encode(image, as: .png) else { return nil }
-        return (image, png)
+    /// The picture and the marks it was rendered from, which go together through the rendering and the copying: a
+    /// mark made meanwhile is kept with a later picture, never as this one's marks.
+    private struct RenderedCapture {
+        let document: AnnotationDocument
+        let image: CGImage
+        let png: Data
     }
 
-    /// Renders and keeps the current edits; the capture's file, unchanged when there was nothing to keep.
+    private func render() async -> RenderedCapture? {
+        let document = session.document
+        guard let image = await AnnotationRenderer.render(document, base: session.base),
+              let png = try? await ImageExporter.encode(image, as: .png) else { return nil }
+        return RenderedCapture(document: document, image: image, png: png)
+    }
+
+    /// Renders and keeps the current edits; the capture's file, unchanged when there was nothing to keep, or nil
+    /// when they could not be kept.
     private func exportAndKeep() async -> URL? {
         guard session.hasUnkeptChanges else { return fileURL }
-        guard let (image, png) = await render() else { return nil }
-        keep(png: png, image: image)
-        return fileURL
+        guard let rendered = await render() else { return nil }
+        return keep(rendered)
     }
 
-    private func keep(png: Data, image: CGImage) {
-        guard session.hasUnkeptChanges else { return }
-        let document = session.document
-        if let url = actions.keep(document, png, image) { fileURL = url }
-        if session.document == document { session.markKept() }
+    private func keep(_ rendered: RenderedCapture) -> URL? {
+        guard session.hasUnkeptChanges else { return fileURL }
+        guard let url = actions.keep(rendered.document, rendered.png, rendered.image) else { return nil }
+        fileURL = url
+        if session.document == rendered.document { session.markKept() }
+        return url
     }
 
     private static func png(_ image: CGImage) -> Data? {

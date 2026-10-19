@@ -11,6 +11,9 @@ import OSLog
 final class AnnotationCoordinator {
     private let history: HistoryStore
     private var editors: [UUID: AnnotationEditorWindowController] = [:]
+    /// Captures whose picture and marks are being read for an editor: held already, so a card that closes by
+    /// itself cannot take its capture while the editor is on its way.
+    private var opening: Set<UUID> = []
     /// Editors of project files, by file.
     private var projectEditors: [URL: AnnotationEditorWindowController] = [:]
     /// Saves a copy of a project's picture to the export location, with the scale it was made at; returns where it went.
@@ -39,21 +42,22 @@ final class AnnotationCoordinator {
             editor.show()
             return
         }
-        guard entry.kind == .screenshot else { return }
+        // Opened again while loading: the editor on its way is the one.
+        guard entry.kind == .screenshot, !opening.contains(entry.id) else { return }
+        let id = entry.id
+        opening.insert(id)
+        onEditing?(id, true)
         let history = history
         Task { [weak self] in
             guard let loaded = await Self.load(entry, from: history) else {
+                self?.opening.remove(id)
+                self?.onEditing?(id, false)
                 Log.capture.error("Could not read \(entry.fileName, privacy: .public) to annotate it")
                 NSSound.beep()
                 return
             }
             guard let self else { return }
-            // Opened twice while loading: the first one wins.
-            if let editor = editors[entry.id] {
-                editor.show()
-                return
-            }
-            let id = entry.id
+            opening.remove(id)
             let editor = AnnotationEditorWindowController(
                 image: loaded.image,
                 scale: loaded.document?.scale ?? entry.pixelsPerPoint.map { CGFloat($0) } ?? scale,
@@ -79,7 +83,6 @@ final class AnnotationCoordinator {
                 }
             }
             editors[id] = editor
-            onEditing?(id, true)
             editor.show()
         }
     }
@@ -102,7 +105,7 @@ final class AnnotationCoordinator {
     }
 
     /// The captures open in an editor: never expired from under it.
-    var openCaptureIDs: Set<UUID> { Set(editors.keys) }
+    var openCaptureIDs: Set<UUID> { Set(editors.keys).union(opening) }
 
     /// Keeps every open editor's edits, for quitting.
     func keepAll() {
