@@ -136,6 +136,14 @@ final class CardStackView: NSView {
         cards[id]?.setHovering(true)
     }
 
+    /// Hovers the card under the pointer, and no other, after the cards have moved: AppKit sends nothing to a card
+    /// that comes in under a pointer at rest, or one that glides out from under it, until the pointer moves.
+    func updatePointerHover() {
+        for (id, card) in cards {
+            card.setHovering(window?.isVisible == true && screenFrame(ofCard: id)?.contains(NSEvent.mouseLocation) == true)
+        }
+    }
+
     func markSaved(_ id: UUID, at url: URL) {
         cards[id]?.item.savedURL = url
         cards[id]?.showSaved()
@@ -739,6 +747,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
 
     /// The shade and the buttons fade in over a moment, or simply appear with Reduce Motion on.
     func setHovering(_ hovering: Bool) {
+        guard hovering != isHovering else { return }
         hoverGeneration += 1
         let generation = hoverGeneration
         let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Theme.Motion.fade

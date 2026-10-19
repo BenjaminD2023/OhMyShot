@@ -126,6 +126,16 @@ struct QuickAccessSettingsTests {
         #expect(kept.closeInterval == 20)
     }
 
+    @Test func threeSecondsIsAChoiceAndNeverStaysTheDefault() throws {
+        let (defaults, suite) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(SettingsStore.quickAccessCloseDelays == [0, 3, 5, 10, 20, 30, 60])
+        let settings = SettingsStore(defaults: defaults)
+        #expect(settings.quickAccessCloseAfter == 0)
+        settings.quickAccessCloseAfter = 3
+        #expect(SettingsStore(defaults: defaults).quickAccessPreferences.closeInterval == 3)
+    }
+
     @Test func closingTakesAnUnsavedCaptureOnlyWithHistoryOffAndTimedCloseOn() {
         let closes = QuickAccessPreferences(closeAfter: 10, closeAction: .close)
         #expect(closes.closingDiscardsUnsavedCaptures(history: .never))
