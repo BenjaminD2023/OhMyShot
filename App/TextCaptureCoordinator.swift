@@ -553,7 +553,7 @@ final class TextCaptureCoordinator {
     nonisolated static func formulas(
         in image: CGImage, pack: URL, helper: URL, found: (@Sendable (Int) -> Void)? = nil
     ) async -> [FormulaMerge.Formula] {
-        guard FormulaFinder.finds(width: image.width, height: image.height), let file = formulaPicture(image) else { return [] }
+        guard LayoutFinder.finds(width: image.width, height: image.height), let file = formulaPicture(image) else { return [] }
         defer { try? FileManager.default.removeItem(at: file) }
         do {
             return try await TextReaderTool.formulas(ofPictureAt: file, pack: pack, helper: helper, found: found).map { formula in

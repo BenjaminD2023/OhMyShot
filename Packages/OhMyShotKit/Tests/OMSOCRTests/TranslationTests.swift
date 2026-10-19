@@ -72,6 +72,16 @@ struct TranslationUnitTests {
         let vertical = OCRLine(text: "竖排文字", box: CGRect(x: 0, y: 0, width: 20, height: 80), confidence: 1)
         #expect(TranslationUnits.group([vertical])[0].skip == .vertical)
     }
+
+    @Test func aTablesRowsAreLeftAsTheyAreOnTheImage() {
+        // A paragraph, then a table's rows (TableMerge): each row alone, left as on the image, which one run of text
+        // drawn across the table would cover.
+        var rows = [line("Region\tQ1\tQ2", y: 60), line("North\tStrong growth\tSteady", y: 84)]
+        for index in rows.indices { rows[index].isTableRow = true; rows[index].isExact = true }
+        let units = TranslationUnits.group([line("The regions grew as follows.", y: 0, width: 300)] + rows)
+        #expect(units.map(\.lines) == [[0], [1], [2]])
+        #expect(units.map(\.skip) == [nil, .code, .code])
+    }
 }
 
 struct TranslatorTests {

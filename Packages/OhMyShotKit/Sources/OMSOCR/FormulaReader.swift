@@ -108,16 +108,18 @@ extension FormulaReader {
     /// so are those still waiting at `deadline` (their text then stays as Vision reads it). `found` is told how many
     /// there are to read before the first is.
     public func formulas(
-        in image: CGImage, finder: FormulaFinder, deadline: Duration = .seconds(30), found: (@Sendable (Int) -> Void)? = nil
+        in image: CGImage, finder: LayoutFinder, deadline: Duration = .seconds(30), found: (@Sendable (Int) -> Void)? = nil
     ) async throws -> [FormulaMerge.Formula] {
         let started = ContinuousClock.now
-        let regions = try await finder.regions(in: image)
+        let regions = try await finder.regions(in: image).filter(\.kind.isFormula)
         found?(regions.count)
         return try await formulas(in: image, regions: regions, deadline: deadline - (ContinuousClock.now - started))
     }
 
-    /// The formulas in `regions` of `image` (as `FormulaFinder` found them), each read as LaTeX, as above.
-    public func formulas(in image: CGImage, regions: [FormulaFinder.Region], deadline: Duration = .seconds(30)) async throws -> [FormulaMerge.Formula] {
+    /// The formulas in `regions` of `image` (as `LayoutFinder` found them; the tables and charts among them left out),
+    /// each read as LaTeX, as above.
+    public func formulas(in image: CGImage, regions: [LayoutFinder.Region], deadline: Duration = .seconds(30)) async throws -> [FormulaMerge.Formula] {
+        let regions = regions.filter(\.kind.isFormula)
         let started = ContinuousClock.now
         let readings = try await withThrowingTaskGroup(of: (Int, FormulaReading?).self) { group in
             var next = 0

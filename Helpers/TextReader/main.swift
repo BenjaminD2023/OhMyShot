@@ -98,28 +98,28 @@ func formulaReader(for pack: String) async throws -> FormulaReader {
 }
 
 /// The formula packs' layout models, loaded the first time a job asks them to find formulas.
-var formulaFinders: [String: FormulaFinder] = [:]
+var layoutFinders: [String: LayoutFinder] = [:]
 
-func formulaFinder(for pack: String) async throws -> FormulaFinder {
-    if let finder = formulaFinders[pack] { return finder }
-    let finder = try await FormulaFinder.load(from: URL(filePath: pack, directoryHint: .isDirectory))
-    formulaFinders[pack] = finder
+func layoutFinder(for pack: String) async throws -> LayoutFinder {
+    if let finder = layoutFinders[pack] { return finder }
+    let finder = try await LayoutFinder.load(from: URL(filePath: pack, directoryHint: .isDirectory))
+    layoutFinders[pack] = finder
     return finder
 }
 
 /// The formulas the pack finds and reads in the picture in `file`, `found` told how many it found; none in a picture too
-/// large to look in (`FormulaFinder.finds`), which isn't decoded for it.
+/// large to look in (`LayoutFinder.finds`), which isn't decoded for it.
 func formulas(inPictureAt file: URL, pack: String, found: @escaping @Sendable (Int) -> Void) async throws -> (CGImage, [FormulaMerge.Formula])? {
     guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
           let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
-          FormulaFinder.finds(width: width, height: height)
+          LayoutFinder.finds(width: width, height: height)
     else {
         found(0)
         return nil
     }
     let image = try PictureText.image(at: file)
-    let regions = try await formulaFinder(for: pack).regions(in: image)
+    let regions = try await layoutFinder(for: pack).regions(in: image)
     found(regions.count)
     // The formula models, 185 MB, are loaded only for a picture that holds a formula.
     guard !regions.isEmpty else { return (image, []) }
@@ -159,7 +159,7 @@ for try await line in FileHandle.standardInput.bytes.lines {
         if let pack = job.formula {
             let reader = try await formulaReader(for: pack)
             if job.warm == true {
-                _ = try await formulaFinder(for: pack)
+                _ = try await layoutFinder(for: pack)
                 send(Result(id: job.id, text: ""))
                 continue
             }
