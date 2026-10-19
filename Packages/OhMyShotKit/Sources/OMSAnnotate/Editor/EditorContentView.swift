@@ -10,9 +10,6 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     let canvas: AnnotationCanvasView
     /// After the picture moves or zooms.
     var onViewportChange: (() -> Void)?
-    var onClosePreview: (() -> Void)?
-    private(set) var presentation: AnnotationEditorWindowController.Presentation
-    var availableTools: [AnnotationTool] { rail.tools }
     private let rail = ToolRail()
     private let capsule = StyleCapsule()
     /// The open suggestions Redact All counted when the capsule was last shown.
@@ -32,9 +29,8 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     /// The band along the bottom where the capsule rests when nothing is selected.
     private static let foot: CGFloat = 12 + StyleCapsule.height + 12
 
-    init(session: AnnotationSession, presentation: AnnotationEditorWindowController.Presentation = .editor) {
+    init(session: AnnotationSession) {
         self.session = session
-        self.presentation = presentation
         canvas = AnnotationCanvasView(session: session)
         super.init(frame: .zero)
         canvas.contentInsets = NSEdgeInsets(top: 24, left: Self.railInset + ToolRail.width + 18, bottom: Self.foot, right: 28)
@@ -43,7 +39,6 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         addSubview(capsule)
         capsule.alphaValue = 0
 
-        rail.showPreviewTools(presentation == .preview)
         rail.select(session.tool)
         rail.onSelect = { [weak self] tool in self?.choose(tool) }
         capsule.onChange = { [weak self] name, change in
@@ -77,15 +72,6 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         refreshCapsule()
     }
 
-    /// The canvas and its text editor stay attached while the surrounding controls expand.
-    func setPresentation(_ presentation: AnnotationEditorWindowController.Presentation) {
-        guard self.presentation != presentation else { return }
-        self.presentation = presentation
-        rail.showPreviewTools(presentation == .preview)
-        refreshCapsule()
-        needsLayout = true
-    }
-
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
@@ -96,27 +82,6 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     }
 
     override var isFlipped: Bool { true }
-
-    override func keyDown(with event: NSEvent) {
-        let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-        // The canvas handles Escape during a draw, crop, selection, or text edit first. Space reaches
-        // here only when no text field consumes it; it never competes with typing or a live gesture.
-        if presentation == .preview, event.keyCode == 53 || event.keyCode == 49, flags.isEmpty,
-           !canvas.isEditingText, !canvas.isDragging, !session.isInLiveChange, let onClosePreview {
-            onClosePreview()
-            return
-        }
-        super.keyDown(with: event)
-    }
-
-    override func cancelOperation(_ sender: Any?) {
-        if presentation == .preview, !canvas.isEditingText, !canvas.isDragging,
-           !session.isInLiveChange, let onClosePreview {
-            onClosePreview()
-            return
-        }
-        super.cancelOperation(sender)
-    }
 
     /// The shared color panel must not point at a capsule that is going away, nor a popover outlive it.
     func releaseColorPanel() {
@@ -357,11 +322,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         let visible = hasContent && !canvas.isDragging
         var frame: CGRect
         let anchorKey = session.selection
-        if presentation == .preview {
-            // A fixed bottom band keeps styles predictable in the smaller window and gives every
-            // control the full width, including a person's saved colors.
-            frame = CGRect(x: max(Self.railInset, (bounds.width - size.width) / 2), y: bounds.maxY - 12 - size.height, width: size.width, height: size.height)
-        } else if let selection = canvas.selectionFrame, !session.selection.isEmpty {
+        if let selection = canvas.selectionFrame, !session.selection.isEmpty {
             let minX = rail.frame.maxX + 8
             let x = max(min(max(selection.midX - size.width / 2, minX), bounds.maxX - 8 - size.width), minX)
             var y = selection.maxY + 10

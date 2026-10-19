@@ -11,11 +11,6 @@ import UniformTypeIdentifiers
 /// Edits are kept in the capture itself (its file shows the marks, and the marks stay editable) when the
 /// window closes and whenever the capture leaves it: copied, saved, or dragged out.
 public final class AnnotationEditorWindowController: NSWindowController, NSWindowDelegate {
-    public enum Presentation: Equatable, Sendable {
-        case editor
-        case preview
-    }
-
     public struct Actions {
         /// Keeps the marked-up capture in place of the capture: the PNG, the image, and the document that
         /// recreates it. Returns the file that now holds the capture.
@@ -37,10 +32,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     public var onClose: (() -> Void)?
     public let session: AnnotationSession
-    public private(set) var presentation: Presentation
 
     private let model: EditorModel
-    let content: EditorContentView
+    private let content: EditorContentView
     private let actions: Actions
     private var fileURL: URL
     private var windowLease: ActiveResources.Lease?
@@ -52,14 +46,13 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     ///   - scale: pixels per point of the screen it came from.
     ///   - document: marks made on it before.
     ///   - fileURL: the capture's file, which holds the marked-up picture once edits are kept.
-    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument?, title: String, fileURL: URL, actions: Actions, presentation: Presentation = .editor) {
-        self.presentation = presentation
-        session = AnnotationSession(image: image, scale: scale, document: document, tool: presentation == .preview ? .select : nil)
-        content = EditorContentView(session: session, presentation: presentation)
+    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument?, title: String, fileURL: URL, actions: Actions) {
+        session = AnnotationSession(image: image, scale: scale, document: document)
+        content = EditorContentView(session: session)
         model = EditorModel()
         self.actions = actions
         self.fileURL = fileURL
-        let size = Self.preferredSize(for: session.document.pictureSize, scale: session.document.scale, presentation: presentation)
+        let size = Self.preferredSize(for: session.document.pictureSize, scale: session.document.scale)
         let window = NSWindow(
             contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -69,10 +62,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         window.title = title
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        window.minSize = presentation == .preview ? Self.previewMinimumSize : Self.minimumSize
+        window.minSize = Self.minimumSize
         super.init(window: window)
         model.controller = self
-        model.presentation = presentation
         model.thumbnail = session.picture
         model.locksCanvas = session.locksCanvas
         let hosting = NSHostingController(rootView: EditorView(model: model, content: content))
@@ -89,20 +81,11 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.onPrint = { [weak self] in self?.printCapture() }
         content.canvas.onImageSize = { [weak self] in self?.presentImageSize() }
         content.onViewportChange = { [weak self] in self?.updateZoomLabel() }
-        content.onClosePreview = { [weak self] in self?.window?.performClose(nil) }
         session.observe { [weak self] event in
             guard let self else { return }
             if event == .history || event == .document { undoChanged() }
             if event == .document, model.thumbnail !== session.picture { model.thumbnail = session.picture }
             if event == .settings { model.locksCanvas = session.locksCanvas }
-            // An advanced tool chosen by its existing keyboard shortcut, or an advanced mark selected
-            // in an older capture, opens the full controls without replacing the document.
-            if self.presentation == .preview, event == .tool || event == .selection {
-                let previewTools = ToolRail.previewGroups.joined()
-                if !previewTools.contains(session.tool) || !previewTools.contains(session.currentKind) {
-                    expandToFullEditor()
-                }
-            }
         }
     }
 
@@ -115,46 +98,15 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// 52 pt), and for the widest the style capsule is (the redaction's with a reading that failed and a
     /// full row of kept colors, 838 pt, beside the rail with 8 pt to spare). A test measures them.
     static let minimumSize = CGSize(width: 910, height: 640)
-    /// The shorter preview rail and its bottom style band need less vertical space than the editor.
-    static let previewMinimumSize = CGSize(width: 860, height: 480)
 
     /// The window shows the picture at the size it had on screen, with room for the rail and the capsule,
     /// within most of the screen.
-    private static func preferredSize(for pixels: CGSize, scale: CGFloat, presentation: Presentation = .editor) -> CGSize {
+    private static func preferredSize(for pixels: CGSize, scale: CGFloat) -> CGSize {
         let picture = CGSize(width: pixels.width / scale, height: pixels.height / scale)
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
-        let width = if presentation == .preview {
-            min(max(picture.width + 100, previewMinimumSize.width), max(previewMinimumSize.width, min(960, visible.width * 0.8)))
-        } else {
-            min(max(picture.width + 72 + 28, 920), visible.width * 0.9)
-        }
-        let height = if presentation == .preview {
-            min(max(picture.height + 120, 520), max(previewMinimumSize.height, min(620, visible.height * 0.75)))
-        } else {
-            min(max(picture.height + 24 + 62 + 52, 660), visible.height * 0.9)
-        }
+        let width = min(max(picture.width + 72 + 28, 920), visible.width * 0.9)
+        let height = min(max(picture.height + 24 + 62 + 52, 660), visible.height * 0.9)
         return CGSize(width: width.rounded(), height: height.rounded())
-    }
-
-    /// Reveals the complete editor in the same window, retaining the canvas, text edit, crop and undo history.
-    public func expandToFullEditor() {
-        guard presentation == .preview, let window else { return }
-        presentation = .editor
-        model.presentation = .editor
-        content.setPresentation(.editor)
-        window.minSize = Self.minimumSize
-        let size = Self.preferredSize(for: session.document.pictureSize, scale: session.document.scale)
-        let top = window.frame.maxY
-        let origin = window.frame.origin
-        window.setContentSize(size)
-        var frame = window.frame
-        frame.origin = CGPoint(x: origin.x, y: top - frame.height)
-        if let visible = window.screen?.visibleFrame {
-            frame.origin.x = min(max(frame.minX, visible.minX), max(visible.minX, visible.maxX - frame.width))
-            frame.origin.y = min(max(frame.minY, visible.minY), max(visible.minY, visible.maxY - frame.height))
-        }
-        window.setFrame(frame, display: true)
-        updateZoomLabel()
     }
 
     public func show() {
@@ -492,6 +444,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     func fileForDragging() -> URL? {
         content.canvas.endEditing()
         keepNow()
+        // Edits that could not be kept are not in the file: handing it over would drop them.
         guard !session.hasUnkeptChanges else { return nil }
         return actions.fileToHandOver(fileURL)
     }
@@ -508,6 +461,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     // MARK: Export
 
+    /// The picture and the marks it was rendered from, which go together through the rendering and the copying: a
+    /// mark made meanwhile is kept with a later picture, never as this one's marks.
     private struct RenderedCapture {
         let document: AnnotationDocument
         let image: CGImage
@@ -515,15 +470,14 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     }
 
     private func render() async -> RenderedCapture? {
-        // All three travel together across the asynchronous render and clipboard work. A new mark
-        // made while they run belongs to a later save, never to this earlier picture's metadata.
         let document = session.document
         guard let image = await AnnotationRenderer.render(document, base: session.base),
               let png = try? await ImageExporter.encode(image, as: .png) else { return nil }
         return RenderedCapture(document: document, image: image, png: png)
     }
 
-    /// Renders and keeps the current edits; the capture's file, unchanged when there was nothing to keep.
+    /// Renders and keeps the current edits; the capture's file, unchanged when there was nothing to keep, or nil
+    /// when they could not be kept.
     private func exportAndKeep() async -> URL? {
         guard session.hasUnkeptChanges else { return fileURL }
         guard let rendered = await render() else { return nil }
@@ -549,7 +503,6 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 @MainActor
 @Observable
 final class EditorModel {
-    var presentation: AnnotationEditorWindowController.Presentation = .editor
     var canUndo = false
     var canRedo = false
     var zoomLabel = "100%"
@@ -611,24 +564,22 @@ struct EditorView: View {
             .disabled(!model.canRedo)
             .help(Text("Redo (⇧⌘Z)", bundle: .module))
         }
-        if model.presentation == .editor {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button { model.controller?.showImageSize() } label: { Text("Image Size… (⌥⌘I)", bundle: .module) }
-                    Divider()
-                    Button { model.controller?.rotateLeft() } label: { Text("Rotate Left (⌘L)", bundle: .module) }
-                    Button { model.controller?.rotateRight() } label: { Text("Rotate Right (⌘R)", bundle: .module) }
-                    Button { model.controller?.flipHorizontal() } label: { Text("Flip Horizontal", bundle: .module) }
-                    Button { model.controller?.flipVertical() } label: { Text("Flip Vertical", bundle: .module) }
-                    Divider()
-                    Toggle(isOn: Binding(get: { model.locksCanvas }, set: { _ in model.controller?.toggleCanvasLock() })) {
-                        Text("Lock Canvas", bundle: .module)
-                    }
-                } label: {
-                    Label { Text("Picture", bundle: .module) } icon: { Image(systemName: "crop.rotate") }
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Button { model.controller?.showImageSize() } label: { Text("Image Size… (⌥⌘I)", bundle: .module) }
+                Divider()
+                Button { model.controller?.rotateLeft() } label: { Text("Rotate Left (⌘L)", bundle: .module) }
+                Button { model.controller?.rotateRight() } label: { Text("Rotate Right (⌘R)", bundle: .module) }
+                Button { model.controller?.flipHorizontal() } label: { Text("Flip Horizontal", bundle: .module) }
+                Button { model.controller?.flipVertical() } label: { Text("Flip Vertical", bundle: .module) }
+                Divider()
+                Toggle(isOn: Binding(get: { model.locksCanvas }, set: { _ in model.controller?.toggleCanvasLock() })) {
+                    Text("Lock Canvas", bundle: .module)
                 }
-                .help(Text("Resize, turn, or flip the picture", bundle: .module))
+            } label: {
+                Label { Text("Picture", bundle: .module) } icon: { Image(systemName: "crop.rotate") }
             }
+            .help(Text("Resize, turn, or flip the picture", bundle: .module))
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
@@ -644,42 +595,30 @@ struct EditorView: View {
             .help(Text("Zoom", bundle: .module))
             .accessibilityLabel(Text("Zoom, \(model.zoomLabel)", bundle: .module))
         }
-        if model.presentation == .editor {
-            ToolbarItem(placement: .primaryAction) {
-                DragOutHandle(model: model)
-                    .frame(width: 34, height: 24)
-                    .help(Text("Drag the capture into another app", bundle: .module))
-                    .accessibilityLabel(Text("Drag Capture", bundle: .module))
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // Save keeps a copy of the picture; its menu keeps the capture and marks as a project.
-                Menu {
-                    Button {
-                        model.controller?.saveProject()
-                    } label: {
-                        Text("Save a Copy as Project…", bundle: .module)
-                    }
-                } label: {
-                    Label {
-                        model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module)
-                    } icon: {
-                        Image(systemName: model.saved ? "checkmark" : "square.and.arrow.down")
-                    }
-                } primaryAction: {
-                    model.controller?.save()
-                }
-                .help(Text("Save a Copy (⌘S)", bundle: .module))
-            }
-        } else {
-            ToolbarItem(placement: .primaryAction) {
+        ToolbarItem(placement: .primaryAction) {
+            DragOutHandle(model: model)
+                .frame(width: 34, height: 24)
+                .help(Text("Drag the capture into another app", bundle: .module))
+                .accessibilityLabel(Text("Drag Capture", bundle: .module))
+        }
+        ToolbarItem(placement: .primaryAction) {
+            // Save keeps a copy of the picture; its menu keeps the capture and marks as a project.
+            Menu {
                 Button {
-                    model.controller?.expandToFullEditor()
+                    model.controller?.saveProject()
                 } label: {
-                    Label { Text("Edit", bundle: .module) } icon: { Image(systemName: "pencil") }
-                        .labelStyle(.titleAndIcon)
+                    Text("Save a Copy as Project…", bundle: .module)
                 }
-                .help(Text("Open the full editor with these marks", bundle: .module))
+            } label: {
+                Label {
+                    model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module)
+                } icon: {
+                    Image(systemName: model.saved ? "checkmark" : "square.and.arrow.down")
+                }
+            } primaryAction: {
+                model.controller?.save()
             }
+            .help(Text("Save a Copy (⌘S)", bundle: .module))
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {

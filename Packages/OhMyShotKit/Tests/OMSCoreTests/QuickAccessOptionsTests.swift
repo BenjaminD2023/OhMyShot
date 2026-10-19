@@ -102,15 +102,14 @@ struct QuickAccessSettingsTests {
         return (try #require(UserDefaults(suiteName: suite)), suite)
     }
 
-    @Test func cardsKeepTodaysLookAndCloseAfterThreeSecondsByDefault() throws {
+    @Test func cardsKeepTodaysLookAndStayUntilClosed() throws {
         let (defaults, suite) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         let preferences = SettingsStore(defaults: defaults).quickAccessPreferences
         #expect(preferences == QuickAccessPreferences())
         #expect(preferences.corner == .bottomLeft && preferences.size == .medium)
         #expect(!preferences.onPointerDisplay)
-        #expect(preferences.closeAfter == 3 && preferences.closeInterval == 3 && preferences.closeAction == .close)
-        #expect(SettingsStore.quickAccessCloseDelays == [0, 3, 5, 10, 20, 30, 60])
+        #expect(preferences.closeInterval == nil && preferences.closeAction == .close)
     }
 
     @Test func theChoicesAreKept() throws {
@@ -127,24 +126,14 @@ struct QuickAccessSettingsTests {
         #expect(kept.closeInterval == 20)
     }
 
-    @Test func theThreeSecondDelayAndAnExplicitNeverChoiceSurviveReloading() throws {
+    @Test func threeSecondsIsAChoiceAndNeverStaysTheDefault() throws {
         let (defaults, suite) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(SettingsStore.quickAccessCloseDelays == [0, 3, 5, 10, 20, 30, 60])
         let settings = SettingsStore(defaults: defaults)
-        settings.quickAccessCloseAfter = 0
-        #expect(SettingsStore(defaults: defaults).quickAccessPreferences.closeInterval == nil)
+        #expect(settings.quickAccessCloseAfter == 0)
         settings.quickAccessCloseAfter = 3
         #expect(SettingsStore(defaults: defaults).quickAccessPreferences.closeInterval == 3)
-    }
-
-    @Test(arguments: [0, 5, 10, 20, 30, 60])
-    func existingDelayChoicesIncludingNeverArePreserved(_ seconds: Int) throws {
-        let (defaults, suite) = try makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set(seconds, forKey: "quickAccessCloseAfter")
-        let settings = SettingsStore(defaults: defaults)
-        #expect(settings.quickAccessCloseAfter == seconds)
-        #expect(settings.quickAccessPreferences.closeInterval == (seconds == 0 ? nil : TimeInterval(seconds)))
     }
 
     @Test func closingTakesAnUnsavedCaptureOnlyWithHistoryOffAndTimedCloseOn() {
@@ -155,25 +144,18 @@ struct QuickAccessSettingsTests {
         // Saving first keeps a copy, and cards that stay until closed are the person's to close.
         #expect(!QuickAccessPreferences(closeAfter: 10, closeAction: .saveAndClose).closingDiscardsUnsavedCaptures(history: .never))
         #expect(!QuickAccessPreferences(closeAfter: 0, closeAction: .close).closingDiscardsUnsavedCaptures(history: .never))
-        #expect(QuickAccessPreferences().closingDiscardsUnsavedCaptures(history: .never))
-        #expect(!QuickAccessPreferences().closingDiscardsUnsavedCaptures(history: .oneWeek))
+        // Today's cards, as they are by default.
+        #expect(!QuickAccessPreferences().closingDiscardsUnsavedCaptures(history: .never))
     }
 
-    @Test func aDelaySettingsDoesNotOfferFallsBackToThreeSeconds() throws {
+    @Test func aDelaySettingsDoesNotOfferFallsBackToNever() throws {
         let (defaults, suite) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(7, forKey: "quickAccessCloseAfter")
         defaults.set("middle", forKey: "quickAccessCorner")
         let settings = SettingsStore(defaults: defaults)
-        #expect(settings.quickAccessCloseAfter == 3)
+        #expect(settings.quickAccessCloseAfter == 0)
         #expect(settings.quickAccessCorner == .bottomLeft)
         #expect(SettingsStore.quickAccessCloseDelays.first == 0)
-    }
-
-    @Test func anInvalidStoredDelayDoesNotBecomeNever() throws {
-        let (defaults, suite) = try makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set("invalid", forKey: "quickAccessCloseAfter")
-        #expect(SettingsStore(defaults: defaults).quickAccessCloseAfter == 3)
     }
 }

@@ -11,8 +11,9 @@ import OSLog
 final class AnnotationCoordinator {
     private let history: HistoryStore
     private var editors: [UUID: AnnotationEditorWindowController] = [:]
-    /// Holds captures while their original and editable marks are loaded.
-    private var opening: [UUID: AnnotationEditorWindowController.Presentation] = [:]
+    /// Captures whose picture and marks are being read for an editor: held already, so a card that closes by
+    /// itself cannot take its capture while the editor is on its way.
+    private var opening: Set<UUID> = []
     /// Editors of project files, by file.
     private var projectEditors: [URL: AnnotationEditorWindowController] = [:]
     /// Saves a copy of a project's picture to the export location, with the scale it was made at; returns where it went.
@@ -37,39 +38,26 @@ final class AnnotationCoordinator {
     /// screen it was captured on; the scale the capture itself has (marks kept with one, or a screenshot
     /// brought down to one pixel per point) comes first.
     func annotate(_ entry: HistoryItem, scale: CGFloat) {
-        open(entry, scale: scale, presentation: .editor)
-    }
-
-    /// A compact preview with the same editable document, copy path, and history retention as the editor.
-    func preview(_ entry: HistoryItem, scale: CGFloat) {
-        open(entry, scale: scale, presentation: .preview)
-    }
-
-    private func open(_ entry: HistoryItem, scale: CGFloat, presentation: AnnotationEditorWindowController.Presentation) {
         if let editor = editors[entry.id] {
-            if presentation == .editor { editor.expandToFullEditor() }
             editor.show()
             return
         }
-        guard entry.kind == .screenshot else { return }
-        if let pending = opening[entry.id] {
-            if pending == .preview, presentation == .editor { opening[entry.id] = .editor }
-            return
-        }
+        // Opened again while loading: the editor on its way is the one.
+        guard entry.kind == .screenshot, !opening.contains(entry.id) else { return }
         let id = entry.id
-        opening[id] = presentation
-        // Loading also holds the capture: a three-second card must not expire while its image is read.
+        opening.insert(id)
         onEditing?(id, true)
         let history = history
         Task { [weak self] in
             guard let loaded = await Self.load(entry, from: history) else {
-                self?.opening[id] = nil
+                self?.opening.remove(id)
                 self?.onEditing?(id, false)
-                Log.capture.error("Could not read \(entry.fileName, privacy: .public) to preview or annotate it")
+                Log.capture.error("Could not read \(entry.fileName, privacy: .public) to annotate it")
                 NSSound.beep()
                 return
             }
-            guard let self, let presentation = opening.removeValue(forKey: id) else { return }
+            guard let self else { return }
+            opening.remove(id)
             let editor = AnnotationEditorWindowController(
                 image: loaded.image,
                 scale: loaded.document?.scale ?? entry.pixelsPerPoint.map { CGFloat($0) } ?? scale,
@@ -83,11 +71,10 @@ final class AnnotationCoordinator {
                         return await self.saveCopy?(entry, file)
                     },
                     coordinator: self, name: (entry.fileName as NSString).deletingPathExtension, scale: { [weak self] in self?.history.item(id: id)?.pixelsPerPoint }
-                ),
-                presentation: presentation
+                )
             )
             editor.onClose = { [weak self] in
-                // Released on the next turn, after the window has finished keeping the current marks.
+                // Released on the next turn, never inside the window's own close.
                 Task { @MainActor in
                     self?.editors[id] = nil
                     self?.onEditing?(id, false)
@@ -118,7 +105,7 @@ final class AnnotationCoordinator {
     }
 
     /// The captures open in an editor: never expired from under it.
-    var openCaptureIDs: Set<UUID> { Set(editors.keys).union(opening.keys) }
+    var openCaptureIDs: Set<UUID> { Set(editors.keys).union(opening) }
 
     /// Keeps every open editor's edits, for quitting.
     func keepAll() {
