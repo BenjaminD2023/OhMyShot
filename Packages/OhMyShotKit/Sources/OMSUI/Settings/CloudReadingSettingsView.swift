@@ -53,6 +53,11 @@ struct CloudReadingRow: View {
             }
         }
         .onAppear { draft = store.model }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: .debugOpenCloudSwitch)) { _ in
+            if store.model != nil { pending = Pending(preset: nil) }
+        }
+        #endif
         .onChange(of: store.model?.id) {
             draft = store.model
             key = ""

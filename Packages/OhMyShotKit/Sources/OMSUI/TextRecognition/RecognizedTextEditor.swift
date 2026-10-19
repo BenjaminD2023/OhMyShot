@@ -66,9 +66,11 @@ struct RecognizedTextEditor: NSViewRepresentable {
         guard let textView = coordinator.textView else { return }
         let body = NSFont.preferredFont(forTextStyle: .body)
         let font: NSFont = model.isCode ? .monospacedSystemFont(ofSize: body.pointSize, weight: .regular) : body
+        coordinator.isCode = model.isCode
         if textView.font != font {
             textView.font = font
             textView.typingAttributes[.font] = font
+            coordinator.styleTables(force: true)
         }
         if coordinator.appliedRevision != model.revision {
             coordinator.apply(model.text, undoable: coordinator.appliedRevision != nil)
@@ -109,6 +111,10 @@ struct RecognizedTextEditor: NSViewRepresentable {
         var isApplyingText = false
         var isApplyingSelection = false
         var isReportingSelection = false
+        /// Code keeps the default stops: its tabs line up what the code's author lined up.
+        var isCode = false
+        /// The table blocks last styled, so the text storage is only touched when they change.
+        private var styledTables: [TableTabStops.Block]?
 
         init(model: TextRecognitionModel) {
             self.model = model
@@ -130,6 +136,17 @@ struct RecognizedTextEditor: NSViewRepresentable {
                 textView.string = text
             }
             storage.addAttribute(.paragraphStyle, value: textView.defaultParagraphStyle ?? .default, range: NSRange(location: 0, length: storage.length))
+            styleTables(force: true)
+        }
+
+        /// Gives a table's rows stops as wide as its columns (`TableTabStops`), again after each edit, since an edit can
+        /// widen a cell or end a row. Left alone while an input method is composing, as links are.
+        func styleTables(force: Bool = false) {
+            guard let textView, let storage = textView.textStorage, let font = textView.font, !textView.hasMarkedText() else { return }
+            let blocks = isCode ? [] : TableTabStops.blocks(in: textView.string, font: font)
+            guard force || blocks != styledTables else { return }
+            styledTables = blocks
+            TableTabStops.apply(blocks, base: textView.defaultParagraphStyle ?? RecognizedTextEditor.paragraphStyle, to: storage)
         }
 
         /// Links, mail addresses, phone numbers, and addresses become clickable; dates stay plain text.
@@ -148,6 +165,7 @@ struct RecognizedTextEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard !isApplyingText, let textView else { return }
+            styleTables()
             model.textEdited(textView.string)
         }
 
@@ -251,9 +269,8 @@ struct TranslatedTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView, let storage = textView.textStorage, textView.string != text else { return }
         textView.string = text
-        let whole = NSRange(location: 0, length: storage.length)
+        TableTabStops.apply(TableTabStops.blocks(in: text, font: textView.font ?? .preferredFont(forTextStyle: .body)), base: RecognizedTextEditor.paragraphStyle, to: storage)
         storage.beginEditing()
-        storage.addAttribute(.paragraphStyle, value: RecognizedTextEditor.paragraphStyle, range: whole)
         for range in translated where NSMaxRange(range) <= storage.length {
             storage.addAttribute(.accessibilityLanguage, value: language, range: range)
         }

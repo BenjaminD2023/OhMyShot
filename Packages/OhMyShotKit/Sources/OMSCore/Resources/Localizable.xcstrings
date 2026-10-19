@@ -1,36 +1,42 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Small" : {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Small"
+    "%@ It said: “%@”" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ It said: “%2$@”"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "小"
-          }
-        }
-      }
-    },
-    "Large" : {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Large"
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ Respondió: «%2$@»"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "大"
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ Réponse : « %2$@ »"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ サービスの返答：「%2$@」"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 服务的回复：“%2$@”"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 服務的回覆：「%2$@」"
           }
         }
       }
@@ -1238,6 +1244,23 @@
         }
       }
     },
+    "Large": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Large"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大"
+          }
+        }
+      }
+    },
     "Low" : {
       "localizations" : {
         "es" : {
@@ -1506,6 +1529,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "S3 相容儲存空間"
+          }
+        }
+      }
+    },
+    "Small": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Small"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小"
           }
         }
       }

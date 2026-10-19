@@ -119,11 +119,16 @@ public struct ModelPackStore: Sendable {
         try FileManager.default.removeItem(at: folder)
     }
 
-    /// Removes the pack's download in progress, and nothing installed.
+    /// Removes the pack's download in progress, and nothing installed; the pack's folder too when nothing else is in it.
     public func removeDownload(of pack: ModelPack) throws {
+        let manager = FileManager.default
         let staging = downloadFolder(of: pack)
-        guard FileManager.default.fileExists(atPath: staging.path(percentEncoded: false)) else { return }
-        try FileManager.default.removeItem(at: staging)
+        guard manager.fileExists(atPath: staging.path(percentEncoded: false)) else { return }
+        try manager.removeItem(at: staging)
+        let folder = staging.deletingLastPathComponent()
+        if (try? manager.contentsOfDirectory(atPath: folder.path(percentEncoded: false)))?.isEmpty == true {
+            try? manager.removeItem(at: folder)
+        }
     }
 
     /// Removes what no pack of `catalog` uses: packs it no longer lists, and versions of its packs other than
