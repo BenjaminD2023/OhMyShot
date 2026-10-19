@@ -7986,6 +7986,40 @@
         }
       }
     },
+    "Edge tolerance" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tolerancia de bordes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tolérance des bords"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エッジの許容範囲"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "边缘容差"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邊緣容差"
+          }
+        }
+      }
+    },
     "Edit" : {
       "localizations" : {
         "es" : {
@@ -8560,6 +8594,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "僅檔案"
+          }
+        }
+      }
+    },
+    "Fits a measurement box to the content inside it when you release the pointer. Turn off to keep the box as drawn, or hold Command while releasing to skip snapping once." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajusta el recuadro de medida al contenido que hay dentro al soltar el puntero. Desactívalo para dejar el recuadro tal como lo trazaste, o mantén pulsada la tecla Comando al soltar para no ajustarlo esa vez."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajuste le cadre de mesure au contenu qu’il entoure lorsque vous relâchez le pointeur. Désactivez l’option pour garder le cadre tel que tracé, ou maintenez Commande en relâchant pour ne pas l’ajuster cette fois."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポインタを離したときに、計測の枠を中の内容に合わせます。オフにすると枠は描いたままになります。離すときにcommandキーを押していると、その回だけ吸着しません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "松开指针时，让测量框贴合其中的内容。关闭后测量框保持绘制时的样子；也可以在松开时按住 Command 键，跳过这一次吸附。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放開指標時，讓測量框貼合其中的內容。關閉後測量框會維持繪製時的樣子；也可以在放開時按住 Command 鍵，略過這一次貼齊。"
           }
         }
       }
@@ -11682,6 +11750,40 @@
         }
       }
     },
+    "Lower tolerance finds finer boundaries. Higher tolerance ignores small color changes. This affects ruler lines and selection snapping. While measuring, T cycles the presets and +/− adjusts them; the choice is remembered here." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una tolerancia menor encuentra bordes más finos; una mayor pasa por alto cambios de color pequeños. Afecta a las líneas de la regla y al ajuste de la selección. Al medir, T recorre los valores y +/− los ajusta; lo elegido se recuerda aquí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une tolérance plus faible trouve des bords plus fins ; une tolérance plus élevée ignore les petits changements de couleur. Cela concerne les lignes de la règle et l’ajustement de la sélection. Pendant la mesure, T fait défiler les préréglages et +/− les ajuste ; le choix est mémorisé ici."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "許容範囲が低いほど細かな境界を見つけ、高いほど小さな色の変化を無視します。定規の線と選択範囲の吸着に影響します。計測中はTキーでプリセットを切り替え、+/−で調整できます。選んだ値はここに記憶されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "容差越低，找到的边界越细；容差越高，越会忽略细小的颜色变化。这会影响量尺线和选区吸附。测量时按 T 键循环切换预设，按 +/− 调整；所选的值会记在这里。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "容差越低，找到的邊界越細；容差越高，越會忽略細微的顏色變化。這會影響量尺線與選取範圍貼齊。測量時按 T 鍵循環切換預設，按 +/− 調整；所選的值會記在這裡。"
+          }
+        }
+      }
+    },
     "Make %@ the Background" : {
       "localizations" : {
         "es" : {
@@ -12052,6 +12154,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "測量單位"
+          }
+        }
+      }
+    },
+    "Measurement snapping" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajuste de medidas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustement des mesures"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "計測の吸着"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测量吸附"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "測量貼齊"
           }
         }
       }
@@ -20216,6 +20352,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "小"
+          }
+        }
+      }
+    },
+    "Snap selections to content" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustar la selección al contenido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aligner la sélection sur le contenu"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択範囲を内容に吸着"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选区吸附到内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將選取範圍貼齊內容"
           }
         }
       }
