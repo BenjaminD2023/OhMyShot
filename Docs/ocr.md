@@ -1822,3 +1822,13 @@ pack's).
 **Not done yet:** a column the selection's edge cuts through; the panel's tables have no cell boxes to outline on the picture; text, formulas, seals, and handwriting with the
 VLM (its "OCR:" reads text better than Vision on the bench, but whole screens make it loop, › L3 spike); a reading the
 deadline cut keeps Vision's lines for that table, though the rows read so far may be right.
+
+## Image line breaks
+
+Settings → Tools → Image line breaks sets the default for Capture Text and new Recognized Text windows: **Keep Line Breaks** (the default) preserves detected image rows as actual newline characters; **Join Lines** merges wrapped lines within a paragraph using the existing layout-aware assembler. Code, table rows and display formulas retain their structure.
+
+The OCR window’s existing **Keep Line Breaks / Join Lines** menu changes the actual text for that window, including Copy, and leaves the saved default unchanged. Existing windows keep their own choice; new windows start from the saved default. The independent **Wrap Text** control only reflows the display. A cloud model’s panel text remains as returned by that model.
+
+The explicit Capture Text, Joining Lines command and explicit Shortcuts or URL line-break arguments still take precedence. A `capture-text` URL without `linebreaks` uses the saved default.
+
+![Image OCR line breaks and temporary window overrides](assets/ocr-image-line-breaks.gif)

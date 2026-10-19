@@ -134,6 +134,12 @@ public final class SettingsStore {
         didSet { defaults.set(showTextResult, forKey: Key.showTextResult) }
     }
 
+    /// Capture Text and new Recognized Text windows keep the image's detected line breaks by default.
+    /// A window's line-break choice changes only that window, without changing this saved default.
+    public var textRecognitionKeepsLineBreaks: Bool {
+        didSet { defaults.set(textRecognitionKeepsLineBreaks, forKey: Key.textRecognitionKeepsLineBreaks) }
+    }
+
     /// Whether recognized text wraps to the window's width by default. Each Recognized Text window
     /// takes this value when it opens and can change its own wrapping without changing the default.
     public var textRecognitionWrapsText: Bool {
@@ -449,6 +455,7 @@ public final class SettingsStore {
             Key.showQuickAccess: true,
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
             Key.showTextResult: false,
+            Key.textRecognitionKeepsLineBreaks: true,
             Key.textRecognitionWrapsText: true,
             Key.readsAppText: false,
             Key.translationTarget: "",
@@ -583,6 +590,7 @@ public final class SettingsStore {
         uploadAfterRecording = Self.recordingChoice(Key.uploadAfterRecording, startingAs: Key.uploadAfterCapture, in: defaults)
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
         showTextResult = defaults.bool(forKey: Key.showTextResult)
+        textRecognitionKeepsLineBreaks = defaults.bool(forKey: Key.textRecognitionKeepsLineBreaks)
         textRecognitionWrapsText = defaults.bool(forKey: Key.textRecognitionWrapsText)
         readsAppText = defaults.bool(forKey: Key.readsAppText)
         translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
@@ -670,6 +678,7 @@ public final class SettingsStore {
         static let uploadAfterRecording = "uploadAfterRecording"
         static let historyRetention = "historyRetention"
         static let showTextResult = "showTextResult"
+        static let textRecognitionKeepsLineBreaks = "textRecognitionKeepsLineBreaks"
         static let textRecognitionWrapsText = "textRecognitionWrapsText"
         static let readsAppText = "readsAppText"
         static let translationTarget = "translationTarget"

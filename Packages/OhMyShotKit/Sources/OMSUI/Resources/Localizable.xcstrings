@@ -10269,6 +10269,34 @@
         }
       }
     },
+    "Image line breaks" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saltos de línea de la imagen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sauts de ligne de l’image"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像内の改行"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片中的换行"
+          }
+        }
+      }
+    },
     "Import" : {
       "localizations" : {
         "es" : {
@@ -11032,6 +11060,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保留 %@"
+          }
+        }
+      }
+    },
+    "Keep the detected lines from the image, or join wrapped lines within each paragraph. Sets the default for Capture Text and new Recognized Text windows; the window’s Line Breaks menu changes only that window." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conserva las líneas detectadas en la imagen o une las de cada párrafo. Define el valor predeterminado de Capturar texto y de las nuevas ventanas Texto reconocido; el menú de saltos de línea solo afecta a esa ventana."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conserve les lignes détectées dans l’image ou réunit celles de chaque paragraphe. Définit le choix par défaut de Capturer le texte et des nouvelles fenêtres Texte reconnu ; le menu Sauts de ligne ne modifie que la fenêtre actuelle."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像から認識した行を保持するか、段落内で折り返された行を結合します。テキストのキャプチャと新しいテキスト認識ウインドウの初期値です。ウインドウの改行メニューは、そのウインドウだけに適用されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留图片中识别到的各行，或合并每个段落内的折行。此设置决定截取文字和新打开的文字识别窗口的默认值；窗口中的“换行”菜单仅临时影响当前窗口。"
           }
         }
       }

@@ -277,7 +277,8 @@ final class TextRecognitionModel {
     var pane: Pane = .text
     var tableIndex = 0
     var copied = false
-    var joinLines = false {
+    /// A window's actual line-break choice, independent of display wrapping and the saved default.
+    var joinLines: Bool {
         didSet { if joinLines != oldValue { regenerate() } }
     }
     /// A window's display choice; changing it never rewrites the text or the saved default.
@@ -310,6 +311,7 @@ final class TextRecognitionModel {
 
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let translator: Translator
+    @ObservationIgnored private let pasteboard: NSPasteboard
     @ObservationIgnored private var translationTask: Task<Void, Never>?
     @ObservationIgnored private var analyze: (@Sendable (CGImage) async throws -> TextAnalysis)?
     @ObservationIgnored private var analysis: Task<Void, Never>?
@@ -322,9 +324,11 @@ final class TextRecognitionModel {
     /// Counts the images loaded, so word from a reading of an earlier one is let go.
     @ObservationIgnored private var generation = 0
 
-    init(settings: SettingsStore, translator: Translator, cloud: TextRecognitionWindowController.Cloud? = nil) {
+    init(settings: SettingsStore, translator: Translator, cloud: TextRecognitionWindowController.Cloud? = nil, pasteboard: NSPasteboard = .general) {
         self.settings = settings
         self.translator = translator
+        self.pasteboard = pasteboard
+        joinLines = !settings.textRecognitionKeepsLineBreaks
         wrapsText = settings.textRecognitionWrapsText
         cloudSetup = cloud
     }
@@ -885,8 +889,8 @@ final class TextRecognitionModel {
     private func write(_ fill: (NSPasteboardItem) -> Void) {
         let item = NSPasteboardItem()
         fill(item)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([item])
+        pasteboard.clearContents()
+        pasteboard.writeObjects([item])
     }
 
     private func flashCopied(_ announcement: String) {
