@@ -34,6 +34,7 @@ protocol OverlayViewDelegate: AnyObject {
     /// The ruler's measurement, to copy; `ending` closes the overlay after it (Return).
     func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool)
     func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit)
+    func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance)
     /// All-In-One's bar or keys chose what the next area is for: its text, a scrolling capture, or a recording.
     func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice)
 }
@@ -134,6 +135,7 @@ final class OverlayView: NSView {
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
         purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex, measureUnit: MeasureUnit = .points,
+        measureTolerance: MeasureTolerance = .medium, measureSnapsToContent: Bool = true,
         allInOne: Bool = false, snapsToText: Bool = false
     ) {
         self.mode = mode
@@ -150,11 +152,17 @@ final class OverlayView: NSView {
         isAllInOne = allInOne && purpose == .screenshot
         if purpose == .measure {
             let measure = self.measure ?? MeasureOverlay(display: display)
+            measure.onRedraw = nil
+            measure.clear()
             if measure.layer.superlayer == nil { layer?.insertSublayer(measure.layer, below: crosshairOutline) }
             measure.unit = measureUnit
+            measure.tolerance = measureTolerance
+            measure.snapsToContent = measureSnapsToContent
             measure.onRedraw = { [weak self] in self?.updateMeasureCrosshair() }
             self.measure = measure
         } else {
+            measure?.onRedraw = nil
+            measure?.clear()
             measure?.layer.removeFromSuperlayer()
             measure = nil
         }
@@ -172,7 +180,7 @@ final class OverlayView: NSView {
         case .screenshot where isAllInOne: String(localized: "Drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, or R to record. Press Escape to cancel.", bundle: .module)
         case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.", bundle: .module)
         case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
-        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
+        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
         case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         }
@@ -242,6 +250,7 @@ final class OverlayView: NSView {
 
     private func updateMeasureCrosshair() {
         guard purpose == .measure, let measure, pointer != nil else { return }
+        setAccessibilityValue(measure.accessibilityValue)
         withoutAnimation {
             crosshair.isHidden = measure.showsLines
             crosshairOutline.isHidden = measure.showsLines
@@ -277,6 +286,12 @@ final class OverlayView: NSView {
 
     func setMeasureUnit(_ unit: MeasureUnit) {
         measure?.unit = unit
+        setAccessibilityValue(measure?.accessibilityValue)
+        if measure?.accessibilityValue != nil { announceValue() }
+    }
+
+    func setMeasureTolerance(_ tolerance: MeasureTolerance) {
+        measure?.tolerance = tolerance
         setAccessibilityValue(measure?.accessibilityValue)
         if measure?.accessibilityValue != nil { announceValue() }
     }
@@ -418,7 +433,8 @@ final class OverlayView: NSView {
         case .color:
             delegate?.overlayView(self, didPickColorAt: global(convert(event.locationInWindow, from: nil)), modifiers: event.modifierFlags, keyboard: false)
         case .measure:
-            measure?.endBox()
+            let bypassSnap = !event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
+            measure?.endBox(snapping: !bypassSnap)
             setAccessibilityValue(measure?.accessibilityValue)
             announceValue()
         case .screenshot, .text, .annotate, .record, .scroll:
@@ -440,6 +456,19 @@ final class OverlayView: NSView {
         }
         let character = event.charactersIgnoringModifiers?.lowercased()
         let picks = purpose == .color || purpose == .measure
+        if purpose == .measure, let measure,
+           event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+            let tolerance: MeasureTolerance? = switch character {
+            case "t": measure.tolerance.next
+            case "=", "+": measure.tolerance.increased
+            case "-": measure.tolerance.decreased
+            default: nil
+            }
+            if let tolerance {
+                delegate?.overlayView(self, didChangeTolerance: tolerance)
+                return
+            }
+        }
         switch event.keyCode {
         case 53: // Escape
             delegate?.overlayViewDidCancel(self)

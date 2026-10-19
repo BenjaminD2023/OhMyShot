@@ -721,6 +721,26 @@ struct ToolsSettingsView: View {
                 .fixedSize()
                 .help(Text("Tab switches between them while measuring.", bundle: .module))
             }
+            SettingsRow(Text("Measurement snapping", bundle: .module)) {
+                Toggle(isOn: $settings.measureSnapsToContent) {
+                    Text("Snap selections to content", bundle: .module)
+                }
+                .help(Text("Fits a measurement box to the content inside it when you release the pointer. Turn off to keep the box as drawn, or hold Command while releasing to skip snapping once.", bundle: .module))
+            }
+            SettingsRow(Text("Edge tolerance", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.measureTolerance) {
+                        ForEach(MeasureTolerance.allCases, id: \.self) { tolerance in
+                            Text(verbatim: tolerance.title).tag(tolerance)
+                        }
+                    } label: {
+                        Text("Edge tolerance", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("Lower tolerance finds finer boundaries. Higher tolerance ignores small color changes. This affects ruler lines and selection snapping. While measuring, T cycles the presets and +/− adjusts them; the choice is remembered here.", bundle: .module))
+                }
+            }
 
             SettingsDivider()
 

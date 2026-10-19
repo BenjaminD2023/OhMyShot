@@ -125,6 +125,11 @@ public final class OverlayController {
     /// What the ruler reads in. Tab switches it during a session, and `onMeasureUnitChange` hears it.
     public var measureUnit: MeasureUnit = .points
     public var onMeasureUnitChange: ((MeasureUnit) -> Void)?
+    /// The ruler's pixel boundary tolerance. T cycles it during a session.
+    public var measureTolerance: MeasureTolerance = .medium
+    public var onMeasureToleranceChange: ((MeasureTolerance) -> Void)?
+    /// Whether a drawn measurement box snaps to its content when released.
+    public var measureSnapsToContent = true
     /// The ruler's measurement to copy, where the crosshair is (global space), and whether the overlay is
     /// closing after it (Return) rather than staying, with "Copied" in its reading (⌘C).
     public var onCopyMeasurement: ((String, CGPoint?, Bool) -> Void)?
@@ -258,6 +263,8 @@ public final class OverlayController {
                 purpose: purpose,
                 colorFormat: colorFormat,
                 measureUnit: measureUnit,
+                measureTolerance: measureTolerance,
+                measureSnapsToContent: measureSnapsToContent,
                 allInOne: isAllInOne,
                 snapsToText: snapsToText
             )
@@ -1071,6 +1078,15 @@ extension OverlayController: OverlayViewDelegate {
             entry.view.setMeasureUnit(unit)
         }
         onMeasureUnitChange?(unit)
+    }
+
+    func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance) {
+        guard isActive, purpose == .measure else { return }
+        measureTolerance = tolerance
+        for entry in entries.values {
+            entry.view.setMeasureTolerance(tolerance)
+        }
+        onMeasureToleranceChange?(tolerance)
     }
 
     func overlayViewDidRequestSizing(_ view: OverlayView) {
