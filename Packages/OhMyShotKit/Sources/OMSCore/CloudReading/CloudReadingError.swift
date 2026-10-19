@@ -35,13 +35,13 @@ public enum CloudReadingError: Error, LocalizedError, Equatable, Sendable {
         case .keyMissing:
             String(localized: "The API key is missing from the Keychain. Open the model in Settings › Tools and enter it again.", bundle: .module)
         case .keyRejected(let detail):
-            [String(localized: "The service didn’t accept the API key.", bundle: .module), detail].compactMap { $0 }.joined(separator: " ")
+            Self.withDetail(String(localized: "The service didn’t accept the API key.", bundle: .module), detail)
         case .notFound(let detail):
-            [String(localized: "The service doesn’t know this address or model. Check both in Settings › Tools.", bundle: .module), detail].compactMap { $0 }.joined(separator: " ")
+            Self.withDetail(String(localized: "The service doesn’t know this address or model. Check both in Settings › Tools.", bundle: .module), detail)
         case .rateLimited(let detail):
-            [String(localized: "The service is turning requests away for now: too many, or the account’s limit or credit ran out.", bundle: .module), detail].compactMap { $0 }.joined(separator: " ")
+            Self.withDetail(String(localized: "The service is turning requests away for now: too many, or the account’s limit or credit ran out.", bundle: .module), detail)
         case .overloaded(let detail):
-            [String(localized: "The service is busy. Try again in a moment.", bundle: .module), detail].compactMap { $0 }.joined(separator: " ")
+            Self.withDetail(String(localized: "The service is busy. Try again in a moment.", bundle: .module), detail)
         case .service(let status, let message):
             if let message, !message.isEmpty {
                 String(localized: "The service answered \(status): \(message)", bundle: .module)
@@ -49,7 +49,7 @@ public enum CloudReadingError: Error, LocalizedError, Equatable, Sendable {
                 String(localized: "The service answered with an error (\(status)).", bundle: .module)
             }
         case .refused(let detail):
-            [String(localized: "The model declined to read this picture.", bundle: .module), detail].compactMap { $0 }.joined(separator: " ")
+            Self.withDetail(String(localized: "The model declined to read this picture.", bundle: .module), detail)
         case .unreachable(let host):
             String(localized: "Couldn’t reach \(host). Check the address and your network connection.", bundle: .module)
         case .certificateRejected(let host):
@@ -61,6 +61,12 @@ public enum CloudReadingError: Error, LocalizedError, Equatable, Sendable {
         case .unexpectedAnswer:
             String(localized: "The service’s answer couldn’t be read. Check that the address is the service’s own.", bundle: .module)
         }
+    }
+
+    /// A sentence of ours, then the service's own words set apart from it, when it gave any.
+    private static func withDetail(_ sentence: String, _ detail: String?) -> String {
+        guard let detail = detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty else { return sentence }
+        return String(localized: "\(sentence) It said: “\(detail)”", bundle: .module)
     }
 
     /// What the log says: the case and the status, never the service's own words, which can quote part of the key

@@ -280,6 +280,8 @@ final class TextRecognitionModel {
     var joinLines = false {
         didSet { if joinLines != oldValue { regenerate() } }
     }
+    /// A window's display choice; changing it never rewrites the text or the saved default.
+    var wrapsText: Bool
 
     /// Whether the translation is shown in place of the text as read.
     var translates = false {
@@ -323,6 +325,7 @@ final class TextRecognitionModel {
     init(settings: SettingsStore, translator: Translator, cloud: TextRecognitionWindowController.Cloud? = nil) {
         self.settings = settings
         self.translator = translator
+        wrapsText = settings.textRecognitionWrapsText
         cloudSetup = cloud
     }
 
@@ -969,6 +972,18 @@ struct TextRecognitionView: View {
         }
         // Modes, not actions: the symbols alone, so Copy stays the one titled, filled control.
         ToolbarItemGroup(placement: .primaryAction) {
+            if model.phase == .ready, model.pane == .text || model.translates {
+                Toggle(isOn: $model.wrapsText) {
+                    Label {
+                        Text("Wrap Text", bundle: .module)
+                    } icon: {
+                        Image(systemName: "arrow.turn.down.left")
+                    }
+                    .labelStyle(.iconOnly)
+                }
+                .toggleStyle(.button)
+                .help(Text("Wrap long lines in this window without changing the text you copy", bundle: .module))
+            }
             if let cloud = model.cloudModel {
                 CloudToggle(model: model, cloud: cloud)
             }
@@ -1314,7 +1329,7 @@ struct TranslationPane: View {
                 if !translation.outcome.translations.isEmpty {
                     TranslatedTextView(
                         text: translation.text, translated: translation.translated,
-                        language: Translator.identifier(of: translation.outcome.target)
+                        language: Translator.identifier(of: translation.outcome.target), wrapsText: model.wrapsText
                     )
                     TranslationStatus(model: model)
                 } else if let language = translation.outcome.needsDownload.first {
@@ -1539,13 +1554,9 @@ struct TablePreview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// A column of figures: every cell below the header starts with a digit, maybe after a sign or a
-    /// currency symbol ("$20", "100 GB", "−3%").
+    /// A column of figures (`TableTabStops.holdsFigures`).
     static func holdsFigures(_ table: OCRTable, column: Int) -> Bool {
-        let cells = table.rows.dropFirst().compactMap { $0.indices.contains(column) ? $0[column] : nil }
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        return !cells.isEmpty && cells.allSatisfy { $0.range(of: #"^[\p{Sc}+\-−±]?\s?\d"#, options: .regularExpression) != nil }
+        TableTabStops.holdsFigures(table.rows, column: column)
     }
 }
 

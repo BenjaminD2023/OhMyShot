@@ -72,25 +72,26 @@ struct CloudStatus: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 8)
+        case .read(let result) where !result.reading.isComplete:
+            // Text cut short is said in words, as a failure is: a glyph alone would go unseen until the text was copied.
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            Text("\(cloud.name) stopped before the end of the text", bundle: .module)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
+            Spacer(minLength: 8)
+            summary(result)
         case .read(let result):
             Text("Read by \(cloud.name)", bundle: .module)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            if !result.reading.isComplete {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                    .help(Text("\(cloud.name) stopped before the end of the text", bundle: .module))
-                    .accessibilityLabel(Text("\(cloud.name) stopped before the end of the text", bundle: .module))
-            }
             Spacer(minLength: 8)
-            Text(verbatim: Self.summary(result.reading))
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(Self.details(result.reading, host: cloud.host ?? cloud.address))
+            summary(result)
         case .failed(let message, let canRetry):
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
@@ -113,6 +114,17 @@ struct CloudStatus: View {
                     .controlSize(.small)
             }
         }
+    }
+
+    /// The model and the tokens at the trailing edge, the host and the tokens each way as its tooltip.
+    private func summary(_ result: TextRecognitionModel.CloudResult) -> some View {
+        Text(verbatim: Self.summary(result.reading))
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help(Self.details(result.reading, host: cloud.host ?? cloud.address))
     }
 
     /// "claude-opus-5-5 · 2,712 tokens": the model that answered, and what the reading cost in tokens.

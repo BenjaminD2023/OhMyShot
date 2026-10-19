@@ -22,10 +22,7 @@ struct RecognizedTextEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let textView = ActivityTrackingTextView(frame: .zero)
         textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
@@ -58,17 +55,21 @@ struct RecognizedTextEditor: NSViewRepresentable {
         context.coordinator.apply(model.text, undoable: false)
         context.coordinator.appliedRevision = model.revision
         context.coordinator.appliedFocusRequest = model.focusRequest
+        OCRTextWrapping.apply(model.wrapsText, to: scrollView)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         guard let textView = coordinator.textView else { return }
+        OCRTextWrapping.apply(model.wrapsText, to: scrollView)
         let body = NSFont.preferredFont(forTextStyle: .body)
         let font: NSFont = model.isCode ? .monospacedSystemFont(ofSize: body.pointSize, weight: .regular) : body
+        coordinator.isCode = model.isCode
         if textView.font != font {
             textView.font = font
             textView.typingAttributes[.font] = font
+            coordinator.styleTables(force: true)
         }
         if coordinator.appliedRevision != model.revision {
             coordinator.apply(model.text, undoable: coordinator.appliedRevision != nil)
@@ -81,7 +82,7 @@ struct RecognizedTextEditor: NSViewRepresentable {
         if textView.selectedRange() != selection, !coordinator.isReportingSelection {
             coordinator.isApplyingSelection = true
             textView.setSelectedRange(selection)
-            textView.scrollRangeToVisible(selection)
+            OCRTextWrapping.reveal(selection, in: textView)
             coordinator.isApplyingSelection = false
         }
         // A line picked on the image: the text takes focus, so its selection is live and ⌘C copies it.
@@ -109,6 +110,10 @@ struct RecognizedTextEditor: NSViewRepresentable {
         var isApplyingText = false
         var isApplyingSelection = false
         var isReportingSelection = false
+        /// Code keeps the default stops: its tabs line up what the code's author lined up.
+        var isCode = false
+        /// The table blocks last styled, so the text storage is only touched when they change.
+        private var styledTables: [TableTabStops.Block]?
 
         init(model: TextRecognitionModel) {
             self.model = model
@@ -130,6 +135,17 @@ struct RecognizedTextEditor: NSViewRepresentable {
                 textView.string = text
             }
             storage.addAttribute(.paragraphStyle, value: textView.defaultParagraphStyle ?? .default, range: NSRange(location: 0, length: storage.length))
+            styleTables(force: true)
+        }
+
+        /// Gives a table's rows stops as wide as its columns (`TableTabStops`), again after each edit, since an edit can
+        /// widen a cell or end a row. Left alone while an input method is composing, as links are.
+        func styleTables(force: Bool = false) {
+            guard let textView, let storage = textView.textStorage, let font = textView.font, !textView.hasMarkedText() else { return }
+            let blocks = isCode ? [] : TableTabStops.blocks(in: textView.string, font: font)
+            guard force || blocks != styledTables else { return }
+            styledTables = blocks
+            TableTabStops.apply(blocks, base: textView.defaultParagraphStyle ?? RecognizedTextEditor.paragraphStyle, to: storage)
         }
 
         /// Links, mail addresses, phone numbers, and addresses become clickable; dates stay plain text.
@@ -148,6 +164,7 @@ struct RecognizedTextEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard !isApplyingText, let textView else { return }
+            styleTables()
             model.textEdited(textView.string)
         }
 
@@ -218,14 +235,12 @@ struct TranslatedTextView: NSViewRepresentable {
     let text: String
     let translated: [NSRange]
     let language: String
+    var wrapsText = true
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = NSTextView(frame: .zero)
         textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = false
@@ -245,15 +260,16 @@ struct TranslatedTextView: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
         scrollView.documentView = textView
+        OCRTextWrapping.apply(wrapsText, to: scrollView)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        OCRTextWrapping.apply(wrapsText, to: scrollView)
         guard let textView = scrollView.documentView as? NSTextView, let storage = textView.textStorage, textView.string != text else { return }
         textView.string = text
-        let whole = NSRange(location: 0, length: storage.length)
+        TableTabStops.apply(TableTabStops.blocks(in: text, font: textView.font ?? .preferredFont(forTextStyle: .body)), base: RecognizedTextEditor.paragraphStyle, to: storage)
         storage.beginEditing()
-        storage.addAttribute(.paragraphStyle, value: RecognizedTextEditor.paragraphStyle, range: whole)
         for range in translated where NSMaxRange(range) <= storage.length {
             storage.addAttribute(.accessibilityLanguage, value: language, range: range)
         }
@@ -261,5 +277,42 @@ struct TranslatedTextView: NSViewRepresentable {
             if let url = item.url { storage.addAttribute(.link, value: url, range: item.range) }
         }
         storage.endEditing()
+    }
+}
+
+/// Changes only native text layout. Text storage, selection, undo, and marked text stay in place.
+enum OCRTextWrapping {
+    static func apply(_ wraps: Bool, to scrollView: NSScrollView) {
+        guard let textView = scrollView.documentView as? NSTextView, let container = textView.textContainer else { return }
+        let scrollsHorizontally = !wraps
+        let resizing: NSView.AutoresizingMask = wraps ? [.width] : []
+        guard container.widthTracksTextView != wraps || textView.isHorizontallyResizable != scrollsHorizontally
+                || scrollView.hasHorizontalScroller != scrollsHorizontally || textView.autoresizingMask != resizing else { return }
+        scrollView.hasHorizontalScroller = scrollsHorizontally
+        textView.isHorizontallyResizable = scrollsHorizontally
+        textView.autoresizingMask = resizing
+        container.widthTracksTextView = wraps
+        if wraps {
+            textView.setFrameSize(NSSize(width: scrollView.contentSize.width, height: textView.frame.height))
+            container.containerSize = NSSize(
+                width: max(0, scrollView.contentSize.width - 2 * textView.textContainerInset.width),
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        } else {
+            container.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        }
+        textView.sizeToFit()
+        if wraps {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: scrollView.contentView.bounds.minY))
+        }
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    /// Scrolls `range` into view once the text has room to show it. The panel applies its selection before SwiftUI
+    /// sizes the editor, and scrolling an empty view moved the text by its insets: with lines not wrapped nothing took
+    /// that back, and every line's first letters stayed hidden.
+    static func reveal(_ range: NSRange, in textView: NSTextView) {
+        guard let clip = textView.enclosingScrollView?.contentView, clip.bounds.width > 0, clip.bounds.height > 0 else { return }
+        textView.scrollRangeToVisible(range)
     }
 }

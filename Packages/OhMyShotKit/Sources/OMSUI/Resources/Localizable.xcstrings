@@ -11852,6 +11852,40 @@
         }
       }
     },
+    "Magnifier" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lupa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loupe"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ルーペ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放大镜"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放大鏡"
+          }
+        }
+      }
+    },
     "Make %@ the Background" : {
       "localizations" : {
         "es" : {
@@ -19385,6 +19419,40 @@
         }
       }
     },
+    "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Define si las nuevas ventanas Texto reconocido ajustan el texto a su ancho. Puedes cambiarlo en cada ventana sin modificar esta opción. Ajustar el texto solo cambia cómo se muestra."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définit si les nouvelles fenêtres Texte reconnu ajustent le texte à leur largeur. Vous pouvez le changer dans chaque fenêtre sans modifier ce réglage. Le renvoi à la ligne ne change que l’affichage."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しく開く「認識されたテキスト」ウインドウで折り返すかどうかを設定します。この設定を変えずに、ウインドウごとに切り替えることもできます。折り返しは表示だけを変えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设定新打开的“识别的文字”窗口是否自动换行。每个窗口都可以单独切换，不会改动这项设置。换行只影响显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定新開啟的「辨識出的文字」視窗是否自動換行。每個視窗都可以單獨切換，不會更動這項設定。換行只影響顯示。"
+          }
+        }
+      }
+    },
     "Settings…" : {
       "localizations" : {
         "es" : {
@@ -23987,6 +24055,40 @@
         }
       }
     },
+    "What the screenshot and Annotate Area overlays show at the pointer before you choose an area. Magnified enlarges the pixels around it, to place an edge on the exact pixel. Actual Size shows them at their own size in a clear circle centered on the pointer, which goes when you start dragging; the crosshair stays." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que las superposiciones de captura de pantalla y de Anotar área muestran en el puntero antes de elegir un área. Ampliada amplía los píxeles a su alrededor, para colocar un borde en el píxel exacto. Tamaño real los muestra a su propio tamaño en un círculo claro centrado en el puntero, que desaparece al empezar a arrastrar; la cruz se mantiene."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que les superpositions de capture d’écran et d’Annoter une zone montrent au pointeur avant de choisir une zone. Agrandie agrandit les pixels autour, pour placer un bord sur le pixel exact. Taille réelle les montre à leur propre taille dans un cercle clair centré sur le pointeur, qui disparaît dès que vous commencez à faire glisser ; le réticule reste."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショットと「範囲に注釈を付ける」で、範囲を選ぶ前にポインタの位置に表示されるもの。「拡大」はポインタ周辺のピクセルを拡大し、端を正確なピクセルに合わせられます。「実寸」はポインタを中心とした透明な円の中にピクセルを実際のサイズで表示し、ドラッグを始めると円は消え、十字線は残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截图和“标注区域”在你选定区域之前，于指针处显示的内容。“放大”会放大指针周围的像素，便于把边缘放在准确的像素上。“实际大小”在以指针为中心的清晰圆圈里按原始大小显示它们，开始拖动时圆圈消失，十字准线保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截圖和「標註區域」在你選定區域之前，於指標處顯示的內容。「放大」會放大指標周圍的像素，方便把邊緣放在準確的像素上。「實際大小」在以指標為中心的清晰圓圈裡按原始大小顯示它們，開始拖移時圓圈消失，十字準線保留。"
+          }
+        }
+      }
+    },
     "When the time is up" : {
       "localizations" : {
         "es" : {
@@ -24357,6 +24459,108 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不勾選時，視窗中的「用…讀取」按鈕在你按下時才傳送圖片。"
+          }
+        }
+      }
+    },
+    "Wrap Text" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustar texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renvoi à la ligne"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストを折り返す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动换行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動換行"
+          }
+        }
+      }
+    },
+    "Wrap long lines in this window without changing the text you copy" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajusta las líneas largas en esta ventana sin cambiar el texto que copias"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renvoie les longues lignes à la ligne dans cette fenêtre, sans changer le texte que vous copiez"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このウインドウで長い行を折り返します。コピーするテキストは変わりません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这个窗口中让长行自动换行，不改变拷贝的文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這個視窗中讓長行自動換行，不改變拷貝的文字"
+          }
+        }
+      }
+    },
+    "Wrap text to window" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustar el texto a la ventana"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajuster le texte à la fenêtre"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウに合わせて折り返す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按窗口宽度换行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "依視窗寬度換行"
           }
         }
       }
