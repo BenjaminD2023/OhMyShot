@@ -232,6 +232,17 @@ Still open:
 
 ## The OCR panel (`VisionPipeline.analyze`, 2026-10-08)
 
+Settings › Tools › Recognized Text sets whether new OCR windows wrap text to their width, on by
+default. Each window also has a Wrap Text toggle in its toolbar. Turning it off enables horizontal
+scrolling; changing it affects only that window, including its translation. Wrapping changes layout
+without inserting or removing line breaks, changing copied text, or discarding edits and undo. The
+existing Keep Line Breaks / Join Lines control still chooses the actual text's paragraph formatting.
+
+![OCR text wrapping in native windows](assets/ocr-line-wrapping.gif)
+
+The native UI demo uses generated bilingual prose and code with isolated preferences to check wrapping,
+horizontal scrolling, defaults for new windows, and undo after toggling.
+
 The panel shows everything about one image: the L1 lines, tables, QR codes and barcodes, and the links,
 mail addresses, phone numbers, dates, and addresses in the text (`NSDataDetector`). `analyze` runs the
 barcode request beside L1 and the document request after it, so no more than two accurate requests

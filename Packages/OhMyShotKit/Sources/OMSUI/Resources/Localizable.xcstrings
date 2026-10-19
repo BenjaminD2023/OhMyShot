@@ -17896,6 +17896,23 @@
         }
       }
     },
+    "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置新打开的文字识别窗口的默认换行方式。各窗口可临时切换，不会修改此设置。自动换行只影响显示。"
+          }
+        }
+      }
+    },
     "SETTINGS_PANE_WIDTH" : {
       "comment" : "The narrowest a Settings pane gets, in points. Not words: raise the number if your language's rows are cut off.",
       "extractionState" : "extracted_with_value",
@@ -24306,6 +24323,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不勾選時，視窗中的「用…讀取」按鈕在你按下時才傳送圖片。"
+          }
+        }
+      }
+    },
+    "Wrap long lines in this window without changing the text you copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wrap long lines in this window without changing the text you copy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在当前窗口中折行显示长文本，不改变复制的内容"
+          }
+        }
+      }
+    },
+    "Wrap Text": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wrap Text"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动换行"
+          }
+        }
+      }
+    },
+    "Wrap text to window": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wrap text to window"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动换行"
           }
         }
       }

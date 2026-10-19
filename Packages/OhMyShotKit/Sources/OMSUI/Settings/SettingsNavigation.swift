@@ -82,6 +82,8 @@ extension SettingsTab {
         case .tools:
             [
                 String(localized: "Capture Text", bundle: .module),
+                String(localized: "Recognized Text", bundle: .module),
+                String(localized: "Wrap text to window", bundle: .module),
                 String(localized: "Text from apps", bundle: .module),
                 String(localized: "Accessibility", bundle: .module),
                 String(localized: "Translate into", bundle: .module),
