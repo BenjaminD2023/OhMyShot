@@ -387,14 +387,14 @@ public final class SettingsStore {
         didSet { defaults.set(quickAccessOnPointerDisplay, forKey: Key.quickAccessOnPointerDisplay) }
     }
 
-    /// Seconds a Quick Access card stays before it closes by itself; 0, the default, keeps cards until they
-    /// are closed.
+    /// Seconds a Quick Access card stays before it closes by itself; 3 by default, or 0 to keep cards until
+    /// they are closed.
     public var quickAccessCloseAfter: Int {
         didSet { defaults.set(quickAccessCloseAfter, forKey: Key.quickAccessCloseAfter) }
     }
 
     /// The delays Settings offers for closing cards, in seconds; 0 is never.
-    public static let quickAccessCloseDelays = [0, 5, 10, 20, 30, 60]
+    public static let quickAccessCloseDelays = [0, 3, 5, 10, 20, 30, 60]
 
     /// What a card does when its time is up.
     public var quickAccessCloseAction: QuickAccessCloseAction {
@@ -478,7 +478,7 @@ public final class SettingsStore {
             Key.quickAccessCorner: QuickAccessCorner.bottomLeft.rawValue,
             Key.quickAccessSize: QuickAccessSize.medium.rawValue,
             Key.quickAccessOnPointerDisplay: false,
-            Key.quickAccessCloseAfter: 0,
+            Key.quickAccessCloseAfter: 3,
             Key.quickAccessCloseAction: QuickAccessCloseAction.close.rawValue,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
@@ -538,8 +538,8 @@ public final class SettingsStore {
         quickAccessCorner = defaults.string(forKey: Key.quickAccessCorner).flatMap(QuickAccessCorner.init(rawValue:)) ?? .bottomLeft
         quickAccessSize = defaults.string(forKey: Key.quickAccessSize).flatMap(QuickAccessSize.init(rawValue:)) ?? .medium
         quickAccessOnPointerDisplay = defaults.bool(forKey: Key.quickAccessOnPointerDisplay)
-        let closeAfter = defaults.integer(forKey: Key.quickAccessCloseAfter)
-        quickAccessCloseAfter = Self.quickAccessCloseDelays.contains(closeAfter) ? closeAfter : 0
+        let closeAfter = defaults.object(forKey: Key.quickAccessCloseAfter) as? Int ?? 3
+        quickAccessCloseAfter = Self.quickAccessCloseDelays.contains(closeAfter) ? closeAfter : 3
         quickAccessCloseAction = defaults.string(forKey: Key.quickAccessCloseAction).flatMap(QuickAccessCloseAction.init(rawValue:)) ?? .close
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         uploadAfterCapture = defaults.bool(forKey: Key.uploadAfterCapture)

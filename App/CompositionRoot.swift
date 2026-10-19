@@ -1575,6 +1575,12 @@ final class CompositionRoot {
         actions.pictureChangeOffer = { [weak self] item in self?.pictureChanges.offer(for: item) ?? .unsupported }
         actions.changePicture = { [weak self] item, change in self?.pictureChanges.apply(change, to: item) }
         actions.isBeingEdited = { [weak self] item in self?.annotations.openCaptureIDs.contains(item.id) ?? false }
+        actions.preview = { [weak self] item in
+            guard let self, let entry = history.item(id: item.id) else { return }
+            let scale = entry.pixelsPerPoint.map { CGFloat($0) }
+                ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
+            annotations.preview(entry, scale: scale)
+        }
         actions.sharing = makeSharingActions()
         return actions
     }

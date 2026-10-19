@@ -4927,6 +4927,23 @@
         }
       }
     },
+    "Cards close after 3 seconds by default. A card waits while the pointer is over it, its menu is open, it is being dragged, a preview shows it, it has the keyboard, the editor has its capture open, or its upload is going. When all of these end, it has at least 3 seconds more with the default delay, or 4 seconds with a longer delay. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cards close after 3 seconds by default. A card waits while the pointer is over it, its menu is open, it is being dragged, a preview shows it, it has the keyboard, the editor has its capture open, or its upload is going. When all of these end, it has at least 3 seconds more with the default delay, or 4 seconds with a longer delay. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卡片默认在 3 秒后关闭。鼠标悬停、菜单打开、拖动、预览、键盘操作、编辑或上传期间会暂停计时。这些操作全部结束后，默认延迟下会再保留至少 3 秒；更长的延迟下至少保留 4 秒。“关闭”会将截图留在截图历史中，但如果“通用”中的历史记录设为“从不”，未保存的截图也会随卡片移除。“保存并关闭”会直接在“通用”中指定的文件夹保存副本，保存失败时保留卡片。"
+          }
+        }
+      }
+    },
     "Cards stand on the display the capture was taken on. With this on they stand on the display where the pointer is when the capture is taken." : {
       "localizations" : {
         "es" : {
@@ -10026,6 +10043,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拖移選取區域時按住 Shift 可保持形狀。選擇區域時按 Tab 鍵可輸入以像素表示的寬度和高度；你在此設定的形狀，之後就是按住 Shift 時保持的形狀。"
+          }
+        }
+      }
+    },
+    "Hover and press Space to preview. Double-click to edit.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hover and press Space to preview. Double-click to edit."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将鼠标悬停在截图卡片上，按空格预览；双击进入完整编辑器。"
           }
         }
       }
@@ -15370,6 +15404,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按 %@ 以擷取區域。"
+          }
+        }
+      }
+    },
+    "Preview": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预览"
           }
         }
       }

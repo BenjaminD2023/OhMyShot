@@ -31,6 +31,19 @@ struct CardCountdownTests {
         #expect(countdown.isDue(at: 64))
     }
 
+    @Test(arguments: [CardCountdown.Hold.pointer, .preview])
+    func aThreeSecondCardPausesForInteractionAndHasThreeSecondsAfterward(_ hold: CardCountdown.Hold) {
+        var countdown = CardCountdown(interval: 3, at: 100)
+        #expect(!countdown.isDue(at: 102.9))
+        countdown.hold(hold, at: 102.9)
+        #expect(countdown.timeLeft(at: 1_000) == nil)
+        #expect(!countdown.isDue(at: 1_000))
+        countdown.release(hold, at: 1_000)
+        #expect(countdown.timeLeft(at: 1_000) == 3)
+        #expect(!countdown.isDue(at: 1_002.9))
+        #expect(countdown.isDue(at: 1_003))
+    }
+
     @Test func aCardKeepsWhatItHadWhenThatIsMoreThanTheGrace() {
         var countdown = CardCountdown(interval: 60, at: 0)
         countdown.hold(.menu, at: 10)

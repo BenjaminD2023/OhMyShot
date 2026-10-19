@@ -136,6 +136,14 @@ final class CardStackView: NSView {
         cards[id]?.setHovering(true)
     }
 
+    /// A card may appear under a stationary pointer, before AppKit sends its first tracking event.
+    func updatePointerHover() {
+        for (id, card) in cards {
+            let hovering = window?.isVisible == true && screenFrame(ofCard: id)?.contains(NSEvent.mouseLocation) == true
+            card.setHovering(hovering)
+        }
+    }
+
     func markSaved(_ id: UUID, at url: URL) {
         cards[id]?.item.savedURL = url
         cards[id]?.showSaved()
@@ -384,6 +392,11 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         self.item = item
         self.size = size
         super.init(frame: .zero)
+        if item.kind == .screenshot {
+            let hint = String(localized: "Hover and press Space to preview. Double-click to edit.", bundle: .module)
+            toolTip = hint
+            setAccessibilityHelp(hint)
+        }
         wantsLayer = true
         guard let layer else { return }
         layer.masksToBounds = false
@@ -612,7 +625,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         ]
         if isPicture { actions.append(action(String(localized: "Annotate", bundle: .module)) { [weak self] in self?.onAnnotate?() }) }
         actions.append(action(String(localized: "Open", bundle: .module)) { [weak self] in self?.onOpen?() })
-        actions.append(action(String(localized: "Quick Look", bundle: .module)) { [weak self] in self?.onCommand?(.quickLook) })
+        let previewTitle = isPicture ? String(localized: "Preview", bundle: .module) : String(localized: "Quick Look", bundle: .module)
+        actions.append(action(previewTitle) { [weak self] in self?.onCommand?(.quickLook) })
         if isPicture {
             actions.append(action(String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onRecognizeText?() })
             actions.append(action(String(localized: "Pin to Screen", bundle: .module)) { [weak self] in self?.onPin?() })
@@ -739,6 +753,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
 
     /// The shade and the buttons fade in over a moment, or simply appear with Reduce Motion on.
     func setHovering(_ hovering: Bool) {
+        guard hovering != isHovering else { return }
         hoverGeneration += 1
         let generation = hoverGeneration
         let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Theme.Motion.fade
@@ -858,7 +873,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         } else {
             add(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle", #selector(annotateClicked), .annotate)
             add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked), .open)
-            add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
+            add(String(localized: "Preview", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
             add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked), .recognizeText)
             add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked), .pin)
             add(String(localized: "Print…", bundle: .module), "printer", #selector(printClicked), .print)

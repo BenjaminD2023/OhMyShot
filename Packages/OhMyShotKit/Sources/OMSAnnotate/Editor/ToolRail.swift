@@ -21,6 +21,15 @@ final class ToolRail: NSView {
         [.redact, .spotlight],
         [.crop, .background],
     ]
+    /// The quick preview keeps the everyday marks at hand; Edit reveals the rest in the same session.
+    static let previewGroups: [[AnnotationTool]] = [
+        [.select],
+        [.arrow, .rectangle, .pen, .highlighter],
+        [.text],
+        [.crop],
+    ]
+    private(set) var displayedGroups = ToolRail.groups
+    var tools: [AnnotationTool] { displayedGroups.flatMap { $0 } }
 
     private var container = NSView()
     private let backing = NSView()
@@ -42,7 +51,28 @@ final class ToolRail: NSView {
         stack.orientation = .vertical
         stack.spacing = 2
         stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
-        for (index, group) in Self.groups.enumerated() {
+        buildChips()
+        backing.wantsLayer = true
+        installContainer()
+        setAccessibilityElement(true)
+        setAccessibilityRole(.toolbar)
+        setAccessibilityLabel(String(localized: "Tools", bundle: .module))
+        applyAppearance()
+    }
+
+    func showPreviewTools(_ preview: Bool) {
+        let groups = preview ? Self.previewGroups : Self.groups
+        guard displayedGroups != groups else { return }
+        displayedGroups = groups
+        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        chips.removeAll()
+        buildChips()
+        select(selected)
+        needsLayout = true
+    }
+
+    private func buildChips() {
+        for (index, group) in displayedGroups.enumerated() {
             if index > 0 {
                 let divider = NSBox()
                 divider.boxType = .separator
@@ -58,12 +88,6 @@ final class ToolRail: NSView {
                 stack.addArrangedSubview(makeChip(tool))
             }
         }
-        backing.wantsLayer = true
-        installContainer()
-        setAccessibilityElement(true)
-        setAccessibilityRole(.toolbar)
-        setAccessibilityLabel(String(localized: "Tools", bundle: .module))
-        applyAppearance()
     }
 
     /// Glass, or a solid capsule with Reduce Transparency; swapped when the setting changes.
