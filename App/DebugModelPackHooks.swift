@@ -114,7 +114,8 @@ struct DebugModelPackHooks {
             }
         case "modelpack-render":
             // Settings › Tools behind the wallpaper as <name>.png (modelpack-tools); consent=1 opens the first-download
-            // sheet for the pack (license=1 an installed pack's license sheet) and renders it as <name>-consent.png. The
+            // sheet for the pack (license=1 an installed pack's license sheet, switch=1 the confirmation of turning cloud
+            // reading off, with cloud-demo's model) and renders it as <name>-consent.png. The
             // window closes once captured.
             // Each render has a window of its own, closed once it is captured, so no sheet stays over the next.
             Self.settings?.close()
@@ -132,11 +133,18 @@ struct DebugModelPackHooks {
                 }
                 try? await Task.sleep(for: .milliseconds(600))
                 guard let window = controller.window else { return }
-                if value("consent") == "1" || value("license") == "1", let pack {
-                    let sheet: Notification.Name = value("license") == "1" ? .debugOpenModelPackLicense : .debugOpenModelPackConsent
+                if value("consent") == "1" || value("license") == "1" || value("switch") == "1", let pack {
+                    let sheet: Notification.Name = value("switch") == "1" ? .debugOpenCloudSwitch
+                        : value("license") == "1" ? .debugOpenModelPackLicense : .debugOpenModelPackConsent
                     NotificationCenter.default.post(name: sheet, object: nil, userInfo: ["id": pack.id])
                     try? await Task.sleep(for: .milliseconds(Int(value("wait") ?? "") ?? 1500))
                     if let sheet = window.attachedSheet {
+                        // A sheet's buttons and their keys: "\r" is the default (Return), "\u{1b}" Escape.
+                        func buttons(in view: NSView) -> [NSButton] {
+                            view.subviews.flatMap { ($0 as? NSButton).map { [$0] } ?? buttons(in: $0) }
+                        }
+                        let keys = sheet.contentView.map(buttons(in:))?.map { "\($0.title)=\($0.keyEquivalent.debugDescription)" } ?? []
+                        Log.app.notice("debug.modelpack-render sheet buttons \(keys.joined(separator: ", "), privacy: .public)")
                         await capture(sheet, "\(value("name") ?? "modelpack-tools")-consent")
                     } else {
                         Log.app.error("debug.modelpack-render no sheet")

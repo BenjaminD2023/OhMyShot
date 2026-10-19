@@ -369,6 +369,9 @@ struct CloudAnswerTests {
         #expect(CloudReadingError.from(status: 529, body: Data()) == .overloaded(nil))
         #expect(CloudReadingError.from(status: 400, body: Data("<html>bad</html>".utf8)) == .service(status: 400, message: nil))
         #expect(CloudReadingError.from(status: 500, body: Data("upstream timed out".utf8)) == .service(status: 500, message: "upstream timed out"))
+        // The service's own words are set apart from the sentence, not run on after it.
+        #expect(CloudReadingError.keyRejected("invalid x-api-key").errorDescription == "The service didn’t accept the API key. It said: “invalid x-api-key”")
+        #expect(CloudReadingError.overloaded(" ").errorDescription == "The service is busy. Try again in a moment.")
     }
 }
 

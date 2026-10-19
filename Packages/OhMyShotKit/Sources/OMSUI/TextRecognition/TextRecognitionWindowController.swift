@@ -1539,13 +1539,9 @@ struct TablePreview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// A column of figures: every cell below the header starts with a digit, maybe after a sign or a
-    /// currency symbol ("$20", "100 GB", "−3%").
+    /// A column of figures (`TableTabStops.holdsFigures`).
     static func holdsFigures(_ table: OCRTable, column: Int) -> Bool {
-        let cells = table.rows.dropFirst().compactMap { $0.indices.contains(column) ? $0[column] : nil }
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        return !cells.isEmpty && cells.allSatisfy { $0.range(of: #"^[\p{Sc}+\-−±]?\s?\d"#, options: .regularExpression) != nil }
+        TableTabStops.holdsFigures(table.rows, column: column)
     }
 }
 

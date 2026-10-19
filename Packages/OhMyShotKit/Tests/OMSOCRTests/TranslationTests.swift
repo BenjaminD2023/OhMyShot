@@ -437,6 +437,11 @@ struct TranslationOverlayTests {
         // A misread that leaves out half the line is held to the height.
         let misread = OCRLine(text: "Quick", box: CGRect(x: 0, y: 0, width: width("Quick Access", 30), height: 30), confidence: 1)
         #expect(TranslationOverlay.typeSize(of: misread) == 37.5)
+        // A formula in the line is as wide as it is drawn, not as its LaTeX (three times as wide here).
+        let latex = #"each step moves $\theta_{t+1}=\theta_{t}-\eta\nabla L(\theta_{t})$ downhill"#
+        let drawn = MathText.readable(in: latex)
+        let formula = OCRLine(text: latex, box: CGRect(x: 0, y: 0, width: width(drawn, 30), height: 34), confidence: 1, math: .inline)
+        #expect(abs(TranslationOverlay.typeSize(of: formula) - 30) < 0.5)
     }
 
     @Test func neighborsOfOneStyleAreOneSize() {
