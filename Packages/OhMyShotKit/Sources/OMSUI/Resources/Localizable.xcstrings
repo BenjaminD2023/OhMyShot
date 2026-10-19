@@ -1,40 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Color picker size": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Color picker size"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "取色器大小"
-          }
-        }
-      }
-    },
-    "Choose how large the color picker appears at the pointer before selecting a screenshot area. The screen stays at its original scale. It hides when you start the selection. The new size applies to your next capture.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose how large the color picker appears at the pointer before selecting a screenshot area. The screen stays at its original scale. It hides when you start the selection. The new size applies to your next capture."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "调整截图框选前指针处取色器的大小，画面保持原始比例，不会放大。开始框选后自动隐藏，新的大小在下次截图时生效。"
-          }
-        }
-      }
-    },
     "%@ can’t be translated into %@" : {
       "localizations" : {
         "en" : {
@@ -11848,6 +11814,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "容差越低，找到的邊界越細；容差越高，越會忽略細微的顏色變化。這會影響量尺線與選取範圍貼齊。測量時按 T 鍵循環切換預設，按 +/− 調整；所選的值會記在這裡。"
+          }
+        }
+      }
+    },
+    "Magnifier" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lupa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loupe"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ルーペ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放大镜"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放大鏡"
           }
         }
       }
@@ -23966,6 +23966,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "「辨識出的文字」視窗的按鈕這樣稱呼它：用 Claude 讀取。"
+          }
+        }
+      }
+    },
+    "What the screenshot and Annotate Area overlays show at the pointer before you choose an area. Magnified enlarges the pixels around it, to place an edge on the exact pixel. Actual Size shows them at their own size in a clear circle centered on the pointer, which goes when you start dragging; the crosshair stays." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que las superposiciones de captura de pantalla y de Anotar área muestran en el puntero antes de elegir un área. Ampliada amplía los píxeles a su alrededor, para colocar un borde en el píxel exacto. Tamaño real los muestra a su propio tamaño en un círculo claro centrado en el puntero, que desaparece al empezar a arrastrar; la cruz se mantiene."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que les superpositions de capture d’écran et d’Annoter une zone montrent au pointeur avant de choisir une zone. Agrandie agrandit les pixels autour, pour placer un bord sur le pixel exact. Taille réelle les montre à leur propre taille dans un cercle clair centré sur le pointeur, qui disparaît dès que vous commencez à faire glisser ; le réticule reste."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショットと「範囲に注釈を付ける」で、範囲を選ぶ前にポインタの位置に表示されるもの。「拡大」はポインタ周辺のピクセルを拡大し、端を正確なピクセルに合わせられます。「実寸」はポインタを中心とした透明な円の中にピクセルを実際のサイズで表示し、ドラッグを始めると円は消え、十字線は残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截图和“标注区域”在你选定区域之前，于指针处显示的内容。“放大”会放大指针周围的像素，便于把边缘放在准确的像素上。“实际大小”在以指针为中心的清晰圆圈里按原始大小显示它们，开始拖动时圆圈消失，十字准线保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截圖和「標註區域」在你選定區域之前，於指標處顯示的內容。「放大」會放大指標周圍的像素，方便把邊緣放在準確的像素上。「實際大小」在以指標為中心的清晰圓圈裡按原始大小顯示它們，開始拖移時圓圈消失，十字準線保留。"
           }
         }
       }

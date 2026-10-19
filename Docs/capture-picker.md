@@ -1,15 +1,12 @@
-# Capture picker
+# Capture magnifier
 
-Before selecting a screenshot or annotation area, the color picker is centered on the pointer. The center of its target border marks the physical pixel that the color reading samples; moving near a display edge clips the lens instead of moving that target. The color reading stays on screen.
+Settings → Capture → Magnifier chooses what screenshots (All-In-One and the Self-Timer's choosing too) and Annotate Area show at the pointer before an area is chosen:
 
-The first area press immediately hides the color picker, color reading, and separate crosshair on every display. They stay hidden during the drag and subsequent pointer moves, tiny clicks, and area/window switches until a new capture session begins. Selection borders, size readings, and keyboard adjustments continue to work.
+- **Magnified** (the default): the 120 pt loupe below and right of the pointer, 15 captured pixels across at 8 pt each, with a faint grid, the accent center cell, and the crosshair at the pointer. It follows the pointer through the drag, so an edge can be put on the exact pixel.
+- **Actual Size**: a lens centered on the pointer, Small (75 pt, the default), Medium (90 pt), or Large (120 pt), showing the screen at its own scale with no grid. The picture in it is 75% opaque over a clear backing, so the area under the pointer shows undimmed; Reduce Transparency makes it opaque. Its center cell is the target, in place of the crosshair, stroked white or black against the pixel under it over an outline of the other; the color reading under it is what C copies. Near a display's edge the lens runs off the edge rather than move off its target, and the reading stays on screen.
 
-Settings → Capture → Color picker size remembers Small (75 pt, the default), Medium (90 pt), or Large (120 pt) for the next capture. The screen image stays at its original 1:1 scale, without enlargement or a pixel grid. Standard area capture, annotation, All-In-One, and Self-Timer use the chosen size.
+With Actual Size, the first press puts the lens and its reading away on every display, and the crosshair marks the pointer through the drag. A click with no drag leaves no selection, so the lens comes back: the overlay hides the system pointer, and without it nothing would show where the pointer is.
 
-The picker image is 75% opaque, while the target border and reading stay opaque. Reduce Transparency restores the opaque preview. The border chooses white or black using the sampled pixel's existing sRGB contrast calculation and keeps an opposite-color outline. Appearance changes do not override that choice. Sampling and copied colors use the original captured pixels.
+Pick Color, Capture Text, recording, and scrolling keep the magnified loupe whatever the setting. Sampled and copied colors are the captured pixels, unchanged.
 
-Pick Color keeps its offset 120 pt lens and crosshair, with the adaptive target border. Recording and scrolling selectors keep their existing offset lens and accent border.
-
-![Synthetic native overlay: targeting, first press, and selection](assets/capture-picker.gif)
-
-The demonstration renders the actual overlay over generated pixels; it contains no screen capture or personal data. Unit coverage includes 1×/2× geometry, display edges, cross-display suppression, late frames, reused sessions and sizes, persisted settings, saturated colors, appearance refresh, and exact sampled colors.
+Unit coverage (`OverlayLoupeTests`) includes 1×/2× geometry, display edges, the first press across displays, a click with no drag, late frames, reused sessions and sizes, saturated colors, appearance changes, and the default magnified loupe.

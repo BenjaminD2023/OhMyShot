@@ -66,8 +66,10 @@ final class OverlayView: NSView {
     private var capturedFrame: CapturedFrame?
     private var pointer: CGPoint?
     /// Every display receives the first area press, even before the selection has any size. Once it
-    /// begins, the picker stays out of the way until a new capture session resets the view.
+    /// begins, the actual-size lens stays out of the way, the crosshair staying, until a click with no drag
+    /// leaves no selection or a new capture session resets the view.
     private var hasStartedAreaSelection = false
+    private var captureLoupeStyle: CaptureLoupeStyle = .magnified
     private var captureLoupeSize: CaptureLoupeSize = .small
     /// Set by `simulate`, so the real (hidden) pointer cannot move a scripted render.
     private var isSimulated = false
@@ -140,7 +142,7 @@ final class OverlayView: NSView {
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
         purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex,
-        captureLoupeSize: CaptureLoupeSize = .small, measureUnit: MeasureUnit = .points,
+        captureLoupeStyle: CaptureLoupeStyle = .magnified, captureLoupeSize: CaptureLoupeSize = .small, measureUnit: MeasureUnit = .points,
         measureTolerance: MeasureTolerance = .medium, measureSnapsToContent: Bool = true,
         allInOne: Bool = false, snapsToText: Bool = false
     ) {
@@ -155,6 +157,7 @@ final class OverlayView: NSView {
         capturedFrame = nil
         increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         self.purpose = purpose
+        self.captureLoupeStyle = captureLoupeStyle
         self.captureLoupeSize = captureLoupeSize
         self.colorFormat = colorFormat
         isAllInOne = allInOne && purpose == .screenshot
@@ -347,11 +350,14 @@ final class OverlayView: NSView {
         self.selection = selection
         self.showsReading = showsReading
         let hidesPicker = usesCenteredPicker && !hasStartedAreaSelection && (isDragging || selection.rect != nil)
+        // A click with no drag leaves no selection: the lens comes back, so the hidden pointer is never lost.
+        let restoresPicker = usesCenteredPicker && hasStartedAreaSelection && !isDragging && selection.rect == nil
         if hidesPicker { hasStartedAreaSelection = true }
+        if restoresPicker { hasStartedAreaSelection = false }
         if !toolbar.isHidden { toolbar.alphaValue = isDragging && selection.rect != nil ? 0 : 1 }
         withoutAnimation {
             updateSelectionLayers()
-            if hidesPicker { updatePointer(pointer) }
+            if hidesPicker || restoresPicker { updatePointer(pointer) }
         }
     }
 
@@ -802,9 +808,10 @@ final class OverlayView: NSView {
         return path
     }
 
-    /// The magnifier's center pixel is the capture target, replacing the separate crosshair until
-    /// the first press. Pick Color and the live recording/scrolling selectors keep their own layout.
-    private var usesCenteredPicker: Bool { purpose == .screenshot || purpose == .annotate }
+    /// The actual-size lens, when Settings choose it for screenshots and Annotate Area: its center cell is the target,
+    /// in place of the crosshair, until the first press. Pick Color and the live recording/scrolling selectors keep the
+    /// magnified lens.
+    private var usesCenteredPicker: Bool { captureLoupeStyle == .actualSize && (purpose == .screenshot || purpose == .annotate) }
 
     /// Choose against the sampled screen pixel, independent of the app's Light/Dark appearance.
     /// The opposite outline keeps the target legible when its neighboring pixels differ sharply.
@@ -853,8 +860,9 @@ final class OverlayView: NSView {
             return
         }
 
+        // Once an area is begun, the lens and its reading go; the crosshair, drawn above, marks the pointer.
         if usesCenteredPicker, hasStartedAreaSelection {
-            pointerLayers.forEach { $0.isHidden = true }
+            for layer in [loupeShadow, loupe, loupeRim, loupePill.layer] { layer.isHidden = true }
             return
         }
 

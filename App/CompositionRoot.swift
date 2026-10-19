@@ -273,6 +273,7 @@ final class CompositionRoot {
         // Where the blocks of text on a frozen screen lie, found quickly and never read, for a selection's edges
         // to snap to when Settings say so.
         overlay.textBlocks = TextBlockFinder(isOn: { [settings = self.settings] in settings.snapSelectionToText }, find: { await TextBlocks.find(in: $0) })
+        overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
         if #available(macOS 27, *) {
             replayStorage = ReplayCoordinator(settings: settings, displays: displays, capturer: capturer, permissions: permissions, recordings: recordings)
@@ -436,6 +437,11 @@ final class CompositionRoot {
         observations.append(Task { [weak self] in
             for await size in Observations({ settings.captureLoupeSize }) {
                 self?.overlay.captureLoupeSize = size
+            }
+        })
+        observations.append(Task { [weak self] in
+            for await style in Observations({ settings.captureLoupeStyle }) {
+                self?.overlay.captureLoupeStyle = style
             }
         })
         observations.append(Task { [weak self] in

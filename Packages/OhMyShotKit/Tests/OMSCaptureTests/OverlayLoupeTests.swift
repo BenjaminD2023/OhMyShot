@@ -40,8 +40,9 @@ struct OverlayLoupeTests {
         return selection
     }
 
-    private func expectPickerHidden(_ view: OverlayView) {
-        #expect(!view.debugPointerLayers.crosshair)
+    /// Once an area is begun: the lens and its reading gone, the crosshair marking the hidden pointer.
+    private func expectLensHidden(_ view: OverlayView, crosshair: Bool = true) {
+        #expect(view.debugPointerLayers.crosshair == crosshair)
         #expect(view.debugPointerLayers.loupe == nil)
         #expect(view.debugPointerLayers.colorReading == nil)
     }
@@ -78,7 +79,7 @@ struct OverlayLoupeTests {
             for purpose in [OverlayController.Purpose.screenshot, .annotate] {
                 let view = OverlayView(display: fixture.display)
                 defer { view.clear() }
-                view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose)
+                view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose, captureLoupeStyle: .actualSize)
                 view.show(fixture.frame, frozen: true)
                 let lens = try #require(view.debugPointerLayers.loupe)
                 #expect(lens.midX == point.x && lens.midY == point.y)
@@ -101,7 +102,7 @@ struct OverlayLoupeTests {
                 let fixture = try fixture(scale: scale, point: point)
                 let view = OverlayView(display: fixture.display)
                 defer { view.clear() }
-                view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false)
+                view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, captureLoupeStyle: .actualSize)
                 view.show(fixture.frame, frozen: true)
                 let lens = try #require(view.debugPointerLayers.loupe)
                 let reading = try #require(view.debugPointerLayers.colorReading)
@@ -120,7 +121,7 @@ struct OverlayLoupeTests {
             defer { view.clear() }
             for purpose in [OverlayController.Purpose.screenshot, .annotate] {
                 for size in CaptureLoupeSize.allCases {
-                    view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose, captureLoupeSize: size)
+                    view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose, captureLoupeStyle: .actualSize, captureLoupeSize: size)
                     view.show(fixture.frame, frozen: true)
                     let image = view.debugLoupeImageGeometry
                     let pixelsAcross = image.contentsRect.width * CGFloat(fixture.frame.image.width)
@@ -130,7 +131,7 @@ struct OverlayLoupeTests {
                     #expect(view.color(at: fixture.global)?.hex == "#123456")
                 }
             }
-            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color)
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color, captureLoupeStyle: .actualSize)
             view.show(fixture.frame, frozen: true)
             let image = view.debugLoupeImageGeometry
             #expect(abs(image.contentsRect.width * CGFloat(fixture.frame.image.width) - 15) < 0.0001)
@@ -145,36 +146,41 @@ struct OverlayLoupeTests {
         ] {
             let view = OverlayView(display: fixture.display)
             defer { view.clear() }
-            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: allInOne, purpose: purpose, allInOne: allInOne)
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: allInOne, purpose: purpose, captureLoupeStyle: .actualSize, allInOne: allInOne)
             view.show(fixture.frame, frozen: true)
             #expect(view.debugPointerLayers.loupe != nil)
             let selection = firstPress(on: fixture.display, at: fixture.global)
             #expect(selection.rect == nil)
             view.show(selection: selection, showsReading: false, isDragging: true)
-            expectPickerHidden(view)
+            expectLensHidden(view)
         }
     }
 
-    @Test func lateFramesPointerMovementAndModeChangesCannotRestoreASuppressedPicker() throws {
+    @Test func lateFramesAndPointerMovesKeepTheLensAwayUntilAClickLeavesNoSelection() throws {
         let fixture = try fixture()
         let view = OverlayView(display: fixture.display)
         defer { view.clear() }
-        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false)
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, captureLoupeStyle: .actualSize)
         var selection = firstPress(on: fixture.display, at: fixture.global)
         view.show(selection: selection, showsReading: false, isDragging: true)
-        expectPickerHidden(view)
+        expectLensHidden(view)
         view.show(fixture.frame, frozen: true)
         view.movePointer(to: CGPoint(x: fixture.global.x + 0.5, y: fixture.global.y - 0.5))
-        expectPickerHidden(view)
-        // A click too small to keep a selection still counts as the session's first press.
-        selection.reset()
-        view.show(selection: selection, showsReading: false, isDragging: false)
         view.switchMode(to: .window, windows: [])
         view.switchMode(to: .area, windows: [])
-        view.movePointer(to: fixture.global)
         view.viewDidChangeEffectiveAppearance()
-        view.simulate(pointer: fixture.global)
-        expectPickerHidden(view)
+        expectLensHidden(view)
+        // A click too small to keep a selection leaves none: the lens comes back, or nothing would show where the
+        // hidden pointer is.
+        selection.reset()
+        view.show(selection: selection, showsReading: false, isDragging: false)
+        let lens = try #require(view.debugPointerLayers.loupe)
+        #expect(lens.midX == fixture.global.x + 0.5 && lens.midY == fixture.global.y - 0.5)
+        #expect(view.debugPointerLayers.colorReading != nil)
+        #expect(!view.debugPointerLayers.crosshair)
+        // And the next press puts it away again.
+        view.show(selection: firstPress(on: fixture.display, at: fixture.global), showsReading: false, isDragging: true)
+        expectLensHidden(view)
     }
 
     @Test func theSharedFirstPressSuppressesThePickerOnOtherDisplaysToo() throws {
@@ -183,7 +189,7 @@ struct OverlayLoupeTests {
         let views = [OverlayView(display: left.display), OverlayView(display: right.display)]
         defer { views.forEach { $0.clear() } }
         for (view, frame) in zip(views, [left.frame, right.frame]) {
-            view.reset(pointer: left.global, mode: .area, windows: [], showsToolbar: false)
+            view.reset(pointer: left.global, mode: .area, windows: [], showsToolbar: false, captureLoupeStyle: .actualSize)
             view.show(frame, frozen: true)
         }
         #expect(views[0].debugPointerLayers.loupe != nil)
@@ -191,31 +197,55 @@ struct OverlayLoupeTests {
         selection.begin(at: left.global)
         for view in views { view.show(selection: selection, showsReading: false, isDragging: true) }
         for view in views { view.movePointer(to: right.global) }
-        for view in views { expectPickerHidden(view) }
+        // The pointer is over the right display now: its crosshair shows there alone.
+        expectLensHidden(views[0], crosshair: false)
+        expectLensHidden(views[1])
     }
 
     @Test func aNewSessionRestoresTheCenteredPickerOnAReusedView() throws {
         let fixture = try fixture()
         let view = OverlayView(display: fixture.display)
         defer { view.clear() }
-        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .annotate)
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .annotate, captureLoupeStyle: .actualSize)
         view.show(fixture.frame, frozen: true)
         view.show(selection: firstPress(on: fixture.display, at: fixture.global), showsReading: false, isDragging: true)
         view.enterAnnotation()
-        expectPickerHidden(view)
+        expectLensHidden(view, crosshair: false)
         view.clear()
-        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false)
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, captureLoupeStyle: .actualSize)
         view.show(fixture.frame, frozen: true)
         let lens = try #require(view.debugPointerLayers.loupe)
         #expect(lens.midX == fixture.global.x && lens.midY == fixture.global.y)
         #expect(view.debugPointerLayers.colorReading != nil)
     }
 
+    @Test func theMagnifierIsTheDefaultAndStaysThroughTheDrag() throws {
+        let fixture = try fixture()
+        for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+            let view = OverlayView(display: fixture.display)
+            defer { view.clear() }
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose, captureLoupeSize: .large)
+            view.show(fixture.frame, frozen: true)
+            let lens = try #require(view.debugPointerLayers.loupe)
+            let offset = Theme.Loupe.offset + Theme.Loupe.diameter / 2
+            #expect(lens.midX == fixture.global.x + offset && lens.midY == fixture.global.y - offset)
+            #expect(lens.width == Theme.Loupe.diameter)
+            #expect(view.debugLoupeImageGeometry.gridVisible)
+            #expect(abs(view.debugLoupeImageGeometry.contentsRect.width * CGFloat(fixture.frame.image.width) - 15) < 0.0001)
+            #expect(view.debugPointerLayers.crosshair)
+            // The center cell is the accent's, as before the actual-size lens.
+            let accent = ScreenColor(Theme.cgColor(.controlAccentColor, for: view.effectiveAppearance))?.hex
+            #expect(view.debugLoupeCenterColors.stroke.flatMap { ScreenColor($0) }?.hex == accent)
+            view.show(selection: firstPress(on: fixture.display, at: fixture.global), showsReading: false, isDragging: true)
+            #expect(view.debugPointerLayers.loupe == lens && view.debugPointerLayers.crosshair)
+        }
+    }
+
     @Test func standaloneColorPickingKeepsItsOffsetLensAndCrosshair() throws {
         let fixture = try fixture()
         let view = OverlayView(display: fixture.display)
         defer { view.clear() }
-        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color)
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color, captureLoupeStyle: .actualSize)
         view.show(fixture.frame, frozen: true)
         let lens = try #require(view.debugPointerLayers.loupe)
         let offset = Theme.Loupe.offset + Theme.Loupe.diameter / 2
@@ -230,14 +260,14 @@ struct OverlayLoupeTests {
         let view = OverlayView(display: fixture.display)
         defer { view.clear() }
         for size in [CaptureLoupeSize.large, .small, .medium] {
-            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, captureLoupeSize: size)
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, captureLoupeStyle: .actualSize, captureLoupeSize: size)
             view.show(fixture.frame, frozen: true)
             let lens = try #require(view.debugPointerLayers.loupe)
             #expect(lens.size == CGSize(width: size.diameter, height: size.diameter))
             #expect(lens.midX == fixture.global.x && lens.midY == fixture.global.y)
             #expect(view.color(at: fixture.global)?.hex == "#123456")
         }
-        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color, captureLoupeSize: .small)
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color, captureLoupeStyle: .actualSize, captureLoupeSize: .small)
         view.show(fixture.frame, frozen: true)
         #expect(view.debugPointerLayers.loupe?.width == Theme.Loupe.diameter)
         #expect(view.debugPointerLayers.crosshair)
@@ -257,7 +287,7 @@ struct OverlayLoupeTests {
             for purpose in [OverlayController.Purpose.screenshot, .annotate, .color] {
                 let view = OverlayView(display: fixture.display)
                 defer { view.clear() }
-                view.reset(pointer: fixture.points[0], mode: .area, windows: [], showsToolbar: false, purpose: purpose)
+                view.reset(pointer: fixture.points[0], mode: .area, windows: [], showsToolbar: false, purpose: purpose, captureLoupeStyle: .actualSize)
                 view.show(fixture.frame, frozen: true)
                 for (point, sample) in zip(fixture.points, samples) {
                     view.movePointer(to: point)
@@ -286,7 +316,7 @@ struct OverlayLoupeTests {
         ].enumerated() {
             let point = fixture.points[index % 2]
             let isPicker = purpose == .screenshot || purpose == .annotate || purpose == .color
-            view.reset(pointer: point, mode: .area, windows: [], showsToolbar: false, purpose: purpose)
+            view.reset(pointer: point, mode: .area, windows: [], showsToolbar: false, purpose: purpose, captureLoupeStyle: .actualSize)
             if isPicker {
                 #expect(view.debugLoupeCenterColors.stroke.flatMap { ScreenColor($0) }?.hex == "#FFFFFF",
                         "A fresh session has no sampled pixel until its new frame arrives")

@@ -54,7 +54,9 @@ struct AppTextTests {
         func name(of app: pid_t) -> String { "App \(app)" }
     }
 
-    private static let later = ContinuousClock.now + .seconds(60)
+    /// A minute from when a test asks: a `let` was a minute from the first test's start, and gone by the time a test
+    /// ran late in a full, loaded run.
+    private static var later: ContinuousClock.Instant { .now + .seconds(60) }
 
     @Test func linesAreAskedAboutWhereThePictureShowsThem() {
         let screen = Screen()

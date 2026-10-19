@@ -91,6 +91,7 @@ final class CaptureCoordinator {
 
     /// Read session appearance directly so a changed preference applies before observation is delivered.
     private func configureCaptureOverlay() {
+        overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
     }
 
