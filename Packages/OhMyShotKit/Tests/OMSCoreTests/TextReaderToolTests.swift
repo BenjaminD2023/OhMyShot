@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import Synchronization
 import Testing
 @testable import OMSCore
 
@@ -101,6 +102,30 @@ struct TextReaderToolTests {
         printf '{"id":"%s","text":""}\\n' "$id"
         """)
         try await TextReaderTool.warm(formula: URL(filePath: "/packs/formula"), helper: reader, resources: ActiveResources())
+    }
+
+    private final class FoundCounts: Sendable {
+        let all = Mutex<[TextReaderTool.Found]>([])
+    }
+
+    @Test func tablesLeftForWantOfMemoryAreCounted() async throws {
+        // The pressure the app stands in for the system's goes to the reader, which says how many tables it left.
+        let reader = try helper(answering + """
+
+        case "$line" in *'"vlm":"/packs/vlm"'*) ;; *) exit 6 ;; esac
+        case "$line" in *'"pressure":"warning"'*) ;; *) exit 7 ;; esac
+        printf '{"id":"%s","found":1,"foundTables":0}\\n' "$id"
+        printf '{"id":"%s","formulas":[{"kind":"inline","box":[[1,2],[3,4]],"latex":"x"}],"tables":[],"tablesLeft":2}\\n' "$id"
+        """)
+        let found = FoundCounts()
+        let read = try await TextReaderTool.elements(
+            ofPictureAt: URL(filePath: "/tmp/p.png"), formulas: URL(filePath: "/packs/formula"), vlm: URL(filePath: "/packs/vlm"),
+            pressure: .warning, helper: reader, found: { counts in found.all.withLock { $0.append(counts) } }, resources: ActiveResources()
+        )
+        #expect(read.formulas.map(\.latex) == ["x"] && read.tables.isEmpty && read.tablesLeft == 2)
+        #expect(found.all.withLock { $0 } == [TextReaderTool.Found(formulas: 1, tables: 0)])
+        #expect(MemoryPressure(name: "critical") == .critical && MemoryPressure(name: "high") == nil)
+        #expect(MemoryPressure.warning > .normal && MemoryPressure.current() >= .normal)
     }
 
     @Test func tidyingReadsNothingAndSaysHowMuchWent() async throws {

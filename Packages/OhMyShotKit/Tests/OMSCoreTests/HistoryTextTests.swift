@@ -97,6 +97,10 @@ struct HistoryTextTests {
         #expect(waiting == [chinese.id, japanese.id])
         // The text it reads stays what was found.
         #expect(store.text(of: chinese) == "打开设置")
+        // Han or kana count side by side: one alone is Vision's reading of a formula's symbol or an icon.
+        #expect(!HistoryText.mayReadBetter("For a quadratic L（z）=臺a「Ax\n7<2/入max（A）."))
+        #expect(HistoryText.mayReadBetter("Open 设置 now") && HistoryText.mayReadBetter("设 置"))
+        #expect(!HistoryText.mayReadBetter("设\n置"))
     }
 
     @Test func textReadWithThePackIsReadAgainOnlyByAnotherVersionOfIt() throws {

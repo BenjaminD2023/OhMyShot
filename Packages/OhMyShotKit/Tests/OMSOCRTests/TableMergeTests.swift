@@ -33,6 +33,8 @@ struct TableMergeTests {
             == [["Name", "", "Size"], ["a", "", "1"], ["", "b", ""]])
         // A last row without its <nl>, and text broken over lines in a cell.
         #expect(TableText.rows(otsl: "<fcel>A<fcel>B<nl><fcel>first<br>second<fcel>2") == [["A", "B"], ["first second", "2"]])
+        // A line break the model writes as a backslash and an n; one that is the cell's text stays.
+        #expect(TableText.rows(otsl: #"<fcel>East<fcel>940\n(est.)<nl><fcel>\n<fcel>Line feed (\n)<nl>"#) == [["East", "940 (est.)"], [#"\n"#, #"Line feed (\n)"#]])
     }
 
     @Test func chartDataBecomesRowsOfCells() {
@@ -103,6 +105,64 @@ struct TableMergeTests {
             return line
         }
         #expect(refused(Self.read, lines: exact) == .appText)
+    }
+
+    @Test func aRowThePicturesEdgeCutsIsLeftToVision() {
+        // A table whose first row the picture's top cuts through: Vision read scraps there, the VLM a whole row it
+        // guessed, as on a crop of tests/page-table.png.
+        let box = CGRect(x: 37, y: 0, width: 785, height: 192)
+        let picture = CGRect(x: 0, y: 0, width: 1000, height: 400)
+        let rows = [["South", "980", "912", "-6.9%"], ["West", "1,105", "1,230", "+11.3%"], ["East", "860", "940", "+9.3%"]]
+        let below = [Self.line("South 980 912 -6.9%", y: 60), Self.line("West 1,105 1,230 +11.3%", y: 108), Self.line("East 860 940 +9.3%", y: 156)]
+        let paragraph = Self.line("Next quarter we expect the South to recover.", y: 250)
+        let scraps = [Self.line(",440 1,00 111.1/0", y: 2, width: 500)] + below + [paragraph]
+        let cut = TableMerge.merged(scraps, with: [TableMerge.Table(kind: .table, box: box, rows: [["Nortu", "1,240", "1,365", "+11.7%"]] + rows, isWhole: true)], in: picture)
+        #expect(cut.taken == [0] && cut.cutRows == 1)
+        #expect(cut.lines.map(\.text) == [",440 1,00 111.1/0", "South\t980\t912\t-6.9%", "West\t1,105\t1,230\t+11.3%", "East\t860\t940\t+9.3%", paragraph.text])
+        // The box's top past Vision's scraps (and the 4 px a line may stray over it).
+        #expect(cut.regions == [CGRect(x: 37, y: 30.5, width: 785, height: 161.5)])
+        #expect(cut.tables == [OCRTable(rows: rows)])
+        // Without the picture's bounds, as before: the guessed row is taken.
+        #expect(TableMerge.merged(scraps, with: [TableMerge.Table(kind: .table, box: box, rows: [["Nortu", "1,240", "1,365", "+11.7%"]] + rows, isWhole: true)]).lines[0].text == "Nortu\t1,240\t1,365\t+11.7%")
+
+        // A selection drawn just around the whole table: its edge rows read as Vision read them, and stay.
+        let north = ["North", "1,240", "1,385", "+11.7%"]
+        let whole = [Self.line("North 1,240 1,385 +11.7%", y: 2)] + below + [paragraph]
+        let tight = TableMerge.merged(whole, with: [TableMerge.Table(kind: .table, box: box, rows: [north] + rows, isWhole: true)], in: CGRect(x: 0, y: 0, width: 1000, height: 196))
+        #expect(tight.taken == [0] && tight.cutRows == 0 && tight.tables == [OCRTable(rows: [north] + rows)])
+
+        // The bottom row cut, which Vision read nothing of.
+        let bottom = TableMerge.merged(Array(whole.prefix(3)), with: [TableMerge.Table(kind: .table, box: box, rows: [north] + rows, isWhole: true)], in: CGRect(x: 0, y: 0, width: 1000, height: 196))
+        #expect(bottom.taken == [0] && bottom.cutRows == 1 && bottom.tables == [OCRTable(rows: [north] + rows.dropLast())])
+
+        // Only a sliver of the first row shows, which Vision read nothing of: the row the VLM guessed goes, and the
+        // next row is the table's, once.
+        let sliver = TableMerge.merged(below + [paragraph], with: [TableMerge.Table(kind: .table, box: box, rows: [north] + rows, isWhole: true)], in: picture)
+        #expect(sliver.taken == [0] && sliver.cutRows == 1)
+        #expect(sliver.lines.filter { $0.text.hasPrefix("South") }.count == 1)
+        #expect(sliver.regions.first?.minY == 59)
+
+        // A chart's rows are its data, not bands of the picture.
+        let chart = TableMerge.Table(kind: .chart, box: box, rows: [["Month", "Users"], ["Jan", "42"]], isWhole: true)
+        #expect(TableMerge.trimmed(chart, against: [], in: picture) == chart)
+    }
+
+    @Test func aTablesWrappedCellsDontReadAsCutRows() {
+        // Drawn just around a table whose header has a cell on two lines and whose last row has one, cells set at their
+        // tops: Vision reads each second line as a row of its own, which the edge rows hold.
+        func cell(_ text: String, x: CGFloat, y: CGFloat) -> OCRLine { Self.line(text, y: y, x: x, width: 120) }
+        let lines = [
+            cell("Region", x: 40, y: 2), cell("Monthly", x: 240, y: 2), cell("Q1", x: 440, y: 2), cell("revenue", x: 240, y: 30),
+            cell("North", x: 40, y: 70), cell("1,240", x: 240, y: 70), cell("1,385", x: 440, y: 70),
+            cell("South", x: 40, y: 118), cell("980", x: 240, y: 118), cell("912", x: 440, y: 118),
+            cell("East", x: 40, y: 166), cell("860", x: 240, y: 166), cell("940", x: 440, y: 166), cell("(est.)", x: 440, y: 194),
+        ]
+        let rows = [["Region", "Monthly revenue", "Q1"], ["North", "1,240", "1,385"], ["South", "980", "912"], ["East", "860", "940 (est.)"]]
+        let box = CGRect(x: 37, y: 0, width: 600, height: 222)
+        let merge = TableMerge.merged(lines, with: [TableMerge.Table(kind: .table, box: box, rows: rows, isWhole: true)], in: CGRect(x: 0, y: 0, width: 640, height: 224))
+        #expect(merge.taken == [0] && merge.cutRows == 0)
+        #expect(merge.tables == [OCRTable(rows: rows)])
+        #expect(TableMerge.visionRows(lines).map(\.count) == [3, 1, 3, 3, 3, 1])
     }
 
     @Test func theAnalysisTakesTheTableInPlaceOfVisions() {

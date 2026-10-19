@@ -15,14 +15,21 @@ public enum SecondReading {
     /// 1 kept Vision's Hangul over L2's Chinese.
     public static let revision = 2
 
-    /// Whether a second reading can change `lines` (L1's): two or more of their characters are Han or kana.
+    /// Whether a second reading can change `lines` (L1's): two of their characters or more are Han or kana side by side
+    /// (spaces between them allowed), as Chinese and Japanese are written. One alone among Latin letters, digits, and
+    /// symbols is Vision's reading of something else: of a formula's λ as 入 and ± as 土, on a page of English with
+    /// formulas (Tests/OMSOCRTests/Resources/Formulas), whose three lone characters had the panel wait 3 s for a second
+    /// reading with nothing to read; or of an icon. Counting them alone or side by side made no difference on the
+    /// benchmark's drawn pages and the real screenshots (29 of 40 read again either way).
     public static func wanted(_ lines: [OCRLine]) -> Bool {
-        var count = 0
-        for line in lines {
-            count += line.text.count(where: isSquare)
-            if count >= 2 { return true }
+        lines.contains { line in
+            var run = 0
+            for character in line.text where character != " " && character != "\u{3000}" {
+                run = isSquare(character) ? run + 1 : 0
+                if run >= 2 { return true }
+            }
+            return false
         }
-        return false
     }
 
     /// `first` (L1's lines, in reading order) with `second`'s (L2's) text where L2 reads better, and the lines only L2

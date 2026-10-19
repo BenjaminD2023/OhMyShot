@@ -1479,9 +1479,33 @@ Text waits for them before it copies. Recognize Text in Image reads them in the 
 (`"formulas"` with `"joinsWrappedLines"`). A picture without formulas costs a run of the text reader beside Vision: 0.2 s,
 145 MB at its peak, done by the time Vision is; Capture Text took 249 ms at the median with the pack, 244 ms without.
 
-**Not done yet:** skipping the L2 pack's second reading in the panel when the only CJK characters are Vision's reading of
-formulas (on the web page it ran, as it did before, and now shares the CPU with the formula reading: the text showed
-after 3.7 s); formulas in the history's search text; inline formulas translated with their LaTeX protected.
+**Since (2026-10-19):**
+
+- *A lone character asks for no second reading.* Vision reads a formula's symbols as single Han characters among the
+  Latin (入 for λ, 土 for ±, 臺 and 位 on the web page). `SecondReading.wanted`, and the history's `mayReadBetter` with
+  it, now counts Han and kana only side by side (spaces between allowed), as Chinese and Japanese are written. The web
+  page's text shows in 0.69–0.75 s, where it took 3.8–3.9 s (the panel waited its 3 s for a second reading with nothing
+  to read), and its formulas come in 4.3 s after the window opens, 4.8 s before (the formula reading no longer shares
+  the CPU with it). The dark page still reads two side by side ("土议", its ± and √) and waits; the Chinese page is read
+  again, as before. On the benchmark's 28 drawn pages and the 12 real screenshots, the same 29 are read again under
+  either rule.
+- *Translation keeps the LaTeX, and the picture shows it readable.* The system's translation models keep a formula's
+  `$…$` as it is and move it where the sentence needs it: so they did in 18 of 19 sentences with formulas, from and into
+  English, Chinese, and Japanese, put to them alone (the 19th lost a trailing `\,`). `Translator.restoringMath` puts a
+  changed formula back: one the source doesn't hold takes the only source formula a few characters from it, matched by
+  its text, never by its order (a translation moves them). The translated text, as the panel shows and copies it, keeps
+  the LaTeX. Drawn over the picture, LaTeX reads as code, so `MathText` draws it as plain text: Greek letters, operators,
+  and relations as their characters; scripts in Unicode's superscripts and subscripts where every character has one
+  (`x^(2q)` where one hasn't); a fraction a/b, in brackets beside more (½ for the simple ones); a root √. A formula
+  holding anything else (a matrix, an alignment, a command it doesn't know) is drawn as its LaTeX, whole. On the web
+  page, "θₜ₊₁=θₜ−η∇L(θₜ)", "L(x)=½xᵀAx", "−(2/n)(yᵢ−ŷᵢ)". A formula set apart stays as it is on the image, as before.
+- *Formulas stay out of the history's search text.* That text is read in the background, where plan rule 7 keeps the
+  packs' heavy readings out (the formula models take 185 MB on the CPU), and LaTeX isn't what anyone types into a
+  search field; what Vision read of a formula, its letters and digits, is there already.
+
+**Not done yet:** a price beside a formula on one line ("$1,000 grows to $1,628" by `$r$`) is taken for a formula from
+one `$` to the next (`TextAssembler.mathSpan`, as it was before), which a translation's picture now draws without its
+spaces.
 
 ## Cloud models (L4, M6, 2026-10-18)
 
@@ -1746,6 +1770,29 @@ rule left it):
   steps, so only the one way counts there; a chart without its values written on it is read as estimates from its bars,
   which this leaves out.
 
+**A row the picture's edge cuts** (2026-10-19). A selection whose edge crosses a row leaves the tops or bottoms of its
+characters. The VLM reads such a row as a whole one it guesses, which looks right: the drawn page with a table, cut
+through its first row, came back "Nortu 1,240 1,365 +11.7%" (the row says North and 1,385), and cut through its header,
+"Region" and "Rating" with Q1 and Q2 empty; Vision read the first as scraps (",440", "1,00", "111.1/0") and the header as
+nothing, and both tables were taken whole. Cut through a bottom row, the two crops tried were refused whole and kept
+Vision's lines. A wrong number that looks right is worse than scraps that look wrong, so `TableMerge.trimmed` keeps a
+table's first or last row, when the picture's edge lies within half a row of it, only if it reads as Vision read it: the
+same numbers both ways and nine in ten of the characters. Vision's reading of the row is taken from its own lines, not
+from the box split into even rows: Vision's lines inside the box in rows (heights overlapping by a third), and from the
+edge in, those rows the edge row holds better than the next row does (half their characters at least), so that a header
+cell on two lines, whose second line Vision reads as a row of its own, still counts as the header's. A row that goes
+takes the box's edge past its own lines, which stay as Vision read them; one Vision read nothing of (a sliver, a
+header's lowest pixels) takes the edge to just before the next row's lines, which the table then stands for, once. On
+seven crops: the two top cuts lost their guessed row and kept the rest; the two bottom cuts, refused before, now take
+their whole rows and leave the cut one to Vision ("1000" in one, nothing in the other); a crop drawn just around the
+whole table keeps every row, as does one around a drawn table with a header cell and a last cell on two lines; and a
+crop showing only a few pixels of a row read the rest once. Charts are left as they are (their rows are data, not rows
+of the picture), and a column the edge cuts is not looked for.
+
+That drawn table showed another thing: the VLM writes a line break inside a cell as a backslash and an n ("940" over
+"(est.)" came back as `940\n(est.)`), which went into the text as it was. `TableText` now makes it a space, but where it
+is the cell's own text (at its start or end, after a backslash, in brackets or quotes: a table of escape sequences).
+
 Two numbers of 22 that differ still pass: the VLM reads digits better than Vision, and either may be the one wrong. The
 panel's tables: Vision's that lie where a table was taken go, and the tables taken (a chart's data too) come after the
 rest; they have no cell boxes, which nothing in the panel needs. Translated (the panel's Translate, Translate Area), a row is
@@ -1755,8 +1802,14 @@ cover its cells.
 **Where.** Capture Text waits for the tables at most 10 s (`TextCaptureCoordinator.tableWait`) and copies Vision's
 reading of what is left; the panel shows Vision's reading first, with "Reading tables…" (or "Reading formulas and
 tables…") under it, and lets the VLM read for 60 s; Recognize Text in Image reads them in its run of the text reader.
-The history's search text doesn't: it reads in the background, and the VLM takes 2.6 GB. The text reader loads the VLM
-only once a table or chart was found. In the Dev app on the drawn page with a table (a paragraph, the table, a
+The history's search text doesn't, nor will it: it reads in the background, where plan rule 7 keeps the VLM's 2.6 GB
+out, and Vision's reading of a table's cells is in it already (only their order in rows is the VLM's). The text reader
+loads the VLM only once a table or chart was found, and not at all while the system is short of memory: with the
+kernel's memory pressure past normal (`kern.memorystatus_vm_pressure_level` above 1, Activity Monitor's yellow or red;
+`MemoryPressure`), the tables and charts stay as Vision read them, the answer says how many (`tablesLeft`), and the app's
+log says so. In the Dev app, with the pressure stood in for as a warning (`debug/memory-pressure?level=warning`), the
+drawn page's table stayed Vision's and no VLM was loaded; back on the system's (normal), it was taken in 1.65 s. A Mac
+with 8 GB, where the 2.6 GB reading is most likely to press the system itself, hasn't been tried. In the Dev app on the drawn page with a table (a paragraph, the table, a
 paragraph): the copied text is the paragraph, the five rows, and the paragraph, 5.4 s after Vision's reading the first
 time (the weights read from disk for the first time at that path, the kernels compiled), 1.2 s the next; a bar chart's
 data came in as "Jan 42" and so on under its title.
@@ -1766,7 +1819,6 @@ huggingface.co/MoraxCheng/ohmyshot-paddleocr-vl-1.6-mlx, commit 59c48a3 (`Tools/
 conversion of upstream revision c5630ab at 8 bits, byte-identical to the spike's; the layout model's files are the formula
 pack's).
 
-**Not done yet:** a table the selection cuts through is read as what shows, its cut rows included; tables in the history's
-search; the panel's tables have no cell boxes to outline on the picture; text, formulas, seals, and handwriting with the
+**Not done yet:** a column the selection's edge cuts through; the panel's tables have no cell boxes to outline on the picture; text, formulas, seals, and handwriting with the
 VLM (its "OCR:" reads text better than Vision on the bench, but whole screens make it loop, › L3 spike); a reading the
 deadline cut keeps Vision's lines for that table, though the rows read so far may be right.

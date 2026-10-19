@@ -2334,3 +2334,21 @@ Vision's reading the first time and 1.2 s the next; a picture without a table or
 beside Vision, as with the formula pack. The pack downloaded from Hugging Face at about 10 MB/s (1.12 GB in under two
 minutes).
 
+
+## M6 — Leftovers: lone characters, cut rows, memory pressure (2026-10-19)
+
+Dev app (Debug), both packs installed, the formula tests' web page (English with eight formulas) and the drawn page with
+a table, opened in the OCR panel from their files (Docs/ocr.md › Formulas among text › Since, › The VLM pack).
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| The web page: Vision's text shown (`ocr.analyze`) | 3826 / 3891 ms | 752 / 692 ms |
+| The web page: its formulas in, from the window's opening | about 4.8 s | 4.3 s (5.1 s the first time after a relaunch) |
+| The Chinese page: Vision's text shown, the second reading taken | — | 2954 ms (the second reading 2.4 s, as before) |
+| The table page, memory pressure stood in for as a warning | the table read (1.2–1.7 s) | Vision's lines, no VLM loaded |
+
+- The web page's panel waited 3 s for a second reading of three lone characters that Vision read in its formulas
+  (`SecondReading.wanted`); now it doesn't ask for one.
+- Checking the memory pressure is one `sysctlbyname` call in the text reader, before the VLM would load.
+- Drawing a translation's formulas readable (`MathText`) and putting a changed formula back (`Translator.restoringMath`)
+  work on the units' text only; the web page's translation took 3.4–3.5 s with or without them (the system's model).

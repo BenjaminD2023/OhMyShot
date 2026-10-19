@@ -24,12 +24,15 @@ public struct TranslationUnit: Sendable, Equatable {
     /// The union of its lines' boxes, in image pixels with a top-left origin.
     public var box: CGRect
     public var skip: Skip?
+    /// Whether it holds a formula (`$…$`), whose LaTeX the translation keeps as it is.
+    public var hasMath: Bool
 
-    public init(lines: [Int], text: String, box: CGRect, skip: Skip? = nil) {
+    public init(lines: [Int], text: String, box: CGRect, skip: Skip? = nil, hasMath: Bool = false) {
         self.lines = lines
         self.text = text
         self.box = box
         self.skip = skip
+        self.hasMath = hasMath
     }
 }
 
@@ -57,8 +60,11 @@ public enum TranslationUnits {
             let text = TextAssembler.joinWrapped(texts, wraps: members.dropLast().map { _ in true } + [false])
             let box = members.dropFirst().reduce(members[0].box) { $0.union($1.box) }
             // A formula's LaTeX is neither code nor figures: what is around it decides.
-            let prose = members.contains { $0.math != nil } ? text.replacing(TextAssembler.mathSpan, with: " ") : text
-            units.append(TranslationUnit(lines: current, text: text, box: box, skip: skip(prose, members: members, isCode: isCode, technical: technical)))
+            let hasMath = members.contains { $0.math != nil }
+            let prose = hasMath ? text.replacing(TextAssembler.mathSpan, with: " ") : text
+            units.append(TranslationUnit(
+                lines: current, text: text, box: box, skip: skip(prose, members: members, isCode: isCode, technical: technical), hasMath: hasMath
+            ))
             current = []
         }
         return units

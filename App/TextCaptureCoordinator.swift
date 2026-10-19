@@ -316,7 +316,7 @@ final class TextCaptureCoordinator {
                 Log.capture.notice("Capture Text put \(found.formulas.count, privacy: .public) formulas into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
             }
             if !found.tables.isEmpty {
-                let merge = TableMerge.merged(lines, with: found.tables)
+                let merge = TableMerge.merged(lines, with: found.tables, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
                 lines = merge.lines
                 Self.log(merge, of: found.tables, in: "Capture Text", after: ContinuousClock.now - started)
             }
@@ -579,8 +579,18 @@ final class TextCaptureCoordinator {
         let counted: (@Sendable (TextReaderTool.Found) -> Void)? = found.map { found in
             { @Sendable counts in found(.init(formulas: counts.formulas, tables: counts.tables)) }
         }
+        var pressure: MemoryPressure?
+        #if DEBUG
+        // debug/memory-pressure: what the reader takes the system's memory pressure to be.
+        pressure = UserDefaults.standard.string(forKey: "debugMemoryPressure").flatMap(MemoryPressure.init(name:))
+        #endif
         do {
-            let read = try await TextReaderTool.elements(ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, helper: helper, found: counted)
+            let read = try await TextReaderTool.elements(
+                ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, helper: helper, found: counted
+            )
+            if read.tablesLeft > 0 {
+                Log.capture.notice("Left \(read.tablesLeft, privacy: .public) tables and charts as Vision read them: the system is short of memory for the VLM pack")
+            }
             return .init(
                 formulas: read.formulas.map { formula in
                     FormulaMerge.Formula(kind: formula.kind == "display" ? .display : .inline, box: formula.box, latex: formula.latex)
@@ -598,7 +608,8 @@ final class TextCaptureCoordinator {
     /// What a merge of tables did, in numbers: how many were taken, and why each other was left.
     nonisolated static func log(_ merge: TableMerge.Merged, of tables: [TableMerge.Table], in surface: String, after elapsed: Duration) {
         let refusals = merge.refused.map { "\(tables[$0.index].kind.rawValue) \($0.refusal.rawValue)" }.joined(separator: ", ")
-        Log.capture.notice("\(surface, privacy: .public) took \(merge.taken.count, privacy: .public) of \(tables.count, privacy: .public) tables and charts read with the VLM pack\(refusals.isEmpty ? "" : " (left: \(refusals))", privacy: .public), \(String(describing: elapsed), privacy: .public) after Vision's reading")
+        let cut = merge.cutRows > 0 ? ", \(merge.cutRows) rows the picture's edge cut left as Vision read them" : ""
+        Log.capture.notice("\(surface, privacy: .public) took \(merge.taken.count, privacy: .public) of \(tables.count, privacy: .public) tables and charts read with the VLM pack\(refusals.isEmpty ? "" : " (left: \(refusals))", privacy: .public)\(cut, privacy: .public), \(String(describing: elapsed), privacy: .public) after Vision's reading")
     }
 
     /// `image` as an uncompressed TIFF for the text reader, written and read in a few milliseconds; the caller removes it.

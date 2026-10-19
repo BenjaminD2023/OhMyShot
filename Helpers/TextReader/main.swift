@@ -24,13 +24,15 @@
 // alone or beside "formulas", the tables and charts the layout model finds are read with the VLM too (Docs/ocr.md › The
 // VLM pack), one layout run serving both packs: the answer holds them as rows of cells, and with "joinsWrappedLines"
 // the text holds those that bear themselves out against Vision's reading, a row a line; "seconds" is how long the VLM
-// may read before what is left stays as Vision read it. With "vlm" and "task": "ocr", "table", "formula", or "chart",
+// may read before what is left stays as Vision read it. With the system's memory pressure past normal (or "pressure":
+// "warning" or "critical" said for it), the VLM isn't loaded and the tables and charts stay as Vision read them, the
+// answer saying how many with "tablesLeft". With "vlm" and "task": "ocr", "table", "formula", or "chart",
 // the VLM reads the whole picture as that; with "warm" its model is loaded and nothing is read.
 // Output, on standard output: one JSON object per line as each picture is read, in order,
 // {"id": "…", "text": "…"}, {"id": "…", "lines": [{"text": "…", "box": [[x, y], [width, height]], "confidence": 0.9}]},
 // {"id": "…", "latex": "…", "ending": "end"} (or "repeats", "cacheFull", "deadline": not a whole formula),
 // {"id": "…", "found": 3, "foundTables": 1} first for those, {"id": "…", "formulas": [{"kind": "inline", "box": [[x, y], [width, height]], "latex": "…"}], "tables": [{"kind":
-// "table", "box": …, "rows": [["…"]], "whole": true}]},
+// "table", "box": …, "rows": [["…"]], "whole": true}], "tablesLeft": 1},
 // {"id": "…", "removed": 2}, {"id": "…", "text": "…", "ending": "end"} (or "length", "stopped") for the VLM pack, or
 // {"id": "…", "error": "…"}. The process exits once its input ends and every picture is
 // read.
@@ -55,6 +57,9 @@ struct Job: Decodable {
     var vlm: String?
     var task: String?
     var seconds: Double?
+    /// What to take the system's memory pressure to be, by name (`MemoryPressure`), rather than ask the kernel: for checking
+    /// what happens when it is pressed.
+    var pressure: String?
 }
 
 nonisolated struct Line: Encodable {
@@ -87,6 +92,8 @@ nonisolated struct Result: Encodable {
     var foundTables: Int?
     var formulas: [Formula]?
     var tables: [Table]?
+    /// Tables and charts found but left to Vision, the system being short of memory for the VLM.
+    var tablesLeft: Int?
     var removed: Int?
     var error: String?
 }
@@ -163,10 +170,12 @@ func layoutFinder(formulas: String?, vlm: String?) async throws -> LayoutFinder 
 /// The formulas the formula pack reads and the tables and charts the VLM pack reads in the picture in `file`, as one
 /// layout run finds them, `found` told how many formulas and how many tables there are to read; none in a picture too large to look in
 /// (`LayoutFinder.finds`), which isn't decoded for it. The VLM reads until `seconds` have gone, and tables and charts
-/// still waiting then are left out.
+/// still waiting then are left out; with the system's memory `pressure` past normal, the VLM isn't loaded at all and
+/// every table and chart is left out (`left`).
 func elements(
-    inPictureAt file: URL, formulas formulaPack: String?, vlm vlmPack: String?, seconds: Double?, found: @escaping @Sendable (Int, Int) -> Void
-) async throws -> (image: CGImage, formulas: [FormulaMerge.Formula], tables: [TableMerge.Table])? {
+    inPictureAt file: URL, formulas formulaPack: String?, vlm vlmPack: String?, seconds: Double?, pressure: MemoryPressure,
+    found: @escaping @Sendable (Int, Int) -> Void
+) async throws -> (image: CGImage, formulas: [FormulaMerge.Formula], tables: [TableMerge.Table], left: Int)? {
     let started = ContinuousClock.now
     guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
@@ -179,7 +188,10 @@ func elements(
     let image = try PictureText.image(at: file)
     let regions = try await layoutFinder(formulas: formulaPack, vlm: vlmPack).regions(in: image)
     let formulaRegions = formulaPack == nil ? [] : regions.filter(\.kind.isFormula)
-    let tableRegions = vlmPack == nil ? [] : regions.filter { !$0.kind.isFormula }
+    var tableRegions = vlmPack == nil ? [] : regions.filter { !$0.kind.isFormula }
+    // The VLM's 2.6 GB would push other apps' memory out to disk when the system is short of it already.
+    let left = pressure > .normal ? tableRegions.count : 0
+    if left > 0 { tableRegions = [] }
     found(formulaRegions.count, tableRegions.count)
     // The formula models, 185 MB, are loaded only for a picture that holds a formula; the VLM, 1.1 GB, for one that holds a
     // table or chart.
@@ -199,7 +211,12 @@ func elements(
             tables.append(TableMerge.Table(kind: chart ? .chart : .table, box: region.box, rows: rows, isWhole: reading.ending == .end))
         }
     }
-    return (image, formulas, tables)
+    return (image, formulas, tables, left)
+}
+
+/// The system's memory pressure, or what the job says to take it to be.
+func pressure(for job: Job) -> MemoryPressure {
+    job.pressure.flatMap(MemoryPressure.init(name:)) ?? MemoryPressure.current()
 }
 
 /// L1, with the pack beside it when it loads.
@@ -279,21 +296,29 @@ for try await line in FileHandle.standardInput.bytes.lines {
         }
         if job.formulas != nil || job.vlm != nil, job.joinsWrappedLines == nil {
             let id = job.id
-            let found = try await elements(inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds) { formulas, tables in
+            let found = try await elements(
+                inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, pressure: pressure(for: job)
+            ) { formulas, tables in
                 sendNow(Result(id: id, found: formulas + tables, foundTables: tables))
             }
             send(Result(
                 id: job.id,
                 formulas: (found?.formulas ?? []).map { Formula(kind: $0.kind.rawValue, box: $0.box, latex: $0.latex) },
-                tables: (found?.tables ?? []).map { Table(kind: $0.kind.rawValue, box: $0.box, rows: $0.rows, whole: $0.isWhole) }
+                tables: (found?.tables ?? []).map { Table(kind: $0.kind.rawValue, box: $0.box, rows: $0.rows, whole: $0.isWhole) },
+                tablesLeft: found.map { $0.left > 0 ? $0.left : nil } ?? nil
             ))
             continue
         }
         var result = try await reading(with: job.pack).recognize(fileAt: file)
         if job.formulas != nil || job.vlm != nil,
-           let found = try await elements(inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, found: { _, _ in }) {
+           let found = try await elements(
+               inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, pressure: pressure(for: job), found: { _, _ in }
+           ) {
             if !found.formulas.isEmpty { result.lines = await pipeline.lines(result.lines, with: found.formulas, in: found.image) }
-            if !found.tables.isEmpty { result.lines = TableMerge.merged(result.lines, with: found.tables).lines }
+            if !found.tables.isEmpty {
+                let picture = CGRect(x: 0, y: 0, width: found.image.width, height: found.image.height)
+                result.lines = TableMerge.merged(result.lines, with: found.tables, in: picture).lines
+            }
         }
         let text = job.joinsWrappedLines.map { TextAssembler.assemble(result.lines, options: .init(joinsWrappedLines: $0)) } ?? result.text
         send(Result(id: job.id, text: text))

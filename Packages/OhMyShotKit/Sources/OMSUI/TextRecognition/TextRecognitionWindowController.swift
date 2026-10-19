@@ -535,10 +535,13 @@ final class TextRecognitionModel {
             guard !Task.isCancelled else { return }
             var taken = 0
             if !found.tables.isEmpty {
-                let tables = TableMerge.merged(merged, with: found.tables)
+                let tables = TableMerge.merged(merged, with: found.tables, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
                 merged = tables.lines
-                visionTables = TableMerge.tables(visionTables, after: tables, of: found.tables)
+                visionTables = TableMerge.tables(visionTables, after: tables)
                 taken = tables.taken.count
+                if tables.cutRows > 0 {
+                    Log.capture.notice("OCR panel left \(tables.cutRows, privacy: .public) table rows the picture's edge cut as Vision read them")
+                }
                 for (index, refusal) in tables.refused {
                     Log.capture.notice("OCR panel kept Vision's reading of \(found.tables[index].kind.rawValue, privacy: .public) \(index, privacy: .public): \(refusal.rawValue, privacy: .public)")
                 }
