@@ -282,6 +282,10 @@ final class OverlayView: NSView {
         (loupeCenter.strokeColor, loupeCenterOutline.strokeColor, !loupeCenterOutline.isHidden)
     }
 
+    var debugLoupeImageGeometry: (frame: CGRect, contentsRect: CGRect, gridVisible: Bool) {
+        (loupeImage.frame, loupeImage.contentsRect, !loupeGrid.isHidden)
+    }
+
     /// Drags the ruler's box over `rect` (global space) and lets go, for scripted checks.
     func debugMeasureBox(_ rect: CGRect) {
         let box = local(rect)
@@ -681,6 +685,7 @@ final class OverlayView: NSView {
         loupeImage.frame = lensBounds
         loupeGrid.frame = lensBounds
         loupeGrid.path = Self.gridPath(size: diameter, cells: Theme.Loupe.pixelsAcross)
+        loupeGrid.isHidden = usesCenteredPicker
         let cell = diameter / CGFloat(Theme.Loupe.pixelsAcross)
         loupeCenter.frame = lensBounds
         loupeCenter.path = CGPath(
@@ -867,7 +872,15 @@ final class OverlayView: NSView {
 
         let pixel = pixelCoordinate(at: point)
         if let frame = capturedFrame {
-            loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image)
+            if usesCenteredPicker {
+                // Match the backdrop's coordinates exactly: this is a clear target, not a zoomed image.
+                loupeImage.contentsRect = CGRect(
+                    x: (point.x - diameter / 2) / bounds.width, y: (point.y - diameter / 2) / bounds.height,
+                    width: diameter / bounds.width, height: diameter / bounds.height
+                )
+            } else {
+                loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image)
+            }
             let color = frame.color(atPixel: pixel.x, pixel.y)
             updateLoupeCenter(for: color)
             loupePill.swatch = color?.cgColor

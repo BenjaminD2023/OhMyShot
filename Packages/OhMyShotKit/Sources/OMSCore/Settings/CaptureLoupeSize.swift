@@ -1,12 +1,12 @@
 import Foundation
 
-/// The centered magnifier used before a screenshot or annotation area is selected.
+/// The centered color picker used before a screenshot or annotation area is selected.
 public enum CaptureLoupeSize: String, CaseIterable, Sendable {
     case small
     case medium
     case large
 
-    /// Whole points per cell in the 15-pixel lens: 5, 6, and 8 respectively.
+    /// The picker diameter in points; the screen itself stays at its original scale.
     public var diameter: CGFloat {
         switch self {
         case .small: 75

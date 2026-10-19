@@ -113,6 +113,31 @@ struct OverlayLoupeTests {
         }
     }
 
+    @Test func theCapturePickerKeepsTheOriginalScaleAndStandaloneColorRestoresItsZoom() throws {
+        for scale in [1, 2] {
+            let fixture = try fixture(scale: scale)
+            let view = OverlayView(display: fixture.display)
+            defer { view.clear() }
+            for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+                for size in CaptureLoupeSize.allCases {
+                    view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose, captureLoupeSize: size)
+                    view.show(fixture.frame, frozen: true)
+                    let image = view.debugLoupeImageGeometry
+                    let pixelsAcross = image.contentsRect.width * CGFloat(fixture.frame.image.width)
+                    #expect(abs(pixelsAcross / image.frame.width - CGFloat(scale)) < 0.0001,
+                            "A picker point must cover exactly one screen point at each display scale")
+                    #expect(!image.gridVisible)
+                    #expect(view.color(at: fixture.global)?.hex == "#123456")
+                }
+            }
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color)
+            view.show(fixture.frame, frozen: true)
+            let image = view.debugLoupeImageGeometry
+            #expect(abs(image.contentsRect.width * CGFloat(fixture.frame.image.width) - 15) < 0.0001)
+            #expect(image.gridVisible)
+        }
+    }
+
     @Test func theFirstPressHidesThePickerBeforeTheSelectionHasAnySize() throws {
         let fixture = try fixture()
         for (purpose, allInOne) in [
