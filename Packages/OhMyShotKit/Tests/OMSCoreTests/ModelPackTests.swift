@@ -183,6 +183,23 @@ struct ModelPackTests {
         )
     }
 
+    @Test func aCancelledDownloadLeavesNoFolderBehind() throws {
+        let rig = try rig()
+        let first = pack(hosts: ["h.test"], files: rig.files)
+        let staging = rig.store.downloadFolder(of: first)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try Data("part".utf8).write(to: staging.appending(path: "LICENSE.txt"))
+        try rig.store.removeDownload(of: first)
+        #expect(!FileManager.default.fileExists(atPath: staging.deletingLastPathComponent().path(percentEncoded: false)))
+        // An installed version beside the download stays, and so does its folder.
+        let installed = rig.store.folder(of: first)
+        try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
+        let second = pack(hosts: ["h.test"], files: rig.files, version: "2")
+        try FileManager.default.createDirectory(at: rig.store.downloadFolder(of: second), withIntermediateDirectories: true)
+        try rig.store.removeDownload(of: second)
+        #expect(FileManager.default.fileExists(atPath: installed.path(percentEncoded: false)))
+    }
+
     // MARK: Listing
 
     @Test func aListingWithAWayOutOfItsFolderIsRefused() {

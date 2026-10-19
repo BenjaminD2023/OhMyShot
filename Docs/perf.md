@@ -2352,3 +2352,55 @@ a table, opened in the OCR panel from their files (Docs/ocr.md › Formulas amon
 - Checking the memory pressure is one `sysctlbyname` call in the text reader, before the VLM would load.
 - Drawing a translation's formulas readable (`MathText`) and putting a changed formula back (`Translator.restoringMath`)
   work on the units' text only; the web page's translation took 3.4–3.5 s with or without them (the system's model).
+
+## M6 — power gate again, with the VLM pack (2026-10-19)
+
+The M6 gate above ran before cloud models, text from apps, and the VLM pack. This one is a Debug build of `4e2d926`
+(main with both pull requests), the Dev app with all three packs installed, a fresh launch. The tour ran through
+hidden hooks on test pictures only: Capture Formula on the formula tests' three pictures (`debug/formula-test`),
+Recognize Formula in Image's path twice (`debug/shortcut-formula`), Capture Text twice on the drawn page with a table
+(`debug/text-test`, nothing copied), Recognize Text in Image's path on it (`debug/shortcut-text`), the same page in
+the OCR panel and the panel closed (`debug/panel-file`, `debug/close-windows`), and the page added to the history,
+found, and removed (`history-add`, `history-search`, `history-remove-tests`); then 30 s of nothing before a 60 s
+`Scripts/power-sample.sh`. Footprints were taken a few seconds after each step.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Idle after launch, 60 s, two runs | 0.09% and 0.06% CPU (seconds at 1.3% at most), 0 wakeups, 26 MB | 0.0%, < 60, < 30 MB |
+| Capture Formula ×3: each reading / the app after them and Recognize Formula ×2 | 1.32, 0.76, 0.63 s / 26 MB | — |
+| Capture Text on the table page: its table in, after Vision's reading | 2.04 s, then 1.77 s | — |
+| The app after Capture Text ×2 / after Recognize Text in Image | 97 / 97 MB | — |
+| The panel: its table in after Vision's reading / open / 10 s after it closed | 1.46 s / 130 / 127 MB | — |
+| The app after the history's add, search, and remove | 88 MB | — |
+| Idle after the tour, 60 s | 0.06% CPU (one second at 0.7%), 0 wakeups, 95 → 68 MB over the minute | 0.0%, < 60, < 60 MB |
+| Live resources and the app's own processes after the tour | none (`debug/resources` idle, no text reader at any step) | none when idle |
+
+- **The VLM costs the app nothing.** Every table was read in the text reader, which had exited by each footprint
+  (its peak is 2.6 GB, › M6 — The VLM pack). What the app gained it gained from Vision reading the page in its own
+  process, for Capture Text and the panel. That is more after Capture Text than M2 measured (61–70 MB, on screen
+  areas): on two fresh launches, one Capture Text of the table page left 94 MB, and 90 MB with the VLM skipped (memory
+  pressure stood in for as a warning), so the tables' path adds about 4 MB; why Vision's reading now leaves more than
+  in M2 wasn't looked into. The panel's 127 MB after it closed is M2's 110–125 MB.
+- **The footprint after use is 68 MB, 8 MB over its budget**, against 120 MB at the first M6 gate and 119 MB at
+  M5's. It fell from 95 MB during the idle minute as the allocator let go of freed pages; this tour had no in-app
+  Shortcuts read of the demo page (the M5 gate's 56 MB step), and the Shortcuts action here read in the text reader.
+- **The CPU wasn't 0.00%**, again with 0 wakeups: the busy seconds came with the system updating the menu bar's
+  status items (FrontBoard scene updates, 2–8 a minute) and, after launch, the
+  App Intents donation to Spotlight. No timers of the app's own.
+- **Launch grew 2 MB** (24 → 26 MB) since the first M6 gate, with the cloud models, text from apps, the VLM pack's
+  merging, and Measure snapping in the app's code; the app still doesn't link MLX.
+
+Not part of this gate: anything on the real screen (the overlay, a real Capture Text drag, Measure). The macOS 26
+smoke test was not run (the user's call, 2026-10-19).
+
+The design gate ran the same night, on renders of the M6 surfaces in Light and Dark taken through hidden hooks (Settings ›
+Tools with the packs and a demo cloud model, a made-up pack downloading and paused, the download and license sheets,
+the panel reading and showing a table, formulas, a translation, five cloud answers, the result cards). Its fixes:
+a translation's paragraph whose lines all held formulas was drawn at 0.8 of the others' size (its size was read from
+the LaTeX's width; now from the formula as drawn, 1.06 after), a table's rows in the panel's text stand on tab stops
+as wide as their columns, a license's web addresses keep their lines, a service's own words in an error are set apart
+("It said: “…”"), a reading cut short says so in words, and a cancelled download no longer leaves its pack's empty
+folder. The cloud switch confirmation, which the reviewer flagged as unseen, needed nothing: its buttons, logged from the
+sheet (`modelpack-render?switch=1`), are Cancel on Escape and Turn Off on no key, so Return deletes no key. Not
+rendered: a failed pack download, the Remove… confirmation, Settings' Test results, both packs reading at once,
+anything under Increase Contrast, Reduce Transparency, or Reduce Motion, and VoiceOver.
