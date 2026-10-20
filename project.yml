@@ -15,6 +15,10 @@ packages:
   # The VLM pack's model on MLX, linked by the text reader alone (Packages/OhMyShotVLM/Package.swift).
   OhMyShotVLM:
     path: Packages/OhMyShotVLM
+  # Updates for release builds (MIT). Only the app links it; its feed is set in Config/Release.xcconfig.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
 
 targets:
   OhMyShot:
@@ -43,6 +47,7 @@ targets:
         product: OMSRecording
       - package: OhMyShotKit
         product: OMSStudio
+      - package: Sparkle
       - target: TextReader
         embed: true
         codeSign: true

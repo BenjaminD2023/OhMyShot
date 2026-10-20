@@ -113,4 +113,25 @@ struct BundleDeclarationTests {
         #expect(debug["INFOPLIST_FILE"] == release["INFOPLIST_FILE"])
         #expect(debug["CODE_SIGN_ENTITLEMENTS"] == release["CODE_SIGN_ENTITLEMENTS"])
     }
+
+    /// Only release builds have Sparkle's feed: a Debug app that looked would offer to replace itself with a release.
+    /// The feed is https (UpdateController takes nothing else), and "//" in an xcconfig would start a comment.
+    @Test func onlyReleaseBuildsLookForUpdates() throws {
+        #expect(try plist("Info.plist")["SUFeedURL"] as? String == "$(OMS_UPDATE_FEED_URL)")
+        #expect(try buildSettings("Debug.xcconfig")["OMS_UPDATE_FEED_URL"] == "")
+        let feed = try #require(try buildSettings("Release.xcconfig")["OMS_UPDATE_FEED_URL"])
+        #expect(feed == "https://github.com/fzlzjerry/OhMyShot/releases/latest/download/appcast.xml")
+    }
+
+    /// Sparkle's own timer stays off (the app schedules its looks), nothing is downloaded before the person says so (as
+    /// Settings promises), and nothing unsigned is taken: the appcast and the archives must match the public key.
+    @Test func updatesAreSignedAndScheduledByTheApp() throws {
+        let info = try plist("Info.plist")
+        let key = try #require(info["SUPublicEDKey"] as? String)
+        #expect(Data(base64Encoded: key)?.count == 32)
+        #expect(info["SUEnableAutomaticChecks"] as? Bool == false)
+        #expect(info["SUAllowsAutomaticUpdates"] as? Bool == false)
+        #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
+        #expect(info["SURequireSignedFeed"] as? Bool == true)
+    }
 }

@@ -5,6 +5,8 @@ PRODUCT_MODULE_NAME = OhMyShot
 OMS_BUNDLE_ID_PREFIX = io.github.fzlzjerry
 PRODUCT_BUNDLE_IDENTIFIER = $(OMS_BUNDLE_ID_PREFIX).ohmyshot
 OMS_URL_SCHEME = ohmyshot
+// Sparkle's feed (Config/Info.plist SUFeedURL): only release builds have one, so only they look for updates.
+OMS_UPDATE_FEED_URL =
 MARKETING_VERSION = 0.1.0
 CURRENT_PROJECT_VERSION = 1
 

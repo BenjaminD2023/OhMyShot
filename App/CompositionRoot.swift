@@ -211,6 +211,8 @@ final class CompositionRoot {
     private let hotkeys: HotkeyCenter
     private let urlScheme: String
     private var statusItem: StatusItemController?
+    /// Release builds' updates; nil in builds without a feed, until a debug hook starts one against a feed of its own.
+    private var updates: UpdateController?
     private var automation: AutomationController?
     private var settingsWindow: SettingsWindowController?
     private var onboardingWindow: OnboardingWindowController?
@@ -413,6 +415,16 @@ final class CompositionRoot {
                     self?.quickAccess.restoreRecentlyClosed()
                 },
             ],
+            appEntries: [
+                .init(
+                    title: String(localized: "Check for Updates…"),
+                    isEnabled: { [weak self] in self?.updates?.status.canCheck ?? false },
+                    currentTitle: { [weak self] in self?.updates?.menuTitle ?? "" },
+                    isHidden: { [weak self] in self?.updates == nil }
+                ) { [weak self] in
+                    self?.updates?.checkNow()
+                },
+            ],
             openSettings: { [weak self] in self?.showSettings() },
             quit: { NSApp.terminate(nil) },
             debugEntries: debugMenuEntries()
@@ -462,6 +474,10 @@ final class CompositionRoot {
                 statusItem?.setVisible(visible)
             }
         })
+        if let updates = UpdateController.make(), updates.start() {
+            self.updates = updates
+            observeUpdateSetting()
+        }
         // Also runs once now, which is the launch-time cleanup.
         observations.append(Task { [weak self] in
             for await _ in Observations({ settings.historyRetention }) {
@@ -922,6 +938,35 @@ final class CompositionRoot {
         }
         return CaptureFollowUp(action: action, asksForName: asksForName, done: done)
     }
+
+    /// Schedules the updater's daily look while Settings › General says so; runs once now.
+    private func observeUpdateSetting() {
+        observations.append(Task { [weak self, settings] in
+            for await on in Observations({ settings.checksForUpdates }) {
+                self?.updates?.setChecksAutomatically(on)
+            }
+        })
+    }
+
+    #if DEBUG
+    /// The updater against `feed` (`debug/updates-start`), in place of any the build has; a found version always waits
+    /// in the menu. Nothing is looked for until a hook asks.
+    func startDebugUpdates(feed: URL) -> UpdateController? {
+        updates?.setChecksAutomatically(false)
+        updates = nil
+        let controller = UpdateController(feedOverride: feed, alwaysGentle: true)
+        guard controller.start() else { return nil }
+        updates = controller
+        return controller
+    }
+
+    func stopDebugUpdates() {
+        updates?.setChecksAutomatically(false)
+        updates = nil
+    }
+
+    var debugUpdates: UpdateController? { updates }
+    #endif
 
     private func setDesktopIconsHidden(_ hidden: Bool) {
         settings.hidesDesktopIcons = hidden
@@ -1791,7 +1836,8 @@ final class CompositionRoot {
                 setAutomatic: { BackdropPresets.shared.setAutomatic($0) }
             ),
             modelPacks: modelPacks,
-            cloudModels: shownCloudModels
+            cloudModels: shownCloudModels,
+            updates: updates?.status
         ))
         controller.onClose = { [weak self] in
             Task { @MainActor in
@@ -1814,6 +1860,17 @@ final class CompositionRoot {
             },
             capture: { window, name in await hooks.captureHiddenWindow(window, name: name) }
         )
+        let updateHooks = DebugUpdateHooks(
+            start: { [unowned self] feed in startDebugUpdates(feed: feed) },
+            current: { [unowned self] in debugUpdates },
+            stop: { [unowned self] in stopDebugUpdates() },
+            makeSettings: { [unowned self] in
+                let controller = makeSettingsWindow()
+                controller.onClose = nil
+                return controller
+            },
+            capture: { window, name in await hooks.captureHiddenWindow(window, name: name) }
+        )
         #endif
         return AutomationController(scheme: urlScheme, settings: settings) { [weak self] command in
             self?.perform(command)
@@ -1822,6 +1879,7 @@ final class CompositionRoot {
         } debugHandler: { url in
             #if DEBUG
             if modelPackHooks.handle(url) { return true }
+            if updateHooks.handle(url) { return true }
             hooks.handle(url)
             return true
             #else

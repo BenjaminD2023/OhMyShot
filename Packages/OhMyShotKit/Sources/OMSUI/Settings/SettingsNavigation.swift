@@ -27,6 +27,8 @@ extension SettingsTab {
             [
                 String(localized: "Language", bundle: .module),
                 String(localized: "Launch at login", bundle: .module),
+                String(localized: "Updates", bundle: .module),
+                String(localized: "Check for updates automatically", bundle: .module),
                 String(localized: "Menu bar", bundle: .module),
                 String(localized: "Show icon", bundle: .module),
                 String(localized: "Play sounds", bundle: .module),

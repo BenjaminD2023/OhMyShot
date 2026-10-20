@@ -14,6 +14,11 @@ public final class SettingsStore {
         didSet { defaults.set(playSounds, forKey: Key.playSounds) }
     }
 
+    /// Whether a release build looks for a newer version by itself, about once a day.
+    public var checksForUpdates: Bool {
+        didSet { defaults.set(checksForUpdates, forKey: Key.checksForUpdates) }
+    }
+
     /// Whether other apps may send `ohmyshot://` commands at all.
     public var automationEnabled: Bool {
         didSet { defaults.set(automationEnabled, forKey: Key.automationEnabled) }
@@ -455,6 +460,7 @@ public final class SettingsStore {
         defaults.register(defaults: [
             Key.showMenuBarIcon: true,
             Key.playSounds: true,
+            Key.checksForUpdates: true,
             Key.automationEnabled: true,
             Key.copyAfterCapture: true,
             Key.uploadAfterCapture: false,
@@ -528,6 +534,7 @@ public final class SettingsStore {
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
+        checksForUpdates = defaults.bool(forKey: Key.checksForUpdates)
         automationEnabled = defaults.bool(forKey: Key.automationEnabled)
         approvedAutomationCallers = defaults.stringArray(forKey: Key.approvedAutomationCallers) ?? []
         exportDirectory = defaults.string(forKey: Key.exportDirectory).map { URL(filePath: $0, directoryHint: .isDirectory) }
@@ -632,6 +639,7 @@ public final class SettingsStore {
     private enum Key {
         static let showMenuBarIcon = "showMenuBarIcon"
         static let playSounds = "playSounds"
+        static let checksForUpdates = "checksForUpdates"
         static let automationEnabled = "automationEnabled"
         static let approvedAutomationCallers = "approvedAutomationCallers"
         static let exportDirectory = "exportDirectory"

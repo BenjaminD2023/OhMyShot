@@ -110,6 +110,8 @@ public final class StatusItemController {
     private let textEntries: [Entry]
     private let pinEntries: [Entry]
     private let historyEntries: [Entry]
+    /// The app's own entries above Settings…, such as Check for Updates….
+    private let appEntries: [Entry]
     private let openSettings: () -> Void
     private let quit: () -> Void
     private let debugEntries: [Entry]
@@ -119,6 +121,7 @@ public final class StatusItemController {
         textEntries: [Entry] = [],
         pinEntries: [Entry] = [],
         historyEntries: [Entry] = [],
+        appEntries: [Entry] = [],
         openSettings: @escaping () -> Void,
         quit: @escaping () -> Void,
         debugEntries: [Entry] = []
@@ -127,6 +130,7 @@ public final class StatusItemController {
         self.textEntries = textEntries
         self.pinEntries = pinEntries
         self.historyEntries = historyEntries
+        self.appEntries = appEntries
         self.openSettings = openSettings
         self.quit = quit
         self.debugEntries = debugEntries
@@ -257,6 +261,9 @@ public final class StatusItemController {
                 menu.addItem(item)
             }
             menu.addItem(.separator())
+        }
+        for entry in appEntries {
+            menu.addItem(menuTarget.item(for: entry))
         }
         menu.addItem(menuTarget.item(for: Entry(
             title: String(localized: "Settings…", bundle: .module),

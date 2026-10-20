@@ -75,6 +75,8 @@ public struct SettingsDependencies {
     public let modelPacks: ModelPackCenter?
     /// The cloud models the OCR panel reads with, which only the Tools tab shows.
     public let cloudModels: CloudModelStore?
+    /// The updater, which only the General tab shows, and only in builds that look for updates.
+    public let updates: UpdateStatus?
 
     /// What Settings › Sharing does with a finished upload.
     public struct UploadRecordActions {
@@ -145,7 +147,8 @@ public struct SettingsDependencies {
         recordActions: UploadRecordActions = .none,
         backgrounds: Backgrounds = .none,
         modelPacks: ModelPackCenter? = nil,
-        cloudModels: CloudModelStore? = nil
+        cloudModels: CloudModelStore? = nil,
+        updates: UpdateStatus? = nil
     ) {
         self.settings = settings
         self.permissions = permissions
@@ -159,6 +162,7 @@ public struct SettingsDependencies {
         self.recordActions = recordActions
         self.modelPacks = modelPacks
         self.cloudModels = cloudModels
+        self.updates = updates
     }
 }
 
@@ -269,7 +273,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             host(GeneralSettingsView(
                 settings: dependencies.settings,
                 openHistory: dependencies.openHistory,
-                expiredCount: dependencies.expiredCount
+                expiredCount: dependencies.expiredCount,
+                updates: dependencies.updates
             ))
         case .capture:
             host(CaptureSettingsView(settings: dependencies.settings))

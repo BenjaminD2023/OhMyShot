@@ -132,6 +132,19 @@ struct CopyLinkSettingTests {
 }
 
 @MainActor
+struct UpdateSettingTests {
+    @Test func releaseBuildsLookForUpdatesUnlessTurnedOff() throws {
+        let suite = "OMSCoreTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        #expect(settings.checksForUpdates)
+        settings.checksForUpdates = false
+        #expect(!SettingsStore(defaults: defaults).checksForUpdates)
+    }
+}
+
+@MainActor
 struct UploadAfterCaptureSettingTests {
     @Test func capturesAreNotUploadedUnlessAskedFor() throws {
         let suite = "OMSCoreTests-\(UUID().uuidString)"

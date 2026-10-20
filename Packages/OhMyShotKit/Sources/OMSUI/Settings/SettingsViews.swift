@@ -102,6 +102,8 @@ struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
     let openHistory: () -> Void
     let expiredCount: (HistoryRetention) -> Int
+    /// The updater's state, in builds that look for updates.
+    let updates: UpdateStatus?
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
@@ -164,6 +166,9 @@ struct GeneralSettingsView: View {
                             .foregroundStyle(.red)
                     }
                 }
+            }
+            if let updates {
+                UpdatesRow(settings: settings, updates: updates)
             }
             SettingsRow(Text("Menu bar", bundle: .module)) {
                 HStack(spacing: 6) {

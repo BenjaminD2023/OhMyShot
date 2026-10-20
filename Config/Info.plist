@@ -81,6 +81,18 @@
 	<string>NSApplication</string>
 	<key>OMSURLScheme</key>
 	<string>$(OMS_URL_SCHEME)</string>
+	<key>SUFeedURL</key>
+	<string>$(OMS_UPDATE_FEED_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string>2sNqLZr4VfSBupLojvk+g1kgp5jEbmr9yebFxdH2Mxs=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SURequireSignedFeed</key>
+	<true/>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
