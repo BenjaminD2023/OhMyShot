@@ -4,7 +4,7 @@ All notable changes to OhMyShot will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 No releases or version tags have been published, so changes remain under Unreleased.
-This initial backfill groups notable app changes from the first commit through [3ee16fa]; documentation-only work, internal refactors, and unmerged proposals are omitted.
+This initial backfill groups notable app changes from the first commit through [11b4090]; documentation-only work, internal refactors, and unmerged proposals are omitted.
 Each entry links its implementation commits or merged pull request and credits verified contributors. Named coauthors follow explicit commit trailers.
 
 ## [Unreleased]
@@ -39,6 +39,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - Measurement snapping preferences and edge tolerance, with keyboard adjustments during measurement. ([#3]; by [@BenjaminD2023], [@fzlzjerry])
 - A three-second Quick Access auto-close option; Never remains the default and saved delays are preserved. ([#5]; by [@BenjaminD2023], [@fzlzjerry])
 - One- and two-second Quick Access auto-close options; Never remains the default and saved delays are preserved. ([#12]; by [@BenjaminD2023], [@fzlzjerry])
+- A saved default for whether Capture Text and new Recognized Text windows keep or join the image's line breaks (Settings › Tools › Image line breaks); Keep Line Breaks remains the default. ([#8]; by [@BenjaminD2023], [@fzlzjerry])
+- Settings for where the Capture Text result card stands (below the selection, or in the bottom-left corner, above Quick Access's cards when they are there) and how long a card the user asked for stays; four seconds remains the default, and cards that report a problem keep at least their own time. ([#11]; by [@BenjaminD2023], [@fzlzjerry])
 - An onboarding step, after Screen Recording, for turning off the macOS screenshot keys that answer OhMyShot's shortcuts first. ([b3ee8ce]; by [@fzlzjerry])
 
 ### Changed
@@ -156,7 +158,9 @@ Each entry links its implementation commits or merged pull request and credits v
 [0182817]: https://github.com/fzlzjerry/OhMyShot/commit/01828172073f4816c9dba6054957f27d631abee8
 [6d3b0af]: https://github.com/fzlzjerry/OhMyShot/commit/6d3b0af34efe0b65102e02e829c53f5f31f5b203
 [#12]: https://github.com/fzlzjerry/OhMyShot/pull/12
-[3ee16fa]: https://github.com/fzlzjerry/OhMyShot/commit/3ee16faad218588c77baea0624e60b481e88553b
+[#8]: https://github.com/fzlzjerry/OhMyShot/pull/8
+[#11]: https://github.com/fzlzjerry/OhMyShot/pull/11
+[11b4090]: https://github.com/fzlzjerry/OhMyShot/commit/11b4090489ad3a5ffe1515ef191aa8eb45e07048
 [b3ee8ce]: https://github.com/fzlzjerry/OhMyShot/commit/b3ee8ce17153c308b1247a9eb28f487af92dca85
 [745e2f4]: https://github.com/fzlzjerry/OhMyShot/commit/745e2f4e76a8be01f02ca25c84a8e4dc6d08ffef
 [@BenjaminD2023]: https://github.com/BenjaminD2023
