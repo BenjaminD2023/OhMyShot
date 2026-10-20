@@ -4,7 +4,7 @@ All notable changes to OhMyShot will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 No releases or version tags have been published, so changes remain under Unreleased.
-This initial backfill groups notable app changes from the first commit through [11b4090]; documentation-only work, internal refactors, and unmerged proposals are omitted.
+This initial backfill groups notable app changes from the first commit through [42c6bfa]; documentation-only work, internal refactors, and unmerged proposals are omitted.
 Each entry links its implementation commits or merged pull request and credits verified contributors. Named coauthors follow explicit commit trailers.
 
 ## [Unreleased]
@@ -42,6 +42,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - A saved default for whether Capture Text and new Recognized Text windows keep or join the image's line breaks (Settings › Tools › Image line breaks); Keep Line Breaks remains the default. ([#8]; by [@BenjaminD2023], [@fzlzjerry])
 - Settings for where the Capture Text result card stands (below the selection, or in the bottom-left corner, above Quick Access's cards when they are there) and how long a card the user asked for stays; four seconds remains the default, and cards that report a problem keep at least their own time. ([#11]; by [@BenjaminD2023], [@fzlzjerry])
 - An onboarding step, after Screen Recording, for turning off the macOS screenshot keys that answer OhMyShot's shortcuts first. ([b3ee8ce]; by [@fzlzjerry])
+- Updates for release builds with Sparkle: about once a day (Settings › General › Updates, on by default), from signed appcasts on this repository's GitHub releases; a version found in the background waits in the menu bar menu and in Settings rather than in a window, and nothing is downloaded before it is chosen. ([d69ff9c]; by [@fzlzjerry])
+- Settings › About › Acknowledgments…, with the licenses of OhMyShot and of the software it is built with. ([42c6bfa]; by [@fzlzjerry])
 
 ### Changed
 
@@ -160,9 +162,10 @@ Each entry links its implementation commits or merged pull request and credits v
 [#12]: https://github.com/fzlzjerry/OhMyShot/pull/12
 [#8]: https://github.com/fzlzjerry/OhMyShot/pull/8
 [#11]: https://github.com/fzlzjerry/OhMyShot/pull/11
-[11b4090]: https://github.com/fzlzjerry/OhMyShot/commit/11b4090489ad3a5ffe1515ef191aa8eb45e07048
+[42c6bfa]: https://github.com/fzlzjerry/OhMyShot/commit/42c6bfada8d898892676d32b2b0daa0bdcc878b6
 [b3ee8ce]: https://github.com/fzlzjerry/OhMyShot/commit/b3ee8ce17153c308b1247a9eb28f487af92dca85
 [745e2f4]: https://github.com/fzlzjerry/OhMyShot/commit/745e2f4e76a8be01f02ca25c84a8e4dc6d08ffef
+[d69ff9c]: https://github.com/fzlzjerry/OhMyShot/commit/d69ff9c7a0c3b71e9eb6a7146d831af4fcb36f6c
 [@BenjaminD2023]: https://github.com/BenjaminD2023
 [@bobbyhuang-dev]: https://github.com/bobbyhuang-dev
 [@fzlzjerry]: https://github.com/fzlzjerry
