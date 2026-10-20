@@ -1285,6 +1285,7 @@
       }
     },
     "A card by the selection with the copied text and a switch for its line breaks." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
