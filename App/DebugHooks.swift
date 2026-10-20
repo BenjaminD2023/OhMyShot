@@ -1398,6 +1398,7 @@ struct DebugHooks {
             if handleUploadHook(hook, url) { return }
             if handleCloudHook(hook, url) { return }
             if handleAppTextHook(hook, url) { return }
+            if handleAccessibilityHook(hook, url) { return }
             Log.app.error("debug.unknown \(hook, privacy: .public)")
         }
     }
