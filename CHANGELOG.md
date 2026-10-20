@@ -4,7 +4,7 @@ All notable changes to OhMyShot will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 No releases or version tags have been published, so changes remain under Unreleased.
-This initial backfill groups notable app changes from the first commit through [0983549]; documentation-only work, internal refactors, and unmerged proposals are omitted.
+This initial backfill groups notable app changes from the first commit through [3ee16fa]; documentation-only work, internal refactors, and unmerged proposals are omitted.
 Each entry links its implementation commits or merged pull request and credits verified contributors. Named coauthors follow explicit commit trailers.
 
 ## [Unreleased]
@@ -38,6 +38,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - Per-window OCR text wrapping, a saved default for new windows, and horizontal scrolling when wrapping is off. ([#6]; by [@BenjaminD2023], [@fzlzjerry])
 - Measurement snapping preferences and edge tolerance, with keyboard adjustments during measurement. ([#3]; by [@BenjaminD2023], [@fzlzjerry])
 - A three-second Quick Access auto-close option; Never remains the default and saved delays are preserved. ([#5]; by [@BenjaminD2023], [@fzlzjerry])
+- One- and two-second Quick Access auto-close options; Never remains the default and saved delays are preserved. ([#12]; by [@BenjaminD2023], [@fzlzjerry])
+- An onboarding step, after Screen Recording, for turning off the macOS screenshot keys that answer OhMyShot's shortcuts first. ([b3ee8ce]; by [@fzlzjerry])
 
 ### Changed
 
@@ -59,6 +61,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Unwrapped OCR windows no longer open with the first characters scrolled out of view. ([33cd6bf]; by [@fzlzjerry])
 - Editor Undo and styled counter numbering behave consistently. ([4558f10]; by [@fzlzjerry])
 - Pin zooming preserves the picture's proportions, and text pins allow selecting part of their text. ([b9c8e30], [9d53b01]; by [@fzlzjerry])
+- VoiceOver names the Save buttons in the editor, recording window, and Studio, and presses History's cards. ([745e2f4]; by [@fzlzjerry])
 - Onboarding avoids duplicate Screen Recording permission prompts and actually reopens the app after Quit & Reopen. ([6ec2f1d]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
 - Launch at login toggles the login item on and off again. ([3c49e89]; by [@fzlzjerry])
 - Quick Access repositions cards when displays are disconnected; cards and pins place their More menus beside them where they fit. ([bb75542], [460c047], [3750631]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
@@ -152,7 +155,10 @@ Each entry links its implementation commits or merged pull request and credits v
 [cff3ddb]: https://github.com/fzlzjerry/OhMyShot/commit/cff3ddb3ca3bd762ed203a21b32a04443e27eaec
 [0182817]: https://github.com/fzlzjerry/OhMyShot/commit/01828172073f4816c9dba6054957f27d631abee8
 [6d3b0af]: https://github.com/fzlzjerry/OhMyShot/commit/6d3b0af34efe0b65102e02e829c53f5f31f5b203
-[0983549]: https://github.com/fzlzjerry/OhMyShot/commit/0983549dea37cb19593358ada4bfcb00755e838f
+[#12]: https://github.com/fzlzjerry/OhMyShot/pull/12
+[3ee16fa]: https://github.com/fzlzjerry/OhMyShot/commit/3ee16faad218588c77baea0624e60b481e88553b
+[b3ee8ce]: https://github.com/fzlzjerry/OhMyShot/commit/b3ee8ce17153c308b1247a9eb28f487af92dca85
+[745e2f4]: https://github.com/fzlzjerry/OhMyShot/commit/745e2f4e76a8be01f02ca25c84a8e4dc6d08ffef
 [@BenjaminD2023]: https://github.com/BenjaminD2023
 [@bobbyhuang-dev]: https://github.com/bobbyhuang-dev
 [@fzlzjerry]: https://github.com/fzlzjerry
