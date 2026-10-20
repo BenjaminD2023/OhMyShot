@@ -410,7 +410,7 @@ public final class SettingsStore {
     }
 
     /// The delays Settings offers for closing cards, in seconds; 0 is never.
-    public static let quickAccessCloseDelays = [0, 3, 5, 10, 20, 30, 60]
+    public static let quickAccessCloseDelays = [0, 1, 2, 3, 5, 10, 20, 30, 60]
 
     /// What a card does when its time is up.
     public var quickAccessCloseAction: QuickAccessCloseAction {
