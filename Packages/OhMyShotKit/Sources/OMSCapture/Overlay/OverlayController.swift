@@ -217,6 +217,7 @@ public final class OverlayController {
             let panel = OverlayPanel(frame: display.frame)
             let view = OverlayView(display: display)
             view.delegate = self
+            view.onCanvasCursorUpdate = { [weak self] point in self?.updateCursorVisibility(at: point) }
             panel.contentView = view
             entries[display.id] = Entry(panel: panel, view: view)
         }
@@ -382,6 +383,7 @@ public final class OverlayController {
         // A screenshot draws its own crosshair and magnifier, but over the bar the system's arrow shows; copying text
         // keeps the system crosshair. Only once the overlay has input, so an early move never hides the pointer.
         cursorVisibility.begin(drawsPointer: purpose != .text, overControls: wantsSystemCursor(at: pointer))
+        for entry in entries.values { entry.view.beginCanvasCursorOwnership(at: pointer) }
         CATransaction.flush()
         // A frozen overlay asks for activation a moment after the shortcut, not while handling it: the log
         // says whether it was granted, which only a real shortcut press can show.
@@ -409,6 +411,9 @@ public final class OverlayController {
 
     private func updateCursorVisibility(at point: CGPoint) {
         cursorVisibility.update(overControls: wantsSystemCursor(at: point))
+        if let display = topology.layout.display(at: point) {
+            entries[display.id]?.view.refreshCanvasCursor(at: point)
+        }
     }
 
     /// Ends in-place annotation: the overlay goes away and the previous app gets the keyboard back.

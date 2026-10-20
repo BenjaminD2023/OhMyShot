@@ -165,6 +165,47 @@ struct OverlayLoupeTests {
         }
     }
 
+    @Test func targetTicksRemainVisibleAtLowZoomWithoutCoveringTheExactPixel() throws {
+        for scale in [1, 2] {
+            let fixture = try fixture(scale: scale)
+            let view = OverlayView(display: fixture.display)
+            defer { view.clear() }
+            for size in CaptureLoupeSize.allCases {
+                for magnification in CaptureLoupeMagnification.allCases {
+                    view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, captureLoupeStyle: .actualSize,
+                               captureLoupeSize: size, captureLoupeMagnification: magnification)
+                    view.show(fixture.frame, frozen: true)
+                    let target = view.debugLoupeTarget
+                    let cell = view.debugLoupePixelGeometry.center
+                    #expect(target.visible && target.stroke == 1 && target.outline == 3)
+                    var starts: [CGPoint] = [], ends: [CGPoint] = []
+                    try #require(target.path).applyWithBlock { element in
+                        switch element.pointee.type {
+                        case .moveToPoint: starts.append(element.pointee.points[0])
+                        case .addLineToPoint: ends.append(element.pointee.points[0])
+                        default: Issue.record("Target ticks must remain separate, straight segments")
+                        }
+                    }
+                    try #require(starts.count == 4 && ends.count == 4)
+                    for (start, end) in zip(starts, ends) {
+                        #expect(abs(abs(start.x - end.x) + abs(start.y - end.y) - 4) < 0.0001)
+                        let ink = CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                                         width: abs(start.x - end.x), height: abs(start.y - end.y))
+                            .insetBy(dx: -target.outline / 2, dy: -target.outline / 2)
+                        #expect(!ink.intersects(cell), "The locator must leave the selected pixel visible")
+                    }
+                    view.show(selection: firstPress(on: fixture.display, at: fixture.global),
+                              showsReading: false, isDragging: true)
+                    #expect(!view.debugLoupeTarget.visible)
+                }
+            }
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false,
+                       purpose: .color, captureLoupeStyle: .actualSize, captureLoupeSize: .large, captureLoupeMagnification: .one)
+            view.show(fixture.frame, frozen: true)
+            #expect(!view.debugLoupeTarget.visible, "Normal Pick Color keeps its original target")
+        }
+    }
+
     private func expectCropCenterMatchesSample(
         _ view: OverlayView, fixture: (display: DisplayInfo, frame: CapturedFrame, global: CGPoint),
         localPoint: CGPoint, scale: Int

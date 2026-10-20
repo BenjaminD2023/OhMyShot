@@ -54,6 +54,8 @@ final class OverlayView: NSView {
     }
 
     weak var delegate: OverlayViewDelegate?
+    var onCanvasCursorUpdate: ((CGPoint) -> Void)?
+    private var ownsCanvasCursor = false
     let display: DisplayInfo
 
     private(set) var mode: Mode = .area
@@ -97,6 +99,9 @@ final class OverlayView: NSView {
     private let loupeCenter = CAShapeLayer()
     /// An opposite-color outline keeps the adaptive center cell visible over neighboring pixels.
     private let loupeCenterOutline = CAShapeLayer()
+    /// Fixed-size ticks make a one-pixel target findable even at low magnification.
+    private let loupeTarget = CAShapeLayer()
+    private let loupeTargetOutline = CAShapeLayer()
     private static let reticleWhite = ScreenColor(srgbRed: 1, green: 1, blue: 1)!
     private static let reticleBlack = ScreenColor(srgbRed: 0, green: 0, blue: 0)!
     private let loupeRim = CAShapeLayer()
@@ -149,6 +154,7 @@ final class OverlayView: NSView {
         measureTolerance: MeasureTolerance = .medium, measureSnapsToContent: Bool = true,
         allInOne: Bool = false, snapsToText: Bool = false
     ) {
+        endCanvasCursorOwnership()
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
@@ -241,6 +247,7 @@ final class OverlayView: NSView {
     /// Drops the frame so its memory is released while the overlay is hidden, and takes away any
     /// interface in-place annotation put over it.
     func clear() {
+        endCanvasCursorOwnership()
         capturedFrame = nil
         measure?.clear()
         isAnnotating = false
@@ -291,6 +298,10 @@ final class OverlayView: NSView {
         (loupeCenter.strokeColor, loupeCenterOutline.strokeColor, !loupeCenterOutline.isHidden)
     }
 
+    var debugLoupeTarget: (path: CGPath?, visible: Bool, stroke: CGFloat, outline: CGFloat) {
+        (loupeTarget.path, !loupe.isHidden && !loupeTarget.isHidden, loupeTarget.lineWidth, loupeTargetOutline.lineWidth)
+    }
+
     var debugLoupeImageGeometry: (frame: CGRect, contentsRect: CGRect, gridVisible: Bool) {
         (loupeImage.frame, loupeImage.contentsRect, !loupeGrid.isHidden)
     }
@@ -335,6 +346,7 @@ final class OverlayView: NSView {
     /// Hands the display to in-place annotation: the frozen screen stays; the selection, readings,
     /// crosshair, magnifier, and All-In-One bar go, since its interface draws its own.
     func enterAnnotation() {
+        endCanvasCursorOwnership()
         isAnnotating = true
         toolbar.isHidden = true
         withoutAnimation {
@@ -381,6 +393,27 @@ final class OverlayView: NSView {
         !isAnnotating && !toolbar.isHidden && toolbar.alphaValue > 0 && toolbar.frame.contains(local(globalPoint))
     }
 
+    /// Cursor ownership starts only once the controller has taken input; other displays acquire the
+    /// same policy without changing the cursor until the pointer reaches them.
+    func beginCanvasCursorOwnership(at globalPoint: CGPoint) {
+        ownsCanvasCursor = !isAnnotating && (purpose == .screenshot || purpose == .annotate)
+        window?.invalidateCursorRects(for: self)
+        refreshCanvasCursor(at: globalPoint)
+    }
+
+    func refreshCanvasCursor(at globalPoint: CGPoint) {
+        guard ownsCanvasCursor, !isAnnotating, display.frame.contains(globalPoint) else { return }
+        let cursor = wantsSystemCursor(at: globalPoint) ? NSCursor.arrow : OverlayCursorVisibility.canvasCursor
+        if NSCursor.current !== cursor { cursor.set() }
+    }
+
+    private func endCanvasCursorOwnership() {
+        guard ownsCanvasCursor else { return }
+        ownsCanvasCursor = false
+        window?.invalidateCursorRects(for: self)
+        OverlayCursorVisibility.restoreCanvasCursor()
+    }
+
     /// Puts the pointer somewhere without mouse input, for scripted checks; the real (hidden) pointer
     /// cannot move it after that.
     func simulate(pointer globalPointer: CGPoint) {
@@ -397,6 +430,7 @@ final class OverlayView: NSView {
     override func resetCursorRects() {
         super.resetCursorRects()
         if purpose == .text { addCursorRect(bounds, cursor: .crosshair) }
+        else if ownsCanvasCursor { addCursorRect(bounds, cursor: OverlayCursorVisibility.canvasCursor) }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -414,13 +448,20 @@ final class OverlayView: NSView {
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(
             rect: .zero,
-            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect],
             owner: self
         ))
     }
 
     // Pointer moves go to the controller, which passes them to every display: the key panel hears moves
     // over other displays too, and drawing them here left a stray magnifier at this display's edge.
+    override func cursorUpdate(with event: NSEvent) {
+        guard ownsCanvasCursor, !isAnnotating else { return }
+        let point = global(convert(event.locationInWindow, from: nil))
+        onCanvasCursorUpdate?(point)
+        refreshCanvasCursor(at: point)
+    }
+
     override func mouseMoved(with event: NSEvent) {
         if purpose == .text { NSCursor.crosshair.set() }
         guard !isSimulated, !isAnnotating else { return }
@@ -669,7 +710,7 @@ final class OverlayView: NSView {
         loupe.backgroundColor = .white
         loupeImage.magnificationFilter = .nearest
         loupeImage.contentsGravity = .resize
-        for shape in [loupeGridOutline, loupeGrid, loupeCenterOutline, loupeCenter] {
+        for shape in [loupeGridOutline, loupeGrid, loupeCenterOutline, loupeCenter, loupeTargetOutline, loupeTarget] {
             shape.contentsScale = display.backingScale
         }
         loupeCenter.fillColor = nil
@@ -679,6 +720,10 @@ final class OverlayView: NSView {
         loupe.addSublayer(loupeGrid)
         loupe.addSublayer(loupeCenterOutline)
         loupe.addSublayer(loupeCenter)
+        for shape in [loupeTargetOutline, loupeTarget] {
+            shape.fillColor = nil
+            loupe.addSublayer(shape)
+        }
 
         // A soft shadow under the lens and a white rim around it, both outside the masked lens.
         loupeShadow.fillColor = .white
@@ -734,6 +779,22 @@ final class OverlayView: NSView {
         loupeCenterOutline.lineWidth = usesCenteredPicker ? pixelOutline : 3
         loupeCenterOutline.frame = lensBounds
         loupeCenterOutline.path = loupeCenter.path
+        let target = CGMutablePath()
+        let center = diameter / 2
+        // Leave the exact cell and its outline clear; the ticks do not shrink with the pixel grid.
+        let gap = max(5, cell / 2 + 3)
+        for direction in [CGVector(dx: -1, dy: 0), CGVector(dx: 1, dy: 0),
+                          CGVector(dx: 0, dy: -1), CGVector(dx: 0, dy: 1)] {
+            target.move(to: CGPoint(x: center + direction.dx * gap, y: center + direction.dy * gap))
+            target.addLine(to: CGPoint(x: center + direction.dx * (gap + 4), y: center + direction.dy * (gap + 4)))
+        }
+        for shape in [loupeTargetOutline, loupeTarget] {
+            shape.frame = lensBounds
+            shape.path = target
+            shape.isHidden = !usesCenteredPicker
+        }
+        loupeTarget.lineWidth = 1
+        loupeTargetOutline.lineWidth = 3
         loupeShadow.bounds = lensBounds
         loupeShadow.path = CGPath(ellipseIn: lensBounds, transform: nil)
         loupeShadow.shadowPath = loupeShadow.path
@@ -860,6 +921,8 @@ final class OverlayView: NSView {
         let outlineOpacity = increasedContrast ? Theme.Overlay.outlineOpacityIncreasedContrast : Theme.Overlay.outlineOpacity
         loupeCenterOutline.strokeColor = CGColor(gray: lightStroke ? 0 : 1, alpha: outlineOpacity)
         loupeCenterOutline.isHidden = !picking
+        loupeTarget.strokeColor = loupeCenter.strokeColor
+        loupeTargetOutline.strokeColor = CGColor(gray: lightStroke ? 0 : 1, alpha: 0.9)
     }
 
     private func updatePointer(_ point: CGPoint?) {

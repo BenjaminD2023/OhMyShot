@@ -4,6 +4,20 @@ import AppKit
 /// give that hide back; ending selection ownership prevents later tracking events from hiding again.
 @MainActor
 final class OverlayCursorVisibility {
+    /// An explicit transparent image also keeps the canvas clear if AppKit restores a native cursor.
+    static let canvasCursor = NSCursor(
+        image: NSImage(size: NSSize(width: 1, height: 1), flipped: false) { rect in
+            NSColor.clear.setFill()
+            rect.fill(using: .copy)
+            return true
+        },
+        hotSpot: .zero
+    )
+
+    static func restoreCanvasCursor() {
+        if NSCursor.current === canvasCursor { NSCursor.arrow.set() }
+    }
+
     private(set) var isHidden = false
     private var drawsPointer = false
     private let hide: () -> Void
