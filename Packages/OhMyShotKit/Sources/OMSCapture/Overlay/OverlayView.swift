@@ -66,7 +66,7 @@ final class OverlayView: NSView {
     private var capturedFrame: CapturedFrame?
     private var pointer: CGPoint?
     /// Every display receives the first area press, even before the selection has any size. Once it
-    /// begins, the actual-size lens stays out of the way, the crosshair staying, until a click with no drag
+    /// begins, the centered pixel picker stays out of the way, the crosshair staying, until a click with no drag
     /// leaves no selection or a new capture session resets the view.
     private var hasStartedAreaSelection = false
     private var captureLoupeStyle: CaptureLoupeStyle = .magnified
@@ -92,6 +92,7 @@ final class OverlayView: NSView {
     private let loupe = CALayer()
     private let loupeImage = CALayer()
     private let loupeGrid = CAShapeLayer()
+    private let loupeGridOutline = CAShapeLayer()
     private let loupeCenter = CAShapeLayer()
     /// An opposite-color outline keeps the adaptive center cell visible over neighboring pixels.
     private let loupeCenterOutline = CAShapeLayer()
@@ -289,6 +290,10 @@ final class OverlayView: NSView {
 
     var debugLoupeImageGeometry: (frame: CGRect, contentsRect: CGRect, gridVisible: Bool) {
         (loupeImage.frame, loupeImage.contentsRect, !loupeGrid.isHidden)
+    }
+
+    var debugLoupePixelGeometry: (center: CGRect, grid: CGPath?, stroke: CGFloat, outline: CGFloat) {
+        (loupeCenter.path?.boundingBoxOfPath ?? .zero, loupeGrid.path, loupeCenter.lineWidth, loupeCenterOutline.lineWidth)
     }
 
     /// Drags the ruler's box over `rect` (global space) and lets go, for scripted checks.
@@ -660,13 +665,13 @@ final class OverlayView: NSView {
         loupe.backgroundColor = .white
         loupeImage.magnificationFilter = .nearest
         loupeImage.contentsGravity = .resize
-        loupeGrid.strokeColor = CGColor(gray: 0, alpha: 0.08)
-        loupeGrid.lineWidth = 1 / display.backingScale
+        for shape in [loupeGridOutline, loupeGrid, loupeCenterOutline, loupeCenter] {
+            shape.contentsScale = display.backingScale
+        }
         loupeCenter.fillColor = nil
-        loupeCenter.lineWidth = 1.5
         loupeCenterOutline.fillColor = nil
-        loupeCenterOutline.lineWidth = 3
         loupe.addSublayer(loupeImage)
+        loupe.addSublayer(loupeGridOutline)
         loupe.addSublayer(loupeGrid)
         loupe.addSublayer(loupeCenterOutline)
         loupe.addSublayer(loupeCenter)
@@ -692,6 +697,9 @@ final class OverlayView: NSView {
     }
 
     private var loupeDiameter: CGFloat { usesCenteredPicker ? captureLoupeSize.diameter : Theme.Loupe.diameter }
+    private var loupePixelsAcross: Int {
+        usesCenteredPicker ? captureLoupeSize.pixelsAcross(backingScale: display.backingScale) : Theme.Loupe.pixelsAcross
+    }
 
     /// Reused views may switch both size and purpose between sessions; keep every lens layer in sync.
     private func layoutLoupe() {
@@ -701,14 +709,22 @@ final class OverlayView: NSView {
         loupe.cornerRadius = diameter / 2
         loupeImage.frame = lensBounds
         loupeGrid.frame = lensBounds
-        loupeGrid.path = Self.gridPath(size: diameter, cells: Theme.Loupe.pixelsAcross)
-        loupeGrid.isHidden = usesCenteredPicker
-        let cell = diameter / CGFloat(Theme.Loupe.pixelsAcross)
+        loupeGrid.path = Self.gridPath(size: diameter, cells: loupePixelsAcross)
+        loupeGrid.isHidden = false
+        loupeGrid.lineWidth = 1 / display.backingScale
+        loupeGrid.strokeColor = CGColor(gray: 0, alpha: usesCenteredPicker ? 0.28 : 0.08)
+        loupeGridOutline.frame = lensBounds
+        loupeGridOutline.path = loupeGrid.path
+        loupeGridOutline.lineWidth = 2 / display.backingScale
+        loupeGridOutline.strokeColor = CGColor(gray: 1, alpha: 0.35)
+        loupeGridOutline.isHidden = !usesCenteredPicker
+        let cell = diameter / CGFloat(loupePixelsAcross)
         loupeCenter.frame = lensBounds
-        loupeCenter.path = CGPath(
-            roundedRect: CGRect(x: (diameter - cell) / 2, y: (diameter - cell) / 2, width: cell, height: cell),
-            cornerWidth: 1.5, cornerHeight: 1.5, transform: nil
-        )
+        let centerCell = CGRect(x: (diameter - cell) / 2, y: (diameter - cell) / 2, width: cell, height: cell)
+        loupeCenter.path = usesCenteredPicker ? CGPath(rect: centerCell, transform: nil)
+            : CGPath(roundedRect: centerCell, cornerWidth: 1.5, cornerHeight: 1.5, transform: nil)
+        loupeCenter.lineWidth = usesCenteredPicker ? 1 / display.backingScale : 1.5
+        loupeCenterOutline.lineWidth = usesCenteredPicker ? 2 / display.backingScale : 3
         loupeCenterOutline.frame = lensBounds
         loupeCenterOutline.path = loupeCenter.path
         loupeShadow.bounds = lensBounds
@@ -819,7 +835,7 @@ final class OverlayView: NSView {
         return path
     }
 
-    /// The actual-size lens, when Settings choose it for screenshots and Annotate Area: its center cell is the target,
+    /// The centered pixel picker, when Settings choose it for screenshots and Annotate Area: its center cell is the target,
     /// in place of the crosshair, until the first press. Pick Color and the live recording/scrolling selectors keep the
     /// magnified lens.
     private var usesCenteredPicker: Bool { captureLoupeStyle == .actualSize && (purpose == .screenshot || purpose == .annotate) }
@@ -900,15 +916,7 @@ final class OverlayView: NSView {
 
         let pixel = pixelCoordinate(at: point)
         if let frame = capturedFrame {
-            if usesCenteredPicker {
-                // Match the backdrop's coordinates exactly: this is a clear target, not a zoomed image.
-                loupeImage.contentsRect = CGRect(
-                    x: (point.x - diameter / 2) / bounds.width, y: (point.y - diameter / 2) / bounds.height,
-                    width: diameter / bounds.width, height: diameter / bounds.height
-                )
-            } else {
-                loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image)
-            }
+            loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image, pixelsAcross: loupePixelsAcross)
             let color = frame.color(atPixel: pixel.x, pixel.y)
             updateLoupeCenter(for: color)
             loupePill.swatch = color?.cgColor
@@ -957,8 +965,8 @@ final class OverlayView: NSView {
 
     /// The part of the frame the magnifier shows: `pixelsAcross` pixels centered on `pixel`. Layer
     /// contents are addressed bottom-up, so the row is flipped.
-    private static func contentsRect(around pixel: (x: Int, y: Int), in image: CGImage) -> CGRect {
-        let across = CGFloat(Theme.Loupe.pixelsAcross)
+    private static func contentsRect(around pixel: (x: Int, y: Int), in image: CGImage, pixelsAcross: Int) -> CGRect {
+        let across = CGFloat(pixelsAcross)
         let half = (across - 1) / 2
         let width = CGFloat(image.width), height = CGFloat(image.height)
         let left = CGFloat(pixel.x) - half

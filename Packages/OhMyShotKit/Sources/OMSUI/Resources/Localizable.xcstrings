@@ -24004,36 +24004,36 @@
         }
       }
     },
-    "What the screenshot and Annotate Area overlays show at the pointer before you choose an area. Magnified enlarges the pixels around it, to place an edge on the exact pixel. Actual Size shows them at their own size in a clear circle centered on the pointer, which goes when you start dragging; the crosshair stays." : {
+    "The screenshot and Annotate Area magnifier. Magnified shows a larger, offset preview. Centered shows a compact, translucent grid at the pointer with modest magnification; its center square marks one screen pixel. It hides when you start selecting." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lo que las superposiciones de captura de pantalla y de Anotar área muestran en el puntero antes de elegir un área. Ampliada amplía los píxeles a su alrededor, para colocar un borde en el píxel exacto. Tamaño real los muestra a su propio tamaño en un círculo claro centrado en el puntero, que desaparece al empezar a arrastrar; la cruz se mantiene."
+            "value" : "La lupa de Captura de pantalla y Anotar área. Ampliado muestra una vista previa más grande junto al puntero. Centrado muestra una cuadrícula compacta y translúcida con un aumento moderado; el cuadrado central marca un píxel de la pantalla. Se oculta al empezar a seleccionar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ce que les superpositions de capture d’écran et d’Annoter une zone montrent au pointeur avant de choisir une zone. Agrandie agrandit les pixels autour, pour placer un bord sur le pixel exact. Taille réelle les montre à leur propre taille dans un cercle clair centré sur le pointeur, qui disparaît dès que vous commencez à faire glisser ; le réticule reste."
+            "value" : "La loupe de Capture d’écran et Annoter une zone. Agrandi affiche un aperçu plus grand à côté du pointeur. Centré affiche une grille compacte et translucide avec un grossissement modéré ; le carré central désigne un pixel de l’écran. Elle disparaît au début de la sélection."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "スクリーンショットと「範囲に注釈を付ける」で、範囲を選ぶ前にポインタの位置に表示されるもの。「拡大」はポインタ周辺のピクセルを拡大し、端を正確なピクセルに合わせられます。「実寸」はポインタを中心とした透明な円の中にピクセルを実際のサイズで表示し、ドラッグを始めると円は消え、十字線は残ります。"
+            "value" : "スクリーンショットと範囲に注釈を付ける際の拡大鏡です。「拡大」はポインタの横に大きなプレビューを表示します。「中央」はポインタの位置に適度に拡大した小さな半透明のグリッドを表示し、中央の四角が画面の1ピクセルを示します。選択を始めると非表示になります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "截图和“标注区域”在你选定区域之前，于指针处显示的内容。“放大”会放大指针周围的像素，便于把边缘放在准确的像素上。“实际大小”在以指针为中心的清晰圆圈里按原始大小显示它们，开始拖动时圆圈消失，十字准线保留。"
+            "value" : "截图和区域标注时使用的放大镜。「放大」在指针旁显示较大的预览。「居中」在指针位置显示适度放大的小型半透明像素网格，中心方框对应屏幕上的一个像素。开始选择后隐藏。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "截圖和「標註區域」在你選定區域之前，於指標處顯示的內容。「放大」會放大指標周圍的像素，方便把邊緣放在準確的像素上。「實際大小」在以指標為中心的清晰圓圈裡按原始大小顯示它們，開始拖移時圓圈消失，十字準線保留。"
+            "value" : "截圖和區域標註時使用的放大鏡。「放大」在指標旁顯示較大的預覽。「置中」在指標位置顯示適度放大的小型半透明像素網格，中央方框對應螢幕上的一個像素。開始選取後隱藏。"
           }
         }
       }

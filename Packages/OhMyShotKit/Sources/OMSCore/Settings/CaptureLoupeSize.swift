@@ -6,31 +6,37 @@ public enum CaptureLoupeStyle: String, CaseIterable, Sendable {
     /// The lens below and right of the pointer, 15 captured pixels across at 8 pt each, with a grid and the crosshair:
     /// for placing an edge on the exact pixel.
     case magnified
-    /// A lens centered on the pointer, the screen in it at its own scale and undimmed, its center cell the target; gone
-    /// from the first press until a click with no drag, the crosshair staying.
+    /// A compact, translucent pixel grid centered on the pointer, with modest magnification. Hidden after the first
+    /// press until a click with no drag. The stored case name preserves existing preferences.
     case actualSize
 
     public var title: String {
         switch self {
         case .magnified: String(localized: "Magnified", bundle: .module)
-        case .actualSize: String(localized: "Actual Size", bundle: .module)
+        case .actualSize: String(localized: "Centered", bundle: .module)
         }
     }
 }
 
-/// The size of the actual-size lens (`CaptureLoupeStyle.actualSize`).
+/// The size of the centered pixel picker (`CaptureLoupeStyle.actualSize`).
 public enum CaptureLoupeSize: String, CaseIterable, Sendable {
     case small
     case medium
     case large
 
-    /// The picker diameter in points; the screen itself stays at its original scale.
+    /// The picker diameter in points; the surrounding screen stays at its original scale.
     public var diameter: CGFloat {
         switch self {
         case .small: 75
         case .medium: 90
         case .large: 120
         }
+    }
+
+    /// About four rendered device pixels per source pixel. An odd count keeps one exact center cell.
+    public func pixelsAcross(backingScale: CGFloat) -> Int {
+        let half = Int((diameter * backingScale / 4 / 2).rounded(.down))
+        return max(3, half * 2 + 1)
     }
 
     public var title: String {

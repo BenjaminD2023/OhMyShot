@@ -115,36 +115,36 @@
         }
       }
     },
-    "Actual Size" : {
+    "Centered" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tamaño real"
+            "value" : "Centrado"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Taille réelle"
+            "value" : "Centré"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "実寸"
+            "value" : "中央"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "实际大小"
+            "value" : "居中"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "實際大小"
+            "value" : "置中"
           }
         }
       }

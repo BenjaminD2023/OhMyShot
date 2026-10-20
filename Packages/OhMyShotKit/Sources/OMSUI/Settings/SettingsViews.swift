@@ -274,7 +274,7 @@ struct CaptureSettingsView: View {
                         .labelsHidden()
                         .fixedSize()
                     }
-                    InfoButton(Text("What the screenshot and Annotate Area overlays show at the pointer before you choose an area. Magnified enlarges the pixels around it, to place an edge on the exact pixel. Actual Size shows them at their own size in a clear circle centered on the pointer, which goes when you start dragging; the crosshair stays.", bundle: .module))
+                    InfoButton(Text("The screenshot and Annotate Area magnifier. Magnified shows a larger, offset preview. Centered shows a compact, translucent grid at the pointer with modest magnification; its center square marks one screen pixel. It hides when you start selecting.", bundle: .module))
                 }
             }
             SettingsRow(Text("Self-Timer", bundle: .module)) {

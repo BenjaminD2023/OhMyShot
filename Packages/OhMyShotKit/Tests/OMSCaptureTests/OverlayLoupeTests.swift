@@ -114,28 +114,90 @@ struct OverlayLoupeTests {
         }
     }
 
-    @Test func theCapturePickerKeepsTheOriginalScaleAndStandaloneColorRestoresItsZoom() throws {
-        for scale in [1, 2] {
-            let fixture = try fixture(scale: scale)
+    @Test func everyPickerSizeSeparatesSourcePixelsWithOneExactCenterCell() throws {
+        let counts: [(scale: Int, sizes: [Int])] = [(1, [19, 23, 31]), (2, [37, 45, 61])]
+        for (scale, expectedCounts) in counts {
+            let point = CGPoint(x: 250 + 0.5 / CGFloat(scale), y: 300 + 0.5 / CGFloat(scale))
+            let fixture = try fixture(scale: scale, origin: CGPoint(x: -800, y: 100), point: point)
             let view = OverlayView(display: fixture.display)
             defer { view.clear() }
             for purpose in [OverlayController.Purpose.screenshot, .annotate] {
-                for size in CaptureLoupeSize.allCases {
+                for (size, expectedCount) in zip(CaptureLoupeSize.allCases, expectedCounts) {
                     view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose, captureLoupeStyle: .actualSize, captureLoupeSize: size)
                     view.show(fixture.frame, frozen: true)
                     let image = view.debugLoupeImageGeometry
-                    let pixelsAcross = image.contentsRect.width * CGFloat(fixture.frame.image.width)
-                    #expect(abs(pixelsAcross / image.frame.width - CGFloat(scale)) < 0.0001,
-                            "A picker point must cover exactly one screen point at each display scale")
-                    #expect(!image.gridVisible)
-                    #expect(view.color(at: fixture.global)?.hex == "#123456")
+                    let pixels = view.debugLoupePixelGeometry
+                    let count = CGFloat(expectedCount), cell = size.diameter / count
+                    #expect(abs(image.contentsRect.width * CGFloat(fixture.frame.image.width) - count) < 0.0001)
+                    #expect(abs(image.contentsRect.height * CGFloat(fixture.frame.image.height) - count) < 0.0001)
+                    #expect(image.gridVisible && expectedCount % 2 == 1)
+                    #expect(abs(cell * CGFloat(scale) - 4) < 0.2, "Modest magnification stays near four rendered pixels per source pixel")
+                    #expect(abs(pixels.center.midX - size.diameter / 2) < 0.0001 && abs(pixels.center.midY - size.diameter / 2) < 0.0001)
+                    #expect(abs(pixels.center.width - cell) < 0.0001 && abs(pixels.center.height - cell) < 0.0001)
+                    #expect(pixels.stroke == 1 / CGFloat(scale) && pixels.outline == 2 / CGFloat(scale))
+                    #expect(cell > pixels.outline, "The reticle must leave the selected pixel's interior visible")
+                    try expectCropCenterMatchesSample(view, fixture: fixture, localPoint: point, scale: scale)
+                    let grid = try #require(pixels.grid)
+                    var moves: [CGPoint] = [], ends: [CGPoint] = []
+                    grid.applyWithBlock { element in
+                        switch element.pointee.type {
+                        case .moveToPoint: moves.append(element.pointee.points[0])
+                        case .addLineToPoint: ends.append(element.pointee.points[0])
+                        default: Issue.record("The pixel grid must contain only straight segments")
+                        }
+                    }
+                    try #require(moves.count == 2 * (expectedCount - 1) && moves.count == ends.count)
+                    for index in 1..<expectedCount {
+                        let offset = CGFloat(index) * cell, vertical = 2 * (index - 1)
+                        #expect(moves[vertical] == CGPoint(x: offset, y: 0))
+                        #expect(ends[vertical] == CGPoint(x: offset, y: size.diameter))
+                        #expect(moves[vertical + 1] == CGPoint(x: 0, y: offset))
+                        #expect(ends[vertical + 1] == CGPoint(x: size.diameter, y: offset))
+                    }
                 }
             }
             view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color, captureLoupeStyle: .actualSize)
             view.show(fixture.frame, frozen: true)
             let image = view.debugLoupeImageGeometry
             #expect(abs(image.contentsRect.width * CGFloat(fixture.frame.image.width) - 15) < 0.0001)
-            #expect(image.gridVisible)
+            #expect(image.frame.width == 120 && image.gridVisible)
+            #expect(view.debugLoupePixelGeometry.stroke == 1.5 && view.debugLoupePixelGeometry.outline == 3)
+        }
+    }
+
+    private func expectCropCenterMatchesSample(
+        _ view: OverlayView, fixture: (display: DisplayInfo, frame: CapturedFrame, global: CGPoint),
+        localPoint: CGPoint, scale: Int
+    ) throws {
+        let crop = view.debugLoupeImageGeometry.contentsRect
+        let sampledX = (localPoint.x * CGFloat(scale)).rounded(.down)
+        let sampledY = ((size.height - localPoint.y) * CGFloat(scale)).rounded(.down)
+        #expect(abs(crop.midX * CGFloat(fixture.frame.image.width) - sampledX - 0.5) < 0.0001)
+        #expect(abs(crop.midY * CGFloat(fixture.frame.image.height) - (CGFloat(fixture.frame.image.height) - sampledY - 0.5)) < 0.0001)
+        #expect(view.color(at: fixture.global)?.hex == "#123456")
+    }
+
+    @Test func movingOnePhysicalPixelMovesTheCropAndSampleTogetherIncludingScreenEdges() throws {
+        for scale in [1, 2] {
+            let unit = 1 / CGFloat(scale), half = unit / 2
+            for point in [CGPoint(x: half, y: half), CGPoint(x: size.width - half, y: size.height - half), CGPoint(x: 250 + half, y: 300 + half)] {
+                let fixture = try fixture(scale: scale, origin: CGPoint(x: -800, y: 100), point: point)
+                let view = OverlayView(display: fixture.display)
+                defer { view.clear() }
+                view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, captureLoupeStyle: .actualSize)
+                view.show(fixture.frame, frozen: true)
+                try expectCropCenterMatchesSample(view, fixture: fixture, localPoint: point, scale: scale)
+                let first = view.debugLoupeImageGeometry.contentsRect
+                // Fractional motion within the same source pixel keeps the same sampled cell.
+                view.movePointer(to: CGPoint(x: fixture.global.x + unit / 4, y: fixture.global.y))
+                #expect(view.debugLoupeImageGeometry.contentsRect == first)
+                let dx = point.x > size.width / 2 ? -unit : unit
+                view.movePointer(to: CGPoint(x: fixture.global.x + dx, y: fixture.global.y))
+                let adjacent = view.debugLoupeImageGeometry.contentsRect
+                #expect(abs((adjacent.minX - first.minX) * CGFloat(fixture.frame.image.width) - dx * CGFloat(scale)) < 0.0001)
+                #expect(adjacent.minY == first.minY && adjacent.size == first.size)
+                #expect(view.color(at: CGPoint(x: fixture.global.x + dx, y: fixture.global.y))?.hex == "#FFFFFF")
+            }
         }
     }
 
