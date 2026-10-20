@@ -46,6 +46,8 @@ struct QuickAccessSettingsView: View {
                             ForEach(SettingsStore.quickAccessCloseDelays, id: \.self) { seconds in
                                 if seconds == 0 {
                                     Text("Never", bundle: .module).tag(seconds)
+                                } else if seconds == 1 {
+                                    Text("After 1 second", bundle: .module).tag(seconds)
                                 } else {
                                     Text("After \(seconds) seconds", bundle: .module).tag(seconds)
                                 }
@@ -64,7 +66,7 @@ struct QuickAccessSettingsView: View {
                         .labelsHidden()
                         .fixedSize()
                         .disabled(settings.quickAccessCloseAfter == 0)
-                        InfoButton(Text("A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails.", bundle: .module))
+                        InfoButton(Text("A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails.", bundle: .module))
                     }
                     if settings.quickAccessPreferences.closingDiscardsUnsavedCaptures(history: settings.historyRetention) {
                         Label {

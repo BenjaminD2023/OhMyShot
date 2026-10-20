@@ -85,12 +85,18 @@ struct StudioView: View {
                 Label {
                     model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module)
                 } icon: {
-                    Image(systemName: model.saved ? "checkmark" : "square.and.arrow.down")
+                    Image(nsImage: Theme.symbol(
+                        model.saved ? "checkmark" : "square.and.arrow.down",
+                        described: model.saved ? String(localized: "Saved", bundle: .module) : String(localized: "Save", bundle: .module)
+                    ))
                 }
             } primaryAction: {
                 model.controller?.saveMovie()
             }
             .help(Text("Save a Copy (⌘S)", bundle: .module))
+            // SwiftUI leaves this split button without a VoiceOver name otherwise; the editor's and the recording
+            // window's take theirs from the label.
+            .accessibilityLabel(model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module))
             .disabled(model.progress != nil)
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)

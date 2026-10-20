@@ -40,11 +40,14 @@ struct CardCountdownTests {
         #expect(countdown.isDue(at: 150))
     }
 
-    @Test func theGraceIsNeverLongerThanTheInterval() {
-        var countdown = CardCountdown(interval: 2, at: 0)
-        countdown.hold(.pointer, at: 1.5)
+    @Test(arguments: [1.0, 2.0, 3.0])
+    func theGraceIsNeverLongerThanTheInterval(interval: Double) {
+        var countdown = CardCountdown(interval: interval, at: 0)
+        countdown.hold(.pointer, at: interval - 0.5)
         countdown.release(.pointer, at: 10)
-        #expect(countdown.timeLeft(at: 10) == 2)
+        #expect(countdown.timeLeft(at: 10) == interval)
+        #expect(!countdown.isDue(at: 10 + interval - 0.01))
+        #expect(countdown.isDue(at: 10 + interval))
     }
 
     @Test func aCardStaysHeldUntilEveryHoldIsLetGo() {

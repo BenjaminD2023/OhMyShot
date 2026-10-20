@@ -1318,36 +1318,36 @@
         }
       }
     },
-    "A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails." : {
+    "A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Una tarjeta espera mientras el puntero está sobre ella, su menú está abierto, se está arrastrando, Vista rápida la muestra, tiene el teclado, el editor tiene abierta su captura o se está subiendo. Después tiene al menos 4 segundos más. “Cerrar” deja la captura en el historial de capturas, salvo que el historial esté configurado como “Nunca” en General; en ese caso, una tarjeta que no se ha guardado se lleva su captura con ella. “Guardar y cerrar” también guarda una copia en la carpeta indicada en General, sin pedir un nombre, y conserva la tarjeta si no se puede guardar."
+            "value" : "Una tarjeta espera mientras el puntero está sobre ella, su menú está abierto, se está arrastrando, Vista rápida la muestra, tiene el teclado, el editor tiene abierta su captura o se está subiendo. Después tiene al menos 4 segundos más, o el tiempo seleccionado si es menor. “Cerrar” deja la captura en el historial de capturas, salvo que el historial esté configurado como “Nunca” en General; en ese caso, una tarjeta que no se ha guardado se lleva su captura con ella. “Guardar y cerrar” también guarda una copia en la carpeta indicada en General, sin pedir un nombre, y conserva la tarjeta si no se puede guardar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Une carte attend tant que le pointeur la survole, que son menu est ouvert, qu’elle est en cours de glissement, que Coup d’œil l’affiche, qu’elle a le focus clavier, que l’éditeur a sa capture ouverte ou que son téléversement est en cours. Elle dispose ensuite d’au moins 4 secondes de plus. Fermer laisse la capture dans l’historique des captures, sauf si l’historique est réglé sur Jamais dans Général : une carte non enregistrée emporte alors sa capture avec elle. Enregistrer et fermer enregistre aussi une copie dans le dossier défini dans Général, sans demander de nom, et conserve la carte en cas d’échec."
+            "value" : "Une carte attend tant que le pointeur la survole, que son menu est ouvert, qu’elle est en cours de glissement, que Coup d’œil l’affiche, qu’elle a le focus clavier, que l’éditeur a sa capture ouverte ou que son téléversement est en cours. Elle dispose ensuite d’au moins 4 secondes de plus, ou du délai choisi s’il est plus court. Fermer laisse la capture dans l’historique des captures, sauf si l’historique est réglé sur Jamais dans Général : une carte non enregistrée emporte alors sa capture avec elle. Enregistrer et fermer enregistre aussi une copie dans le dossier défini dans Général, sans demander de nom, et conserve la carte en cas d’échec."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ポインタがカードの上にあるとき、メニューが開いているとき、ドラッグ中、クイックルックで表示中、キーボード操作の対象のとき、エディタでキャプチャを開いているとき、アップロード中のときは、カードは待機し、その後少なくとも4秒間表示されます。「閉じる」でもキャプチャはキャプチャ履歴に残ります。ただし「一般」で履歴が「しない」に設定されている場合、保存されていないカードを閉じるとキャプチャも削除されます。「保存して閉じる」は、名前を尋ねずに「一般」で指定したフォルダにコピーを保存します。保存に失敗した場合はカードが残ります。"
+            "value" : "ポインタがカードの上にあるとき、メニューが開いているとき、ドラッグ中、クイックルックで表示中、キーボード操作の対象のとき、エディタでキャプチャを開いているとき、アップロード中のときは、カードは待機し、その後少なくとも4秒間（選択した時間がそれより短い場合はその時間）表示されます。「閉じる」でもキャプチャはキャプチャ履歴に残ります。ただし「一般」で履歴が「しない」に設定されている場合、保存されていないカードを閉じるとキャプチャも削除されます。「保存して閉じる」は、名前を尋ねずに「一般」で指定したフォルダにコピーを保存します。保存に失敗した場合はカードが残ります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当指针停在卡片上、卡片菜单已打开、卡片正被拖移、正在用快速查看显示、卡片拥有键盘焦点、编辑器打开了其截图，或其上传正在进行时，卡片会等待，之后至少再保留 4 秒。“关闭”会将截图留在截图历史中，除非“通用”中的历史记录设为“永不”，此时未存储的卡片关闭时会连同截图一起移除；“存储并关闭”还会将副本存储到“通用”中的文件夹，不询问名称，如果存储失败则保留卡片。"
+            "value" : "当指针停在卡片上、卡片菜单已打开、卡片正被拖移、正在用快速查看显示、卡片拥有键盘焦点、编辑器打开了其截图，或其上传正在进行时，卡片会等待，之后至少再保留 4 秒，若所选时间更短，则保留所选时间。“关闭”会将截图留在截图历史中，除非“通用”中的历史记录设为“永不”，此时未存储的卡片关闭时会连同截图一起移除；“存储并关闭”还会将副本存储到“通用”中的文件夹，不询问名称，如果存储失败则保留卡片。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "當指標停留在卡片上、其選單已打開、正被拖移、正以「快速查看」顯示、擁有鍵盤焦點、編輯器已打開其擷取內容，或正在上傳時，卡片會保持顯示，之後至少再停留 4 秒。「關閉」會將擷取內容留在擷取記錄中；但若「一般」中的記錄設為「永不」，未儲存的卡片關閉時會一併移除其擷取內容。「儲存並關閉」也會將拷貝儲存到「一般」中設定的檔案夾，不會詢問名稱；若儲存失敗則保留卡片。"
+            "value" : "當指標停留在卡片上、其選單已打開、正被拖移、正以「快速查看」顯示、擁有鍵盤焦點、編輯器已打開其擷取內容，或正在上傳時，卡片會保持顯示，之後至少再停留 4 秒，若所選時間較短，則停留所選時間。「關閉」會將擷取內容留在擷取記錄中；但若「一般」中的記錄設為「永不」，未儲存的卡片關閉時會一併移除其擷取內容。「儲存並關閉」也會將拷貝儲存到「一般」中設定的檔案夾，不會詢問名稱；若儲存失敗則保留卡片。"
           }
         }
       }
@@ -2440,6 +2440,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 秒後"
+          }
+        }
+      }
+    },
+    "After 1 second" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Después de 1 segundo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Après 1 seconde"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1秒後"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 秒后"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 秒後"
           }
         }
       }
@@ -13745,6 +13779,40 @@
         }
       }
     },
+    "OhMyShot Has Its Keys" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot ya tiene sus teclas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot a ses raccourcis"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShotでキーが使えます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷键已归 OhMyShot"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速鍵已歸 OhMyShot"
+          }
+        }
+      }
+    },
     "OhMyShot can show itself in a language other than the system’s. Missing your language? Translations are welcome on GitHub." : {
       "localizations" : {
         "es" : {
@@ -23237,6 +23305,40 @@
         }
       }
     },
+    "Turn Off macOS’s Screenshot Keys" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactiva las teclas de captura de macOS"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivez les raccourcis de capture de macOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOSのスクリーンショットのキーをオフにする"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭 macOS 的截屏快捷键"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉 macOS 的截圖快速鍵"
+          }
+        }
+      }
+    },
     "Turn off Capture History?" : {
       "localizations" : {
         "es" : {
@@ -24706,6 +24808,40 @@
         }
       }
     },
+    "macOS answers these keys before OhMyShot can. Turn them off in Keyboard Settings › Keyboard Shortcuts › Screenshots." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS responde a estas teclas antes que OhMyShot. Desactívalas en Ajustes de Teclado › Funciones rápidas de teclado › Capturas de pantalla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS répond à ces raccourcis avant OhMyShot. Désactivez-les dans les réglages Clavier › Raccourcis clavier › Captures d’écran."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOSはOhMyShotより先にこれらのキーに応答します。キーボード設定 › キーボードショートカット › スクリーンショット でオフにしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 会先于 OhMyShot 响应这些快捷键。请在 键盘设置 › 键盘快捷键 › 截屏 中关闭它们。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 會比 OhMyShot 先回應這些快速鍵。請到 鍵盤設定 › 鍵盤快速鍵 › 截圖 將其關閉。"
+          }
+        }
+      }
+    },
     "macOS applies it after a relaunch." : {
       "localizations" : {
         "es" : {
@@ -24770,6 +24906,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在你於鍵盤設定中將其關閉之前，macOS 會保留 ⇧⌘3、⇧⌘4 和 ⇧⌘5。"
+          }
+        }
+      }
+    },
+    "macOS’s screenshot keys are off, so these keys capture with OhMyShot." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las teclas de captura de macOS están desactivadas, así que estas teclas capturan con OhMyShot."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les raccourcis de capture de macOS sont désactivés, ces raccourcis capturent donc avec OhMyShot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOSのスクリーンショットのキーはオフです。これらのキーでOhMyShotが撮影します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 的截屏快捷键已关闭，这些快捷键现在由 OhMyShot 截图。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 的截圖快速鍵已關閉，這些快速鍵現在由 OhMyShot 擷取畫面。"
           }
         }
       }
