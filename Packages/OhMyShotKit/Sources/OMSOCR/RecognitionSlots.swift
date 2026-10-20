@@ -1,27 +1,20 @@
-/// Accurate Vision requests share one process-wide slot, including warmups. Concurrent model
-/// initialization can stall them; a timed-out request must not overlap its replacement.
+/// Vision can stall, without an error, when more than two accurate text requests run at once in a process
+/// (Docs/ocr.md). A recognition now runs two models side by side, and the OCR panel and Capture Text can
+/// overlap, so every accurate request the pipeline makes holds one of two slots; a third waits its turn.
 actor RecognitionSlots {
-    static let shared = RecognitionSlots(count: 1)
-
-    private struct Waiter {
-        let id: Int
-        let continuation: CheckedContinuation<Void, Error>
-    }
+    static let shared = RecognitionSlots(count: 2)
 
     private var free: Int
-    private var waiting: [Waiter] = []
-    private var nextWaiter = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
 
     init(count: Int) {
         free = count
     }
 
-    /// Runs `operation` in a slot, waiting cancellably if capacity is taken. A timeout belongs outside
-    /// this call: the slot stays occupied until the actual operation ends, even if it ignores cancellation.
+    /// Runs `operation` in a slot, waiting for one if both are taken.
     nonisolated func run<T>(_ operation: () async throws -> T) async throws -> T {
-        try await acquire()
+        await acquire()
         do {
-            try Task.checkCancellation()
             let value = try await operation()
             await release()
             return value
@@ -31,37 +24,19 @@ actor RecognitionSlots {
         }
     }
 
-    private func acquire() async throws {
-        try Task.checkCancellation()
+    private func acquire() async {
         if free > 0 {
             free -= 1
         } else {
-            let id = nextWaiter
-            nextWaiter += 1
-            try await withTaskCancellationHandler {
-                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                    if Task.isCancelled {
-                        continuation.resume(throwing: CancellationError())
-                    } else {
-                        waiting.append(Waiter(id: id, continuation: continuation))
-                    }
-                }
-            } onCancel: {
-                Task { await self.cancelWaiter(id) }
-            }
+            await withCheckedContinuation { waiting.append($0) }
         }
-    }
-
-    private func cancelWaiter(_ id: Int) {
-        guard let index = waiting.firstIndex(where: { $0.id == id }) else { return }
-        waiting.remove(at: index).continuation.resume(throwing: CancellationError())
     }
 
     private func release() {
         if waiting.isEmpty {
             free += 1
         } else {
-            waiting.removeFirst().continuation.resume()
+            waiting.removeFirst().resume()
         }
     }
 }

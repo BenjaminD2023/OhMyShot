@@ -157,12 +157,13 @@ public struct VisionPipeline: OCREngine {
             trace("\(step): \(Self.milliseconds(now - mark)) ms")
             mark = now
         }
-        // Finish the primary model before starting other requests: simultaneous model initialization
-        // can stall Vision. The Latin reading still serves both English pages and English lines in CJK.
-        options.trace?("primary pass started")
-        var lines = try await readLines(in: image, languages: options.primaryLanguages)
+        // The first pass, the Latin model over the whole page, and text detection run side by side.
+        // Vision runs the two models at once for about 17 ms more than the first pass alone (measured),
+        // and the Latin reading serves both an English page and the English lines of a Chinese one.
+        async let primary = readLines(in: image, languages: options.primaryLanguages)
         async let latinPage = readLines(in: image, languages: Self.english)
         async let detected = textRectangles(in: image)
+        var lines = try await primary
         let latin = (try? await latinPage) ?? []
         let rectangles = try await detected
         lap("first pass")
@@ -215,8 +216,8 @@ public struct VisionPipeline: OCREngine {
         let configured = request
         let timeout = options.timeout
         let requested = ContinuousClock.now
-        let observations = try await withTimeout(timeout) {
-            try await RecognitionSlots.shared.run { try await configured.perform(on: image) }
+        let observations = try await RecognitionSlots.shared.run {
+            try await withTimeout(timeout) { try await configured.perform(on: image) }
         }
         let read = ContinuousClock.now
         defer {
@@ -618,8 +619,8 @@ struct InkProfile {
 /// "下午3点", "24 px" as "24px"), going by the empty pixel columns at that spot rather than a style rule.
 ///
 /// macOS text layout already leaves a gap of up to about 0.25 em between CJK and Latin where nobody
-/// typed a space, so missing spaces use a 0.3 em cut unless the line supplies narrower spaced examples.
-/// Japanese gets no spaces back at all: its automatic gap reaches 0.29 em, and Japanese
+/// typed a space, while a typed space leaves 0.32 em or more (measured with the benchmark), so the cut
+/// is at 0.3 em. Japanese gets no spaces back at all: its automatic gap reaches 0.29 em, and Japanese
 /// rarely puts spaces there anyway.
 enum Spacing {
     /// Whether the text has a boundary Vision drops spaces at.
@@ -637,59 +638,34 @@ enum Spacing {
         return widths.isEmpty ? nil : widths[widths.count / 2]
     }
 
-    /// Existing spaces stay unless the ink nearly touches. Missing spaces use the conservative
-    /// 0.3 em cut, calibrated only when the same line supplies consistent spaced examples in both
-    /// script directions. This also reads fonts whose typed space is narrower than 0.3 em.
+    /// Spaces at a CJK–Latin boundary follow the image both ways: one is added where the gap is a typed
+    /// space (over 0.3 em), and one Vision put in is dropped where the glyphs nearly touch (under 0.2 em).
     ///
     /// - Parameter boundary: the image x where a range of the text ends, if Vision knows it.
     static func restored(_ text: Substring, ink: InkProfile, em: CGFloat, boundary: (Range<String.Index>) -> CGFloat?) -> String {
-        struct Gap {
-            var width: CGFloat
-            var hadSpace: Bool
-            var direction: Int
-        }
-        var gaps: [String.Index: Gap] = [:]
-        var previous: (character: Character, range: Range<String.Index>)?
-        var spaced = false
-        for index in text.indices {
-            let character = text[index]
-            if character.isWhitespace { spaced = true; continue }
-            let range = index..<text.index(after: index)
-            if let last = previous, isBoundary(last.character, character), let x = boundary(last.range) {
-                let width = ink.widestGap(from: x - em * 0.45, to: x + em * 0.45)
-                let direction = Script.isCJK(last.character) ? 1 : Script.isCJK(character) ? 2 : 0
-                gaps[index] = Gap(width: width, hadSpace: spaced, direction: direction)
-            }
-            previous = (character, range)
-            spaced = false
-        }
-        let anchors = gaps.values.filter { $0.hadSpace && $0.direction != 0 && $0.width > em * 0.2 }
-        let widths = anchors.map(\.width).sorted()
-        var addingThreshold = em * 0.3
-        if widths.count >= 2, let narrowest = widths.first, let widest = widths.last,
-           widest <= narrowest * 1.5, Set(anchors.map(\.direction)).count == 2 {
-            let median = (widths[(widths.count - 1) / 2] + widths[widths.count / 2]) / 2
-            addingThreshold = max(em * 0.2, min(addingThreshold, median * 0.8))
-        }
-
         var output = ""
-        var hasCharacter = false
+        var previous: (character: Character, range: Range<String.Index>)?
         var spaceAfterPrevious = false
         for index in text.indices {
             let character = text[index]
             if character.isWhitespace {
-                if !hasCharacter { output.append(character) } else { spaceAfterPrevious = true }
+                if previous == nil { output.append(character) } else { spaceAfterPrevious = true }
                 continue
             }
-            if let gap = gaps[index] {
-                let threshold = gap.hadSpace ? em * 0.2 : gap.direction == 0 ? em * 0.3 : addingThreshold
-                if gap.width > threshold { output.append(" ") }
+            let range = index..<text.index(after: index)
+            if let last = previous, isBoundary(last.character, character), let x = boundary(last.range) {
+                // Vision's own spaces are usually right, so one goes only where the glyphs clearly touch.
+                let window = em * 0.45
+                let gap = ink.widestGap(from: x - window, to: x + window)
+                if gap > em * (spaceAfterPrevious ? 0.2 : 0.3) {
+                    output.append(" ")
+                }
             } else if spaceAfterPrevious {
                 output.append(" ")
             }
             spaceAfterPrevious = false
             output.append(character)
-            hasCharacter = true
+            previous = (character, range)
         }
         if spaceAfterPrevious { output.append(" ") }
         return output
@@ -733,8 +709,9 @@ extension VisionPipeline {
     @concurrent
     public func prewarm() async {
         guard let image = Self.warmupImage() else { return }
-        _ = try? await readLines(in: image, languages: options.primaryLanguages)
-        _ = try? await readLines(in: image, languages: Self.english)
+        async let primary = try? readLines(in: image, languages: options.primaryLanguages)
+        async let latin = try? readLines(in: image, languages: Self.english)
+        _ = await (primary, latin)
     }
 
     private static func warmupImage() -> CGImage? {

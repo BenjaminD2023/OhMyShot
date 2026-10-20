@@ -134,29 +134,24 @@ extension OCRLine.Direction {
 }
 
 /// Runs `operation`, or throws `OCRError.timedOut` once `limit` passes. Whichever finishes first cancels
-/// the other, so no timer outlives a request. Cancellation also releases the caller immediately. The
-/// operation may still be running if it ignores cancellation; any concurrency slot must be held inside it.
+/// the other, so no timer outlives a request. The caller is released even if the operation ignores
+/// cancellation, so one stalled request cannot hang a whole batch.
 func withTimeout<T: Sendable>(_ limit: Duration, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
     let race = TimeoutRace<T>()
-    return try await withTaskCancellationHandler {
-        try await withCheckedThrowingContinuation { continuation in
-            guard race.begin(continuation) else { return }
-            let work = Task {
-                do {
-                    try Task.checkCancellation()
-                    race.finish(.success(try await operation()))
-                } catch {
-                    race.finish(.failure(error))
-                }
+    return try await withCheckedThrowingContinuation { continuation in
+        race.begin(continuation)
+        let work = Task {
+            do {
+                race.finish(.success(try await operation()))
+            } catch {
+                race.finish(.failure(error))
             }
-            let timer = Task {
-                try? await Task.sleep(for: limit)
-                if !Task.isCancelled { race.finish(.failure(OCRError.timedOut)) }
-            }
-            race.track([work, timer])
         }
-    } onCancel: {
-        race.finish(.failure(CancellationError()))
+        let timer = Task {
+            try? await Task.sleep(for: limit)
+            if !Task.isCancelled { race.finish(.failure(OCRError.timedOut)) }
+        }
+        race.track([work, timer])
     }
 }
 
@@ -165,28 +160,19 @@ private final class TimeoutRace<T: Sendable>: Sendable {
     private struct State {
         var continuation: CheckedContinuation<T, Error>?
         var tasks: [Task<Void, Never>] = []
-        var result: Result<T, Error>?
+        var finished = false
     }
 
     private let state = Mutex(State())
 
-    /// Cancellation can win before the caller has installed its continuation.
-    func begin(_ continuation: CheckedContinuation<T, Error>) -> Bool {
-        let result = state.withLock { state in
-            if state.result == nil { state.continuation = continuation }
-            return state.result
-        }
-        if let result {
-            continuation.resume(with: result)
-            return false
-        }
-        return true
+    func begin(_ continuation: CheckedContinuation<T, Error>) {
+        state.withLock { $0.continuation = continuation }
     }
 
     func track(_ tasks: [Task<Void, Never>]) {
         let finishedAlready = state.withLock { state in
-            if state.result == nil { state.tasks = tasks }
-            return state.result != nil
+            if !state.finished { state.tasks = tasks }
+            return state.finished
         }
         // A result that arrived before the tasks were tracked could not cancel them.
         if finishedAlready { tasks.forEach { $0.cancel() } }
@@ -194,8 +180,8 @@ private final class TimeoutRace<T: Sendable>: Sendable {
 
     func finish(_ result: Result<T, Error>) {
         let (continuation, tasks) = state.withLock { state -> (CheckedContinuation<T, Error>?, [Task<Void, Never>]) in
-            guard state.result == nil else { return (nil, []) }
-            state.result = result
+            guard !state.finished else { return (nil, []) }
+            state.finished = true
             defer { state.continuation = nil; state.tasks = [] }
             return (state.continuation, state.tasks)
         }

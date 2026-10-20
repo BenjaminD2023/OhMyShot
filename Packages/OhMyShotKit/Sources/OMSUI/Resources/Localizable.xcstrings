@@ -10328,6 +10328,12 @@
             "state" : "translated",
             "value" : "图片中的换行"
           }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圖片中的換行"
+          }
         }
       }
     },
@@ -11103,25 +11109,31 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conserva las líneas detectadas en la imagen o une las de cada párrafo. Define el valor predeterminado de Capturar texto y de las nuevas ventanas Texto reconocido; el menú de saltos de línea solo afecta a esa ventana."
+            "value" : "Conserva las líneas detectadas en la imagen o une las de cada párrafo. Define el valor predeterminado de Capturar texto y de las nuevas ventanas Texto reconocido; el menú Saltos de línea solo afecta a esa ventana."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conserve les lignes détectées dans l’image ou réunit celles de chaque paragraphe. Définit le choix par défaut de Capturer le texte et des nouvelles fenêtres Texte reconnu ; le menu Sauts de ligne ne modifie que la fenêtre actuelle."
+            "value" : "Conserve les lignes détectées dans l’image ou réunit celles de chaque paragraphe. Définit le choix par défaut de Capturer du texte et des nouvelles fenêtres Texte reconnu ; le menu Sauts de ligne ne modifie que la fenêtre concernée."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "画像から認識した行を保持するか、段落内で折り返された行を結合します。テキストのキャプチャと新しいテキスト認識ウインドウの初期値です。ウインドウの改行メニューは、そのウインドウだけに適用されます。"
+            "value" : "画像から認識した行を保持するか、段落内で折り返された行を結合します。「テキストをキャプチャ」と新しい「認識されたテキスト」ウインドウの初期値です。ウインドウの「改行」メニューは、そのウインドウだけに適用されます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保留图片中识别到的各行，或合并每个段落内的折行。此设置决定截取文字和新打开的文字识别窗口的默认值；窗口中的“换行”菜单仅临时影响当前窗口。"
+            "value" : "保留图片中识别到的各行，或合并每个段落内的折行。这是“截取文字”和新打开的“识别的文字”窗口的默认设置；窗口中的“换行”菜单只影响该窗口。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留圖片中偵測到的各行，或合併每個段落內的折行。這是「擷取文字」和新開啟的「辨識出的文字」視窗的預設值；視窗中的「換行」選單只影響該視窗。"
           }
         }
       }

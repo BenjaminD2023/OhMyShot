@@ -71,11 +71,10 @@ one per engine and major macOS version; a run reports cases that got worse than 
 What the pipeline does, in order, and why (an image more than 2560 pixels tall, or very wide, is cut into
 overlapping pieces first and each piece goes through all of this: see Large selections in bands):
 
-1. **Primary pass** with `[zh-Hans, en-US]`, language correction off, before the Latin model `[en-US]`
-   reads the whole page alongside `DetectTextRectanglesRequest`. Starting the primary model alone
-   avoids competing model initialization; barcode detection starts after text recognition too.
-   Every accurate request holds the process-wide slot (`RecognitionSlots`), including warmup, since
-   concurrent initialization can stall Vision. Each line Vision returns loses the icons at its ends (`Icons`): an
+1. **Primary pass** with `[zh-Hans, en-US]`, language correction off, while the Latin model `[en-US]`
+   reads the whole page and `DetectTextRectanglesRequest` finds text regions, all three side by side.
+   Every accurate request holds one of two process-wide slots (`RecognitionSlots`), since a third
+   running at once can stall Vision. Each line Vision returns loses the icons at its ends (`Icons`): an
    app's symbol before a label, a status icon, emoji, or unread dot after it, all of which Vision reads
    as characters. One goes when it is about as wide as the line is tall (a dot: small and read as one),
    sits at an end, and is set apart by a gap at least 0.4 of the line's height and twice any other gap in
@@ -115,10 +114,6 @@ overlapping pieces first and each piece goes through all of this: see Large sele
    Japanese), and a typed space leaves 0.32–0.50 em, so a space is added above 0.3 em and one of
    Vision's is removed below 0.2 em. Japanese lines get no spaces back. (Vision's per-character boxes
    cannot be used for this: they tile the line, with any space folded into a neighbor.)
-   Narrower fonts can put a typed space below 0.3 em. When a line already has at least two consistent
-   spaced CJK/Latin boundaries in both script directions, their measured median calibrates the add
-   threshold to 80% of that gap, bounded by 0.2–0.3 em. Other lines retain the conservative threshold;
-   letter/digit boundaries and the removal threshold stay unchanged. Each boundary is measured once.
 9. **Text assembly** (`TextAssembler`): reading order with vertical columns right to left; a listing
    where at least 40% of lines look like code (a `key: value` line counts when the key looks like code,
    lowercase or with `_`, `.`, `-`, or stands alone; a capitalized label such as `Phone: …` counts half,
@@ -1828,17 +1823,18 @@ pack's).
 VLM (its "OCR:" reads text better than Vision on the bench, but whole screens make it loop, › L3 spike); a reading the
 deadline cut keeps Vision's lines for that table, though the rows read so far may be right.
 
-## Image line breaks
+## Image line breaks (2026-10-20)
 
-Settings → Tools → Image line breaks sets the default for Capture Text and new Recognized Text windows: **Keep Line Breaks** (the default) preserves detected image rows as actual newline characters; **Join Lines** merges wrapped lines within a paragraph using the existing layout-aware assembler. Code, table rows and display formulas retain their structure.
+Settings → Tools → Image line breaks sets the default for Capture Text and new Recognized Text windows:
+**Keep Line Breaks** (the default, as before) keeps the image's detected rows as newline characters, and
+**Join Lines** merges wrapped lines within a paragraph through the layout-aware assembler. Code, table rows,
+and display formulas keep their structure either way. All-In-One's text mode follows the setting too.
 
-The OCR window’s existing **Keep Line Breaks / Join Lines** menu changes the actual text for that window, including Copy, and leaves the saved default unchanged. Existing windows keep their own choice; new windows start from the saved default. The independent **Wrap Text** control only reflows the display. A cloud model’s panel text remains as returned by that model.
+The Recognized Text window's Keep Line Breaks / Join Lines menu changes the text of that window, Copy
+included, and leaves the saved default alone; a window opened earlier keeps its own choice, a new one starts
+from the saved default. Wrap Text is separate: it reflows the display only. A cloud model's text stays as the
+model returned it.
 
-The explicit Capture Text, Joining Lines command and explicit Shortcuts or URL line-break arguments still take precedence. A `capture-text` URL without `linebreaks` uses the saved default.
-
-Vision request deadlines include waiting for a recognition slot. Cancelling or timing out a caller
-removes queued work promptly; a native request that ignores cancellation retains its slot until it
-actually finishes. This keeps accurate requests serialized, including after a timeout. The
-app's 30-second request deadline is unchanged.
-
-![Image OCR line breaks and temporary window overrides](assets/ocr-image-line-breaks.gif)
+Capture Text, Joining Lines always joins. A `capture-text` URL without `linebreaks` follows the saved default,
+and `linebreaks=true|false` overrides it. The Shortcuts actions (Capture Text, Recognize Text in Image) have
+their own Keep Line Breaks parameter, on by default, so they ignore the saved default.
