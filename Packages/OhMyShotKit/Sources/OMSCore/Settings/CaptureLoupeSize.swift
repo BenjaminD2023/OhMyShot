@@ -18,6 +18,32 @@ public enum CaptureLoupeStyle: String, CaseIterable, Sendable {
     }
 }
 
+/// The centered screenshot and annotation picker's approximate device-pixel magnification.
+public enum CaptureLoupeMagnification: String, CaseIterable, Sendable {
+    case one
+    case two
+    case four
+    case eight
+
+    public var factor: CGFloat {
+        switch self {
+        case .one: 1
+        case .two: 2
+        case .four: 4
+        case .eight: 8
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .one: "1×"
+        case .two: "2×"
+        case .four: "4×"
+        case .eight: "8×"
+        }
+    }
+}
+
 /// The size of the centered pixel picker (`CaptureLoupeStyle.actualSize`).
 public enum CaptureLoupeSize: String, CaseIterable, Sendable {
     case small
@@ -33,9 +59,9 @@ public enum CaptureLoupeSize: String, CaseIterable, Sendable {
         }
     }
 
-    /// About four rendered device pixels per source pixel. An odd count keeps one exact center cell.
-    public func pixelsAcross(backingScale: CGFloat) -> Int {
-        let half = Int((diameter * backingScale / 4 / 2).rounded(.down))
+    /// An odd count keeps one exact center cell, with the chosen rendered device pixels per source pixel.
+    public func pixelsAcross(backingScale: CGFloat, magnification: CaptureLoupeMagnification = .four) -> Int {
+        let half = Int((diameter * backingScale / magnification.factor / 2).rounded(.down))
         return max(3, half * 2 + 1)
     }
 

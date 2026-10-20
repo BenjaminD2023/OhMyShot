@@ -126,6 +126,8 @@ public final class OverlayController {
     public var captureLoupeStyle: CaptureLoupeStyle = .magnified
     /// The actual-size lens's size.
     public var captureLoupeSize: CaptureLoupeSize = .small
+    /// How much the centered screenshot and annotation picker enlarges device pixels.
+    public var captureLoupeMagnification: CaptureLoupeMagnification = .four
     /// What the ruler reads in. Tab switches it during a session, and `onMeasureUnitChange` hears it.
     public var measureUnit: MeasureUnit = .points
     public var onMeasureUnitChange: ((MeasureUnit) -> Void)?
@@ -269,6 +271,7 @@ public final class OverlayController {
                 colorFormat: colorFormat,
                 captureLoupeStyle: captureLoupeStyle,
                 captureLoupeSize: captureLoupeSize,
+                captureLoupeMagnification: captureLoupeMagnification,
                 measureUnit: measureUnit,
                 measureTolerance: measureTolerance,
                 measureSnapsToContent: measureSnapsToContent,

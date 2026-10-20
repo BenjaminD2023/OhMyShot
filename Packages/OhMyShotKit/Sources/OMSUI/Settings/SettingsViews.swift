@@ -263,18 +263,34 @@ struct CaptureSettingsView: View {
                     }
                     .labelsHidden()
                     .fixedSize()
-                    if settings.captureLoupeStyle == .actualSize {
-                        Picker(selection: $settings.captureLoupeSize) {
-                            ForEach(CaptureLoupeSize.allCases, id: \.self) { size in
-                                Text(verbatim: size.title).tag(size)
+                    InfoButton(Text("The screenshot and Annotate Area magnifier. Magnified shows a larger, offset preview. Centered shows a compact, translucent grid at the pointer; choose its size and magnification below. Its center square marks one screen pixel. It hides when you start selecting.", bundle: .module))
+                }
+            }
+            if settings.captureLoupeStyle == .actualSize {
+                SettingsRow(Text("Color picker size", bundle: .module)) {
+                    Picker(selection: $settings.captureLoupeSize) {
+                        ForEach(CaptureLoupeSize.allCases, id: \.self) { size in
+                            Text(verbatim: size.title).tag(size)
+                        }
+                    } label: {
+                        Text("Color picker size", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                SettingsRow(Text("Color picker magnification", bundle: .module)) {
+                    HStack(spacing: 6) {
+                        Picker(selection: $settings.captureLoupeMagnification) {
+                            ForEach(CaptureLoupeMagnification.allCases, id: \.self) { magnification in
+                                Text(verbatim: magnification.title).tag(magnification)
                             }
                         } label: {
-                            Text("Size", bundle: .module)
+                            Text("Color picker magnification", bundle: .module)
                         }
                         .labelsHidden()
                         .fixedSize()
+                        InfoButton(Text("Controls how much each screen pixel is enlarged in the centered screenshot picker. The size stays the same when you change magnification. Applies to the next screenshot or Annotate Area capture; Pick Color is unchanged.", bundle: .module))
                     }
-                    InfoButton(Text("The screenshot and Annotate Area magnifier. Magnified shows a larger, offset preview. Centered shows a compact, translucent grid at the pointer with modest magnification; its center square marks one screen pixel. It hides when you start selecting.", bundle: .module))
                 }
             }
             SettingsRow(Text("Self-Timer", bundle: .module)) {

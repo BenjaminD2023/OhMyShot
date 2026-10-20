@@ -5744,6 +5744,74 @@
         }
       }
     },
+    "Color picker magnification" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aumento del selector de color"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grossissement de la pipette"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カラーピッカーの倍率"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取色器放大倍率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取色器放大倍率"
+          }
+        }
+      }
+    },
+    "Color picker size" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamaño del selector de color"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taille de la pipette"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カラーピッカーのサイズ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取色器大小"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取色器大小"
+          }
+        }
+      }
+    },
     "Color pin, %@" : {
       "localizations" : {
         "es" : {
@@ -5910,6 +5978,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "控制快速取用"
+          }
+        }
+      }
+    },
+    "Controls how much each screen pixel is enlarged in the centered screenshot picker. The size stays the same when you change magnification. Applies to the next screenshot or Annotate Area capture; Pick Color is unchanged." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controla cuánto se amplía cada píxel de la pantalla en el selector centrado de las capturas. El tamaño no cambia al ajustar el aumento. Se aplica a la próxima captura o Anotar área; Seleccionar color no cambia."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Règle l’agrandissement de chaque pixel dans la pipette centrée des captures. La taille reste la même lorsque le grossissement change. S’applique à la prochaine capture ou à Annoter une zone ; Choisir une couleur reste inchangé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショットの中央ピッカーで、画面の各ピクセルの拡大率を調整します。倍率を変えてもピッカーのサイズは変わりません。次のスクリーンショットまたは「範囲に注釈」に適用され、「カラーを選択」は変わりません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调整截图居中取色器中每个屏幕像素的放大倍率。修改倍率不会改变取色器的大小。应用于下一次截图或“标注区域”；普通“取色”工具保持不变。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "調整截圖置中取色器中每個螢幕像素的放大倍率。修改倍率不會改變取色器大小。套用至下一次截圖或「標註區域」；一般「挑選顏色」工具維持不變。"
           }
         }
       }
@@ -22011,6 +22113,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "簽署請求所用的區域。Cloudflare R2 使用「auto」；MinIO 通常接受「us-east-1」。"
+          }
+        }
+      }
+    },
+    "The screenshot and Annotate Area magnifier. Magnified shows a larger, offset preview. Centered shows a compact, translucent grid at the pointer; choose its size and magnification below. Its center square marks one screen pixel. It hides when you start selecting." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La lupa para capturas y Anotar área. Ampliada muestra una vista previa más grande y desplazada. Centrada muestra una cuadrícula compacta y translúcida en el puntero; elige su tamaño y aumento abajo. El cuadrado central marca un píxel de la pantalla. Se oculta al empezar a seleccionar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La loupe pour les captures et Annoter une zone. Agrandie affiche un aperçu plus grand et décalé. Centrée affiche une grille compacte et translucide au pointeur ; choisissez sa taille et son grossissement ci-dessous. Le carré central indique un pixel de l’écran. Elle se masque au début de la sélection."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショットと「範囲に注釈」のルーペです。「拡大」は大きなプレビューをポインタから離して表示します。「中央」はポインタに小さな半透明グリッドを表示します。サイズと倍率を下で選べます。中央の四角は画面の1ピクセルを示します。選択を始めると非表示になります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用于截图和“标注区域”的放大镜。“放大”会在指针旁显示较大的预览。“居中”会在指针处显示紧凑的半透明网格，可在下方选择大小和放大倍率。中心方框标记屏幕上的一个像素，开始选择区域后隐藏。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用於截圖和「標註區域」的放大鏡。「放大」會在指標旁顯示較大的預覽。「置中」會在指標處顯示小巧的半透明格線，可在下方選擇大小和放大倍率。中央方框標記螢幕上的一個像素，開始選取範圍後隱藏。"
           }
         }
       }

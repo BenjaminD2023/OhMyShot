@@ -173,6 +173,11 @@ public final class SettingsStore {
         didSet { defaults.set(captureLoupeSize.rawValue, forKey: Key.captureLoupeSize) }
     }
 
+    /// How much the centered screenshot and annotation picker enlarges device pixels.
+    public var captureLoupeMagnification: CaptureLoupeMagnification {
+        didSet { defaults.set(captureLoupeMagnification.rawValue, forKey: Key.captureLoupeMagnification) }
+    }
+
     /// The shape Shift keeps while an area is dragged out, as "16:9"; empty for a square.
     public var areaShape: String {
         didSet { defaults.set(areaShape, forKey: Key.areaShape) }
@@ -458,6 +463,7 @@ public final class SettingsStore {
             Key.screenshotShowsCursor: false,
             Key.captureLoupeStyle: CaptureLoupeStyle.magnified.rawValue,
             Key.captureLoupeSize: CaptureLoupeSize.small.rawValue,
+            Key.captureLoupeMagnification: CaptureLoupeMagnification.four.rawValue,
             Key.areaShape: "",
             Key.snapSelectionToText: false,
             Key.allInOneRemembersArea: true,
@@ -510,6 +516,7 @@ public final class SettingsStore {
         screenshotShowsCursor = defaults.bool(forKey: Key.screenshotShowsCursor)
         captureLoupeStyle = defaults.string(forKey: Key.captureLoupeStyle).flatMap(CaptureLoupeStyle.init(rawValue:)) ?? .magnified
         captureLoupeSize = defaults.string(forKey: Key.captureLoupeSize).flatMap(CaptureLoupeSize.init(rawValue:)) ?? .small
+        captureLoupeMagnification = defaults.string(forKey: Key.captureLoupeMagnification).flatMap(CaptureLoupeMagnification.init(rawValue:)) ?? .four
         // Only a shape the picker lists is kept; anything else, a square included, is a square.
         let shape = defaults.string(forKey: Key.areaShape) ?? ""
         areaShape = AspectRatio.presets.dropFirst().contains { $0.label == shape } ? shape : ""
@@ -607,6 +614,7 @@ public final class SettingsStore {
         static let screenshotShowsCursor = "screenshotShowsCursor"
         static let captureLoupeStyle = "captureLoupeStyle"
         static let captureLoupeSize = "captureLoupeSize"
+        static let captureLoupeMagnification = "captureLoupeMagnification"
         static let areaShape = "areaShape"
         static let snapSelectionToText = "snapSelectionToText"
         static let selfTimerDelay = "selfTimerDelay"

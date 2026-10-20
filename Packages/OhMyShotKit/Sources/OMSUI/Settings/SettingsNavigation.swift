@@ -38,6 +38,8 @@ extension SettingsTab {
                 String(localized: "Freeze the screen", bundle: .module),
                 String(localized: "Show the pointer in screenshots", bundle: .module),
                 String(localized: "Magnifier", bundle: .module),
+                String(localized: "Color picker size", bundle: .module),
+                String(localized: "Color picker magnification", bundle: .module),
                 String(localized: "Shift keeps", bundle: .module),
                 String(localized: "Snap the selection to text", bundle: .module),
                 String(localized: "All-In-One remembers the last area", bundle: .module),

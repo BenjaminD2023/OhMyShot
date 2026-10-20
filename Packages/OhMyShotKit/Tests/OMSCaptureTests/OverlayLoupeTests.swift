@@ -177,6 +177,94 @@ struct OverlayLoupeTests {
         #expect(view.color(at: fixture.global)?.hex == "#123456")
     }
 
+    @Test func everyMagnificationRescalesTheGridAndKeepsTheExactSampleOnReusedViews() throws {
+        let cases: [(scale: Int, counts: [[Int]])] = [
+            (1, [[75, 91, 121], [37, 45, 61], [19, 23, 31], [9, 11, 15]]),
+            (2, [[151, 181, 241], [75, 91, 121], [37, 45, 61], [19, 23, 31]]),
+        ]
+        for (scale, counts) in cases {
+            let point = CGPoint(x: 250 + 0.5 / CGFloat(scale), y: 300 + 0.5 / CGFloat(scale))
+            let fixture = try fixture(scale: scale, origin: CGPoint(x: -800, y: 100), point: point)
+            let view = OverlayView(display: fixture.display)
+            defer { view.clear() }
+            for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+                for (magnification, expectedCounts) in zip(CaptureLoupeMagnification.allCases, counts) {
+                    for (size, count) in zip(CaptureLoupeSize.allCases, expectedCounts) {
+                        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false,
+                                   purpose: purpose, captureLoupeStyle: .actualSize, captureLoupeSize: size,
+                                   captureLoupeMagnification: magnification)
+                        view.show(fixture.frame, frozen: true)
+                        let image = view.debugLoupeImageGeometry
+                        let pixel = view.debugLoupePixelGeometry
+                        let cell = size.diameter / CGFloat(count)
+                        #expect(image.frame.size == CGSize(width: size.diameter, height: size.diameter))
+                        #expect(abs(image.contentsRect.width * CGFloat(fixture.frame.image.width) - CGFloat(count)) < 0.0001)
+                        #expect(abs(image.contentsRect.height * CGFloat(fixture.frame.image.height) - CGFloat(count)) < 0.0001)
+                        #expect(abs(pixel.center.width - cell) < 0.0001 && abs(pixel.center.height - cell) < 0.0001)
+                        #expect(abs(pixel.center.midX - size.diameter / 2) < 0.0001 && abs(pixel.center.midY - size.diameter / 2) < 0.0001)
+                        #expect(pixel.stroke > 0 && pixel.outline >= pixel.stroke && pixel.outline < cell,
+                                "Low zoom must leave the sampled cell's interior visible")
+                        #expect(pixel.gridStroke > 0 && pixel.gridOutline >= pixel.gridStroke && pixel.gridOutline < cell,
+                                "A dense grid must not paint over the source pixels")
+                        if magnification == .four || magnification == .eight {
+                            #expect(pixel.stroke == 1 / CGFloat(scale) && pixel.outline == 2 / CGFloat(scale))
+                            #expect(pixel.gridStroke == 1 / CGFloat(scale) && pixel.gridOutline == 2 / CGFloat(scale))
+                        }
+                        var lines = 0
+                        try #require(pixel.grid).applyWithBlock { element in
+                            if element.pointee.type == .addLineToPoint { lines += 1 }
+                        }
+                        #expect(lines == 2 * (count - 1) && image.gridVisible)
+                        try expectCropCenterMatchesSample(view, fixture: fixture, localPoint: point, scale: scale)
+                        view.show(selection: firstPress(on: fixture.display, at: fixture.global), showsReading: false, isDragging: true)
+                        expectLensHidden(view)
+                        view.viewDidChangeEffectiveAppearance()
+                        expectLensHidden(view)
+                    }
+                }
+            }
+            // The default argument must replace the previous session's chosen 8× zoom.
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, captureLoupeStyle: .actualSize)
+            view.show(fixture.frame, frozen: true)
+            let expectedDefault = scale == 1 ? 19.0 : 37.0
+            #expect(abs(view.debugLoupeImageGeometry.contentsRect.width * CGFloat(fixture.frame.image.width) - expectedDefault) < 0.0001)
+            try expectCropCenterMatchesSample(view, fixture: fixture, localPoint: point, scale: scale)
+        }
+    }
+
+    @Test func captureMagnificationDoesNotChangeTheLegacyLensOrOtherTools() throws {
+        for scale in [1, 2] {
+            let fixture = try fixture(scale: scale)
+            let view = OverlayView(display: fixture.display)
+            defer { view.clear() }
+            for purpose in [OverlayController.Purpose.screenshot, .annotate, .color, .text, .record, .scroll] {
+                for magnification in CaptureLoupeMagnification.allCases {
+                    // The legacy screenshot style, and both styles of every other tool, retain 15 source pixels.
+                    let styles: [CaptureLoupeStyle] = purpose == .screenshot || purpose == .annotate ? [.magnified] : [.magnified, .actualSize]
+                    for style in styles {
+                        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false,
+                                   purpose: purpose, captureLoupeStyle: style, captureLoupeSize: .large,
+                                   captureLoupeMagnification: magnification)
+                        view.show(fixture.frame, frozen: true)
+                        let image = view.debugLoupeImageGeometry
+                        let pixel = view.debugLoupePixelGeometry
+                        #expect(image.frame.width == 120 && image.gridVisible)
+                        #expect(abs(image.contentsRect.width * CGFloat(fixture.frame.image.width) - 15) < 0.0001)
+                        #expect(pixel.stroke == 1.5 && pixel.outline == 3)
+                        #expect(pixel.gridStroke == 1 / CGFloat(scale) && pixel.gridOutline == 2 / CGFloat(scale))
+                        if purpose == .text {
+                            // Capture Text uses AppKit's system crosshair and hides the custom pointer layers.
+                            expectLensHidden(view, crosshair: false)
+                        } else {
+                            #expect(view.debugPointerLayers.crosshair)
+                        }
+                        #expect(view.color(at: fixture.global)?.hex == "#123456")
+                    }
+                }
+            }
+        }
+    }
+
     @Test func movingOnePhysicalPixelMovesTheCropAndSampleTogetherIncludingScreenEdges() throws {
         for scale in [1, 2] {
             let unit = 1 / CGFloat(scale), half = unit / 2

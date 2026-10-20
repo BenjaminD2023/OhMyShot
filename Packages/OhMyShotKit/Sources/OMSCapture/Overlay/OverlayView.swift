@@ -71,6 +71,7 @@ final class OverlayView: NSView {
     private var hasStartedAreaSelection = false
     private var captureLoupeStyle: CaptureLoupeStyle = .magnified
     private var captureLoupeSize: CaptureLoupeSize = .small
+    private var captureLoupeMagnification: CaptureLoupeMagnification = .four
     /// Set by `simulate`, so the real (hidden) pointer cannot move a scripted render.
     private var isSimulated = false
     /// In-place annotation has the display: its interface takes the input and draws the selection.
@@ -143,7 +144,8 @@ final class OverlayView: NSView {
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
         purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex,
-        captureLoupeStyle: CaptureLoupeStyle = .magnified, captureLoupeSize: CaptureLoupeSize = .small, measureUnit: MeasureUnit = .points,
+        captureLoupeStyle: CaptureLoupeStyle = .magnified, captureLoupeSize: CaptureLoupeSize = .small,
+        captureLoupeMagnification: CaptureLoupeMagnification = .four, measureUnit: MeasureUnit = .points,
         measureTolerance: MeasureTolerance = .medium, measureSnapsToContent: Bool = true,
         allInOne: Bool = false, snapsToText: Bool = false
     ) {
@@ -160,6 +162,7 @@ final class OverlayView: NSView {
         self.purpose = purpose
         self.captureLoupeStyle = captureLoupeStyle
         self.captureLoupeSize = captureLoupeSize
+        self.captureLoupeMagnification = captureLoupeMagnification
         self.colorFormat = colorFormat
         isAllInOne = allInOne && purpose == .screenshot
         if purpose == .measure {
@@ -292,8 +295,9 @@ final class OverlayView: NSView {
         (loupeImage.frame, loupeImage.contentsRect, !loupeGrid.isHidden)
     }
 
-    var debugLoupePixelGeometry: (center: CGRect, grid: CGPath?, stroke: CGFloat, outline: CGFloat) {
-        (loupeCenter.path?.boundingBoxOfPath ?? .zero, loupeGrid.path, loupeCenter.lineWidth, loupeCenterOutline.lineWidth)
+    var debugLoupePixelGeometry: (center: CGRect, grid: CGPath?, stroke: CGFloat, outline: CGFloat, gridStroke: CGFloat, gridOutline: CGFloat) {
+        (loupeCenter.path?.boundingBoxOfPath ?? .zero, loupeGrid.path, loupeCenter.lineWidth, loupeCenterOutline.lineWidth,
+         loupeGrid.lineWidth, loupeGridOutline.lineWidth)
     }
 
     /// Drags the ruler's box over `rect` (global space) and lets go, for scripted checks.
@@ -698,12 +702,16 @@ final class OverlayView: NSView {
 
     private var loupeDiameter: CGFloat { usesCenteredPicker ? captureLoupeSize.diameter : Theme.Loupe.diameter }
     private var loupePixelsAcross: Int {
-        usesCenteredPicker ? captureLoupeSize.pixelsAcross(backingScale: display.backingScale) : Theme.Loupe.pixelsAcross
+        usesCenteredPicker ? captureLoupeSize.pixelsAcross(backingScale: display.backingScale, magnification: captureLoupeMagnification) : Theme.Loupe.pixelsAcross
     }
 
     /// Reused views may switch both size and purpose between sessions; keep every lens layer in sync.
     private func layoutLoupe() {
         let diameter = loupeDiameter
+        let cell = diameter / CGFloat(loupePixelsAcross)
+        // Low zoom still needs an open cell interior; normal tools and the default 4× widths stay as before.
+        let pixelStroke = usesCenteredPicker ? min(1 / display.backingScale, cell / 3) : 1 / display.backingScale
+        let pixelOutline = usesCenteredPicker ? min(2 / display.backingScale, cell * 2 / 3) : 2 / display.backingScale
         let lensBounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
         loupe.bounds = lensBounds
         loupe.cornerRadius = diameter / 2
@@ -711,20 +719,19 @@ final class OverlayView: NSView {
         loupeGrid.frame = lensBounds
         loupeGrid.path = Self.gridPath(size: diameter, cells: loupePixelsAcross)
         loupeGrid.isHidden = false
-        loupeGrid.lineWidth = 1 / display.backingScale
+        loupeGrid.lineWidth = pixelStroke
         loupeGrid.strokeColor = CGColor(gray: 0, alpha: usesCenteredPicker ? 0.28 : 0.08)
         loupeGridOutline.frame = lensBounds
         loupeGridOutline.path = loupeGrid.path
-        loupeGridOutline.lineWidth = 2 / display.backingScale
+        loupeGridOutline.lineWidth = pixelOutline
         loupeGridOutline.strokeColor = CGColor(gray: 1, alpha: 0.35)
         loupeGridOutline.isHidden = !usesCenteredPicker
-        let cell = diameter / CGFloat(loupePixelsAcross)
         loupeCenter.frame = lensBounds
         let centerCell = CGRect(x: (diameter - cell) / 2, y: (diameter - cell) / 2, width: cell, height: cell)
         loupeCenter.path = usesCenteredPicker ? CGPath(rect: centerCell, transform: nil)
             : CGPath(roundedRect: centerCell, cornerWidth: 1.5, cornerHeight: 1.5, transform: nil)
-        loupeCenter.lineWidth = usesCenteredPicker ? 1 / display.backingScale : 1.5
-        loupeCenterOutline.lineWidth = usesCenteredPicker ? 2 / display.backingScale : 3
+        loupeCenter.lineWidth = usesCenteredPicker ? pixelStroke : 1.5
+        loupeCenterOutline.lineWidth = usesCenteredPicker ? pixelOutline : 3
         loupeCenterOutline.frame = lensBounds
         loupeCenterOutline.path = loupeCenter.path
         loupeShadow.bounds = lensBounds

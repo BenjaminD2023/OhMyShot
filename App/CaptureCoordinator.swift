@@ -93,6 +93,7 @@ final class CaptureCoordinator {
     private func configureCaptureOverlay() {
         overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
+        overlay.captureLoupeMagnification = settings.captureLoupeMagnification
     }
 
     // MARK: All-In-One
