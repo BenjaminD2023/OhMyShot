@@ -85,6 +85,7 @@ extension SettingsTab {
                 String(localized: "Capture Text", bundle: .module),
                 String(localized: "Show the copied text", bundle: .module),
                 String(localized: "Text popup position", bundle: .module),
+                String(localized: "Close text popup", bundle: .module),
                 String(localized: "Below selection", bundle: .module),
                 String(localized: "Bottom left", bundle: .module),
                 String(localized: "Recognized Text", bundle: .module),

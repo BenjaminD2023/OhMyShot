@@ -6,9 +6,14 @@ struct TextResultLifetime {
     private(set) var generation: UInt = 0
     private var countdown: CardCountdown?
 
-    mutating func start(at now: TimeInterval, hovered: Bool, voiceOver: Bool) {
+    mutating func start(at now: TimeInterval, hovered: Bool, voiceOver: Bool, closeAfter: Int = 1) {
         generation &+= 1
-        countdown = CardCountdown(interval: voiceOver ? 20 : 3, at: now)
+        guard closeAfter > 0 else {
+            countdown = nil
+            return
+        }
+        let interval = TimeInterval(voiceOver ? max(20, closeAfter) : closeAfter)
+        countdown = CardCountdown(interval: interval, at: now)
         if hovered { countdown?.hold(.pointer, at: now) }
     }
 
@@ -75,7 +80,7 @@ public final class TextResultHUD {
 
     /// Shows `state` by `selection`, in AppKit's global coordinates. `note` is a line under the text, such as who read
     /// it ("Read by Claude"), or why this Mac's reading was copied instead of the cloud model's.
-    public func show(_ state: State, near selection: CGRect, position: TextResultPosition = .belowSelection, note: String? = nil) {
+    public func show(_ state: State, near selection: CGRect, position: TextResultPosition = .belowSelection, closeAfter: Int = 1, note: String? = nil) {
         anchor = selection
         self.position = position
         let isNew = panel == nil
@@ -91,7 +96,7 @@ public final class TextResultHUD {
         self.note = note
         // A stationary pointer can already cover a newly shown/moved/resized card without an enter event.
         lifetime.start(at: Self.now, hovered: panel.frame.insetBy(dx: TextResultCard.margin, dy: TextResultCard.margin).contains(NSEvent.mouseLocation),
-                       voiceOver: NSWorkspace.shared.isVoiceOverEnabled)
+                       voiceOver: NSWorkspace.shared.isVoiceOverEnabled, closeAfter: closeAfter)
         scheduleDismissal()
     }
 

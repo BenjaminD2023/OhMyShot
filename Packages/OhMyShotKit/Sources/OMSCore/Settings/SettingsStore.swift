@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 import Observation
 
@@ -138,6 +139,14 @@ public final class SettingsStore {
     public var textResultPosition: TextResultPosition {
         didSet { defaults.set(textResultPosition.rawValue, forKey: Key.textResultPosition) }
     }
+
+    /// Seconds the copied-text/formula popup stays before closing; 0 keeps it open until closed.
+    public var textResultCloseAfter: Int {
+        didSet { defaults.set(textResultCloseAfter, forKey: Key.textResultCloseAfter) }
+    }
+
+    /// Popup close delays in seconds; the one-second default stays separate from Quick Access cards.
+    public static let textResultCloseDelays = [0, 1, 2, 3, 5, 10, 20, 30, 60]
 
     /// Whether recognized text wraps to the window's width by default. Each Recognized Text window
     /// takes this value when it opens and can change its own wrapping without changing the default.
@@ -455,6 +464,7 @@ public final class SettingsStore {
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
             Key.showTextResult: false,
             Key.textResultPosition: TextResultPosition.belowSelection.rawValue,
+            Key.textResultCloseAfter: 1,
             Key.textRecognitionWrapsText: true,
             Key.readsAppText: false,
             Key.translationTarget: "",
@@ -590,6 +600,10 @@ public final class SettingsStore {
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
         showTextResult = defaults.bool(forKey: Key.showTextResult)
         textResultPosition = defaults.string(forKey: Key.textResultPosition).flatMap(TextResultPosition.init(rawValue:)) ?? .belowSelection
+        // Invalid types must not become 0 (Never), as integer(forKey:) would make an unreadable string.
+        let storedTextResultCloseAfter = defaults.object(forKey: Key.textResultCloseAfter) as? NSNumber
+        let textResultDelay = storedTextResultCloseAfter.flatMap { CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : $0 as? Int } ?? 1
+        textResultCloseAfter = Self.textResultCloseDelays.contains(textResultDelay) ? textResultDelay : 1
         textRecognitionWrapsText = defaults.bool(forKey: Key.textRecognitionWrapsText)
         readsAppText = defaults.bool(forKey: Key.readsAppText)
         translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
@@ -678,6 +692,7 @@ public final class SettingsStore {
         static let historyRetention = "historyRetention"
         static let showTextResult = "showTextResult"
         static let textResultPosition = "textResultPosition"
+        static let textResultCloseAfter = "textResultCloseAfter"
         static let textRecognitionWrapsText = "textRecognitionWrapsText"
         static let readsAppText = "readsAppText"
         static let translationTarget = "translationTarget"

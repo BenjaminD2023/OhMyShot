@@ -14,26 +14,26 @@ struct TextResultHUDTests {
         #expect(card.trackingAreas.first?.rect == card.bounds.insetBy(dx: TextResultCard.margin, dy: TextResultCard.margin))
     }
 
-    @Test func aCompletedResultExpiresAfterThreeSeconds() {
+    @Test func aCompletedResultExpiresAfterOneSecond() {
         var lifetime = TextResultLifetime()
         lifetime.start(at: 10, hovered: false, voiceOver: false)
         let generation = lifetime.generation
-        #expect(lifetime.timeLeft(at: 10) == 3)
-        #expect(!lifetime.isDue(at: 12.999, generation: generation))
-        #expect(lifetime.isDue(at: 13, generation: generation))
+        #expect(lifetime.timeLeft(at: 10) == 1)
+        #expect(!lifetime.isDue(at: 10.999, generation: generation))
+        #expect(lifetime.isDue(at: 11, generation: generation))
     }
 
     @Test func hoveringHoldsIndefinitelyAndLeavingRestartsTheWholeInterval() {
         var lifetime = TextResultLifetime()
         lifetime.start(at: 0, hovered: false, voiceOver: false)
         let generation = lifetime.generation
-        lifetime.setHovered(true, at: 2.9)
+        lifetime.setHovered(true, at: 0.9)
         #expect(lifetime.timeLeft(at: 1_000) == nil)
         #expect(!lifetime.isDue(at: 1_000, generation: generation))
         lifetime.setHovered(false, at: 1_000)
-        #expect(lifetime.timeLeft(at: 1_000) == 3)
-        #expect(!lifetime.isDue(at: 1_002.99, generation: generation))
-        #expect(lifetime.isDue(at: 1_003, generation: generation))
+        #expect(lifetime.timeLeft(at: 1_000) == 1)
+        #expect(!lifetime.isDue(at: 1_000.999, generation: generation))
+        #expect(lifetime.isDue(at: 1_001, generation: generation))
     }
 
     @Test func duplicateExitEventsDoNotKeepExtendingTheCard() {
@@ -41,20 +41,20 @@ struct TextResultHUDTests {
         lifetime.start(at: 0, hovered: true, voiceOver: false)
         lifetime.setHovered(true, at: 10)
         lifetime.setHovered(false, at: 20)
-        lifetime.setHovered(false, at: 22)
-        #expect(lifetime.timeLeft(at: 22) == 1)
-        #expect(lifetime.isDue(at: 23, generation: lifetime.generation))
+        lifetime.setHovered(false, at: 20.5)
+        #expect(lifetime.timeLeft(at: 20.5) == 0.5)
+        #expect(lifetime.isDue(at: 21, generation: lifetime.generation))
     }
 
     @Test func anOldTimerCannotCloseANewerResult() {
         var lifetime = TextResultLifetime()
         lifetime.start(at: 0, hovered: false, voiceOver: false)
         let oldTimer = lifetime.generation
-        lifetime.start(at: 2.9, hovered: false, voiceOver: false)
-        #expect(!lifetime.isDue(at: 3, generation: oldTimer))
+        lifetime.start(at: 0.9, hovered: false, voiceOver: false)
+        #expect(!lifetime.isDue(at: 1, generation: oldTimer))
         #expect(!lifetime.isDue(at: 100, generation: oldTimer))
-        #expect(abs((lifetime.timeLeft(at: 3) ?? 0) - 2.9) < 0.0001)
-        #expect(lifetime.isDue(at: 5.9, generation: lifetime.generation))
+        #expect(abs((lifetime.timeLeft(at: 1) ?? 0) - 0.9) < 0.0001)
+        #expect(lifetime.isDue(at: 1.9, generation: lifetime.generation))
     }
 
     @Test func closingAHoveredCardDoesNotHoldTheNextResult() {
@@ -66,7 +66,7 @@ struct TextResultHUDTests {
         #expect(lifetime.timeLeft(at: 10) == nil)
         #expect(!lifetime.isDue(at: 10, generation: oldTimer))
         lifetime.start(at: 10, hovered: false, voiceOver: false)
-        #expect(lifetime.isDue(at: 13, generation: lifetime.generation))
+        #expect(lifetime.isDue(at: 11, generation: lifetime.generation))
     }
 
     @Test func aResultShownUnderAStationaryPointerStartsHeld() {
@@ -75,7 +75,7 @@ struct TextResultHUDTests {
         lifetime.start(at: 2, hovered: true, voiceOver: false)
         #expect(lifetime.timeLeft(at: 100) == nil)
         lifetime.setHovered(false, at: 100)
-        #expect(lifetime.timeLeft(at: 100) == 3)
+        #expect(lifetime.timeLeft(at: 100) == 1)
     }
 
     @Test func theExistingVoiceOverReadingTimeIsPreserved() {
@@ -91,7 +91,47 @@ struct TextResultHUDTests {
         var lifetime = TextResultLifetime()
         lifetime.start(at: 10, hovered: false, voiceOver: false)
         #expect(!lifetime.isDue(at: 10.5, generation: lifetime.generation))
-        #expect(lifetime.timeLeft(at: 10.5) == 2.5)
+        #expect(lifetime.timeLeft(at: 10.5) == 0.5)
+    }
+
+    @Test func eachConfiguredDelayAndHoverReleaseUseTheChosenInterval() {
+        for seconds in [1, 2, 3, 5, 10, 20, 30, 60] {
+            var lifetime = TextResultLifetime()
+            lifetime.start(at: 10, hovered: false, voiceOver: false, closeAfter: seconds)
+            #expect(lifetime.timeLeft(at: 10) == TimeInterval(seconds))
+            #expect(!lifetime.isDue(at: 10 + TimeInterval(seconds) - 0.001, generation: lifetime.generation))
+            #expect(lifetime.isDue(at: 10 + TimeInterval(seconds), generation: lifetime.generation))
+            lifetime.setHovered(true, at: 10.5)
+            #expect(lifetime.timeLeft(at: 1_000) == nil)
+            lifetime.setHovered(false, at: 1_000)
+            #expect(lifetime.timeLeft(at: 1_000) == TimeInterval(seconds))
+        }
+    }
+
+    @Test func neverDisablesTheTimerAcrossHoverAndResultReplacement() {
+        var lifetime = TextResultLifetime()
+        lifetime.start(at: 0, hovered: false, voiceOver: false)
+        let oldTimer = lifetime.generation
+        lifetime.start(at: 0.5, hovered: false, voiceOver: false, closeAfter: 0)
+        #expect(!lifetime.isDue(at: 1, generation: oldTimer))
+        #expect(lifetime.timeLeft(at: 100_000) == nil)
+        lifetime.setHovered(true, at: 2)
+        lifetime.setHovered(false, at: 3)
+        #expect(!lifetime.isDue(at: 100_000, generation: lifetime.generation))
+        lifetime.start(at: 10, hovered: false, voiceOver: false)
+        #expect(lifetime.isDue(at: 11, generation: lifetime.generation))
+    }
+
+    @Test func voiceOverKeepsLongerUserChoicesAndNever() {
+        var lifetime = TextResultLifetime()
+        lifetime.start(at: 0, hovered: false, voiceOver: true, closeAfter: 30)
+        #expect(lifetime.timeLeft(at: 0) == 30)
+        lifetime.setHovered(true, at: 29)
+        lifetime.setHovered(false, at: 100)
+        #expect(lifetime.timeLeft(at: 100) == 30)
+        lifetime.start(at: 0, hovered: false, voiceOver: true, closeAfter: 0)
+        #expect(lifetime.timeLeft(at: 100_000) == nil)
+        #expect(!lifetime.isDue(at: 100_000, generation: lifetime.generation))
     }
 
     @Test func defaultPlacementKeepsTheExistingTenPointSelectionGap() {

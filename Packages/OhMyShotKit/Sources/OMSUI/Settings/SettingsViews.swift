@@ -690,7 +690,7 @@ struct ToolsSettingsView: View {
                 Toggle(isOn: $settings.showTextResult) {
                     Text("Show the copied text", bundle: .module)
                 }
-                .help(Text("A card with the copied text and a switch for its line breaks. Closes after 3 seconds; hovering keeps it open.", bundle: .module))
+                .help(Text("A card with the copied text and a switch for its line breaks. Choose when it closes below; hovering keeps it open.", bundle: .module))
             }
             SettingsRow(Text("Text popup position", bundle: .module)) {
                 Picker(selection: $settings.textResultPosition) {
@@ -702,6 +702,24 @@ struct ToolsSettingsView: View {
                 .labelsHidden()
                 .fixedSize()
                 .help(Text("Shows the result on the display where the text or formula was selected.", bundle: .module))
+            }
+            SettingsRow(Text("Close text popup", bundle: .module)) {
+                Picker(selection: $settings.textResultCloseAfter) {
+                    ForEach(SettingsStore.textResultCloseDelays, id: \.self) { seconds in
+                        if seconds == 0 {
+                            Text("Never", bundle: .module).tag(seconds)
+                        } else if seconds == 1 {
+                            Text("After 1 second", bundle: .module).tag(seconds)
+                        } else {
+                            Text("After \(seconds) seconds", bundle: .module).tag(seconds)
+                        }
+                    }
+                } label: {
+                    Text("Close text popup", bundle: .module)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("The popup stays open while hovered. When the pointer leaves, the selected duration starts again. Never keeps it open until you close it.", bundle: .module))
             }
             SettingsRow(Text("Recognized Text", bundle: .module)) {
                 Toggle(isOn: $settings.textRecognitionWrapsText) {
