@@ -134,6 +134,11 @@ public final class SettingsStore {
         didSet { defaults.set(showTextResult, forKey: Key.showTextResult) }
     }
 
+    /// The small copied-text/formula card stays by its selection unless a screen corner is chosen.
+    public var textResultPosition: TextResultPosition {
+        didSet { defaults.set(textResultPosition.rawValue, forKey: Key.textResultPosition) }
+    }
+
     /// Whether recognized text wraps to the window's width by default. Each Recognized Text window
     /// takes this value when it opens and can change its own wrapping without changing the default.
     public var textRecognitionWrapsText: Bool {
@@ -449,6 +454,7 @@ public final class SettingsStore {
             Key.showQuickAccess: true,
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
             Key.showTextResult: false,
+            Key.textResultPosition: TextResultPosition.belowSelection.rawValue,
             Key.textRecognitionWrapsText: true,
             Key.readsAppText: false,
             Key.translationTarget: "",
@@ -583,6 +589,7 @@ public final class SettingsStore {
         uploadAfterRecording = Self.recordingChoice(Key.uploadAfterRecording, startingAs: Key.uploadAfterCapture, in: defaults)
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
         showTextResult = defaults.bool(forKey: Key.showTextResult)
+        textResultPosition = defaults.string(forKey: Key.textResultPosition).flatMap(TextResultPosition.init(rawValue:)) ?? .belowSelection
         textRecognitionWrapsText = defaults.bool(forKey: Key.textRecognitionWrapsText)
         readsAppText = defaults.bool(forKey: Key.readsAppText)
         translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
@@ -670,6 +677,7 @@ public final class SettingsStore {
         static let uploadAfterRecording = "uploadAfterRecording"
         static let historyRetention = "historyRetention"
         static let showTextResult = "showTextResult"
+        static let textResultPosition = "textResultPosition"
         static let textRecognitionWrapsText = "textRecognitionWrapsText"
         static let readsAppText = "readsAppText"
         static let translationTarget = "translationTarget"

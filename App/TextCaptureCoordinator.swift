@@ -279,7 +279,7 @@ final class TextCaptureCoordinator {
                     }
                     if copiesToClipboard { copy(text) }
                     highlight.finish(copied: text, announces: !showsCard)
-                    if showsCard { hud.show(.copied(text: text, joined: joinLines, canJoin: false), near: selection, note: readBy) }
+                    if showsCard { hud.show(.copied(text: text, joined: joinLines, canJoin: false), near: selection, position: settings.textResultPosition, note: readBy) }
                     done?(text)
                     return
                 }
@@ -296,7 +296,7 @@ final class TextCaptureCoordinator {
         guard var lines = visionLines else {
             formulas?.cancel()
             highlight.finish(copied: nil, announces: !showsCard)
-            if showsCard || note != nil { hud.show(.empty, near: selection, note: note) }
+            if showsCard || note != nil { hud.show(.empty, near: selection, position: settings.textResultPosition, note: note) }
             done?(nil)
             return
         }
@@ -330,7 +330,7 @@ final class TextCaptureCoordinator {
             last = nil
             Log.capture.notice("Capture Text found no text")
             highlight.finish(copied: nil, announces: !showsCard)
-            if showsCard || note != nil { hud.show(.empty, near: selection, note: note) }
+            if showsCard || note != nil { hud.show(.empty, near: selection, position: settings.textResultPosition, note: note) }
             done?(nil)
             return
         }
@@ -349,7 +349,7 @@ final class TextCaptureCoordinator {
         // The cloud model's failure is said even with the card off: Capture Text would otherwise read differently
         // without a word.
         if showsCard || note != nil {
-            hud.show(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, note: recognition.note)
+            hud.show(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, position: settings.textResultPosition, note: recognition.note)
         }
         done?(text)
     }
@@ -411,7 +411,7 @@ final class TextCaptureCoordinator {
     private func keepUncopied(_ text: String, note: String?, near selection: CGRect) {
         uncopied = (text, note, selection)
         highlight.finish(copied: text, announces: false)
-        hud.show(.notCopied(text: text), near: selection, note: String(localized: "You copied something else while it was read."))
+        hud.show(.notCopied(text: text), near: selection, position: settings.textResultPosition, note: String(localized: "You copied something else while it was read."))
         Log.capture.notice("Capture Text left \(text.count, privacy: .public) characters off the clipboard, which changed meanwhile")
     }
 
@@ -420,7 +420,7 @@ final class TextCaptureCoordinator {
         guard let uncopied else { return }
         copy(uncopied.text)
         self.uncopied = nil
-        hud.show(.copied(text: uncopied.text, joined: false, canJoin: false), near: uncopied.selection, note: uncopied.note)
+        hud.show(.copied(text: uncopied.text, joined: false, canJoin: false), near: uncopied.selection, position: settings.textResultPosition, note: uncopied.note)
     }
 
     /// The card's switch: copies the text again with the other line-break choice.
@@ -430,7 +430,7 @@ final class TextCaptureCoordinator {
         let text = assemble(recognition)
         if recognition.copiesToClipboard { copy(text) }
         last = recognition
-        hud.show(.copied(text: text, joined: recognition.joined, canJoin: true), near: recognition.selection, note: recognition.note)
+        hud.show(.copied(text: text, joined: recognition.joined, canJoin: true), near: recognition.selection, position: settings.textResultPosition, note: recognition.note)
     }
 
     private func assemble(_ recognition: Recognition) -> String {
@@ -531,7 +531,7 @@ final class TextCaptureCoordinator {
         let showsCard = settings.showTextResult
         guard let reader = formulaReader?() else {
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
-            if showsCard { hud.show(.noFormula, near: selection) }
+            if showsCard { hud.show(.noFormula, near: selection, position: settings.textResultPosition) }
             done?(nil)
             return
         }
@@ -542,14 +542,14 @@ final class TextCaptureCoordinator {
         guard let formula, formula.isFormula else {
             Log.capture.notice("Capture Formula found no formula (\(formula?.ending ?? "failed", privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
-            if showsCard { hud.show(.noFormula, near: selection) }
+            if showsCard { hud.show(.noFormula, near: selection, position: settings.textResultPosition) }
             done?(nil)
             return
         }
         if copiesToClipboard { copy(formula.latex) }
         highlight.finish(copied: formula.latex, announces: !showsCard, formula: true)
         Log.capture.notice("Capture Formula \(copiesToClipboard ? "copied" : "read", privacy: .public) \(formula.latex.count, privacy: .public) characters of LaTeX in \(String(describing: ContinuousClock.now - started), privacy: .public)")
-        if showsCard { hud.show(.copiedFormula(latex: formula.latex), near: selection) }
+        if showsCard { hud.show(.copiedFormula(latex: formula.latex), near: selection, position: settings.textResultPosition) }
         done?(formula.latex)
     }
 
@@ -1015,20 +1015,20 @@ final class TextCaptureCoordinator {
         case "highlight":
             highlight.show(selection)
         case "empty":
-            hud.show(.empty, near: selection)
+            hud.show(.empty, near: selection, position: settings.textResultPosition)
         case "single":
-            hud.show(.copied(text: "7", joined: false, canJoin: false), near: selection)
+            hud.show(.copied(text: "7", joined: false, canJoin: false), near: selection, position: settings.textResultPosition)
         case "formula":
-            hud.show(.copiedFormula(latex: #"\mathrm{Attention}(Q,K,V)=\mathrm{softmax}\left(\frac{QK^{T}}{\sqrt{d_{k}}}\right)V"#), near: selection)
+            hud.show(.copiedFormula(latex: #"\mathrm{Attention}(Q,K,V)=\mathrm{softmax}\left(\frac{QK^{T}}{\sqrt{d_{k}}}\right)V"#), near: selection, position: settings.textResultPosition)
         case "no-formula":
-            hud.show(.noFormula, near: selection)
+            hud.show(.noFormula, near: selection, position: settings.textResultPosition)
         case "not-copied":
-            hud.show(.notCopied(text: "OhMyShot Release Notes\nCapture text from anything on screen."), near: selection, note: String(localized: "You copied something else while it was read."))
+            hud.show(.notCopied(text: "OhMyShot Release Notes\nCapture text from anything on screen."), near: selection, position: settings.textResultPosition, note: String(localized: "You copied something else while it was read."))
         case "cloud":
-            hud.show(.copied(text: "OhMyShot Release Notes\nCapture text from anything on screen.", joined: false, canJoin: false), near: selection, note: String(localized: "Read by \("Claude")"))
+            hud.show(.copied(text: "OhMyShot Release Notes\nCapture text from anything on screen.", joined: false, canJoin: false), near: selection, position: settings.textResultPosition, note: String(localized: "Read by \("Claude")"))
         default:
             let sample = "截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。\nPress Copy to put the capture on the clipboard.\n历史记录会保留一周，之后自动删除。\nVersion 0.1.0 (build 42)"
-            hud.show(.copied(text: sample, joined: false, canJoin: true), near: selection)
+            hud.show(.copied(text: sample, joined: false, canJoin: true), near: selection, position: settings.textResultPosition)
         }
     }
 

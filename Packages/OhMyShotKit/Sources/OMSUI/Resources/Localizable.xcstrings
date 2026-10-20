@@ -1284,40 +1284,6 @@
         }
       }
     },
-    "A card by the selection with the copied text and a switch for its line breaks." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Una tarjeta junto a la selección con el texto copiado y un interruptor para sus saltos de línea."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Une carte près de la sélection, avec le texte copié et un interrupteur pour ses sauts de ligne."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コピーしたテキストと改行の切り替えスイッチを表示するカードが、選択範囲のそばに表示されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选区旁的一张卡片，显示已拷贝的文字，并提供换行开关。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在選取範圍旁顯示一張卡片，內含已拷貝的文字和換行切換開關。"
-          }
-        }
-      }
-    },
     "A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails." : {
       "localizations" : {
         "es" : {
@@ -1348,6 +1314,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "當指標停留在卡片上、其選單已打開、正被拖移、正以「快速查看」顯示、擁有鍵盤焦點、編輯器已打開其擷取內容，或正在上傳時，卡片會保持顯示，之後至少再停留 4 秒。「關閉」會將擷取內容留在擷取記錄中；但若「一般」中的記錄設為「永不」，未儲存的卡片關閉時會一併移除其擷取內容。「儲存並關閉」也會將拷貝儲存到「一般」中設定的檔案夾，不會詢問名稱；若儲存失敗則保留卡片。"
+          }
+        }
+      }
+    },
+    "A card with the copied text and a switch for its line breaks. Closes after 3 seconds; hovering keeps it open." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una tarjeta con el texto copiado y un botón para cambiar los saltos de línea. Se cierra al cabo de 3 segundos; al pasar el puntero se mantiene abierta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une carte avec le texte copié et une commande pour ses sauts de ligne. Elle se ferme après 3 secondes ; le survol la garde ouverte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーしたテキストと改行を切り替えるボタンを表示するカードです。3秒後に閉じますが、ポインタを重ねている間は表示され続けます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示拷贝文字及其换行切换按钮的卡片。3 秒后自动关闭；指针悬停时保持显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示已拷貝文字及其換行切換按鈕的卡片。3 秒後自動關閉；指標停留時保持顯示。"
           }
         }
       }
@@ -3699,6 +3699,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "基礎 URL"
+          }
+        }
+      }
+    },
+    "Below selection" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debajo de la selección"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sous la sélection"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択範囲の下"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选区域下方"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選取範圍下方"
           }
         }
       }
@@ -20390,6 +20424,40 @@
         }
       }
     },
+    "Shows the result on the display where the text or formula was selected." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra el resultado en la pantalla donde se seleccionó el texto o la fórmula."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche le résultat sur l’écran où le texte ou la formule a été sélectionné."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストまたは数式を選択したディスプレイに結果を表示します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在选取文字或公式的显示器上显示结果。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在選取文字或公式的顯示器上顯示結果。"
+          }
+        }
+      }
+    },
     "Size" : {
       "localizations" : {
         "es" : {
@@ -21535,6 +21603,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文字釘選：%@"
+          }
+        }
+      }
+    },
+    "Text popup position" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posición del texto copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position du texte copié"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーテキストの表示位置"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字浮窗位置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字浮窗位置"
           }
         }
       }
