@@ -277,6 +277,24 @@ struct CaptureSettingsView: View {
                     InfoButton(Text("What the screenshot and Annotate Area overlays show at the pointer before you choose an area. Magnified enlarges the pixels around it, to place an edge on the exact pixel. Actual Size shows them at their own size in a clear circle centered on the pointer, which goes when you start dragging; the crosshair stays.", bundle: .module))
                 }
             }
+            SettingsRow(Text("Copy color shortcut", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.colorCopyGesture) {
+                        ForEach(ColorCopyGesture.allCases, id: \.self) { gesture in
+                            if gesture == .disabled {
+                                Text("Off", bundle: .module).tag(gesture)
+                            } else {
+                                Text("\(gesture.modifierSymbols) + Left Click", bundle: .module).tag(gesture)
+                            }
+                        }
+                    } label: {
+                        Text("Copy color shortcut", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("Before starting an area selection, or while using Pick Color, this left-click shortcut copies the pointed color without closing the overlay. Other clicks keep their usual behavior.", bundle: .module))
+                }
+            }
             SettingsRow(Text("Self-Timer", bundle: .module)) {
                 Picker(selection: $settings.selfTimerDelay) {
                     ForEach(SettingsStore.selfTimerDelays, id: \.self) { seconds in

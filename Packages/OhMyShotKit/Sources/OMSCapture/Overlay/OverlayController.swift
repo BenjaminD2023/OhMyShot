@@ -122,6 +122,10 @@ public final class OverlayController {
     private var chosenAhead: (area: CGRect, display: DisplayInfo)?
     /// The notation picked colors are copied in: the magnifier's reading shows it while picking.
     public var colorFormat: ColorFormat = .hex
+    /// A local modifier-click that copies a color before choosing an area, or while picking colors.
+    public var colorCopyGesture: ColorCopyGesture = .option
+    /// Copies a color at the mouse press while keeping the overlay and its selection session open.
+    public var onCopyColor: ((ScreenColor, CGPoint) -> Void)?
     /// How screenshot and annotation sessions show the pixels at the pointer: magnified, or at their own size.
     public var captureLoupeStyle: CaptureLoupeStyle = .magnified
     /// The actual-size lens's size.
@@ -273,7 +277,8 @@ public final class OverlayController {
                 measureTolerance: measureTolerance,
                 measureSnapsToContent: measureSnapsToContent,
                 allInOne: isAllInOne,
-                snapsToText: snapsToText
+                snapsToText: snapsToText,
+                colorCopyGesture: colorCopyGesture
             )
         }
         hasInput = false
@@ -1024,6 +1029,20 @@ extension OverlayController: OverlayViewDelegate {
             entry.view.movePointer(to: point)
         }
         updateCursorVisibility(at: point)
+    }
+
+    func overlayView(_ view: OverlayView, copyColorAt point: CGPoint) -> Bool {
+        guard isActive, selection.anchor == nil,
+              purpose == .screenshot || purpose == .annotate || purpose == .color else { return false }
+        // All-In-One keeps its screenshot purpose while its next area is for text or recording.
+        switch allInOneMode {
+        case .text?, .record?, .scroll?: return false
+        case .screenshot?, nil: break
+        }
+        // The mouse press identifies this pixel; an earlier arrow-key nudge belongs only to a keyboard pick.
+        // Claim the gesture even before the first frame arrives, so it cannot begin an area by accident.
+        if let color = view.color(at: point) { onCopyColor?(color, point) }
+        return true
     }
 
     func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) {

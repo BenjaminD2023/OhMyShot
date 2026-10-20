@@ -26,6 +26,9 @@ protocol OverlayViewDelegate: AnyObject {
     /// A color taken at a point in global space (a click, Return, or C), with the keys held then; `keyboard`
     /// says it was a key, so what follows can take the keyboard too.
     func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool)
+    /// Copies at the mouse press without ending the session. True consumes the whole mouse gesture,
+    /// including when the display's first frame has not arrived yet.
+    func overlayView(_ view: OverlayView, copyColorAt point: CGPoint) -> Bool
     /// The arrow keys moved the crosshair by whole pixels, down positive: the corner being dragged, when an area is
     /// being dragged out.
     func overlayView(_ view: OverlayView, didNudge pixels: CGVector)
@@ -105,6 +108,9 @@ final class OverlayView: NSView {
     private var purpose: OverlayController.Purpose = .screenshot
     /// The notation picked colors are copied in, which the magnifier's reading shows while picking.
     private var colorFormat: ColorFormat = .hex
+    private var colorCopyGesture: ColorCopyGesture = .option
+    /// A claimed copy press never starts or releases a selection, even if its modifiers change.
+    private var isCopyingColor = false
     /// The ruler, while measuring.
     private var measure: MeasureOverlay?
 
@@ -144,7 +150,7 @@ final class OverlayView: NSView {
         purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex,
         captureLoupeStyle: CaptureLoupeStyle = .magnified, captureLoupeSize: CaptureLoupeSize = .small, measureUnit: MeasureUnit = .points,
         measureTolerance: MeasureTolerance = .medium, measureSnapsToContent: Bool = true,
-        allInOne: Bool = false, snapsToText: Bool = false
+        allInOne: Bool = false, snapsToText: Bool = false, colorCopyGesture: ColorCopyGesture = .option
     ) {
         self.mode = mode
         self.windows = windows
@@ -160,6 +166,8 @@ final class OverlayView: NSView {
         self.captureLoupeStyle = captureLoupeStyle
         self.captureLoupeSize = captureLoupeSize
         self.colorFormat = colorFormat
+        self.colorCopyGesture = colorCopyGesture
+        isCopyingColor = false
         isAllInOne = allInOne && purpose == .screenshot
         if purpose == .measure {
             let measure = self.measure ?? MeasureOverlay(display: display)
@@ -190,7 +198,7 @@ final class OverlayView: NSView {
         case .annotate: String(localized: "Drag over an area to mark it up. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .screenshot where isAllInOne: String(localized: "Drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, or R to record. Press Escape to cancel.", bundle: .module)
         case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.", bundle: .module)
-        case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
+        case .color: String(localized: "Click or press Return to copy the color under the crosshair; Option-Return shows it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
         case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
         case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
@@ -442,6 +450,13 @@ final class OverlayView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard mode == .area, !isAnnotating else { return }
         let point = convert(event.locationInWindow, from: nil)
+        if event.type == .leftMouseDown, event.buttonNumber == 0,
+           colorCopyGesture.matches(event.modifierFlags), selection.anchor == nil,
+           purpose == .screenshot || purpose == .annotate || purpose == .color,
+           delegate?.overlayView(self, copyColorAt: global(point)) == true {
+            isCopyingColor = true
+            return
+        }
         switch purpose {
         case .color:
             break
@@ -453,7 +468,7 @@ final class OverlayView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard mode == .area, !isAnnotating else { return }
+        guard !isCopyingColor, mode == .area, !isAnnotating else { return }
         let point = convert(event.locationInWindow, from: nil)
         switch purpose {
         case .color:
@@ -468,6 +483,10 @@ final class OverlayView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isCopyingColor {
+            isCopyingColor = false
+            return
+        }
         guard !isAnnotating else { return }
         if mode == .window {
             if let hoveredWindow { delegate?.overlayView(self, didSelectWindow: hoveredWindow, modifiers: event.modifierFlags) }
@@ -557,7 +576,7 @@ final class OverlayView: NSView {
                 toolbarChose(choice)
             } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose != .text, purpose != .record, purpose != .scroll, let pointer, capturedFrame != nil {
                 // C takes the color under the crosshair, as in Snipaste: from the magnifier while capturing. With
-                // Option it opens the color card, as an Option-click does.
+                // Option it opens the color card, as Option-Return does.
                 delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags.intersection(.option), keyboard: true)
             } else {
                 super.keyDown(with: event)

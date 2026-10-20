@@ -274,6 +274,7 @@ final class CompositionRoot {
         // Where the blocks of text on a frozen screen lie, found quickly and never read, for a selection's edges
         // to snap to when Settings say so.
         overlay.textBlocks = TextBlockFinder(isOn: { [settings = self.settings] in settings.snapSelectionToText }, find: { await TextBlocks.find(in: $0) })
+        overlay.colorCopyGesture = settings.colorCopyGesture
         overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
         if #available(macOS 27, *) {
@@ -436,6 +437,11 @@ final class CompositionRoot {
             }
         })
         observations.append(Task { [weak self] in
+            for await gesture in Observations({ settings.colorCopyGesture }) {
+                self?.overlay.colorCopyGesture = gesture
+            }
+        })
+        observations.append(Task { [weak self] in
             for await size in Observations({ settings.captureLoupeSize }) {
                 self?.overlay.captureLoupeSize = size
             }
@@ -531,6 +537,10 @@ final class CompositionRoot {
         captures.canUpload = { [weak self] in self?.uploads.destinations.defaultDestination != nil }
         captures.onColor = { [weak self] color, point, modifiers, keyboard in
             self?.colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard)
+        }
+        overlay.onCopyColor = { [weak self] color, point in
+            // The gesture's modifiers choose this action; Option must not open the color card here.
+            self?.colorPicker.deliver(color, at: point, modifiers: [])
         }
         colorPicker.pin = { [weak self] color in
             guard let pinned = PinColor(color.cgColor) else { return NSSound.beep() }

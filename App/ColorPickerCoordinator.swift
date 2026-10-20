@@ -5,9 +5,9 @@ import OMSUI
 import OSLog
 
 /// Pick Color: the frozen screen with the magnifier. A click copies the pixel's color in the chosen
-/// notation and says so by the pointer; an Option-click opens the color card instead, with every notation,
-/// the contrast against a second color, and Pin. C over a capture's or the ruler's magnifier takes the
-/// color the same way.
+/// notation and says so by the pointer. The configured modifier-click copies without ending the session;
+/// Option-Return opens the color card, with every notation, contrast against a second color, and Pin.
+/// C over a capture's or the ruler's magnifier takes the color the same way.
 final class ColorPickerCoordinator {
     private let settings: SettingsStore
     private let overlay: OverlayController
@@ -28,6 +28,7 @@ final class ColorPickerCoordinator {
     func pickColor(copiesToClipboard: Bool = true) {
         guard !overlay.isActive else { return }
         overlay.colorFormat = settings.colorFormat
+        overlay.colorCopyGesture = copiesToClipboard ? settings.colorCopyGesture : .disabled
         overlay.begin(mode: .area, purpose: .color) { [weak self] outcome in
             guard case .color(let color, let point, _, let modifiers, let keyboard) = outcome else { return }
             self?.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard, copiesToClipboard: copiesToClipboard)
@@ -60,6 +61,8 @@ final class ColorPickerCoordinator {
             return
         }
         overlay.colorFormat = settings.colorFormat
+        // Contrast needs a completing pick, including Option-click's existing behavior.
+        overlay.colorCopyGesture = .disabled
         overlay.begin(mode: .area, purpose: .color) { [weak self] outcome in
             guard let self else { return }
             if case .color(let color, _, _, _, _) = outcome {

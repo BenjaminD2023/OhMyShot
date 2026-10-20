@@ -1537,6 +1537,40 @@
         }
       }
     },
+    "Click or press Return to copy the color under the crosshair; Option-Return shows it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic o pulsa Retorno para copiar el color bajo la cruz; Opción-Retorno lo muestra en todas las notaciones. Las flechas mueven la cruz un píxel, diez con Mayús. Pulsa Escape para cancelar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez ou appuyez sur Retour pour copier la couleur sous le réticule ; Option-Retour l’affiche dans toutes les notations. Les flèches déplacent le réticule d’un pixel, de dix avec Maj. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリックまたはReturnで十字線の下の色をコピーします。Option-Returnですべての表記を表示します。矢印キーで十字線を1ピクセル、Shiftと併用で10ピクセル動かします。Escapeでキャンセルします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击或按 Return 拷贝准星下的颜色；Option-Return 可查看所有格式。方向键移动准星一个像素，配合 Shift 移动十个像素。按 Escape 取消。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點按或按 Return 拷貝準星下的顏色；Option-Return 可查看所有格式。方向鍵移動準星一個像素，搭配 Shift 移動十個像素。按 Escape 取消。"
+          }
+        }
+      }
+    },
     "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel." : {
       "localizations" : {
         "es" : {

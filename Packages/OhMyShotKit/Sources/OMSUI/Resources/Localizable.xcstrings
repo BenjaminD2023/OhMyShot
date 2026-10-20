@@ -1,6 +1,40 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ + Left Click" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ + clic izquierdo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ + clic gauche"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ + 左クリック"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ + 左键"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ + 左鍵"
+          }
+        }
+      }
+    },
     "%@ can’t be translated into %@" : {
       "localizations" : {
         "en" : {
@@ -3772,6 +3806,40 @@
         }
       }
     },
+    "Before starting an area selection, or while using Pick Color, this left-click shortcut copies the pointed color without closing the overlay. Other clicks keep their usual behavior." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antes de empezar una selección de área o al usar Seleccionar color, este atajo de clic izquierdo copia el color señalado sin cerrar la superposición. Los demás clics conservan su comportamiento habitual."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avant de commencer une sélection de zone, ou avec Choisir une couleur, ce raccourci de clic gauche copie la couleur pointée sans fermer la superposition. Les autres clics conservent leur comportement habituel."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "範囲の選択前や「カラーを選択」の使用中に、この左クリックのショートカットでポインタ位置の色をコピーできます。オーバーレイは閉じず、ほかのクリックは通常どおり動作します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始框选之前，或使用普通取色工具时，此左键快捷操作会复制指针下的颜色，并保持当前界面。其他点击保留原有行为。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始框選之前，或使用一般取色工具時，此左鍵快捷操作會拷貝指標下的顏色，並保持目前畫面。其他點按保留原有行為。"
+          }
+        }
+      }
+    },
     "Below selection" : {
       "localizations" : {
         "es" : {
@@ -6821,6 +6889,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拷貝為 Markdown"
+          }
+        }
+      }
+    },
+    "Copy color shortcut" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atajo para copiar color"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccourci pour copier la couleur"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "色をコピーするショートカット"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制颜色快捷键"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝顏色快捷鍵"
           }
         }
       }

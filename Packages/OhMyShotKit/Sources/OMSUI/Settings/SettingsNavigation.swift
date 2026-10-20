@@ -44,6 +44,7 @@ extension SettingsTab {
                 String(localized: "Self-Timer", bundle: .module),
                 String(localized: "Capture the shadow", bundle: .module),
                 String(localized: "Window background", bundle: .module),
+                String(localized: "Copy color shortcut", bundle: .module),
             ]
         case .screenshots:
             [

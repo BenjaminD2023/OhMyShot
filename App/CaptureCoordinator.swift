@@ -90,7 +90,8 @@ final class CaptureCoordinator {
     }
 
     /// Read session appearance directly so a changed preference applies before observation is delivered.
-    private func configureCaptureOverlay() {
+    private func configureCaptureOverlay(copiesToClipboard: Bool) {
+        overlay.colorCopyGesture = copiesToClipboard ? settings.colorCopyGesture : .disabled
         overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
     }
@@ -124,7 +125,7 @@ final class CaptureCoordinator {
         overlay.isAllInOne = true
         overlay.allInOneOffersUpload = canUpload?() ?? false
         let start = area ?? (settings.allInOneRemembersArea ? settings.allInOneArea?.area(in: displays.layout) : nil)
-        configureCaptureOverlay()
+        configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: .area, choosing: start) { [weak self] outcome in
             guard let self else { return }
             switch outcome {
@@ -173,7 +174,7 @@ final class CaptureCoordinator {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         overlay.onAnnotate = { [weak self] request in self?.annotateInPlace(request, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard) }
-        configureCaptureOverlay()
+        configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: .area, purpose: .annotate) { [weak self] outcome in
             if case .color(let color, let point, _, let modifiers, let keyboard) = outcome { self?.onColor?(color, point, modifiers, keyboard) }
         }
@@ -273,7 +274,7 @@ final class CaptureCoordinator {
         overlay.freezesScreen = freezes ?? settings.freezeScreen
         // What is captured is the screen once the time is up: the frozen one, pointer or not, is only for choosing on.
         overlay.recapturesLive = true
-        configureCaptureOverlay()
+        configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: .area) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
             let seconds = delay ?? settings.selfTimerDelay
@@ -477,7 +478,7 @@ final class CaptureCoordinator {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         overlay.freezesScreen = freezes ?? settings.freezeScreen
-        configureCaptureOverlay()
+        configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: mode, choosing: area) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
             switch outcome {

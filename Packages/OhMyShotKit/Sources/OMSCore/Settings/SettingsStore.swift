@@ -248,6 +248,11 @@ public final class SettingsStore {
         didSet { defaults.set(colorFormat.rawValue, forKey: Key.colorFormat) }
     }
 
+    /// Copies a color with a modifier-click before selecting an area, or while picking colors.
+    public var colorCopyGesture: ColorCopyGesture {
+        didSet { defaults.set(colorCopyGesture.rawValue, forKey: Key.colorCopyGesture) }
+    }
+
     /// What the ruler reads in; switched with Tab while measuring, and remembered.
     public var measureUnit: MeasureUnit {
         didSet { defaults.set(measureUnit.rawValue, forKey: Key.measureUnit) }
@@ -494,6 +499,7 @@ public final class SettingsStore {
             Key.pinBorder: true,
             Key.pinsAppearInCaptures: true,
             Key.colorFormat: ColorFormat.hex.rawValue,
+            Key.colorCopyGesture: ColorCopyGesture.option.rawValue,
             Key.measureUnit: MeasureUnit.points.rawValue,
             Key.measureTolerance: MeasureTolerance.medium.rawValue,
             Key.measureSnapsToContent: true,
@@ -547,6 +553,7 @@ public final class SettingsStore {
         pinBorder = defaults.bool(forKey: Key.pinBorder)
         pinsAppearInCaptures = defaults.bool(forKey: Key.pinsAppearInCaptures)
         colorFormat = defaults.string(forKey: Key.colorFormat).flatMap(ColorFormat.init(rawValue:)) ?? .hex
+        colorCopyGesture = defaults.string(forKey: Key.colorCopyGesture).flatMap(ColorCopyGesture.init(rawValue:)) ?? .option
         measureUnit = defaults.string(forKey: Key.measureUnit).flatMap(MeasureUnit.init(rawValue:)) ?? .points
         measureTolerance = defaults.string(forKey: Key.measureTolerance).flatMap(MeasureTolerance.init(rawValue:)) ?? .medium
         measureSnapsToContent = defaults.bool(forKey: Key.measureSnapsToContent)
@@ -647,6 +654,7 @@ public final class SettingsStore {
         static let pinBorder = "pinBorder"
         static let pinsAppearInCaptures = "pinsAppearInCaptures"
         static let colorFormat = "colorFormat"
+        static let colorCopyGesture = "colorCopyGesture"
         static let measureUnit = "measureUnit"
         static let measureTolerance = "measureTolerance"
         static let measureSnapsToContent = "measureSnapsToContent"
