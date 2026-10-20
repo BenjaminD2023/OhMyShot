@@ -454,6 +454,7 @@ final class OverlayView: NSView {
            colorCopyGesture.matches(event.modifierFlags), selection.anchor == nil,
            purpose == .screenshot || purpose == .annotate || purpose == .color,
            delegate?.overlayView(self, copyColorAt: global(point)) == true {
+            delegate?.overlayView(self, didMovePointerTo: global(point))
             isCopyingColor = true
             return
         }
@@ -468,8 +469,12 @@ final class OverlayView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard !isCopyingColor, mode == .area, !isAnnotating else { return }
+        guard mode == .area, !isAnnotating else { return }
         let point = convert(event.locationInWindow, from: nil)
+        if isCopyingColor {
+            delegate?.overlayView(self, didMovePointerTo: global(point))
+            return
+        }
         switch purpose {
         case .color:
             delegate?.overlayView(self, didMovePointerTo: global(point))

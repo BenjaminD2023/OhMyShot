@@ -13,6 +13,7 @@ struct OverlayKeyTests {
         /// The last nudge, in pixels, down positive.
         var nudge: CGVector?
         var colorCopyPoint: CGPoint?
+        var movedPoints: [CGPoint] = []
         var copiedColor: ScreenColor?
         var acceptsColorCopy = true
         var pickModifiers: NSEvent.ModifierFlags?
@@ -25,7 +26,10 @@ struct OverlayKeyTests {
         }
         func overlayView(_ view: OverlayView, didReleaseWith modifiers: NSEvent.ModifierFlags) { heard.append("release") }
         func overlayView(_ view: OverlayView, didChangeModifiers modifiers: NSEvent.ModifierFlags) { heard.append("modifiers") }
-        func overlayView(_ view: OverlayView, didMovePointerTo point: CGPoint) { heard.append("move") }
+        func overlayView(_ view: OverlayView, didMovePointerTo point: CGPoint) {
+            heard.append("move")
+            movedPoints.append(point)
+        }
         func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool) { heard.append("space") }
         func overlayViewDidReleaseSpace(_ view: OverlayView) { heard.append("space up") }
         func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) { heard.append("select") }
@@ -227,8 +231,9 @@ struct OverlayKeyTests {
                 // Releasing the modifier before releasing the button must not release a selection or end Pick Color.
                 view.mouseDragged(with: try mouse(.leftMouseDragged, at: CGPoint(x: 500, y: 250)))
                 view.mouseUp(with: try mouse(.leftMouseUp))
-                #expect(recorder.heard == ["copy color"], "\(purpose), \(style): \(recorder.heard)")
+                #expect(recorder.heard == ["copy color", "move", "move"], "\(purpose), \(style): \(recorder.heard)")
                 #expect(recorder.copiedColor?.hex == "#123456")
+                #expect(recorder.movedPoints == [CGPoint(x: 400, y: 300), CGPoint(x: 500, y: 250)])
                 recorder.heard.removeAll()
                 view.mouseDown(with: try mouse(.leftMouseDown))
                 view.mouseUp(with: try mouse(.leftMouseUp))
@@ -245,7 +250,7 @@ struct OverlayKeyTests {
         view.mouseDown(with: try mouse(.leftMouseDown, modifiers: .option))
         view.mouseDragged(with: try mouse(.leftMouseDragged, modifiers: .option))
         view.mouseUp(with: try mouse(.leftMouseUp, modifiers: .option))
-        #expect(recorder.heard == ["copy color"])
+        #expect(recorder.heard == ["copy color", "move", "move"])
         #expect(recorder.copiedColor == nil)
     }
 
@@ -263,7 +268,7 @@ struct OverlayKeyTests {
         view.mouseDown(with: try mouse(.leftMouseDown, at: CGPoint(x: 500.5, y: 350.5), modifiers: .option))
         #expect(recorder.colorCopyPoint == CGPoint(x: -299.5, y: 450.5))
         #expect(recorder.copiedColor?.hex == "#123456")
-        #expect(recorder.heard == ["copy color"])
+        #expect(recorder.heard == ["copy color", "move"])
     }
 
     @Test func anExistingAnchorOrRememberedAreaKeepsTheUsualDragModifiers() throws {
@@ -290,7 +295,7 @@ struct OverlayKeyTests {
         view.delegate = recorder
         for (gesture, flags, expected) in [
             (ColorCopyGesture.command, NSEvent.ModifierFlags.option, ["press", "release"]),
-            (.command, .command, ["copy color"]),
+            (.command, .command, ["copy color", "move"]),
             (.disabled, .option, ["press", "release"]),
             (.option, [.option, .command], ["press", "release"]),
         ] {
