@@ -5607,36 +5607,36 @@
         }
       }
     },
-    "Close text popup" : {
+    "Close text card" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cerrar ventana de texto"
+            "value" : "Cerrar tarjeta de texto"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fermer la fenêtre de texte"
+            "value" : "Fermer la carte de texte"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "テキストポップアップを閉じる"
+            "value" : "テキストカードを閉じる"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭文字浮窗"
+            "value" : "关闭文字卡片"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "關閉文字浮窗"
+            "value" : "關閉文字卡片"
           }
         }
       }
@@ -10298,6 +10298,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "擷取內容在記錄中保留的時間"
+          }
+        }
+      }
+    },
+    "How long the copied-text card stays. It stays open while the pointer is over it and closes the chosen time after the pointer leaves; Never keeps it until you close it. A card that says nothing was found, or that the text was not copied, always stays at least as long as it used to." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuánto tiempo permanece la tarjeta del texto copiado. Permanece abierta mientras el puntero está sobre ella y se cierra el tiempo elegido después de retirarlo; Nunca la mantiene hasta que la cierres. Una tarjeta que avisa de que no se encontró texto, o de que el texto no se copió, permanece siempre al menos el tiempo de siempre."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Combien de temps la carte du texte copié reste affichée. Elle reste ouverte pendant le survol et se ferme à l’issue de la durée choisie après le départ du pointeur ; Jamais la garde jusqu’à ce que vous la fermiez. Une carte qui indique qu’aucun texte n’a été trouvé, ou que le texte n’a pas été copié, reste toujours au moins aussi longtemps qu’avant."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーしたテキストのカードを表示しておく時間です。ポインタを重ねている間は表示され続け、離してから選んだ時間が過ぎると閉じます。「しない」では、自分で閉じるまで表示され続けます。テキストが見つからなかった場合や、コピーされなかった場合のカードは、これまでと同じ長さ以上は表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝文字卡片的显示时长。指针悬停时保持显示，移开指针后按所选时长关闭；选择“永不”则一直显示，直到手动关闭。提示未找到文字或文字未被拷贝的卡片，至少会像以前一样久地保持显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拷貝文字卡片的顯示時間。指標停留時保持顯示，移開指標後依所選時間關閉；選擇「永不」則持續顯示，直到手動關閉。提示找不到文字或文字未被拷貝的卡片，至少會像以前一樣久地保持顯示。"
           }
         }
       }
@@ -21641,6 +21675,40 @@
         }
       }
     },
+    "Text card position" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posición de la tarjeta de texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position de la carte de texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストカードの表示位置"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字卡片位置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字卡片位置"
+          }
+        }
+      }
+    },
     "Text from apps" : {
       "localizations" : {
         "es" : {
@@ -21739,40 +21807,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文字釘選：%@"
-          }
-        }
-      }
-    },
-    "Text popup position" : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Posición del texto copiado"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Position du texte copié"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コピーテキストの表示位置"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文字浮窗位置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文字浮窗位置"
           }
         }
       }
@@ -22215,40 +22249,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "指標會出現在圖片中你擷取當下的位置。若螢幕已凍結，則是你按下快速鍵時的位置；此時「多合一」不會包含指標。"
-          }
-        }
-      }
-    },
-    "The popup stays open while hovered. When the pointer leaves, the selected duration starts again. Never keeps it open until you close it." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La ventana permanece abierta mientras el puntero está sobre ella. Al retirarlo, el tiempo seleccionado vuelve a empezar. Nunca la mantiene abierta hasta que la cierres."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "La fenêtre reste ouverte pendant le survol. Quand le pointeur la quitte, la durée choisie recommence. Jamais la garde ouverte jusqu’à ce que vous la fermiez."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ポインタを重ねている間は表示され続けます。ポインタを離すと、選択した時間が最初から始まります。「しない」では、自分で閉じるまで表示され続けます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "指针悬停时保持显示。移开指针后，按所选时长重新计时。选择“永不”后，会一直显示直到手动关闭。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "指標停留時保持顯示。移開指標後，依所選時長重新計時。選擇「永不」後，會持續顯示直到手動關閉。"
           }
         }
       }

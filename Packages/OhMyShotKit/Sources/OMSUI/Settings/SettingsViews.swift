@@ -692,18 +692,18 @@ struct ToolsSettingsView: View {
                 }
                 .help(Text("A card with the copied text and a switch for its line breaks. Choose when it closes below; hovering keeps it open.", bundle: .module))
             }
-            SettingsRow(Text("Text popup position", bundle: .module)) {
+            SettingsRow(Text("Text card position", bundle: .module)) {
                 Picker(selection: $settings.textResultPosition) {
                     Text("Below selection", bundle: .module).tag(TextResultPosition.belowSelection)
                     Text("Bottom left", bundle: .module).tag(TextResultPosition.bottomLeft)
                 } label: {
-                    Text("Text popup position", bundle: .module)
+                    Text("Text card position", bundle: .module)
                 }
                 .labelsHidden()
                 .fixedSize()
                 .help(Text("Shows the result on the display where the text or formula was selected.", bundle: .module))
             }
-            SettingsRow(Text("Close text popup", bundle: .module)) {
+            SettingsRow(Text("Close text card", bundle: .module)) {
                 Picker(selection: $settings.textResultCloseAfter) {
                     ForEach(SettingsStore.textResultCloseDelays, id: \.self) { seconds in
                         if seconds == 0 {
@@ -715,11 +715,11 @@ struct ToolsSettingsView: View {
                         }
                     }
                 } label: {
-                    Text("Close text popup", bundle: .module)
+                    Text("Close text card", bundle: .module)
                 }
                 .labelsHidden()
                 .fixedSize()
-                .help(Text("The popup stays open while hovered. When the pointer leaves, the selected duration starts again. Never keeps it open until you close it.", bundle: .module))
+                .help(Text("How long the copied-text card stays. It stays open while the pointer is over it and closes the chosen time after the pointer leaves; Never keeps it until you close it. A card that says nothing was found, or that the text was not copied, always stays at least as long as it used to.", bundle: .module))
             }
             SettingsRow(Text("Recognized Text", bundle: .module)) {
                 Toggle(isOn: $settings.textRecognitionWrapsText) {

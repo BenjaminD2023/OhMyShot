@@ -26,14 +26,15 @@ struct TextResultPositionSettingTests {
         }
     }
 
-    @Test func copiedTextPopupDefaultsToOneSecond() throws {
+    @Test func theTextCardKeepsItsFourSecondsUnlessTheUserChoosesOtherwise() throws {
         let suite = "TextResultCloseTests-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = SettingsStore(defaults: defaults)
-        #expect(settings.textResultCloseAfter == 1)
+        #expect(settings.textResultCloseAfter == 4)
+        #expect(SettingsStore.defaultTextResultCloseAfter == 4)
         #expect(!settings.showTextResult)
-        #expect(SettingsStore.textResultCloseDelays == [0, 1, 2, 3, 5, 10, 20, 30, 60])
+        #expect(SettingsStore.textResultCloseDelays == [0, 1, 2, 3, 4, 5, 10, 20, 30, 60])
     }
 
     @Test func everyCloseDelayPersistsIncludingExplicitNever() throws {
@@ -52,19 +53,19 @@ struct TextResultPositionSettingTests {
         }
     }
 
-    @Test func unknownCloseDelaysFallBackToOneSecond() throws {
+    @Test func unknownCloseDelaysFallBackToFourSeconds() throws {
         let suite = "TextResultCloseTests-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        for invalid in [-1, 4, 7, Int.max] {
+        for invalid in [-1, 6, 7, Int.max] {
             defaults.set(invalid, forKey: "textResultCloseAfter")
-            #expect(SettingsStore(defaults: defaults).textResultCloseAfter == 1)
+            #expect(SettingsStore(defaults: defaults).textResultCloseAfter == 4)
         }
         // None of these values means an intentional integer 0 (Never).
         let invalidTypes: [Any] = ["0", "unexpected", false, 2.5, [1, 2]]
         for invalid in invalidTypes {
             defaults.set(invalid, forKey: "textResultCloseAfter")
-            #expect(SettingsStore(defaults: defaults).textResultCloseAfter == 1)
+            #expect(SettingsStore(defaults: defaults).textResultCloseAfter == 4)
         }
         defaults.set(0, forKey: "textResultCloseAfter")
         #expect(SettingsStore(defaults: defaults).textResultCloseAfter == 0)

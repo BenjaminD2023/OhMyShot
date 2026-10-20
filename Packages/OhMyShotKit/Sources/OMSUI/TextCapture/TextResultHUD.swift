@@ -6,13 +6,14 @@ struct TextResultLifetime {
     private(set) var generation: UInt = 0
     private var countdown: CardCountdown?
 
-    mutating func start(at now: TimeInterval, hovered: Bool, voiceOver: Bool, closeAfter: Int = 1) {
+    /// `closeAfter` is in seconds; 0 keeps the card until it is closed.
+    mutating func start(at now: TimeInterval, hovered: Bool, voiceOver: Bool, closeAfter: TimeInterval) {
         generation &+= 1
         guard closeAfter > 0 else {
             countdown = nil
             return
         }
-        let interval = TimeInterval(voiceOver ? max(20, closeAfter) : closeAfter)
+        let interval = voiceOver ? max(20, closeAfter) : closeAfter
         countdown = CardCountdown(interval: interval, at: now)
         if hovered { countdown?.hold(.pointer, at: now) }
     }
@@ -74,13 +75,31 @@ public final class TextResultHUD {
     private var lifetime = TextResultLifetime()
     private var windowLease: ActiveResources.Lease?
 
+    /// Where Quick Access's cards stand on screen, if they do: the bottom-left card keeps clear of them.
+    public var cardsInTheWay: () -> CGRect? = { nil }
+
     public init() {}
 
-    deinit { dismissal?.cancel() }
+    /// How long a card stays, in seconds; 0 is until it is closed. `chosen` is the user's Close text card choice for a card
+    /// they asked for (Show the copied text), nil for a card shown only to say something. A copied result takes the choice
+    /// (4 s without one, as it always was); a card that reports a problem keeps at least its own time: nothing found
+    /// and no formula found 2.5 s, not copied 10 s, because its Copy is the only way to the text.
+    static func closeDelay(for state: State, chosen: Int?) -> TimeInterval {
+        func atLeast(_ own: TimeInterval) -> TimeInterval {
+            guard let chosen else { return own }
+            return chosen == 0 ? 0 : max(own, TimeInterval(chosen))
+        }
+        return switch state {
+        case .copied, .copiedFormula: chosen.map(TimeInterval.init) ?? 4
+        case .empty, .noFormula: atLeast(2.5)
+        case .notCopied: atLeast(10)
+        }
+    }
 
     /// Shows `state` by `selection`, in AppKit's global coordinates. `note` is a line under the text, such as who read
-    /// it ("Read by Claude"), or why this Mac's reading was copied instead of the cloud model's.
-    public func show(_ state: State, near selection: CGRect, position: TextResultPosition = .belowSelection, closeAfter: Int = 1, note: String? = nil) {
+    /// it ("Read by Claude"), or why this Mac's reading was copied instead of the cloud model's. `closeAfter` is the
+    /// user's Close text card choice when they asked for the card, nil when it is shown only to say something.
+    public func show(_ state: State, near selection: CGRect, position: TextResultPosition, closeAfter: Int?, note: String? = nil) {
         anchor = selection
         self.position = position
         let isNew = panel == nil
@@ -96,7 +115,7 @@ public final class TextResultHUD {
         self.note = note
         // A stationary pointer can already cover a newly shown/moved/resized card without an enter event.
         lifetime.start(at: Self.now, hovered: panel.frame.insetBy(dx: TextResultCard.margin, dy: TextResultCard.margin).contains(NSEvent.mouseLocation),
-                       voiceOver: NSWorkspace.shared.isVoiceOverEnabled, closeAfter: closeAfter)
+                       voiceOver: NSWorkspace.shared.isVoiceOverEnabled, closeAfter: Self.closeDelay(for: state, chosen: closeAfter))
         scheduleDismissal()
     }
 
@@ -162,8 +181,10 @@ public final class TextResultHUD {
         }
     }
 
-    /// Frame includes the shadow margin. The card itself keeps the existing screen/selection gaps.
-    static func frame(size: CGSize, near anchor: CGRect, position: TextResultPosition, visibleFrame: CGRect) -> CGRect {
+    /// Frame includes the shadow margin. The card itself keeps the existing screen/selection gaps. `avoiding` is the
+    /// Quick Access cards' frame: in the bottom-left corner the card stands above them, or beside them when there is
+    /// no room above, rather than under their panel.
+    static func frame(size: CGSize, near anchor: CGRect, position: TextResultPosition, visibleFrame: CGRect, avoiding: CGRect? = nil) -> CGRect {
         let margin = TextResultCard.margin
         let visible = visibleFrame.insetBy(dx: 8 - margin, dy: 8 - margin)
         var origin: CGPoint
@@ -171,6 +192,13 @@ public final class TextResultHUD {
         case .bottomLeft:
             origin = CGPoint(x: visibleFrame.minX + QuickAccessPlacement.edge - margin,
                              y: visibleFrame.minY + QuickAccessPlacement.edge - margin)
+            if let avoiding, CGRect(origin: origin, size: size).insetBy(dx: margin, dy: margin).intersects(avoiding) {
+                if avoiding.maxY + 10 - margin + size.height <= visible.maxY {
+                    origin.y = avoiding.maxY + 10 - margin
+                } else if avoiding.maxX + 10 - margin + size.width <= visible.maxX {
+                    origin.x = avoiding.maxX + 10 - margin
+                }
+            }
         case .belowSelection:
             origin = CGPoint(x: anchor.midX - size.width / 2, y: anchor.minY - 10 - size.height + margin)
             if origin.y < visible.minY {
@@ -190,7 +218,7 @@ public final class TextResultHUD {
         let visible = screen?.visibleFrame ?? anchor
         let width = min(max(anchor.width, 300), 420, max(1, visible.width - 16))
         let size = card.fittingSize(width: width)
-        panel.setFrame(Self.frame(size: size, near: anchor, position: position, visibleFrame: visible), display: true)
+        panel.setFrame(Self.frame(size: size, near: anchor, position: position, visibleFrame: visible, avoiding: cardsInTheWay()), display: true)
     }
 
     /// A short fade and rise, or nothing with Reduce Motion. The rise moves the card's layer, never the
@@ -554,7 +582,13 @@ final class TextResultCard: NSView {
         trackingAreas.forEach(removeTrackingArea)
         let card = bounds.insetBy(dx: Self.margin, dy: Self.margin)
         guard !card.isEmpty else { return }
-        addTrackingArea(NSTrackingArea(rect: card, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
+        // A pointer already over the card when it appears or moves under it gets no entry from AppKit, so its exit would
+        // never come either and the card would stay held: tell the area the pointer is inside when it is.
+        var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways]
+        if let window, card.contains(convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)) {
+            options.insert(.assumeInside)
+        }
+        addTrackingArea(NSTrackingArea(rect: card, options: options, owner: self))
     }
 
     override func mouseEntered(with event: NSEvent) { onHover?(true) }

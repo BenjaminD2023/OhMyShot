@@ -224,6 +224,12 @@ public final class QuickAccessController {
         stack?.screenFrame(ofCard: id)
     }
 
+    /// The stack of cards as it stands on screen, shadow room left out, while it shows: what the text card keeps clear of.
+    public var cardsFrame: CGRect? {
+        guard let panel, panel.isVisible else { return nil }
+        return panel.frame.insetBy(dx: CardStackView.margin, dy: CardStackView.margin)
+    }
+
     /// Copies the newest card's capture: the keyboard path to Quick Access.
     public func copyLatest() {
         guard let latest = items.last else { return }
