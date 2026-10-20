@@ -185,6 +185,7 @@ struct GeneralSettingsView: View {
                 let downloads = updates.automaticallyDownloads()
                 SettingsRow(Text("Updates", bundle: .module)) {
                     VStack(alignment: .leading, spacing: 6) {
+                        UpdateCheckStatus(updates: updates.status)
                         Button(action: updates.check) {
                             Text("Check for Updates…", bundle: .module)
                         }
@@ -1174,6 +1175,10 @@ struct AutomationSettingsView: View {
 }
 
 struct AboutSettingsView: View {
+    /// The notices file in the app's Resources (App/Acknowledgments.md), or nil in a build without one.
+    let acknowledgments: URL?
+    @State private var readingAcknowledgments = false
+
     var body: some View {
         // In a scroll view like the other panes, so the toolbar above stays clear rather than drawing its own
         // grey background over a pane with nothing to scroll.
@@ -1183,6 +1188,16 @@ struct AboutSettingsView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .frame(minWidth: paneWidth, maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $readingAcknowledgments) {
+            if let acknowledgments {
+                AcknowledgmentsSheet(url: acknowledgments) { readingAcknowledgments = false }
+            }
+        }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: .debugOpenAcknowledgments)) { _ in
+            readingAcknowledgments = acknowledgments != nil
+        }
+        #endif
     }
 
     private var about: some View {
@@ -1200,6 +1215,13 @@ struct AboutSettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .padding(.top, 6)
+            if acknowledgments != nil {
+                Button { readingAcknowledgments = true } label: {
+                    Text("Acknowledgments…", bundle: .module)
+                }
+                .help(Text("The licenses of OhMyShot and of the software it’s built with", bundle: .module))
+                .padding(.top, 12)
+            }
         }
         .padding(28)
     }

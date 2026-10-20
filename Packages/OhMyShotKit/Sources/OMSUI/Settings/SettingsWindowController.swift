@@ -77,6 +77,7 @@ public struct SettingsDependencies {
     public let updates: Updates?
 
     public struct Updates {
+        public let status: UpdateStatus
         public let canCheck: () -> Bool
         public let check: () -> Void
         public let automaticallyChecks: () -> Bool
@@ -90,8 +91,10 @@ public struct SettingsDependencies {
             automaticallyChecks: @escaping () -> Bool,
             setAutomaticallyChecks: @escaping (Bool) -> Void,
             automaticallyDownloads: @escaping () -> Bool,
-            setAutomaticallyDownloads: @escaping (Bool) -> Void
+            setAutomaticallyDownloads: @escaping (Bool) -> Void,
+            status: UpdateStatus = UpdateStatus()
         ) {
+            self.status = status
             self.canCheck = canCheck
             self.check = check
             self.automaticallyChecks = automaticallyChecks
@@ -102,6 +105,8 @@ public struct SettingsDependencies {
     }
     /// The cloud models the OCR panel reads with, which only the Tools tab shows.
     public let cloudModels: CloudModelStore?
+    /// The notices of OhMyShot and of the software it is built with (App/Acknowledgments.md), which About shows.
+    public let acknowledgments: URL?
 
     /// What Settings › Sharing does with a finished upload.
     public struct UploadRecordActions {
@@ -173,7 +178,8 @@ public struct SettingsDependencies {
         backgrounds: Backgrounds = .none,
         modelPacks: ModelPackCenter? = nil,
         cloudModels: CloudModelStore? = nil,
-        updates: Updates? = nil
+        updates: Updates? = nil,
+        acknowledgments: URL? = nil
     ) {
         self.settings = settings
         self.permissions = permissions
@@ -188,6 +194,7 @@ public struct SettingsDependencies {
         self.modelPacks = modelPacks
         self.updates = updates
         self.cloudModels = cloudModels
+        self.acknowledgments = acknowledgments
     }
 }
 
@@ -329,7 +336,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .automation:
             host(AutomationSettingsView(settings: dependencies.settings, urlScheme: dependencies.urlScheme))
         case .about:
-            host(AboutSettingsView())
+            host(AboutSettingsView(acknowledgments: dependencies.acknowledgments))
         }
     }
 

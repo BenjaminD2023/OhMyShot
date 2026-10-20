@@ -426,7 +426,8 @@ final class CompositionRoot {
             updateEntries: [
                 .init(
                     title: String(localized: "Check for Updates…"),
-                    isEnabled: { [updates] in updates.canCheckForUpdates }
+                    isEnabled: { [updates] in updates.canCheckForUpdates },
+                    currentTitle: { [updates] in updates.menuTitle }
                 ) { [updates] in updates.checkForUpdates() },
                 .init(title: String(localized: "Updates"), children: { [updates] in [
                     .init(
@@ -1837,8 +1838,10 @@ final class CompositionRoot {
                 automaticallyChecks: { [updates] in updates.automaticallyChecksForUpdates },
                 setAutomaticallyChecks: { [updates] in updates.setAutomaticallyChecksForUpdates($0) },
                 automaticallyDownloads: { [updates] in updates.automaticallyDownloadsUpdates },
-                setAutomaticallyDownloads: { [updates] in updates.setAutomaticallyDownloadsUpdates($0) }
-            )
+                setAutomaticallyDownloads: { [updates] in updates.setAutomaticallyDownloadsUpdates($0) },
+                status: updates.status
+            ),
+            acknowledgments: Bundle.main.url(forResource: "Acknowledgments", withExtension: "md")
         ))
         controller.onClose = { [weak self] in
             Task { @MainActor in
@@ -1861,6 +1864,14 @@ final class CompositionRoot {
             },
             capture: { window, name in await hooks.captureHiddenWindow(window, name: name) }
         )
+        let aboutHooks = DebugAboutHooks(
+            makeSettings: { [unowned self] in
+                let controller = makeSettingsWindow()
+                controller.onClose = nil
+                return controller
+            },
+            capture: { window, name in await hooks.captureHiddenWindow(window, name: name) }
+        )
         #endif
         return AutomationController(scheme: urlScheme, settings: settings) { [weak self] command in
             self?.perform(command)
@@ -1869,6 +1880,7 @@ final class CompositionRoot {
         } debugHandler: { url in
             #if DEBUG
             if modelPackHooks.handle(url) { return true }
+            if aboutHooks.handle(url) { return true }
             hooks.handle(url)
             return true
             #else

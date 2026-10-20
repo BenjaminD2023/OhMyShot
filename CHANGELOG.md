@@ -8,6 +8,13 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.2.1-fork.2] - 2026-10-21
+
+- Integrate upstream through 87e25df, including Settings › About acknowledgments and update status. Preserve the fork feed, signing key, saved automatic update preferences and capture guards.
+
+- Updates for release builds with Sparkle: about once a day (Settings › General › Updates, on by default), from signed appcasts on this repository's GitHub releases; a version found in the background waits in the menu bar menu and in Settings rather than in a window, while this fork retains its saved automatic download and installation preference. ([d69ff9c]; by [@fzlzjerry])
+- Settings › About › Acknowledgments…, with the licenses of OhMyShot and of the software it is built with. ([42c6bfa]; by [@fzlzjerry])
+
 ## [0.2.0-fork.1] - 2026-10-20
 
 ### Added
@@ -46,6 +53,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Per-window OCR text wrapping, a saved default for new windows, and horizontal scrolling when wrapping is off. ([#6]; by [@BenjaminD2023], [@fzlzjerry])
 - Measurement snapping preferences and edge tolerance, with keyboard adjustments during measurement. ([#3]; by [@BenjaminD2023], [@fzlzjerry])
 - Independent screenshot/recording and OCR popup delays. This fork defaults screenshot/recording cards to three seconds and OCR results to one second; saved choices are preserved. ([1897ae9]; by [@BenjaminD2023])
+
 
 ### Changed
 
@@ -164,6 +172,14 @@ Each entry links its implementation commits or merged pull request and credits v
 [0182817]: https://github.com/fzlzjerry/OhMyShot/commit/01828172073f4816c9dba6054957f27d631abee8
 [6d3b0af]: https://github.com/fzlzjerry/OhMyShot/commit/6d3b0af34efe0b65102e02e829c53f5f31f5b203
 [0983549]: https://github.com/fzlzjerry/OhMyShot/commit/0983549dea37cb19593358ada4bfcb00755e838f
+
+[#12]: https://github.com/fzlzjerry/OhMyShot/pull/12
+[#8]: https://github.com/fzlzjerry/OhMyShot/pull/8
+[#11]: https://github.com/fzlzjerry/OhMyShot/pull/11
+[42c6bfa]: https://github.com/fzlzjerry/OhMyShot/commit/42c6bfada8d898892676d32b2b0daa0bdcc878b6
+[b3ee8ce]: https://github.com/fzlzjerry/OhMyShot/commit/b3ee8ce17153c308b1247a9eb28f487af92dca85
+[745e2f4]: https://github.com/fzlzjerry/OhMyShot/commit/745e2f4e76a8be01f02ca25c84a8e4dc6d08ffef
+[d69ff9c]: https://github.com/fzlzjerry/OhMyShot/commit/d69ff9c7a0c3b71e9eb6a7146d831af4fcb36f6c
 [@BenjaminD2023]: https://github.com/BenjaminD2023
 [@bobbyhuang-dev]: https://github.com/bobbyhuang-dev
 [@fzlzjerry]: https://github.com/fzlzjerry

@@ -1,5 +1,8 @@
 #include "Base.xcconfig"
 
+// The appcast attached to the latest GitHub release (Docs/release.md). "/$()/" keeps "//" from starting a comment.
+OMS_UPDATE_FEED_URL = https:/$()/github.com/BenjaminD2023/OhMyShot/releases/latest/download/appcast.xml
+
 SWIFT_OPTIMIZATION_LEVEL = -O
 SWIFT_COMPILATION_MODE = wholemodule
 DEBUG_INFORMATION_FORMAT = dwarf-with-dsym

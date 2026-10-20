@@ -2404,3 +2404,27 @@ folder. The cloud switch confirmation, which the reviewer flagged as unseen, nee
 sheet (`modelpack-render?switch=1`), are Cancel on Escape and Turn Off on no key, so Return deletes no key. Not
 rendered: a failed pack download, the Remove… confirmation, Settings' Test results, both packs reading at once,
 anything under Increase Contrast, Reduce Transparency, or Reduce Motion, and VoiceOver.
+
+## M7 — Updates (2026-10-20)
+
+Sparkle 2.10.0 in the app, its own schedule off, the daily look an `NSBackgroundActivityScheduler` activity
+(Docs/release.md). Debug builds have no feed, so this was measured with the debug hooks starting the updater against a
+signed test feed on 127.0.0.1 (`debug/updates-start`, `debug/updates-schedule?on=1`), on a fresh launch of the Dev app.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Footprint 40 s after launch / 30 s after the updater and its schedule started | 24 / 25 MB | < 30 MB |
+| Idle with the updater and its schedule, 60 s | 0.00% CPU, 0 wakeups | 0.0%, < 60 |
+| A look that found the test version (feed fetched, its signature checked) | 21 ms from asking to found, 33 ms more to waiting in the menu | — |
+| Idle after a look, a Settings render, and the updater started again with its schedule, 60 s | 0.02% CPU (one 0.4% second), 0 wakeups, 54 MB | 0.0%, < 60, < 60 MB |
+| The app as `Scripts/release.sh --dry-run` makes it: stripped / zipped (Xcode's Release build unstripped: 60 MB) | 37 MB / 14 MB | < 30 MB |
+
+- **The updater costs nothing while idle**: no timer of Sparkle's runs (`SUEnableAutomaticChecks` is NO), and the
+  background activity is the system's, so the app had no wakeups with it scheduled. About 1 MB of footprint.
+- **The size is over its budget.** Stripping takes the app from 60 to 37 MB (the app's binary 20 → 10 MB, the text
+  reader 28 → 15 MB); the text reader is MLX's (+16 MB at the VLM pack), and Sparkle's framework is about 3 MB.
+- A changed feed was refused (Sparkle: "EdDSA signature does not match"), and a found version never put a window on
+  screen: the app had no window but its own two off screen while the version waited in the menu.
+
+Not measured: a real release (none exists; it needs Developer ID), installing an update, and the activity firing on its
+own (the system decides when; it wasn't waited for).

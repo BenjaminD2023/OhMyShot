@@ -82,7 +82,7 @@
 	<key>OMSURLScheme</key>
 	<string>$(OMS_URL_SCHEME)</string>
 	<key>SUFeedURL</key>
-	<string>https://github.com/BenjaminD2023/OhMyShot/releases/latest/download/appcast.xml</string>
+	<string>$(OMS_UPDATE_FEED_URL)</string>
 	<key>SUPublicEDKey</key>
 	<string>hKR+RgxaJihsYToYeaJSyUtwJE0hBH+QR2sRKVcEH5I=</string>
 	<key>SUEnableAutomaticChecks</key>
