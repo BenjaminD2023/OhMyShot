@@ -690,7 +690,36 @@ struct ToolsSettingsView: View {
                 Toggle(isOn: $settings.showTextResult) {
                     Text("Show the copied text", bundle: .module)
                 }
-                .help(Text("A card by the selection with the copied text and a switch for its line breaks.", bundle: .module))
+                .help(Text("A card with the copied text and a switch for its line breaks. Choose when it closes below; hovering keeps it open.", bundle: .module))
+            }
+            SettingsRow(Text("Text card position", bundle: .module)) {
+                Picker(selection: $settings.textResultPosition) {
+                    Text("Below selection", bundle: .module).tag(TextResultPosition.belowSelection)
+                    Text("Bottom left", bundle: .module).tag(TextResultPosition.bottomLeft)
+                } label: {
+                    Text("Text card position", bundle: .module)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("Shows the result on the display where the text or formula was selected.", bundle: .module))
+            }
+            SettingsRow(Text("Close text card", bundle: .module)) {
+                Picker(selection: $settings.textResultCloseAfter) {
+                    ForEach(SettingsStore.textResultCloseDelays, id: \.self) { seconds in
+                        if seconds == 0 {
+                            Text("Never", bundle: .module).tag(seconds)
+                        } else if seconds == 1 {
+                            Text("After 1 second", bundle: .module).tag(seconds)
+                        } else {
+                            Text("After \(seconds) seconds", bundle: .module).tag(seconds)
+                        }
+                    }
+                } label: {
+                    Text("Close text card", bundle: .module)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("How long the copied-text card stays. It stays open while the pointer is over it and closes the chosen time after the pointer leaves; Never keeps it until you close it. A card that says nothing was found, or that the text was not copied, always stays at least as long as it used to.", bundle: .module))
             }
             SettingsRow(Text("Image line breaks", bundle: .module)) {
                 Picker(selection: $settings.textRecognitionKeepsLineBreaks) {

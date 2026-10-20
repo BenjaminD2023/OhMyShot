@@ -36,6 +36,7 @@ final class CompositionRoot {
     }()
     private lazy var textCapture: TextCaptureCoordinator = {
         let coordinator = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
+        coordinator.cardsInTheWay = { [weak self] in self?.quickAccess.cardsFrame }
         coordinator.secondReader = { [weak self] in
             guard let self, let helper = textReaderTool, let pack = secondReadingPack else { return nil }
             return (pack, helper)

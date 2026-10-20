@@ -1285,6 +1285,7 @@
       }
     },
     "A card by the selection with the copied text and a switch for its line breaks." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -1348,6 +1349,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "當指標停留在卡片上、其選單已打開、正被拖移、正以「快速查看」顯示、擁有鍵盤焦點、編輯器已打開其擷取內容，或正在上傳時，卡片會保持顯示，之後至少再停留 4 秒，若所選時間較短，則停留所選時間。「關閉」會將擷取內容留在擷取記錄中；但若「一般」中的記錄設為「永不」，未儲存的卡片關閉時會一併移除其擷取內容。「儲存並關閉」也會將拷貝儲存到「一般」中設定的檔案夾，不會詢問名稱；若儲存失敗則保留卡片。"
+          }
+        }
+      }
+    },
+    "A card with the copied text and a switch for its line breaks. Choose when it closes below; hovering keeps it open." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una tarjeta con el texto copiado y un botón para cambiar los saltos de línea. Elige abajo cuándo se cierra; al pasar el puntero se mantiene abierta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une carte avec le texte copié et une commande pour ses sauts de ligne. Choisissez ci-dessous quand elle se ferme ; le survol la garde ouverte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーしたテキストと改行を切り替えるボタンを表示するカードです。閉じるまでの時間を下で選べます。ポインタを重ねている間は表示され続けます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示拷贝文字及其换行切换按钮的卡片。可在下方选择关闭时间；指针悬停时保持显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示已拷貝文字及其換行切換按鈕的卡片。可在下方選擇關閉時間；指標停留時保持顯示。"
           }
         }
       }
@@ -3737,6 +3772,40 @@
         }
       }
     },
+    "Below selection" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debajo de la selección"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sous la sélection"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択範囲の下"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选区域下方"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選取範圍下方"
+          }
+        }
+      }
+    },
     "Body" : {
       "localizations" : {
         "es" : {
@@ -5535,6 +5604,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉卡片"
+          }
+        }
+      }
+    },
+    "Close text card" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar tarjeta de texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer la carte de texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストカードを閉じる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭文字卡片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉文字卡片"
           }
         }
       }
@@ -10196,6 +10299,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "擷取內容在記錄中保留的時間"
+          }
+        }
+      }
+    },
+    "How long the copied-text card stays. It stays open while the pointer is over it and closes the chosen time after the pointer leaves; Never keeps it until you close it. A card that says nothing was found, or that the text was not copied, always stays at least as long as it used to." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuánto tiempo permanece la tarjeta del texto copiado. Permanece abierta mientras el puntero está sobre ella y se cierra el tiempo elegido después de retirarlo; Nunca la mantiene hasta que la cierres. Una tarjeta que avisa de que no se encontró texto, o de que el texto no se copió, permanece siempre al menos el tiempo de siempre."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Combien de temps la carte du texte copié reste affichée. Elle reste ouverte pendant le survol et se ferme à l’issue de la durée choisie après le départ du pointeur ; Jamais la garde jusqu’à ce que vous la fermiez. Une carte qui indique qu’aucun texte n’a été trouvé, ou que le texte n’a pas été copié, reste toujours au moins aussi longtemps qu’avant."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーしたテキストのカードを表示しておく時間です。ポインタを重ねている間は表示され続け、離してから選んだ時間が過ぎると閉じます。「しない」では、自分で閉じるまで表示され続けます。テキストが見つからなかった場合や、コピーされなかった場合のカードは、これまでと同じ長さ以上は表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝文字卡片的显示时长。指针悬停时保持显示，移开指针后按所选时长关闭；选择“永不”则一直显示，直到手动关闭。提示未找到文字或文字未被拷贝的卡片，至少会像以前一样久地保持显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拷貝文字卡片的顯示時間。指標停留時保持顯示，移開指標後依所選時間關閉；選擇「永不」則持續顯示，直到手動關閉。提示找不到文字或文字未被拷貝的卡片，至少會像以前一樣久地保持顯示。"
           }
         }
       }
@@ -20526,6 +20663,40 @@
         }
       }
     },
+    "Shows the result on the display where the text or formula was selected." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra el resultado en la pantalla donde se seleccionó el texto o la fórmula."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche le résultat sur l’écran où le texte ou la formule a été sélectionné."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストまたは数式を選択したディスプレイに結果を表示します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在选取文字或公式的显示器上显示结果。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在選取文字或公式的顯示器上顯示結果。"
+          }
+        }
+      }
+    },
     "Size" : {
       "localizations" : {
         "es" : {
@@ -21569,6 +21740,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文字"
+          }
+        }
+      }
+    },
+    "Text card position" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posición de la tarjeta de texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position de la carte de texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストカードの表示位置"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字卡片位置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字卡片位置"
           }
         }
       }

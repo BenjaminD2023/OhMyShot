@@ -134,6 +134,23 @@ public final class SettingsStore {
         didSet { defaults.set(showTextResult, forKey: Key.showTextResult) }
     }
 
+    /// The small copied-text/formula card stands by its selection, or in the bottom-left corner of that display.
+    public var textResultPosition: TextResultPosition {
+        didSet { defaults.set(textResultPosition.rawValue, forKey: Key.textResultPosition) }
+    }
+
+    /// Seconds a copied-text/formula card the user asked for (Show the copied text) stays before closing; 0 keeps
+    /// it open until closed. Cards that say something went wrong keep at least their own time.
+    public var textResultCloseAfter: Int {
+        didSet { defaults.set(textResultCloseAfter, forKey: Key.textResultCloseAfter) }
+    }
+
+    /// The delays Settings offers for closing the text card, in seconds; 0 is never. Separate from Quick Access's.
+    public static let textResultCloseDelays = [0, 1, 2, 3, 4, 5, 10, 20, 30, 60]
+
+    /// What the card has always stayed: the default of `textResultCloseAfter`.
+    public static let defaultTextResultCloseAfter = 4
+
     /// Capture Text and new Recognized Text windows keep the image's detected line breaks by default.
     /// A window's line-break choice changes only that window, without changing this saved default.
     public var textRecognitionKeepsLineBreaks: Bool {
@@ -455,6 +472,8 @@ public final class SettingsStore {
             Key.showQuickAccess: true,
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
             Key.showTextResult: false,
+            Key.textResultPosition: TextResultPosition.belowSelection.rawValue,
+            Key.textResultCloseAfter: Self.defaultTextResultCloseAfter,
             Key.textRecognitionKeepsLineBreaks: true,
             Key.textRecognitionWrapsText: true,
             Key.readsAppText: false,
@@ -590,6 +609,11 @@ public final class SettingsStore {
         uploadAfterRecording = Self.recordingChoice(Key.uploadAfterRecording, startingAs: Key.uploadAfterCapture, in: defaults)
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
         showTextResult = defaults.bool(forKey: Key.showTextResult)
+        textResultPosition = defaults.string(forKey: Key.textResultPosition).flatMap(TextResultPosition.init(rawValue:)) ?? .belowSelection
+        // Invalid types must not become 0 (Never), as integer(forKey:) would make an unreadable string.
+        let storedTextResultCloseAfter = defaults.object(forKey: Key.textResultCloseAfter) as? NSNumber
+        let textResultDelay = storedTextResultCloseAfter.flatMap { CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : $0 as? Int } ?? Self.defaultTextResultCloseAfter
+        textResultCloseAfter = Self.textResultCloseDelays.contains(textResultDelay) ? textResultDelay : Self.defaultTextResultCloseAfter
         textRecognitionKeepsLineBreaks = defaults.bool(forKey: Key.textRecognitionKeepsLineBreaks)
         textRecognitionWrapsText = defaults.bool(forKey: Key.textRecognitionWrapsText)
         readsAppText = defaults.bool(forKey: Key.readsAppText)
@@ -678,6 +702,8 @@ public final class SettingsStore {
         static let uploadAfterRecording = "uploadAfterRecording"
         static let historyRetention = "historyRetention"
         static let showTextResult = "showTextResult"
+        static let textResultPosition = "textResultPosition"
+        static let textResultCloseAfter = "textResultCloseAfter"
         static let textRecognitionKeepsLineBreaks = "textRecognitionKeepsLineBreaks"
         static let textRecognitionWrapsText = "textRecognitionWrapsText"
         static let readsAppText = "readsAppText"

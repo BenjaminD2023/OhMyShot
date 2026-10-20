@@ -83,6 +83,11 @@ extension SettingsTab {
         case .tools:
             [
                 String(localized: "Capture Text", bundle: .module),
+                String(localized: "Show the copied text", bundle: .module),
+                String(localized: "Text card position", bundle: .module),
+                String(localized: "Close text card", bundle: .module),
+                String(localized: "Below selection", bundle: .module),
+                String(localized: "Bottom left", bundle: .module),
                 String(localized: "Image line breaks", bundle: .module),
                 String(localized: "Keep Line Breaks", bundle: .module),
                 String(localized: "Join Lines", bundle: .module),
