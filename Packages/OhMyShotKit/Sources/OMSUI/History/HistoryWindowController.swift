@@ -422,6 +422,7 @@ struct HistoryView: View {
     @State private var gridWidth: CGFloat = 0
     @FocusState private var gridFocused: Bool
     @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let cardMinimum: CGFloat = 200
     private static let spacing: CGFloat = 20
@@ -519,7 +520,7 @@ struct HistoryView: View {
             .onCommand(#selector(NSText.delete(_:)), perform: selectionCommand(model.moveToTrash))
             .onChange(of: model.selection) { _, selection in
                 guard let selection else { return }
-                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(selection) }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { proxy.scrollTo(selection) }
             }
             .onAppear { gridFocused = true }
         }
@@ -774,6 +775,8 @@ struct HistoryCard: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(accessibilityValue)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        // VoiceOver's press does what a double-click does.
+        .accessibilityAction { model.actions.annotate(item) }
         .accessibilityAction(named: Text("Restore", bundle: .module)) { model.actions.restore(item) }
         .accessibilityAction(named: Text("Copy", bundle: .module)) { model.actions.copy(item) }
         .accessibilityAction(named: Text("Save", bundle: .module)) { model.actions.save(item) }

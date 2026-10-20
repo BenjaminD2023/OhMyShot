@@ -47,6 +47,77 @@ struct MeasureOverlayTests {
         overlay.endBox(snapping: snapping)
     }
 
+    private func dragLargeArea(_ overlay: MeasureOverlay) throws {
+        overlay.beginBox(at: CGPoint(x: 20, y: 20))
+        overlay.dragBox(to: CGPoint(x: 780, y: 580))
+        overlay.endBox()
+        try #require(overlay.isFindingEdges, "Large selections return before edge detection finishes")
+    }
+
+    private func waitForSnap(_ overlay: MeasureOverlay) async throws {
+        for _ in 0..<1_000 {
+            if !overlay.isFindingEdges { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try #require(!overlay.isFindingEdges, "Synthetic selection edge detection did not finish")
+    }
+
+    @Test func largeSelectionsFinishInTheBackgroundAndApplyTheirBounds() async throws {
+        let overlay = try overlay(scale: 1, size: CGSize(width: 800, height: 600))
+        defer { overlay.clear() }
+        try await waitForPixels(overlay)
+        try dragLargeArea(overlay)
+        #expect(overlay.measurement == "760 × 560 pt")
+        #expect(overlay.accessibilityValue?.contains("Finding edges") == true)
+        try await waitForSnap(overlay)
+        #expect(overlay.measurement == "40 × 20 pt")
+    }
+
+    @Test func aNewManualSelectionAndClearRejectPendingAreaResults() async throws {
+        let overlay = try overlay(scale: 1, size: CGSize(width: 800, height: 600))
+        defer { overlay.clear() }
+        try await waitForPixels(overlay)
+        try dragLargeArea(overlay)
+        overlay.beginBox(at: CGPoint(x: 100, y: 100))
+        overlay.dragBox(to: CGPoint(x: 300, y: 250))
+        overlay.endBox(snapping: false)
+        #expect(!overlay.isFindingEdges && overlay.measurement == "200 × 150 pt")
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(overlay.measurement == "200 × 150 pt")
+        overlay.clear()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(!overlay.isFindingEdges && overlay.measurement == nil)
+    }
+
+    @Test func aToleranceChangeReplacesThePendingSelectionResult() async throws {
+        let overlay = try overlay(scale: 1, faint: true, size: CGSize(width: 800, height: 600))
+        defer { overlay.clear() }
+        try await waitForPixels(overlay)
+        try dragLargeArea(overlay)
+        overlay.tolerance = .high
+        try await waitForSnap(overlay)
+        #expect(overlay.measurement == "760 × 560 pt", "Old Medium bounds must not replace the newer High result")
+    }
+
+    @Test func aReplacementFrameRejectsTheOldFramesPendingBounds() async throws {
+        let overlay = try overlay(scale: 1, size: CGSize(width: 800, height: 600))
+        defer { overlay.clear() }
+        try await waitForPixels(overlay)
+        try dragLargeArea(overlay)
+        let context = try #require(CGContext(
+            data: nil, width: 800, height: 600, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 800, height: 600))
+        overlay.show(CapturedFrame(
+            image: try #require(context.makeImage()), hdrImage: nil, displayID: 1,
+            frame: CGRect(x: 0, y: 0, width: 800, height: 600)
+        ))
+        try await waitForSnap(overlay)
+        #expect(overlay.measurement == "760 × 560 pt", "The new blank frame has no content to trim")
+    }
+
     @Test func disabledSnappingKeepsLargeDrawnBoxesWithoutStartingAreaWork() async throws {
         let overlay = try overlay(scale: 2, size: CGSize(width: 800, height: 600))
         defer { overlay.clear() }

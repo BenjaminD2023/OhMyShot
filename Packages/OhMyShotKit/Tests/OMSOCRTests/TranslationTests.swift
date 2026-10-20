@@ -72,6 +72,25 @@ struct TranslationUnitTests {
         let vertical = OCRLine(text: "竖排文字", box: CGRect(x: 0, y: 0, width: 20, height: 80), confidence: 1)
         #expect(TranslationUnits.group([vertical])[0].skip == .vertical)
     }
+
+    @Test func aTablesRowsAreLeftAsTheyAreOnTheImage() {
+        // A paragraph, then a table's rows (TableMerge): each row alone, left as on the image, which one run of text
+        // drawn across the table would cover.
+        var rows = [line("Region\tQ1\tQ2", y: 60), line("North\tStrong growth\tSteady", y: 84)]
+        for index in rows.indices { rows[index].isTableRow = true; rows[index].isExact = true }
+        let units = TranslationUnits.group([line("The regions grew as follows.", y: 0, width: 300)] + rows)
+        #expect(units.map(\.lines) == [[0], [1], [2]])
+        #expect(units.map(\.skip) == [nil, .code, .code])
+    }
+
+    @Test func aUnitWithAFormulaSaysSo() {
+        var formula = line(#"Given a loss $L(\theta)$, each step moves"#, y: 0, wraps: true)
+        formula.math = .inline
+        let units = TranslationUnits.group([formula, line("the parameters until they settle.", y: 26, width: 300), line("Settings", y: 70, width: 120)])
+        #expect(units.map(\.lines) == [[0, 1], [2]])
+        #expect(units.map(\.hasMath) == [true, false])
+        #expect(units[0].text.contains(#"$L(\theta)$"#))
+    }
 }
 
 struct TranslatorTests {
@@ -193,6 +212,28 @@ struct TranslatorTests {
         #expect(Translator.tidied("按住 Option 再松开", into: hans) == "按住 Option 再松开")
         #expect(Translator.tidied("Done. Next", into: Locale.Language(identifier: "en")) == "Done. Next")
         #expect(Translator.tidied("저장 완료. 다음", into: Locale.Language(identifier: "ko")) == "저장 완료. 다음")
+    }
+
+    @Test func aFormulaTheTranslatorChangedIsPutBack() {
+        // As the system's model gave it: a trailing space command dropped.
+        #expect(Translator.restoringMath(#"这里 $a\,b$ 表示乘积，且 $\text{rank}(A)\leq n$ 成立。"#, from: #"Here $a\,b\,$ denotes the product and $\text{rank}(A)\leq n$ holds."#)
+            == #"这里 $a\,b\,$ 表示乘积，且 $\text{rank}(A)\leq n$ 成立。"#)
+        // Formulas the translation moved are matched by their text, not their order.
+        let moved = #"如果$x\in A$，我们就设置$p(x)=1$，否则$p(x)=0$。"#
+        #expect(Translator.restoringMath(moved, from: #"We set $p(x)=1$ if $x\in A$ and $p(x)=0$ otherwise."#) == moved)
+        #expect(Translator.restoringMath(#"若 $x\in B$，设 $p(x)=1$"#, from: #"Set $p(x)=1$ if $x\in A$"#) == #"若 $x\in A$，设 $p(x)=1$"#)
+        // Two the changed one is as near to: left as translated. So is one near none.
+        #expect(Translator.restoringMath("取 $x_{3}$", from: "Take $x_{1}$ or $x_{2}$") == "取 $x_{3}$")
+        #expect(Translator.restoringMath(#"取 $\frac{a}{b}$"#, from: "Take $y^{2}+1$") == #"取 $\frac{a}{b}$"#)
+        // Money is no formula, and a translation without formulas has none to put back.
+        #expect(Translator.restoringMath("利润升至500万美元", from: "Profit rose to $5 million and $3 million") == "利润升至500万美元")
+        #expect(Translator.editDistance("kitten", "sitting") == 3)
+    }
+
+    @Test func chineseTidyingLeavesAFormulaAlone() {
+        let translated = #"给定损失函数 $L(\theta)$，每一步都会移动参数，$\theta_{t+1}=\theta_{t}-\eta\nabla L(\theta_{t})$，直到收敛。"#
+        #expect(Translator.tidied(translated, into: hans) == translated)
+        #expect(Translator.tidied(#"$f(x, y)$ 的值"#, into: hans) == #"$f(x, y)$ 的值"#)
     }
 
     /// No model is involved: Traditional to Simplified is a character conversion, text already in the
@@ -396,6 +437,11 @@ struct TranslationOverlayTests {
         // A misread that leaves out half the line is held to the height.
         let misread = OCRLine(text: "Quick", box: CGRect(x: 0, y: 0, width: width("Quick Access", 30), height: 30), confidence: 1)
         #expect(TranslationOverlay.typeSize(of: misread) == 37.5)
+        // A formula in the line is as wide as it is drawn, not as its LaTeX (three times as wide here).
+        let latex = #"each step moves $\theta_{t+1}=\theta_{t}-\eta\nabla L(\theta_{t})$ downhill"#
+        let drawn = MathText.readable(in: latex)
+        let formula = OCRLine(text: latex, box: CGRect(x: 0, y: 0, width: width(drawn, 30), height: 34), confidence: 1, math: .inline)
+        #expect(abs(TranslationOverlay.typeSize(of: formula) - 30) < 0.5)
     }
 
     @Test func neighborsOfOneStyleAreOneSize() {

@@ -5,10 +5,10 @@ This fork ships its complete local feature set, including changes that upstream 
 ## Requirements
 
 - A clean, committed checkout containing the exact release source. Increase `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `Config/Base.xcconfig` before building. Every update needs a higher build number.
-- Xcode 27 with the macOS 27 SDK, Swift 6, and XcodeGen. The app's deployment target is macOS 26 and its executable is arm64.
+- Xcode 27 with the macOS 27 SDK, Swift 6, XcodeGen, and its Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`). The embedded VLM reader links MLX and requires this toolchain to compile its Metal kernels. The app's deployment target is macOS 26 and its executable is arm64.
 - A working local signing configuration. The app, Sparkle framework, and embedded helpers must have valid signatures from the same team, with Hardened Runtime and library validation enabled. Keep credentials and `Config/Signing.local.xcconfig` out of Git.
 - The official Sparkle **2.10.0** distribution tools. Set `SPARKLE_TOOLS` to its `bin` directory, or pass `--sparkle-tools`. Verify the downloaded distribution against its published checksum.
-- The existing dedicated Sparkle Keychain account `BenjaminD2023.OhMyShot.updates`. `SUPublicEDKey` in the app must match this account. Keep the same key for future releases; packaging never generates or exports it. `--key-account` / `SPARKLE_KEY_ACCOUNT` can select another existing account. An existing private-key file can instead be supplied through `--ed-key-file` / `SPARKLE_ED_KEY_FILE`; never put key contents on a command line or in Git.
+- The existing dedicated Sparkle Keychain account `BenjaminD2023.OhMyShot.updates`. `SUPublicEDKey` in the app must match this account. Keep the same key for future releases; packaging never generates or exports it. `--key-account` / `SPARKLE_KEY_ACCOUNT` can select another existing account. Packaging verifies that the existing account’s public key matches the app before creating artifacts.
 
 Apple Development signing is not Developer ID notarization. The packaging script verifies signatures but does not notarize, weaken library validation, or claim that Gatekeeper will accept a public download without additional user action.
 

@@ -3,7 +3,7 @@
 All notable changes to OhMyShot will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-The first fork release includes the original history present at [8c038d1] and the local improvements preserved in [1897ae9]. Upstream-only changes absent from this fork are omitted.
+The first fork release combines upstream history through [07c3fdf] with the local improvements preserved in [1897ae9]. Fork-specific behavior is retained during upstream synchronization.
 Each entry links its implementation commits or merged pull request and credits verified contributors. Named coauthors follow explicit commit trailers.
 
 ## [Unreleased]
@@ -12,6 +12,9 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
+- Optional cloud OCR using a configured model and the user's own API key, including Read with in the OCR window and fallback to the Mac's reading. ([34f042b], [0f80678]; by [@fzlzjerry])
+- Optional text supplied by the source app to refine recognized characters in Capture Text and the OCR window. ([9b5aa53]; by [@fzlzjerry])
+- An optional VLM model pack for reading tables and charts within recognized text. ([1971598]; by [@fzlzjerry])
 - Signed automatic updates from this fork, with manual checks and saved automatic-check/download controls. Both the feed and update archive require Ed25519 verification. (by [@BenjaminD2023])
 - Release packaging for Apple silicon: a DMG with an Applications shortcut, a ZIP for updates, matching GPL source, signatures and SHA-256 checksums. (by [@BenjaminD2023])
 - Centered screenshot pixel grids with independent size and 1×/2×/4×/8× magnification, adaptive target borders, and fixed-size center locator ticks. ([1897ae9]; by [@BenjaminD2023])
@@ -57,6 +60,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Fixed
 
+- Unwrapped OCR windows no longer open with the first characters scrolled out of view. ([33cd6bf]; by [@fzlzjerry])
 - The native arrow appears over capture toolbar controls, and cursor visibility is restored correctly when returning to the canvas, cancelling, or entering another capture setup. ([#7]; by [@BenjaminD2023], [@fzlzjerry])
 - Shortcut recorders support Use Anyway for menu conflicts, including Command-Shift-S; assigning a shortcut to another OhMyShot action clears the previous assignment. ([#2]; by [@BenjaminD2023], [@fzlzjerry])
 - Measurement snapping better handles faint outlines and thin details, retaining the drawn rectangle when no credible boundary is found. ([#3]; by [@BenjaminD2023], [@fzlzjerry])
@@ -163,3 +167,5 @@ Each entry links its implementation commits or merged pull request and credits v
 [@BenjaminD2023]: https://github.com/BenjaminD2023
 [@bobbyhuang-dev]: https://github.com/bobbyhuang-dev
 [@fzlzjerry]: https://github.com/fzlzjerry
+
+[07c3fdf]: https://github.com/fzlzjerry/OhMyShot/commit/07c3fdf6be30c55bc3e55b70343141080efc7ddd

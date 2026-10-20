@@ -720,7 +720,9 @@ struct RecordingSettingsView: View {
 
 struct ToolsSettingsView: View {
     @Bindable var settings: SettingsStore
+    var permissions: PermissionCenter?
     var modelPacks: ModelPackCenter?
+    var cloudModels: CloudModelStore?
     @State private var translationTargets: [Locale.Language] = []
 
     var body: some View {
@@ -777,6 +779,9 @@ struct ToolsSettingsView: View {
                 }
                 .help(Text("Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display.", bundle: .module))
             }
+            SettingsRow(Text("Text from apps", bundle: .module)) {
+                AppTextSetting(settings: settings, permissions: permissions)
+            }
             SettingsRow(Text("Translate into", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.translationTarget) {
@@ -796,6 +801,9 @@ struct ToolsSettingsView: View {
             }
             if let modelPacks, !modelPacks.isEmpty {
                 ModelPacksRow(center: modelPacks)
+            }
+            if let cloudModels {
+                CloudReadingRow(store: cloudModels)
             }
 
             SettingsDivider()
@@ -1057,6 +1065,60 @@ extension Permission {
         case .camera: String(localized: "Show your camera in screen recordings.", bundle: .module)
         case .accessibility: String(localized: "Scroll for you during scrolling capture, and read text straight from apps.", bundle: .module)
         case .inputMonitoring: String(localized: "Show the keys you press in screen recordings.", bundle: .module)
+        }
+    }
+}
+
+/// Settings › Tools › Text from apps: Capture Text and the Recognized Text window take the characters the app under the
+/// selection shows (L0, Docs/ocr.md › Text from apps). Turning it on asks for Accessibility; while OhMyShot doesn't
+/// have it, a line under the switch says so, with the way to it.
+private struct AppTextSetting: View {
+    @Bindable var settings: SettingsStore
+    let permissions: PermissionCenter?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Toggle(isOn: Binding(get: { settings.readsAppText }, set: { on in
+                    settings.readsAppText = on
+                    if on { allow() }
+                })) {
+                    Text("Use the app’s own characters", bundle: .module)
+                }
+                InfoButton(Text("Capture Text and the Recognized Text window ask the app under the selection for the text it shows, through Accessibility, and use its own characters for the lines that read the same, so code, names, and numbers come out as the app has them. Apps that don’t share their text, such as Chrome and most apps built with Electron, are read from the picture alone. Nothing leaves this Mac.", bundle: .module))
+            }
+            if settings.readsAppText, let permissions, permissions.status(of: .accessibility) != .granted {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Label {
+                        Text("Needs Accessibility to ask apps for their text.", bundle: .module)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    Button(action: allow) {
+                        permissions.hasAsked(.accessibility) ? Text("Open System Settings…", bundle: .module) : Text("Allow…", bundle: .module)
+                    }
+                    .controlSize(.small)
+                }
+            }
+        }
+        .onAppear { permissions?.refresh([.accessibility]) }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            permissions?.refresh([.accessibility])
+        }
+    }
+
+    /// macOS asks once; after that, System Settings.
+    private func allow() {
+        guard let permissions else { return }
+        permissions.refresh([.accessibility])
+        guard permissions.status(of: .accessibility) != .granted else { return }
+        if permissions.hasAsked(.accessibility) {
+            permissions.openSystemSettings(for: .accessibility)
+        } else {
+            Task { await permissions.request(.accessibility) }
         }
     }
 }

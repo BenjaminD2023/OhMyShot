@@ -35,346 +35,6 @@
         }
       }
     },
-    "Automatically check for updates" : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Buscar actualizaciones automáticamente"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rechercher automatiquement les mises à jour"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アップデートを自動的に確認"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动检查更新"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動檢查更新"
-          }
-        }
-      }
-    },
-    "Automatically download and install updates" : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descargar e instalar actualizaciones automáticamente"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Télécharger et installer automatiquement les mises à jour"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アップデートを自動的にダウンロードしてインストール"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动下载并安装更新"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動下載並安裝更新"
-          }
-        }
-      }
-    },
-    "Before starting an area selection, or while using Pick Color, this left-click shortcut copies the pointed color without closing the overlay. Other clicks keep their usual behavior." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Antes de empezar una selección de área o al usar Seleccionar color, este atajo de clic izquierdo copia el color señalado sin cerrar la superposición. Los demás clics conservan su comportamiento habitual."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avant de commencer une sélection de zone, ou avec Choisir une couleur, ce raccourci de clic gauche copie la couleur pointée sans fermer la superposition. Les autres clics conservent leur comportement habituel."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "範囲の選択前や「カラーを選択」の使用中に、この左クリックのショートカットでポインタ位置の色をコピーできます。オーバーレイは閉じず、ほかのクリックは通常どおり動作します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开始框选之前，或使用普通取色工具时，此左键快捷操作会复制指针下的颜色，并保持当前界面。其他点击保留原有行为。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開始框選之前，或使用一般取色工具時，此左鍵快捷操作會拷貝指標下的顏色，並保持目前畫面。其他點按保留原有行為。"
-          }
-        }
-      }
-    },
-    "Check for Updates…" : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Buscar actualizaciones…"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rechercher des mises à jour…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アップデートを確認…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "检查更新…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "檢查更新…"
-          }
-        }
-      }
-    },
-    "Color picker magnification" : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aumento del selector de color"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Grossissement de la pipette"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "カラーピッカーの倍率"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取色器放大倍率"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取色器放大倍率"
-          }
-        }
-      }
-    },
-    "Controls how much each screen pixel is enlarged in the centered screenshot picker. The size stays the same when you change magnification. Applies to the next screenshot or Annotate Area capture; Pick Color is unchanged." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Controla cuánto se amplía cada píxel de la pantalla en el selector centrado de las capturas. El tamaño no cambia al ajustar el aumento. Se aplica a la próxima captura o Anotar área; Seleccionar color no cambia."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Règle l’agrandissement de chaque pixel dans la pipette centrée des captures. La taille reste la même lorsque le grossissement change. S’applique à la prochaine capture ou à Annoter une zone ; Choisir une couleur reste inchangé."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スクリーンショットの中央ピッカーで、画面の各ピクセルの拡大率を調整します。倍率を変えてもピッカーのサイズは変わりません。次のスクリーンショットまたは「範囲に注釈」に適用され、「カラーを選択」は変わりません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "调整截图居中取色器中每个屏幕像素的放大倍率。修改倍率不会改变取色器的大小。应用于下一次截图或“标注区域”；普通“取色”工具保持不变。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "調整截圖置中取色器中每個螢幕像素的放大倍率。修改倍率不會改變取色器大小。套用至下一次截圖或「標註區域」；一般「挑選顏色」工具維持不變。"
-          }
-        }
-      }
-    },
-    "Copy color shortcut" : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Atajo para copiar color"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Raccourci pour copier la couleur"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "色をコピーするショートカット"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复制颜色快捷键"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拷貝顏色快捷鍵"
-          }
-        }
-      }
-    },
-    "Preview": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preview"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "预览"
-          }
-        }
-      }
-    },
-    "Hover and press Space to preview. Double-click to edit.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hover and press Space to preview. Double-click to edit."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "将鼠标悬停在截图卡片上，按空格预览；双击进入完整编辑器。"
-          }
-        }
-      }
-    },
-    "Cards close after 3 seconds by default. A card waits while the pointer is over it, its menu is open, it is being dragged, a preview shows it, it has the keyboard, the editor has its capture open, or its upload is going. When all of these end, it has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cards close after 3 seconds by default. A card waits while the pointer is over it, its menu is open, it is being dragged, a preview shows it, it has the keyboard, the editor has its capture open, or its upload is going. When all of these end, it has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "卡片默认在 3 秒后关闭。鼠标悬停、菜单打开、拖动、预览、键盘操作、编辑或上传期间会暂停计时。这些操作全部结束后，会再保留至少 4 秒；若所选时长更短，则保留所选时长。“关闭”会将截图留在截图历史中，但如果“通用”中的历史记录设为“从不”，未保存的截图也会随卡片移除。“保存并关闭”会直接在“通用”中指定的文件夹保存副本，保存失败时保留卡片。"
-          }
-        }
-      }
-    },
-    "Color picker size" : {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Color picker size"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "取色器大小"
-          }
-        }
-      }
-    },
-    "Choose how large the centered pixel picker appears before selecting a screenshot area. Its grid slightly magnifies each screen pixel; the center square marks the selected pixel. It hides when you start the selection. The new size applies to your next capture." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige el tamaño del selector de píxeles centrado antes de seleccionar un área. La cuadrícula amplía ligeramente cada píxel de la pantalla; el cuadrado central marca el píxel seleccionado. Se oculta al empezar a seleccionar. El nuevo tamaño se aplica a la próxima captura."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choisissez la taille du sélecteur de pixels centré avant de sélectionner une zone. La grille agrandit légèrement chaque pixel de l’écran ; le carré central marque le pixel sélectionné. Il disparaît au début de la sélection. La nouvelle taille s’applique à la prochaine capture."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "範囲を選択する前に表示される中央のピクセルピッカーのサイズを選びます。グリッドは画面の各ピクセルを少し拡大し、中央の四角が選択中のピクセルを示します。選択を始めると非表示になります。新しいサイズは次回のキャプチャから適用されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择截图前居中像素取色器的大小。网格会适度放大屏幕上的每个像素，中心方框标记选中的像素。开始选择后隐藏。新大小将在下次截图时生效。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "選擇截圖前置中像素取色器的大小。網格會適度放大螢幕上的每個像素，中央方框標記選取的像素。開始選取後隱藏。新大小將在下次截圖時生效。"
-          }
-        }
-      }
-    },
     "%@ can’t be translated into %@" : {
       "localizations" : {
         "en" : {
@@ -415,6 +75,75 @@
         }
       }
     },
+    "%@ found no text" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no ha encontrado texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’a trouvé aucun texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はテキストを見つけられませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 没有找到文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 沒有找到文字"
+          }
+        }
+      }
+    },
+    "%@ found no text either" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ tampoco ha encontrado texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’a pas trouvé de texte non plus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@もテキストを見つけられませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 也没有找到文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 也沒有找到文字"
+          }
+        }
+      }
+    },
     "%@ of %@" : {
       "localizations" : {
         "en" : {
@@ -451,6 +180,155 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ / %2$@"
+          }
+        }
+      }
+    },
+    "%@ read the test picture in %@ s." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ read the test picture in %2$@ s."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ ha leído la imagen de prueba en %2$@ s."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ a lu l’image de test en %2$@ s."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@がテスト画像を%2$@秒で読み取りました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 用 %2$@ 秒读出了测试图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 用 %2$@ 秒讀出了測試圖片。"
+          }
+        }
+      }
+    },
+    "%@ reads it there, with %@. The picture leaves this Mac each time you choose Read with %@; your API key stays in the Keychain." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ reads it there, with %2$@. The picture leaves this Mac each time you choose Read with %3$@; your API key stays in the Keychain."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ la lee allí, con %2$@. La imagen sale de este Mac cada vez que eliges Leer con %3$@; tu clave de API se queda en el Llavero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ la lit là-bas, avec %2$@. L’image quitte ce Mac chaque fois que vous choisissez Lire avec %3$@ ; votre clé d’API reste dans le trousseau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@がそこで%2$@を使って読み取ります。「%3$@で読み取る」を選ぶたびに画像はこのMacから送信されます。APIキーはキーチェーンに残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 会在那里用 %2$@ 读取它。每次选择“用 %3$@ 读取”，图片都会离开这台 Mac；你的 API 密钥保留在钥匙串中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 會在那裡以 %2$@ 讀取它。每次選擇「用 %3$@ 讀取」，圖片都會離開這台 Mac；你的 API 密鑰保留在鑰匙圈中。"
+          }
+        }
+      }
+    },
+    "%@ stopped before the end of the text" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ se ha detenido antes del final del texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ s’est arrêté avant la fin du texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はテキストの途中で止まりました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 在文字结束前就停止了"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 在文字結束前就停止了"
+          }
+        }
+      }
+    },
+    "%@ tokens" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ tokens"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ jetons"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@トークン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 个 token"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 個 token"
           }
         }
       }
@@ -611,6 +489,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@，%2$@"
+          }
+        }
+      }
+    },
+    "%@…" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@…"
           }
         }
       }
@@ -1405,6 +1318,75 @@
         }
       }
     },
+    "A card by the selection with the copied text and a switch for its line breaks." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una tarjeta junto a la selección con el texto copiado y un interruptor para sus saltos de línea."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une carte près de la sélection, avec le texte copié et un interrupteur pour ses sauts de ligne."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーしたテキストと改行の切り替えスイッチを表示するカードが、選択範囲のそばに表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选区旁的一张卡片，显示已拷贝的文字，并提供换行开关。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在選取範圍旁顯示一張卡片，內含已拷貝的文字和換行切換開關。"
+          }
+        }
+      }
+    },
+    "A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una tarjeta espera mientras el puntero está sobre ella, su menú está abierto, se está arrastrando, Vista rápida la muestra, tiene el teclado, el editor tiene abierta su captura o se está subiendo. Después tiene al menos 4 segundos más, o el tiempo seleccionado si es menor. “Cerrar” deja la captura en el historial de capturas, salvo que el historial esté configurado como “Nunca” en General; en ese caso, una tarjeta que no se ha guardado se lleva su captura con ella. “Guardar y cerrar” también guarda una copia en la carpeta indicada en General, sin pedir un nombre, y conserva la tarjeta si no se puede guardar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une carte attend tant que le pointeur la survole, que son menu est ouvert, qu’elle est en cours de glissement, que Coup d’œil l’affiche, qu’elle a le focus clavier, que l’éditeur a sa capture ouverte ou que son téléversement est en cours. Elle dispose ensuite d’au moins 4 secondes de plus, ou du délai choisi s’il est plus court. Fermer laisse la capture dans l’historique des captures, sauf si l’historique est réglé sur Jamais dans Général : une carte non enregistrée emporte alors sa capture avec elle. Enregistrer et fermer enregistre aussi une copie dans le dossier défini dans Général, sans demander de nom, et conserve la carte en cas d’échec."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポインタがカードの上にあるとき、メニューが開いているとき、ドラッグ中、クイックルックで表示中、キーボード操作の対象のとき、エディタでキャプチャを開いているとき、アップロード中のときは、カードは待機し、その後少なくとも4秒間（選択した時間がそれより短い場合はその時間）表示されます。「閉じる」でもキャプチャはキャプチャ履歴に残ります。ただし「一般」で履歴が「しない」に設定されている場合、保存されていないカードを閉じるとキャプチャも削除されます。「保存して閉じる」は、名前を尋ねずに「一般」で指定したフォルダにコピーを保存します。保存に失敗した場合はカードが残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当指针停在卡片上、卡片菜单已打开、卡片正被拖移、正在用快速查看显示、卡片拥有键盘焦点、编辑器打开了其截图，或其上传正在进行时，卡片会等待，之后至少再保留 4 秒，若所选时间更短，则保留所选时间。“关闭”会将截图留在截图历史中，除非“通用”中的历史记录设为“永不”，此时未存储的卡片关闭时会连同截图一起移除；“存储并关闭”还会将副本存储到“通用”中的文件夹，不询问名称，如果存储失败则保留卡片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當指標停留在卡片上、其選單已打開、正被拖移、正以「快速查看」顯示、擁有鍵盤焦點、編輯器已打開其擷取內容，或正在上傳時，卡片會保持顯示，之後至少再停留 4 秒，若所選時間較短，則停留所選時間。「關閉」會將擷取內容留在擷取記錄中；但若「一般」中的記錄設為「永不」，未儲存的卡片關閉時會一併移除其擷取內容。「儲存並關閉」也會將拷貝儲存到「一般」中設定的檔案夾，不會詢問名稱；若儲存失敗則保留卡片。"
+          }
+        }
+      }
+    },
     "A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails." : {
       "localizations" : {
         "es" : {
@@ -1576,7 +1558,42 @@
         }
       }
     },
+    "A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, math formulas, or tables and charts. It’s downloaded once, from %@, and stays on this Mac; nothing you capture leaves it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un paquete de modelos lee lo que macOS lee mal o no puede leer por sí solo, como texto en chino y japonés, fórmulas matemáticas, o tablas y gráficos. Se descarga una vez, desde %@, y se queda en este Mac; nada de lo que capturas sale de él."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un pack de modèles lit ce que macOS lit mal ou ne sait pas lire à lui seul, comme le texte chinois et japonais, les formules mathématiques, ou les tableaux et graphiques. Il est téléchargé une fois, depuis %@, et reste sur ce Mac ; rien de ce que vous capturez n’en sort."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデルパックは、中国語や日本語のテキスト、数式、表やグラフなど、macOS単体ではうまく読み取れない、または読み取れない内容を読み取ります。%@から一度だけダウンロードされ、このMacに保存されます。キャプチャした内容がこのMacから送られることはありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型包能读出 macOS 自己读不好或读不了的内容，比如中文和日文文字、数学公式、表格和图表。它只需从 %@ 下载一次，之后保存在这台 Mac 上；你截取的任何内容都不会离开这台 Mac。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型套件能讀出 macOS 自己讀不好或讀不了的內容，例如中文和日文文字、數學公式、表格和圖表。它只需從 %@ 下載一次，之後保存在這台 Mac 上；你擷取的任何內容都不會離開這台 Mac。"
+          }
+        }
+      }
+    },
     "A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, or math formulas. It’s downloaded once, from %@, and stays on this Mac; nothing you capture leaves it." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -1882,6 +1899,40 @@
         }
       }
     },
+    "API key" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clave de API"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clé d’API"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APIキー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 密鑰"
+          }
+        }
+      }
+    },
     "About" : {
       "localizations" : {
         "es" : {
@@ -2086,6 +2137,41 @@
         }
       }
     },
+    "Add Cloud Model" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir modelo en la nube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un modèle cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウドモデルを追加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加云端模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入雲端模型"
+          }
+        }
+      }
+    },
     "Add Destination" : {
       "localizations" : {
         "es" : {
@@ -2184,6 +2270,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入標頭"
+          }
+        }
+      }
+    },
+    "Add Model" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir modelo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un modèle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデルを追加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入模型"
           }
         }
       }
@@ -3174,6 +3295,41 @@
         }
       }
     },
+    "Anthropic" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic"
+          }
+        }
+      }
+    },
     "Any text" : {
       "localizations" : {
         "es" : {
@@ -3514,6 +3670,74 @@
         }
       }
     },
+    "Automatically check for updates" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar actualizaciones automáticamente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher automatiquement les mises à jour"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップデートを自動的に確認"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动检查更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動檢查更新"
+          }
+        }
+      }
+    },
+    "Automatically download and install updates" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descargar e instalar actualizaciones automáticamente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Télécharger et installer automatiquement les mises à jour"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップデートを自動的にダウンロードしてインストール"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动下载并安装更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動下載並安裝更新"
+          }
+        }
+      }
+    },
     "Automation" : {
       "localizations" : {
         "es" : {
@@ -3646,6 +3870,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "條碼"
+          }
+        }
+      }
+    },
+    "Base URL" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL base"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "URL de base"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ベースURL"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基础 URL"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基礎 URL"
+          }
+        }
+      }
+    },
+    "Before starting an area selection, or while using Pick Color, this left-click shortcut copies the pointed color without closing the overlay. Other clicks keep their usual behavior." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antes de empezar una selección de área o al usar Seleccionar color, este atajo de clic izquierdo copia el color señalado sin cerrar la superposición. Los demás clics conservan su comportamiento habitual."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avant de commencer une sélection de zone, ou avec Choisir une couleur, ce raccourci de clic gauche copie la couleur pointée sans fermer la superposition. Les autres clics conservent leur comportement habituel."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "範囲の選択前や「カラーを選択」の使用中に、この左クリックのショートカットでポインタ位置の色をコピーできます。オーバーレイは閉じず、ほかのクリックは通常どおり動作します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始框选之前，或使用普通取色工具时，此左键快捷操作会复制指针下的颜色，并保持当前界面。其他点击保留原有行为。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始框選之前，或使用一般取色工具時，此左鍵快捷操作會拷貝指標下的顏色，並保持目前畫面。其他點按保留原有行為。"
           }
         }
       }
@@ -4568,6 +4860,74 @@
         }
       }
     },
+    "Capture Text and the Recognized Text window ask the app under the selection for the text it shows, through Accessibility, and use its own characters for the lines that read the same, so code, names, and numbers come out as the app has them. Apps that don’t share their text, such as Chrome and most apps built with Electron, are read from the picture alone. Nothing leaves this Mac." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturar texto y la ventana Texto reconocido piden a la app que hay bajo la selección el texto que muestra, mediante Accesibilidad, y usan sus propios caracteres en las líneas que se leen igual, para que el código, los nombres y los números salgan tal como los tiene la app. Las apps que no comparten su texto, como Chrome y la mayoría de las creadas con Electron, se leen solo a partir de la imagen. Nada sale de este Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturer du texte et la fenêtre Texte reconnu demandent à l’app située sous la sélection le texte qu’elle affiche, via l’Accessibilité, et utilisent ses propres caractères pour les lignes qui se lisent de la même façon : le code, les noms et les nombres sortent tels que l’app les a. Les apps qui ne partagent pas leur texte, comme Chrome et la plupart des apps créées avec Electron, sont lues à partir de l’image seule. Rien ne quitte ce Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「テキストをキャプチャ」と「認識されたテキスト」ウインドウは、アクセシビリティを通じて選択範囲の下にあるアプリに表示中のテキストを問い合わせ、読み取り結果が一致する行にはアプリ自身の文字を使います。これにより、コード、名前、数字がアプリのとおりになります。テキストを共有しないアプリ（Chrome や Electron で作られた多くのアプリなど）は、画像からのみ読み取ります。このMacの外には何も送信されません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“截取文字”和“识别的文字”窗口会通过辅助功能向选区下方的 App 询问它显示的文字；读出来一致的行，就使用 App 自己的字符，让代码、名称和数字与 App 中完全一样。不共享文字的 App（例如 Chrome 和大多数用 Electron 构建的 App）只从图片中读取。所有内容都不会离开这台 Mac。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「擷取文字」和「辨識出的文字」視窗會透過輔助使用向選取範圍下方的 App 詢問它顯示的文字；讀出來一致的行，就使用 App 自己的字元，讓程式碼、名稱和數字與 App 中完全一樣。不分享文字的 App（例如 Chrome 和大多數以 Electron 建構的 App）只從圖片中讀取。所有內容都不會離開這台 Mac。"
+          }
+        }
+      }
+    },
+    "Capture Text waits for the model’s reading before it copies, and copies this Mac’s reading when the model can’t read it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturar texto espera a la lectura del modelo antes de copiar, y copia lo leído en este Mac cuando el modelo no puede leerla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturer du texte attend la lecture du modèle avant de copier, et copie le texte lu sur ce Mac quand le modèle ne peut pas la lire."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「テキストをキャプチャ」はモデルの読み取りを待ってからコピーし、モデルが読み取れないときはこのMacで読み取ったテキストをコピーします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“截取文字”会等模型读完再拷贝；模型读不了时，拷贝这台 Mac 读取的文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「擷取文字」會等模型讀完再拷貝；模型讀不了時，拷貝這台 Mac 讀取的文字。"
+          }
+        }
+      }
+    },
     "Capture Text, Joining Lines" : {
       "localizations" : {
         "es" : {
@@ -4840,6 +5200,23 @@
         }
       }
     },
+    "Cards close after 3 seconds by default. A card waits while the pointer is over it, its menu is open, it is being dragged, a preview shows it, it has the keyboard, the editor has its capture open, or its upload is going. When all of these end, it has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cards close after 3 seconds by default. A card waits while the pointer is over it, its menu is open, it is being dragged, a preview shows it, it has the keyboard, the editor has its capture open, or its upload is going. When all of these end, it has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "卡片默认在 3 秒后关闭。鼠标悬停、菜单打开、拖动、预览、键盘操作、编辑或上传期间会暂停计时。这些操作全部结束后，会再保留至少 4 秒；若所选时长更短，则保留所选时长。“关闭”会将截图留在截图历史中，但如果“通用”中的历史记录设为“从不”，未保存的截图也会随卡片移除。“保存并关闭”会直接在“通用”中指定的文件夹保存副本，保存失败时保留卡片。"
+          }
+        }
+      }
+    },
     "Cards stand on the display the capture was taken on. With this on they stand on the display where the pointer is when the capture is taken." : {
       "localizations" : {
         "es" : {
@@ -4870,6 +5247,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "卡片會顯示在擷取時所在的顯示器上。開啟此選項後，卡片會顯示在擷取時指標所在的顯示器上。"
+          }
+        }
+      }
+    },
+    "Check for Updates…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar actualizaciones…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher des mises à jour…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップデートを確認…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检查更新…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "檢查更新…"
           }
         }
       }
@@ -5108,6 +5519,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請在工具列中選擇其他語言。"
+          }
+        }
+      }
+    },
+    "Choose how large the centered pixel picker appears before selecting a screenshot area. Its grid slightly magnifies each screen pixel; the center square marks the selected pixel. It hides when you start the selection. The new size applies to your next capture." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige el tamaño del selector de píxeles centrado antes de seleccionar un área. La cuadrícula amplía ligeramente cada píxel de la pantalla; el cuadrado central marca el píxel seleccionado. Se oculta al empezar a seleccionar. El nuevo tamaño se aplica a la próxima captura."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez la taille du sélecteur de pixels centré avant de sélectionner une zone. La grille agrandit légèrement chaque pixel de l’écran ; le carré central marque le pixel sélectionné. Il disparaît au début de la sélection. La nouvelle taille s’applique à la prochaine capture."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "範囲を選択する前に表示される中央のピクセルピッカーのサイズを選びます。グリッドは画面の各ピクセルを少し拡大し、中央の四角が選択中のピクセルを示します。選択を始めると非表示になります。新しいサイズは次回のキャプチャから適用されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择截图前居中像素取色器的大小。网格会适度放大屏幕上的每个像素，中心方框标记选中的像素。开始选择后隐藏。新大小将在下次截图时生效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇截圖前置中像素取色器的大小。網格會適度放大螢幕上的每個像素，中央方框標記選取的像素。開始選取後隱藏。新大小將在下次截圖時生效。"
           }
         }
       }
@@ -5418,6 +5863,40 @@
         }
       }
     },
+    "Close text card" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar tarjeta de texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer la carte de texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストカードを閉じる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭文字卡片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉文字卡片"
+          }
+        }
+      }
+    },
     "Close text popup" : {
       "localizations" : {
         "es" : {
@@ -5482,6 +5961,75 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請先關閉此擷取內容的編輯器。"
+          }
+        }
+      }
+    },
+    "Cloud models" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelos en la nube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modèles cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウドモデル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "云端模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雲端模型"
+          }
+        }
+      }
+    },
+    "Cloud reading" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lectura en la nube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture dans le cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウド読み取り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "云端读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雲端讀取"
           }
         }
       }
@@ -5618,6 +6166,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顏色 %@"
+          }
+        }
+      }
+    },
+    "Color picker magnification" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aumento del selector de color"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grossissement de la pipette"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カラーピッカーの倍率"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取色器放大倍率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取色器放大倍率"
+          }
+        }
+      }
+    },
+    "Color picker size" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color picker size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取色器大小"
           }
         }
       }
@@ -5788,6 +6387,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "控制快速取用"
+          }
+        }
+      }
+    },
+    "Controls how much each screen pixel is enlarged in the centered screenshot picker. The size stays the same when you change magnification. Applies to the next screenshot or Annotate Area capture; Pick Color is unchanged." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controla cuánto se amplía cada píxel de la pantalla en el selector centrado de las capturas. El tamaño no cambia al ajustar el aumento. Se aplica a la próxima captura o Anotar área; Seleccionar color no cambia."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Règle l’agrandissement de chaque pixel dans la pipette centrée des captures. La taille reste la même lorsque le grossissement change. S’applique à la prochaine capture ou à Annoter une zone ; Choisir une couleur reste inchangé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショットの中央ピッカーで、画面の各ピクセルの拡大率を調整します。倍率を変えてもピッカーのサイズは変わりません。次のスクリーンショットまたは「範囲に注釈」に適用され、「カラーを選択」は変わりません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调整截图居中取色器中每个屏幕像素的放大倍率。修改倍率不会改变取色器的大小。应用于下一次截图或“标注区域”；普通“取色”工具保持不变。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "調整截圖置中取色器中每個螢幕像素的放大倍率。修改倍率不會改變取色器大小。套用至下一次截圖或「標註區域」；一般「挑選顏色」工具維持不變。"
           }
         }
       }
@@ -6566,6 +7199,40 @@
         }
       }
     },
+    "Copy color shortcut" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atajo para copiar color"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccourci pour copier la couleur"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "色をコピーするショートカット"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制颜色快捷键"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝顏色快捷鍵"
+          }
+        }
+      }
+    },
     "Copy colors as" : {
       "localizations" : {
         "es" : {
@@ -7010,6 +7677,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法讀取此影像"
+          }
+        }
+      }
+    },
+    "Couldn’t read with %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido leer con %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de lire avec %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で読み取れませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法用 %@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法用 %@ 讀取"
           }
         }
       }
@@ -7830,6 +8531,40 @@
         }
       }
     },
+    "Edge tolerance" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tolerancia de bordes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tolérance des bords"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エッジの許容範囲"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "边缘容差"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邊緣容差"
+          }
+        }
+      }
+    },
     "Edit" : {
       "localizations" : {
         "es" : {
@@ -8030,6 +8765,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "錯誤文字"
+          }
+        }
+      }
+    },
+    "Every picture in the Recognized Text window" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada imagen en la ventana Texto reconocido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque image de la fenêtre Texte reconnu"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「認識されたテキスト」ウインドウのすべての画像"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“识别的文字”窗口中的每张图片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「辨識出的文字」視窗中的每張圖片"
           }
         }
       }
@@ -8370,6 +9139,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "僅檔案"
+          }
+        }
+      }
+    },
+    "Fits a measurement box to the content inside it when you release the pointer. Turn off to keep the box as drawn, or hold Command while releasing to skip snapping once." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajusta el recuadro de medida al contenido que hay dentro al soltar el puntero. Desactívalo para dejar el recuadro tal como lo trazaste, o mantén pulsada la tecla Comando al soltar para no ajustarlo esa vez."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajuste le cadre de mesure au contenu qu’il entoure lorsque vous relâchez le pointeur. Désactivez l’option pour garder le cadre tel que tracé, ou maintenez Commande en relâchant pour ne pas l’ajuster cette fois."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポインタを離したときに、計測の枠を中の内容に合わせます。オフにすると枠は描いたままになります。離すときにcommandキーを押していると、その回だけ吸着しません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "松开指针时，让测量框贴合其中的内容。关闭后测量框保持绘制时的样子；也可以在松开时按住 Command 键，跳过这一次吸附。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放開指標時，讓測量框貼合其中的內容。關閉後測量框會維持繪製時的樣子；也可以在放開時按住 Command 鍵，略過這一次貼齊。"
           }
         }
       }
@@ -8744,6 +9547,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "格式"
+          }
+        }
+      }
+    },
+    "Formulas and tables read" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fórmulas y tablas leídas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formules et tableaux lus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数式と表を読み取りました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已读取公式和表格"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已讀取公式和表格"
           }
         }
       }
@@ -9738,6 +10575,23 @@
         }
       }
     },
+    "Hover and press Space to preview. Double-click to edit." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hover and press Space to preview. Double-click to edit."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将鼠标悬停在截图卡片上，按空格预览；双击进入完整编辑器。"
+          }
+        }
+      }
+    },
     "Hover states and open menus stay in place until the capture is taken." : {
       "localizations" : {
         "es" : {
@@ -9874,6 +10728,75 @@
         }
       }
     },
+    "How long the copied-text card stays. It stays open while the pointer is over it and closes the chosen time after the pointer leaves; Never keeps it until you close it. A card that says nothing was found, or that the text was not copied, always stays at least as long as it used to." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuánto tiempo permanece la tarjeta del texto copiado. Permanece abierta mientras el puntero está sobre ella y se cierra el tiempo elegido después de retirarlo; Nunca la mantiene hasta que la cierres. Una tarjeta que avisa de que no se encontró texto, o de que el texto no se copió, permanece siempre al menos el tiempo de siempre."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Combien de temps la carte du texte copié reste affichée. Elle reste ouverte pendant le survol et se ferme à l’issue de la durée choisie après le départ du pointeur ; Jamais la garde jusqu’à ce que vous la fermiez. Une carte qui indique qu’aucun texte n’a été trouvé, ou que le texte n’a pas été copié, reste toujours au moins aussi longtemps qu’avant."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーしたテキストのカードを表示しておく時間です。ポインタを重ねている間は表示され続け、離してから選んだ時間が過ぎると閉じます。「しない」では、自分で閉じるまで表示され続けます。テキストが見つからなかった場合や、コピーされなかった場合のカードは、これまでと同じ長さ以上は表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝文字卡片的显示时长。指针悬停时保持显示，移开指针后按所选时长关闭；选择“永不”则一直显示，直到手动关闭。提示未找到文字或文字未被拷贝的卡片，至少会像以前一样久地保持显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拷貝文字卡片的顯示時間。指標停留時保持顯示，移開指標後依所選時間關閉；選擇「永不」則持續顯示，直到手動關閉。提示找不到文字或文字未被拷貝的卡片，至少會像以前一樣久地保持顯示。"
+          }
+        }
+      }
+    },
+    "How the service is spoken to. Most services, and Ollama and LM Studio on this Mac, take OpenAI’s Chat Completions; Claude takes Anthropic’s Messages." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo se habla con el servicio. La mayoría de los servicios, y Ollama y LM Studio en este Mac, aceptan Chat Completions de OpenAI; Claude usa Messages de Anthropic."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La façon de parler au service. La plupart des services, ainsi qu’Ollama et LM Studio sur ce Mac, acceptent les Chat Completions d’OpenAI ; Claude utilise les Messages d’Anthropic."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスとのやり取りの方式です。ほとんどのサービスと、このMac上のOllamaやLM StudioはOpenAIのChat Completionsを受け付けます。ClaudeはAnthropicのMessagesを使います。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与服务通信的方式。大多数服务，以及这台 Mac 上的 Ollama 和 LM Studio，都接受 OpenAI 的 Chat Completions；Claude 使用 Anthropic 的 Messages。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "與服務溝通的方式。大多數服務，以及這台 Mac 上的 Ollama 和 LM Studio，都接受 OpenAI 的 Chat Completions；Claude 使用 Anthropic 的 Messages。"
+          }
+        }
+      }
+    },
     "How to find the link in the server’s answer, as in ShareX: {json:path.to.link}, {response}, {header:Location}. Empty means the whole answer is the link." : {
       "localizations" : {
         "es" : {
@@ -9966,6 +10889,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "图片中的换行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圖片中的換行"
           }
         }
       }
@@ -10180,6 +11109,114 @@
         }
       }
     },
+    "It goes at %lld%% of its size." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se envía al %lld%% de su tamaño."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle part à %lld %% de sa taille."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "元のサイズの%lld%%で送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它会以原尺寸的 %lld%% 发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它會以原尺寸的 %lld%% 傳送。"
+          }
+        }
+      }
+    },
+    "It goes in %lld pieces, at %lld%% of its size." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "It goes in %1$lld pieces, at %2$lld%% of its size."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se envía en %1$lld partes, al %2$lld%% de su tamaño."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle part en %1$lld morceaux, à %2$lld %% de sa taille."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld個に分け、元のサイズの%2$lld%%で送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它会分成 %1$lld 块，以原尺寸的 %2$lld%% 发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它會分成 %1$lld 塊，以原尺寸的 %2$lld%% 傳送。"
+          }
+        }
+      }
+    },
+    "It goes in %lld pieces." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se envía en %lld partes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle part en %lld morceaux."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld個に分けて送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它会分成 %lld 块发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它會分成 %lld 塊傳送。"
+          }
+        }
+      }
+    },
     "It is saved in “%@” as a .%@ file." : {
       "localizations" : {
         "en" : {
@@ -10288,6 +11325,40 @@
         }
       }
     },
+    "Its %@ are deleted from this Mac. Tables and charts are read as plain text until it’s downloaded again." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se eliminan sus %@ de este Mac. Las tablas y los gráficos se leerán como texto normal hasta que lo vuelvas a descargar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ses %@ sont supprimés de ce Mac. Les tableaux et graphiques sont lus comme du texte simple jusqu’à ce qu’il soit de nouveau téléchargé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacから%@が削除されます。再度ダウンロードするまで、表やグラフは通常のテキストとして読み取られます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它占用的 %@ 将从这台 Mac 上删除。重新下载之前，表格和图表会按普通文字读取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它佔用的 %@ 將從這台 Mac 上刪除。重新下載之前，表格和圖表會按一般文字讀取。"
+          }
+        }
+      }
+    },
     "Its %@ are deleted from this Mac. Text is read without it until it’s downloaded again." : {
       "localizations" : {
         "es" : {
@@ -10318,6 +11389,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "它佔用的 %@ 將從這台 Mac 上刪除。重新下載之前，辨識文字時不會用到它。"
+          }
+        }
+      }
+    },
+    "Its API key is deleted from the Keychain." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Su clave de API se elimina del Llavero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sa clé d’API est supprimée du trousseau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APIキーはキーチェーンから削除されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的 API 密钥会从钥匙串中删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它的 API 密鑰會從鑰匙圈中刪除。"
           }
         }
       }
@@ -10565,25 +11671,31 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conserva las líneas detectadas en la imagen o une las de cada párrafo. Define el valor predeterminado de Capturar texto y de las nuevas ventanas Texto reconocido; el menú de saltos de línea solo afecta a esa ventana."
+            "value" : "Conserva las líneas detectadas en la imagen o une las de cada párrafo. Define el valor predeterminado de Capturar texto y de las nuevas ventanas Texto reconocido; el menú Saltos de línea solo afecta a esa ventana."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conserve les lignes détectées dans l’image ou réunit celles de chaque paragraphe. Définit le choix par défaut de Capturer le texte et des nouvelles fenêtres Texte reconnu ; le menu Sauts de ligne ne modifie que la fenêtre actuelle."
+            "value" : "Conserve les lignes détectées dans l’image ou réunit celles de chaque paragraphe. Définit le choix par défaut de Capturer du texte et des nouvelles fenêtres Texte reconnu ; le menu Sauts de ligne ne modifie que la fenêtre concernée."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "画像から認識した行を保持するか、段落内で折り返された行を結合します。テキストのキャプチャと新しいテキスト認識ウインドウの初期値です。ウインドウの改行メニューは、そのウインドウだけに適用されます。"
+            "value" : "画像から認識した行を保持するか、段落内で折り返された行を結合します。「テキストをキャプチャ」と新しい「認識されたテキスト」ウインドウの初期値です。ウインドウの「改行」メニューは、そのウインドウだけに適用されます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保留图片中识别到的各行，或合并每个段落内的折行。此设置决定截取文字和新打开的文字识别窗口的默认值；窗口中的“换行”菜单仅临时影响当前窗口。"
+            "value" : "保留图片中识别到的各行，或合并每个段落内的折行。这是“截取文字”和新打开的“识别的文字”窗口的默认设置；窗口中的“换行”菜单只影响该窗口。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留圖片中偵測到的各行，或合併每個段落內的折行。這是「擷取文字」和新開啟的「辨識出的文字」視窗的預設值；視窗中的「換行」選單只影響該視窗。"
           }
         }
       }
@@ -10686,6 +11798,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保留聲音"
+          }
+        }
+      }
+    },
+    "Keys chosen for one action are taken from any other that had them." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las teclas elegidas para una acción se quitan de cualquier otra que las tuviera."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les touches choisies pour une action sont retirées de toute autre action qui les utilisait."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ある操作に設定したキーは、それを使っていたほかの操作から外れます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为某个操作设定的按键，会从原来使用它的其他操作上移除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為某個動作設定的按鍵，會從原本使用它的其他動作上移除。"
           }
         }
       }
@@ -11302,6 +12448,74 @@
         }
       }
     },
+    "Lower tolerance finds finer boundaries. Higher tolerance ignores small color changes. This affects ruler lines and selection snapping. While measuring, T cycles the presets and +/− adjusts them; the choice is remembered here." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una tolerancia menor encuentra bordes más finos; una mayor pasa por alto cambios de color pequeños. Afecta a las líneas de la regla y al ajuste de la selección. Al medir, T recorre los valores y +/− los ajusta; lo elegido se recuerda aquí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une tolérance plus faible trouve des bords plus fins ; une tolérance plus élevée ignore les petits changements de couleur. Cela concerne les lignes de la règle et l’ajustement de la sélection. Pendant la mesure, T fait défiler les préréglages et +/− les ajuste ; le choix est mémorisé ici."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "許容範囲が低いほど細かな境界を見つけ、高いほど小さな色の変化を無視します。定規の線と選択範囲の吸着に影響します。計測中はTキーでプリセットを切り替え、+/−で調整できます。選んだ値はここに記憶されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "容差越低，找到的边界越细；容差越高，越会忽略细小的颜色变化。这会影响量尺线和选区吸附。测量时按 T 键循环切换预设，按 +/− 调整；所选的值会记在这里。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "容差越低，找到的邊界越細；容差越高，越會忽略細微的顏色變化。這會影響量尺線與選取範圍貼齊。測量時按 T 鍵循環切換預設，按 +/− 調整；所選的值會記在這裡。"
+          }
+        }
+      }
+    },
+    "Magnifier" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lupa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loupe"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ルーペ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放大镜"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放大鏡"
+          }
+        }
+      }
+    },
     "Make %@ the Background" : {
       "localizations" : {
         "es" : {
@@ -11676,6 +12890,40 @@
         }
       }
     },
+    "Measurement snapping" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajuste de medidas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustement des mesures"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "計測の吸着"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测量吸附"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "測量貼齊"
+          }
+        }
+      }
+    },
     "Medium" : {
       "localizations" : {
         "es" : {
@@ -11910,6 +13158,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "麥克風音量"
+          }
+        }
+      }
+    },
+    "Model" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modèle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
           }
         }
       }
@@ -12182,6 +13464,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "為檔案命名"
+          }
+        }
+      }
+    },
+    "Needs Accessibility to ask apps for their text." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Necesita Accesibilidad para pedir el texto a las apps."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nécessite l’Accessibilité pour demander leur texte aux apps."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリにテキストを問い合わせるには「アクセシビリティ」が必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要“辅助功能”权限才能向 App 询问文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要「輔助使用」權限才能向 App 詢問文字。"
+          }
+        }
+      }
+    },
+    "Neither this Mac nor %@ found text in it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ni este Mac ni %@ han encontrado texto en ella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ni ce Mac ni %@ n’y ont trouvé de texte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacも%@もテキストを見つけられませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 Mac 和 %@ 都没有在其中找到文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台 Mac 和 %@ 都沒有在其中找到文字。"
           }
         }
       }
@@ -12526,6 +13876,41 @@
         }
       }
     },
+    "No cloud models" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay modelos en la nube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun modèle cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウドモデルはありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有云端模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有雲端模型"
+          }
+        }
+      }
+    },
     "No destinations yet" : {
       "localizations" : {
         "es" : {
@@ -12832,6 +14217,40 @@
         }
       }
     },
+    "Not copied" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non copié"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーしていません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未拷贝"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未拷貝"
+          }
+        }
+      }
+    },
     "Nothing to translate" : {
       "localizations" : {
         "es" : {
@@ -12930,6 +14349,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉"
+          }
+        }
+      }
+    },
+    "OhMyShot Has Its Keys" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot ya tiene sus teclas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot a ses raccourcis"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShotでキーが使えます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷键已归 OhMyShot"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速鍵已歸 OhMyShot"
           }
         }
       }
@@ -13542,6 +14995,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 QuickTime Player 中打開"
+          }
+        }
+      }
+    },
+    "OpenAI-compatible" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compatible con OpenAI"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compatible OpenAI"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI互換"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 兼容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 相容"
           }
         }
       }
@@ -14618,6 +16106,23 @@
         }
       }
     },
+    "Preview" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preview"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览"
+          }
+        }
+      }
+    },
     "Print" : {
       "localizations" : {
         "es" : {
@@ -14682,6 +16187,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "列印…"
+          }
+        }
+      }
+    },
+    "Protocol" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protocolo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Protocole"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロトコル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "协议"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "協定"
           }
         }
       }
@@ -15128,6 +16668,332 @@
         }
       }
     },
+    "Read a picture with a model you have an account with, such as Claude, GPT, or Qwen, where this Mac reads it poorly: handwriting, dense tables, complex layouts. Nothing is sent until you choose Read with… in the Recognized Text window; then the picture goes from this Mac straight to the service, which may charge for it. Keys stay in the Keychain." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lee una imagen con un modelo en el que tengas cuenta, como Claude, GPT o Qwen, donde este Mac la lee mal: escritura a mano, tablas densas, maquetaciones complejas. No se envía nada hasta que eliges Leer con… en la ventana Texto reconocido; entonces la imagen va de este Mac directamente al servicio, que puede cobrar por ello. Las claves se quedan en el Llavero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lisez une image avec un modèle pour lequel vous avez un compte, comme Claude, GPT ou Qwen, là où ce Mac la lit mal : écriture manuscrite, tableaux denses, mises en page complexes. Rien n’est envoyé tant que vous ne choisissez pas Lire avec… dans la fenêtre Texte reconnu ; l’image part alors de ce Mac directement vers le service, qui peut la facturer. Les clés restent dans le trousseau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacがうまく読み取れない画像（手書き、細かい表、複雑なレイアウト）を、Claude、GPT、Qwenなど、アカウントを持っているモデルで読み取ります。「認識されたテキスト」ウインドウで「…で読み取る」を選ぶまで何も送信されません。選ぶと画像はこのMacからそのサービスへ直接送られ、料金がかかる場合があります。キーはキーチェーンに残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这台 Mac 读不好的地方（手写、密集的表格、复杂的版式），用你有账户的模型读取图片，比如 Claude、GPT 或通义千问。在“识别的文字”窗口中选择“用…读取”之前，什么都不会发送；选择后，图片直接从这台 Mac 发送到该服务，服务可能会为此收费。密钥保留在钥匙串中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這台 Mac 讀不好的地方（手寫、密集的表格、複雜的版面），用你有帳號的模型讀取圖片，例如 Claude、GPT 或通義千問。在「辨識出的文字」視窗中選擇「用…讀取」之前，什麼都不會傳送；選擇後，圖片會直接從這台 Mac 傳送到該服務，服務可能會為此收費。密鑰保留在鑰匙圈中。"
+          }
+        }
+      }
+    },
+    "Read by %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído por %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu par %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@が読み取りました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %@ 讀取"
+          }
+        }
+      }
+    },
+    "Read by %@ at %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Read by %1$@ at %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído por %1$@ en %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu par %1$@ sur %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@の%1$@が読み取りました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %2$@ 上的 %1$@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %2$@ 上的 %1$@ 讀取"
+          }
+        }
+      }
+    },
+    "Read by %@ at %@: %@ tokens in, %@ out" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Read by %1$@ at %2$@: %3$@ tokens in, %4$@ out"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído por %1$@ en %2$@: %3$@ tokens de entrada, %4$@ de salida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu par %1$@ sur %2$@ : %3$@ jetons en entrée, %4$@ en sortie"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@の%1$@が読み取りました：入力%3$@トークン、出力%4$@トークン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %2$@ 上的 %1$@ 读取：输入 %3$@ 个 token，输出 %4$@ 个"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 %2$@ 上的 %1$@ 讀取：輸入 %3$@ 個 token，輸出 %4$@ 個"
+          }
+        }
+      }
+    },
+    "Read by itself in" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leer automáticamente en"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire automatiquement dans"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動で読み取る場所"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动读取于"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動讀取於"
+          }
+        }
+      }
+    },
+    "Read on this Mac" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leído en este Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lu sur ce Mac"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacで読み取り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这台 Mac 上读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這台 Mac 上讀取"
+          }
+        }
+      }
+    },
+    "Read with %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leer con %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire avec %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で読み取る"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 %@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 %@ 讀取"
+          }
+        }
+      }
+    },
+    "Read with %@: sends this picture to %@ (⇧⌘R)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Read with %1$@: sends this picture to %2$@ (⇧⌘R)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leer con %1$@: envía esta imagen a %2$@ (⇧⌘R)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lire avec %1$@ : envoie cette image à %2$@ (⇧⌘R)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@で読み取る：この画像を%2$@に送信します（⇧⌘R）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 %1$@ 读取：将这张图片发送到 %2$@（⇧⌘R）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 %1$@ 讀取：將這張圖片傳送到 %2$@（⇧⌘R）"
+          }
+        }
+      }
+    },
+    "Reading formulas and tables…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leyendo fórmulas y tablas…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture des formules et des tableaux…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数式と表を読み取り中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取公式和表格…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在讀取公式和表格…"
+          }
+        }
+      }
+    },
     "Reading formulas…" : {
       "localizations" : {
         "es" : {
@@ -15192,6 +17058,149 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "讀取時間過長。"
+          }
+        }
+      }
+    },
+    "Reading tables…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leyendo tablas…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture des tableaux…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表を読み取り中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取表格…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在讀取表格…"
+          }
+        }
+      }
+    },
+    "Reading with %@… %@ characters" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reading with %1$@… %2$@ characters"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leyendo con %1$@… %2$@ caracteres"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lecture avec %1$@… %2$@ caractères"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@で読み取り中… %2$@文字"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在用 %1$@ 读取… %2$@ 个字符"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在用 %1$@ 讀取… %2$@ 個字元"
+          }
+        }
+      }
+    },
+    "Reads a small picture of a few words with this model, to check the address, the model, and the key." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lee con este modelo una imagen pequeña con unas palabras, para comprobar la dirección, el modelo y la clave."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lit avec ce modèle une petite image de quelques mots, pour vérifier l’adresse, le modèle et la clé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数語が書かれた小さな画像をこのモデルで読み取り、アドレス、モデル、キーを確認します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用这个模型读取一张有几个词的小图片，以检查地址、模型和密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用這個模型讀取一張有幾個字的小圖片，以檢查位址、模型和密鑰。"
+          }
+        }
+      }
+    },
+    "Reads pictures with a model you have an account with, such as Claude, GPT, or Qwen, or one on this Mac with Ollama, where this Mac reads them poorly: handwriting, dense tables, complex layouts. The picture goes from this Mac straight to the service, which may charge for it: when you press Read with in the Recognized Text window, and by itself where you turn that on below. Keys stay in the Keychain." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lee imágenes con un modelo en el que tengas cuenta, como Claude, GPT o Qwen, o uno en este Mac con Ollama, donde este Mac las lee mal: escritura a mano, tablas densas, maquetaciones complejas. La imagen va de este Mac directamente al servicio, que puede cobrar por ello: cuando pulsas Leer con en la ventana Texto reconocido, y automáticamente donde lo actives abajo. Las claves se quedan en el Llavero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lit les images avec un modèle pour lequel vous avez un compte, comme Claude, GPT ou Qwen, ou un modèle sur ce Mac avec Ollama, là où ce Mac les lit mal : écriture manuscrite, tableaux denses, mises en page complexes. L’image part de ce Mac directement vers le service, qui peut la facturer : quand vous appuyez sur Lire avec dans la fenêtre Texte reconnu, et automatiquement là où vous l’activez ci-dessous. Les clés restent dans le trousseau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacがうまく読み取れない画像（手書き、細かい表、複雑なレイアウト）を、Claude、GPT、Qwenなどアカウントを持っているモデル、またはこのMac上のOllamaのモデルで読み取ります。画像はこのMacからそのサービスへ直接送られ、料金がかかる場合があります。送信されるのは「認識されたテキスト」ウインドウで「…で読み取る」を押したときと、下で自動読み取りをオンにした場所です。キーはキーチェーンに残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这台 Mac 读不好的地方（手写、密集的表格、复杂的版式），用你有账户的模型读取图片，比如 Claude、GPT 或通义千问，也可以是这台 Mac 上用 Ollama 运行的模型。图片会直接从这台 Mac 发送到该服务，服务可能会为此收费：在“识别的文字”窗口中按“用…读取”时发送，或在下方开启自动读取的地方自动发送。密钥保留在钥匙串中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這台 Mac 讀不好的地方（手寫、密集的表格、複雜的版面），用你有帳號的模型讀取圖片，例如 Claude、GPT 或通義千問，也可以是這台 Mac 上用 Ollama 執行的模型。圖片會直接從這台 Mac 傳送到該服務，服務可能會為此收費：在「辨識出的文字」視窗中按「用…讀取」時傳送，或在下方開啟自動讀取的地方自動傳送。密鑰保留在鑰匙圈中。"
           }
         }
       }
@@ -16636,23 +18645,6 @@
         }
       }
     },
-    "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设置新打开的文字识别窗口的默认换行方式。各窗口可临时切换，不会修改此设置。自动换行只影响显示。"
-          }
-        }
-      }
-    },
     "SETTINGS_PANE_WIDTH" : {
       "comment" : "The narrowest a Settings pane gets, in points. Not words: raise the number if your language's rows are cut off.",
       "extractionState" : "extracted_with_value",
@@ -17099,6 +19091,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已儲存在鑰匙圈中"
+          }
+        }
+      }
+    },
+    "Saved in the Keychain. Type a new key to replace it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardada en el Llavero. Escribe una clave nueva para sustituirla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrée dans le trousseau. Saisissez une nouvelle clé pour la remplacer."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーチェーンに保存済みです。新しいキーを入力すると置き換わります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已存储在钥匙串中。输入新的密钥即可替换。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已儲存在鑰匙圈中。輸入新的密鑰即可取代。"
           }
         }
       }
@@ -17687,6 +19713,41 @@
         }
       }
     },
+    "Send" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "送信"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "傳送"
+          }
+        }
+      }
+    },
     "Send by Email" : {
       "localizations" : {
         "es" : {
@@ -17717,6 +19778,348 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "透過電子郵件傳送"
+          }
+        }
+      }
+    },
+    "Send this picture to %@ and read it with %@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Send this picture to %1$@ and read it with %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar esta imagen a %1$@ y leerla con %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer cette image à %1$@ et la lire avec %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%1$@に送信して%2$@で読み取ります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这张图片发送到 %1$@，并用 %2$@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這張圖片傳送到 %1$@，並用 %2$@ 讀取"
+          }
+        }
+      }
+    },
+    "Send this picture to %@ and read it with %@. It goes at %lld%% of its size." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Send this picture to %1$@ and read it with %2$@. It goes at %3$lld%% of its size."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar esta imagen a %1$@ y leerla con %2$@. Se envía al %3$lld%% de su tamaño."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer cette image à %1$@ et la lire avec %2$@. Elle part à %3$lld %% de sa taille."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%1$@に送信して%2$@で読み取ります。元のサイズの%3$lld%%で送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这张图片发送到 %1$@，并用 %2$@ 读取。它会以原尺寸的 %3$lld%% 发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這張圖片傳送到 %1$@，並用 %2$@ 讀取。它會以原尺寸的 %3$lld%% 傳送。"
+          }
+        }
+      }
+    },
+    "Send this picture to %@ and read it with %@. It goes in %lld pieces, at %lld%% of its size." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Send this picture to %1$@ and read it with %2$@. It goes in %3$lld pieces, at %4$lld%% of its size."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar esta imagen a %1$@ y leerla con %2$@. Se envía en %3$lld partes, al %4$lld%% de su tamaño."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer cette image à %1$@ et la lire avec %2$@. Elle part en %3$lld morceaux, à %4$lld %% de sa taille."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%1$@に送信して%2$@で読み取ります。%3$lld個に分け、元のサイズの%4$lld%%で送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这张图片发送到 %1$@，并用 %2$@ 读取。它会分成 %3$lld 块，以原尺寸的 %4$lld%% 发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這張圖片傳送到 %1$@，並用 %2$@ 讀取。它會分成 %3$lld 塊，以原尺寸的 %4$lld%% 傳送。"
+          }
+        }
+      }
+    },
+    "Send this picture to %@ and read it with %@. It goes in %lld pieces." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Send this picture to %1$@ and read it with %2$@. It goes in %3$lld pieces."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar esta imagen a %1$@ y leerla con %2$@. Se envía en %3$lld partes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer cette image à %1$@ et la lire avec %2$@. Elle part en %3$lld morceaux."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%1$@に送信して%2$@で読み取ります。%3$lld個に分けて送信されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这张图片发送到 %1$@，并用 %2$@ 读取。它会分成 %3$lld 块发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這張圖片傳送到 %1$@，並用 %2$@ 讀取。它會分成 %3$lld 塊傳送。"
+          }
+        }
+      }
+    },
+    "Send this picture to %@?" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Enviar esta imagen a %@?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer cette image à %@ ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%@に送信しますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要将这张图片发送到 %@ 吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要將這張圖片傳送到 %@ 嗎？"
+          }
+        }
+      }
+    },
+    "Sending to %@…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviando a %@…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoi à %@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@に送信中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在发送到 %@…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在傳送到 %@…"
+          }
+        }
+      }
+    },
+    "Sends a small picture of the words “%@” to the service and checks that the model reads them back. The service may charge for it, as for any request." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envía al servicio una imagen pequeña con las palabras «%@» y comprueba que el modelo las lee. El servicio puede cobrar por ello, como por cualquier solicitud."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoie au service une petite image des mots « %@ » et vérifie que le modèle les relit. Le service peut la facturer, comme toute requête."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」と書かれた小さな画像をサービスに送り、モデルがそれを読み返せるか確認します。ほかのリクエストと同様に料金がかかる場合があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向服务发送一张写着“%@”的小图片，并检查模型能否读回这些词。和任何请求一样，服务可能会为此收费。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向服務傳送一張寫著「%@」的小圖片，並檢查模型能否讀回這些字。和任何請求一樣，服務可能會為此收費。"
+          }
+        }
+      }
+    },
+    "Sends this picture to %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envía esta imagen a %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoie cette image à %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画像を%@に送信します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将这张图片发送到 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將這張圖片傳送到 %@"
+          }
+        }
+      }
+    },
+    "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Define si las nuevas ventanas Texto reconocido ajustan el texto a su ancho. Puedes cambiarlo en cada ventana sin modificar esta opción. Ajustar el texto solo cambia cómo se muestra."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définit si les nouvelles fenêtres Texte reconnu ajustent le texte à leur largeur. Vous pouvez le changer dans chaque fenêtre sans modifier ce réglage. Le renvoi à la ligne ne change que l’affichage."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しく開く「認識されたテキスト」ウインドウで折り返すかどうかを設定します。この設定を変えずに、ウインドウごとに切り替えることもできます。折り返しは表示だけを変えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设定新打开的“识别的文字”窗口是否自动换行。每个窗口都可以单独切换，不会改动这项设置。换行只影响显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定新開啟的「辨識出的文字」視窗是否自動換行。每個視窗都可以單獨切換，不會更動這項設定。換行只影響顯示。"
           }
         }
       }
@@ -18537,6 +20940,110 @@
         }
       }
     },
+    "Show the text read by" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar el texto leído por"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher le texte lu par"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み取り元を表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示读取者"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示讀取者"
+          }
+        }
+      }
+    },
+    "Show the text read on this Mac (⇧⌘R)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar el texto leído en este Mac (⇧⌘R)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher le texte lu sur ce Mac (⇧⌘R)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacで読み取ったテキストを表示（⇧⌘R）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示在这台 Mac 上读取的文字（⇧⌘R）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示在這台 Mac 上讀取的文字（⇧⌘R）"
+          }
+        }
+      }
+    },
+    "Show the text read on this Mac, or the text %@ read" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra el texto leído en este Mac o el texto que ha leído %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche le texte lu sur ce Mac, ou le texte lu par %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacで読み取ったテキスト、または%@が読み取ったテキストを表示します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示在这台 Mac 上读取的文字，或 %@ 读取的文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示在這台 Mac 上讀取的文字，或 %@ 讀取的文字"
+          }
+        }
+      }
+    },
     "Show the text, or the table found in the image" : {
       "localizations" : {
         "es" : {
@@ -18703,6 +21210,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "小"
+          }
+        }
+      }
+    },
+    "Snap selections to content" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustar la selección al contenido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aligner la sélection sur le contenu"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択範囲を内容に吸着"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选区吸附到内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將選取範圍貼齊內容"
           }
         }
       }
@@ -19107,6 +21648,41 @@
         }
       }
     },
+    "Stop reading with %@" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de leer con %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrêter la lecture avec %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@での読み取りを中止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止用 %@ 读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止用 %@ 讀取"
+          }
+        }
+      }
+    },
     "Studio" : {
       "localizations" : {
         "es" : {
@@ -19205,6 +21781,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "對調文字與背景"
+          }
+        }
+      }
+    },
+    "Switch" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切り替える"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換"
+          }
+        }
+      }
+    },
+    "Switch to %@?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Cambiar a %@?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passer à %@ ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@に切り替えますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要切换到 %@ 吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要切換到 %@ 嗎？"
           }
         }
       }
@@ -19379,6 +22023,40 @@
         }
       }
     },
+    "Tables read" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tablas leídas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tableaux lus"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表を読み取りました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已读取表格"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已讀取表格"
+          }
+        }
+      }
+    },
     "Take screenshots and record the screen." : {
       "localizations" : {
         "es" : {
@@ -19515,6 +22193,74 @@
         }
       }
     },
+    "Text card position" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posición de la tarjeta de texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position de la carte de texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストカードの表示位置"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字卡片位置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字卡片位置"
+          }
+        }
+      }
+    },
+    "Text from apps" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texto de las apps"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texte des apps"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリのテキスト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 中的文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 中的文字"
+          }
+        }
+      }
+    },
     "Text in %@ is shown as read until its languages are downloaded" : {
       "localizations" : {
         "es" : {
@@ -19613,6 +22359,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文字浮窗位置"
+          }
+        }
+      }
+    },
+    "The API key saved for %@ is deleted from the Keychain." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de API guardada para %@ se elimina del Llavero."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clé d’API enregistrée pour %@ est supprimée du trousseau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@用に保存されたAPIキーはキーチェーンから削除されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为 %@ 存储的 API 密钥会从钥匙串中删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為 %@ 儲存的 API 密鑰會從鑰匙圈中刪除。"
           }
         }
       }
@@ -19889,6 +22669,74 @@
         }
       }
     },
+    "The model answered, but not with the words in the picture: “%@”. Check that it reads pictures." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo ha respondido, pero no con las palabras de la imagen: «%@». Comprueba que lee imágenes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le modèle a répondu, mais pas avec les mots de l’image : « %@ ». Vérifiez qu’il lit les images."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデルは応答しましたが、画像の語句ではありませんでした：「%@」。画像を読み取れるモデルか確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型回答了，但不是图片中的词：“%@”。请确认它能读取图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型回應了，但不是圖片中的字：「%@」。請確認它能讀取圖片。"
+          }
+        }
+      }
+    },
+    "The name of a model that reads pictures, as the service lists it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El nombre de un modelo que lea imágenes, tal como lo indica el servicio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le nom d’un modèle qui lit les images, tel que le service l’indique."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像を読み取れるモデルの名前を、サービスに表示されているとおりに入力します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "能读取图片的模型的名称，按服务列出的写。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "能讀取圖片的模型名稱，依服務列出的寫。"
+          }
+        }
+      }
+    },
     "The new language shows after OhMyShot relaunches." : {
       "localizations" : {
         "es" : {
@@ -20025,6 +22873,75 @@
         }
       }
     },
+    "The service’s address with its version, as its documentation gives it, such as https://api.openai.com/v1. Plain http:// works only on this Mac or your local network." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dirección del servicio con su versión, tal como la indica su documentación, como https://api.openai.com/v1. http:// sin cifrar solo funciona en este Mac o en tu red local."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’adresse du service avec sa version, telle que sa documentation l’indique, comme https://api.openai.com/v1. http:// sans chiffrement ne fonctionne que sur ce Mac ou votre réseau local."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドキュメントに記載されている、バージョンを含むサービスのアドレスです（例：https://api.openai.com/v1）。http:// はこのMacかローカルネットワーク上でのみ使えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务的地址（含版本），按其文档给出的写，例如 https://api.openai.com/v1。普通的 http:// 只能用于这台 Mac 或本地网络。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務的位址（含版本），依其文件提供的寫，例如 https://api.openai.com/v1。一般的 http:// 只能用於這台 Mac 或區域網路。"
+          }
+        }
+      }
+    },
+    "The service’s address with its version, as its documentation gives it. Plain http:// works only on this Mac or your local network." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dirección del servicio con su versión, tal como la indica su documentación. http:// sin cifrar solo funciona en este Mac o en tu red local."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’adresse du service avec sa version, telle que sa documentation l’indique. http:// sans chiffrement ne fonctionne que sur ce Mac ou votre réseau local."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドキュメントに記載されている、バージョンを含むサービスのアドレスです。http:// はこのMacかローカルネットワーク上でのみ使えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务的地址（含版本），按其文档给出的写。普通的 http:// 只能用于这台 Mac 或本地网络。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務的位址（含版本），依其文件提供的寫。一般的 http:// 只能用於這台 Mac 或區域網路。"
+          }
+        }
+      }
+    },
     "The text in it couldn’t be recognized." : {
       "localizations" : {
         "es" : {
@@ -20089,6 +23006,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法輸入此上傳器"
+          }
+        }
+      }
+    },
+    "This Mac" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce Mac"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMac"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 Mac"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台 Mac"
           }
         }
       }
@@ -20745,6 +23697,41 @@
         }
       }
     },
+    "Translation works on the text read on this Mac" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La traducción funciona con el texto leído en este Mac"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La traduction porte sur le texte lu sur ce Mac"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻訳はこのMacで読み取ったテキストに対してのみ使えます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译只对在这台 Mac 上读取的文字可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻譯只適用於在這台 Mac 上讀取的文字"
+          }
+        }
+      }
+    },
     "Translation, %@" : {
       "localizations" : {
         "es" : {
@@ -20915,6 +23902,75 @@
         }
       }
     },
+    "Try an image with larger text or more contrast, or read it with %@." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prueba con una imagen con el texto más grande o con más contraste, o léela con %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Essayez une image au texte plus grand ou plus contrasté, ou lisez-la avec %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字が大きい画像やコントラストが高い画像を試すか、%@で読み取ってください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "试试文字更大或对比度更高的图片，或用 %@ 读取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "試試文字更大或對比度更高的圖片，或用 %@ 讀取。"
+          }
+        }
+      }
+    },
+    "Try an image with larger text or more contrast, or read it with a cloud model." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prueba con una imagen con el texto más grande o con más contraste, o léela con un modelo en la nube."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Essayez une image au texte plus grand ou plus contrasté, ou lisez-la avec un modèle cloud."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字が大きい画像やコントラストが高い画像を試すか、クラウドモデルで読み取ってください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "试试文字更大或对比度更高的图片，或用云端模型读取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "試試文字更大或對比度更高的圖片，或用雲端模型讀取。"
+          }
+        }
+      }
+    },
     "Try an image with larger text or more contrast." : {
       "localizations" : {
         "es" : {
@@ -20949,6 +24005,74 @@
         }
       }
     },
+    "Turn Off" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactivar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフにする"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉"
+          }
+        }
+      }
+    },
+    "Turn Off macOS’s Screenshot Keys" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactiva las teclas de captura de macOS"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivez les raccourcis de capture de macOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOSのスクリーンショットのキーをオフにする"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭 macOS 的截屏快捷键"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉 macOS 的截圖快速鍵"
+          }
+        }
+      }
+    },
     "Turn off Capture History?" : {
       "localizations" : {
         "es" : {
@@ -20979,6 +24103,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要關閉擷取記錄嗎？"
+          }
+        }
+      }
+    },
+    "Turn off cloud reading?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Desactivar la lectura en la nube?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactiver la lecture dans le cloud ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウド読み取りをオフにしますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要关闭云端读取吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要關閉雲端讀取嗎？"
           }
         }
       }
@@ -21425,6 +24583,40 @@
         }
       }
     },
+    "Use the app’s own characters" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usar los caracteres de la propia app"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utiliser les caractères de l’app elle-même"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリ自身の文字を使う"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 App 自己的字符"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 App 自己的字元"
+          }
+        }
+      }
+    },
     "User name" : {
       "localizations" : {
         "es" : {
@@ -21665,6 +24857,109 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "WebDAV…"
+          }
+        }
+      }
+    },
+    "What the Read with button calls it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo lo llama el botón Leer con."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le nom que lui donne le bouton Lire avec."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「…で読み取る」ボタンでの呼び名です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“用…读取”按钮这样称呼它。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「用…讀取」按鈕這樣稱呼它。"
+          }
+        }
+      }
+    },
+    "What the Recognized Text window’s button calls it: Read with Claude." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cómo lo llama el botón de la ventana Texto reconocido: Leer con Claude."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le nom que lui donne le bouton de la fenêtre Texte reconnu : Lire avec Claude."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「認識されたテキスト」ウインドウのボタンでの呼び名です（例：Claudeで読み取る）。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“识别的文字”窗口的按钮这样称呼它：用 Claude 读取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「辨識出的文字」視窗的按鈕這樣稱呼它：用 Claude 讀取。"
+          }
+        }
+      }
+    },
+    "What the screenshot and Annotate Area overlays show at the pointer before you choose an area. Magnified enlarges the pixels around it, to place an edge on the exact pixel. Actual Size shows them at their own size in a clear circle centered on the pointer, which goes when you start dragging; the crosshair stays." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que las superposiciones de captura de pantalla y de Anotar área muestran en el puntero antes de elegir un área. Ampliada amplía los píxeles a su alrededor, para colocar un borde en el píxel exacto. Tamaño real los muestra a su propio tamaño en un círculo claro centrado en el puntero, que desaparece al empezar a arrastrar; la cruz se mantiene."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce que les superpositions de capture d’écran et d’Annoter une zone montrent au pointeur avant de choisir une zone. Agrandie agrandit les pixels autour, pour placer un bord sur le pixel exact. Taille réelle les montre à leur propre taille dans un cercle clair centré sur le pointeur, qui disparaît dès que vous commencez à faire glisser ; le réticule reste."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショットと「範囲に注釈を付ける」で、範囲を選ぶ前にポインタの位置に表示されるもの。「拡大」はポインタ周辺のピクセルを拡大し、端を正確なピクセルに合わせられます。「実寸」はポインタを中心とした透明な円の中にピクセルを実際のサイズで表示し、ドラッグを始めると円は消え、十字線は残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截图和“标注区域”在你选定区域之前，于指针处显示的内容。“放大”会放大指针周围的像素，便于把边缘放在准确的像素上。“实际大小”在以指针为中心的清晰圆圈里按原始大小显示它们，开始拖动时圆圈消失，十字准线保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截圖和「標註區域」在你選定區域之前，於指標處顯示的內容。「放大」會放大指標周圍的像素，方便把邊緣放在準確的像素上。「實際大小」在以指標為中心的清晰圓圈裡按原始大小顯示它們，開始拖移時圓圈消失，十字準線保留。"
           }
         }
       }
@@ -22009,53 +25304,159 @@
         }
       }
     },
-    "Wrap long lines in this window without changing the text you copy": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wrap long lines in this window without changing the text you copy"
+    "Without it, the window’s Read with button sends a picture when you press it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin esto, el botón Leer con de la ventana envía la imagen cuando lo pulsas."
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在当前窗口中折行显示长文本，不改变复制的内容"
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sans cela, le bouton Lire avec de la fenêtre envoie l’image quand vous appuyez dessus."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフのときは、ウインドウの「…で読み取る」ボタンを押したときだけ画像を送信します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不勾选时，窗口中的“用…读取”按钮在你按下时才发送图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不勾選時，視窗中的「用…讀取」按鈕在你按下時才傳送圖片。"
           }
         }
       }
     },
-    "Wrap Text": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wrap Text"
+    "Wrap Text" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wrap Text"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自动换行"
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustar texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renvoi à la ligne"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストを折り返す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动换行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動換行"
           }
         }
       }
     },
-    "Wrap text to window": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wrap text to window"
+    "Wrap long lines in this window without changing the text you copy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wrap long lines in this window without changing the text you copy"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自动换行"
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajusta las líneas largas en esta ventana sin cambiar el texto que copias"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renvoie les longues lignes à la ligne dans cette fenêtre, sans changer le texte que vous copiez"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このウインドウで長い行を折り返します。コピーするテキストは変わりません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这个窗口中让长行自动换行，不改变拷贝的文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這個視窗中讓長行自動換行，不改變拷貝的文字"
+          }
+        }
+      }
+    },
+    "Wrap text to window" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wrap text to window"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustar el texto a la ventana"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajuster le texte à la fenêtre"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウに合わせて折り返す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按窗口宽度换行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "依視窗寬度換行"
           }
         }
       }
@@ -22196,6 +25597,40 @@
         }
       }
     },
+    "macOS answers these keys before OhMyShot can. Turn them off in Keyboard Settings › Keyboard Shortcuts › Screenshots." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS responde a estas teclas antes que OhMyShot. Desactívalas en Ajustes de Teclado › Funciones rápidas de teclado › Capturas de pantalla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS répond à ces raccourcis avant OhMyShot. Désactivez-les dans les réglages Clavier › Raccourcis clavier › Captures d’écran."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOSはOhMyShotより先にこれらのキーに応答します。キーボード設定 › キーボードショートカット › スクリーンショット でオフにしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 会先于 OhMyShot 响应这些快捷键。请在 键盘设置 › 键盘快捷键 › 截屏 中关闭它们。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 會比 OhMyShot 先回應這些快速鍵。請到 鍵盤設定 › 鍵盤快速鍵 › 截圖 將其關閉。"
+          }
+        }
+      }
+    },
     "macOS applies it after a relaunch." : {
       "localizations" : {
         "es" : {
@@ -22260,6 +25695,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在你於鍵盤設定中將其關閉之前，macOS 會保留 ⇧⌘3、⇧⌘4 和 ⇧⌘5。"
+          }
+        }
+      }
+    },
+    "macOS’s screenshot keys are off, so these keys capture with OhMyShot." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las teclas de captura de macOS están desactivadas, así que estas teclas capturan con OhMyShot."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les raccourcis de capture de macOS sont désactivés, ces raccourcis capturent donc avec OhMyShot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOSのスクリーンショットのキーはオフです。これらのキーでOhMyShotが撮影します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 的截屏快捷键已关闭，这些快捷键现在由 OhMyShot 截图。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 的截圖快速鍵已關閉，這些快速鍵現在由 OhMyShot 擷取畫面。"
           }
         }
       }

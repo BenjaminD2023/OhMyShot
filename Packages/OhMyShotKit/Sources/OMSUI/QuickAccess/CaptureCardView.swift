@@ -136,7 +136,8 @@ final class CardStackView: NSView {
         cards[id]?.setHovering(true)
     }
 
-    /// A card may appear under a stationary pointer, before AppKit sends its first tracking event.
+    /// Hovers the card under the pointer, and no other, after the cards have moved: AppKit sends nothing to a card
+    /// that comes in under a pointer at rest, or one that glides out from under it, until the pointer moves.
     func updatePointerHover() {
         for (id, card) in cards {
             let hovering = window?.isVisible == true && screenFrame(ofCard: id)?.contains(NSEvent.mouseLocation) == true

@@ -100,6 +100,8 @@ public struct SettingsDependencies {
             self.setAutomaticallyDownloads = setAutomaticallyDownloads
         }
     }
+    /// The cloud models the OCR panel reads with, which only the Tools tab shows.
+    public let cloudModels: CloudModelStore?
 
     /// What Settings › Sharing does with a finished upload.
     public struct UploadRecordActions {
@@ -170,6 +172,7 @@ public struct SettingsDependencies {
         recordActions: UploadRecordActions = .none,
         backgrounds: Backgrounds = .none,
         modelPacks: ModelPackCenter? = nil,
+        cloudModels: CloudModelStore? = nil,
         updates: Updates? = nil
     ) {
         self.settings = settings
@@ -184,6 +187,7 @@ public struct SettingsDependencies {
         self.recordActions = recordActions
         self.modelPacks = modelPacks
         self.updates = updates
+        self.cloudModels = cloudModels
     }
 }
 
@@ -310,7 +314,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .recording:
             host(RecordingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
         case .tools:
-            host(ToolsSettingsView(settings: dependencies.settings, modelPacks: dependencies.modelPacks))
+            host(ToolsSettingsView(settings: dependencies.settings, permissions: dependencies.permissions, modelPacks: dependencies.modelPacks, cloudModels: dependencies.cloudModels))
         case .sharing:
             host(SharingSettingsView(
                 settings: dependencies.settings, destinations: dependencies.destinations,

@@ -14,12 +14,12 @@ import Foundation
 public enum FormulaMerge {
     /// A formula the formula pack read whole.
     public struct Formula: Sendable, Equatable {
-        public var kind: FormulaFinder.Region.Kind
+        public var kind: LayoutFinder.Region.Kind
         /// In the picture's pixels, top-left origin.
         public var box: CGRect
         public var latex: String
 
-        public init(kind: FormulaFinder.Region.Kind, box: CGRect, latex: String) {
+        public init(kind: LayoutFinder.Region.Kind, box: CGRect, latex: String) {
             self.kind = kind
             self.box = box
             self.latex = latex

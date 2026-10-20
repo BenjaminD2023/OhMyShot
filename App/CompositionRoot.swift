@@ -37,6 +37,7 @@ final class CompositionRoot {
     }()
     private lazy var textCapture: TextCaptureCoordinator = {
         let coordinator = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
+        coordinator.cardsInTheWay = { [weak self] in self?.quickAccess.cardsFrame }
         coordinator.secondReader = { [weak self] in
             guard let self, let helper = textReaderTool, let pack = secondReadingPack else { return nil }
             return (pack, helper)
@@ -45,8 +46,50 @@ final class CompositionRoot {
             guard let self, let helper = textReaderTool, let pack = formulaPack else { return nil }
             return (pack, helper)
         }
+        coordinator.elementReader = { [weak self] in
+            guard let self, let helper = textReaderTool else { return nil }
+            let (formulas, vlm) = (formulaPack, vlmPack)
+            return formulas == nil && vlm == nil ? nil : (formulas, vlm, helper)
+        }
+        coordinator.cloud = { [weak self] in self?.panelCloud() }
+        coordinator.captureTextCloud = { [weak self] in self?.captureTextCloud() }
         return coordinator
     }()
+    /// The cloud model the OCR panel's Read with, and Capture Text while Settings says so, send a picture to (L4,
+    /// Docs/ocr.md › Cloud models). Its key is read from the Keychain only when a picture is sent or Settings shows it.
+    private lazy var cloudModels = CloudModelStore(secrets: KeychainSecretStore(service: "OhMyShot Cloud Models (\(Log.subsystem))"))
+    #if DEBUG
+    /// Scripted checks' models, in memory, in place of the person's while set.
+    private var demoCloudModels: CloudModelStore?
+    private var shownCloudModels: CloudModelStore { demoCloudModels ?? cloudModels }
+    #else
+    private var shownCloudModels: CloudModelStore { cloudModels }
+    #endif
+
+    /// How the OCR panel reads with a cloud model: a reader over the models' keys, made for each panel window.
+    private func panelCloud() -> TextRecognitionWindowController.Cloud {
+        let store = shownCloudModels
+        let reader = CloudReader(secrets: store.secrets)
+        return .init(store: store) { image, model, progress in
+            #if DEBUG
+            if let stub = DebugCloudDemo.stub(for: model) { return try await stub(progress) }
+            #endif
+            return try await reader.read(image, with: model, progress: progress)
+        }
+    }
+
+    /// The cloud model Capture Text reads with, while Settings says so, and how.
+    private func captureTextCloud() -> (model: CloudModel, read: @Sendable (CGImage, Bool) async throws -> CloudReading)? {
+        let store = shownCloudModels
+        guard let model = store.captureTextModel else { return nil }
+        let reader = CloudReader(secrets: store.secrets)
+        return (model, { image, joinsLines in
+            #if DEBUG
+            if let stub = DebugCloudDemo.stub(for: model) { return try await stub { _ in } }
+            #endif
+            return try await reader.read(image, with: model, joinsLines: joinsLines)
+        })
+    }
     private lazy var annotations = AnnotationCoordinator(history: history)
     /// Turns, flips, and scales pictures from their Quick Access cards.
     private lazy var pictureChanges = PictureChangeCoordinator(
@@ -109,6 +152,12 @@ final class CompositionRoot {
     /// as LaTeX (Docs/ocr.md › Formulas among text).
     private var formulaPack: URL? {
         modelPacks.installedFolder(of: ModelPackCatalog.ppFormulaNetPlusL)
+    }
+
+    /// The VLM pack, when it is installed: the text Capture Text, the OCR panel, and Recognize Text in Image read holds
+    /// the tables and charts in the picture a row a line, as PaddleOCR-VL reads them (Docs/ocr.md › The VLM pack).
+    private var vlmPack: URL? {
+        modelPacks.installedFolder(of: ModelPackCatalog.paddleOCRVL)
     }
 
     /// A pack just installed: its models are compiled now, in the background, rather than on the first reading someone
@@ -582,6 +631,13 @@ final class CompositionRoot {
             // first: the app is listed in the shareable content only once it has windows.
             overlay.prepare()
             shareableContent.refresh()
+            // Once, after the permission (often a relaunch later): while macOS answers its screenshot keys, the
+            // shortcuts that have them never fire.
+            if !OnboardingWindowController.hasShownShortcuts,
+               SystemScreenshotKeys.clashes(hotKeys: SystemScreenshotKeys.readHotKeys(), bindings: SystemScreenshotKeys.currentBindings())
+                .contains(where: \.takenByMacOS) {
+                showOnboarding(at: .shortcuts)
+            }
         } else {
             showOnboarding()
         }
@@ -686,15 +742,27 @@ final class CompositionRoot {
         if settings.historyRetention != .never { textReader.readNow() }
     }
 
-    func showOnboarding() {
+    /// An open onboarding window is brought forward as it is. Scripted checks pass `keys`, macOS's hot keys and
+    /// OhMyShot's shortcuts to show in place of the Mac's, which replaces an open window.
+    func showOnboarding(
+        at step: OnboardingWindowController.Step = .permission,
+        keys: (hotKeys: () -> [String: Any]?, bindings: @MainActor () -> [SystemScreenshotKeys.Binding])? = nil
+    ) {
+        if keys != nil, let open = onboardingWindow {
+            open.close()
+            onboardingWindow = nil
+        }
         let controller = onboardingWindow ?? OnboardingWindowController(
             permissions: permissions,
+            startingAt: step,
+            readHotKeys: keys?.hotKeys ?? SystemScreenshotKeys.readHotKeys,
+            bindings: keys?.bindings ?? SystemScreenshotKeys.currentBindings,
             relaunch: { Relauncher.relaunch() }
         )
-        controller.onClose = { [weak self] in
+        controller.onClose = { [weak self, weak controller] in
             // Released on the next turn so the window is not deallocated inside its own delegate call.
             Task { @MainActor in
-                self?.onboardingWindow = nil
+                if self?.onboardingWindow === controller { self?.onboardingWindow = nil }
                 MemoryRelief.returnFreedPages()
             }
         }
@@ -831,7 +899,7 @@ final class CompositionRoot {
             if let area {
                 Task { await textCapture.recognize(region: area, joinLines: joinLines) }
             } else {
-                textCapture.captureText(joinLines: joinLines)
+                textCapture.captureText(joinLines: joinLines, allowsCloud: false)
             }
         case .captureFormula(let file?, _):
             Task { await textCapture.readFormula(fileAt: file) }
@@ -994,7 +1062,7 @@ final class CompositionRoot {
         captures.cancelSelfTimer()
         return await withCheckedContinuation { continuation in
             let answer = Answer(continuation)
-            textCapture.captureText(joinLines: !keepsLineBreaks) { answer.give($0) }
+            textCapture.captureText(joinLines: !keepsLineBreaks, allowsCloud: false) { answer.give($0) }
         }
     }
 
@@ -1013,7 +1081,10 @@ final class CompositionRoot {
         try data.write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
         do {
-            let text = try await TextReaderTool.text(ofPictureAt: file, joinsWrappedLines: !keepsLineBreaks, formulas: formulaPack, helper: helper)
+            let text = try await TextReaderTool.text(
+                ofPictureAt: file, joinsWrappedLines: !keepsLineBreaks, formulas: formulaPack, vlm: vlmPack, seconds: TextCaptureCoordinator.panelTableWait,
+                helper: helper
+            )
             return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
         } catch let failure as TextReaderTool.Failure {
             // As Capture Text's own reading did: no text, rather than an error.
@@ -1759,6 +1830,7 @@ final class CompositionRoot {
                 setAutomatic: { BackdropPresets.shared.setAutomatic($0) }
             ),
             modelPacks: modelPacks,
+            cloudModels: shownCloudModels,
             updates: SettingsDependencies.Updates(
                 canCheck: { [updates] in updates.canCheckForUpdates },
                 check: { [updates] in updates.checkForUpdates() },
@@ -1830,7 +1902,7 @@ final class CompositionRoot {
             quickAccess: quickAccess,
             showSettings: { [weak self] tab in self?.showSettings(tab) },
             searchSettings: { [weak self] query in self?.settingsWindow?.search(query) },
-            showOnboarding: { [weak self] in self?.showOnboarding() },
+            showOnboarding: { [weak self] step, keys in self?.showOnboarding(at: step, keys: keys) },
             showHistory: { [weak self] in self?.showHistory() },
             restoreLatestFromHistory: { [weak self] in
                 guard let self, let entry = history.items().first else { return }
@@ -1881,7 +1953,26 @@ final class CompositionRoot {
             latestCaptureID: { [weak self] in self?.history.items().first?.id },
             replay: { [weak self] in self?.replayStorage },
             shortcutFormula: { [weak self] data in try await self?.formulaForShortcut(inImage: data) },
-            shortcutText: { [weak self] data in try await self?.textForShortcut(inImage: data, keepsLineBreaks: true) }
+            shortcutText: { [weak self] data in try await self?.textForShortcut(inImage: data, keepsLineBreaks: true) },
+            setCloudDemo: { [weak self] store in
+                self?.settingsWindow?.close()
+                self?.demoCloudModels = store
+            },
+            addCloudDemoModel: { [weak self] model, key in
+                guard let store = self?.demoCloudModels else {
+                    Log.app.error("debug.cloud-local: turn the demo models on first (cloud-demo?on=1)")
+                    return
+                }
+                store.choose(.other)
+                guard var local = store.model else { return }
+                local.kind = model.kind
+                local.name = model.name
+                local.address = model.address
+                local.model = model.model
+                store.update(local)
+                if let key { try? store.setKey(key) }
+                Log.app.notice("debug.cloud-local set \(model.name, privacy: .public) at \(model.address, privacy: .public)")
+            }
         )
     }
 

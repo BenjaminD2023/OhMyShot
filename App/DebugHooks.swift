@@ -29,7 +29,7 @@ struct DebugHooks {
     let showSettings: (SettingsTab) -> Void
     /// Types into the open Settings window's search field.
     let searchSettings: (String) -> Void
-    let showOnboarding: () -> Void
+    let showOnboarding: (OnboardingWindowController.Step, (hotKeys: () -> [String: Any]?, bindings: @MainActor () -> [SystemScreenshotKeys.Binding])?) -> Void
     let showHistory: () -> Void
     let restoreLatestFromHistory: () -> Void
     let annotateLatestFromHistory: () -> Void
@@ -68,6 +68,10 @@ struct DebugHooks {
     let shortcutFormula: (Data) async throws -> String?
     /// What the Shortcuts action Recognize Text in Image answers for a picture's data, its line breaks kept.
     let shortcutText: (Data) async throws -> String?
+    /// Puts scripted checks' cloud models in place of the person's, or the person's back with nil.
+    let setCloudDemo: (CloudModelStore?) -> Void
+    /// Adds a model to the scripted checks' cloud models, with its key, agreed.
+    let addCloudDemoModel: (CloudModel, String?) -> Void
 
     /// Capture History's search, for scripted checks on the hook's own test pictures.
     struct HistorySearchHooks {
@@ -131,7 +135,25 @@ struct DebugHooks {
         case "settings-search":
             searchSettings(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value ?? "")
         case "onboarding":
-            showOnboarding()
+            // step=shortcuts opens on macOS's screenshot keys. keys=on (as on a Mac where they were never changed), off
+            // (all five turned off), or mixed (only ⇧⌘3's turned off) shows made-up hot keys against the release build's default shortcuts, in place of
+            // the Mac's hot keys (never written) and this build's ⌃⌥⌘ keys, which never clash.
+            // act=escape sends the open onboarding window what Escape sends when no button answers it.
+            if Self.parameter("act", in: url) == "escape" {
+                let window = NSApp.windows.first { $0.isVisible && $0.windowController is OnboardingWindowController }
+                let handled = window.map { ($0.firstResponder ?? $0).tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: nil) } ?? false
+                Log.app.notice("debug.onboarding escape handled=\(handled, privacy: .public) open=\(NSApp.windows.contains { $0.isVisible && $0.windowController is OnboardingWindowController }, privacy: .public)")
+                return
+            }
+            let step: OnboardingWindowController.Step = Self.parameter("step", in: url) == "shortcuts" ? .shortcuts : .permission
+            let off = Dictionary(uniqueKeysWithValues: ["28", "29", "30", "31", "184"].map { ($0, ["enabled": false] as [String: Any]) })
+            let release: @MainActor () -> [SystemScreenshotKeys.Binding] = { SystemScreenshotKeys.defaultBindings(for: .release) }
+            switch Self.parameter("keys", in: url) {
+            case "on": showOnboarding(step, ({ nil }, release))
+            case "off": showOnboarding(step, ({ off }, release))
+            case "mixed": showOnboarding(step, ({ ["28": ["enabled": false]] }, release))
+            default: showOnboarding(step, nil)
+            }
         case "history":
             showHistory()
         case "appearance":
@@ -255,7 +277,48 @@ struct DebugHooks {
             // Capture Text on the same centered region as capture-test, without touching the clipboard; path=<a picture>
             // reads that file instead. The log says how many characters were read, and the formulas put in.
             let join = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "join" && $0.value == "1" } ?? false
-            if let path = Self.parameter("path", in: url) {
+            if Self.parameter("demo", in: url) == "1", let display = displays.layout.primary,
+               let image = DebugPanelDemo.image(blank: Self.parameter("blank", in: url) == "1") {
+                // demo=1: the drawn demo page, as a drag over the middle of the main display reads it; cloud=1 lets the
+                // cloud model read it as a person's drag would (with cloud-demo's model and capture=1).
+                let rect = CGRect(x: display.frame.midX - 380, y: display.frame.midY - 280, width: 760, height: 560)
+                Task {
+                    await textCapture.previewRecognition(of: image, near: rect, joinLines: join, allowsCloud: Self.parameter("cloud", in: url) == "1") { text in
+                        Log.app.notice("debug.text-test read \(text.map { "\($0.count) characters" } ?? "nothing", privacy: .public)")
+                    }
+                }
+            } else if let window = Self.parameter("window", in: url).flatMap({ CGWindowID($0) }),
+                      let info = (CGWindowListCopyWindowInfo(.optionIncludingWindow, window) as? [[String: Any]])?.first,
+                      let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] {
+                // window=<id>: Capture Text over that window alone, as when it is picked, without touching the clipboard;
+                // apptext=1 turns Text from apps on for the run. The log has the text only when only=<app name> owns the
+                // window: a check must never write down the person's own windows.
+                let owner = info[kCGWindowOwnerName as String] as? String ?? ""
+                let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+                let target = WindowTarget(id: window, frame: displays.layout.flipped(frame), ownerName: owner, title: nil)
+                let shows = Self.parameter("only", in: url) == owner
+                let before = settings.readsAppText
+                if Self.parameter("apptext", in: url) == "1" { settings.readsAppText = true }
+                if Self.parameter("panel", in: url) == "1" {
+                    // panel=1: read as the Recognized Text window reads it, without opening the window.
+                    let analyze = textCapture.analyzer(for: textCapture.place(ofWindow: target))
+                    settings.readsAppText = before
+                    Task { [capturer, displays] in
+                        guard let frame = try? await capturer.captureWindow(target, shadow: false, layout: displays.layout),
+                              let analysis = try? await analyze(frame.image) else { return }
+                        let text = analysis.result.text
+                        Log.app.notice("debug.text-test read in the window's way \(shows ? "“\(text)”" : "\(text.count) characters", privacy: .public)")
+                    }
+                    return
+                }
+                Task {
+                    await textCapture.previewRecognition(ofWindow: target, joinLines: join) { [settings] text in
+                        settings.readsAppText = before
+                        let said = shows ? text.map { "“\($0)”" } : text.map { "\($0.count) characters" }
+                        Log.app.notice("debug.text-test read \(said ?? "nothing", privacy: .public)")
+                    }
+                }
+            } else if let path = Self.parameter("path", in: url) {
                 Task {
                     await textCapture.recognize(fileAt: URL(filePath: path), joinLines: join, copiesToClipboard: false) { text in
                         Log.app.notice("debug.text-test read \(text.map { "“\($0)”" } ?? "nothing", privacy: .public)")
@@ -333,13 +396,15 @@ struct DebugHooks {
             Task { await openPanelDemo(via: value("via"), state: value("state")) }
         case "panel-state":
             // pane=text|table, join=0|1, select=<line>, hover=<line>, edited=1, translate=0|1,
-            // target=auto|<language> (the setting itself: put it back to auto afterwards)
+            // target=auto|<language> (the setting itself: put it back to auto afterwards),
+            // cloud=read|read2|cancel|accept|device|cloud (with the cloud-demo models)
             let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in items.first { $0.name == name }?.value }
             textCapture.previewPanelState(
                 pane: value("pane"), joinLines: value("join").map { $0 == "1" },
                 selectLine: value("select").flatMap(Int.init), hoverLine: value("hover").flatMap(Int.init),
-                edited: value("edited") == "1", translate: value("translate").map { $0 == "1" }, target: value("target")
+                edited: value("edited") == "1", translate: value("translate").map { $0 == "1" }, target: value("target"),
+                cloud: value("cloud")
             )
         case "translate-demo":
             // Translate Area on a drawn page (never the screen): its lens lies centered on the main
@@ -353,6 +418,12 @@ struct DebugHooks {
                 await translateDemo(prose: prose, blank: blank)
                 if controls { textCapture.revealLensControls() }
             }
+        case "memory-pressure":
+            // level=normal|warning|critical: what the text reader takes the system's memory pressure to be when it reads
+            // tables and charts (warning or critical leaves them to Vision); off: the system's own again.
+            let level = Self.parameter("level", in: url).flatMap(MemoryPressure.init(name:))
+            UserDefaults.standard.set(level?.name, forKey: "debugMemoryPressure")
+            Log.app.notice("debug.memory-pressure \(level?.name ?? "system's", privacy: .public) (system: \(MemoryPressure.current().name, privacy: .public))")
         case "panel-file":
             // path=: the OCR panel on that picture, as Recognize Text in Image… opens it (the window shows on screen).
             if let path = Self.parameter("path", in: url) {
@@ -1343,6 +1414,9 @@ struct DebugHooks {
             if overlay.isActive { overlay.cancel() }
         default:
             if handleUploadHook(hook, url) { return }
+            if handleCloudHook(hook, url) { return }
+            if handleAppTextHook(hook, url) { return }
+            if handleAccessibilityHook(hook, url) { return }
             Log.app.error("debug.unknown \(hook, privacy: .public)")
         }
     }

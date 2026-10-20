@@ -29,7 +29,6 @@ parser.add_argument("--source-ref", default="HEAD", help="Committed source ref; 
 parser.add_argument("--repository", default="BenjaminD2023/OhMyShot", help="Public GitHub owner/repository")
 parser.add_argument("--sparkle-tools", type=Path, default=Path(os.environ.get("SPARKLE_TOOLS", repo / "build/tools/Sparkle-2.10.0/bin")), help="Sparkle 2.10.0 bin directory (or parent); default SPARKLE_TOOLS")
 parser.add_argument("--key-account", default=os.environ.get("SPARKLE_KEY_ACCOUNT", "BenjaminD2023.OhMyShot.updates"), help="Existing dedicated Sparkle Keychain account; default SPARKLE_KEY_ACCOUNT")
-parser.add_argument("--ed-key-file", type=Path, default=os.environ.get("SPARKLE_ED_KEY_FILE"), help="Optional existing private-key file instead of Keychain; never pass key contents")
 args = parser.parse_args()
 
 def fail(message):
@@ -109,15 +108,10 @@ if output == app or output.is_relative_to(app) or app.is_relative_to(output):
 tools = args.sparkle_tools.resolve()
 if not (tools / "generate_appcast").is_file():
     tools = tools / "bin"
-for tool in ["generate_appcast", "sign_update"]:
+for tool in ["generate_appcast", "sign_update", "generate_keys"]:
     if not os.access(tools / tool, os.X_OK):
         fail("missing executable Sparkle tool: " + str(tools / tool))
 key_arguments = ["--account", args.key_account]
-if args.ed_key_file:
-    key_file = Path(args.ed_key_file).resolve()
-    if not key_file.is_file():
-        fail("private-key file does not exist")
-    key_arguments = ["--ed-key-file", str(key_file)]
 
 source_commit = command(["git", "rev-parse", args.source_ref + "^{commit}"], capture=True, cwd=repo)
 if source_commit != command(["git", "rev-parse", "HEAD"], capture=True, cwd=repo):
@@ -131,7 +125,7 @@ info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
 if (info.get("CFBundleShortVersionString"), info.get("CFBundleVersion")) != (args.version, args.build):
     fail("app version/build do not match the requested release")
 feed_url = f"https://github.com/{args.repository}/releases/latest/download/appcast.xml"
-if info.get("SUFeedURL") != feed_url or info.get("SURequireSignedFeed") is not True or info.get("SUVerifyUpdateBeforeExtraction") is not True:
+if info.get("SUFeedURL") != feed_url or info.get("SURequireSignedFeed") is not True or info.get("SUVerifyUpdateBeforeExtraction") is not True or info.get("SUSignedFeedFailureExpirationInterval") != 0:
     fail("app must use the fork's stable feed and require feed/pre-extraction signature verification")
 try:
     if len(base64.b64decode(info.get("SUPublicEDKey", ""), validate=True)) != 32:
@@ -144,6 +138,10 @@ if command(["xcrun", "lipo", "-archs", main_binary], capture=True).split() != ["
 if not (app / "Contents/Frameworks/Sparkle.framework").is_dir():
     fail("Sparkle.framework is missing from the app")
 identity = verify_app(app)
+# -p only reads an existing public key; it never creates or exports a private key.
+public_key = command([tools / "generate_keys", "--account", args.key_account, "-p"], capture=True)
+if public_key != info["SUPublicEDKey"]:
+    fail("signing account public key does not match the app SUPublicEDKey")
 for name in ["LICENSE", "README.md", "Docs/ThirdPartyNotices.txt"]:
     if not (repo / name).is_file():
         fail("missing fork distribution file: " + name)

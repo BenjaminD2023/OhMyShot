@@ -1,53 +1,42 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Small" : {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Small"
+    "%@ It said: “%@”" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ It said: “%2$@”"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "小"
-          }
-        }
-      }
-    },
-    "Medium" : {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Medium"
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ Respondió: «%2$@»"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "中"
-          }
-        }
-      }
-    },
-    "Large" : {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Large"
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ Réponse : « %2$@ »"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "大"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ サービスの返答：「%2$@」"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 服务的回复：“%2$@”"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 服務的回覆：「%2$@」"
           }
         }
       }
@@ -126,6 +115,40 @@
         }
       }
     },
+    "Actual Size" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamaño real"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taille réelle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "実寸"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实际大小"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "實際大小"
+          }
+        }
+      }
+    },
     "Amazon S3" : {
       "localizations" : {
         "es" : {
@@ -190,6 +213,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "中文和日文文字"
+          }
+        }
+      }
+    },
+    "Cloud model" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelo en la nube"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modèle cloud"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラウドモデル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "云端模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雲端模型"
           }
         }
       }
@@ -506,6 +563,40 @@
         }
       }
     },
+    "Enter the API key." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Introduce la clave de API."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saisissez la clé d’API."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APIキーを入力してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入 API 密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請輸入 API 密鑰。"
+          }
+        }
+      }
+    },
     "Enter the access key ID." : {
       "localizations" : {
         "es" : {
@@ -638,6 +729,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請輸入檔案夾的位址，以 http:// 或 https:// 開頭。"
+          }
+        }
+      }
+    },
+    "Enter the model’s name, as the service lists it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Introduce el nombre del modelo tal como lo indica el servicio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saisissez le nom du modèle tel que le service l’indique."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスに表示されているとおりにモデル名を入力してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请按服务列出的名称输入模型名。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請依服務列出的名稱輸入模型名稱。"
           }
         }
       }
@@ -880,6 +1005,41 @@
         }
       }
     },
+    "Give it a name." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ponle un nombre."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Donnez-lui un nom."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名前を付けてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请为它起个名字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請為它取個名稱。"
+          }
+        }
+      }
+    },
     "Give the destination a name." : {
       "localizations" : {
         "es" : {
@@ -910,6 +1070,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請為目的地命名。"
+          }
+        }
+      }
+    },
+    "High" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Élevée"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高"
           }
         }
       }
@@ -1084,6 +1278,115 @@
         }
       }
     },
+    "Large" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Large"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grande"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grande"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大"
+          }
+        }
+      }
+    },
+    "Low" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Baja"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faible"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "低"
+          }
+        }
+      }
+    },
+    "Magnified" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ampliada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agrandie"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拡大"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放大"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放大"
+          }
+        }
+      }
+    },
     "Math Formulas" : {
       "localizations" : {
         "es" : {
@@ -1114,6 +1417,81 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "數學公式"
+          }
+        }
+      }
+    },
+    "Medium" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medium"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Media"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moyenne"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中"
+          }
+        }
+      }
+    },
+    "Other OpenAI-Compatible Service" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otro servicio compatible con OpenAI"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autre service compatible OpenAI"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他のOpenAI互換サービス"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他 OpenAI 兼容服务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他 OpenAI 相容服務"
           }
         }
       }
@@ -1186,6 +1564,40 @@
         }
       }
     },
+    "PaddleOCR-VL-1.6 and PP-DocLayoutV3, by PaddlePaddle: recognized text holds each table and chart as rows you can paste into a spreadsheet. Reading one takes about 2.6 GB of memory." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaddleOCR-VL-1.6 y PP-DocLayoutV3, de PaddlePaddle: el texto reconocido incluye cada tabla y gráfico como filas que puedes pegar en una hoja de cálculo. Leer uno requiere unos 2,6 GB de memoria."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaddleOCR-VL-1.6 et PP-DocLayoutV3, de PaddlePaddle : le texte reconnu contient chaque tableau et graphique sous forme de lignes à coller dans un tableur. En lire un demande environ 2,6 Go de mémoire."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaddleOCR-VL-1.6 と PP-DocLayoutV3（PaddlePaddle 製）：認識されたテキストでは、表やグラフが行として入り、そのままスプレッドシートにペーストできます。1つの読み取りに約 2.6 GB のメモリを使います。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaddleOCR-VL-1.6 和 PP-DocLayoutV3，来自 PaddlePaddle：识别出的文字会把每个表格和图表写成行，可以直接粘贴到电子表格中。读取一个约需 2.6 GB 内存。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PaddleOCR-VL-1.6 和 PP-DocLayoutV3，來自 PaddlePaddle：辨識出的文字會把每個表格和圖表寫成列，可以直接貼到試算表中。讀取一個約需 2.6 GB 記憶體。"
+          }
+        }
+      }
+    },
     "S3-compatible storage" : {
       "localizations" : {
         "es" : {
@@ -1216,6 +1628,115 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "S3 相容儲存空間"
+          }
+        }
+      }
+    },
+    "Small" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Small"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pequeña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Petite"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "小"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "小"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "小"
+          }
+        }
+      }
+    },
+    "Tables and Charts" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tablas y gráficos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tableaux et graphiques"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表とグラフ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表格和图表"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表格和圖表"
+          }
+        }
+      }
+    },
+    "The API key is missing from the Keychain. Open the model in Settings › Tools and enter it again." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta la clave de API en el Llavero. Abre el modelo en Ajustes › Herramientas y vuelve a introducirla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clé d’API est absente du trousseau. Ouvrez le modèle dans Réglages › Outils et saisissez-la à nouveau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APIキーがキーチェーンにありません。「設定」›「ツール」でモデルを開いて、もう一度入力してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "钥匙串中没有这个 API 密钥。请在“设置 › 工具”中打开该模型并重新输入。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鑰匙圈中沒有這個 API 密鑰。請在「設定」›「工具」中打開該模型並重新輸入。"
           }
         }
       }
@@ -1318,6 +1839,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "XPath「%@」無效。"
+          }
+        }
+      }
+    },
+    "The address must start with https://." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dirección debe empezar por https://."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’adresse doit commencer par https://."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アドレスは https:// で始まる必要があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址必须以 https:// 开头。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "位址必須以 https:// 開頭。"
           }
         }
       }
@@ -1488,6 +2043,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法儲存這些檔案：%@"
+          }
+        }
+      }
+    },
+    "The model declined to read this picture." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo se ha negado a leer esta imagen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le modèle a refusé de lire cette image."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデルはこの画像の読み取りを断りました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型拒绝读取这张图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型拒絕讀取這張圖片。"
+          }
+        }
+      }
+    },
+    "The picture couldn’t be prepared for sending." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido preparar la imagen para enviarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de préparer l’image pour l’envoi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "送信する画像を準備できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法准备要发送的图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法準備要傳送的圖片。"
           }
         }
       }
@@ -1766,6 +2389,250 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "伺服器的回應不是 XML，因此 {xml:} 無法讀取。"
+          }
+        }
+      }
+    },
+    "The service answered %lld: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "The service answered %1$lld: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio ha respondido %1$lld: %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service a répondu %1$lld : %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスの応答 %1$lld：%2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务返回 %1$lld：%2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務回應 %1$lld：%2$@"
+          }
+        }
+      }
+    },
+    "The service answered with an error (%lld)." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio ha respondido con un error (%lld)."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service a répondu par une erreur (%lld)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスがエラーを返しました（%lld）。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务返回了错误（%lld）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務回應了錯誤（%lld）。"
+          }
+        }
+      }
+    },
+    "The service didn’t accept the API key." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio no ha aceptado la clave de API."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service n’a pas accepté la clé d’API."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスがAPIキーを受け付けませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务不接受这个 API 密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務不接受這個 API 密鑰。"
+          }
+        }
+      }
+    },
+    "The service doesn’t know this address or model. Check both in Settings › Tools." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio no reconoce esta dirección o este modelo. Comprueba ambos en Ajustes › Herramientas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service ne connaît pas cette adresse ou ce modèle. Vérifiez les deux dans Réglages › Outils."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスはこのアドレスまたはモデルを認識しません。「設定」›「ツール」で両方を確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务不认识这个地址或模型。请在“设置 › 工具”中检查两者。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務不認得這個位址或模型。請在「設定」›「工具」中檢查兩者。"
+          }
+        }
+      }
+    },
+    "The service is busy. Try again in a moment." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio está ocupado. Vuelve a intentarlo en un momento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service est occupé. Réessayez dans un instant."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスが混み合っています。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务正忙，请稍后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務正忙碌，請稍後再試。"
+          }
+        }
+      }
+    },
+    "The service is turning requests away for now: too many, or the account’s limit or credit ran out." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio está rechazando solicitudes por ahora: demasiadas, o se ha agotado el límite o el crédito de la cuenta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service refuse les requêtes pour le moment : trop nombreuses, ou la limite ou le crédit du compte est épuisé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスは現在リクエストを受け付けていません。リクエストが多すぎるか、アカウントの上限またはクレジットに達しています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务暂时拒绝请求：请求太多，或账户的额度或余额已用完。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務暫時拒絕請求：請求太多，或帳號的額度或餘額已用完。"
+          }
+        }
+      }
+    },
+    "The service’s answer couldn’t be read. Check that the address is the service’s own." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido leer la respuesta del servicio. Comprueba que la dirección sea la del propio servicio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de lire la réponse du service. Vérifiez que l’adresse est bien celle du service."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスの応答を読み取れませんでした。アドレスがそのサービス自身のものか確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取服务的回答。请确认地址是该服务自己的。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取服務的回應。請確認位址是該服務本身的。"
           }
         }
       }
@@ -2156,6 +3023,40 @@
         }
       }
     },
+    "This model isn’t set up yet: %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este modelo aún no está configurado: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce modèle n’est pas encore configuré : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このモデルはまだ設定されていません：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个模型还没设置好：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這個模型尚未設定完成：%@"
+          }
+        }
+      }
+    },
     "This model pack can’t be downloaded: %@" : {
       "localizations" : {
         "es" : {
@@ -2258,6 +3159,40 @@
         }
       }
     },
+    "Use https:// for a service on the internet. Plain http:// works only on this Mac or your local network." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa https:// para un servicio en internet. http:// sin cifrar solo funciona en este Mac o en tu red local."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisez https:// pour un service sur Internet. http:// sans chiffrement ne fonctionne que sur ce Mac ou votre réseau local."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インターネット上のサービスには https:// を使ってください。http:// はこのMacかローカルネットワーク上でのみ使えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "互联网上的服务请使用 https://。普通的 http:// 只能用于这台 Mac 或本地网络。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "網際網路上的服務請使用 https://。一般的 http:// 只能用於這台 Mac 或區域網路。"
+          }
+        }
+      }
+    },
     "WebDAV" : {
       "localizations" : {
         "es" : {
@@ -2292,6 +3227,40 @@
         }
       }
     },
+    "Zero" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cero"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nulle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ゼロ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "零"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "零"
+          }
+        }
+      }
+    },
     "macOS blocks the unencrypted connection to %@. Use https, or a server on your local network." : {
       "localizations" : {
         "es" : {
@@ -2322,6 +3291,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS 封鎖了與 %@ 的未加密連線。請使用 https，或區域網路上的伺服器。"
+          }
+        }
+      }
+    },
+    "macOS blocks the unencrypted connection to %@. Use https, or a service on your local network." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS bloquea la conexión sin cifrar con %@. Usa https o un servicio de tu red local."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS bloque la connexion non chiffrée à %@. Utilisez https, ou un service de votre réseau local."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOSが%@への暗号化されていない接続をブロックしました。httpsか、ローカルネットワーク上のサービスを使ってください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 阻止了到 %@ 的未加密连接。请使用 https，或本地网络中的服务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 封鎖了到 %@ 的未加密連線。請使用 https，或區域網路中的服務。"
           }
         }
       }

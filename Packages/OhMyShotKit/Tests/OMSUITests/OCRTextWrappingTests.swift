@@ -77,4 +77,28 @@ struct OCRTextWrappingTests {
         textView.undoManager?.undo()
         #expect(undoWasCalled)
     }
+
+    /// The panel's editor shows the model's selection in its first update, before SwiftUI gives it a size.
+    @Test func aSelectionShownBeforeLayoutLeavesUnwrappedTextAtItsStart() throws {
+        let textView = NSTextView(frame: .zero)
+        textView.isVerticallyResizable = true
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainerInset = NSSize(width: 12, height: 14)
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.documentView = textView
+        textView.string = "Gradient descent\n" + String(repeating: "A long recognized line that runs past the edge. ", count: 8)
+        OCRTextWrapping.apply(false, to: scrollView)
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        OCRTextWrapping.reveal(NSRange(location: 0, length: 0), in: textView)
+        textView.layoutManager?.ensureLayout(for: try #require(textView.textContainer))
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = scrollView
+        scrollView.layoutSubtreeIfNeeded()
+        #expect(textView.frame.width > scrollView.contentSize.width)
+        #expect(scrollView.contentView.bounds.origin == .zero)
+    }
 }

@@ -18,6 +18,13 @@ struct SecondReadingTests {
         #expect(!SecondReading.wanted([line("首 Home", 0, 0, 100)]))
         #expect(SecondReading.wanted([line("打开 Settings", 0, 0, 200)]))
         #expect(SecondReading.wanted([line("保存したい", 0, 0, 200)]))
+        // Vision's lone misreads of a formula's symbols, on lines of English (Resources/Formulas/page-web.png).
+        #expect(!SecondReading.wanted([
+            line("For a quadratic L（z）=臺a「Ax the iteration converges when", 0, 0, 500), line("7<2/入max（A）.", 0, 30, 100),
+            line("（Ji -位）2", 0, 60, 100),
+        ]))
+        // Letter-spaced characters are still side by side.
+        #expect(SecondReading.wanted([line("一 二 三 四 五", 0, 0, 200)]))
     }
 
     // MARK: Which lines

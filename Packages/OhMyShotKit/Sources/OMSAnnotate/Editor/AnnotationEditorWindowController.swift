@@ -492,6 +492,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     func fileForDragging() -> URL? {
         content.canvas.endEditing()
         keepNow()
+        // Edits that could not be kept are not in the file: handing it over would drop them.
         guard !session.hasUnkeptChanges else { return nil }
         return actions.fileToHandOver(fileURL)
     }
@@ -508,6 +509,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     // MARK: Export
 
+    /// The picture and the marks it was rendered from, which go together through the rendering and the copying: a
+    /// mark made meanwhile is kept with a later picture, never as this one's marks.
     private struct RenderedCapture {
         let document: AnnotationDocument
         let image: CGImage
@@ -515,15 +518,14 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     }
 
     private func render() async -> RenderedCapture? {
-        // All three travel together across the asynchronous render and clipboard work. A new mark
-        // made while they run belongs to a later save, never to this earlier picture's metadata.
         let document = session.document
         guard let image = await AnnotationRenderer.render(document, base: session.base),
               let png = try? await ImageExporter.encode(image, as: .png) else { return nil }
         return RenderedCapture(document: document, image: image, png: png)
     }
 
-    /// Renders and keeps the current edits; the capture's file, unchanged when there was nothing to keep.
+    /// Renders and keeps the current edits; the capture's file, unchanged when there was nothing to keep, or nil
+    /// when they could not be kept.
     private func exportAndKeep() async -> URL? {
         guard session.hasUnkeptChanges else { return fileURL }
         guard let rendered = await render() else { return nil }
@@ -663,7 +665,10 @@ struct EditorView: View {
                     Label {
                         model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module)
                     } icon: {
-                        Image(systemName: model.saved ? "checkmark" : "square.and.arrow.down")
+                        Image(nsImage: Theme.symbol(
+                            model.saved ? "checkmark" : "square.and.arrow.down",
+                            described: model.saved ? String(localized: "Saved", bundle: .module) : String(localized: "Save", bundle: .module)
+                        ))
                     }
                 } primaryAction: {
                     model.controller?.save()

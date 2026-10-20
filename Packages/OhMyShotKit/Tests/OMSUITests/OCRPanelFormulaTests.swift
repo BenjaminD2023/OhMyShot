@@ -20,16 +20,17 @@ struct OCRPanelFormulaTests {
         /// The lines each merge was given.
         var merged: [[OCRLine]] { lock.withLock { _merged } }
 
-        var formulas: TextRecognitionWindowController.Formulas {
+        var formulas: TextRecognitionWindowController.Elements {
             .init(
                 read: { [self] _, found in
-                    found(1)
-                    return await withCheckedContinuation { continuation in
+                    found(.init(formulas: 1, tables: 0))
+                    let formulas = await withCheckedContinuation { continuation in
                         lock.withLock {
                             _reads += 1
                             waiting = continuation
                         }
                     }
+                    return .init(formulas: formulas)
                 },
                 merge: { [self] lines, formulas, _ in
                     lock.withLock { _merged.append(lines) }
@@ -81,15 +82,15 @@ struct OCRPanelFormulaTests {
     @Test func formulasComeIntoTheTextOnceRead() async {
         let model = Self.model()
         let reader = Reader()
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), formulas: reader.formulas)
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), elements: reader.formulas)
         // The reading starts with the image, beside Vision's.
-        await Self.settle { model.phase == .ready && reader.isWaiting && model.formulasBeingRead != nil }
+        await Self.settle { model.phase == .ready && reader.isWaiting && model.beingRead != nil }
         #expect(model.text == "Euler wrote")
-        #expect(model.formulasBeingRead == 1)
+        #expect(model.beingRead == .init(formulas: 1, tables: 0))
         #expect(model.panes.isEmpty)
 
         reader.answer([Self.formula])
-        await Self.settle { model.formulasBeingRead == nil && model.lines.count == 2 }
+        await Self.settle { model.beingRead == nil && model.lines.count == 2 }
         #expect(reader.merged == [[Self.line]])
         #expect(model.text == "Euler wrote\n$e^{i\\pi}+1=0$")
         // The formula's line is outlined on the image as any other.
@@ -99,11 +100,11 @@ struct OCRPanelFormulaTests {
     @Test func noFormulasLeaveTheTextAsItWas() async {
         let model = Self.model()
         let reader = Reader()
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), formulas: reader.formulas)
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), elements: reader.formulas)
         await Self.settle { reader.isWaiting && model.phase == .ready }
         let revision = model.revision
         reader.answer([])
-        await Self.settle { model.formulasBeingRead == nil }
+        await Self.settle { model.beingRead == nil }
         try? await Task.sleep(for: .milliseconds(30))
         #expect(reader.merged.isEmpty)
         #expect(model.revision == revision)
@@ -113,8 +114,8 @@ struct OCRPanelFormulaTests {
     @Test func anImageWithNoTextButAFormulaHasText() async {
         let model = Self.model()
         let reader = Reader()
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), formulas: reader.formulas)
-        await Self.settle { model.phase == .empty && model.formulasBeingRead != nil }
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis(), elements: reader.formulas)
+        await Self.settle { model.phase == .empty && model.beingRead != nil }
         reader.answer([Self.formula])
         await Self.settle { model.phase == .ready }
         #expect(model.text == "$e^{i\\pi}+1=0$")
@@ -123,11 +124,11 @@ struct OCRPanelFormulaTests {
     @Test func editsStayAndRevertBringsTheFormulas() async {
         let model = Self.model()
         let reader = Reader()
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), formulas: reader.formulas)
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), elements: reader.formulas)
         await Self.settle { reader.isWaiting && model.phase == .ready }
         model.textEdited("Euler wrote, as I recall")
         reader.answer([Self.formula])
-        await Self.settle { model.formulasBeingRead == nil && model.lines.count == 2 }
+        await Self.settle { model.beingRead == nil && model.lines.count == 2 }
         #expect(model.text == "Euler wrote, as I recall")
         #expect(model.edited)
         model.revert()
@@ -137,23 +138,52 @@ struct OCRPanelFormulaTests {
     @Test func aNewImageDropsTheLastOnesFormulas() async {
         let model = Self.model()
         let first = Reader()
-        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), formulas: first.formulas)
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]), elements: first.formulas)
         await Self.settle { first.isWaiting && model.phase == .ready }
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis())
-        #expect(model.formulasBeingRead == nil)
+        #expect(model.beingRead == nil)
         // The old reading's answer lands nowhere.
         first.answer([Self.formula])
         try? await Task.sleep(for: .milliseconds(50))
         #expect(first.merged.isEmpty)
         #expect(model.text.isEmpty)
-        #expect(model.formulasBeingRead == nil)
+        #expect(model.beingRead == nil)
+    }
+
+    @Test func aTableReadLaterTakesVisionsLinesAndTable() async {
+        let rows = [
+            OCRLine(text: "Region Q1", box: CGRect(x: 10, y: 40, width: 200, height: 20), confidence: 1),
+            OCRLine(text: "North 1,240", box: CGRect(x: 10, y: 70, width: 200, height: 20), confidence: 1),
+        ]
+        let visionTable = OCRTable(rows: [["Region Q1"], ["North 1,240"]], cellBoxes: [[rows[0].box], [rows[1].box]])
+        let lines = [Self.line] + rows
+        let analyze: @Sendable (CGImage) async throws -> TextAnalysis = { _ in
+            TextAnalysis(result: OCRResult(lines: lines, text: "", duration: .zero), tables: [visionTable], codes: [])
+        }
+        let table = TableMerge.Table(kind: .table, box: CGRect(x: 8, y: 36, width: 210, height: 58), rows: [["Region", "Q1"], ["North", "1,240"]], isWhole: true)
+        let elements = TextRecognitionWindowController.Elements(
+            read: { _, found in
+                found(.init(formulas: 0, tables: 1))
+                try? await Task.sleep(for: .milliseconds(100))
+                return .init(tables: [table])
+            },
+            merge: { lines, _, _ in lines }
+        )
+        let model = Self.model()
+        model.load(image: Self.image(), scale: 2, analyze: analyze, elements: elements)
+        await Self.settle { model.phase == .ready && model.beingRead != nil }
+        #expect(model.beingRead == .init(formulas: 0, tables: 1))
+        #expect(model.tables == [visionTable])
+        await Self.settle { model.beingRead == nil && model.text.contains("\t") }
+        #expect(model.text == "Euler wrote\nRegion\tQ1\nNorth\t1,240")
+        #expect(model.tables == [OCRTable(rows: table.rows)])
     }
 
     @Test func withoutThePackNothingIsRead() async {
         let model = Self.model()
         model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line]))
         await Self.settle { model.phase == .ready }
-        #expect(model.formulasBeingRead == nil)
+        #expect(model.beingRead == nil)
         #expect(model.text == "Euler wrote")
     }
 }

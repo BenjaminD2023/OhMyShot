@@ -69,6 +69,12 @@ public enum WindowCatalog {
         return nil
     }
 
+    /// The process a window belongs to, read from the window list now; nil once the window is gone.
+    public static func owner(of window: CGWindowID) -> pid_t? {
+        let list = CGWindowListCopyWindowInfo(.optionIncludingWindow, window) as? [[String: Any]]
+        return list?.first?[kCGWindowOwnerPID as String] as? pid_t
+    }
+
     /// The frontmost window under a point in AppKit's global space.
     public static func target(at point: CGPoint, in windows: [WindowTarget]) -> WindowTarget? {
         windows.first { $0.frame.contains(point) }

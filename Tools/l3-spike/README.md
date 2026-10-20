@@ -16,6 +16,7 @@ uv pip install --python $L3/venv/bin/python --exclude-newer 2026-10-04 \
   ftfy==6.3.1 numpy pillow safetensors tokenizers "huggingface-hub==1.33.0" psutil opencv-python-headless
 swiftc -O -o $L3/energy Tools/l3-spike/energy.swift -lIOReport
 swiftc -O -o $L3/fprobe Tools/l3-spike/fprobe.swift
+swiftc -parse-as-library -O -o $L3/fm_probe Tools/l3-spike/fm_probe.swift
 ```
 
 The models, each in its own folder under `$L3/models`, at these revisions (all checked against the Hub's SHA-256):
@@ -68,6 +69,19 @@ $P $T/vlm_text_coreml.py $L3/models/PaddlePaddle_PaddleOCR-VL-1.6 $L3/coreml/vlm
 $P $T/vlm_text_speed.py $L3/coreml/vlmtext gpu
 ```
 
+The Swift reader (Packages/OhMyShotVLM, Docs/ocr.md › The VLM pack) against mlx-vlm, stage by stage, and on the corpus.
+`vlm-check` runs from SwiftPM, which can't compile Metal: it finds MLX's kernels in an `mlx.metallib` beside it, the
+`default.metallib` an xcodebuild of mlx-swift (or the app's build) makes.
+
+```sh
+V=Packages/OhMyShotVLM; swift build -c release -Xswiftc -enable-testing --package-path $V --product vlm-check
+cp build/Build/Products/Debug/OhMyShot\ Dev.app/Contents/Resources/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib $V/.build/release/mlx.metallib
+$P $T/vlm_stages.py $L3/mlx/paddle-8 $L3/corpus/bench/en-ui.png "OCR:" en-ui.safetensors 256   # every stage, mlx-vlm
+$V/.build/release/vlm-check $L3/mlx/paddle-8 en-ui.safetensors $L3/corpus/bench/en-ui.png VOCABULARY.json
+$V/.build/release/vlm-check read PACK ocr text.json $L3/corpus/bench/*.png          # PACK: vlm_pack.py's folder
+$P $T/vlm_score.py text $L3/corpus/bench text.json
+```
+
 `energy -- COMMAND` runs a command and prints the whole machine's energy over it (IOReport), less the idle power of the
 3 s before it; `usage.py` gives a Python process's own peak footprint, Neural Engine footprint, CPU time, and CPU
 energy (`proc_pid_rusage`).
@@ -90,3 +104,7 @@ energy (`proc_pid_rusage`).
   here, so its own size wasn't measured.
 - **Energy.** On macOS 27.2 beta IOReport's CPU and ANE energy channels read 0; only the GPU's counts. CPU energy is
   each process's own, from `usage.py`.
+- **Foundation Models.** `fm_probe` prints what the system model says of itself (availability, `.vision`, variant,
+  context, languages) and asks it to transcribe `<dir>/<id>.png` for each id, writing `<id>.fm-<name>.txt`; score
+  those against the bench's `.truth.txt` files (`--save`). On this Mac it ends at availability (Docs/ocr.md ›
+  Foundation Models).

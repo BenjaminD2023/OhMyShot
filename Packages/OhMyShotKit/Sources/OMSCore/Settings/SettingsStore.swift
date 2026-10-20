@@ -135,18 +135,22 @@ public final class SettingsStore {
         didSet { defaults.set(showTextResult, forKey: Key.showTextResult) }
     }
 
-    /// The small copied-text/formula card stays by its selection unless a screen corner is chosen.
+    /// The small copied-text/formula card stands by its selection, or in the bottom-left corner of that display.
     public var textResultPosition: TextResultPosition {
         didSet { defaults.set(textResultPosition.rawValue, forKey: Key.textResultPosition) }
     }
 
-    /// Seconds the copied-text/formula popup stays before closing; 0 keeps it open until closed.
+    /// Seconds a copied-text/formula card the user asked for (Show the copied text) stays before closing; 0 keeps
+    /// it open until closed. Cards that say something went wrong keep at least their own time.
     public var textResultCloseAfter: Int {
         didSet { defaults.set(textResultCloseAfter, forKey: Key.textResultCloseAfter) }
     }
 
-    /// Popup close delays in seconds; the one-second default stays separate from Quick Access cards.
-    public static let textResultCloseDelays = [0, 1, 2, 3, 5, 10, 20, 30, 60]
+    /// The delays Settings offers for closing the text card, in seconds; 0 is never. Separate from Quick Access's.
+    public static let textResultCloseDelays = [0, 1, 2, 3, 4, 5, 10, 20, 30, 60]
+
+    /// What the card has always stayed: the default of `textResultCloseAfter`.
+    public static let defaultTextResultCloseAfter = 1
 
     /// Capture Text and new Recognized Text windows keep the image's detected line breaks by default.
     /// A window's line-break choice changes only that window, without changing this saved default.
@@ -158,6 +162,13 @@ public final class SettingsStore {
     /// takes this value when it opens and can change its own wrapping without changing the default.
     public var textRecognitionWrapsText: Bool {
         didSet { defaults.set(textRecognitionWrapsText, forKey: Key.textRecognitionWrapsText) }
+    }
+
+    /// Capture Text and the Recognized Text window take the characters the app under the selection shows, through
+    /// Accessibility, for the lines it shows alike (L0, Docs/ocr.md › Text from apps). Off by default: it needs
+    /// Accessibility, asked for when it is turned on.
+    public var readsAppText: Bool {
+        didSet { defaults.set(readsAppText, forKey: Key.readsAppText) }
     }
 
     /// The language text is translated into, as "zh-Hans" or "ja"; empty for automatic: the first
@@ -468,9 +479,10 @@ public final class SettingsStore {
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
             Key.showTextResult: false,
             Key.textResultPosition: TextResultPosition.belowSelection.rawValue,
-            Key.textResultCloseAfter: 1,
+            Key.textResultCloseAfter: Self.defaultTextResultCloseAfter,
             Key.textRecognitionKeepsLineBreaks: true,
             Key.textRecognitionWrapsText: true,
+            Key.readsAppText: false,
             Key.translationTarget: "",
             // Frozen by default: a hover card or menu that closes as the pointer leaves it can still be
             // captured, since the screen is taken the moment the shortcut is pressed.
@@ -608,10 +620,11 @@ public final class SettingsStore {
         textResultPosition = defaults.string(forKey: Key.textResultPosition).flatMap(TextResultPosition.init(rawValue:)) ?? .belowSelection
         // Invalid types must not become 0 (Never), as integer(forKey:) would make an unreadable string.
         let storedTextResultCloseAfter = defaults.object(forKey: Key.textResultCloseAfter) as? NSNumber
-        let textResultDelay = storedTextResultCloseAfter.flatMap { CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : $0 as? Int } ?? 1
-        textResultCloseAfter = Self.textResultCloseDelays.contains(textResultDelay) ? textResultDelay : 1
+        let textResultDelay = storedTextResultCloseAfter.flatMap { CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : $0 as? Int } ?? Self.defaultTextResultCloseAfter
+        textResultCloseAfter = Self.textResultCloseDelays.contains(textResultDelay) ? textResultDelay : Self.defaultTextResultCloseAfter
         textRecognitionKeepsLineBreaks = defaults.bool(forKey: Key.textRecognitionKeepsLineBreaks)
         textRecognitionWrapsText = defaults.bool(forKey: Key.textRecognitionWrapsText)
+        readsAppText = defaults.bool(forKey: Key.readsAppText)
         translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
     }
 
@@ -702,6 +715,7 @@ public final class SettingsStore {
         static let textResultCloseAfter = "textResultCloseAfter"
         static let textRecognitionKeepsLineBreaks = "textRecognitionKeepsLineBreaks"
         static let textRecognitionWrapsText = "textRecognitionWrapsText"
+        static let readsAppText = "readsAppText"
         static let translationTarget = "translationTarget"
     }
 }

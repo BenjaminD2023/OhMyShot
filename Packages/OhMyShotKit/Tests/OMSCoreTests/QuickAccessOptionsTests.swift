@@ -147,6 +147,33 @@ struct QuickAccessSettingsTests {
         #expect(settings.quickAccessPreferences.closeInterval == (seconds == 0 ? nil : TimeInterval(seconds)))
     }
 
+    @Test(arguments: [0, 1, 2, 3, 5, 10, 20, 30, 60])
+    func everyOfferedDelaySurvivesRelaunch(seconds: Int) throws {
+        let (defaults, suite) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.quickAccessCloseAfter = seconds
+        let restored = SettingsStore(defaults: defaults)
+        #expect(restored.quickAccessCloseAfter == seconds)
+        #expect(restored.quickAccessPreferences.closeInterval == (seconds == 0 ? nil : TimeInterval(seconds)))
+    }
+
+    @Test func screenshotCardDelayAndTextToolPreferencesAreIndependent() throws {
+        let (defaults, suite) = try makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        settings.showTextResult = true
+        settings.textRecognitionWrapsText = false
+        settings.quickAccessCloseAfter = 1
+        let restored = SettingsStore(defaults: defaults)
+        #expect(restored.quickAccessCloseAfter == 1)
+        #expect(restored.showTextResult)
+        #expect(!restored.textRecognitionWrapsText)
+        restored.showTextResult = false
+        restored.textRecognitionWrapsText = true
+        #expect(SettingsStore(defaults: defaults).quickAccessCloseAfter == 1)
+    }
+
     @Test func closingTakesAnUnsavedCaptureOnlyWithHistoryOffAndTimedCloseOn() {
         let closes = QuickAccessPreferences(closeAfter: 10, closeAction: .close)
         #expect(closes.closingDiscardsUnsavedCaptures(history: .never))

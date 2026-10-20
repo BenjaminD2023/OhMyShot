@@ -34,7 +34,7 @@ struct ModelPacksRow: View {
                 .frame(width: 360)
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
-                InfoButton(Text("A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, or math formulas. It’s downloaded once, from \(hosts), and stays on this Mac; nothing you capture leaves it.", bundle: .module))
+                InfoButton(Text("A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, math formulas, or tables and charts. It’s downloaded once, from \(hosts), and stays on this Mac; nothing you capture leaves it.", bundle: .module))
             }
         }
         .task { await center.refresh() }
@@ -64,9 +64,12 @@ struct ModelPacksRow: View {
                 Text("Remove", bundle: .module)
             }
         } message: { pack in
-            // The L2 pack only reads beside Vision; without the formula pack, Capture Formula has nothing to read with.
+            // The L2 pack only reads beside Vision; without the formula pack, Capture Formula has nothing to read with; the
+            // VLM pack only reads tables and charts in place of Vision's reading.
             if pack.id == ModelPackCatalog.ppFormulaNetPlusL.id {
                 Text("Its \(ModelPackRow.size(pack.size)) are deleted from this Mac. Capture Formula is unavailable until it’s downloaded again.", bundle: .module)
+            } else if pack.id == ModelPackCatalog.paddleOCRVL.id {
+                Text("Its \(ModelPackRow.size(pack.size)) are deleted from this Mac. Tables and charts are read as plain text until it’s downloaded again.", bundle: .module)
             } else {
                 Text("Its \(ModelPackRow.size(pack.size)) are deleted from this Mac. Text is read without it until it’s downloaded again.", bundle: .module)
             }
@@ -304,7 +307,7 @@ private struct ModelPackLicense: View {
 }
 
 /// A license's text in the rounded well, its hard-wrapped lines joined so they flow at the well's width.
-private struct LicenseWell: View {
+struct LicenseWell: View {
     let license: Result<String, Error>?
     var height: CGFloat = 180
     let retry: (() -> Void)?
@@ -344,12 +347,24 @@ private struct LicenseWell: View {
     }
 
     /// Paragraphs as blank lines divide them, each one line: licenses such as Apache-2.0 come wrapped at about 78
-    /// characters, which a narrower well would break again mid-line.
+    /// characters, which a narrower well would break again mid-line. A web address keeps a line of its own, as a
+    /// notice of what was changed lists them one under another.
     static func reflowed(_ text: String) -> String {
         text.replacingOccurrences(of: "\r\n", with: "\n")
             .components(separatedBy: "\n\n")
             .map { paragraph in
-                paragraph.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+                var lines: [String] = []
+                var joining = false
+                for line in paragraph.split(separator: "\n").map({ $0.trimmingCharacters(in: .whitespaces) }) where !line.isEmpty {
+                    let address = line.hasPrefix("https://") || line.hasPrefix("http://")
+                    if joining, !address, let last = lines.popLast() {
+                        lines.append(last + " " + line)
+                    } else {
+                        lines.append(line)
+                    }
+                    joining = !address
+                }
+                return lines.joined(separator: "\n")
             }
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
@@ -362,5 +377,7 @@ public extension Notification.Name {
     static let debugOpenModelPackConsent = Notification.Name("OhMyShotDebugOpenModelPackConsent")
     /// Opens the installed pack's license sheet, as License… in its menu does.
     static let debugOpenModelPackLicense = Notification.Name("OhMyShotDebugOpenModelPackLicense")
+    /// Asks to turn cloud reading off, as choosing Off with a key saved does, so its confirmation shows.
+    static let debugOpenCloudSwitch = Notification.Name("OhMyShotDebugOpenCloudSwitch")
 }
 #endif

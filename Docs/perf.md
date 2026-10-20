@@ -2272,3 +2272,135 @@ and removed it, and the download fetched the 34 MB left from Hugging Face in abo
   sends the picture to the L2 pack's second reading (two Han or kana characters are enough, as before this change), and
   that reading now shares the CPU with the formula reading; it waits for at most 3 s. Not addressed yet.
 - **The app stays as it was**: every reading, the layout model's included, runs in the text reader, which exits after it.
+
+## M6 — Cloud models (2026-10-18)
+
+Reading with a cloud model is a request the person makes from the OCR panel; nothing of it runs otherwise. Each reading
+holds an `ActiveResources` lease (`cloudReading`) and its own ephemeral URL session, invalidated when the answer is in,
+fails, or is cancelled. In the Dev app (Debug, M3 Max) against a stand-in server on 127.0.0.1 that streams an answer
+(Docs/ocr.md › Cloud models):
+
+| Reading | Sent | Time |
+| --- | --- | --- |
+| The demo page, 1520 × 1120, Chat Completions | 1 piece, 156 KB of PNG | 0.42 s |
+| The same, Messages, to `localhost` | 1 piece, 156 KB | 0.40 s |
+| A 3078 × 9000 picture, Messages | 6 pieces of 2576 × 1310, 709 KB | 0.82 s |
+
+`debug/resources` read idle after each. A real service's time is the model's: not measured here.
+
+## M6 — Text from apps (2026-10-19)
+
+Asking the apps for their text (Docs/ocr.md › Text from apps) runs only inside a Capture Text or a Recognized Text
+window reading, after Vision's, while Settings has it on: no observer, no timer, nothing held after. In the Dev app
+(Debug, M3 Max) over a 656 × 422 pt TextEdit window of 9–10 lines:
+
+| Reading | Points asked | Time |
+| --- | --- | --- |
+| First cut, every point along every line | 43–93 | 85–111 ms |
+| Points left unasked once a line is covered | 10–12 | 27–50 ms |
+
+Each question waits 0.1 s at most; the reading stops at 150 ms in Capture Text and 500 ms in the window.
+
+## M6 — The VLM pack (2026-10-19)
+
+PaddleOCR-VL on MLX in the text reader (Docs/ocr.md › The VLM pack). Nothing runs unless a picture read while the pack is
+installed holds a table or chart: the layout model runs beside Vision as it does for formulas, and the VLM is loaded
+only after it found one; the reader exits when its reading is done.
+
+**Size.** The app's process doesn't link MLX. The text reader grew from 4.9 MB to 28.6 MB as built (16.1 MB with its
+symbols stripped, as an archive strips them), and the app's Resources gained MLX's `default.metallib`, 2.4 MB: the
+Release app went from 33 MB to 59 MB as built (the main binary is 19.9 MB, 10.1 MB stripped). The pack is 1.12 GB.
+
+**The reader** (Release, M3 Max), a fresh run each, the pack's files already in memory unless said:
+
+| Run | Time | Peak footprint |
+| --- | --- | --- |
+| Loading the model only | 0.22 s | 1.29 GB |
+| A UI picture (35 tokens) | 0.54 s | 2.62 GB |
+| Swift code, 1298 × 454 (118 tokens) | 1.18 s | 2.64 GB |
+| Three pictures (35, 106, 72 tokens) | 1.79 s | 2.62 GB |
+| The same, the first time after the files were written (read from disk, kernels compiled) | 7.27 s | 5.63 GB* |
+| A picture with no VLM job (Vision only), MLX linked | 0.27 s | 235 MB |
+
+\* Before the reader capped MLX's buffer cache (256 MB, emptied after each reading): three readings grew it to 5.6 GB, a
+single one by up to 2 GB; after, three readings peak where one does.
+
+On the spike's corpus (40 bench pictures, "OCR:"): 0.46 s a picture at the median, 3.53 s at the 95th percentile, MLX's
+own peak 2.34 GB; mlx-vlm in Python 0.40 s and 2.99 s. The Swift loop waits for each token before asking the next
+(mlx-vlm overlaps them).
+
+**In the app** (Dev app, Debug): Capture Text over the drawn page with a table put the table into its text 5.4 s after
+Vision's reading the first time and 1.2 s the next; a picture without a table or chart costs the layout model's run
+beside Vision, as with the formula pack. The pack downloaded from Hugging Face at about 10 MB/s (1.12 GB in under two
+minutes).
+
+
+## M6 — Leftovers: lone characters, cut rows, memory pressure (2026-10-19)
+
+Dev app (Debug), both packs installed, the formula tests' web page (English with eight formulas) and the drawn page with
+a table, opened in the OCR panel from their files (Docs/ocr.md › Formulas among text › Since, › The VLM pack).
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| The web page: Vision's text shown (`ocr.analyze`) | 3826 / 3891 ms | 752 / 692 ms |
+| The web page: its formulas in, from the window's opening | about 4.8 s | 4.3 s (5.1 s the first time after a relaunch) |
+| The Chinese page: Vision's text shown, the second reading taken | — | 2954 ms (the second reading 2.4 s, as before) |
+| The table page, memory pressure stood in for as a warning | the table read (1.2–1.7 s) | Vision's lines, no VLM loaded |
+
+- The web page's panel waited 3 s for a second reading of three lone characters that Vision read in its formulas
+  (`SecondReading.wanted`); now it doesn't ask for one.
+- Checking the memory pressure is one `sysctlbyname` call in the text reader, before the VLM would load.
+- Drawing a translation's formulas readable (`MathText`) and putting a changed formula back (`Translator.restoringMath`)
+  work on the units' text only; the web page's translation took 3.4–3.5 s with or without them (the system's model).
+
+## M6 — power gate again, with the VLM pack (2026-10-19)
+
+The M6 gate above ran before cloud models, text from apps, and the VLM pack. This one is a Debug build of `4e2d926`
+(main with both pull requests), the Dev app with all three packs installed, a fresh launch. The tour ran through
+hidden hooks on test pictures only: Capture Formula on the formula tests' three pictures (`debug/formula-test`),
+Recognize Formula in Image's path twice (`debug/shortcut-formula`), Capture Text twice on the drawn page with a table
+(`debug/text-test`, nothing copied), Recognize Text in Image's path on it (`debug/shortcut-text`), the same page in
+the OCR panel and the panel closed (`debug/panel-file`, `debug/close-windows`), and the page added to the history,
+found, and removed (`history-add`, `history-search`, `history-remove-tests`); then 30 s of nothing before a 60 s
+`Scripts/power-sample.sh`. Footprints were taken a few seconds after each step.
+
+| Measurement | Result | Target |
+| --- | --- | --- |
+| Idle after launch, 60 s, two runs | 0.09% and 0.06% CPU (seconds at 1.3% at most), 0 wakeups, 26 MB | 0.0%, < 60, < 30 MB |
+| Capture Formula ×3: each reading / the app after them and Recognize Formula ×2 | 1.32, 0.76, 0.63 s / 26 MB | — |
+| Capture Text on the table page: its table in, after Vision's reading | 2.04 s, then 1.77 s | — |
+| The app after Capture Text ×2 / after Recognize Text in Image | 97 / 97 MB | — |
+| The panel: its table in after Vision's reading / open / 10 s after it closed | 1.46 s / 130 / 127 MB | — |
+| The app after the history's add, search, and remove | 88 MB | — |
+| Idle after the tour, 60 s | 0.06% CPU (one second at 0.7%), 0 wakeups, 95 → 68 MB over the minute | 0.0%, < 60, < 60 MB |
+| Live resources and the app's own processes after the tour | none (`debug/resources` idle, no text reader at any step) | none when idle |
+
+- **The VLM costs the app nothing.** Every table was read in the text reader, which had exited by each footprint
+  (its peak is 2.6 GB, › M6 — The VLM pack). What the app gained it gained from Vision reading the page in its own
+  process, for Capture Text and the panel. That is more after Capture Text than M2 measured (61–70 MB, on screen
+  areas): on two fresh launches, one Capture Text of the table page left 94 MB, and 90 MB with the VLM skipped (memory
+  pressure stood in for as a warning), so the tables' path adds about 4 MB; why Vision's reading now leaves more than
+  in M2 wasn't looked into. The panel's 127 MB after it closed is M2's 110–125 MB.
+- **The footprint after use is 68 MB, 8 MB over its budget**, against 120 MB at the first M6 gate and 119 MB at
+  M5's. It fell from 95 MB during the idle minute as the allocator let go of freed pages; this tour had no in-app
+  Shortcuts read of the demo page (the M5 gate's 56 MB step), and the Shortcuts action here read in the text reader.
+- **The CPU wasn't 0.00%**, again with 0 wakeups: the busy seconds came with the system updating the menu bar's
+  status items (FrontBoard scene updates, 2–8 a minute) and, after launch, the
+  App Intents donation to Spotlight. No timers of the app's own.
+- **Launch grew 2 MB** (24 → 26 MB) since the first M6 gate, with the cloud models, text from apps, the VLM pack's
+  merging, and Measure snapping in the app's code; the app still doesn't link MLX.
+
+Not part of this gate: anything on the real screen (the overlay, a real Capture Text drag, Measure). The macOS 26
+smoke test was not run (the user's call, 2026-10-19).
+
+The design gate ran the same night, on renders of the M6 surfaces in Light and Dark taken through hidden hooks (Settings ›
+Tools with the packs and a demo cloud model, a made-up pack downloading and paused, the download and license sheets,
+the panel reading and showing a table, formulas, a translation, five cloud answers, the result cards). Its fixes:
+a translation's paragraph whose lines all held formulas was drawn at 0.8 of the others' size (its size was read from
+the LaTeX's width; now from the formula as drawn, 1.06 after), a table's rows in the panel's text stand on tab stops
+as wide as their columns, a license's web addresses keep their lines, a service's own words in an error are set apart
+("It said: “…”"), a reading cut short says so in words, and a cancelled download no longer leaves its pack's empty
+folder. The cloud switch confirmation, which the reviewer flagged as unseen, needed nothing: its buttons, logged from the
+sheet (`modelpack-render?switch=1`), are Cancel on Escape and Turn Off on no key, so Return deletes no key. Not
+rendered: a failed pack download, the Remove… confirmation, Settings' Test results, both packs reading at once,
+anything under Increase Contrast, Reduce Transparency, or Reduce Motion, and VoiceOver.

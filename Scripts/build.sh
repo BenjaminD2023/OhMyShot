@@ -12,6 +12,13 @@ if [ ! -d OhMyShot.xcodeproj ] || [ project.yml -nt OhMyShot.xcodeproj/project.p
   Scripts/bootstrap.sh
 fi
 
+# The text reader links MLX (Packages/OhMyShotVLM), whose Metal kernels only Xcode's Metal Toolchain compiles; without
+# it the build fails deep in mlx-swift, so say so first.
+if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q "Status: installed"; then
+  echo "Xcode's Metal Toolchain isn't installed. Install it with: xcodebuild -downloadComponent MetalToolchain" >&2
+  exit 1
+fi
+
 # The repository can live in a file-provider folder (iCloud Desktop & Documents), which tags existing
 # bundles with Finder info that codesign then rejects ("resource fork, Finder information, or similar
 # detritus not allowed"); clear it from earlier builds first.

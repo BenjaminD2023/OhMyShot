@@ -37,7 +37,11 @@ public enum TranslationOverlay {
         // Where each line's ink starts, translated or not, so a translation lines up with the text that
         // stays beside it rather than with Vision's box, which starts a little before the ink.
         let lefts = columnLefts(lines.map(\.box), sizes: sizes, edges: lines.map { inkLeft(of: $0.box, in: pixels) ?? $0.box.minX })
-        let bodySize = median(sizes) ?? 0
+        // A line holding a formula tells its size less well than one of words alone: the formula is set in another face,
+        // its scripts smaller (`typeSize`). Lines of words alone say the body's size where there are a few; two could be a
+        // heading and one more line, and the body would read as the heading's size.
+        let words = lines.indices.filter { lines[$0].math == nil }
+        let bodySize = median((words.count < 3 ? Array(lines.indices) : words).map { sizes[$0] }) ?? 0
         let rightToLeft = language.characterDirection == .rightToLeft
         // Colors and room first, while every pixel is still the original.
         let drawn = units.indices.compactMap { index -> Drawn? in
@@ -49,12 +53,15 @@ public enum TranslationOverlay {
                 let others = lines.indices.filter { $0 != unit.lines[0] }.map { lines[$0].box }
                 room = clear(Self.room(for: unit.box, beside: others, imageWidth: CGFloat(width)), beside: unit.box, of: colors[0].paper, in: pixels)
             }
-            let size = median(unit.lines.map { sizes[$0] }) ?? unit.box.height
+            let wordLines = unit.lines.filter { lines[$0].math == nil }
+            let size = median((wordLines.isEmpty ? unit.lines : wordLines).map { sizes[$0] }) ?? unit.box.height
             // A heading: a third larger than the body or more. Its weight cannot be read from its pixels
             // reliably (bold Latin is wider, so it reads as a larger size instead), but headings are set
             // bold far more often than not.
             let isHeading = unit.lines.count <= 2 && size >= bodySize * 1.3
-            return Drawn(index: index, text: text, colors: colors, room: room, size: size, bold: isHeading)
+            // A formula drawn as its LaTeX would read as code: drawn readable instead (the text copied keeps the LaTeX).
+            let drawnText = unit.hasMath ? MathText.readable(in: text) : text
+            return Drawn(index: index, text: drawnText, colors: colors, room: room, size: size, bold: isHeading)
         }
         let erasedLines = Set(drawn.flatMap { units[$0.index].lines })
         let kept = lines.indices.filter { !erasedLines.contains($0) }.map { lines[$0].box }
@@ -184,12 +191,14 @@ public enum TranslationOverlay {
     /// to Chinese with punctuation; measured). The width is measured again at the size found, in points
     /// on screen (`scale` pixels each): the system font is drawn wider at text sizes than at display
     /// sizes, by about a tenth. The height only bounds the result, for a line misread or set in another
-    /// font, and loosely: Vision's box is sometimes half again as tall as the text in it.
+    /// font, and loosely: Vision's box is sometimes half again as tall as the text in it. A formula in the line is
+    /// measured as it is drawn readable (`MathText`), not as its LaTeX, which runs several times as wide as its ink.
     static func typeSize(of line: OCRLine, scale: CGFloat = 1) -> CGFloat {
         let height = line.box.height
+        let text = line.math == nil ? line.text : MathText.readable(in: line.text)
         func width(at points: CGFloat) -> CGFloat {
             let font = CTFontCreateUIFontForLanguage(.system, points, nil) ?? CTFontCreateWithName("Helvetica" as CFString, points, nil)
-            let probe = CTLineCreateWithAttributedString(NSAttributedString(string: line.text, attributes: [
+            let probe = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
                 NSAttributedString.Key(kCTFontAttributeName as String): font,
             ]))
             return CGFloat(CTLineGetTypographicBounds(probe, nil, nil, nil))

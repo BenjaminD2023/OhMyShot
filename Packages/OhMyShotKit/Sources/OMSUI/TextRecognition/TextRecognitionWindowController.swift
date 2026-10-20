@@ -20,20 +20,61 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
         case noImageOnClipboard
     }
 
-    /// How the formulas in an image get into its text while the formula pack is installed (Docs/ocr.md › Formulas
-    /// among text): found and read in the text reader, starting with Vision's reading, then put into the lines read.
-    public nonisolated struct Formulas: Sendable {
-        /// The formulas in the image, read as LaTeX; `found` is told how many there are, before they are read.
-        public var read: @Sendable (CGImage, _ found: @escaping @Sendable (Int) -> Void) async -> [FormulaMerge.Formula]
-        /// The lines with the formulas in them.
+    /// How the formulas, tables, and charts in an image get into its text while the formula pack or the VLM pack is
+    /// installed (Docs/ocr.md › Formulas among text, › The VLM pack): found and read in the text reader, starting with
+    /// Vision's reading, then put into the lines read; a table or chart read takes the place of Vision's table there.
+    public nonisolated struct Elements: Sendable {
+        /// How many formulas, and how many tables and charts, there are to read.
+        public struct Counts: Sendable, Equatable {
+            public var formulas: Int
+            public var tables: Int
+
+            public init(formulas: Int, tables: Int) {
+                self.formulas = formulas
+                self.tables = tables
+            }
+        }
+
+        /// What was read.
+        public struct Found: Sendable {
+            public var formulas: [FormulaMerge.Formula]
+            public var tables: [TableMerge.Table]
+
+            public init(formulas: [FormulaMerge.Formula] = [], tables: [TableMerge.Table] = []) {
+                self.formulas = formulas
+                self.tables = tables
+            }
+        }
+
+        /// The formulas in the image, read as LaTeX, and the tables and charts, as rows; `found` is told how many there
+        /// are, before they are read.
+        public var read: @Sendable (CGImage, _ found: @escaping @Sendable (Counts) -> Void) async -> Found
+        /// The lines with the formulas in them (the tables go in after, by `TableMerge`).
         public var merge: @Sendable ([OCRLine], [FormulaMerge.Formula], CGImage) async -> [OCRLine]
 
         public init(
-            read: @escaping @Sendable (CGImage, _ found: @escaping @Sendable (Int) -> Void) async -> [FormulaMerge.Formula],
+            read: @escaping @Sendable (CGImage, _ found: @escaping @Sendable (Counts) -> Void) async -> Found,
             merge: @escaping @Sendable ([OCRLine], [FormulaMerge.Formula], CGImage) async -> [OCRLine]
         ) {
             self.read = read
             self.merge = merge
+        }
+    }
+
+    /// The cloud model the person set up, and how a picture is read with it (L4, Docs/ocr.md › Cloud models). The
+    /// toolbar's Read with sends the picture shown; with "every picture" on in Settings, each picture is read with it
+    /// as it opens. With no model set up, the panel never mentions it.
+    public struct Cloud {
+        public let store: CloudModelStore
+        /// Reads a picture with a model, telling how many characters have come so far.
+        public let read: @Sendable (CGImage, CloudModel, _ progress: @escaping @Sendable (Int) -> Void) async throws -> CloudReading
+
+        public init(
+            store: CloudModelStore,
+            read: @escaping @Sendable (CGImage, CloudModel, _ progress: @escaping @Sendable (Int) -> Void) async throws -> CloudReading
+        ) {
+            self.store = store
+            self.read = read
         }
     }
 
@@ -43,8 +84,8 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
     private var windowLease: ActiveResources.Lease?
 
     /// `translator` is shared, so a language pair's model, slow to load, stays ready from image to image.
-    public init(settings: SettingsStore, translator: Translator) {
-        model = TextRecognitionModel(settings: settings, translator: translator)
+    public init(settings: SettingsStore, translator: Translator, cloud: Cloud? = nil) {
+        model = TextRecognitionModel(settings: settings, translator: translator, cloud: cloud)
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 1040, height: 660),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -73,13 +114,13 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
 
     /// Shows `image` and reads it with `analyze`. `scale` is pixels per point (2 for a Retina capture),
     /// so the image is never drawn larger than it appeared; `source` names it under the title.
-    /// `translating` turns the translation on for it (Translate Area's Open in Panel). With `formulas`, the formulas in
-    /// the image come into its text as LaTeX once they are read.
+    /// `translating` turns the translation on for it (Translate Area's Open in Panel). With `elements`, the formulas in
+    /// the image come into its text as LaTeX once they are read, and its tables and charts as rows.
     public func show(
-        image: CGImage, scale: CGFloat, source: String, translating: Bool = false, formulas: Formulas? = nil,
+        image: CGImage, scale: CGFloat, source: String, translating: Bool = false, elements: Elements? = nil,
         analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis
     ) {
-        model.load(image: image, scale: scale, analyze: analyze, formulas: formulas)
+        model.load(image: image, scale: scale, analyze: analyze, elements: elements)
         if translating { model.translates = true }
         present(source: source)
     }
@@ -115,9 +156,17 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
     #if DEBUG
     /// For scripted screenshots: `pane` text or table, joined lines, a selected or hovered line, an
     /// edited text.
+    /// `cloud`: on or off (the toolbar's Read with), retry.
     public func preview(
-        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool? = nil, target: String? = nil
+        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool? = nil, target: String? = nil,
+        cloud: String? = nil
     ) {
+        switch cloud {
+        case "on"?: model.readsInCloud = true
+        case "off"?: model.readsInCloud = false
+        case "retry"?: model.retryCloudReading()
+        default: break
+        }
         if let target { model.translationChoice = target == "auto" ? "" : target }
         if let translate { model.translates = translate }
         if let pane { model.pane = pane == "table" ? .table : .text }
@@ -156,6 +205,29 @@ final class TextRecognitionModel {
         case csv
     }
 
+    /// Whose reading the text side shows.
+    enum TextSource: Hashable {
+        /// Vision's, with the model packs', on this Mac.
+        case device
+        /// The cloud model's.
+        case cloud
+    }
+
+    /// Reading with the cloud model, for the picture shown.
+    enum CloudState: Equatable {
+        case idle
+        /// Sent, and `characters` of the answer have come.
+        case reading(characters: Int)
+        case read(CloudResult)
+        case failed(message: String, canRetry: Bool)
+    }
+
+    struct CloudResult: Equatable {
+        let reading: CloudReading
+        /// The Markdown tables in its text.
+        let tables: [OCRTable]
+    }
+
     /// A translation of what was read, for one choice of target.
     struct Translation {
         /// The setting it was made for: a language, or empty for automatic.
@@ -181,7 +253,8 @@ final class TextRecognitionModel {
     private(set) var scale: CGFloat = 1
     private(set) var phase: Phase = .loading
     private(set) var lines: [OCRLine] = []
-    private(set) var tables: [OCRTable] = []
+    /// The tables Vision read.
+    private(set) var visionTables: [OCRTable] = []
     private(set) var codes: [OCRCode] = []
     private(set) var isCode = false
     /// The text in the editor.
@@ -223,8 +296,18 @@ final class TextRecognitionModel {
     /// A language to download: the view hands it to the system, which asks the person first.
     var download: TranslationSession.Configuration?
 
-    /// How many formulas the formula pack found and is reading, once it said; nil when none are being read.
-    private(set) var formulasBeingRead: Int?
+    /// How many formulas and tables the packs found and are reading, once they said; nil when none are being read.
+    private(set) var beingRead: TextRecognitionWindowController.Elements.Counts?
+
+    /// The cloud model the toolbar's Read with reads with, when one is set up and can read; looked up as each picture
+    /// opens (its key is in the Keychain).
+    private(set) var cloudModel: CloudModel?
+    /// Whether Read with is on: the text side shows the cloud model's reading once it has come.
+    private(set) var cloudOn = false
+    /// Where reading with the cloud model stands for this picture.
+    private(set) var cloud: CloudState = .idle
+    @ObservationIgnored let cloudSetup: TextRecognitionWindowController.Cloud?
+    @ObservationIgnored var cloudTask: Task<Void, Never>?
 
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let translator: Translator
@@ -233,43 +316,47 @@ final class TextRecognitionModel {
     @ObservationIgnored private var analyze: (@Sendable (CGImage) async throws -> TextAnalysis)?
     @ObservationIgnored private var analysis: Task<Void, Never>?
     @ObservationIgnored private var copiedReset: Task<Void, Never>?
-    @ObservationIgnored private var formulas: TextRecognitionWindowController.Formulas?
-    /// Finds and reads the formulas, from the time the image is shown, beside Vision's reading.
-    @ObservationIgnored private var formulaReading: Task<[FormulaMerge.Formula], Never>?
+    @ObservationIgnored private var elements: TextRecognitionWindowController.Elements?
+    /// Finds and reads the formulas, tables, and charts, from the time the image is shown, beside Vision's reading.
+    @ObservationIgnored private var elementReading: Task<TextRecognitionWindowController.Elements.Found, Never>?
     /// Puts them into the text once both are done.
-    @ObservationIgnored private var formulaMerge: Task<Void, Never>?
+    @ObservationIgnored private var elementMerge: Task<Void, Never>?
     /// Counts the images loaded, so word from a reading of an earlier one is let go.
     @ObservationIgnored private var generation = 0
 
-    init(settings: SettingsStore, translator: Translator, pasteboard: NSPasteboard = .general) {
+    init(settings: SettingsStore, translator: Translator, cloud: TextRecognitionWindowController.Cloud? = nil, pasteboard: NSPasteboard = .general) {
         self.settings = settings
         self.translator = translator
         self.pasteboard = pasteboard
         joinLines = !settings.textRecognitionKeepsLineBreaks
         wrapsText = settings.textRecognitionWrapsText
+        cloudSetup = cloud
     }
 
     func load(
         image: CGImage, scale: CGFloat, analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis,
-        formulas: TextRecognitionWindowController.Formulas? = nil
+        elements: TextRecognitionWindowController.Elements? = nil
     ) {
         analysis?.cancel()
         self.analyze = analyze
-        self.formulas = formulas
+        self.elements = elements
         self.image = image
         self.scale = max(scale, 1)
         phase = .loading
         clearResults()
         generation += 1
         let generation = generation
-        let reading = formulas.map { formulas in
+        cloudModel = cloudSetup?.store.usableModel
+        // Read with the cloud model from the start, beside Vision, when Settings says every picture is.
+        if cloudModel != nil, cloudSetup?.store.readsInPanel == true { readsInCloud = true }
+        let reading = elements.map { elements in
             Task { [weak self] in
-                await formulas.read(image) { count in
-                    Task { @MainActor in self?.formulasFound(count, generation: generation) }
+                await elements.read(image) { counts in
+                    Task { @MainActor in self?.elementsFound(counts, generation: generation) }
                 }
             }
         }
-        formulaReading = reading
+        elementReading = reading
         analysis = Task { [weak self] in
             let probe = LatencyProbe("ocr.analyze")
             do {
@@ -277,18 +364,18 @@ final class TextRecognitionModel {
                 probe.end()
                 guard !Task.isCancelled, let self else { return }
                 lines = result.result.lines
-                tables = result.tables
+                visionTables = result.tables
                 codes = result.codes
                 regenerate()
                 let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                phase = hasText || !codes.isEmpty || !tables.isEmpty ? .ready : .empty
+                phase = hasText || !codes.isEmpty || !visionTables.isEmpty || source == .cloud ? .ready : .empty
                 if translates, phase == .ready { translate() }
-                Log.capture.notice("OCR panel read \(self.lines.count, privacy: .public) lines, \(self.tables.count, privacy: .public) tables, \(self.codes.count, privacy: .public) codes, \(self.items.count, privacy: .public) links and contacts")
-                if let reading, let formulas { putFormulasIn(reading, with: formulas, image: image) }
+                Log.capture.notice("OCR panel read \(self.lines.count, privacy: .public) lines, \(self.visionTables.count, privacy: .public) tables, \(self.codes.count, privacy: .public) codes, \(self.items.count, privacy: .public) links and contacts")
+                if let reading, let elements { putElementsIn(reading, with: elements, image: image) }
             } catch {
                 guard !Task.isCancelled else { return }
                 reading?.cancel()
-                self?.formulasBeingRead = nil
+                self?.beingRead = nil
                 // The details go to the log; the panel says what they mean.
                 Log.capture.error("OCR panel failed: \(String(describing: error), privacy: .public)")
                 self?.phase = .failed(
@@ -305,13 +392,13 @@ final class TextRecognitionModel {
     /// Reads the same image again.
     func retry() {
         guard let image, let analyze else { return }
-        load(image: image, scale: scale, analyze: analyze, formulas: formulas)
+        load(image: image, scale: scale, analyze: analyze, elements: elements)
     }
 
     func fail(_ failure: TextRecognitionWindowController.OpenFailure) {
         analysis?.cancel()
         analyze = nil
-        formulas = nil
+        elements = nil
         image = nil
         clearResults()
         phase = switch failure {
@@ -333,7 +420,7 @@ final class TextRecognitionModel {
     func unload() {
         analysis?.cancel()
         analyze = nil
-        formulas = nil
+        elements = nil
         image = nil
         clearResults()
     }
@@ -345,24 +432,34 @@ final class TextRecognitionModel {
         translationFailed = false
         download = nil
         lines = []
-        tables = []
+        visionTables = []
         codes = []
         pane = .text
         tableIndex = 0
         hoveredLine = nil
         hoveredCode = nil
         // Cancelled, the reading ends its run of the text reader.
-        formulaReading?.cancel()
-        formulaReading = nil
-        formulaMerge?.cancel()
-        formulaMerge = nil
-        formulasBeingRead = nil
+        elementReading?.cancel()
+        elementReading = nil
+        elementMerge?.cancel()
+        elementMerge = nil
+        beingRead = nil
+        // Cancelled, the request stops: nothing more of the picture is sent.
+        cloudTask?.cancel()
+        cloudTask = nil
+        cloud = .idle
+        cloudOn = false
         replaceText(with: TextAssembler.Assembly())
     }
 
-    /// The text again from what was read, in the current line-break style. Undoable in the editor.
-    private func regenerate() {
-        replaceText(with: TextAssembler.assembly(lines, options: .init(joinsWrappedLines: joinLines)))
+    /// The text again from what was read, in the current line-break style; the cloud model's text as it gave it while
+    /// that is shown. Undoable in the editor.
+    func regenerate() {
+        if source == .cloud, case .read(let result) = cloud {
+            replaceText(with: TextAssembler.Assembly(text: result.reading.text))
+        } else {
+            replaceText(with: TextAssembler.assembly(lines, options: .init(joinsWrappedLines: joinLines)))
+        }
     }
 
     /// Drops the person's edits: the text as read, linked to the image again. Undoable in the editor.
@@ -399,6 +496,12 @@ final class TextRecognitionModel {
         focusRequest += 1
     }
 
+    /// The tables of the reading shown.
+    var tables: [OCRTable] {
+        if source == .cloud, case .read(let result) = cloud { return result.tables }
+        return visionTables
+    }
+
     var currentTable: OCRTable? {
         tables.indices.contains(tableIndex) ? tables[tableIndex] : tables.first
     }
@@ -409,39 +512,160 @@ final class TextRecognitionModel {
         return [.text, .table]
     }
 
-    // MARK: Formulas
+    // MARK: Formulas, tables, and charts
 
-    /// The text reader said how many formulas it found: while it reads them, the panel says so.
-    private func formulasFound(_ count: Int, generation: Int) {
-        guard generation == self.generation, formulaReading != nil else { return }
-        formulasBeingRead = count > 0 ? count : nil
+    /// The text reader said how many formulas and tables it found: while it reads them, the panel says so.
+    private func elementsFound(_ counts: TextRecognitionWindowController.Elements.Counts, generation: Int) {
+        guard generation == self.generation, elementReading != nil else { return }
+        beingRead = counts.formulas + counts.tables > 0 ? counts : nil
     }
 
-    /// Once Vision's reading is shown and the formulas are read, puts them into the lines, and the text, as LaTeX
-    /// (`FormulaMerge`). Text the person edited meanwhile stays as it is; Revert brings the text with the formulas.
-    private func putFormulasIn(_ reading: Task<[FormulaMerge.Formula], Never>, with formulas: TextRecognitionWindowController.Formulas, image: CGImage) {
-        formulaMerge = Task { [weak self] in
+    /// Once Vision's reading is shown and the formulas, tables, and charts are read, puts them into the lines, and the
+    /// text: formulas as LaTeX (`FormulaMerge`), tables and charts a row a line in place of Vision's lines and tables there
+    /// where they bear themselves out (`TableMerge`). Text the person edited meanwhile stays as it is; Revert brings the
+    /// text with them.
+    private func putElementsIn(
+        _ reading: Task<TextRecognitionWindowController.Elements.Found, Never>, with elements: TextRecognitionWindowController.Elements, image: CGImage
+    ) {
+        elementMerge = Task { [weak self] in
             let probe = LatencyProbe("ocr.panel-formulas")
             let started = ContinuousClock.now
             let found = await reading.value
             guard !Task.isCancelled, let self else { return }
-            guard !found.isEmpty else {
-                formulaReading = nil
-                formulasBeingRead = nil
+            guard !found.formulas.isEmpty || !found.tables.isEmpty else {
+                elementReading = nil
+                beingRead = nil
                 return
             }
-            let merged = await formulas.merge(lines, found, image)
+            var merged = found.formulas.isEmpty ? lines : await elements.merge(lines, found.formulas, image)
             probe.end()
             guard !Task.isCancelled else { return }
-            formulaReading = nil
-            formulasBeingRead = nil
-            Log.capture.notice("OCR panel put \(found.count, privacy: .public) formulas into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
+            var taken = 0
+            if !found.tables.isEmpty {
+                let tables = TableMerge.merged(merged, with: found.tables, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                merged = tables.lines
+                visionTables = TableMerge.tables(visionTables, after: tables)
+                taken = tables.taken.count
+                if tables.cutRows > 0 {
+                    Log.capture.notice("OCR panel left \(tables.cutRows, privacy: .public) table rows the picture's edge cut as Vision read them")
+                }
+                for (index, refusal) in tables.refused {
+                    Log.capture.notice("OCR panel kept Vision's reading of \(found.tables[index].kind.rawValue, privacy: .public) \(index, privacy: .public): \(refusal.rawValue, privacy: .public)")
+                }
+            }
+            elementReading = nil
+            beingRead = nil
+            Log.capture.notice("OCR panel put \(found.formulas.count, privacy: .public) formulas and \(taken, privacy: .public) of \(found.tables.count, privacy: .public) tables into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
             lines = merged
             if !edited { regenerate() }
             if phase == .empty, !lines.isEmpty { phase = .ready }
             if translates, phase == .ready { translate() }
-            announce(String(localized: "Formulas read", bundle: .module))
+            switch (found.formulas.isEmpty, taken == 0) {
+            case (false, true): announce(String(localized: "Formulas read", bundle: .module))
+            case (true, false): announce(String(localized: "Tables read", bundle: .module))
+            case (false, false): announce(String(localized: "Formulas and tables read", bundle: .module))
+            case (true, true): break
+            }
         }
+    }
+
+    // MARK: Cloud model
+
+    /// Whose reading the text side shows: the cloud model's while Read with is on and it found text.
+    var source: TextSource {
+        if cloudOn, case .read(let result) = cloud, !result.reading.text.isEmpty { return .cloud }
+        return .device
+    }
+
+    /// The toolbar's Read with. On, the picture is sent the first time (its reading is kept for the picture); off, this
+    /// Mac's reading shows again, and a reading still running stops.
+    var readsInCloud: Bool {
+        get { cloudOn }
+        set { setReadsInCloud(newValue) }
+    }
+
+    var isReadingInCloud: Bool {
+        if case .reading = cloud { return true }
+        return false
+    }
+
+    private func setReadsInCloud(_ on: Bool) {
+        guard on != cloudOn else { return }
+        guard !on || cloudModel != nil else { return }
+        let before = source
+        cloudOn = on
+        if on {
+            // The translation works on this Mac's reading, with its boxes; the cloud model's has none.
+            if translates { translates = false }
+            switch cloud {
+            case .idle, .failed: startCloudReading()
+            case .reading, .read: break
+            }
+        } else if isReadingInCloud {
+            cloudTask?.cancel()
+            cloudTask = nil
+            cloud = .idle
+        }
+        if source != before { sourceChanged() }
+    }
+
+    /// Reads the picture again after a failure.
+    func retryCloudReading() {
+        guard cloudOn else { return }
+        startCloudReading()
+    }
+
+    private func startCloudReading() {
+        guard let setup = cloudSetup, let model = cloudModel, let image else { return }
+        cloudTask?.cancel()
+        cloud = .reading(characters: 0)
+        let generation = generation
+        cloudTask = Task { [weak self] in
+            let probe = LatencyProbe("ocr.cloud")
+            do {
+                let reading = try await setup.read(image, model) { characters in
+                    Task { @MainActor in self?.cloudProgress(characters, generation: generation) }
+                }
+                probe.end()
+                guard !Task.isCancelled, let self, generation == self.generation else { return }
+                cloudDone(reading, with: model)
+            } catch is CancellationError {
+            } catch {
+                guard !Task.isCancelled, let self, generation == self.generation else { return }
+                cloudTask = nil
+                cloud = .failed(message: error.localizedDescription, canRetry: (error as? CloudReadingError)?.isWorthRetrying ?? true)
+                announce(String(localized: "Couldn’t read with \(model.name)", bundle: .module))
+            }
+        }
+    }
+
+    private func cloudProgress(_ characters: Int, generation: Int) {
+        guard generation == self.generation, isReadingInCloud else { return }
+        cloud = .reading(characters: characters)
+    }
+
+    private func cloudDone(_ reading: CloudReading, with model: CloudModel) {
+        cloudTask = nil
+        let before = source
+        cloud = .read(CloudResult(reading: reading, tables: MarkdownTables.tables(in: reading.text)))
+        Log.capture.notice("OCR panel read with a cloud model: \(reading.text.count, privacy: .public) characters, \(self.tables.count, privacy: .public) tables, complete \(reading.isComplete, privacy: .public)")
+        guard source == .cloud else {
+            announce(String(localized: "\(model.name) found no text", bundle: .module))
+            return
+        }
+        // Vision found nothing, but the model did.
+        if phase == .empty { phase = .ready }
+        if source != before { sourceChanged() }
+        announce(String(localized: "Read by \(model.name)", bundle: .module))
+    }
+
+    /// The text side changed hands: the other reading's text, undoably; edits to the one shown give way.
+    private func sourceChanged() {
+        Log.capture.notice("OCR panel shows the text read \(self.source == .cloud ? "by the cloud model" : "on this Mac", privacy: .public)")
+        tableIndex = 0
+        if tables.isEmpty { pane = .text }
+        hoveredLine = nil
+        regenerate()
     }
 
     // MARK: Translation
@@ -458,6 +682,7 @@ final class TextRecognitionModel {
 
     private func translatesChanged() {
         if translates {
+            if cloudOn { readsInCloud = false }
             if targets.isEmpty {
                 Task { [weak self] in
                     let targets = await Translator.targets()
@@ -731,7 +956,7 @@ struct TextRecognitionView: View {
                 .help(Text("Show the text, or the table found in the image", bundle: .module))
             }
         }
-        if model.phase == .ready, model.pane == .text, !model.translates {
+        if model.phase == .ready, model.pane == .text, !model.translates, model.source == .device {
             ToolbarItem(placement: .primaryAction) {
                 // Code always keeps its line breaks, whatever was chosen for the last image.
                 Picker(selection: Binding(get: { model.joinLines && !model.isCode }, set: { model.joinLines = $0 })) {
@@ -762,6 +987,9 @@ struct TextRecognitionView: View {
                 }
                 .toggleStyle(.button)
                 .help(Text("Wrap long lines in this window without changing the text you copy", bundle: .module))
+            }
+            if let cloud = model.cloudModel {
+                CloudToggle(model: model, cloud: cloud)
             }
             Toggle(isOn: $model.translates) {
                 Label {
@@ -924,7 +1152,8 @@ struct RecognizedImagePane: View {
         // Snapshots: the closures below run lazily, after a new image may have emptied the model's arrays.
         let lines = model.lines
         let codes = model.codes
-        if model.pane == .text {
+        // The cloud model's text has no boxes on the picture.
+        if model.pane == .text, model.source == .device {
             let selected = model.selectedLines
             let linked = !model.edited
             ForEach(lines.indices, id: \.self) { index in
@@ -997,15 +1226,18 @@ struct TextPane: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .empty:
-                if model.formulasBeingRead != nil {
-                    // No text, but formulas: the text is what they read as.
+                if let counts = model.beingRead {
+                    // No text, but formulas or tables: the text is what they read as.
                     VStack(spacing: 10) {
                         ProgressView().controlSize(.small)
-                        Text("Reading formulas…", bundle: .module)
+                        ElementsReading(counts: counts)
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let cloud = model.cloudModel {
+                    // Handwriting and faint text are what a cloud model may still read.
+                    CloudEmptyState(model: model, cloud: cloud)
                 } else {
                     PanelPlaceholder(
                         symbol: "text.magnifyingglass",
@@ -1030,9 +1262,12 @@ struct TextPane: View {
                     if model.edited {
                         EditedNotice(model: model)
                     }
-                    if model.formulasBeingRead != nil {
-                        FormulaNotice()
+                    if let counts = model.beingRead, model.source == .device {
+                        FormulaNotice(counts: counts)
                     }
+                }
+                if model.readsInCloud, let cloud = model.cloudModel {
+                    CloudStatus(model: model, cloud: cloud)
                 }
                 if !model.items.isEmpty || !model.codes.isEmpty {
                     Divider()
@@ -1218,14 +1453,14 @@ struct EditedNotice: View {
 
 /// Under the text while the formulas found in the image are read: each comes into the text as LaTeX once read.
 struct FormulaNotice: View {
+    let counts: TextRecognitionWindowController.Elements.Counts
+
     var body: some View {
         VStack(spacing: 0) {
             Divider()
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Reading formulas…", bundle: .module)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                ElementsReading(counts: counts)
                     .lineLimit(1)
                 Spacer(minLength: 8)
             }
@@ -1233,6 +1468,25 @@ struct FormulaNotice: View {
             .padding(.vertical, 8)
             .accessibilityElement(children: .combine)
         }
+    }
+}
+
+/// What the packs are reading, under the text or in its place.
+struct ElementsReading: View {
+    let counts: TextRecognitionWindowController.Elements.Counts
+
+    var body: some View {
+        Group {
+            if counts.tables == 0 {
+                Text("Reading formulas…", bundle: .module)
+            } else if counts.formulas == 0 {
+                Text("Reading tables…", bundle: .module)
+            } else {
+                Text("Reading formulas and tables…", bundle: .module)
+            }
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
     }
 }
 
@@ -1304,13 +1558,9 @@ struct TablePreview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// A column of figures: every cell below the header starts with a digit, maybe after a sign or a
-    /// currency symbol ("$20", "100 GB", "−3%").
+    /// A column of figures (`TableTabStops.holdsFigures`).
     static func holdsFigures(_ table: OCRTable, column: Int) -> Bool {
-        let cells = table.rows.dropFirst().compactMap { $0.indices.contains(column) ? $0[column] : nil }
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        return !cells.isEmpty && cells.allSatisfy { $0.range(of: #"^[\p{Sc}+\-−±]?\s?\d"#, options: .regularExpression) != nil }
+        TableTabStops.holdsFigures(table.rows, column: column)
     }
 }
 

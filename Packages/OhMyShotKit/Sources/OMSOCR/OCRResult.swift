@@ -25,14 +25,25 @@ public struct OCRLine: Sendable, Equatable {
     /// Whether the text runs on into the next line (a wrapped sentence) rather than ending here.
     public var wrapsToNextLine: Bool?
     public var math: Math?
+    /// Whether the text is the app's own, as the app under the picture shows it (`AppTextMerge`): its characters and
+    /// spaces are kept as they are, where Vision's are put in the form their language writes them.
+    public var isExact: Bool
+    /// Whether the line is a row of a table or chart the VLM pack read (`TableMerge`): its cells apart by tabs, kept as
+    /// they are, never joined to the lines around it, and no sign of a code listing.
+    public var isTableRow: Bool
 
-    public init(text: String, box: CGRect, confidence: Float, direction: Direction? = nil, wrapsToNextLine: Bool? = nil, math: Math? = nil) {
+    public init(
+        text: String, box: CGRect, confidence: Float, direction: Direction? = nil, wrapsToNextLine: Bool? = nil, math: Math? = nil,
+        isExact: Bool = false, isTableRow: Bool = false
+    ) {
         self.text = text
         self.box = box
         self.confidence = confidence
         self.direction = direction
         self.wrapsToNextLine = wrapsToNextLine
         self.math = math
+        self.isExact = isExact
+        self.isTableRow = isTableRow
     }
 }
 

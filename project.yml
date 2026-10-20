@@ -15,6 +15,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.0
+  # The VLM pack's model on MLX, linked by the text reader alone (Packages/OhMyShotVLM/Package.swift).
+  OhMyShotVLM:
+    path: Packages/OhMyShotVLM
 
 targets:
   OhMyShot:
@@ -57,6 +60,23 @@ targets:
       - target: ShareExtension
         embed: true
         codeSign: true
+    postBuildScripts:
+      # MLX's precompiled Metal kernels (the rest it compiles when first used), which the text reader finds in the
+      # app's Resources: a command-line tool has no resources of its own.
+      - name: Copy MLX's Metal library
+        # Only the files declared below: Xcode's script sandbox lets a script write nothing else.
+        script: |
+          set -e
+          mkdir -p "$(dirname "$SCRIPT_OUTPUT_FILE_0")" "$(dirname "$SCRIPT_OUTPUT_FILE_1")"
+          cp "$SCRIPT_INPUT_FILE_0" "$SCRIPT_OUTPUT_FILE_0"
+          cp "$SCRIPT_INPUT_FILE_1" "$SCRIPT_OUTPUT_FILE_1"
+        inputFiles:
+          - $(BUILT_PRODUCTS_DIR)/mlx-swift_Cmlx.bundle/Contents/Info.plist
+          - $(BUILT_PRODUCTS_DIR)/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/mlx-swift_Cmlx.bundle/Contents/Info.plist
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib
+        basedOnDependencyAnalysis: true
 
   # Reads the text in captures for Capture History's search, in a process of its own (see main.swift).
   TextReader:
@@ -72,6 +92,8 @@ targets:
         product: OMSOCR
       - package: OhMyShotKit
         product: OMSCore
+      - package: OhMyShotVLM
+        product: OMSVLM
 
   # OhMyShot in any app's Share menu: pictures to annotate or pin, handed over through the Share Inbox (see
   # Extensions/Share/ShareViewController.swift). Sandboxed, as extensions must be; the app is not.

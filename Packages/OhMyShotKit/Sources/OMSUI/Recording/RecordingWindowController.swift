@@ -694,7 +694,10 @@ struct RecordingWindowView: View {
                 Label {
                     model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module)
                 } icon: {
-                    Image(systemName: model.saved ? "checkmark" : "square.and.arrow.down")
+                    Image(nsImage: Theme.symbol(
+                        model.saved ? "checkmark" : "square.and.arrow.down",
+                        described: model.saved ? String(localized: "Saved", bundle: .module) : String(localized: "Save", bundle: .module)
+                    ))
                 }
             } primaryAction: {
                 model.controller?.saveRecording()

@@ -39,12 +39,38 @@ final class TextCaptureCoordinator {
     /// The formula pack's folder and the text reader that reads with it (Capture Formula, and the formulas among text;
     /// Docs/ocr.md › The formula pack); nil while the pack isn't installed.
     var formulaReader: (() -> (pack: URL, helper: URL)?)?
+    /// The formula pack's and the VLM pack's folders, whichever are installed, and the text reader that reads with them
+    /// (the formulas, tables, and charts among text; Docs/ocr.md › Formulas among text, › The VLM pack); nil while neither
+    /// is installed.
+    var elementReader: (() -> (formulas: URL?, vlm: URL?, helper: URL)?)?
+    /// How long Capture Text lets the VLM read tables and charts before it copies Vision's reading of what is left: a
+    /// table takes 0.2–1.2 s once the model's files are in memory, the first after a restart about 7 s
+    /// (Docs/ocr.md › The VLM pack).
+    nonisolated static let tableWait: Double = 10
+    /// The same in the OCR panel, which shows Vision's reading meanwhile.
+    nonisolated static let panelTableWait: Double = 60
+    /// The cloud model the panel's Read with sends a picture to, and how; asked as each panel window opens.
+    var cloud: (() -> TextRecognitionWindowController.Cloud?)?
+    /// The cloud model Capture Text reads with while Settings says so, and how (joining lines or not); nil otherwise.
+    /// Asked at each capture.
+    var captureTextCloud: (() -> (model: CloudModel, read: @Sendable (CGImage, _ joinsLines: Bool) async throws -> CloudReading)?)?
+    /// How long Capture Text waits for the cloud model before it copies this Mac's reading instead.
+    nonisolated static let cloudWait: Duration = .seconds(60)
+    /// Counts Capture Text's readings: one still waiting for the cloud model when another starts is let go, and leaves
+    /// the clipboard and the highlight to the newer one.
+    private var readings = 0
+    /// The cloud model's reading Capture Text waits for, cancelled when another Capture Text starts.
+    private var waitingForCloud: Task<CloudReading, any Error>?
+    /// Text read but left off the clipboard, which changed while the cloud model read it; the card's Copy puts it there.
+    private var uncopied: (text: String, note: String?, selection: CGRect)?
 
     private struct Recognition {
         let lines: [OCRLine]
         let selection: CGRect
         var joined: Bool
         let copiesToClipboard: Bool
+        /// The card's line under the text: why this Mac's reading was copied instead of the cloud model's.
+        var note: String?
     }
 
     init(settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController) {
@@ -53,11 +79,26 @@ final class TextCaptureCoordinator {
         self.capturer = capturer
         self.overlay = overlay
         hud.onToggleJoin = { [weak self] in self?.toggleJoin() }
+        hud.onCopy = { [weak self] in self?.copyUncopied() }
+    }
+
+    /// Where Quick Access's cards stand, for the result card to keep clear of in the bottom-left corner.
+    var cardsInTheWay: () -> CGRect? {
+        get { hud.cardsInTheWay }
+        set { hud.cardsInTheWay = newValue }
+    }
+
+    /// Shows a result card by `selection`. The Close text card choice applies to a card the user asked for (Show the
+    /// copied text); one shown only to say something (a note, or text left off the clipboard) keeps its own time.
+    private func presentCard(_ state: TextResultHUD.State, near selection: CGRect, note: String? = nil) {
+        hud.show(state, near: selection, position: settings.textResultPosition,
+                 closeAfter: settings.showTextResult ? settings.textResultCloseAfter : nil, note: note)
     }
 
     /// Shows the overlay for text. `joinLines` joins the lines of each paragraph. `done` is told the text copied, or
-    /// nil when none was: cancelled, nothing readable, or Option opened the OCR panel instead.
-    func captureText(joinLines: Bool, done: ((String?) -> Void)? = nil) {
+    /// nil when none was: cancelled, nothing readable, or Option opened the OCR panel instead. `allowsCloud` false
+    /// keeps the reading on this Mac, for the URL API and Shortcuts.
+    func captureText(joinLines: Bool, allowsCloud: Bool = true, done: ((String?) -> Void)? = nil) {
         guard !overlay.isActive else { done?(nil); return }
         // The model loads while the person selects, which hides its first-use cost.
         let pipeline = pipeline
@@ -80,10 +121,10 @@ final class TextCaptureCoordinator {
                 Task { await self.openPanel(window: target) }
             case .region(let rect, _, _, let frozen):
                 highlight.show(rect)
-                Task { await self.recognize(region: rect, frozen: frozen, joinLines: joinLines, done: done) }
+                Task { await self.recognize(region: rect, frozen: frozen, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
             case .window(let target, _):
                 highlight.show(target.frame)
-                Task { await self.recognize(window: target, joinLines: joinLines, done: done) }
+                Task { await self.recognize(window: target, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
             case .annotated, .color, .record, .scroll, .allInOne, .cancelled:
                 done?(nil)
             }
@@ -95,12 +136,20 @@ final class TextCaptureCoordinator {
     ///   - frozen: the region as the overlay held it still; nil captures it now.
     ///   - copiesToClipboard: false leaves the clipboard alone, so scripted checks never replace what
     ///     the user copied.
+    ///   - allowsCloud: true for a person's own drag: it reads with the cloud model while Settings says Capture Text
+    ///     does. The URL API never sends a capture to one.
     ///   - done: told the text copied, or nil when there was none.
-    func recognize(region rect: CGRect, frozen: CapturedFrame? = nil, joinLines: Bool, copiesToClipboard: Bool = true, done: ((String?) -> Void)? = nil) async {
+    func recognize(
+        region rect: CGRect, frozen: CapturedFrame? = nil, joinLines: Bool, copiesToClipboard: Bool = true, allowsCloud: Bool = false,
+        done: ((String?) -> Void)? = nil
+    ) async {
         highlight.show(rect)
         do {
             let frame = try await capture(rect, frozen: frozen)
-            await recognize(frame.image, selection: rect, joinLines: joinLines, copiesToClipboard: copiesToClipboard, done: done)
+            await recognize(
+                frame.image, selection: rect, place: Self.place(of: frame), joinLines: joinLines, copiesToClipboard: copiesToClipboard,
+                allowsCloud: allowsCloud, done: done
+            )
         } catch {
             Log.capture.error("Capture Text failed to capture: \(error.localizedDescription, privacy: .public)")
             highlight.finish(copied: nil, announces: !settings.showTextResult)
@@ -108,17 +157,43 @@ final class TextCaptureCoordinator {
         }
     }
 
-    private func recognize(window target: WindowTarget, joinLines: Bool, done: ((String?) -> Void)? = nil) async {
+    private func recognize(window target: WindowTarget, joinLines: Bool, allowsCloud: Bool, done: ((String?) -> Void)? = nil) async {
         highlight.show(target.frame)
         do {
             let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
-            await recognize(frame.image, selection: target.frame, joinLines: joinLines, copiesToClipboard: true, done: done)
+            await recognize(
+                frame.image, selection: target.frame, place: Self.place(of: frame, window: target), joinLines: joinLines, copiesToClipboard: true,
+                allowsCloud: allowsCloud, done: done
+            )
         } catch {
             Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
             highlight.finish(copied: nil, announces: !settings.showTextResult)
             done?(nil)
         }
     }
+
+    #if DEBUG
+    /// Where a window is on screen, for asking its app for its text (the scale taken from the window's display). For
+    /// scripted checks.
+    func place(ofWindow target: WindowTarget) -> AppTextPlace? {
+        let scale = displays.layout.display(at: CGPoint(x: target.frame.midX, y: target.frame.midY))?.pixelsPerPoint ?? 2
+        guard let owner = WindowCatalog.owner(of: target.id), owner != ProcessInfo.processInfo.processIdentifier else { return nil }
+        return AppTextPlace(frame: target.frame, scale: scale, pid: owner)
+    }
+
+    /// Capture Text over one window, as when it is picked, without touching the clipboard. For scripted checks.
+    func previewRecognition(ofWindow target: WindowTarget, joinLines: Bool, done: @escaping (String?) -> Void) async {
+        do {
+            let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
+            await recognize(
+                frame.image, selection: target.frame, place: Self.place(of: frame, window: target), joinLines: joinLines, copiesToClipboard: false,
+                done: done
+            )
+        } catch {
+            done(nil)
+        }
+    }
+    #endif
 
     /// The URL API's `capture-text` with a file: its text goes to the clipboard as a selection's does, the card (when
     /// it is on) by the pointer. Nothing is highlighted: the picture is not on screen.
@@ -150,42 +225,132 @@ final class TextCaptureCoordinator {
     }
 
     /// With the formula pack installed, the formulas in the picture are found and read in the text reader beside Vision's
-    /// reading, and the text copied holds each as LaTeX (Docs/ocr.md › Formulas among text); the highlight stays on
-    /// until they are in.
-    private func recognize(_ image: CGImage, selection: CGRect, joinLines: Bool, copiesToClipboard: Bool, done: ((String?) -> Void)? = nil) async {
+    /// reading, and the text copied holds each as LaTeX (Docs/ocr.md › Formulas among text); with the VLM pack, its tables
+    /// and charts, a row a line, where they bear themselves out (Docs/ocr.md › The VLM pack); the highlight stays on until
+    /// they are in. While Settings has Capture Text read with the cloud model (and `allowsCloud`), the picture goes
+    /// to it beside them, and its text is copied once it comes; when it can't read the picture (or takes over
+    /// `cloudWait`), this Mac's reading is copied, and the card says so even when it is off.
+    ///
+    /// While Settings says so, the app under `place` (where the picture was on screen) is asked for the text it shows
+    /// where Vision read its lines, and the lines it shows alike take its characters (L0, Docs/ocr.md › Text from apps);
+    /// the card then says the text came from that app. The cloud model's text, when it comes, is copied as it reads.
+    private func recognize(
+        _ image: CGImage, selection: CGRect, place: AppTextPlace? = nil, joinLines: Bool, copiesToClipboard: Bool, allowsCloud: Bool = false,
+        done: ((String?) -> Void)? = nil
+    ) async {
         let showsCard = settings.showTextResult
         let probe = LatencyProbe("ocr.recognize")
-        let formulas = formulaReader?().map { reader in
-            Task { await Self.formulas(in: image, pack: reader.pack, helper: reader.helper) }
+        readings += 1
+        let reading = readings
+        waitingForCloud?.cancel()
+        waitingForCloud = nil
+        let clipboard = NSPasteboard.general.changeCount
+        let cloud = allowsCloud ? captureTextCloud?() : nil
+        let cloudReading = cloud.map { cloud in Task { try await cloud.read(image, joinLines) } }
+        waitingForCloud = cloudReading
+        let reader = elementReader?()
+        let vlm = reader?.vlm.flatMap { isTerminal(place) ? nil : $0 }
+        if reader?.vlm != nil, vlm == nil { Log.capture.notice("Capture Text leaves the tables to Vision: the picture is of a terminal") }
+        let formulas = reader.map { reader in
+            Task { await Self.elements(in: image, formulas: reader.formulas, vlm: vlm, seconds: Self.tableWait, helper: reader.helper) }
         }
-        var lines: [OCRLine]
+        let visionLines: [OCRLine]?
         do {
-            lines = try await pipeline.recognize(image).lines
+            visionLines = try await pipeline.recognize(image).lines
         } catch {
-            formulas?.cancel()
             Log.capture.error("Capture Text failed to recognize: \(String(describing: error), privacy: .public)")
+            visionLines = nil
+        }
+        // Asked at once, while the screen still shows what the picture does: before any wait for the cloud model.
+        let appText = Self.appText(for: visionLines, in: settings.readsAppText ? place : nil, layout: displays.layout)
+
+        var note: String?
+        if let cloud, let cloudReading {
+            let started = ContinuousClock.now
+            let outcome = await Self.first(cloudReading, within: Self.cloudWait)
+            guard reading == readings else {
+                // Another Capture Text started meanwhile: the clipboard and the highlight are its.
+                formulas?.cancel()
+                Log.capture.notice("Capture Text let go of a reading another one replaced")
+                done?(nil)
+                return
+            }
+            waitingForCloud = nil
+            switch outcome {
+            case .success(let cloudText)?:
+                let text = cloudText.text
+                if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    formulas?.cancel()
+                    probe.end()
+                    last = nil
+                    let readBy = String(localized: "Read by \(cloud.model.displayName)")
+                    Log.capture.notice("Capture Text read \(text.count, privacy: .public) characters with the cloud model, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
+                    if copiesToClipboard, NSPasteboard.general.changeCount != clipboard {
+                        keepUncopied(text, note: readBy, near: selection)
+                        done?(nil)
+                        return
+                    }
+                    if copiesToClipboard { copy(text) }
+                    highlight.finish(copied: text, announces: !showsCard)
+                    if showsCard { presentCard(.copied(text: text, joined: joinLines, canJoin: false), near: selection, note: readBy) }
+                    done?(text)
+                    return
+                }
+                note = String(localized: "\(cloud.model.displayName) found no text, so this Mac’s reading was copied.")
+            case .failure(let error)?:
+                note = String(localized: "\(cloud.model.displayName) couldn’t read it, so this Mac’s reading was copied: \(error.localizedDescription)")
+            case nil:
+                cloudReading.cancel()
+                note = String(localized: "\(cloud.model.displayName) took too long, so this Mac’s reading was copied.")
+            }
+            Log.capture.notice("Capture Text falls back to this Mac's reading: the cloud model gave no text")
+        }
+
+        guard var lines = visionLines else {
+            formulas?.cancel()
             highlight.finish(copied: nil, announces: !showsCard)
-            if showsCard { hud.show(.empty, near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter) }
+            if showsCard || note != nil { presentCard(.empty, near: selection, note: note) }
             done?(nil)
             return
+        }
+        var appNote: String?
+        if let appText {
+            let reading = await appText.value
+            let merge = AppTextMerge.merged(lines, with: reading.lines.map { AppTextLine(box: $0.box, pieces: $0.pieces, app: $0.app) })
+            Self.log(reading, merge, of: lines.count, in: "Capture Text")
+            appNote = merge.source.map { String(localized: "Text from \($0)") }
+            lines = merge.lines
         }
         if let formulas {
             let started = ContinuousClock.now
             let found = await formulas.value
-            if !found.isEmpty {
-                lines = await pipeline.lines(lines, with: found, in: image)
-                Log.capture.notice("Capture Text put \(found.count, privacy: .public) formulas into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
+            if !found.formulas.isEmpty {
+                lines = await pipeline.lines(lines, with: found.formulas, in: image)
+                Log.capture.notice("Capture Text put \(found.formulas.count, privacy: .public) formulas into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
+            }
+            if !found.tables.isEmpty {
+                let merge = TableMerge.merged(lines, with: found.tables, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                lines = merge.lines
+                Self.log(merge, of: found.tables, in: "Capture Text", after: ContinuousClock.now - started)
             }
         }
         probe.end()
 
-        var recognition = Recognition(lines: lines, selection: selection, joined: joinLines, copiesToClipboard: copiesToClipboard)
+        // The card says where the text came from only when it shows anyway.
+        var recognition = Recognition(lines: lines, selection: selection, joined: joinLines, copiesToClipboard: copiesToClipboard, note: note ?? (showsCard ? appNote : nil))
         let text = assemble(recognition)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             last = nil
             Log.capture.notice("Capture Text found no text")
             highlight.finish(copied: nil, announces: !showsCard)
-            if showsCard { hud.show(.empty, near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter) }
+            if showsCard || note != nil { presentCard(.empty, near: selection, note: note) }
+            done?(nil)
+            return
+        }
+        // After a wait for the cloud model, something copied meanwhile stays on the clipboard.
+        if cloud != nil, copiesToClipboard, NSPasteboard.general.changeCount != clipboard {
+            last = nil
+            keepUncopied(text, note: note, near: selection)
             done?(nil)
             return
         }
@@ -194,10 +359,81 @@ final class TextCaptureCoordinator {
         last = recognition
         highlight.finish(copied: text, announces: !showsCard)
         Log.capture.notice("Capture Text copied \(text.count, privacy: .public) characters in \(lines.count, privacy: .public) lines")
-        if showsCard {
-            hud.show(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter)
+        // The cloud model's failure is said even with the card off: Capture Text would otherwise read differently
+        // without a word.
+        if showsCard || note != nil {
+            presentCard(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, note: recognition.note)
         }
         done?(text)
+    }
+
+    /// Where a picture of the screen was, for asking the apps there for their text; a window's own app for a window.
+    /// Nil for a window of OhMyShot's own (Settings, History, an editor): it isn't asked about its own text.
+    private static func place(of frame: CapturedFrame, window: WindowTarget? = nil) -> AppTextPlace? {
+        let owner = window.flatMap { WindowCatalog.owner(of: $0.id) }
+        if window != nil, owner == nil || owner == ProcessInfo.processInfo.processIdentifier { return nil }
+        return AppTextPlace(frame: frame.frame, scale: scale(of: frame), pid: owner)
+    }
+
+    /// The apps' text at the lines' places (L0), being read for `budget` at most; nil while Settings leaves it off (no
+    /// `place`), while Accessibility is off for OhMyShot, or with no lines to ask about.
+    private nonisolated static func appText(
+        for lines: [OCRLine]?, in place: AppTextPlace?, layout: DisplayLayout, within budget: Duration = .milliseconds(150)
+    ) -> Task<AppTextReading, Never>? {
+        guard let place, let lines, !lines.isEmpty, AppText.isAllowed else { return nil }
+        let boxes = lines.map(\.box)
+        return Task { await AppText.read(boxes, in: place, layout: layout, within: budget) }
+    }
+
+    /// What the apps said, in numbers alone: never their text.
+    private nonisolated static func log(_ reading: AppTextReading, _ merge: AppTextMerge.Merged, of count: Int, in reader: String) {
+        let apps = Set(reading.lines.map(\.app)).count
+        var extra = ""
+        if merge.dropped > 0 { extra += ", \(merge.dropped) scraps dropped" }
+        if reading.outOfTime { extra += ", out of time after \(reading.asked) lines" }
+        if reading.secure > 0 { extra += ", \(reading.secure) over password fields" }
+        Log.capture.notice("\(reader, privacy: .public) took \(merge.taken.count, privacy: .public) of \(count, privacy: .public) lines from \(apps, privacy: .public) apps (\(merge.changed, privacy: .public) changed); \(reading.lines.count, privacy: .public) answered at \(reading.points, privacy: .public) points in \(String(describing: reading.duration), privacy: .public)\(extra, privacy: .public)")
+    }
+
+    /// The task's outcome, or nil when it takes longer than `limit` (the task goes on; the caller may cancel it).
+    nonisolated static func first<Value: Sendable>(_ task: Task<Value, any Error>, within limit: Duration) async -> Result<Value, any Error>? {
+        let (outcomes, outcome) = AsyncStream.makeStream(of: Result<Value, any Error>?.self)
+        let waiting = Task {
+            do {
+                outcome.yield(.success(try await task.value))
+            } catch {
+                outcome.yield(.failure(error))
+            }
+            outcome.finish()
+        }
+        let timer = Task {
+            try? await Task.sleep(for: limit)
+            outcome.yield(nil)
+            outcome.finish()
+        }
+        defer {
+            waiting.cancel()
+            timer.cancel()
+        }
+        for await first in outcomes { return first }
+        return nil
+    }
+
+    /// Shows text read but not copied, because the clipboard changed while the cloud model read it: the card, with Copy,
+    /// shows even while it is off.
+    private func keepUncopied(_ text: String, note: String?, near selection: CGRect) {
+        uncopied = (text, note, selection)
+        highlight.finish(copied: text, announces: false)
+        presentCard(.notCopied(text: text), near: selection, note: String(localized: "You copied something else while it was read."))
+        Log.capture.notice("Capture Text left \(text.count, privacy: .public) characters off the clipboard, which changed meanwhile")
+    }
+
+    /// The card's Copy, for text that wasn't copied.
+    private func copyUncopied() {
+        guard let uncopied else { return }
+        copy(uncopied.text)
+        self.uncopied = nil
+        presentCard(.copied(text: uncopied.text, joined: false, canJoin: false), near: uncopied.selection, note: uncopied.note)
     }
 
     /// The card's switch: copies the text again with the other line-break choice.
@@ -207,7 +443,7 @@ final class TextCaptureCoordinator {
         let text = assemble(recognition)
         if recognition.copiesToClipboard { copy(text) }
         last = recognition
-        hud.show(.copied(text: text, joined: recognition.joined, canJoin: true), near: recognition.selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter)
+        presentCard(.copied(text: text, joined: recognition.joined, canJoin: true), near: recognition.selection, note: recognition.note)
     }
 
     private func assemble(_ recognition: Recognition) -> String {
@@ -308,7 +544,7 @@ final class TextCaptureCoordinator {
         let showsCard = settings.showTextResult
         guard let reader = formulaReader?() else {
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
-            if showsCard { hud.show(.noFormula, near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter) }
+            if showsCard { presentCard(.noFormula, near: selection) }
             done?(nil)
             return
         }
@@ -319,14 +555,14 @@ final class TextCaptureCoordinator {
         guard let formula, formula.isFormula else {
             Log.capture.notice("Capture Formula found no formula (\(formula?.ending ?? "failed", privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
-            if showsCard { hud.show(.noFormula, near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter) }
+            if showsCard { presentCard(.noFormula, near: selection) }
             done?(nil)
             return
         }
         if copiesToClipboard { copy(formula.latex) }
         highlight.finish(copied: formula.latex, announces: !showsCard, formula: true)
         Log.capture.notice("Capture Formula \(copiesToClipboard ? "copied" : "read", privacy: .public) \(formula.latex.count, privacy: .public) characters of LaTeX in \(String(describing: ContinuousClock.now - started), privacy: .public)")
-        if showsCard { hud.show(.copiedFormula(latex: formula.latex), near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter) }
+        if showsCard { presentCard(.copiedFormula(latex: formula.latex), near: selection) }
         done?(formula.latex)
     }
 
@@ -343,22 +579,50 @@ final class TextCaptureCoordinator {
         }
     }
 
-    /// The formulas the pack finds in `image` and reads, in a run of the text reader (Docs/ocr.md › Formulas among text);
-    /// none when it can't, or in a picture too large to look in. `found` is told how many there are to read.
+    /// The formulas the formula pack reads and the tables and charts the VLM pack reads in `image`, in a run of the text
+    /// reader (Docs/ocr.md › Formulas among text, › The VLM pack), the VLM reading for `seconds` at most; none when it
+    /// can't, or in a picture too large to look in. `found` is told how many there are to read.
     @concurrent
-    nonisolated static func formulas(
-        in image: CGImage, pack: URL, helper: URL, found: (@Sendable (Int) -> Void)? = nil
-    ) async -> [FormulaMerge.Formula] {
-        guard FormulaFinder.finds(width: image.width, height: image.height), let file = formulaPicture(image) else { return [] }
+    nonisolated static func elements(
+        in image: CGImage, formulas: URL?, vlm: URL?, seconds: Double, helper: URL,
+        found: (@Sendable (TextRecognitionWindowController.Elements.Counts) -> Void)? = nil
+    ) async -> TextRecognitionWindowController.Elements.Found {
+        guard formulas != nil || vlm != nil, LayoutFinder.finds(width: image.width, height: image.height), let file = formulaPicture(image) else { return .init() }
         defer { try? FileManager.default.removeItem(at: file) }
-        do {
-            return try await TextReaderTool.formulas(ofPictureAt: file, pack: pack, helper: helper, found: found).map { formula in
-                FormulaMerge.Formula(kind: formula.kind == "display" ? .display : .inline, box: formula.box, latex: formula.latex)
-            }
-        } catch {
-            if !Task.isCancelled { Log.capture.error("Finding formulas failed: \(String(describing: error), privacy: .public)") }
-            return []
+        let counted: (@Sendable (TextReaderTool.Found) -> Void)? = found.map { found in
+            { @Sendable counts in found(.init(formulas: counts.formulas, tables: counts.tables)) }
         }
+        var pressure: MemoryPressure?
+        #if DEBUG
+        // debug/memory-pressure: what the reader takes the system's memory pressure to be.
+        pressure = UserDefaults.standard.string(forKey: "debugMemoryPressure").flatMap(MemoryPressure.init(name:))
+        #endif
+        do {
+            let read = try await TextReaderTool.elements(
+                ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, helper: helper, found: counted
+            )
+            if read.tablesLeft > 0 {
+                Log.capture.notice("Left \(read.tablesLeft, privacy: .public) tables and charts as Vision read them: the system is short of memory for the VLM pack")
+            }
+            return .init(
+                formulas: read.formulas.map { formula in
+                    FormulaMerge.Formula(kind: formula.kind == "display" ? .display : .inline, box: formula.box, latex: formula.latex)
+                },
+                tables: read.tables.map { table in
+                    TableMerge.Table(kind: table.kind == "chart" ? .chart : .table, box: table.box, rows: table.rows, isWhole: table.whole)
+                }
+            )
+        } catch {
+            if !Task.isCancelled { Log.capture.error("Finding formulas and tables failed: \(String(describing: error), privacy: .public)") }
+            return .init()
+        }
+    }
+
+    /// What a merge of tables did, in numbers: how many were taken, and why each other was left.
+    nonisolated static func log(_ merge: TableMerge.Merged, of tables: [TableMerge.Table], in surface: String, after elapsed: Duration) {
+        let refusals = merge.refused.map { "\(tables[$0.index].kind.rawValue) \($0.refusal.rawValue)" }.joined(separator: ", ")
+        let cut = merge.cutRows > 0 ? ", \(merge.cutRows) rows the picture's edge cut left as Vision read them" : ""
+        Log.capture.notice("\(surface, privacy: .public) took \(merge.taken.count, privacy: .public) of \(tables.count, privacy: .public) tables and charts read with the VLM pack\(refusals.isEmpty ? "" : " (left: \(refusals))", privacy: .public)\(cut, privacy: .public), \(String(describing: elapsed), privacy: .public) after Vision's reading")
     }
 
     /// `image` as an uncompressed TIFF for the text reader, written and read in a few milliseconds; the caller removes it.
@@ -425,9 +689,10 @@ final class TextCaptureCoordinator {
     /// the OCR panel, translated, which says why and offers a download or another language: a beep alone
     /// said nothing anyone could act on.
     func translate(_ image: CGImage, scale: CGFloat, over frame: CGRect, source: String, inPanel: Bool) async {
+        let place = AppTextPlace(frame: frame, scale: scale)
         if inPanel {
             highlight.hide()
-            openPanel(image: image, scale: scale, source: source, translating: true)
+            openPanel(image: image, scale: scale, source: source, translating: true, place: place)
             return
         }
         let probe = LatencyProbe("ocr.translate-area")
@@ -440,7 +705,7 @@ final class TextCaptureCoordinator {
                 let skipped = Dictionary(grouping: units.compactMap(\.skip), by: { "\($0)" }).map { "\($1.count) \($0)" }.sorted().joined(separator: ", ")
                 Log.capture.notice("Translate Area translated nothing into \(outcome.target.minimalIdentifier, privacy: .public): \(units.count, privacy: .public) units, skipped \(skipped, privacy: .public), \(outcome.inTarget.count, privacy: .public) already in it, to download \(outcome.needsDownload.map(\.minimalIdentifier), privacy: .public); opening the panel")
                 highlight.hide()
-                openPanel(image: image, scale: scale, source: source, translating: true)
+                openPanel(image: image, scale: scale, source: source, translating: true, place: place)
                 return
             }
             guard let rendering = await TranslationOverlay.render(
@@ -457,7 +722,7 @@ final class TextCaptureCoordinator {
                 language: Translator.identifier(of: outcome.target), summary: "\(sources) → \(Translator.name(of: outcome.target))",
                 shortened: !rendering.truncated.isEmpty
             )
-            lens.onOpenInPanel = { [weak self] in self?.openPanel(image: image, scale: scale, source: source, translating: true) }
+            lens.onOpenInPanel = { [weak self] in self?.openPanel(image: image, scale: scale, source: source, translating: true, place: place) }
             highlight.hide()
             Log.capture.notice("Translate Area translated \(outcome.translations.count, privacy: .public) of \(units.count, privacy: .public) units into \(outcome.target.minimalIdentifier, privacy: .public), \(rendering.truncated.count, privacy: .public) shortened")
         } catch {
@@ -489,33 +754,94 @@ final class TextCaptureCoordinator {
     ///
     /// With the formula pack installed, the formulas in the picture are found and read in the text reader beside
     /// Vision's reading, and come into the text as LaTeX once read.
-    func openPanel(image: CGImage, scale: CGFloat, source: String, translating: Bool = false) {
+    ///
+    /// A picture of the screen (`place`) takes the characters of the apps there for the lines they show alike, while
+    /// Settings says so (L0, Docs/ocr.md › Text from apps); they are asked as soon as Vision has read, and their
+    /// characters go over the second reading's.
+    func openPanel(image: CGImage, scale: CGFloat, source: String, translating: Bool = false, place: AppTextPlace? = nil) {
         let controller = panel ?? makePanel()
         panel = controller
+        controller.show(
+            image: image, scale: scale, source: source, translating: translating, elements: panelElements(readsTables: !isTerminal(place)),
+            analyze: analyzer(for: place)
+        )
+    }
+
+    /// The terminals whose windows keep their text as the program printed it: a listing in columns there (`ls -l`) isn't
+    /// read as a table, which the layout model takes it for (Docs/ocr.md › The VLM pack).
+    nonisolated static let terminals: Set<String> = [
+        "com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "dev.warp.Warp-Stable", "net.kovidgoyal.kitty",
+        "org.alacritty", "io.alacritty", "com.github.wez.wezterm", "co.zeit.hyper", "com.raphaelamorim.rio", "dev.commandline.waveterm",
+        "com.termius-dmg.mac", "org.tabby",
+    ]
+
+    /// Whether the picture at `place` (of the screen; none for a file or the clipboard) is of a terminal: a picked
+    /// window's own app, else the app whose standard window is in front at the middle of the area, OhMyShot's own left out.
+    func isTerminal(_ place: AppTextPlace?) -> Bool {
+        guard let place else { return false }
+        let pid = place.pid ?? Optional(place.frame).flatMap { area -> pid_t? in
+            let middle = displays.layout.flipped(CGPoint(x: area.midX, y: area.midY))
+            let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+            return list.lazy.compactMap { info -> pid_t? in
+                guard (info[kCGWindowLayer as String] as? Int) == 0,
+                      let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner != ProcessInfo.processInfo.processIdentifier,
+                      let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                      CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0).contains(middle)
+                else { return nil }
+                return owner
+            }.first
+        }
+        guard let pid, let identifier = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return false }
+        return Self.terminals.contains(identifier)
+    }
+
+    /// How the panel reads a picture: Vision; the second reading while a pack is installed; and for a picture of the
+    /// screen (`place`), the apps' characters while Settings says so.
+    func analyzer(for place: AppTextPlace?) -> @Sendable (CGImage) async throws -> TextAnalysis {
         let pipeline = pipeline
         let second = secondReader?()
-        controller.show(image: image, scale: scale, source: source, translating: translating, formulas: panelFormulas()) { image in
+        let place = settings.readsAppText ? place : nil
+        let layout = displays.layout
+        return { image in
             let analysis = try await pipeline.analyze(image)
-            guard let second, SecondReading.wanted(analysis.result.lines), PPOCRReader.reads(width: image.width, height: image.height)
-            else { return analysis }
-            let started = ContinuousClock.now
-            guard let lines = await Self.secondReading(of: image, with: second.pack, helper: second.helper) else { return analysis }
-            let merged = analysis.withSecondReading(lines, assembly: pipeline.options.assembly)
-            // Vision's lines keep their boxes; the added ones are sorted in among them.
-            let first = Dictionary(analysis.result.lines.map { ("\($0.box)", $0.text) }) { a, _ in a }
-            let changed = merged.result.lines.count { line in first["\(line.box)"].map { $0 != line.text } ?? false }
-            Log.capture.notice("Second reading: \(lines.count, privacy: .public) lines read, \(changed, privacy: .public) of \(analysis.result.lines.count, privacy: .public) changed, \(merged.result.lines.count - analysis.result.lines.count, privacy: .public) added, in \(String(describing: ContinuousClock.now - started), privacy: .public)")
-            return merged
+            // Longer than Capture Text: the window shows Vision's reading meanwhile.
+            let asking = Self.appText(for: analysis.result.lines, in: place, layout: layout, within: .milliseconds(500))
+            var shown = analysis
+            if let second, SecondReading.wanted(analysis.result.lines), PPOCRReader.reads(width: image.width, height: image.height) {
+                let started = ContinuousClock.now
+                if let lines = await Self.secondReading(of: image, with: second.pack, helper: second.helper) {
+                    let merged = analysis.withSecondReading(lines, assembly: pipeline.options.assembly)
+                    // Vision's lines keep their boxes; the added ones are sorted in among them.
+                    let first = Dictionary(analysis.result.lines.map { ("\($0.box)", $0.text) }) { a, _ in a }
+                    let changed = merged.result.lines.count { line in first["\(line.box)"].map { $0 != line.text } ?? false }
+                    Log.capture.notice("Second reading: \(lines.count, privacy: .public) lines read, \(changed, privacy: .public) of \(analysis.result.lines.count, privacy: .public) changed, \(merged.result.lines.count - analysis.result.lines.count, privacy: .public) added, in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+                    shown = merged
+                }
+            }
+            if let asking {
+                let reading = await asking.value
+                let (merged, merge) = shown.withAppText(
+                    reading.lines.map { AppTextLine(box: $0.box, pieces: $0.pieces, app: $0.app) }, assembly: pipeline.options.assembly
+                )
+                Self.log(reading, merge, of: shown.result.lines.count, in: "The Recognized Text window")
+                shown = merged
+            }
+            return shown
         }
     }
 
-    /// How the panel gets the formulas into its text; nil while the formula pack isn't installed. Asked as each panel
+    /// How the panel gets the formulas, tables, and charts into its text; nil while neither the formula pack nor the VLM
+    /// pack is installed. Asked as each panel
     /// opens.
-    private func panelFormulas() -> TextRecognitionWindowController.Formulas? {
-        guard let reader = formulaReader?() else { return nil }
+    private func panelElements(readsTables: Bool = true) -> TextRecognitionWindowController.Elements? {
+        guard let found = elementReader?() else { return nil }
+        let reader = (formulas: found.formulas, vlm: readsTables ? found.vlm : nil, helper: found.helper)
+        guard reader.formulas != nil || reader.vlm != nil else { return nil }
         let pipeline = pipeline
         return .init(
-            read: { image, found in await Self.formulas(in: image, pack: reader.pack, helper: reader.helper, found: found) },
+            read: { image, found in
+                await Self.elements(in: image, formulas: reader.formulas, vlm: reader.vlm, seconds: Self.panelTableWait, helper: reader.helper, found: found)
+            },
             merge: { lines, formulas, image in await pipeline.lines(lines, with: formulas, in: image) }
         )
     }
@@ -573,7 +899,7 @@ final class TextCaptureCoordinator {
     }
 
     private func makePanel() -> TextRecognitionWindowController {
-        let controller = TextRecognitionWindowController(settings: settings, translator: translator)
+        let controller = TextRecognitionWindowController(settings: settings, translator: translator, cloud: cloud?())
         controller.onClose = { [weak self] in
             // Released on the next turn so the window is not deallocated inside its own delegate call.
             Task { @MainActor in
@@ -590,7 +916,7 @@ final class TextCaptureCoordinator {
     func openPanel(region rect: CGRect, frozen: CapturedFrame? = nil) async {
         do {
             let frame = try await capture(rect, frozen: frozen)
-            openPanel(image: frame.image, scale: Self.scale(of: frame), source: String(localized: "Screen Area"))
+            openPanel(image: frame.image, scale: Self.scale(of: frame), source: String(localized: "Screen Area"), place: Self.place(of: frame))
         } catch {
             Log.capture.error("Capture Text failed to capture: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
@@ -601,7 +927,10 @@ final class TextCaptureCoordinator {
         do {
             let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
             let title = target.title.flatMap { $0.isEmpty ? nil : $0 }
-            openPanel(image: frame.image, scale: Self.scale(of: frame), source: title.map { "\(target.ownerName) – \($0)" } ?? target.ownerName)
+            openPanel(
+                image: frame.image, scale: Self.scale(of: frame), source: title.map { "\(target.ownerName) – \($0)" } ?? target.ownerName,
+                place: Self.place(of: frame, window: target)
+            )
         } catch {
             Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
@@ -699,16 +1028,20 @@ final class TextCaptureCoordinator {
         case "highlight":
             highlight.show(selection)
         case "empty":
-            hud.show(.empty, near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter)
+            presentCard(.empty, near: selection)
         case "single":
-            hud.show(.copied(text: "7", joined: false, canJoin: false), near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter)
+            presentCard(.copied(text: "7", joined: false, canJoin: false), near: selection)
         case "formula":
-            hud.show(.copiedFormula(latex: #"\mathrm{Attention}(Q,K,V)=\mathrm{softmax}\left(\frac{QK^{T}}{\sqrt{d_{k}}}\right)V"#), near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter)
+            presentCard(.copiedFormula(latex: #"\mathrm{Attention}(Q,K,V)=\mathrm{softmax}\left(\frac{QK^{T}}{\sqrt{d_{k}}}\right)V"#), near: selection)
         case "no-formula":
-            hud.show(.noFormula, near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter)
+            presentCard(.noFormula, near: selection)
+        case "not-copied":
+            presentCard(.notCopied(text: "OhMyShot Release Notes\nCapture text from anything on screen."), near: selection, note: String(localized: "You copied something else while it was read."))
+        case "cloud":
+            presentCard(.copied(text: "OhMyShot Release Notes\nCapture text from anything on screen.", joined: false, canJoin: false), near: selection, note: String(localized: "Read by \("Claude")"))
         default:
             let sample = "截图完成后，卡片会出现在屏幕左下角，可以直接拖到其他应用里。\nPress Copy to put the capture on the clipboard.\n历史记录会保留一周，之后自动删除。\nVersion 0.1.0 (build 42)"
-            hud.show(.copied(text: sample, joined: false, canJoin: true), near: selection, position: settings.textResultPosition, closeAfter: settings.textResultCloseAfter)
+            presentCard(.copied(text: sample, joined: false, canJoin: true), near: selection)
         }
     }
 
@@ -716,16 +1049,28 @@ final class TextCaptureCoordinator {
     func previewPanel(image: CGImage, scale: CGFloat, source: String, analyze: @escaping @Sendable (CGImage) async throws -> TextAnalysis) {
         let controller = panel ?? makePanel()
         panel = controller
-        controller.show(image: image, scale: scale, source: source, formulas: panelFormulas(), analyze: analyze)
+        controller.show(image: image, scale: scale, source: source, elements: panelElements(), analyze: analyze)
     }
 
     /// Sets the open panel's pane, line breaks, selected or hovered line, and whether the text was edited.
     func previewPanelState(
-        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool?, target: String?
+        pane: String?, joinLines: Bool?, selectLine: Int?, hoverLine: Int?, edited: Bool, translate: Bool?, target: String?, cloud: String? = nil
     ) {
         panel?.preview(
-            pane: pane, joinLines: joinLines, selectLine: selectLine, hoverLine: hoverLine, edited: edited, translate: translate, target: target
+            pane: pane, joinLines: joinLines, selectLine: selectLine, hoverLine: hoverLine, edited: edited, translate: translate, target: target,
+            cloud: cloud
         )
+    }
+
+    /// Closes the panel, so the next one is made anew (with the cloud model then in place).
+    func closePanel() {
+        panel?.close()
+    }
+
+    /// Capture Text's reading of a picture, as after a person's drag over `selection` (the cloud model too, while
+    /// Settings says so, with `allowsCloud`), without touching the clipboard.
+    func previewRecognition(of image: CGImage, near selection: CGRect, joinLines: Bool, allowsCloud: Bool, done: ((String?) -> Void)? = nil) async {
+        await recognize(image, selection: selection, joinLines: joinLines, copiesToClipboard: false, allowsCloud: allowsCloud, done: done)
     }
 
     /// Shows a failure to open, as a broken file or an empty clipboard would.
