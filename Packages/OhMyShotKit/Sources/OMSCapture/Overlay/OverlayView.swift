@@ -26,6 +26,10 @@ protocol OverlayViewDelegate: AnyObject {
     /// A color taken at a point in global space (a click, Return, or C), with the keys held then; `keyboard`
     /// says it was a key, so what follows can take the keyboard too.
     func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool)
+    /// Copies at the mouse press without ending the session. True consumes the whole mouse gesture,
+    /// including when the display's first frame has not arrived yet.
+    func overlayView(_ view: OverlayView, copyColorAt point: CGPoint) -> Bool
+
     /// The arrow keys moved the crosshair by whole pixels, down positive: the corner being dragged, when an area is
     /// being dragged out.
     func overlayView(_ view: OverlayView, didNudge pixels: CGVector)
@@ -34,6 +38,7 @@ protocol OverlayViewDelegate: AnyObject {
     /// The ruler's measurement, to copy; `ending` closes the overlay after it (Return).
     func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool)
     func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit)
+    func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance)
     /// All-In-One's bar or keys chose what the next area is for: its text, a scrolling capture, or a recording.
     func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice)
 }
@@ -53,6 +58,9 @@ final class OverlayView: NSView {
     }
 
     weak var delegate: OverlayViewDelegate?
+    var onCanvasCursorUpdate: ((CGPoint) -> Void)?
+    private var ownsCanvasCursor = false
+    var onToolbarVisibilityToggle: (() -> Void)?
     let display: DisplayInfo
 
     private(set) var mode: Mode = .area
@@ -64,6 +72,11 @@ final class OverlayView: NSView {
     private var showsReading = false
     private var capturedFrame: CapturedFrame?
     private var pointer: CGPoint?
+    /// Every display receives the first area press, even before the selection has any size. Once it
+    /// begins, the picker stays out of the way until a new capture session resets the view.
+    private var hasStartedAreaSelection = false
+    private var captureLoupeSize: CaptureLoupeSize = .small
+    private var captureLoupeMagnification: CaptureLoupeMagnification = .four
     /// Set by `simulate`, so the real (hidden) pointer cannot move a scripted render.
     private var isSimulated = false
     /// In-place annotation has the display: its interface takes the input and draws the selection.
@@ -85,18 +98,29 @@ final class OverlayView: NSView {
     private let loupe = CALayer()
     private let loupeImage = CALayer()
     private let loupeGrid = CAShapeLayer()
+    private let loupeGridOutline = CAShapeLayer()
     private let loupeCenter = CAShapeLayer()
-    /// While picking, the center cell is drawn as the crosshair is, white over a dark outline, so it holds
-    /// over the accent's own color: that cell is what a click copies.
+    /// An opposite-color outline keeps the adaptive center cell visible over neighboring pixels.
     private let loupeCenterOutline = CAShapeLayer()
+    /// Fixed-size ticks make a one-pixel target findable even at low magnification.
+    private let loupeTarget = CAShapeLayer()
+    private let loupeTargetOutline = CAShapeLayer()
+    private static let reticleWhite = ScreenColor(srgbRed: 1, green: 1, blue: 1)!
+    private static let reticleBlack = ScreenColor(srgbRed: 0, green: 0, blue: 0)!
     private let loupeRim = CAShapeLayer()
     private let loupePill = ReadingCapsule(showsSwatch: true)
     private let toolbar = AllInOneBar()
+    private var offersToolbar = false
+    private(set) var toolbarHiddenByUser = false
+    private var toolbarOrigin: CGPoint?
     /// Copying text gets a lighter overlay than a screenshot: no dimming, no magnifier or readings, the
     /// system crosshair, and a selection drawn like selected text.
     private var purpose: OverlayController.Purpose = .screenshot
     /// The notation picked colors are copied in, which the magnifier's reading shows while picking.
     private var colorFormat: ColorFormat = .hex
+    private var colorCopyGesture: ColorCopyGesture = .option
+    /// A claimed copy press never starts or releases a selection, even if its modifiers change.
+    private var isCopyingColor = false
     /// The ruler, while measuring.
     private var measure: MeasureOverlay?
 
@@ -110,6 +134,8 @@ final class OverlayView: NSView {
         wantsLayer = true
         buildLayers()
         toolbar.onSelect = { [weak self] choice in self?.toolbarChose(choice) }
+        toolbar.onMove = { [weak self] delta, point in self?.moveToolbar(by: delta, pointerInWindow: point) }
+        toolbar.onHide = { [weak self] in self?.onToolbarVisibilityToggle?() }
         toolbar.isHidden = true
         addSubview(toolbar)
         setAccessibilityElement(true)
@@ -133,32 +159,56 @@ final class OverlayView: NSView {
     /// screen; O, S, and R for text, a scrolling capture, or a recording.
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
-        purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex, measureUnit: MeasureUnit = .points,
+        purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex, colorCopyGesture: ColorCopyGesture = .option,
+        captureLoupeSize: CaptureLoupeSize = .small, captureLoupeMagnification: CaptureLoupeMagnification = .four,
+        measureUnit: MeasureUnit = .points,
+        measureTolerance: MeasureTolerance = .medium, measureSnapsToContent: Bool = true,
         allInOne: Bool = false, snapsToText: Bool = false
     ) {
+        endCanvasCursorOwnership()
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
         selection.reset()
+        hasStartedAreaSelection = false
         showsReading = false
         isSimulated = false
         isAnnotating = false
         capturedFrame = nil
         increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         self.purpose = purpose
+        self.captureLoupeSize = captureLoupeSize
+        self.captureLoupeMagnification = captureLoupeMagnification
         self.colorFormat = colorFormat
+        self.colorCopyGesture = colorCopyGesture
+        isCopyingColor = false
         isAllInOne = allInOne && purpose == .screenshot
         if purpose == .measure {
             let measure = self.measure ?? MeasureOverlay(display: display)
+            measure.onRedraw = nil
+            measure.onCapture = nil
+            measure.clear()
             if measure.layer.superlayer == nil { layer?.insertSublayer(measure.layer, below: crosshairOutline) }
             measure.unit = measureUnit
+            measure.tolerance = measureTolerance
+            measure.snapsToContent = measureSnapsToContent
             measure.onRedraw = { [weak self] in self?.updateMeasureCrosshair() }
+            measure.onCapture = { [weak self] area in
+                guard let self, self.purpose == .measure else { return }
+                self.delegate?.overlayView(self, didSelect: self.global(area), modifiers: [])
+            }
             self.measure = measure
         } else {
+            measure?.onRedraw = nil
+            measure?.onCapture = nil
+            measure?.clear()
             measure?.layer.removeFromSuperlayer()
             measure = nil
         }
         // The bar first: the size reading below steers clear of it.
+        offersToolbar = showsToolbar
+        toolbarHiddenByUser = false
+        toolbarOrigin = nil
         toolbar.isHidden = !showsToolbar
         toolbar.alphaValue = 1
         toolbar.showModes(isAllInOne)
@@ -171,13 +221,16 @@ final class OverlayView: NSView {
         case .annotate: String(localized: "Drag over an area to mark it up. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .screenshot where isAllInOne: String(localized: "Drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, or R to record. Press Escape to cancel.", bundle: .module)
         case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.", bundle: .module)
-        case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
-        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
+        case .color: String(localized: "Click or press Return to copy the color under the crosshair; Option-Return shows it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
+        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Click inside the selected box to take a screenshot. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
         case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         }
-        setAccessibilityHelp(snapsToText ? help + " " + String(localized: "The selection's edges snap to text; hold Command to place them freely.", bundle: .module) : help)
+        var accessibilityHelp = snapsToText ? help + " " + String(localized: "The selection's edges snap to text; hold Command to place them freely.", bundle: .module) : help
+        if showsToolbar { accessibilityHelp += " " + String(localized: "Press H to hide or show the toolbar.", bundle: .module) }
+        setAccessibilityHelp(accessibilityHelp)
         withoutAnimation {
+            layoutLoupe()
             applyAppearance()
             // The panels are reused: the edges in-place annotation hid come back with a new session.
             border.isHidden = false
@@ -217,6 +270,7 @@ final class OverlayView: NSView {
     /// Drops the frame so its memory is released while the overlay is hidden, and takes away any
     /// interface in-place annotation put over it.
     func clear() {
+        endCanvasCursorOwnership()
         capturedFrame = nil
         measure?.clear()
         isAnnotating = false
@@ -242,6 +296,7 @@ final class OverlayView: NSView {
 
     private func updateMeasureCrosshair() {
         guard purpose == .measure, let measure, pointer != nil else { return }
+        setAccessibilityValue(measure.accessibilityValue)
         withoutAnimation {
             crosshair.isHidden = measure.showsLines
             crosshairOutline.isHidden = measure.showsLines
@@ -253,6 +308,32 @@ final class OverlayView: NSView {
     /// brings back after in-place annotation hid them.
     var debugEdgeLayersShow: (border: Bool, snapped: Bool) {
         (!border.isHidden, !snapEdges.isHidden)
+    }
+
+    var debugPointerLayers: (crosshair: Bool, loupe: CGRect?, colorReading: CGRect?) {
+        (!crosshair.isHidden, loupe.isHidden ? nil : loupe.frame,
+         loupePill.layer.isHidden ? nil : loupePill.layer.frame)
+    }
+
+    var debugToolbarFrame: CGRect { toolbar.frame }
+    var debugToolbarIsHidden: Bool { toolbar.isHidden }
+    func debugMoveToolbar(by delta: CGVector) { moveToolbar(by: delta, pointerInWindow: .zero) }
+
+    var debugLoupeCenterColors: (stroke: CGColor?, outline: CGColor?, outlineVisible: Bool) {
+        (loupeCenter.strokeColor, loupeCenterOutline.strokeColor, !loupeCenterOutline.isHidden)
+    }
+
+    var debugLoupeTarget: (path: CGPath?, visible: Bool, stroke: CGFloat, outline: CGFloat) {
+        (loupeTarget.path, !loupe.isHidden && !loupeTarget.isHidden, loupeTarget.lineWidth, loupeTargetOutline.lineWidth)
+    }
+
+    var debugLoupeImageGeometry: (frame: CGRect, contentsRect: CGRect, gridVisible: Bool) {
+        (loupeImage.frame, loupeImage.contentsRect, !loupeGrid.isHidden)
+    }
+
+    var debugLoupePixelGeometry: (center: CGRect, grid: CGPath?, stroke: CGFloat, outline: CGFloat, gridStroke: CGFloat, gridOutline: CGFloat) {
+        (loupeCenter.path?.boundingBoxOfPath ?? .zero, loupeGrid.path, loupeCenter.lineWidth, loupeCenterOutline.lineWidth,
+         loupeGrid.lineWidth, loupeGridOutline.lineWidth)
     }
 
     /// Drags the ruler's box over `rect` (global space) and lets go, for scripted checks.
@@ -281,9 +362,16 @@ final class OverlayView: NSView {
         if measure?.accessibilityValue != nil { announceValue() }
     }
 
+    func setMeasureTolerance(_ tolerance: MeasureTolerance) {
+        measure?.tolerance = tolerance
+        setAccessibilityValue(measure?.accessibilityValue)
+        if measure?.accessibilityValue != nil { announceValue() }
+    }
+
     /// Hands the display to in-place annotation: the frozen screen stays; the selection, readings,
     /// crosshair, magnifier, and All-In-One bar go, since its interface draws its own.
     func enterAnnotation() {
+        endCanvasCursorOwnership()
         isAnnotating = true
         toolbar.isHidden = true
         withoutAnimation {
@@ -309,8 +397,69 @@ final class OverlayView: NSView {
     func show(selection: SelectionModel, showsReading: Bool, isDragging: Bool) {
         self.selection = selection
         self.showsReading = showsReading
-        if !toolbar.isHidden { toolbar.alphaValue = isDragging && selection.rect != nil ? 0 : 1 }
-        withoutAnimation { updateSelectionLayers() }
+        let hidesPicker = usesCenteredPicker && !hasStartedAreaSelection && (isDragging || selection.rect != nil)
+        if hidesPicker { hasStartedAreaSelection = true }
+        let toolbarAlpha: CGFloat = isDragging && selection.rect != nil ? 0 : 1
+        let toolbarVisibilityChanged = !toolbar.isHidden && toolbar.alphaValue != toolbarAlpha
+        if !toolbar.isHidden { toolbar.alphaValue = toolbarAlpha }
+        withoutAnimation {
+            updateSelectionLayers()
+            if hidesPicker || toolbarVisibilityChanged { updatePointer(pointer) }
+        }
+    }
+
+    /// The controller shares the hidden choice across displays, without making an unavailable bar appear.
+    func setToolbarHidden(_ hidden: Bool) {
+        let changed = toolbarHiddenByUser != hidden
+        toolbarHiddenByUser = hidden
+        toolbar.isHidden = !offersToolbar || hidden || isAnnotating
+        window?.invalidateCursorRects(for: toolbar)
+        withoutAnimation {
+            updateSelectionLayers()
+            updatePointer(pointer)
+        }
+        if changed, offersToolbar {
+            NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
+                .announcement: hidden
+                    ? String(localized: "Toolbar hidden. Press H to show it.", bundle: .module)
+                    : String(localized: "Toolbar shown.", bundle: .module),
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+            ])
+        }
+    }
+
+    /// Native controls borrow the system cursor from the canvas, including throughout a grip drag.
+    func wantsSystemCursor(at globalPoint: CGPoint) -> Bool {
+        !isAnnotating && !toolbar.isHidden && toolbar.alphaValue > 0
+            && (toolbar.isDragging || toolbar.frame.contains(local(globalPoint)))
+    }
+
+    /// Cursor ownership starts only once the controller has taken input; other displays acquire the
+    /// same policy without changing the cursor until the pointer reaches them.
+    func beginCanvasCursorOwnership(at globalPoint: CGPoint) {
+        ownsCanvasCursor = !isAnnotating && (purpose == .screenshot || purpose == .annotate)
+        window?.invalidateCursorRects(for: self)
+        refreshCanvasCursor(at: globalPoint)
+    }
+
+    func refreshCanvasCursor(at globalPoint: CGPoint) {
+        guard ownsCanvasCursor, !isAnnotating, display.frame.contains(globalPoint) else { return }
+        let cursor: NSCursor
+        if wantsSystemCursor(at: globalPoint) {
+            let point = convert(local(globalPoint), to: toolbar)
+            cursor = toolbar.isDragging ? .closedHand
+                : (toolbar.dragHandleFrame.contains(point) ? .openHand : .arrow)
+        } else {
+            cursor = OverlayCursorVisibility.canvasCursor
+        }
+        if NSCursor.current !== cursor { cursor.set() }
+    }
+
+    private func endCanvasCursorOwnership() {
+        guard ownsCanvasCursor else { return }
+        ownsCanvasCursor = false
+        window?.invalidateCursorRects(for: self)
+        OverlayCursorVisibility.restoreCanvasCursor()
     }
 
     /// Puts the pointer somewhere without mouse input, for scripted checks; the real (hidden) pointer
@@ -329,6 +478,7 @@ final class OverlayView: NSView {
     override func resetCursorRects() {
         super.resetCursorRects()
         if purpose == .text { addCursorRect(bounds, cursor: .crosshair) }
+        else if ownsCanvasCursor { addCursorRect(bounds, cursor: OverlayCursorVisibility.canvasCursor) }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -346,13 +496,20 @@ final class OverlayView: NSView {
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(
             rect: .zero,
-            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect],
             owner: self
         ))
     }
 
     // Pointer moves go to the controller, which passes them to every display: the key panel hears moves
     // over other displays too, and drawing them here left a stray magnifier at this display's edge.
+    override func cursorUpdate(with event: NSEvent) {
+        guard ownsCanvasCursor, !isAnnotating else { return }
+        let point = global(convert(event.locationInWindow, from: nil))
+        onCanvasCursorUpdate?(point)
+        refreshCanvasCursor(at: point)
+    }
+
     override func mouseMoved(with event: NSEvent) {
         if purpose == .text { NSCursor.crosshair.set() }
         guard !isSimulated, !isAnnotating else { return }
@@ -383,11 +540,20 @@ final class OverlayView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard mode == .area, !isAnnotating else { return }
         let point = convert(event.locationInWindow, from: nil)
+        if event.type == .leftMouseDown, event.buttonNumber == 0,
+           colorCopyGesture.matches(event.modifierFlags), selection.anchor == nil,
+           purpose == .screenshot || purpose == .annotate || purpose == .color,
+           delegate?.overlayView(self, copyColorAt: global(point)) == true {
+            delegate?.overlayView(self, didMovePointerTo: global(point))
+            isCopyingColor = true
+            return
+        }
         switch purpose {
         case .color:
             break
         case .measure:
-            measure?.beginBox(at: point)
+            let plain = event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
+            measure?.beginBox(at: point, allowsCapture: plain)
         case .screenshot, .text, .annotate, .record, .scroll:
             delegate?.overlayView(self, didPressAt: global(point))
         }
@@ -396,6 +562,10 @@ final class OverlayView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard mode == .area, !isAnnotating else { return }
         let point = convert(event.locationInWindow, from: nil)
+        if isCopyingColor {
+            delegate?.overlayView(self, didMovePointerTo: global(point))
+            return
+        }
         switch purpose {
         case .color:
             delegate?.overlayView(self, didMovePointerTo: global(point))
@@ -409,6 +579,10 @@ final class OverlayView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isCopyingColor {
+            isCopyingColor = false
+            return
+        }
         guard !isAnnotating else { return }
         if mode == .window {
             if let hoveredWindow { delegate?.overlayView(self, didSelectWindow: hoveredWindow, modifiers: event.modifierFlags) }
@@ -418,7 +592,12 @@ final class OverlayView: NSView {
         case .color:
             delegate?.overlayView(self, didPickColorAt: global(convert(event.locationInWindow, from: nil)), modifiers: event.modifierFlags, keyboard: false)
         case .measure:
-            measure?.endBox()
+            let bypassSnap = !event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
+            let point = convert(event.locationInWindow, from: nil)
+            if let area = measure?.endBox(at: point, snapping: !bypassSnap, allowsCapture: !bypassSnap) {
+                delegate?.overlayView(self, didSelect: global(area), modifiers: event.modifierFlags)
+                return
+            }
             setAccessibilityValue(measure?.accessibilityValue)
             announceValue()
         case .screenshot, .text, .annotate, .record, .scroll:
@@ -439,7 +618,26 @@ final class OverlayView: NSView {
             return
         }
         let character = event.charactersIgnoringModifiers?.lowercased()
+        if character == "h", purpose == .screenshot || purpose == .annotate || purpose == .record,
+           let onToolbarVisibilityToggle,
+           event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
+            onToolbarVisibilityToggle()
+            return
+        }
         let picks = purpose == .color || purpose == .measure
+        if purpose == .measure, let measure,
+           event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+            let tolerance: MeasureTolerance? = switch character {
+            case "t": measure.tolerance.next
+            case "=", "+": measure.tolerance.increased
+            case "-": measure.tolerance.decreased
+            default: nil
+            }
+            if let tolerance {
+                delegate?.overlayView(self, didChangeTolerance: tolerance)
+                return
+            }
+        }
         switch event.keyCode {
         case 53: // Escape
             delegate?.overlayViewDidCancel(self)
@@ -484,7 +682,7 @@ final class OverlayView: NSView {
                 toolbarChose(choice)
             } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose != .text, purpose != .record, purpose != .scroll, let pointer, capturedFrame != nil {
                 // C takes the color under the crosshair, as in Snipaste: from the magnifier while capturing. With
-                // Option it opens the color card, as an Option-click does.
+                // Option it opens the color card, as Option-Return does.
                 delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags.intersection(.option), keyboard: true)
             } else {
                 super.keyDown(with: event)
@@ -582,46 +780,31 @@ final class OverlayView: NSView {
         snapEdges.fillColor = nil
         snapEdges.lineCap = .round
 
-        let diameter = Theme.Loupe.diameter
-        let lensBounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
-        loupe.bounds = lensBounds
-        loupe.cornerRadius = diameter / 2
+        layoutLoupe()
         loupe.masksToBounds = true
         loupe.backgroundColor = .white
-        loupeImage.frame = lensBounds
         loupeImage.magnificationFilter = .nearest
         loupeImage.contentsGravity = .resize
-        loupeGrid.frame = lensBounds
-        loupeGrid.strokeColor = CGColor(gray: 0, alpha: 0.08)
-        loupeGrid.lineWidth = 1 / display.backingScale
-        loupeGrid.path = Self.gridPath(size: diameter, cells: Theme.Loupe.pixelsAcross)
-        let cell = diameter / CGFloat(Theme.Loupe.pixelsAcross)
-        loupeCenter.frame = lensBounds
-        loupeCenter.path = CGPath(
-            roundedRect: CGRect(x: (diameter - cell) / 2, y: (diameter - cell) / 2, width: cell, height: cell),
-            cornerWidth: 1.5, cornerHeight: 1.5, transform: nil
-        )
+        for shape in [loupeGridOutline, loupeGrid, loupeCenterOutline, loupeCenter, loupeTargetOutline, loupeTarget] {
+            shape.contentsScale = display.backingScale
+        }
         loupeCenter.fillColor = nil
-        loupeCenter.lineWidth = 1.5
-        loupeCenterOutline.frame = lensBounds
-        loupeCenterOutline.path = loupeCenter.path
         loupeCenterOutline.fillColor = nil
-        loupeCenterOutline.lineWidth = 3
         loupe.addSublayer(loupeImage)
+        loupe.addSublayer(loupeGridOutline)
         loupe.addSublayer(loupeGrid)
         loupe.addSublayer(loupeCenterOutline)
         loupe.addSublayer(loupeCenter)
+        for shape in [loupeTargetOutline, loupeTarget] {
+            shape.fillColor = nil
+            loupe.addSublayer(shape)
+        }
 
         // A soft shadow under the lens and a white rim around it, both outside the masked lens.
-        loupeShadow.bounds = lensBounds
-        loupeShadow.path = CGPath(ellipseIn: lensBounds, transform: nil)
         loupeShadow.fillColor = .white
-        loupeShadow.shadowPath = loupeShadow.path
         loupeShadow.shadowOpacity = 0.28
         loupeShadow.shadowRadius = 12
         loupeShadow.shadowOffset = CGSize(width: 0, height: -4)
-        loupeRim.bounds = lensBounds
-        loupeRim.path = CGPath(ellipseIn: lensBounds.insetBy(dx: -Theme.Loupe.rimWidth / 2, dy: -Theme.Loupe.rimWidth / 2), transform: nil)
         loupeRim.strokeColor = .white
         loupeRim.fillColor = nil
         loupeRim.lineWidth = Theme.Loupe.rimWidth
@@ -637,6 +820,63 @@ final class OverlayView: NSView {
         }
     }
 
+    private var loupeDiameter: CGFloat { usesCenteredPicker ? captureLoupeSize.diameter : Theme.Loupe.diameter }
+    private var loupePixelsAcross: Int {
+        usesCenteredPicker ? captureLoupeSize.pixelsAcross(backingScale: display.backingScale, magnification: captureLoupeMagnification) : Theme.Loupe.pixelsAcross
+    }
+
+    /// Reused views may switch both size and purpose between sessions; keep every lens layer in sync.
+    private func layoutLoupe() {
+        let diameter = loupeDiameter
+        let cell = diameter / CGFloat(loupePixelsAcross)
+        // Low zoom still needs an open cell interior; normal tools and the default 4× widths stay as before.
+        let pixelStroke = usesCenteredPicker ? min(1 / display.backingScale, cell / 3) : 1 / display.backingScale
+        let pixelOutline = usesCenteredPicker ? min(2 / display.backingScale, cell * 2 / 3) : 2 / display.backingScale
+        let lensBounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
+        loupe.bounds = lensBounds
+        loupe.cornerRadius = diameter / 2
+        loupeImage.frame = lensBounds
+        loupeGrid.frame = lensBounds
+        loupeGrid.path = Self.gridPath(size: diameter, cells: loupePixelsAcross)
+        loupeGrid.isHidden = false
+        loupeGrid.lineWidth = pixelStroke
+        loupeGrid.strokeColor = CGColor(gray: 0, alpha: usesCenteredPicker ? 0.28 : 0.08)
+        loupeGridOutline.frame = lensBounds
+        loupeGridOutline.path = loupeGrid.path
+        loupeGridOutline.lineWidth = pixelOutline
+        loupeGridOutline.strokeColor = CGColor(gray: 1, alpha: 0.35)
+        loupeGridOutline.isHidden = !usesCenteredPicker
+        loupeCenter.frame = lensBounds
+        let centerCell = CGRect(x: (diameter - cell) / 2, y: (diameter - cell) / 2, width: cell, height: cell)
+        loupeCenter.path = usesCenteredPicker ? CGPath(rect: centerCell, transform: nil)
+            : CGPath(roundedRect: centerCell, cornerWidth: 1.5, cornerHeight: 1.5, transform: nil)
+        loupeCenter.lineWidth = usesCenteredPicker ? pixelStroke : 1.5
+        loupeCenterOutline.lineWidth = usesCenteredPicker ? pixelOutline : 3
+        loupeCenterOutline.frame = lensBounds
+        loupeCenterOutline.path = loupeCenter.path
+        let target = CGMutablePath()
+        let center = diameter / 2
+        // Leave the exact cell and its outline clear; the ticks do not shrink with the pixel grid.
+        let gap = max(5, cell / 2 + 3)
+        for direction in [CGVector(dx: -1, dy: 0), CGVector(dx: 1, dy: 0),
+                          CGVector(dx: 0, dy: -1), CGVector(dx: 0, dy: 1)] {
+            target.move(to: CGPoint(x: center + direction.dx * gap, y: center + direction.dy * gap))
+            target.addLine(to: CGPoint(x: center + direction.dx * (gap + 4), y: center + direction.dy * (gap + 4)))
+        }
+        for shape in [loupeTargetOutline, loupeTarget] {
+            shape.frame = lensBounds
+            shape.path = target
+            shape.isHidden = !usesCenteredPicker
+        }
+        loupeTarget.lineWidth = 1
+        loupeTargetOutline.lineWidth = 3
+        loupeShadow.bounds = lensBounds
+        loupeShadow.path = CGPath(ellipseIn: lensBounds, transform: nil)
+        loupeShadow.shadowPath = loupeShadow.path
+        loupeRim.bounds = lensBounds
+        loupeRim.path = CGPath(ellipseIn: lensBounds.insetBy(dx: -Theme.Loupe.rimWidth / 2, dy: -Theme.Loupe.rimWidth / 2), transform: nil)
+    }
+
     /// Colors that depend on appearance or accessibility settings. Read when a session starts and when
     /// the appearance changes, never per event.
     private func applyAppearance() {
@@ -645,10 +885,14 @@ final class OverlayView: NSView {
         let outlineOpacity = increasedContrast ? Theme.Overlay.outlineOpacityIncreasedContrast : Theme.Overlay.outlineOpacity
         outline.strokeColor = CGColor(gray: 0, alpha: outlineOpacity)
         crosshairOutline.strokeColor = CGColor(gray: 0, alpha: outlineOpacity)
-        let picking = purpose == .color
-        loupeCenter.strokeColor = picking ? .white : Theme.cgColor(.controlAccentColor, for: effectiveAppearance)
-        loupeCenterOutline.strokeColor = CGColor(gray: 0, alpha: outlineOpacity)
-        loupeCenterOutline.isHidden = !picking
+        // Let the original screen show through the centered preview, with an opaque reticle.
+        // Both white backing discs must go as well, or lowering image opacity reveals only white.
+        let translucentPicker = usesCenteredPicker && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        loupeImage.opacity = translucentPicker ? 0.75 : 1
+        loupe.backgroundColor = translucentPicker ? .clear : .white
+        loupeShadow.fillColor = translucentPicker ? .clear : .white
+        loupeShadow.shadowOpacity = translucentPicker ? 0 : 0.28
+        updateLoupeCenter(for: pointer.flatMap { color(at: global($0)) })
         let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         sizePill.applyAppearance(dark: isDark, contrast: increasedContrast)
         loupePill.applyAppearance(dark: isDark, contrast: increasedContrast)
@@ -734,9 +978,39 @@ final class OverlayView: NSView {
         return path
     }
 
+    /// The magnifier's center pixel is the capture target, replacing the separate crosshair until
+    /// the first press. Pick Color and the live recording/scrolling selectors keep their own layout.
+    private var usesCenteredPicker: Bool { purpose == .screenshot || purpose == .annotate }
+
+    /// Choose against the sampled screen pixel, independent of the app's Light/Dark appearance.
+    /// The opposite outline keeps the target legible when its neighboring pixels differ sharply.
+    private func updateLoupeCenter(for color: ScreenColor?) {
+        let picking = usesCenteredPicker || purpose == .color
+        let lightStroke = color.map {
+            $0.wcagContrast(with: Self.reticleWhite) >= $0.wcagContrast(with: Self.reticleBlack)
+        } ?? true
+        loupeCenter.strokeColor = picking
+            ? (lightStroke ? .white : .black)
+            : Theme.cgColor(.controlAccentColor, for: effectiveAppearance)
+        let outlineOpacity = increasedContrast ? Theme.Overlay.outlineOpacityIncreasedContrast : Theme.Overlay.outlineOpacity
+        loupeCenterOutline.strokeColor = CGColor(gray: lightStroke ? 0 : 1, alpha: outlineOpacity)
+        loupeCenterOutline.isHidden = !picking
+        loupeTarget.strokeColor = loupeCenter.strokeColor
+        loupeTargetOutline.strokeColor = CGColor(gray: lightStroke ? 0 : 1, alpha: 0.9)
+    }
+
     private func updatePointer(_ point: CGPoint?) {
         pointer = point
         let pointerLayers: [CALayer] = [crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, loupePill.layer]
+        if let point, wantsSystemCursor(at: global(point)) {
+            pointerLayers.forEach { $0.isHidden = true }
+            if hoveredWindow != nil {
+                hoveredWindow = nil
+                updateSelectionLayers()
+            }
+            measure?.movePointer(to: nil)
+            return
+        }
         if mode == .window {
             let hovered = point.flatMap { WindowCatalog.target(at: global($0), in: windows) }
             if hovered != hoveredWindow {
@@ -766,18 +1040,28 @@ final class OverlayView: NSView {
             return
         }
 
-        // The magnifier sits below and right of the pointer, flipping away from the display's edges.
-        let diameter = Theme.Loupe.diameter
+        if usesCenteredPicker, hasStartedAreaSelection {
+            pointerLayers.forEach { $0.isHidden = true }
+            return
+        }
+
+        // A capture's lens stays centered on the target, including at screen edges. Moving the lens
+        // away to keep it on screen would make its center cell point at the wrong location.
+        let diameter = loupeDiameter
         let offset = Theme.Loupe.offset
-        var center = CGPoint(x: point.x + offset + diameter / 2, y: point.y - offset - diameter / 2)
-        if center.x + diameter / 2 > bounds.maxX - 6 { center.x = point.x - offset - diameter / 2 }
-        if center.y - diameter / 2 - 32 < bounds.minY + 6 { center.y = point.y + offset + diameter / 2 }
+        var center = point
+        if !usesCenteredPicker {
+            center = CGPoint(x: point.x + offset + diameter / 2, y: point.y - offset - diameter / 2)
+            if center.x + diameter / 2 > bounds.maxX - 6 { center.x = point.x - offset - diameter / 2 }
+            if center.y - diameter / 2 - 32 < bounds.minY + 6 { center.y = point.y + offset + diameter / 2 }
+        }
         for layer in [loupe, loupeRim, loupeShadow] { layer.position = center }
 
         let pixel = pixelCoordinate(at: point)
         if let frame = capturedFrame {
-            loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image)
+            loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image, pixelsAcross: loupePixelsAcross)
             let color = frame.color(atPixel: pixel.x, pixel.y)
+            updateLoupeCenter(for: color)
             loupePill.swatch = color?.cgColor
             // The reading is what a click (or C) copies, in Settings' notation.
             let value = color.map { $0.string(in: colorFormat) }
@@ -785,6 +1069,10 @@ final class OverlayView: NSView {
             // VoiceOver hears the color under the crosshair while picking.
             if purpose == .color { setAccessibilityValue(value) }
             for layer in [loupe, loupeRim, loupeShadow] { layer.isHidden = false }
+            if usesCenteredPicker {
+                crosshair.isHidden = true
+                crosshairOutline.isHidden = true
+            }
         } else {
             loupePill.swatch = nil
             loupePill.text = "\(pixel.x), \(pixel.y)"
@@ -795,11 +1083,35 @@ final class OverlayView: NSView {
         loupePill.layer.frame.origin = loupe.isHidden
             ? CGPoint(x: point.x + offset, y: point.y - offset - pillSize.height)
             : CGPoint(x: center.x - pillSize.width / 2, y: center.y - diameter / 2 - pillSize.height - 8)
+        if usesCenteredPicker {
+            var origin = loupePill.layer.frame.origin
+            if origin.y < bounds.minY + 6 { origin.y = center.y + diameter / 2 + 8 }
+            origin.x = min(max(origin.x, bounds.minX + 6), max(bounds.minX + 6, bounds.maxX - pillSize.width - 6))
+            origin.y = min(max(origin.y, bounds.minY + 6), max(bounds.minY + 6, bounds.maxY - pillSize.height - 6))
+            loupePill.layer.frame.origin = origin
+        }
     }
 
     private func layoutToolbar() {
         let size = toolbar.fittingSize
-        toolbar.frame = CGRect(x: (bounds.width - size.width) / 2, y: 40, width: size.width, height: size.height)
+        let origin = toolbarOrigin ?? CGPoint(x: (bounds.width - size.width) / 2, y: 40)
+        toolbar.frame = CGRect(
+            x: min(max(origin.x, bounds.minX + 8), max(bounds.minX + 8, bounds.maxX - size.width - 8)),
+            y: min(max(origin.y, bounds.minY + 8), max(bounds.minY + 8, bounds.maxY - size.height - 8)),
+            width: size.width, height: size.height
+        )
+    }
+
+    private func moveToolbar(by delta: CGVector, pointerInWindow: CGPoint) {
+        toolbarOrigin = CGPoint(x: toolbar.frame.minX + delta.dx, y: toolbar.frame.minY + delta.dy)
+        layoutToolbar()
+        toolbarOrigin = toolbar.frame.origin
+        window?.invalidateCursorRects(for: toolbar)
+        withoutAnimation {
+            updateSelectionLayers()
+            updatePointer(convert(pointerInWindow, from: nil))
+        }
+        delegate?.overlayView(self, didMovePointerTo: global(convert(pointerInWindow, from: nil)))
     }
 
     /// The captured pixel under a point, counted from the display's top-left corner.
@@ -813,8 +1125,8 @@ final class OverlayView: NSView {
 
     /// The part of the frame the magnifier shows: `pixelsAcross` pixels centered on `pixel`. Layer
     /// contents are addressed bottom-up, so the row is flipped.
-    private static func contentsRect(around pixel: (x: Int, y: Int), in image: CGImage) -> CGRect {
-        let across = CGFloat(Theme.Loupe.pixelsAcross)
+    private static func contentsRect(around pixel: (x: Int, y: Int), in image: CGImage, pixelsAcross: Int) -> CGRect {
+        let across = CGFloat(pixelsAcross)
         let half = (across - 1) / 2
         let width = CGFloat(image.width), height = CGFloat(image.height)
         let left = CGFloat(pixel.x) - half
@@ -858,6 +1170,10 @@ final class OverlayView: NSView {
 
     private func global(_ point: CGPoint) -> CGPoint {
         CGPoint(x: point.x + display.frame.minX, y: point.y + display.frame.minY)
+    }
+
+    private func global(_ rect: CGRect) -> CGRect {
+        rect.offsetBy(dx: display.frame.minX, dy: display.frame.minY)
     }
 
     private func withoutAnimation(_ body: () -> Void) {

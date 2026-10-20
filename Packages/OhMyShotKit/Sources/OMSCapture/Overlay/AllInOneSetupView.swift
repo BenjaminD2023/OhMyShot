@@ -51,16 +51,19 @@ final class AllInOneSetupView: NSView {
     private let chrome = SelectionChromeView()
     private let bar: AllInOneActionBar
     private var adjustment: Adjustment?
+    private var manualBarOrigin: CGPoint?
+    private var barHiddenByUser = false
     /// The shape kept while the area is resized or a size typed; nil for any shape.
     private(set) var ratio: AspectRatio?
 
     /// `ratio` is the shape already kept when the frame opens; the area is not reshaped to it here.
-    init(display: DisplayInfo, area: CGRect, offersUpload: Bool, kind: Kind = .allInOne, ratio: AspectRatio? = nil) {
+    init(display: DisplayInfo, area: CGRect, offersUpload: Bool, kind: Kind = .allInOne, ratio: AspectRatio? = nil, toolbarHidden: Bool = false) {
         self.display = display
         self.offersUpload = offersUpload
         self.kind = kind
         self.area = area
         self.ratio = ratio
+        barHiddenByUser = toolbarHidden
         bar = AllInOneActionBar(offersUpload: offersUpload, sizingOnly: kind == .sizing)
         super.init(frame: CGRect(origin: .zero, size: display.frame.size))
         chrome.frame = bounds
@@ -69,6 +72,12 @@ final class AllInOneSetupView: NSView {
         addSubview(bar)
         bar.onChoose = { [weak self] choice in self?.choose(choice) }
         bar.onCancel = { [weak self] in self?.onCancel?() }
+        bar.onHide = { [weak self] in self?.setBarHidden(true) }
+        bar.onMove = { [weak self] delta, point in
+            guard let self else { return }
+            moveBar(by: delta)
+            updateCursor(at: convert(point, from: nil))
+        }
         bar.onSize = { [weak self] width, height in self?.type(width: width, height: height) }
         bar.onRatio = { [weak self] ratio in self?.keep(ratio) }
         bar.onDoneTyping = { [weak self] in
@@ -78,7 +87,7 @@ final class AllInOneSetupView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.layoutArea)
         setAccessibilityLabel(String(localized: "Capture area", bundle: .module))
-        setAccessibilityHelp(instructions)
+        setAccessibilityHelp(instructions + " " + toolbarInstructions)
         update()
     }
 
@@ -97,6 +106,10 @@ final class AllInOneSetupView: NSView {
             : String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.", bundle: .module)
     }
 
+    private var toolbarInstructions: String {
+        String(localized: "Press H to hide or show the toolbar.", bundle: .module)
+    }
+
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -104,7 +117,7 @@ final class AllInOneSetupView: NSView {
     /// Says what to do next.
     func begin() {
         NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: instructions, .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            .announcement: instructions + " " + toolbarInstructions, .priority: NSAccessibilityPriorityLevel.high.rawValue,
         ])
     }
 
@@ -142,11 +155,49 @@ final class AllInOneSetupView: NSView {
     /// The size shows in the bar's fields; while the area is adjusted the bar steps aside and the size reading takes
     /// its place above the area's corner.
     private func placeBar() {
-        bar.frame = AreaFrame.barFrame(size: bar.fittingSize, for: frameRect, in: bounds)
-        bar.isHidden = adjustment != nil
+        let size = bar.fittingSize
+        if let origin = manualBarOrigin {
+            let room = bounds.insetBy(dx: 8, dy: 8)
+            let kept = CGPoint(
+                x: min(max(origin.x, room.minX), max(room.minX, room.maxX - size.width)),
+                y: min(max(origin.y, room.minY), max(room.minY, room.maxY - size.height))
+            )
+            bar.frame = CGRect(origin: kept, size: size)
+            manualBarOrigin = kept
+        } else {
+            bar.frame = AreaFrame.barFrame(size: size, for: frameRect, in: bounds)
+        }
+        bar.isHidden = barHiddenByUser || adjustment != nil
         chrome.reading = bar.isHidden ? pixelReading : ""
         chrome.avoiding = bar.isHidden ? .null : bar.frame
         chrome.toolbarFrame = bar.isHidden ? .null : bar.frame
+    }
+
+    override func layout() {
+        super.layout()
+        placeBar()
+    }
+
+    private func moveBar(by delta: CGVector) {
+        guard !bar.isHidden else { return }
+        // The setup view is flipped; the grip's deltas are in the window's upward-positive space.
+        manualBarOrigin = CGPoint(x: bar.frame.minX + delta.dx, y: bar.frame.minY - delta.dy)
+        placeBar()
+        window?.invalidateCursorRects(for: self)
+    }
+
+    private func setBarHidden(_ hidden: Bool) {
+        if hidden { endTyping() }
+        barHiddenByUser = hidden
+        placeBar()
+        window?.invalidateCursorRects(for: self)
+        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
+            .announcement: hidden
+                ? String(localized: "Toolbar hidden. Press H to show it.", bundle: .module)
+                : String(localized: "Toolbar shown.", bundle: .module),
+            .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+        ])
+        if let window { updateCursor(at: convert(window.mouseLocationOutsideOfEventStream, from: nil)) }
     }
 
     /// Keeps `ratio` (nil: any shape), reshaping the area to it at once around its middle.
@@ -231,9 +282,15 @@ final class AllInOneSetupView: NSView {
     }
 
     private func updateCursor(_ event: NSEvent) {
+        updateCursor(at: convert(event.locationInWindow, from: nil))
+    }
+
+    private func updateCursor(at point: CGPoint) {
         guard adjustment == nil else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        if bar.frame.contains(point) {
+        if !bar.isHidden, bar.frame.contains(point) || bar.isDragging {
+            if bar.isDragging || bar.dragHandleFrame.contains(convert(point, to: bar)) {
+                return (bar.isDragging ? NSCursor.closedHand : NSCursor.openHand).set()
+            }
             // The size fields take an I-beam: they can be typed in.
             let overField = bar.sizeFieldFrames.contains { convert($0, from: bar).insetBy(dx: -6, dy: -4).contains(point) }
             return (overField ? NSCursor.iBeam : NSCursor.arrow).set()
@@ -304,6 +361,12 @@ final class AllInOneSetupView: NSView {
 
     override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.charactersIgnoringModifiers?.lowercased() == "h",
+           flags.intersection([.command, .control, .option, .shift]).isEmpty,
+           !(window?.firstResponder is NSText) {
+            setBarHidden(!barHiddenByUser)
+            return
+        }
         switch event.keyCode {
         case 53: // Escape: an adjustment first, then the whole capture.
             if adjustment != nil {
@@ -384,6 +447,13 @@ final class AllInOneSetupView: NSView {
     }
 
     #if DEBUG
+    var debugBarState: (frame: CGRect, isHidden: Bool, dragHandleFrame: CGRect) {
+        (bar.frame, bar.isHidden, bar.convert(bar.dragHandleFrame, to: self))
+    }
+
+    func debugMoveBar(by windowDelta: CGVector) { moveBar(by: windowDelta) }
+    func debugHideBar() { setBarHidden(true) }
+
     /// Presses a key in the frame as the keyboard would (`return`, `escape`, a letter, `cmd-c`, `left`…), or
     /// with nil only reads; for scripted checks. Returns the area and its reading.
     func debugAct(_ action: String?) -> String {
@@ -437,6 +507,11 @@ final class AllInOneSetupView: NSView {
 final class AllInOneActionBar: CapsuleBar {
     var onChoose: ((AllInOneChoice) -> Void)?
     var onCancel: (() -> Void)?
+    var onHide: (() -> Void)?
+    var onMove: ((CGVector, CGPoint) -> Void)?
+    var isDragging: Bool { handle.isDragging }
+    var dragHandleFrame: CGRect { handle.convert(handle.bounds, to: self) }
+    private let handle = CaptureBarHandle()
     /// A width or a height typed, in pixels; nil for the side not typed.
     var onSize: ((Int?, Int?) -> Void)?
     /// A shape chosen to keep, or nil for any.
@@ -449,6 +524,11 @@ final class AllInOneActionBar: CapsuleBar {
     /// The ratio chip's width while it shows its symbol alone.
     private var squareRatioChip: NSLayoutConstraint?
     private var ratio: AspectRatio?
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .arrow)
+    }
 
     /// Shows the area's size and the shape kept; a field being typed in keeps what is typed.
     func show(pixelSize: CGSize, ratio: AspectRatio?) {
@@ -527,6 +607,8 @@ final class AllInOneActionBar: CapsuleBar {
     /// take the area.
     init(offersUpload: Bool, sizingOnly: Bool = false) {
         super.init()
+        addView(handle)
+        handle.onMove = { [weak self] delta, point in self?.onMove?(delta, point) }
         let capture = add(.screenshot(nil), symbol: "camera.viewfinder", title: String(localized: "Capture", bundle: .module), help: String(localized: "Capture the area (Return)", bundle: .module))
         setTitle(String(localized: "Capture", bundle: .module), of: capture, emphasized: true)
         if !sizingOnly {
@@ -554,6 +636,8 @@ final class AllInOneActionBar: CapsuleBar {
         addDivider()
         let cancel = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel (Esc)", bundle: .module), target: self, action: #selector(cancelClicked))
         cancel.setAccessibilityLabel(String(localized: "Cancel", bundle: .module))
+        let hide = addChip(symbol: "eye.slash", title: nil, help: String(localized: "Hide toolbar (H to show)", bundle: .module), target: self, action: #selector(hideClicked))
+        hide.setAccessibilityLabel(String(localized: "Hide toolbar", bundle: .module))
         setAccessibilityLabel(sizingOnly ? String(localized: "Area size", bundle: .module) : String(localized: "All-In-One", bundle: .module))
     }
 
@@ -579,6 +663,8 @@ final class AllInOneActionBar: CapsuleBar {
     @objc private func cancelClicked() {
         onCancel?()
     }
+
+    @objc private func hideClicked() { onHide?() }
 }
 
 /// The area's width and height in pixels as two fields in All-In-One's bar: read like a reading until clicked (or

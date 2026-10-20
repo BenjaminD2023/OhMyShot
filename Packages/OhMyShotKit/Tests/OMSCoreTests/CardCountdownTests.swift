@@ -31,6 +31,19 @@ struct CardCountdownTests {
         #expect(countdown.isDue(at: 64))
     }
 
+    @Test(arguments: [CardCountdown.Hold.pointer, .preview])
+    func aThreeSecondCardPausesForInteractionAndHasThreeSecondsAfterward(_ hold: CardCountdown.Hold) {
+        var countdown = CardCountdown(interval: 3, at: 100)
+        #expect(!countdown.isDue(at: 102.9))
+        countdown.hold(hold, at: 102.9)
+        #expect(countdown.timeLeft(at: 1_000) == nil)
+        #expect(!countdown.isDue(at: 1_000))
+        countdown.release(hold, at: 1_000)
+        #expect(countdown.timeLeft(at: 1_000) == 3)
+        #expect(!countdown.isDue(at: 1_002.9))
+        #expect(countdown.isDue(at: 1_003))
+    }
+
     @Test func aCardKeepsWhatItHadWhenThatIsMoreThanTheGrace() {
         var countdown = CardCountdown(interval: 60, at: 0)
         countdown.hold(.menu, at: 10)
@@ -40,11 +53,14 @@ struct CardCountdownTests {
         #expect(countdown.isDue(at: 150))
     }
 
-    @Test func theGraceIsNeverLongerThanTheInterval() {
-        var countdown = CardCountdown(interval: 2, at: 0)
-        countdown.hold(.pointer, at: 1.5)
+    @Test(arguments: [1.0, 2.0, 3.0])
+    func theGraceIsNeverLongerThanTheInterval(interval: Double) {
+        var countdown = CardCountdown(interval: interval, at: 0)
+        countdown.hold(.pointer, at: interval - 0.5)
         countdown.release(.pointer, at: 10)
-        #expect(countdown.timeLeft(at: 10) == 2)
+        #expect(countdown.timeLeft(at: 10) == interval)
+        #expect(!countdown.isDue(at: 10 + interval - 0.01))
+        #expect(countdown.isDue(at: 10 + interval))
     }
 
     @Test func aCardStaysHeldUntilEveryHoldIsLetGo() {

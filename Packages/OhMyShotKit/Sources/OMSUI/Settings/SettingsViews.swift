@@ -252,6 +252,51 @@ struct CaptureSettingsView: View {
                     }
                 }
             }
+            SettingsRow(Text("Color picker size", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.captureLoupeSize) {
+                        ForEach(CaptureLoupeSize.allCases, id: \.self) { size in
+                            Text(verbatim: size.title).tag(size)
+                        }
+                    } label: {
+                        Text("Color picker size", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+            }
+            SettingsRow(Text("Color picker magnification", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.captureLoupeMagnification) {
+                        ForEach(CaptureLoupeMagnification.allCases, id: \.self) { magnification in
+                            Text(verbatim: magnification.title).tag(magnification)
+                        }
+                    } label: {
+                        Text("Color picker magnification", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("Controls how much each screen pixel is enlarged in the centered screenshot picker. The size stays the same when you change magnification. Applies to the next screenshot or Annotate Area capture; Pick Color is unchanged.", bundle: .module))
+                }
+            }
+            SettingsRow(Text("Copy color shortcut", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.colorCopyGesture) {
+                        ForEach(ColorCopyGesture.allCases, id: \.self) { gesture in
+                            if gesture == .disabled {
+                                Text("Off", bundle: .module).tag(gesture)
+                            } else {
+                                Text("\(gesture.modifierSymbols) + Left Click", bundle: .module).tag(gesture)
+                            }
+                        }
+                    } label: {
+                        Text("Copy color shortcut", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("Before starting an area selection, or while using Pick Color, this left-click shortcut copies the pointed color without closing the overlay. Other clicks keep their usual behavior.", bundle: .module))
+                }
+            }
             SettingsRow(Text("Self-Timer", bundle: .module)) {
                 Picker(selection: $settings.selfTimerDelay) {
                     ForEach(SettingsStore.selfTimerDelays, id: \.self) { seconds in
@@ -663,7 +708,53 @@ struct ToolsSettingsView: View {
                 Toggle(isOn: $settings.showTextResult) {
                     Text("Show the copied text", bundle: .module)
                 }
-                .help(Text("A card by the selection with the copied text and a switch for its line breaks.", bundle: .module))
+                .help(Text("A card with the copied text and a switch for its line breaks. Choose when it closes below; hovering keeps it open.", bundle: .module))
+            }
+            SettingsRow(Text("Text popup position", bundle: .module)) {
+                Picker(selection: $settings.textResultPosition) {
+                    Text("Below selection", bundle: .module).tag(TextResultPosition.belowSelection)
+                    Text("Bottom left", bundle: .module).tag(TextResultPosition.bottomLeft)
+                } label: {
+                    Text("Text popup position", bundle: .module)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("Shows the result on the display where the text or formula was selected.", bundle: .module))
+            }
+            SettingsRow(Text("Close text popup", bundle: .module)) {
+                Picker(selection: $settings.textResultCloseAfter) {
+                    ForEach(SettingsStore.textResultCloseDelays, id: \.self) { seconds in
+                        if seconds == 0 {
+                            Text("Never", bundle: .module).tag(seconds)
+                        } else if seconds == 1 {
+                            Text("After 1 second", bundle: .module).tag(seconds)
+                        } else {
+                            Text("After \(seconds) seconds", bundle: .module).tag(seconds)
+                        }
+                    }
+                } label: {
+                    Text("Close text popup", bundle: .module)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("The popup stays open while hovered. When the pointer leaves, the selected duration starts again. Never keeps it open until you close it.", bundle: .module))
+            }
+            SettingsRow(Text("Image line breaks", bundle: .module)) {
+                Picker(selection: $settings.textRecognitionKeepsLineBreaks) {
+                    Text("Keep Line Breaks", bundle: .module).tag(true)
+                    Text("Join Lines", bundle: .module).tag(false)
+                } label: {
+                    Text("Image line breaks", bundle: .module)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("Keep the detected lines from the image, or join wrapped lines within each paragraph. Sets the default for Capture Text and new Recognized Text windows; the window’s Line Breaks menu changes only that window.", bundle: .module))
+            }
+            SettingsRow(Text("Recognized Text", bundle: .module)) {
+                Toggle(isOn: $settings.textRecognitionWrapsText) {
+                    Text("Wrap text to window", bundle: .module)
+                }
+                .help(Text("Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display.", bundle: .module))
             }
             SettingsRow(Text("Translate into", bundle: .module)) {
                 HStack(spacing: 6) {
@@ -712,6 +803,26 @@ struct ToolsSettingsView: View {
                 .labelsHidden()
                 .fixedSize()
                 .help(Text("Tab switches between them while measuring.", bundle: .module))
+            }
+            SettingsRow(Text("Measurement snapping", bundle: .module)) {
+                Toggle(isOn: $settings.measureSnapsToContent) {
+                    Text("Snap selections to content", bundle: .module)
+                }
+                .help(Text("Fits a measurement box to the content inside it when you release the pointer. Turn off to keep the box as drawn, or hold Command while releasing to skip snapping once.", bundle: .module))
+            }
+            SettingsRow(Text("Edge tolerance", bundle: .module)) {
+                HStack(spacing: 6) {
+                    Picker(selection: $settings.measureTolerance) {
+                        ForEach(MeasureTolerance.allCases, id: \.self) { tolerance in
+                            Text(verbatim: tolerance.title).tag(tolerance)
+                        }
+                    } label: {
+                        Text("Edge tolerance", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    InfoButton(Text("Lower tolerance finds finer boundaries. Higher tolerance ignores small color changes. This affects ruler lines and selection snapping. While measuring, T cycles the presets and +/− adjusts them; the choice is remembered here.", bundle: .module))
+                }
             }
 
             SettingsDivider()
@@ -790,12 +901,18 @@ struct ShortcutsSettingsView: View {
                 }
                 ForEach(groups[index], id: \.self) { shortcut in
                     SettingsRow(Text(shortcut.title)) {
-                        KeyboardShortcuts.Recorder(for: shortcut.name)
+                        KeyboardShortcuts.Recorder(for: shortcut.name) { keys in
+                            HotkeyCenter.clearOtherAssignments(of: keys, keeping: shortcut.name)
+                        }
+                        .keyboardShortcutsConflictPolicy(.init(menuItem: .warn))
                     }
                 }
             }
             SettingsDivider()
             VStack(alignment: .leading, spacing: 4) {
+                Text("Choose Use Anyway to override an app menu shortcut. Assigning the same shortcut to another action removes its previous assignment.", bundle: .module)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("macOS keeps ⇧⌘3, ⇧⌘4, and ⇧⌘5 until you turn them off in Keyboard Settings.", bundle: .module)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

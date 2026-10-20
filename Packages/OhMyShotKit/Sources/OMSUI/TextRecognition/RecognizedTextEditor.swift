@@ -22,10 +22,7 @@ struct RecognizedTextEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let textView = ActivityTrackingTextView(frame: .zero)
         textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
@@ -58,12 +55,14 @@ struct RecognizedTextEditor: NSViewRepresentable {
         context.coordinator.apply(model.text, undoable: false)
         context.coordinator.appliedRevision = model.revision
         context.coordinator.appliedFocusRequest = model.focusRequest
+        OCRTextWrapping.apply(model.wrapsText, to: scrollView)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         guard let textView = coordinator.textView else { return }
+        OCRTextWrapping.apply(model.wrapsText, to: scrollView)
         let body = NSFont.preferredFont(forTextStyle: .body)
         let font: NSFont = model.isCode ? .monospacedSystemFont(ofSize: body.pointSize, weight: .regular) : body
         if textView.font != font {
@@ -218,14 +217,12 @@ struct TranslatedTextView: NSViewRepresentable {
     let text: String
     let translated: [NSRange]
     let language: String
+    var wrapsText = true
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = NSTextView(frame: .zero)
         textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = false
@@ -245,10 +242,12 @@ struct TranslatedTextView: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
         scrollView.documentView = textView
+        OCRTextWrapping.apply(wrapsText, to: scrollView)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        OCRTextWrapping.apply(wrapsText, to: scrollView)
         guard let textView = scrollView.documentView as? NSTextView, let storage = textView.textStorage, textView.string != text else { return }
         textView.string = text
         let whole = NSRange(location: 0, length: storage.length)
@@ -261,5 +260,34 @@ struct TranslatedTextView: NSViewRepresentable {
             if let url = item.url { storage.addAttribute(.link, value: url, range: item.range) }
         }
         storage.endEditing()
+    }
+}
+
+/// Changes only native text layout. Text storage, selection, undo, and marked text stay in place.
+enum OCRTextWrapping {
+    static func apply(_ wraps: Bool, to scrollView: NSScrollView) {
+        guard let textView = scrollView.documentView as? NSTextView, let container = textView.textContainer else { return }
+        let scrollsHorizontally = !wraps
+        let resizing: NSView.AutoresizingMask = wraps ? [.width] : []
+        guard container.widthTracksTextView != wraps || textView.isHorizontallyResizable != scrollsHorizontally
+                || scrollView.hasHorizontalScroller != scrollsHorizontally || textView.autoresizingMask != resizing else { return }
+        scrollView.hasHorizontalScroller = scrollsHorizontally
+        textView.isHorizontallyResizable = scrollsHorizontally
+        textView.autoresizingMask = resizing
+        container.widthTracksTextView = wraps
+        if wraps {
+            textView.setFrameSize(NSSize(width: scrollView.contentSize.width, height: textView.frame.height))
+            container.containerSize = NSSize(
+                width: max(0, scrollView.contentSize.width - 2 * textView.textContainerInset.width),
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        } else {
+            container.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        }
+        textView.sizeToFit()
+        if wraps {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: scrollView.contentView.bounds.minY))
+        }
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 }

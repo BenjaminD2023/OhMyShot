@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 import Observation
 
@@ -134,6 +135,31 @@ public final class SettingsStore {
         didSet { defaults.set(showTextResult, forKey: Key.showTextResult) }
     }
 
+    /// The small copied-text/formula card stays by its selection unless a screen corner is chosen.
+    public var textResultPosition: TextResultPosition {
+        didSet { defaults.set(textResultPosition.rawValue, forKey: Key.textResultPosition) }
+    }
+
+    /// Seconds the copied-text/formula popup stays before closing; 0 keeps it open until closed.
+    public var textResultCloseAfter: Int {
+        didSet { defaults.set(textResultCloseAfter, forKey: Key.textResultCloseAfter) }
+    }
+
+    /// Popup close delays in seconds; the one-second default stays separate from Quick Access cards.
+    public static let textResultCloseDelays = [0, 1, 2, 3, 5, 10, 20, 30, 60]
+
+    /// Capture Text and new Recognized Text windows keep the image's detected line breaks by default.
+    /// A window's line-break choice changes only that window, without changing this saved default.
+    public var textRecognitionKeepsLineBreaks: Bool {
+        didSet { defaults.set(textRecognitionKeepsLineBreaks, forKey: Key.textRecognitionKeepsLineBreaks) }
+    }
+
+    /// Whether recognized text wraps to the window's width by default. Each Recognized Text window
+    /// takes this value when it opens and can change its own wrapping without changing the default.
+    public var textRecognitionWrapsText: Bool {
+        didSet { defaults.set(textRecognitionWrapsText, forKey: Key.textRecognitionWrapsText) }
+    }
+
     /// The language text is translated into, as "zh-Hans" or "ja"; empty for automatic: the first
     /// preferred language the text is not already in.
     public var translationTarget: String {
@@ -148,6 +174,16 @@ public final class SettingsStore {
     /// Whether screenshots show the pointer, where it was when they were taken. Off by default, as macOS's own are.
     public var screenshotShowsCursor: Bool {
         didSet { defaults.set(screenshotShowsCursor, forKey: Key.screenshotShowsCursor) }
+    }
+
+    /// The magnifier at the capture target before the first press; Small leaves more of the screen visible.
+    public var captureLoupeSize: CaptureLoupeSize {
+        didSet { defaults.set(captureLoupeSize.rawValue, forKey: Key.captureLoupeSize) }
+    }
+
+    /// How much the centered screenshot and annotation picker enlarges device pixels.
+    public var captureLoupeMagnification: CaptureLoupeMagnification {
+        didSet { defaults.set(captureLoupeMagnification.rawValue, forKey: Key.captureLoupeMagnification) }
     }
 
     /// The shape Shift keeps while an area is dragged out, as "16:9"; empty for a square.
@@ -202,9 +238,24 @@ public final class SettingsStore {
         didSet { defaults.set(colorFormat.rawValue, forKey: Key.colorFormat) }
     }
 
+    /// Copies a color with a modifier-click before selecting an area, or while picking colors.
+    public var colorCopyGesture: ColorCopyGesture {
+        didSet { defaults.set(colorCopyGesture.rawValue, forKey: Key.colorCopyGesture) }
+    }
+
     /// What the ruler reads in; switched with Tab while measuring, and remembered.
     public var measureUnit: MeasureUnit {
         didSet { defaults.set(measureUnit.rawValue, forKey: Key.measureUnit) }
+    }
+
+    /// How readily the ruler detects pixel boundaries; adjusted while measuring and remembered.
+    public var measureTolerance: MeasureTolerance {
+        didSet { defaults.set(measureTolerance.rawValue, forKey: Key.measureTolerance) }
+    }
+
+    /// Whether drawn measurement boxes shrink to the content they enclose.
+    public var measureSnapsToContent: Bool {
+        didSet { defaults.set(measureSnapsToContent, forKey: Key.measureSnapsToContent) }
     }
 
     // MARK: Recording
@@ -370,14 +421,14 @@ public final class SettingsStore {
         didSet { defaults.set(quickAccessOnPointerDisplay, forKey: Key.quickAccessOnPointerDisplay) }
     }
 
-    /// Seconds a Quick Access card stays before it closes by itself; 0, the default, keeps cards until they
-    /// are closed.
+    /// Seconds a Quick Access card stays before it closes by itself; 3 by default, or 0 to keep cards until
+    /// they are closed.
     public var quickAccessCloseAfter: Int {
         didSet { defaults.set(quickAccessCloseAfter, forKey: Key.quickAccessCloseAfter) }
     }
 
     /// The delays Settings offers for closing cards, in seconds; 0 is never.
-    public static let quickAccessCloseDelays = [0, 5, 10, 20, 30, 60]
+    public static let quickAccessCloseDelays = [0, 1, 2, 3, 5, 10, 20, 30, 60]
 
     /// What a card does when its time is up.
     public var quickAccessCloseAction: QuickAccessCloseAction {
@@ -416,11 +467,17 @@ public final class SettingsStore {
             Key.showQuickAccess: true,
             Key.historyRetention: HistoryRetention.oneWeek.rawValue,
             Key.showTextResult: false,
+            Key.textResultPosition: TextResultPosition.belowSelection.rawValue,
+            Key.textResultCloseAfter: 1,
+            Key.textRecognitionKeepsLineBreaks: true,
+            Key.textRecognitionWrapsText: true,
             Key.translationTarget: "",
             // Frozen by default: a hover card or menu that closes as the pointer leaves it can still be
             // captured, since the screen is taken the moment the shortcut is pressed.
             Key.freezeScreen: true,
             Key.screenshotShowsCursor: false,
+            Key.captureLoupeSize: CaptureLoupeSize.small.rawValue,
+            Key.captureLoupeMagnification: CaptureLoupeMagnification.four.rawValue,
             Key.areaShape: "",
             Key.snapSelectionToText: false,
             Key.allInOneRemembersArea: true,
@@ -431,7 +488,10 @@ public final class SettingsStore {
             Key.pinBorder: true,
             Key.pinsAppearInCaptures: true,
             Key.colorFormat: ColorFormat.hex.rawValue,
+            Key.colorCopyGesture: ColorCopyGesture.option.rawValue,
             Key.measureUnit: MeasureUnit.points.rawValue,
+            Key.measureTolerance: MeasureTolerance.medium.rawValue,
+            Key.measureSnapsToContent: true,
             Key.recordingFrameRate: 60,
             Key.recordingPrefersHEVC: false,
             Key.recordingCountdown: 3,
@@ -458,7 +518,7 @@ public final class SettingsStore {
             Key.quickAccessCorner: QuickAccessCorner.bottomLeft.rawValue,
             Key.quickAccessSize: QuickAccessSize.medium.rawValue,
             Key.quickAccessOnPointerDisplay: false,
-            Key.quickAccessCloseAfter: 0,
+            Key.quickAccessCloseAfter: 3,
             Key.quickAccessCloseAction: QuickAccessCloseAction.close.rawValue,
         ])
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
@@ -469,6 +529,8 @@ public final class SettingsStore {
             ?? URL.desktopDirectory
         freezeScreen = defaults.bool(forKey: Key.freezeScreen)
         screenshotShowsCursor = defaults.bool(forKey: Key.screenshotShowsCursor)
+        captureLoupeSize = defaults.string(forKey: Key.captureLoupeSize).flatMap(CaptureLoupeSize.init(rawValue:)) ?? .small
+        captureLoupeMagnification = defaults.string(forKey: Key.captureLoupeMagnification).flatMap(CaptureLoupeMagnification.init(rawValue:)) ?? .four
         // Only a shape the picker lists is kept; anything else, a square included, is a square.
         let shape = defaults.string(forKey: Key.areaShape) ?? ""
         areaShape = AspectRatio.presets.dropFirst().contains { $0.label == shape } ? shape : ""
@@ -480,7 +542,10 @@ public final class SettingsStore {
         pinBorder = defaults.bool(forKey: Key.pinBorder)
         pinsAppearInCaptures = defaults.bool(forKey: Key.pinsAppearInCaptures)
         colorFormat = defaults.string(forKey: Key.colorFormat).flatMap(ColorFormat.init(rawValue:)) ?? .hex
+        colorCopyGesture = defaults.string(forKey: Key.colorCopyGesture).flatMap(ColorCopyGesture.init(rawValue:)) ?? .option
         measureUnit = defaults.string(forKey: Key.measureUnit).flatMap(MeasureUnit.init(rawValue:)) ?? .points
+        measureTolerance = defaults.string(forKey: Key.measureTolerance).flatMap(MeasureTolerance.init(rawValue:)) ?? .medium
+        measureSnapsToContent = defaults.bool(forKey: Key.measureSnapsToContent)
         let frameRate = defaults.integer(forKey: Key.recordingFrameRate)
         recordingFrameRate = Self.recordingFrameRates.contains(frameRate) ? frameRate : 60
         recordingPrefersHEVC = defaults.bool(forKey: Key.recordingPrefersHEVC)
@@ -516,8 +581,8 @@ public final class SettingsStore {
         quickAccessCorner = defaults.string(forKey: Key.quickAccessCorner).flatMap(QuickAccessCorner.init(rawValue:)) ?? .bottomLeft
         quickAccessSize = defaults.string(forKey: Key.quickAccessSize).flatMap(QuickAccessSize.init(rawValue:)) ?? .medium
         quickAccessOnPointerDisplay = defaults.bool(forKey: Key.quickAccessOnPointerDisplay)
-        let closeAfter = defaults.integer(forKey: Key.quickAccessCloseAfter)
-        quickAccessCloseAfter = Self.quickAccessCloseDelays.contains(closeAfter) ? closeAfter : 0
+        let closeAfter = defaults.object(forKey: Key.quickAccessCloseAfter) as? Int ?? 3
+        quickAccessCloseAfter = Self.quickAccessCloseDelays.contains(closeAfter) ? closeAfter : 3
         quickAccessCloseAction = defaults.string(forKey: Key.quickAccessCloseAction).flatMap(QuickAccessCloseAction.init(rawValue:)) ?? .close
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         uploadAfterCapture = defaults.bool(forKey: Key.uploadAfterCapture)
@@ -540,6 +605,13 @@ public final class SettingsStore {
         uploadAfterRecording = Self.recordingChoice(Key.uploadAfterRecording, startingAs: Key.uploadAfterCapture, in: defaults)
         historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
         showTextResult = defaults.bool(forKey: Key.showTextResult)
+        textResultPosition = defaults.string(forKey: Key.textResultPosition).flatMap(TextResultPosition.init(rawValue:)) ?? .belowSelection
+        // Invalid types must not become 0 (Never), as integer(forKey:) would make an unreadable string.
+        let storedTextResultCloseAfter = defaults.object(forKey: Key.textResultCloseAfter) as? NSNumber
+        let textResultDelay = storedTextResultCloseAfter.flatMap { CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : $0 as? Int } ?? 1
+        textResultCloseAfter = Self.textResultCloseDelays.contains(textResultDelay) ? textResultDelay : 1
+        textRecognitionKeepsLineBreaks = defaults.bool(forKey: Key.textRecognitionKeepsLineBreaks)
+        textRecognitionWrapsText = defaults.bool(forKey: Key.textRecognitionWrapsText)
         translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
     }
 
@@ -560,6 +632,8 @@ public final class SettingsStore {
         static let exportDirectory = "exportDirectory"
         static let freezeScreen = "freezeScreen"
         static let screenshotShowsCursor = "screenshotShowsCursor"
+        static let captureLoupeSize = "captureLoupeSize"
+        static let captureLoupeMagnification = "captureLoupeMagnification"
         static let areaShape = "areaShape"
         static let snapSelectionToText = "snapSelectionToText"
         static let selfTimerDelay = "selfTimerDelay"
@@ -568,7 +642,10 @@ public final class SettingsStore {
         static let pinBorder = "pinBorder"
         static let pinsAppearInCaptures = "pinsAppearInCaptures"
         static let colorFormat = "colorFormat"
+        static let colorCopyGesture = "colorCopyGesture"
         static let measureUnit = "measureUnit"
+        static let measureTolerance = "measureTolerance"
+        static let measureSnapsToContent = "measureSnapsToContent"
         static let recordingFrameRate = "recordingFrameRate"
         static let recordingPrefersHEVC = "recordingPrefersHEVC"
         static let recordingCountdown = "recordingCountdown"
@@ -621,6 +698,10 @@ public final class SettingsStore {
         static let uploadAfterRecording = "uploadAfterRecording"
         static let historyRetention = "historyRetention"
         static let showTextResult = "showTextResult"
+        static let textResultPosition = "textResultPosition"
+        static let textResultCloseAfter = "textResultCloseAfter"
+        static let textRecognitionKeepsLineBreaks = "textRecognitionKeepsLineBreaks"
+        static let textRecognitionWrapsText = "textRecognitionWrapsText"
         static let translationTarget = "translationTarget"
     }
 }

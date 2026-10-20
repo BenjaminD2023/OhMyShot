@@ -37,6 +37,9 @@ extension SettingsTab {
             [
                 String(localized: "Freeze the screen", bundle: .module),
                 String(localized: "Show the pointer in screenshots", bundle: .module),
+                String(localized: "Color picker size", bundle: .module),
+                String(localized: "Color picker magnification", bundle: .module),
+                String(localized: "Copy color shortcut", bundle: .module),
                 String(localized: "Shift keeps", bundle: .module),
                 String(localized: "Snap the selection to text", bundle: .module),
                 String(localized: "All-In-One remembers the last area", bundle: .module),
@@ -82,10 +85,23 @@ extension SettingsTab {
         case .tools:
             [
                 String(localized: "Capture Text", bundle: .module),
+                String(localized: "Show the copied text", bundle: .module),
+                String(localized: "Text popup position", bundle: .module),
+                String(localized: "Close text popup", bundle: .module),
+                String(localized: "Below selection", bundle: .module),
+                String(localized: "Bottom left", bundle: .module),
+                String(localized: "Image line breaks", bundle: .module),
+                String(localized: "Keep Line Breaks", bundle: .module),
+                String(localized: "Join Lines", bundle: .module),
+                String(localized: "Recognized Text", bundle: .module),
+                String(localized: "Wrap text to window", bundle: .module),
                 String(localized: "Translate into", bundle: .module),
                 String(localized: "Model packs", bundle: .module),
                 String(localized: "Copy colors as", bundle: .module),
                 String(localized: "Measure in", bundle: .module),
+                String(localized: "Measurement snapping", bundle: .module),
+                String(localized: "Snap selections to content", bundle: .module),
+                String(localized: "Edge tolerance", bundle: .module),
                 String(localized: "Pins", bundle: .module),
                 String(localized: "Show in screenshots", bundle: .module),
             ]

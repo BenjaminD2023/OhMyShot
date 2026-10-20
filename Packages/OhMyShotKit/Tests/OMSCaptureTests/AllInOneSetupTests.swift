@@ -146,6 +146,106 @@ struct AllInOneSetupTests {
         let result = run(["escape"])
         #expect(result.cancelled && result.chose.isEmpty)
     }
+
+    @Test func hidingTheBarCommitsATypedSizeAndReturnsTheKeyboard() throws {
+        let (view, window, _) = try typing("800")
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        view.debugHideBar()
+        #expect(view.debugBarState.isHidden)
+        #expect(view.area.width == 400)
+        #expect(window.firstResponder === view)
+        _ = view.debugAct("h")
+        #expect(!view.debugBarState.isHidden)
+        #expect(view.barSummary.hasPrefix("800 × "))
+    }
+}
+
+/// Toolbar placement is independent of the framed capture area and survives the area's adjustments.
+@MainActor
+struct CaptureToolbarSetupTests {
+    private static let display = DisplayInfo(
+        id: 1, name: "Test", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+        pixelSize: CGSize(width: 2880, height: 1800), backingScale: 2, maximumPotentialEDR: 1
+    )
+    private static let area = CGRect(x: 500, y: 300, width: 300, height: 150)
+
+    @Test func aHiddenToolbarStaysHiddenWhenSelectionSetupOpens() {
+        let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: true, toolbarHidden: true)
+        #expect(view.debugBarState.isHidden)
+        _ = view.debugAct("h")
+        #expect(!view.debugBarState.isHidden)
+    }
+
+    @Test func movedToolbarKeepsItsPositionWithoutChangingTheCapture() {
+        let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: true)
+        let initial = view.debugBarState.frame
+        view.debugMoveBar(by: CGVector(dx: 20, dy: 30))
+        let moved = view.debugBarState.frame
+        #expect(moved.origin == CGPoint(x: initial.minX + 20, y: initial.minY - 30))
+        #expect(view.area == Self.area)
+        _ = view.debugAct("right")
+        #expect(view.area == Self.area.offsetBy(dx: 1, dy: 0))
+        #expect(view.debugBarState.frame == moved)
+        view.debugMoveBar(by: CGVector(dx: 10000, dy: -10000))
+        #expect(view.bounds.insetBy(dx: 8, dy: 8).contains(view.debugBarState.frame))
+        #expect(view.debugBarState.frame.maxX == view.bounds.maxX - 8)
+        #expect(view.debugBarState.frame.maxY == view.bounds.maxY - 8)
+        view.debugMoveBar(by: CGVector(dx: -10000, dy: 10000))
+        #expect(view.debugBarState.frame.origin == CGPoint(x: 8, y: 8))
+    }
+
+    @Test func hiddenToolbarLetsItsFormerAreaBeSelectedAndHRestoresIt() throws {
+        let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: true)
+        let window = NSWindow(contentRect: view.bounds, styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { window.close() }
+        view.layoutSubtreeIfNeeded()
+        view.debugMoveBar(by: CGVector(dx: 20, dy: 0))
+        let bar = view.debugBarState.frame
+        let start = CGPoint(x: bar.midX, y: bar.midY)
+        view.debugHideBar()
+        #expect(view.hitTest(start) === view)
+        #expect(view.debugBarState.isHidden)
+        func mouse(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: view.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+        view.mouseDown(with: try mouse(.leftMouseDown, at: start))
+        let end = CGPoint(x: start.x + 80, y: start.y + 40)
+        view.mouseDragged(with: try mouse(.leftMouseDragged, at: end))
+        view.mouseUp(with: try mouse(.leftMouseUp, at: end))
+        #expect(view.area.size == CGSize(width: 80, height: 40))
+        #expect(view.debugBarState.isHidden)
+        _ = view.debugAct("h")
+        #expect(!view.debugBarState.isHidden && view.debugBarState.frame == bar)
+    }
+
+    @Test func movingTheGripReportsWindowDeltasAndEndsWithACursorRefresh() throws {
+        let handle = CaptureBarHandle()
+        let image = try #require(handle.subviews.compactMap { $0 as? NSImageView }.first?.image)
+        #expect(image.size.width > 0 && image.size.height > 0)
+        var moves: [(CGVector, CGPoint, Bool)] = []
+        handle.onMove = { moves.append(($0, $1, handle.isDragging)) }
+        defer { handle.onMove = nil }
+        func mouse(_ type: NSEvent.EventType, _ point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: point, modifierFlags: [], timestamp: 0,
+                windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+        handle.mouseDown(with: try mouse(.leftMouseDown, CGPoint(x: 10, y: 20)))
+        handle.mouseDragged(with: try mouse(.leftMouseDragged, CGPoint(x: 35, y: 50)))
+        handle.mouseUp(with: try mouse(.leftMouseUp, CGPoint(x: 35, y: 50)))
+        #expect(moves.count == 3)
+        let movement = try #require(moves.dropFirst().first)
+        #expect(movement.0 == CGVector(dx: 25, dy: 30) && movement.1 == CGPoint(x: 35, y: 50))
+        #expect(movement.2 && !handle.isDragging)
+        #expect(moves.last?.0 == .zero && moves.last?.2 == false)
+    }
 }
 
 /// Capture Area's size control: All-In-One's frame with only Capture, the size, and the shape on its bar.

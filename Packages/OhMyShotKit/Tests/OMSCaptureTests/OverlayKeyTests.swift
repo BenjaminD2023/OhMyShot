@@ -12,19 +12,41 @@ struct OverlayKeyTests {
         var heard: [String] = []
         /// The last nudge, in pixels, down positive.
         var nudge: CGVector?
+        var colorCopyPoint: CGPoint?
+        var movedPoints: [CGPoint] = []
+        var copiedColor: ScreenColor?
+        var acceptsColorCopy = true
+        var pickModifiers: NSEvent.ModifierFlags?
+        var dragModifiers: NSEvent.ModifierFlags?
 
         func overlayView(_ view: OverlayView, didPressAt point: CGPoint) { heard.append("press") }
-        func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) { heard.append("drag") }
+        func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) {
+            heard.append("drag")
+            dragModifiers = modifiers
+        }
         func overlayView(_ view: OverlayView, didReleaseWith modifiers: NSEvent.ModifierFlags) { heard.append("release") }
         func overlayView(_ view: OverlayView, didChangeModifiers modifiers: NSEvent.ModifierFlags) { heard.append("modifiers") }
-        func overlayView(_ view: OverlayView, didMovePointerTo point: CGPoint) { heard.append("move") }
+        func overlayView(_ view: OverlayView, didMovePointerTo point: CGPoint) {
+            heard.append("move")
+            movedPoints.append(point)
+        }
         func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool) { heard.append("space") }
         func overlayViewDidReleaseSpace(_ view: OverlayView) { heard.append("space up") }
         func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) { heard.append("select") }
         func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) { heard.append("window") }
         func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) { heard.append("switch") }
         func overlayViewDidCancel(_ view: OverlayView) { heard.append("cancel") }
-        func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) { heard.append("pick") }
+        func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) {
+            heard.append("pick")
+            pickModifiers = modifiers
+        }
+        func overlayView(_ view: OverlayView, copyColorAt point: CGPoint) -> Bool {
+            guard acceptsColorCopy else { return false }
+            heard.append("copy color")
+            colorCopyPoint = point
+            copiedColor = view.color(at: point)
+            return true
+        }
         func overlayView(_ view: OverlayView, didNudge pixels: CGVector) {
             heard.append("nudge")
             nudge = pixels
@@ -32,6 +54,7 @@ struct OverlayKeyTests {
         func overlayViewDidRequestSizing(_ view: OverlayView) { heard.append("size") }
         func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) { heard.append("copy") }
         func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) { heard.append("unit") }
+        func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance) { heard.append("tolerance \(tolerance.rawValue)") }
         func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice) { heard.append("mode \(choice)") }
     }
 
@@ -161,4 +184,184 @@ struct OverlayKeyTests {
         }
         #expect(try press(48, in: .measure).heard == ["unit"])
     }
+
+    @Test func toleranceKeysBelongOnlyToMeasureWithoutCommandModifiers() throws {
+        let keys: [(UInt16, String, String)] = [(17, "t", "high"), (24, "=", "high"), (24, "+", "high"), (27, "-", "low")]
+        for (code, character, expected) in keys {
+            let result = try press(code, characters: character, in: .measure)
+            #expect(result.heard == ["tolerance \(expected)"] && !result.passedOn)
+            for purpose in [OverlayController.Purpose.screenshot, .annotate, .color, .text, .record, .scroll] {
+                #expect(try press(code, characters: character, in: purpose).heard.isEmpty)
+            }
+            for modifier: NSEvent.ModifierFlags in [.command, .control, .option] {
+                #expect(try press(code, characters: character, modifiers: modifier, in: .measure).heard.isEmpty)
+            }
+        }
+    }
+
+    private func mouse(
+        _ type: NSEvent.EventType, at point: CGPoint = CGPoint(x: 400, y: 300), modifiers: NSEvent.ModifierFlags = []
+    ) throws -> NSEvent {
+        try #require(NSEvent.mouseEvent(
+            with: type, location: point, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 0
+        ))
+    }
+
+    private func colorFrame(on display: DisplayInfo = Self.display) throws -> CapturedFrame {
+        let width = Int(display.pixelSize.width), height = Int(display.pixelSize.height)
+        let context = try #require(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(srgbRed: 18.0 / 255, green: 52.0 / 255, blue: 86.0 / 255, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return CapturedFrame(image: try #require(context.makeImage()), hdrImage: nil, displayID: display.id, frame: display.frame)
+    }
+
+    @Test func modifierColorCopyConsumesThePressDragAndReleaseWithoutSelecting() throws {
+        for purpose in [OverlayController.Purpose.screenshot, .annotate, .color] {
+            let view = OverlayView(display: Self.display)
+            let recorder = Recorder()
+            view.delegate = recorder
+            view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: purpose)
+            view.show(try colorFrame(), frozen: true)
+            view.mouseDown(with: try mouse(.leftMouseDown, modifiers: .option))
+            // Releasing the modifier before releasing the button must not release a selection or end Pick Color.
+            view.mouseDragged(with: try mouse(.leftMouseDragged, at: CGPoint(x: 500, y: 250)))
+            view.mouseUp(with: try mouse(.leftMouseUp))
+            #expect(recorder.heard == ["copy color", "move", "move"], "\(purpose): \(recorder.heard)")
+            #expect(recorder.copiedColor?.hex == "#123456")
+            #expect(recorder.movedPoints == [CGPoint(x: 400, y: 300), CGPoint(x: 500, y: 250)])
+            recorder.heard.removeAll()
+            view.mouseDown(with: try mouse(.leftMouseDown))
+            view.mouseUp(with: try mouse(.leftMouseUp))
+            #expect(recorder.heard == (purpose == .color ? ["pick"] : ["press", "release"]))
+        }
+    }
+
+    @Test func aCopyBeforeTheFirstFrameArrivesStillCannotStartAnArea() throws {
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false)
+        view.mouseDown(with: try mouse(.leftMouseDown, modifiers: .option))
+        view.mouseDragged(with: try mouse(.leftMouseDragged, modifiers: .option))
+        view.mouseUp(with: try mouse(.leftMouseUp, modifiers: .option))
+        #expect(recorder.heard == ["copy color", "move", "move"])
+        #expect(recorder.copiedColor == nil)
+    }
+
+    @Test func aMouseCopyUsesTheClickedGlobalPixelRatherThanThePreviousCrosshair() throws {
+        let display = DisplayInfo(
+            id: 42, name: "Left screen", frame: CGRect(x: -800, y: 100, width: 800, height: 600),
+            pixelSize: CGSize(width: 800, height: 600), backingScale: 1, maximumPotentialEDR: 1
+        )
+        let view = OverlayView(display: display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: -700, y: 200), mode: .area, windows: [], showsToolbar: false)
+        view.show(try colorFrame(on: display), frozen: true)
+        view.simulate(pointer: CGPoint(x: -600, y: 300))
+        view.mouseDown(with: try mouse(.leftMouseDown, at: CGPoint(x: 500.5, y: 350.5), modifiers: .option))
+        #expect(recorder.colorCopyPoint == CGPoint(x: -299.5, y: 450.5))
+        #expect(recorder.copiedColor?.hex == "#123456")
+        #expect(recorder.heard == ["copy color", "move"])
+    }
+
+    @Test func anExistingAnchorOrRememberedAreaKeepsTheUsualDragModifiers() throws {
+        for hasRectangle in [false, true] {
+            let view = OverlayView(display: Self.display)
+            let recorder = Recorder()
+            view.delegate = recorder
+            view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, allInOne: true)
+            var selection = SelectionModel(bounds: Self.display.frame, pixelsPerPoint: 2)
+            selection.begin(at: CGPoint(x: 200, y: 200))
+            if hasRectangle { selection.drag(to: CGPoint(x: 500, y: 400)) }
+            view.show(selection: selection, showsReading: false, isDragging: !hasRectangle)
+            view.mouseDown(with: try mouse(.leftMouseDown, modifiers: .option))
+            view.mouseDragged(with: try mouse(.leftMouseDragged, modifiers: [.option, .shift]))
+            view.mouseUp(with: try mouse(.leftMouseUp, modifiers: .option))
+            #expect(recorder.heard == ["press", "drag", "release"])
+            #expect(recorder.dragModifiers == [.option, .shift])
+        }
+    }
+
+    @Test func theGestureCanBeReassignedDisabledAndDeclinedByTheSession() throws {
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        for (gesture, flags, expected) in [
+            (ColorCopyGesture.command, NSEvent.ModifierFlags.option, ["press", "release"]),
+            (.command, .command, ["copy color", "move"]),
+            (.disabled, .option, ["press", "release"]),
+            (.option, [.option, .command], ["press", "release"]),
+        ] {
+            recorder.heard.removeAll()
+            view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, colorCopyGesture: gesture)
+            view.mouseDown(with: try mouse(.leftMouseDown, modifiers: flags))
+            view.mouseUp(with: try mouse(.leftMouseUp, modifiers: flags))
+            #expect(recorder.heard == expected)
+        }
+        recorder.heard.removeAll()
+        recorder.acceptsColorCopy = false
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false)
+        view.mouseDown(with: try mouse(.leftMouseDown, modifiers: .option))
+        view.mouseUp(with: try mouse(.leftMouseUp, modifiers: .option))
+        #expect(recorder.heard == ["press", "release"])
+    }
+
+    @Test func otherPurposesWindowModeAndInPlaceAnnotationDoNotCopy() throws {
+        for purpose in [OverlayController.Purpose.text, .measure, .record, .scroll] {
+            let view = OverlayView(display: Self.display)
+            let recorder = Recorder()
+            view.delegate = recorder
+            view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: purpose)
+            view.mouseDown(with: try mouse(.leftMouseDown, modifiers: .option))
+            view.mouseUp(with: try mouse(.leftMouseUp, modifiers: .option))
+            #expect(!recorder.heard.contains("copy color"))
+        }
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .window, windows: [], showsToolbar: false)
+        view.mouseDown(with: try mouse(.leftMouseDown, modifiers: .option))
+        view.mouseUp(with: try mouse(.leftMouseUp, modifiers: .option))
+        #expect(recorder.heard.isEmpty)
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .annotate)
+        view.enterAnnotation()
+        view.mouseDown(with: try mouse(.leftMouseDown, modifiers: .option))
+        view.mouseUp(with: try mouse(.leftMouseUp, modifiers: .option))
+        #expect(recorder.heard.isEmpty)
+    }
+
+    @Test func aRightOrOtherMouseEventCannotCopyAColor() throws {
+        for type in [NSEvent.EventType.rightMouseDown, .otherMouseDown] {
+            let view = OverlayView(display: Self.display)
+            let recorder = Recorder()
+            view.delegate = recorder
+            view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false)
+            view.mouseDown(with: try mouse(type, modifiers: .option))
+            #expect(!recorder.heard.contains("copy color"))
+        }
+    }
+
+    @Test func optionReturnAndOptionCStillRequestTheCompletingColorCardPath() throws {
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .color)
+        view.show(try colorFrame(), frozen: true)
+        for (keyCode, characters) in [(UInt16(36), "\r"), (UInt16(8), "c")] {
+            recorder.heard.removeAll()
+            let event = try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: .option, timestamp: 0, windowNumber: 0, context: nil,
+                characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+            ))
+            view.keyDown(with: event)
+            #expect(recorder.heard == ["pick"])
+            #expect(recorder.pickModifiers == .option)
+        }
+    }
+
 }

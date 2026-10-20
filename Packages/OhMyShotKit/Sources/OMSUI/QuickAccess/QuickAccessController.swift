@@ -16,6 +16,8 @@ public final class QuickAccessController {
         public var open: (QuickAccessItem) -> Void
         /// Opens the capture in the annotation editor.
         public var annotate: (QuickAccessItem) -> Void
+        /// Opens a screenshot in a compact, editable preview. Movies keep the system's Quick Look.
+        public var preview: ((QuickAccessItem) -> Void)?
         public var reveal: (QuickAccessItem) -> Void
         /// Opens the capture in the OCR panel.
         public var recognizeText: (QuickAccessItem) -> Void
@@ -133,9 +135,12 @@ public final class QuickAccessController {
     private var selectedID: UUID?
     /// A card's hold by the keyboard, to be given back when the keys go to another card.
     private var keyboardHolder: UUID?
+    private var hoveredID: UUID?
+    private let hoverPreviewShortcut = HoverPreviewShortcut()
 
     public init(actions: Actions) {
         self.actions = actions
+        hoverPreviewShortcut.onPreview = { [weak self] in self?.previewHoveredCard() }
     }
 
     public var isEmpty: Bool { items.isEmpty }
@@ -164,6 +169,7 @@ public final class QuickAccessController {
         let target = QuickAccessPlacement.display(forCaptureOn: item.displayID, pointerOn: Self.pointerDisplayID(), followsPointer: preferences.onPointerDisplay)
         present(entering: item.id, on: target)
         panel?.orderFrontRegardless()
+        stack?.updatePointerHover()
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }
@@ -280,6 +286,7 @@ public final class QuickAccessController {
     /// Removes a capture that was deleted elsewhere: its card goes without the closed callback, and it
     /// can no longer be restored.
     public func remove(_ id: UUID) {
+        clearHover(for: id)
         recentlyClosed.removeAll { $0.id == id }
         guard items.contains(where: { $0.id == id }) else { return }
         items.removeAll { $0.id == id }
@@ -305,6 +312,7 @@ public final class QuickAccessController {
     }
 
     private func close(_ item: QuickAccessItem) {
+        clearHover(for: item.id)
         recentlyClosed.append(item)
         if recentlyClosed.count > 20 { recentlyClosed.removeFirst() }
         schedule.forget(item.id)
@@ -361,6 +369,8 @@ public final class QuickAccessController {
         schedule.removeAll()
         selectedID = nil
         keyboardHolder = nil
+        hoveredID = nil
+        hoverPreviewShortcut.stop()
         stack?.quickLook.close()
         stack?.quickLook.detach()
         panel?.orderOut(nil)
@@ -454,6 +464,7 @@ public final class QuickAccessController {
     private func trash(_ item: QuickAccessItem) {
         let next = neighbor(of: item.id)
         let hadKeyboard = selectedID == item.id
+        clearHover(for: item.id)
         items.removeAll { $0.id == item.id }
         schedule.forget(item.id)
         if hadKeyboard { selectedID = nil }
@@ -472,7 +483,41 @@ public final class QuickAccessController {
     private func hold(_ hold: CardCountdown.Hold, for id: UUID, if on: Bool) {
         guard items.contains(where: { $0.id == id }) else { return }
         schedule.hold(hold, for: id, if: on, at: Self.now)
+        if hold == .pointer {
+            if on { hoveredID = id } else if hoveredID == id { hoveredID = nil }
+        }
+        if hold == .pointer || hold == .editor || hold == .menu || hold == .drag { updateHoverPreviewShortcut() }
         if schedule.isCounting(id) { scheduleCloser() }
+    }
+
+    private func updateHoverPreviewShortcut() {
+        let hovered = hoveredID.flatMap { item($0) }
+        let eligible = hovered.map {
+            schedule.holds(on: $0.id).isDisjoint(with: [.menu, .drag, .editor, .preview])
+                && !actions.isBeingEdited($0) && stack?.quickLook.isShowing != true && NSApp.modalWindow == nil
+        } ?? false
+        hoverPreviewShortcut.setEnabled(eligible)
+    }
+
+    private func clearHover(for id: UUID) {
+        guard hoveredID == id else { return }
+        hoveredID = nil
+        hoverPreviewShortcut.stop()
+    }
+
+    private func previewHoveredCard() {
+        guard let id = hoveredID, let item = item(id) else {
+            hoveredID = nil
+            hoverPreviewShortcut.stop()
+            return
+        }
+        // A stale exit event must never open a card after the pointer has left the actual card.
+        guard stack?.screenFrame(ofCard: id)?.contains(NSEvent.mouseLocation) == true else {
+            hold(.pointer, for: id, if: false)
+            return
+        }
+        hoverPreviewShortcut.stop()
+        toggleQuickLook(of: item)
     }
 
     /// Starts the time of every card that has none while Settings has cards close by themselves, and stops all of
@@ -566,6 +611,7 @@ public final class QuickAccessController {
     private func previewClosed() {
         // The keys come back to the card, which the preview took them from.
         if let selectedID { focus(on: selectedID) }
+        updateHoverPreviewShortcut()
     }
 
     private func neighbor(of id: UUID) -> UUID? {
@@ -648,6 +694,12 @@ public final class QuickAccessController {
 
     private func toggleQuickLook(of item: QuickAccessItem) {
         guard let stack else { return }
+        hoverPreviewShortcut.stop()
+        if item.kind == .screenshot, let preview = actions.preview {
+            endKeyboard()
+            preview(item)
+            return
+        }
         if stack.quickLook.isShowing {
             stack.quickLook.close()
             return

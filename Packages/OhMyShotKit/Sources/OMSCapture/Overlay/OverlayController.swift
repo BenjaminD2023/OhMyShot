@@ -122,13 +122,30 @@ public final class OverlayController {
     private var chosenAhead: (area: CGRect, display: DisplayInfo)?
     /// The notation picked colors are copied in: the magnifier's reading shows it while picking.
     public var colorFormat: ColorFormat = .hex
+    /// A local modifier-click that copies a color before choosing an area, or while picking colors.
+    public var colorCopyGesture: ColorCopyGesture = .option
+    /// Copies a color at the mouse press while keeping the overlay and its selection session open.
+    public var onCopyColor: ((ScreenColor, CGPoint) -> Void)?
+    /// The centered magnifier's size for screenshot and annotation sessions.
+    public var captureLoupeSize: CaptureLoupeSize = .small
+    /// How much the centered screenshot and annotation picker enlarges device pixels.
+    public var captureLoupeMagnification: CaptureLoupeMagnification = .four
     /// What the ruler reads in. Tab switches it during a session, and `onMeasureUnitChange` hears it.
     public var measureUnit: MeasureUnit = .points
     public var onMeasureUnitChange: ((MeasureUnit) -> Void)?
+    /// The ruler's pixel boundary tolerance. T cycles it during a session.
+    public var measureTolerance: MeasureTolerance = .medium
+    public var onMeasureToleranceChange: ((MeasureTolerance) -> Void)?
+    /// Whether a drawn measurement box snaps to its content when released.
+    public var measureSnapsToContent = true
     /// The ruler's measurement to copy, where the crosshair is (global space), and whether the overlay is
     /// closing after it (Return) rather than staying, with "Copied" in its reading (⌘C).
     public var onCopyMeasurement: ((String, CGPoint?, Bool) -> Void)?
-    private var hidesCursor = false
+    private let cursorVisibility = OverlayCursorVisibility()
+    /// A session's choice is shared across displays, including the one with no visible bar.
+    private var toolbarHiddenByUser = false
+    /// Mouse input's location, separate from the crosshair the arrow keys may nudge.
+    private var systemCursorPoint: CGPoint?
 
     public private(set) var isActive = false
     /// Whether the overlay has the keyboard and the pointer: at once on a live screen, once the
@@ -206,6 +223,8 @@ public final class OverlayController {
             let panel = OverlayPanel(frame: display.frame)
             let view = OverlayView(display: display)
             view.delegate = self
+            view.onCanvasCursorUpdate = { [weak self] point in self?.updateCursorVisibility(at: point) }
+            view.onToolbarVisibilityToggle = { [weak self] in self?.toggleToolbarVisibility() }
             panel.contentView = view
             entries[display.id] = Entry(panel: panel, view: view)
         }
@@ -216,6 +235,9 @@ public final class OverlayController {
     ///   chooses another.
     public func begin(mode: Mode = .area, purpose: Purpose = .screenshot, choosing area: CGRect? = nil, completion: @escaping (Outcome) -> Void) {
         guard !isActive else { return }
+        cursorVisibility.end()
+        toolbarHiddenByUser = false
+        systemCursorPoint = nil
         let beginning = LatencyProbe("overlay.begin")
         let visible = LatencyProbe("overlay.visible")
         let frozen = LatencyProbe("overlay.frozen")
@@ -257,10 +279,16 @@ public final class OverlayController {
                 showsPointer: !holdsStill,
                 purpose: purpose,
                 colorFormat: colorFormat,
+                colorCopyGesture: colorCopyGesture,
+                captureLoupeSize: captureLoupeSize,
+                captureLoupeMagnification: captureLoupeMagnification,
                 measureUnit: measureUnit,
+                measureTolerance: measureTolerance,
+                measureSnapsToContent: measureSnapsToContent,
                 allInOne: isAllInOne,
                 snapsToText: snapsToText
             )
+            entry.view.setToolbarHidden(false)
         }
         hasInput = false
         // Shown before the overlay takes input, which tells VoiceOver it is there; framed with its bar once the
@@ -338,6 +366,8 @@ public final class OverlayController {
         // On a frozen screen this comes a moment after the session began: the crosshair goes where the
         // pointer is now.
         let pointer = NSEvent.mouseLocation
+        self.pointer = pointer
+        systemCursorPoint = pointer
         for entry in entries.values {
             entry.panel.ignoresMouseEvents = false
             entry.view.movePointer(to: pointer)
@@ -362,9 +392,10 @@ public final class OverlayController {
             entry.panel.makeKey()
             entry.panel.makeFirstResponder(entry.view)
         }
-        // A screenshot draws its own crosshair and magnifier; copying text keeps the system crosshair.
-        hidesCursor = purpose != .text
-        if hidesCursor { NSCursor.hide() }
+        // The canvas draws its own pointer; native controls retain the system cursor. This ownership
+        // starts only after taking input, so early tracking events cannot hide the user's pointer.
+        cursorVisibility.begin(drawsPointer: purpose != .text, overControls: wantsSystemCursor(at: pointer))
+        for entry in entries.values { entry.view.beginCanvasCursorOwnership(at: pointer) }
         CATransaction.flush()
         // A frozen overlay asks for activation a moment after the shortcut, not while handling it: the log
         // says whether it was granted, which only a real shortcut press can show.
@@ -383,6 +414,27 @@ public final class OverlayController {
 
     public func cancel() {
         end(.cancelled)
+    }
+
+    private func wantsSystemCursor(at point: CGPoint) -> Bool {
+        entries.values.contains { $0.view.wantsSystemCursor(at: point) }
+    }
+
+    private func updateCursorVisibility(at point: CGPoint) {
+        systemCursorPoint = point
+        cursorVisibility.update(overControls: wantsSystemCursor(at: point))
+        if let display = topology.layout.display(at: point) {
+            entries[display.id]?.view.refreshCanvasCursor(at: point)
+        }
+    }
+
+    private func toggleToolbarVisibility() {
+        guard isActive else { return }
+        toolbarHiddenByUser.toggle()
+        for entry in entries.values { entry.view.setToolbarHidden(toolbarHiddenByUser) }
+        let point = systemCursorPoint ?? NSEvent.mouseLocation
+        for entry in entries.values { entry.view.movePointer(to: pointer ?? point) }
+        updateCursorVisibility(at: point)
     }
 
     /// Ends in-place annotation: the overlay goes away and the previous app gets the keyboard back.
@@ -421,6 +473,9 @@ public final class OverlayController {
     }
 
     #if DEBUG
+    /// Whether this controller currently owns one native cursor hide, for checks of bar handoffs.
+    public var debugCursorIsHidden: Bool { cursorVisibility.isHidden }
+
     /// Chooses an area as a drag ending there would, without mouse input, for scripted checks. The area
     /// may cross displays.
     public func simulateSelection(_ rect: CGRect) {
@@ -630,8 +685,7 @@ public final class OverlayController {
     /// the system's again, for the frame's resize cursors.
     private func startRecordingSetup(on display: DisplayInfo, target: RecordingTarget) {
         guard let entry = entries[display.id] else { return }
-        if hidesCursor { NSCursor.unhide() }
-        hidesCursor = false
+        cursorVisibility.end()
         for (id, other) in entries where id != display.id {
             other.panel.orderOut(nil)
             other.view.clear()
@@ -661,8 +715,7 @@ public final class OverlayController {
         let area = area.intersection(display.frame)
         guard !area.isNull, area.width >= AreaFrame.smallest, area.height >= AreaFrame.smallest else { return }
         if startsScrollingAtOnce { return end(.scroll(area, display: display, autoScrolls: false)) }
-        if hidesCursor { NSCursor.unhide() }
-        hidesCursor = false
+        cursorVisibility.end()
         for (id, other) in entries where id != display.id {
             other.panel.orderOut(nil)
             other.view.clear()
@@ -689,8 +742,7 @@ public final class OverlayController {
         guard let entry = entries[display.id] else { return }
         let area = area.intersection(display.frame)
         guard !area.isNull, area.width >= AreaFrame.smallest, area.height >= AreaFrame.smallest else { return }
-        if hidesCursor { NSCursor.unhide() }
-        hidesCursor = false
+        cursorVisibility.end()
         for (id, other) in entries where id != display.id {
             other.panel.orderOut(nil)
             other.view.clear()
@@ -700,7 +752,7 @@ public final class OverlayController {
         entry.panel.makeKey()
         let setup = AllInOneSetupView(
             display: display, area: area, offersUpload: allInOneOffersUpload && !sizing,
-            kind: sizing ? .sizing : .allInOne, ratio: sizing ? ratio : nil
+            kind: sizing ? .sizing : .allInOne, ratio: sizing ? ratio : nil, toolbarHidden: toolbarHiddenByUser
         )
         setup.frame = entry.view.bounds
         setup.onShapeKept = { [weak self] shape in self?.onKeptShapeChange?(shape) }
@@ -748,8 +800,7 @@ public final class OverlayController {
             return
         }
         // The pointer is the system's again: marks need the arrow, the I-beam, and the resize cursors.
-        if hidesCursor { NSCursor.unhide() }
-        hidesCursor = false
+        cursorVisibility.end()
         // Only this display stays: the others would start selections of their own.
         for (id, other) in entries where id != displayID {
             other.panel.orderOut(nil)
@@ -763,6 +814,7 @@ public final class OverlayController {
 
     private func end(_ outcome: Outcome) {
         guard isActive else { return }
+        cursorVisibility.end()
         isActive = false
         startsScrollingAtOnce = false
         recapturesLive = false
@@ -784,8 +836,8 @@ public final class OverlayController {
             entry.panel.orderOut(nil)
             entry.view.clear()
         }
-        if hidesCursor { NSCursor.unhide() }
-        hidesCursor = false
+        toolbarHiddenByUser = false
+        systemCursorPoint = nil
         frameLeases.removeAll()
         windowLease = nil
         windows = []
@@ -946,6 +998,7 @@ extension OverlayController: OverlayViewDelegate {
         spaceHeld = false
         dragModifiers = []
         showSelection()
+        updateCursorVisibility(at: point)
     }
 
     func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) {
@@ -972,6 +1025,7 @@ extension OverlayController: OverlayViewDelegate {
         for entry in entries.values {
             entry.view.movePointer(to: shown)
         }
+        updateCursorVisibility(at: point)
     }
 
     func overlayView(_ view: OverlayView, didReleaseWith modifiers: NSEvent.ModifierFlags) {
@@ -981,6 +1035,7 @@ extension OverlayController: OverlayViewDelegate {
         guard let rect = selection.rect, !selection.isTooSmall else {
             selection.reset()
             showSelection()
+            updateCursorVisibility(at: last)
             // A click, not a drag: recording takes the whole display.
             if purpose == .record { startRecordingSetup(on: display, target: .display) }
             return
@@ -1002,6 +1057,21 @@ extension OverlayController: OverlayViewDelegate {
         for entry in entries.values {
             entry.view.movePointer(to: point)
         }
+        updateCursorVisibility(at: point)
+    }
+
+    func overlayView(_ view: OverlayView, copyColorAt point: CGPoint) -> Bool {
+        guard isActive, selection.anchor == nil,
+              purpose == .screenshot || purpose == .annotate || purpose == .color else { return false }
+        // All-In-One keeps its screenshot purpose while its next area is for text or recording.
+        switch allInOneMode {
+        case .text?, .record?, .scroll?: return false
+        case .screenshot?, nil: break
+        }
+        // The mouse press identifies this pixel; an earlier arrow-key nudge belongs only to a keyboard pick.
+        // Claim the gesture even before the first frame arrives, so it cannot begin an area by accident.
+        if let color = view.color(at: point) { onCopyColor?(color, point) }
+        return true
     }
 
     func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) {
@@ -1073,6 +1143,15 @@ extension OverlayController: OverlayViewDelegate {
         onMeasureUnitChange?(unit)
     }
 
+    func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance) {
+        guard isActive, purpose == .measure else { return }
+        measureTolerance = tolerance
+        for entry in entries.values {
+            entry.view.setMeasureTolerance(tolerance)
+        }
+        onMeasureToleranceChange?(tolerance)
+    }
+
     func overlayViewDidRequestSizing(_ view: OverlayView) {
         guard isActive, hasInput, !isAllInOne, purpose == .screenshot || purpose == .annotate, !isAnnotating else { return }
         let at = pointer ?? NSEvent.mouseLocation
@@ -1121,6 +1200,14 @@ extension OverlayController: OverlayViewDelegate {
     }
 
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) {
+        if purpose == .measure {
+            // A measured selection belongs to this display's frozen image. A missing frame leaves the
+            // measurement up; recapturing live could include the ruler or different screen content.
+            guard isActive, entries[view.display.id]?.view === view,
+                  let frozen = view.frame()?.cropped(to: rect) else { return }
+            end(.region(frozen.frame, display: view.display, modifiers: modifiers, frozen: frozen))
+            return
+        }
         // All-In-One's Screen (or F) takes the whole display at once; a mode chosen before takes it too.
         if isAllInOne, purpose == .screenshot, allInOneMode == nil {
             return endAllInOne(.screenshot(nil), rect, on: view.display)

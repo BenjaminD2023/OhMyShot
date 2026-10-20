@@ -1714,7 +1714,7 @@ struct DebugHooks {
     /// Measure over the drawn tools screen: a reading inside the button, then a box around the square.
     func runMeasureDemo(drawsBox: Bool = true) async {
         guard let display = injectToolsDemoFrames() else { return }
-        measurer.measure(copiesToClipboard: false)
+        measurer.measure(copiesToClipboard: false, allowsCapture: false)
         await waitForOverlayFrames()
         let button = DebugToolsDemo.button
         overlay.simulatePointer(DebugToolsDemo.global(CGPoint(x: button.midX, y: button.midY), on: display))

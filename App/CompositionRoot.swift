@@ -147,7 +147,7 @@ final class CompositionRoot {
         ])
     }
     private lazy var colorPicker = ColorPickerCoordinator(settings: settings, overlay: overlay)
-    private lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker)
+    private lazy var measurer = MeasureCoordinator(settings: settings, overlay: overlay, colorPicker: colorPicker, captures: captures)
     private lazy var recordings = RecordingCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions)
     private lazy var scrolling = ScrollingCaptureCoordinator(displays: displays, capturer: capturer, overlay: overlay, permissions: permissions, captures: captures)
     /// Hide Desktop Icons: nothing exists unless the icons are hidden.
@@ -225,6 +225,9 @@ final class CompositionRoot {
         // Where the blocks of text on a frozen screen lie, found quickly and never read, for a selection's edges
         // to snap to when Settings say so.
         overlay.textBlocks = TextBlockFinder(isOn: { [settings = self.settings] in settings.snapSelectionToText }, find: { await TextBlocks.find(in: $0) })
+        overlay.colorCopyGesture = settings.colorCopyGesture
+        overlay.captureLoupeSize = settings.captureLoupeSize
+        overlay.captureLoupeMagnification = settings.captureLoupeMagnification
         if #available(macOS 27, *) {
             replayStorage = ReplayCoordinator(settings: settings, displays: displays, capturer: capturer, permissions: permissions, recordings: recordings)
         }
@@ -385,6 +388,21 @@ final class CompositionRoot {
             }
         })
         observations.append(Task { [weak self] in
+            for await gesture in Observations({ settings.colorCopyGesture }) {
+                self?.overlay.colorCopyGesture = gesture
+            }
+        })
+        observations.append(Task { [weak self] in
+            for await size in Observations({ settings.captureLoupeSize }) {
+                self?.overlay.captureLoupeSize = size
+            }
+        })
+        observations.append(Task { [weak self] in
+            for await magnification in Observations({ settings.captureLoupeMagnification }) {
+                self?.overlay.captureLoupeMagnification = magnification
+            }
+        })
+        observations.append(Task { [weak self] in
             for await shows in Observations({ settings.screenshotShowsCursor }) {
                 self?.overlay.showsPointer = shows
             }
@@ -458,7 +476,9 @@ final class CompositionRoot {
         }
         // All-In-One hands on what it does not do itself.
         captures.allInOneText = { [weak self] area, frozen in
-            Task { await self?.textCapture.recognize(region: area, frozen: frozen, joinLines: false) }
+            guard let self else { return }
+            let joinLines = !self.settings.textRecognitionKeepsLineBreaks
+            Task { await self.textCapture.recognize(region: area, frozen: frozen, joinLines: joinLines) }
         }
         captures.allInOneScroll = { [weak self] area in self?.scrolling.begin(area: area, starts: true) }
         captures.onRecord = { [weak self] target, display, choices, app in
@@ -468,6 +488,10 @@ final class CompositionRoot {
         captures.canUpload = { [weak self] in self?.uploads.destinations.defaultDestination != nil }
         captures.onColor = { [weak self] color, point, modifiers, keyboard in
             self?.colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard)
+        }
+        overlay.onCopyColor = { [weak self] color, point in
+            // The gesture's modifiers choose this action; Option must not open the color card here.
+            self?.colorPicker.deliver(color, at: point, modifiers: [])
         }
         colorPicker.pin = { [weak self] color in
             guard let pinned = PinColor(color.cgColor) else { return NSSound.beep() }
@@ -714,7 +738,7 @@ final class CompositionRoot {
             captures.capturePreviousArea()
         case .captureText:
             captures.cancelSelfTimer()
-            textCapture.captureText(joinLines: false)
+            textCapture.captureText(joinLines: !settings.textRecognitionKeepsLineBreaks)
         case .captureTextJoined:
             captures.cancelSelfTimer()
             textCapture.captureText(joinLines: true)
@@ -775,14 +799,16 @@ final class CompositionRoot {
             captures.cancelSelfTimer()
             recordings.recordScreen(area: area)
         case .captureText(let file?, _, let lineBreaks):
-            Task { await textCapture.recognize(fileAt: file, joinLines: lineBreaks == false) }
+            let joinLines = !(lineBreaks ?? settings.textRecognitionKeepsLineBreaks)
+            Task { await textCapture.recognize(fileAt: file, joinLines: joinLines) }
         case .captureText(nil, let region, let lineBreaks):
             guard let area = area(of: region) else { return }
             captures.cancelSelfTimer()
+            let joinLines = !(lineBreaks ?? settings.textRecognitionKeepsLineBreaks)
             if let area {
-                Task { await textCapture.recognize(region: area, joinLines: lineBreaks == false) }
+                Task { await textCapture.recognize(region: area, joinLines: joinLines) }
             } else {
-                textCapture.captureText(joinLines: lineBreaks == false)
+                textCapture.captureText(joinLines: joinLines)
             }
         case .captureFormula(let file?, _):
             Task { await textCapture.readFormula(fileAt: file) }
@@ -1524,6 +1550,12 @@ final class CompositionRoot {
         actions.pictureChangeOffer = { [weak self] item in self?.pictureChanges.offer(for: item) ?? .unsupported }
         actions.changePicture = { [weak self] item, change in self?.pictureChanges.apply(change, to: item) }
         actions.isBeingEdited = { [weak self] item in self?.annotations.openCaptureIDs.contains(item.id) ?? false }
+        actions.preview = { [weak self] item in
+            guard let self, let entry = history.item(id: item.id) else { return }
+            let scale = entry.pixelsPerPoint.map { CGFloat($0) }
+                ?? displays.layout.display(id: item.displayID)?.pixelsPerPoint ?? 2
+            annotations.preview(entry, scale: scale)
+        }
         actions.sharing = makeSharingActions()
         return actions
     }

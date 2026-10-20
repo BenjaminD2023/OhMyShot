@@ -63,7 +63,7 @@ public struct QuickAccessPreferences: Equatable, Sendable {
         corner: QuickAccessCorner = .bottomLeft,
         size: QuickAccessSize = .medium,
         onPointerDisplay: Bool = false,
-        closeAfter: Int = 0,
+        closeAfter: Int = 3,
         closeAction: QuickAccessCloseAction = .close
     ) {
         self.corner = corner

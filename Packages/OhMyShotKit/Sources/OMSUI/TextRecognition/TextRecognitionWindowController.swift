@@ -204,9 +204,12 @@ final class TextRecognitionModel {
     var pane: Pane = .text
     var tableIndex = 0
     var copied = false
-    var joinLines = false {
+    /// A window's actual line-break choice, independent of display wrapping and the saved default.
+    var joinLines: Bool {
         didSet { if joinLines != oldValue { regenerate() } }
     }
+    /// A window's display choice; changing it never rewrites the text or the saved default.
+    var wrapsText: Bool
 
     /// Whether the translation is shown in place of the text as read.
     var translates = false {
@@ -225,6 +228,7 @@ final class TextRecognitionModel {
 
     @ObservationIgnored private let settings: SettingsStore
     @ObservationIgnored private let translator: Translator
+    @ObservationIgnored private let pasteboard: NSPasteboard
     @ObservationIgnored private var translationTask: Task<Void, Never>?
     @ObservationIgnored private var analyze: (@Sendable (CGImage) async throws -> TextAnalysis)?
     @ObservationIgnored private var analysis: Task<Void, Never>?
@@ -237,9 +241,12 @@ final class TextRecognitionModel {
     /// Counts the images loaded, so word from a reading of an earlier one is let go.
     @ObservationIgnored private var generation = 0
 
-    init(settings: SettingsStore, translator: Translator) {
+    init(settings: SettingsStore, translator: Translator, pasteboard: NSPasteboard = .general) {
         self.settings = settings
         self.translator = translator
+        self.pasteboard = pasteboard
+        joinLines = !settings.textRecognitionKeepsLineBreaks
+        wrapsText = settings.textRecognitionWrapsText
     }
 
     func load(
@@ -657,8 +664,8 @@ final class TextRecognitionModel {
     private func write(_ fill: (NSPasteboardItem) -> Void) {
         let item = NSPasteboardItem()
         fill(item)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([item])
+        pasteboard.clearContents()
+        pasteboard.writeObjects([item])
     }
 
     private func flashCopied(_ announcement: String) {
@@ -742,8 +749,20 @@ struct TextRecognitionView: View {
                 .disabled(model.isCode)
             }
         }
-        // A mode, not an action: the symbol alone, so Copy stays the one titled, filled control.
+        // Modes, not actions: the symbols alone, so Copy stays the one titled, filled control.
         ToolbarItemGroup(placement: .primaryAction) {
+            if model.phase == .ready, model.pane == .text || model.translates {
+                Toggle(isOn: $model.wrapsText) {
+                    Label {
+                        Text("Wrap Text", bundle: .module)
+                    } icon: {
+                        Image(systemName: "arrow.turn.down.left")
+                    }
+                    .labelStyle(.iconOnly)
+                }
+                .toggleStyle(.button)
+                .help(Text("Wrap long lines in this window without changing the text you copy", bundle: .module))
+            }
             Toggle(isOn: $model.translates) {
                 Label {
                     Text("Translate", bundle: .module)
@@ -1079,7 +1098,7 @@ struct TranslationPane: View {
                 if !translation.outcome.translations.isEmpty {
                     TranslatedTextView(
                         text: translation.text, translated: translation.translated,
-                        language: Translator.identifier(of: translation.outcome.target)
+                        language: Translator.identifier(of: translation.outcome.target), wrapsText: model.wrapsText
                     )
                     TranslationStatus(model: model)
                 } else if let language = translation.outcome.needsDownload.first {

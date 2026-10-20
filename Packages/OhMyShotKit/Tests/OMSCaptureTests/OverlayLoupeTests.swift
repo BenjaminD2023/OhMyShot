@@ -1,0 +1,493 @@
+import AppKit
+import OMSCore
+import Testing
+@testable import OMSCapture
+
+#if DEBUG
+@MainActor
+struct OverlayLoupeTests {
+    private let size = CGSize(width: 800, height: 600)
+
+    /// One marked physical pixel in a generated frame, including displays with negative origins.
+    private func fixture(
+        scale: Int = 2, origin: CGPoint = .zero, point: CGPoint = CGPoint(x: 400, y: 300)
+    ) throws -> (display: DisplayInfo, frame: CapturedFrame, global: CGPoint) {
+        let width = Int(size.width) * scale, height = Int(size.height) * scale
+        let context = try #require(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let x = Int((point.x * CGFloat(scale)).rounded(.down))
+        let y = Int(((size.height - point.y) * CGFloat(scale)).rounded(.down))
+        context.setFillColor(CGColor(srgbRed: 18.0 / 255, green: 52.0 / 255, blue: 86.0 / 255, alpha: 1))
+        context.fill(CGRect(x: x, y: height - y - 1, width: 1, height: 1))
+        let image = try #require(context.makeImage())
+        let display = DisplayInfo(
+            id: origin.x < 0 ? 1 : 2, name: "Synthetic loupe screen", frame: CGRect(origin: origin, size: size),
+            pixelSize: CGSize(width: width, height: height), backingScale: CGFloat(scale), maximumPotentialEDR: 1
+        )
+        return (
+            display, CapturedFrame(image: image, hdrImage: nil, displayID: display.id, frame: display.frame),
+            CGPoint(x: origin.x + point.x, y: origin.y + point.y)
+        )
+    }
+
+    private func firstPress(on display: DisplayInfo, at point: CGPoint) -> SelectionModel {
+        var selection = SelectionModel(bounds: display.frame, pixelsPerPoint: display.pixelsPerPoint)
+        selection.begin(at: point)
+        return selection
+    }
+
+    private func expectPickerHidden(_ view: OverlayView) {
+        #expect(!view.debugPointerLayers.crosshair)
+        #expect(view.debugPointerLayers.loupe == nil)
+        #expect(view.debugPointerLayers.colorReading == nil)
+    }
+
+    private func contrastFixture(
+        colors: [CGColor], scale: Int
+    ) throws -> (display: DisplayInfo, frame: CapturedFrame, points: [CGPoint]) {
+        let width = Int(size.width) * scale, height = Int(size.height) * scale
+        let context = try #require(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(gray: 0.5, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let points = colors.indices.map { CGPoint(x: 100.5 + CGFloat($0) * 80, y: 300.5) }
+        for (point, color) in zip(points, colors) {
+            let x = Int((point.x * CGFloat(scale)).rounded(.down))
+            let y = Int(((size.height - point.y) * CGFloat(scale)).rounded(.down))
+            context.setFillColor(color)
+            context.fill(CGRect(x: x - 8, y: height - y - 9, width: 17, height: 17))
+        }
+        let display = DisplayInfo(
+            id: 2, name: "Synthetic contrast screen", frame: CGRect(origin: .zero, size: size),
+            pixelSize: CGSize(width: width, height: height), backingScale: CGFloat(scale), maximumPotentialEDR: 1
+        )
+        let image = try #require(context.makeImage())
+        return (display, CapturedFrame(image: image, hdrImage: nil, displayID: display.id, frame: display.frame), points)
+    }
+
+    @Test func captureAndAnnotationCenterTheLoupeOnTheSelectedPixelAtBothScales() throws {
+        for scale in [1, 2] {
+            let point = CGPoint(x: 250 + 0.5 / CGFloat(scale), y: 300 + 0.5 / CGFloat(scale))
+            let fixture = try fixture(scale: scale, origin: CGPoint(x: -800, y: 100), point: point)
+            for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+                let view = OverlayView(display: fixture.display)
+                defer { view.clear() }
+                view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose)
+                view.show(fixture.frame, frozen: true)
+                let lens = try #require(view.debugPointerLayers.loupe)
+                #expect(lens.midX == point.x && lens.midY == point.y)
+                #expect(lens.size == CGSize(width: 75, height: 75))
+                #expect(view.color(at: fixture.global)?.hex == "#123456")
+                #expect(!view.debugPointerLayers.crosshair, "The lens center marks the target instead of a second crosshair")
+                #expect(view.debugPointerLayers.colorReading != nil)
+            }
+        }
+    }
+
+    @Test func screenEdgesClipTheCenteredLensWhileKeepingItsColorReadingOnScreen() throws {
+        for scale in [1, 2] {
+            let halfPixel = 0.5 / CGFloat(scale)
+            for point in [
+                CGPoint(x: halfPixel, y: halfPixel), CGPoint(x: halfPixel, y: size.height - halfPixel),
+                CGPoint(x: size.width - halfPixel, y: halfPixel),
+                CGPoint(x: size.width - halfPixel, y: size.height - halfPixel),
+            ] {
+                let fixture = try fixture(scale: scale, point: point)
+                let view = OverlayView(display: fixture.display)
+                defer { view.clear() }
+                view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false)
+                view.show(fixture.frame, frozen: true)
+                let lens = try #require(view.debugPointerLayers.loupe)
+                let reading = try #require(view.debugPointerLayers.colorReading)
+                #expect(lens.midX == point.x && lens.midY == point.y)
+                #expect(!view.bounds.contains(lens), "Keeping the lens on screen must not move it off the target")
+                #expect(view.bounds.insetBy(dx: 6, dy: 6).contains(reading))
+                #expect(view.color(at: fixture.global)?.hex == "#123456")
+            }
+        }
+    }
+
+    @Test func everyPickerSizeSeparatesSourcePixelsWithOneExactCenterCell() throws {
+        let counts: [(scale: Int, sizes: [Int])] = [(1, [19, 23, 31]), (2, [37, 45, 61])]
+        for (scale, expectedCounts) in counts {
+            let point = CGPoint(x: 250 + 0.5 / CGFloat(scale), y: 300 + 0.5 / CGFloat(scale))
+            let fixture = try fixture(scale: scale, origin: CGPoint(x: -800, y: 100), point: point)
+            let view = OverlayView(display: fixture.display)
+            defer { view.clear() }
+            for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+                for (size, expectedCount) in zip(CaptureLoupeSize.allCases, expectedCounts) {
+                    view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose, captureLoupeSize: size)
+                    view.show(fixture.frame, frozen: true)
+                    let image = view.debugLoupeImageGeometry
+                    let pixels = view.debugLoupePixelGeometry
+                    let count = CGFloat(expectedCount), cell = size.diameter / count
+                    #expect(abs(image.contentsRect.width * CGFloat(fixture.frame.image.width) - count) < 0.0001)
+                    #expect(abs(image.contentsRect.height * CGFloat(fixture.frame.image.height) - count) < 0.0001)
+                    #expect(image.gridVisible && expectedCount % 2 == 1)
+                    #expect(abs(cell * CGFloat(scale) - 4) < 0.2, "Modest magnification stays near four rendered pixels per source pixel")
+                    #expect(abs(pixels.center.midX - size.diameter / 2) < 0.0001 && abs(pixels.center.midY - size.diameter / 2) < 0.0001)
+                    #expect(abs(pixels.center.width - cell) < 0.0001 && abs(pixels.center.height - cell) < 0.0001)
+                    #expect(pixels.stroke == 1 / CGFloat(scale) && pixels.outline == 2 / CGFloat(scale))
+                    #expect(cell > pixels.outline, "The reticle must leave the selected pixel's interior visible")
+                    try expectCropCenterMatchesSample(view, fixture: fixture, localPoint: point, scale: scale)
+                    let grid = try #require(pixels.grid)
+                    var moves: [CGPoint] = [], ends: [CGPoint] = []
+                    grid.applyWithBlock { element in
+                        switch element.pointee.type {
+                        case .moveToPoint: moves.append(element.pointee.points[0])
+                        case .addLineToPoint: ends.append(element.pointee.points[0])
+                        default: Issue.record("The pixel grid must contain only straight segments")
+                        }
+                    }
+                    try #require(moves.count == 2 * (expectedCount - 1) && moves.count == ends.count)
+                    for index in 1..<expectedCount {
+                        let offset = CGFloat(index) * cell, vertical = 2 * (index - 1)
+                        #expect(moves[vertical] == CGPoint(x: offset, y: 0))
+                        #expect(ends[vertical] == CGPoint(x: offset, y: size.diameter))
+                        #expect(moves[vertical + 1] == CGPoint(x: 0, y: offset))
+                        #expect(ends[vertical + 1] == CGPoint(x: size.diameter, y: offset))
+                    }
+                }
+            }
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color)
+            view.show(fixture.frame, frozen: true)
+            let image = view.debugLoupeImageGeometry
+            #expect(abs(image.contentsRect.width * CGFloat(fixture.frame.image.width) - 15) < 0.0001)
+            #expect(image.frame.width == 120 && image.gridVisible)
+            #expect(view.debugLoupePixelGeometry.stroke == 1.5 && view.debugLoupePixelGeometry.outline == 3)
+        }
+    }
+
+    @Test func targetTicksRemainVisibleAtLowZoomWithoutCoveringTheExactPixel() throws {
+        for scale in [1, 2] {
+            let fixture = try fixture(scale: scale)
+            let view = OverlayView(display: fixture.display)
+            defer { view.clear() }
+            for size in CaptureLoupeSize.allCases {
+                for magnification in CaptureLoupeMagnification.allCases {
+                    view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false,
+                               captureLoupeSize: size, captureLoupeMagnification: magnification)
+                    view.show(fixture.frame, frozen: true)
+                    let target = view.debugLoupeTarget
+                    let cell = view.debugLoupePixelGeometry.center
+                    #expect(target.visible && target.stroke == 1 && target.outline == 3)
+                    var starts: [CGPoint] = [], ends: [CGPoint] = []
+                    try #require(target.path).applyWithBlock { element in
+                        switch element.pointee.type {
+                        case .moveToPoint: starts.append(element.pointee.points[0])
+                        case .addLineToPoint: ends.append(element.pointee.points[0])
+                        default: Issue.record("Target ticks must remain separate, straight segments")
+                        }
+                    }
+                    try #require(starts.count == 4 && ends.count == 4)
+                    for (start, end) in zip(starts, ends) {
+                        #expect(abs(abs(start.x - end.x) + abs(start.y - end.y) - 4) < 0.0001)
+                        let ink = CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                                         width: abs(start.x - end.x), height: abs(start.y - end.y))
+                            .insetBy(dx: -target.outline / 2, dy: -target.outline / 2)
+                        #expect(!ink.intersects(cell), "The locator must leave the selected pixel visible")
+                    }
+                    view.show(selection: firstPress(on: fixture.display, at: fixture.global),
+                              showsReading: false, isDragging: true)
+                    #expect(!view.debugLoupeTarget.visible)
+                }
+            }
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false,
+                       purpose: .color, captureLoupeSize: .large, captureLoupeMagnification: .one)
+            view.show(fixture.frame, frozen: true)
+            #expect(!view.debugLoupeTarget.visible, "Normal Pick Color keeps its original target")
+        }
+    }
+
+    private func expectCropCenterMatchesSample(
+        _ view: OverlayView, fixture: (display: DisplayInfo, frame: CapturedFrame, global: CGPoint),
+        localPoint: CGPoint, scale: Int
+    ) throws {
+        let crop = view.debugLoupeImageGeometry.contentsRect
+        let sampledX = (localPoint.x * CGFloat(scale)).rounded(.down)
+        let sampledY = ((size.height - localPoint.y) * CGFloat(scale)).rounded(.down)
+        #expect(abs(crop.midX * CGFloat(fixture.frame.image.width) - sampledX - 0.5) < 0.0001)
+        #expect(abs(crop.midY * CGFloat(fixture.frame.image.height) - (CGFloat(fixture.frame.image.height) - sampledY - 0.5)) < 0.0001)
+        #expect(view.color(at: fixture.global)?.hex == "#123456")
+    }
+
+    @Test func everyMagnificationRescalesTheGridAndKeepsTheExactSampleOnReusedViews() throws {
+        let cases: [(scale: Int, counts: [[Int]])] = [
+            (1, [[75, 91, 121], [37, 45, 61], [19, 23, 31], [9, 11, 15]]),
+            (2, [[151, 181, 241], [75, 91, 121], [37, 45, 61], [19, 23, 31]]),
+        ]
+        for (scale, counts) in cases {
+            let point = CGPoint(x: 250 + 0.5 / CGFloat(scale), y: 300 + 0.5 / CGFloat(scale))
+            let fixture = try fixture(scale: scale, origin: CGPoint(x: -800, y: 100), point: point)
+            let view = OverlayView(display: fixture.display)
+            defer { view.clear() }
+            for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+                for (magnification, expectedCounts) in zip(CaptureLoupeMagnification.allCases, counts) {
+                    for (size, count) in zip(CaptureLoupeSize.allCases, expectedCounts) {
+                        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false,
+                                   purpose: purpose, captureLoupeSize: size,
+                                   captureLoupeMagnification: magnification)
+                        view.show(fixture.frame, frozen: true)
+                        let image = view.debugLoupeImageGeometry
+                        let pixel = view.debugLoupePixelGeometry
+                        let cell = size.diameter / CGFloat(count)
+                        #expect(image.frame.size == CGSize(width: size.diameter, height: size.diameter))
+                        #expect(abs(image.contentsRect.width * CGFloat(fixture.frame.image.width) - CGFloat(count)) < 0.0001)
+                        #expect(abs(image.contentsRect.height * CGFloat(fixture.frame.image.height) - CGFloat(count)) < 0.0001)
+                        #expect(abs(pixel.center.width - cell) < 0.0001 && abs(pixel.center.height - cell) < 0.0001)
+                        #expect(abs(pixel.center.midX - size.diameter / 2) < 0.0001 && abs(pixel.center.midY - size.diameter / 2) < 0.0001)
+                        #expect(pixel.stroke > 0 && pixel.outline >= pixel.stroke && pixel.outline < cell,
+                                "Low zoom must leave the sampled cell's interior visible")
+                        #expect(pixel.gridStroke > 0 && pixel.gridOutline >= pixel.gridStroke && pixel.gridOutline < cell,
+                                "A dense grid must not paint over the source pixels")
+                        if magnification == .four || magnification == .eight {
+                            #expect(pixel.stroke == 1 / CGFloat(scale) && pixel.outline == 2 / CGFloat(scale))
+                            #expect(pixel.gridStroke == 1 / CGFloat(scale) && pixel.gridOutline == 2 / CGFloat(scale))
+                        }
+                        var lines = 0
+                        try #require(pixel.grid).applyWithBlock { element in
+                            if element.pointee.type == .addLineToPoint { lines += 1 }
+                        }
+                        #expect(lines == 2 * (count - 1) && image.gridVisible)
+                        try expectCropCenterMatchesSample(view, fixture: fixture, localPoint: point, scale: scale)
+                        view.show(selection: firstPress(on: fixture.display, at: fixture.global), showsReading: false, isDragging: true)
+                        expectPickerHidden(view)
+                        view.viewDidChangeEffectiveAppearance()
+                        expectPickerHidden(view)
+                    }
+                }
+            }
+            // The default argument must replace the previous session's chosen 8× zoom.
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false)
+            view.show(fixture.frame, frozen: true)
+            let expectedDefault = scale == 1 ? 19.0 : 37.0
+            #expect(abs(view.debugLoupeImageGeometry.contentsRect.width * CGFloat(fixture.frame.image.width) - expectedDefault) < 0.0001)
+            try expectCropCenterMatchesSample(view, fixture: fixture, localPoint: point, scale: scale)
+        }
+    }
+
+    @Test func captureMagnificationDoesNotChangeOtherTools() throws {
+        for scale in [1, 2] {
+            let fixture = try fixture(scale: scale)
+            let view = OverlayView(display: fixture.display)
+            defer { view.clear() }
+            for purpose in [OverlayController.Purpose.color, .text, .record, .scroll] {
+                for magnification in CaptureLoupeMagnification.allCases {
+                    view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false,
+                               purpose: purpose, captureLoupeSize: .large, captureLoupeMagnification: magnification)
+                    view.show(fixture.frame, frozen: true)
+                    let image = view.debugLoupeImageGeometry
+                    let pixel = view.debugLoupePixelGeometry
+                    #expect(image.frame.width == 120 && image.gridVisible)
+                    #expect(abs(image.contentsRect.width * CGFloat(fixture.frame.image.width) - 15) < 0.0001)
+                    #expect(pixel.stroke == 1.5 && pixel.outline == 3)
+                    #expect(pixel.gridStroke == 1 / CGFloat(scale) && pixel.gridOutline == 2 / CGFloat(scale))
+                    if purpose == .text {
+                        // Capture Text uses AppKit's system crosshair and hides the custom pointer layers.
+                        expectPickerHidden(view)
+                    } else {
+                        #expect(view.debugPointerLayers.crosshair)
+                    }
+                    #expect(view.color(at: fixture.global)?.hex == "#123456")
+                }
+            }
+        }
+    }
+
+    @Test func movingOnePhysicalPixelMovesTheCropAndSampleTogetherIncludingScreenEdges() throws {
+        for scale in [1, 2] {
+            let unit = 1 / CGFloat(scale), half = unit / 2
+            for point in [CGPoint(x: half, y: half), CGPoint(x: size.width - half, y: size.height - half), CGPoint(x: 250 + half, y: 300 + half)] {
+                let fixture = try fixture(scale: scale, origin: CGPoint(x: -800, y: 100), point: point)
+                let view = OverlayView(display: fixture.display)
+                defer { view.clear() }
+                view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false)
+                view.show(fixture.frame, frozen: true)
+                try expectCropCenterMatchesSample(view, fixture: fixture, localPoint: point, scale: scale)
+                let first = view.debugLoupeImageGeometry.contentsRect
+                // Fractional motion within the same source pixel keeps the same sampled cell.
+                view.movePointer(to: CGPoint(x: fixture.global.x + unit / 4, y: fixture.global.y))
+                #expect(view.debugLoupeImageGeometry.contentsRect == first)
+                let dx = point.x > size.width / 2 ? -unit : unit
+                view.movePointer(to: CGPoint(x: fixture.global.x + dx, y: fixture.global.y))
+                let adjacent = view.debugLoupeImageGeometry.contentsRect
+                #expect(abs((adjacent.minX - first.minX) * CGFloat(fixture.frame.image.width) - dx * CGFloat(scale)) < 0.0001)
+                #expect(adjacent.minY == first.minY && adjacent.size == first.size)
+                #expect(view.color(at: CGPoint(x: fixture.global.x + dx, y: fixture.global.y))?.hex == "#FFFFFF")
+            }
+        }
+    }
+
+    @Test func theFirstPressHidesThePickerBeforeTheSelectionHasAnySize() throws {
+        let fixture = try fixture()
+        for (purpose, allInOne) in [
+            (OverlayController.Purpose.screenshot, false), (.screenshot, true), (.annotate, false),
+        ] {
+            let view = OverlayView(display: fixture.display)
+            defer { view.clear() }
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: allInOne, purpose: purpose, allInOne: allInOne)
+            view.show(fixture.frame, frozen: true)
+            #expect(view.debugPointerLayers.loupe != nil)
+            let selection = firstPress(on: fixture.display, at: fixture.global)
+            #expect(selection.rect == nil)
+            view.show(selection: selection, showsReading: false, isDragging: true)
+            expectPickerHidden(view)
+        }
+    }
+
+    @Test func lateFramesPointerMovementAndModeChangesCannotRestoreASuppressedPicker() throws {
+        let fixture = try fixture()
+        let view = OverlayView(display: fixture.display)
+        defer { view.clear() }
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false)
+        var selection = firstPress(on: fixture.display, at: fixture.global)
+        view.show(selection: selection, showsReading: false, isDragging: true)
+        expectPickerHidden(view)
+        view.show(fixture.frame, frozen: true)
+        view.movePointer(to: CGPoint(x: fixture.global.x + 0.5, y: fixture.global.y - 0.5))
+        expectPickerHidden(view)
+        // A click too small to keep a selection still counts as the session's first press.
+        selection.reset()
+        view.show(selection: selection, showsReading: false, isDragging: false)
+        view.switchMode(to: .window, windows: [])
+        view.switchMode(to: .area, windows: [])
+        view.movePointer(to: fixture.global)
+        view.viewDidChangeEffectiveAppearance()
+        view.simulate(pointer: fixture.global)
+        expectPickerHidden(view)
+    }
+
+    @Test func theSharedFirstPressSuppressesThePickerOnOtherDisplaysToo() throws {
+        let left = try fixture(origin: CGPoint(x: -800, y: 100))
+        let right = try fixture(origin: CGPoint(x: 0, y: 100))
+        let views = [OverlayView(display: left.display), OverlayView(display: right.display)]
+        defer { views.forEach { $0.clear() } }
+        for (view, frame) in zip(views, [left.frame, right.frame]) {
+            view.reset(pointer: left.global, mode: .area, windows: [], showsToolbar: false)
+            view.show(frame, frozen: true)
+        }
+        #expect(views[0].debugPointerLayers.loupe != nil)
+        var selection = SelectionModel(bounds: left.display.frame.union(right.display.frame), pixelsPerPoint: 2)
+        selection.begin(at: left.global)
+        for view in views { view.show(selection: selection, showsReading: false, isDragging: true) }
+        for view in views { view.movePointer(to: right.global) }
+        for view in views { expectPickerHidden(view) }
+    }
+
+    @Test func aNewSessionRestoresTheCenteredPickerOnAReusedView() throws {
+        let fixture = try fixture()
+        let view = OverlayView(display: fixture.display)
+        defer { view.clear() }
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .annotate)
+        view.show(fixture.frame, frozen: true)
+        view.show(selection: firstPress(on: fixture.display, at: fixture.global), showsReading: false, isDragging: true)
+        view.enterAnnotation()
+        expectPickerHidden(view)
+        view.clear()
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false)
+        view.show(fixture.frame, frozen: true)
+        let lens = try #require(view.debugPointerLayers.loupe)
+        #expect(lens.midX == fixture.global.x && lens.midY == fixture.global.y)
+        #expect(view.debugPointerLayers.colorReading != nil)
+    }
+
+    @Test func standaloneColorPickingKeepsItsOffsetLensAndCrosshair() throws {
+        let fixture = try fixture()
+        let view = OverlayView(display: fixture.display)
+        defer { view.clear() }
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color)
+        view.show(fixture.frame, frozen: true)
+        let lens = try #require(view.debugPointerLayers.loupe)
+        let offset = Theme.Loupe.offset + Theme.Loupe.diameter / 2
+        #expect(lens.midX == fixture.global.x + offset && lens.midY == fixture.global.y - offset)
+        #expect(view.debugPointerLayers.crosshair)
+        view.show(selection: firstPress(on: fixture.display, at: fixture.global), showsReading: false, isDragging: true)
+        #expect(view.debugPointerLayers.loupe == lens && view.debugPointerLayers.colorReading != nil)
+    }
+
+    @Test func reusedViewsApplyEverySizeAndRestoreTheStandaloneColorLens() throws {
+        let fixture = try fixture()
+        let view = OverlayView(display: fixture.display)
+        defer { view.clear() }
+        for size in [CaptureLoupeSize.large, .small, .medium] {
+            view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, captureLoupeSize: size)
+            view.show(fixture.frame, frozen: true)
+            let lens = try #require(view.debugPointerLayers.loupe)
+            #expect(lens.size == CGSize(width: size.diameter, height: size.diameter))
+            #expect(lens.midX == fixture.global.x && lens.midY == fixture.global.y)
+            #expect(view.color(at: fixture.global)?.hex == "#123456")
+        }
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .color, captureLoupeSize: .small)
+        view.show(fixture.frame, frozen: true)
+        #expect(view.debugPointerLayers.loupe?.width == Theme.Loupe.diameter)
+        #expect(view.debugPointerLayers.crosshair)
+    }
+
+    @Test func selectedPixelContrastFollowsDarkLightAndSaturatedPixelsAcrossAppearanceChanges() throws {
+        let samples: [(color: CGColor, pixel: String, stroke: String)] = [
+            (CGColor(gray: 0, alpha: 1), "#000000", "#FFFFFF"),
+            (CGColor(gray: 1, alpha: 1), "#FFFFFF", "#000000"),
+            // Saturated red and blue need opposite strokes despite the same average RGB value.
+            (CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), "#FF0000", "#000000"),
+            (CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1), "#0000FF", "#FFFFFF"),
+            (CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1), "#00FF00", "#000000"),
+        ]
+        for scale in [1, 2] {
+            let fixture = try contrastFixture(colors: samples.map(\.color), scale: scale)
+            for purpose in [OverlayController.Purpose.screenshot, .annotate, .color] {
+                let view = OverlayView(display: fixture.display)
+                defer { view.clear() }
+                view.reset(pointer: fixture.points[0], mode: .area, windows: [], showsToolbar: false, purpose: purpose)
+                view.show(fixture.frame, frozen: true)
+                for (point, sample) in zip(fixture.points, samples) {
+                    view.movePointer(to: point)
+                    for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+                        view.appearance = NSAppearance(named: appearance)
+                        // An appearance refresh must keep the target's contrast without another move.
+                        view.viewDidChangeEffectiveAppearance()
+                        let colors = view.debugLoupeCenterColors
+                        #expect(colors.stroke.flatMap { ScreenColor($0) }?.hex == sample.stroke)
+                        let opposite = sample.stroke == "#FFFFFF" ? "#000000" : "#FFFFFF"
+                        #expect(colors.outline.flatMap { ScreenColor($0) }?.hex == opposite)
+                        #expect(colors.outlineVisible)
+                        #expect(view.color(at: point)?.hex == sample.pixel, "Styling must preserve the raw sampled color")
+                    }
+                }
+            }
+        }
+    }
+
+    @Test func reusedPickerSessionsResetContrastAndOtherModesRestoreTheirAccent() throws {
+        let fixture = try contrastFixture(colors: [CGColor(gray: 0, alpha: 1), CGColor(gray: 1, alpha: 1)], scale: 2)
+        let view = OverlayView(display: fixture.display)
+        defer { view.clear() }
+        for (index, purpose) in [
+            OverlayController.Purpose.screenshot, .annotate, .color, .record, .scroll, .screenshot,
+        ].enumerated() {
+            let point = fixture.points[index % 2]
+            let isPicker = purpose == .screenshot || purpose == .annotate || purpose == .color
+            view.reset(pointer: point, mode: .area, windows: [], showsToolbar: false, purpose: purpose)
+            if isPicker {
+                #expect(view.debugLoupeCenterColors.stroke.flatMap { ScreenColor($0) }?.hex == "#FFFFFF",
+                        "A fresh session has no sampled pixel until its new frame arrives")
+            }
+            view.show(fixture.frame, frozen: true)
+            view.switchMode(to: .window, windows: [])
+            view.switchMode(to: .area, windows: [])
+            view.viewDidChangeEffectiveAppearance()
+            let expected = isPicker
+                ? (index % 2 == 0 ? "#FFFFFF" : "#000000")
+                : ScreenColor(Theme.cgColor(.controlAccentColor, for: view.effectiveAppearance))?.hex
+            #expect(view.debugLoupeCenterColors.stroke.flatMap { ScreenColor($0) }?.hex == expected)
+            #expect(view.debugLoupeCenterColors.outlineVisible == isPicker)
+            #expect(view.color(at: point)?.hex == (index % 2 == 0 ? "#000000" : "#FFFFFF"))
+        }
+    }
+}
+#endif

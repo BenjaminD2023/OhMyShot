@@ -19,8 +19,15 @@ final class AllInOneBar: NSView {
     }
 
     var onSelect: ((Choice) -> Void)?
+    var onMove: ((CGVector, CGPoint) -> Void)?
+    var onHide: (() -> Void)?
+    var isDragging: Bool { handle.isDragging }
+    var dragHandleFrame: CGRect { handle.convert(handle.bounds, to: self) }
 
     private let container: NSView
+    private let handle = CaptureBarHandle()
+    private var hideButton: BarButton!
+    private var hideHovered = false
     private let stack = NSStackView()
     /// Inside the glass, an opaque window-colored backing: the bar sits over arbitrary screen content,
     /// and even a slightly translucent fill let text behind it show through near the rounded ends, where
@@ -58,6 +65,8 @@ final class AllInOneBar: NSView {
         stack.orientation = .horizontal
         stack.spacing = 2
         stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
+        stack.addArrangedSubview(handle)
+        handle.onMove = { [weak self] delta, point in self?.onMove?(delta, point) }
         for choice in [Choice.area, .window, .fullscreen] {
             stack.addArrangedSubview(makeButton(choice))
         }
@@ -78,6 +87,27 @@ final class AllInOneBar: NSView {
         stack.setCustomSpacing(8, after: buttons[.record]!)
         stack.setCustomSpacing(8, after: divider)
         stack.addArrangedSubview(makeButton(.cancel))
+        hideButton = BarButton(
+            title: "", image: NSImage(systemSymbolName: "eye.slash", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 13, weight: .medium)) ?? NSImage(),
+            target: self, action: #selector(hideClicked)
+        )
+        hideButton.isBordered = false
+        hideButton.imagePosition = .imageOnly
+        hideButton.contentTintColor = .labelColor
+        hideButton.wantsLayer = true
+        hideButton.layer?.cornerRadius = Self.buttonHeight / 2
+        hideButton.translatesAutoresizingMaskIntoConstraints = false
+        hideButton.heightAnchor.constraint(equalToConstant: Self.buttonHeight).isActive = true
+        hideButton.widthAnchor.constraint(equalToConstant: Self.buttonHeight).isActive = true
+        hideButton.toolTip = String(localized: "Hide toolbar (H to show)", bundle: .module)
+        hideButton.setAccessibilityLabel(String(localized: "Hide toolbar", bundle: .module))
+        hideButton.setAccessibilityHelp(hideButton.toolTip)
+        hideButton.onHover = { [weak self] inside in
+            self?.hideHovered = inside
+            self?.applyAppearance()
+        }
+        stack.addArrangedSubview(hideButton)
         showModes(false)
 
         if let glass = container as? NSGlassEffectView {
@@ -100,6 +130,11 @@ final class AllInOneBar: NSView {
 
     override var fittingSize: NSSize {
         stack.fittingSize
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .arrow)
     }
 
     override func layout() {
@@ -189,6 +224,7 @@ final class AllInOneBar: NSView {
                     : candidate == hovered ? hover
                     : .clear
             }
+            hideButton?.layer?.backgroundColor = hideHovered ? hover : .clear
         }
     }
 
@@ -251,6 +287,8 @@ final class AllInOneBar: NSView {
         guard let choice = buttons.first(where: { $0.value === sender })?.key else { return }
         onSelect?(choice)
     }
+
+    @objc private func hideClicked() { onHide?() }
 }
 
 /// A borderless bar button that reports the pointer entering and leaving it, for its hover highlight.

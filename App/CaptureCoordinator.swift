@@ -89,6 +89,13 @@ final class CaptureCoordinator {
         return WindowCatalog.frontWindowTitle(ofProcess: pid)
     }
 
+    /// Read session appearance directly so a changed preference applies before observation is delivered.
+    private func configureCaptureOverlay(copiesToClipboard: Bool) {
+        overlay.colorCopyGesture = copiesToClipboard ? settings.colorCopyGesture : .disabled
+        overlay.captureLoupeSize = settings.captureLoupeSize
+        overlay.captureLoupeMagnification = settings.captureLoupeMagnification
+    }
+
     // MARK: All-In-One
 
     /// All-In-One's area's text, with the area as it was frozen when the screen held still.
@@ -118,6 +125,7 @@ final class CaptureCoordinator {
         overlay.isAllInOne = true
         overlay.allInOneOffersUpload = canUpload?() ?? false
         let start = area ?? (settings.allInOneRemembersArea ? settings.allInOneArea?.area(in: displays.layout) : nil)
+        configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: .area, choosing: start) { [weak self] outcome in
             guard let self else { return }
             switch outcome {
@@ -166,6 +174,7 @@ final class CaptureCoordinator {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         overlay.onAnnotate = { [weak self] request in self?.annotateInPlace(request, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard) }
+        configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: .area, purpose: .annotate) { [weak self] outcome in
             if case .color(let color, let point, _, let modifiers, let keyboard) = outcome { self?.onColor?(color, point, modifiers, keyboard) }
         }
@@ -265,6 +274,7 @@ final class CaptureCoordinator {
         overlay.freezesScreen = freezes ?? settings.freezeScreen
         // What is captured is the screen once the time is up: the frozen one, pointer or not, is only for choosing on.
         overlay.recapturesLive = true
+        configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: .area) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
             let seconds = delay ?? settings.selfTimerDelay
@@ -398,6 +408,13 @@ final class CaptureCoordinator {
         }
     }
 
+    /// Takes a finished measurement from its frozen screen through the normal screenshot settings.
+    /// The overlay has already gone; this never reads the screen again.
+    func deliverMeasuredCapture(_ frame: CapturedFrame, appName: String?, windowTitle: String?, copiesToClipboard: Bool = true) {
+        previousArea = frame.frame
+        Task { await self.deliver(frame, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard) }
+    }
+
     /// Keeps a scrolling capture's picture as a screenshot is kept: History, the clipboard as the settings say,
     /// a card, the shutter. `area` is where the capture began (global points), `pixelsPerPoint` its display's.
     @discardableResult
@@ -468,6 +485,7 @@ final class CaptureCoordinator {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         overlay.freezesScreen = freezes ?? settings.freezeScreen
+        configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: mode, choosing: area) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
             switch outcome {
