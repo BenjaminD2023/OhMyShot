@@ -125,7 +125,7 @@ extension SettingsTab {
         case .permissions:
             Permission.allCases.map(\.title)
         case .about:
-            []
+            [String(localized: "Acknowledgments", bundle: .module)]
         }
     }
 

@@ -77,6 +77,8 @@ public struct SettingsDependencies {
     public let cloudModels: CloudModelStore?
     /// The updater, which only the General tab shows, and only in builds that look for updates.
     public let updates: UpdateStatus?
+    /// The notices of OhMyShot and of the software it is built with (App/Acknowledgments.md), which About shows.
+    public let acknowledgments: URL?
 
     /// What Settings › Sharing does with a finished upload.
     public struct UploadRecordActions {
@@ -148,7 +150,8 @@ public struct SettingsDependencies {
         backgrounds: Backgrounds = .none,
         modelPacks: ModelPackCenter? = nil,
         cloudModels: CloudModelStore? = nil,
-        updates: UpdateStatus? = nil
+        updates: UpdateStatus? = nil,
+        acknowledgments: URL? = nil
     ) {
         self.settings = settings
         self.permissions = permissions
@@ -163,6 +166,7 @@ public struct SettingsDependencies {
         self.modelPacks = modelPacks
         self.cloudModels = cloudModels
         self.updates = updates
+        self.acknowledgments = acknowledgments
     }
 }
 
@@ -304,7 +308,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .automation:
             host(AutomationSettingsView(settings: dependencies.settings, urlScheme: dependencies.urlScheme))
         case .about:
-            host(AboutSettingsView())
+            host(AboutSettingsView(acknowledgments: dependencies.acknowledgments))
         }
     }
 

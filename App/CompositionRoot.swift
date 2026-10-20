@@ -1837,7 +1837,8 @@ final class CompositionRoot {
             ),
             modelPacks: modelPacks,
             cloudModels: shownCloudModels,
-            updates: updates?.status
+            updates: updates?.status,
+            acknowledgments: Bundle.main.url(forResource: "Acknowledgments", withExtension: "md")
         ))
         controller.onClose = { [weak self] in
             Task { @MainActor in
@@ -1871,6 +1872,14 @@ final class CompositionRoot {
             },
             capture: { window, name in await hooks.captureHiddenWindow(window, name: name) }
         )
+        let aboutHooks = DebugAboutHooks(
+            makeSettings: { [unowned self] in
+                let controller = makeSettingsWindow()
+                controller.onClose = nil
+                return controller
+            },
+            capture: { window, name in await hooks.captureHiddenWindow(window, name: name) }
+        )
         #endif
         return AutomationController(scheme: urlScheme, settings: settings) { [weak self] command in
             self?.perform(command)
@@ -1880,6 +1889,7 @@ final class CompositionRoot {
             #if DEBUG
             if modelPackHooks.handle(url) { return true }
             if updateHooks.handle(url) { return true }
+            if aboutHooks.handle(url) { return true }
             hooks.handle(url)
             return true
             #else

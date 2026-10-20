@@ -50,7 +50,12 @@ The tools are Sparkle's, in the package's artifacts once the project has resolve
    compares: it has to be higher than every build in the feed) in `Config/Base.xcconfig`.
 2. Move CHANGELOG.md's Unreleased entries under `## [<version>] - <date>`. That section becomes the release notes in
    Sparkle's window and on the release page.
-3. Commit, then run `Scripts/release.sh`. With nothing uncommitted, it:
+3. Make the notices again after a build (`Scripts/build.sh Release`): `python3 -I Scripts/acknowledgments.py` writes
+   `App/Acknowledgments.md` (Settings › About › Acknowledgments…) from the licenses of the packages the app is built
+   with, which ask for their notices to go with every copy. It stops at a package it doesn't know (add it to `PACKAGES`
+   in the script) and at a checkout of another version than the one resolved; the unit tests fail while a resolved
+   package has no notice of its version.
+4. Commit, then run `Scripts/release.sh`. With nothing uncommitted, it:
    - fetches the current appcast and stops if its build number isn't higher than the feed's,
    - builds the Release app for Apple silicon, stripped and without the debugging entitlement (`get-task-allow`) that a
      development identity adds,
@@ -62,13 +67,13 @@ The tools are Sparkle's, in the package's artifacts once the project has resolve
    - notarizes it, staples the ticket, and checks that Gatekeeper takes it as notarized,
    - zips it to `build/release/<version>/archives/OhMyShot-<version>.zip`, and writes the release notes and the signed
      appcast beside it, keeping the versions the feed had.
-4. Try the zip on a Mac (or a user account) that has an older release: Check for Updates… should offer it, install it,
+5. Try the zip on a Mac (or a user account) that has an older release: Check for Updates… should offer it, install it,
    and relaunch, with Screen Recording still allowed.
-5. Publish with the `gh release create …` line the script prints last. The release gets the zip and `appcast.xml`, so
+6. Publish with the `gh release create …` line the script prints last. The release gets the zip and `appcast.xml`, so
    the feed URL (the latest release's `appcast.xml`) moves to it. A release marked as a pre-release isn't "latest", so
    its appcast isn't the feed.
 
-`Scripts/release.sh --dry-run` does step 3 with this Mac's Apple Development identity and without a timestamp, and
+`Scripts/release.sh --dry-run` does step 4 with this Mac's Apple Development identity and without a timestamp, and
 doesn't notarize, into `build/release/<version>-dry-run/`; without a `## [<version>]` section its notes are Unreleased's.
 Don't publish what it makes. (An archive and an export for Developer ID were tried first and dropped: `xcodebuild
 archive` puts the MLX bundle where the script that copies its Metal library may not read, and a generic destination
