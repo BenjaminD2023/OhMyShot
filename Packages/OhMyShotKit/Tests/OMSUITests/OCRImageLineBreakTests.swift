@@ -115,4 +115,33 @@ struct OCRImageLineBreakTests {
         model.joinLines = false
         #expect(model.text == "func run() {\n    return nil\n}")
     }
+
+    @Test func mixedParagraphsCopyTheirExactUnicodeWhitespaceInBothModes() async throws {
+        let suite = "OCRImageLineBreakTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = TextRecognitionModel(settings: SettingsStore(defaults: defaults), translator: Translator(), pasteboard: pasteboard)
+        defer { model.unload() }
+        // The six recognized row boxes from the unchanged mixed-image native QA fixture.
+        try await Self.load(model, lines: [
+            OCRLine(text: "截图完成后，预览卡片会保留在屏幕上，方便你", box: CGRect(x: 80, y: 90, width: 717, height: 44), confidence: 1),
+            OCRLine(text: "立即复制图片并继续编辑。", box: CGRect(x: 80, y: 137, width: 404, height: 49), confidence: 1),
+            OCRLine(text: "After capture, the preview stays visible so you can", box: CGRect(x: 80, y: 272, width: 759, height: 38), confidence: 1),
+            OCRLine(text: "copy the image and continue editing.", box: CGRect(x: 74, y: 326, width: 576, height: 37), confidence: 1),
+            OCRLine(text: "本次 OCR 测试包含 English words 和版本 2.0，编号为", box: CGRect(x: 80, y: 450, width: 819, height: 42), confidence: 1),
+            OCRLine(text: "12345；请保留 punctuation、空格与数字。", box: CGRect(x: 76, y: 498, width: 662, height: 48), confidence: 1),
+        ])
+        let kept = "截图完成后，预览卡片会保留在屏幕上，方便你\n立即复制图片并继续编辑。\nAfter capture, the preview stays visible so you can\ncopy the image and continue editing.\n本次 OCR 测试包含 English words 和版本 2.0，编号为\n12345；请保留 punctuation、空格与数字。"
+        let joined = "截图完成后，预览卡片会保留在屏幕上，方便你立即复制图片并继续编辑。\nAfter capture, the preview stays visible so you can copy the image and continue editing.\n本次 OCR 测试包含 English words 和版本 2.0，编号为12345；请保留 punctuation、空格与数字。"
+        model.copyShown()
+        #expect(pasteboard.string(forType: .string) == kept)
+        model.joinLines = true
+        model.copyShown()
+        #expect(pasteboard.string(forType: .string) == joined)
+        model.joinLines = false
+        model.copyShown()
+        #expect(pasteboard.string(forType: .string) == kept)
+    }
 }
