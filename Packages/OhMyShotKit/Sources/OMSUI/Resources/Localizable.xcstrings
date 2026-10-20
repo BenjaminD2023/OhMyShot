@@ -1284,6 +1284,40 @@
         }
       }
     },
+    "A card by the selection with the copied text and a switch for its line breaks." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una tarjeta junto a la selección con el texto copiado y un interruptor para sus saltos de línea."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une carte près de la sélection, avec le texte copié et un interrupteur pour ses sauts de ligne."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーしたテキストと改行の切り替えスイッチを表示するカードが、選択範囲のそばに表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选区旁的一张卡片，显示已拷贝的文字，并提供换行开关。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在選取範圍旁顯示一張卡片，內含已拷貝的文字和換行切換開關。"
+          }
+        }
+      }
+    },
     "A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails." : {
       "localizations" : {
         "es" : {
