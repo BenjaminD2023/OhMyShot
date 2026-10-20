@@ -5,12 +5,14 @@ import Foundation
 /// through this menu: without it, ⌘C, ⌘V, ⌘W and the rest would do nothing in its windows.
 enum MainMenu {
     /// - Parameter settingsTarget: receives `showSettings(_:)` for ⌘,.
-    static func make(settingsTarget: AppDelegate) -> NSMenu {
+    static func make(settingsTarget: AppDelegate, updates: UpdateController) -> NSMenu {
         let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OhMyShot"
         let menu = NSMenu()
 
         let app = submenu(appName, in: menu)
         app.addItem(withTitle: String(localized: "About \(appName)"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let checkForUpdates = app.addItem(withTitle: String(localized: "Check for Updates…"), action: #selector(UpdateController.checkForUpdates(_:)), keyEquivalent: "")
+        checkForUpdates.target = updates
         app.addItem(.separator())
         let settings = app.addItem(withTitle: String(localized: "Settings…"), action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         settings.target = settingsTarget

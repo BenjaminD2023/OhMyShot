@@ -3,13 +3,21 @@
 All notable changes to OhMyShot will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-No releases or version tags have been published, so changes remain under Unreleased.
-This initial backfill groups notable app changes from the first commit through [0983549]; documentation-only work, internal refactors, and unmerged proposals are omitted.
+The first fork release includes the original history present at [8c038d1] and the local improvements preserved in [1897ae9]. Upstream-only changes absent from this fork are omitted.
 Each entry links its implementation commits or merged pull request and credits verified contributors. Named coauthors follow explicit commit trailers.
 
 ## [Unreleased]
 
+## [0.2.0-fork.1] - 2026-10-20
+
 ### Added
+
+- Signed automatic updates from this fork, with manual checks and saved automatic-check/download controls. Both the feed and update archive require Ed25519 verification. (by [@BenjaminD2023])
+- Release packaging for Apple silicon: a DMG with an Applications shortcut, a ZIP for updates, matching GPL source, signatures and SHA-256 checksums. (by [@BenjaminD2023])
+- Centered screenshot pixel grids with independent size and 1×/2×/4×/8× magnification, adaptive target borders, and fixed-size center locator ticks. ([1897ae9]; by [@BenjaminD2023])
+- Configurable Option-left-click color copying before area selection, keeping the overlay open and pointer tracking active. ([1897ae9]; by [@BenjaminD2023])
+- Draggable and hideable capture toolbars; hovering over screenshot cards and pressing Space opens an editable preview with Copy and Edit actions. ([1897ae9]; by [@BenjaminD2023])
+- OCR image-line-break preferences, temporary result controls, independent popup placement/delay options, and mixed-language spacing/timeout fixes. ([1897ae9]; by [@BenjaminD2023])
 
 - Area, window, and full-display screenshots, Quick Access cards, and Capture History with configurable retention; selections can cross displays and use a self-timer. ([c999cc0], [47460d9], [4fba5e2]; by [@fzlzjerry])
 - An annotation editor with drawing, shapes, text, blur, pixelation, and counters; backgrounds, combined images, and editable project files. ([82a1188], [72d434f]; by [@fzlzjerry])
@@ -22,9 +30,6 @@ Each entry links its implementation commits or merged pull request and credits v
 - Text search across Capture History, with recognition performed by a background helper. ([b9474f8]; by [@fzlzjerry])
 - Optional downloadable on-device OCR model packs, with a second reading alongside Vision in the OCR window and History search. ([18059d3], [70711ac]; by [@fzlzjerry])
 - Capture Formula and an optional formula pack; recognized formulas are inserted as LaTeX in Capture Text, the OCR window, and image-recognition automation. ([0897744], [cfbe3ac]; by [@fzlzjerry])
-- Optional cloud OCR using a configured model and the user's own API key, including Read with in the OCR window and fallback to the Mac's reading. ([34f042b], [0f80678]; by [@fzlzjerry])
-- Optional text supplied by the source app to refine recognized characters in Capture Text and the OCR window. ([9b5aa53]; by [@fzlzjerry])
-- An optional VLM model pack for reading tables and charts within recognized text. ([1971598]; by [@fzlzjerry])
 - Screen and window recording, GIF export, microphone and system audio, camera overlays, and displayed keystrokes. ([3e37cd6], [8ddb274]; by [@fzlzjerry])
 - Studio editing for recordings, including automatic zooms, camera layout, motion blur, cursor and click effects, and adding keystrokes after recording. ([dd88b79], [195f1df], [131e96f]; by [@fzlzjerry])
 - Scrolling Capture with manual scrolling and Auto-scroll to assemble a long image. ([fcdb351]; by [@fzlzjerry])
@@ -37,14 +42,14 @@ Each entry links its implementation commits or merged pull request and credits v
 - Simplified and Traditional Chinese, Japanese, Spanish, and French interface translations. ([1c86bc4]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
 - Per-window OCR text wrapping, a saved default for new windows, and horizontal scrolling when wrapping is off. ([#6]; by [@BenjaminD2023], [@fzlzjerry])
 - Measurement snapping preferences and edge tolerance, with keyboard adjustments during measurement. ([#3]; by [@BenjaminD2023], [@fzlzjerry])
-- A three-second Quick Access auto-close option; Never remains the default and saved delays are preserved. ([#5]; by [@BenjaminD2023], [@fzlzjerry])
+- Independent screenshot/recording and OCR popup delays. This fork defaults screenshot/recording cards to three seconds and OCR results to one second; saved choices are preserved. ([1897ae9]; by [@BenjaminD2023])
 
 ### Changed
 
 - Screenshot selection freezes the screen by default and retains the frozen image for the capture. ([1a44474]; by [@fzlzjerry])
 - Quick Access supports automatic closing, either screen corner, three card sizes, keyboard operation, and picture transformations. ([d65a655]; by [@fzlzjerry])
 - Settings split capture and tool options out of General, then gained a searchable sidebar, dedicated panes, and Back and Forward navigation. ([#1], [af0aa70], [d43258a]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
-- Screenshot and annotation capture offer an optional centered, translucent actual-size picker with adjustable size and an adaptive target border. The centered picker and color reading clear when area selection begins; the crosshair remains, and the magnified loupe stays the default. ([#4]; by [@BenjaminD2023], [@fzlzjerry])
+- This fork uses the centered, translucent screenshot and annotation picker by default; its picker, color reading and drawn crosshair clear after the first area press. The normal Pick Color loupe retains its original geometry. ([1897ae9]; by [@BenjaminD2023])
 - Large measurement selections are analyzed in the background to keep the overlay responsive. ([#3]; by [@BenjaminD2023], [@fzlzjerry])
 - Recording and Studio expose quality controls and estimated movie size; recording areas can be dimmed or framed, and automatic zooms better follow sustained activity. ([8cf6555], [202dc77], [a2f2527]; by [@fzlzjerry])
 - Large and tall OCR images are read in bands, then assembled in image order to limit memory use. ([a8b2131], [14fdf15]; by [@fzlzjerry])
@@ -56,7 +61,6 @@ Each entry links its implementation commits or merged pull request and credits v
 - Shortcut recorders support Use Anyway for menu conflicts, including Command-Shift-S; assigning a shortcut to another OhMyShot action clears the previous assignment. ([#2]; by [@BenjaminD2023], [@fzlzjerry])
 - Measurement snapping better handles faint outlines and thin details, retaining the drawn rectangle when no credible boundary is found. ([#3]; by [@BenjaminD2023], [@fzlzjerry])
 - Editor copies keep the annotation document that produced the copied image, and failed saves or drags no longer silently discard unkept edits. Quick Access holds captures while their editor loads and tracks hover after cards move. ([#5]; by [@BenjaminD2023], [@fzlzjerry])
-- Unwrapped OCR windows no longer open with the first characters scrolled out of view. ([33cd6bf]; by [@fzlzjerry])
 - Editor Undo and styled counter numbering behave consistently. ([4558f10]; by [@fzlzjerry])
 - Pin zooming preserves the picture's proportions, and text pins allow selecting part of their text. ([b9c8e30], [9d53b01]; by [@fzlzjerry])
 - Onboarding avoids duplicate Screen Recording permission prompts and actually reopens the app after Quit & Reopen. ([6ec2f1d]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
@@ -68,7 +72,10 @@ Each entry links its implementation commits or merged pull request and credits v
 - Recording warns when a microphone stops delivering audio instead of leaving a disconnected microphone silently recording. ([450f4a6]; by [@fzlzjerry])
 - Closing History and editors releases more memory, clipboard TIFFs use compression, and GIF frame buffers return their memory when freed. ([cff3ddb], [0182817], [6d3b0af]; by [@fzlzjerry])
 
-[Unreleased]: https://github.com/fzlzjerry/OhMyShot/commits/main/
+[Unreleased]: https://github.com/BenjaminD2023/OhMyShot/compare/v0.2.0-fork.1...main
+[0.2.0-fork.1]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.2.0-fork.1
+[8c038d1]: https://github.com/BenjaminD2023/OhMyShot/commit/8c038d1f61a7cafb8057b0da04cf70501bbe1748
+[1897ae9]: https://github.com/BenjaminD2023/OhMyShot/commit/1897ae9
 [c999cc0]: https://github.com/fzlzjerry/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/fzlzjerry/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/fzlzjerry/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287

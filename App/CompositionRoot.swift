@@ -14,6 +14,7 @@ import UniformTypeIdentifiers
 /// Builds the app's services once and wires them together. Feature modules never import each other;
 /// they meet here, through closures.
 final class CompositionRoot {
+    private let updates: UpdateController
     private let settings = SettingsStore()
     private let permissions = PermissionCenter()
     private let displays = DisplayTopology()
@@ -172,13 +173,18 @@ final class CompositionRoot {
     private var clipboardRecording: (id: UUID, changeCount: Int)?
     private var clipboardWatch: Task<Void, Never>?
 
-    init() {
+    init(updates: UpdateController) {
+        self.updates = updates
         #if DEBUG
         hotkeys = HotkeyCenter(profile: .development)
         #else
         hotkeys = HotkeyCenter(profile: .release)
         #endif
         urlScheme = Bundle.main.object(forInfoDictionaryKey: "OMSURLScheme") as? String ?? "ohmyshot"
+        updates.isCapturing = { [weak self] in
+            guard let self else { return false }
+            return overlay.isActive || recordings.isRecording || recordings.isCountingDown || scrolling.isCapturing
+        }
     }
 
     func start() {
@@ -367,7 +373,24 @@ final class CompositionRoot {
             ],
             openSettings: { [weak self] in self?.showSettings() },
             quit: { NSApp.terminate(nil) },
-            debugEntries: debugMenuEntries()
+            debugEntries: debugMenuEntries(),
+            updateEntries: [
+                .init(
+                    title: String(localized: "Check for Updates…"),
+                    isEnabled: { [updates] in updates.canCheckForUpdates }
+                ) { [updates] in updates.checkForUpdates() },
+                .init(title: String(localized: "Updates"), children: { [updates] in [
+                    .init(
+                        title: String(localized: "Automatically check for updates"),
+                        isChecked: { updates.automaticallyChecksForUpdates }
+                    ) { updates.setAutomaticallyChecksForUpdates(!updates.automaticallyChecksForUpdates) },
+                    .init(
+                        title: String(localized: "Automatically download and install updates"),
+                        isEnabled: { updates.automaticallyChecksForUpdates },
+                        isChecked: { updates.automaticallyDownloadsUpdates }
+                    ) { updates.setAutomaticallyDownloadsUpdates(!updates.automaticallyDownloadsUpdates) },
+                ] }),
+            ]
         )
         statusItem.onDrop = { [weak self] pasteboard in
             self?.textCapture.openPanel(from: pasteboard, source: String(localized: "Dropped Image")) ?? false
@@ -1735,7 +1758,15 @@ final class CompositionRoot {
                 automatic: { BackdropPresets.shared.automatic?.id },
                 setAutomatic: { BackdropPresets.shared.setAutomatic($0) }
             ),
-            modelPacks: modelPacks
+            modelPacks: modelPacks,
+            updates: SettingsDependencies.Updates(
+                canCheck: { [updates] in updates.canCheckForUpdates },
+                check: { [updates] in updates.checkForUpdates() },
+                automaticallyChecks: { [updates] in updates.automaticallyChecksForUpdates },
+                setAutomaticallyChecks: { [updates] in updates.setAutomaticallyChecksForUpdates($0) },
+                automaticallyDownloads: { [updates] in updates.automaticallyDownloadsUpdates },
+                setAutomaticallyDownloads: { [updates] in updates.setAutomaticallyDownloadsUpdates($0) }
+            )
         ))
         controller.onClose = { [weak self] in
             Task { @MainActor in

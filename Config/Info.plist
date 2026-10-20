@@ -81,6 +81,22 @@
 	<string>NSApplication</string>
 	<key>OMSURLScheme</key>
 	<string>$(OMS_URL_SCHEME)</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/BenjaminD2023/OhMyShot/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>hKR+RgxaJihsYToYeaJSyUtwJE0hBH+QR2sRKVcEH5I=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUSignedFeedFailureExpirationInterval</key>
+	<integer>0</integer>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

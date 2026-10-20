@@ -102,6 +102,7 @@ struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
     let openHistory: () -> Void
     let expiredCount: (HistoryRetention) -> Int
+    var updates: SettingsDependencies.Updates? = nil
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginItemError: String?
     @State private var retentionRequest: RetentionChangeRequest?
@@ -176,6 +177,26 @@ struct GeneralSettingsView: View {
             SettingsRow(Text("Sound", bundle: .module)) {
                 Toggle(isOn: $settings.playSounds) {
                     Text("Play sounds", bundle: .module)
+                }
+            }
+
+            if let updates {
+                let checks = updates.automaticallyChecks()
+                let downloads = updates.automaticallyDownloads()
+                SettingsRow(Text("Updates", bundle: .module)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Button(action: updates.check) {
+                            Text("Check for Updates…", bundle: .module)
+                        }
+                        .disabled(!updates.canCheck())
+                        Toggle(isOn: Binding(get: { checks }, set: { updates.setAutomaticallyChecks($0) })) {
+                            Text("Automatically check for updates", bundle: .module)
+                        }
+                        Toggle(isOn: Binding(get: { downloads }, set: { updates.setAutomaticallyDownloads($0) })) {
+                            Text("Automatically download and install updates", bundle: .module)
+                        }
+                        .disabled(!checks)
+                    }
                 }
             }
 

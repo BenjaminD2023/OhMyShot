@@ -1,0 +1,16 @@
+# Features retained by this fork
+
+Upstream synchronization must preserve the following behavior. New upstream APIs and fixes should be integrated around it. A conflict is not permission to remove a feature.
+
+- **Screenshot pointer:** the translucent picker is centered on the selected physical pixel, with independent Small/Medium/Large size and 1×/2×/4×/8× magnification. Pixel grid, adaptive light/dark center border and four fixed-size locator ticks leave the exact cell visible. Hide the native cursor on the screenshot canvas, retaining toolbar arrows and drag hands. The first area press hides picker, reading and drawn crosshair for the rest of that session. Normal Pick Color keeps its existing geometry.
+- **Persistent color copying:** Option + left click copies the actual pointed color before area selection or in Pick Color without closing the overlay. Settings can disable or reassign the gesture. Exact modifier matching, pointer tracking during the consumed drag and the next normal area click must keep working; automation that suppresses clipboard writes stays isolated.
+- **Measurement:** content snapping, adjustable sensitivity/tolerance, responsive background analysis for large boxes, and click inside the selected area to capture.
+- **Capture toolbar:** visible native cursor, drag to reposition, hide/show with controls and H, and screenshot selection through the area previously occupied by a hidden or faded toolbar.
+- **Quick Access:** screenshot/recording cards default to three seconds with configurable timing, hold while hovered and retain editable Space preview on hover, Copy and Edit. OCR has its own independent timing preference.
+- **OCR:** preserve/merge the image's line breaks using a saved default and temporary result control; retain mixed Chinese/English spaces, paragraph copy formatting, timeout/concurrency fixes, and optional per-window text wrapping. OCR results default to one second with configurable delay and placement below the selection or at the bottom left; hover holds dismissal.
+- **Shortcuts:** deliberate override of conflicting app menu shortcuts and reassignment of duplicate OhMyShot actions. Preserve the system-key onboarding guidance and existing assignments.
+- **Fork updates:** check, download and install signed updates from this fork's release feed; retain manual check and automatic preferences. Do not interrupt active capture/recording, disable library validation or embed private keys. Preserve the existing bundle identifier/preferences when replacing local releases.
+
+Useful regression areas include OverlayLoupeTests, OverlayCanvasCursorTests, OverlayCursorVisibilityTests, OverlayToolbarTests, OverlayKeyTests, ColorCopyGestureTests, measurement/capture tests, OCR copy/spacing/timeout tests, TextResultHUDTests, OCRTextWrappingTests and preview tests. Run the relevant subset plus a Release build after integration; inspect changes using the review-agent workflow before direct commits.
+
+The daily maintenance task checks upstream at 06:00 in the user's Asia/Shanghai time zone and stays quiet when nothing changes. The local checkout, fork main branch and published release must identify their actual source commits; never describe a partial or unverified sync as complete.

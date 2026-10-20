@@ -12,6 +12,9 @@ options:
 packages:
   OhMyShotKit:
     path: Packages/OhMyShotKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.0
 
 targets:
   OhMyShot:
@@ -25,7 +28,13 @@ targets:
         type: syncedFolder
       - path: Config
         buildPhase: none
+      - path: LICENSE
+        buildPhase: resources
+      - path: Docs/ThirdPartyNotices.txt
+        buildPhase: resources
     dependencies:
+      - package: Sparkle
+        product: Sparkle
       - package: OhMyShotKit
         product: OMSCore
       - package: OhMyShotKit

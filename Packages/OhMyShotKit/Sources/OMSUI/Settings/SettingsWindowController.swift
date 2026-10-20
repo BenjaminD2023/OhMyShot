@@ -73,6 +73,33 @@ public struct SettingsDependencies {
     public let recordActions: UploadRecordActions
     /// The model packs, which only the Tools tab shows, and only when the build offers one.
     public let modelPacks: ModelPackCenter?
+    /// App-owned update preferences; this module does not depend on an update framework.
+    public let updates: Updates?
+
+    public struct Updates {
+        public let canCheck: () -> Bool
+        public let check: () -> Void
+        public let automaticallyChecks: () -> Bool
+        public let setAutomaticallyChecks: (Bool) -> Void
+        public let automaticallyDownloads: () -> Bool
+        public let setAutomaticallyDownloads: (Bool) -> Void
+
+        public init(
+            canCheck: @escaping () -> Bool,
+            check: @escaping () -> Void,
+            automaticallyChecks: @escaping () -> Bool,
+            setAutomaticallyChecks: @escaping (Bool) -> Void,
+            automaticallyDownloads: @escaping () -> Bool,
+            setAutomaticallyDownloads: @escaping (Bool) -> Void
+        ) {
+            self.canCheck = canCheck
+            self.check = check
+            self.automaticallyChecks = automaticallyChecks
+            self.setAutomaticallyChecks = setAutomaticallyChecks
+            self.automaticallyDownloads = automaticallyDownloads
+            self.setAutomaticallyDownloads = setAutomaticallyDownloads
+        }
+    }
 
     /// What Settings › Sharing does with a finished upload.
     public struct UploadRecordActions {
@@ -142,7 +169,8 @@ public struct SettingsDependencies {
         uploadRecords: UploadRecordStore,
         recordActions: UploadRecordActions = .none,
         backgrounds: Backgrounds = .none,
-        modelPacks: ModelPackCenter? = nil
+        modelPacks: ModelPackCenter? = nil,
+        updates: Updates? = nil
     ) {
         self.settings = settings
         self.permissions = permissions
@@ -155,6 +183,7 @@ public struct SettingsDependencies {
         self.uploadRecords = uploadRecords
         self.recordActions = recordActions
         self.modelPacks = modelPacks
+        self.updates = updates
     }
 }
 
@@ -265,7 +294,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             host(GeneralSettingsView(
                 settings: dependencies.settings,
                 openHistory: dependencies.openHistory,
-                expiredCount: dependencies.expiredCount
+                expiredCount: dependencies.expiredCount,
+                updates: dependencies.updates
             ))
         case .capture:
             host(CaptureSettingsView(settings: dependencies.settings))

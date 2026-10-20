@@ -6,11 +6,12 @@ import OSLog
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var root: CompositionRoot?
+    private let updates = UpdateController()
     private var pendingURLs: [(url: URL, senderPID: pid_t?)] = []
     private var pendingFiles: [URL] = []
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        NSApp.mainMenu = MainMenu.make(settingsTarget: self)
+        NSApp.mainMenu = MainMenu.make(settingsTarget: self, updates: updates)
         // Registered before launch finishes, so a URL that launched the app is not lost.
         NSAppleEventManager.shared().setEventHandler(
             self,
@@ -29,9 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func start() {
-        let root = CompositionRoot()
+        let root = CompositionRoot(updates: updates)
         self.root = root
         root.start()
+        updates.start()
         ShortcutsBridge.started(root)
         for pending in pendingURLs {
             root.handle(url: pending.url, senderPID: pending.senderPID)

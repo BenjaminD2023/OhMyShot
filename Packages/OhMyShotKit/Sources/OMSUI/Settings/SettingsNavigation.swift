@@ -32,6 +32,10 @@ extension SettingsTab {
                 String(localized: "Play sounds", bundle: .module),
                 String(localized: "Keep captures", bundle: .module),
                 String(localized: "Open History", bundle: .module),
+                String(localized: "Updates", bundle: .module),
+                String(localized: "Check for Updates…", bundle: .module),
+                String(localized: "Automatically check for updates", bundle: .module),
+                String(localized: "Automatically download and install updates", bundle: .module),
             ]
         case .capture:
             [

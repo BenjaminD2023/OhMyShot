@@ -4,12 +4,16 @@ A native macOS capture tool — screenshots, recordings, annotation, pins, and o
 
 一个原生 macOS 截图工具：截图、录屏、标注、贴图和端侧 OCR，常驻菜单栏时几乎不耗电。
 
-> **Status: pre-alpha.** Milestone M0 (foundations) is done: the app lives in the menu bar, registers its shortcuts, walks you through permissions, and answers URL commands, at 0.0% idle CPU and a 14 MB footprint. It does not capture anything yet; that is milestone M1.
+This is [BenjaminD2023's maintained fork](https://github.com/BenjaminD2023/OhMyShot) of [fzlzjerry/OhMyShot](https://github.com/fzlzjerry/OhMyShot). It preserves the local capture, pixel-picker, shortcut, OCR, preview and toolbar improvements, including proposals that were not merged upstream. Updates and packaged builds come from this fork.
+
+Download the Apple silicon build from [Releases](https://github.com/BenjaminD2023/OhMyShot/releases). The DMG contains the app and an Applications shortcut. The first fork release is not Apple-notarized; its update feed and update archives are signed independently with Sparkle's Ed25519 key. See [release and signing instructions](Docs/releasing.md).
+
+这是独立维护的 fork，保留本地增强功能；安装包和自动更新均来自本 fork。
 
 ## Requirements
 
 - macOS 26 or later on Apple silicon
-- Xcode 26 or later
+- Xcode 27 or later
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 
 ## Build and run
@@ -24,7 +28,9 @@ Debug builds use their own bundle identifier (`….ohmyshot.dev`), URL scheme (`
 
 ### Signing and Screen Recording permission
 
-macOS ties the Screen Recording permission to the app's code signature. An ad-hoc signed build looks like a new app after every rebuild and loses the permission. To keep it, copy `Config/Signing.local.xcconfig.example` to `Config/Signing.local.xcconfig` and fill in your Apple Development team (a free personal team works). `Scripts/reset-tcc.sh` clears the Debug build's permissions when you want to start over.
+This fork keeps Hardened Runtime and library validation enabled. Before building, copy `Config/Signing.local.xcconfig.example` to the ignored `Config/Signing.local.xcconfig` and select an existing Apple Development identity for local use, or Developer ID Application for distribution. Use the certificate's actual organizational-unit Team ID. An ad-hoc build is insufficient for loading the separately distributed Sparkle framework with these protections enabled.
+
+macOS ties Screen Recording permission to the app's code signature; a stable signing identity also avoids treating every rebuild as a new app. `Scripts/reset-tcc.sh` clears the Debug build's permissions when needed.
 
 After you grant Screen Recording, relaunch the app: macOS applies the permission only to new processes.
 
@@ -48,7 +54,7 @@ language, or the one chosen in Settings › General. To add or improve a transla
 
 ## Power budget
 
-Idle means idle. While OhMyShot sits in the menu bar it runs no timers, polls nothing, and holds no capture streams or event taps. Every milestone is gated on measured numbers:
+When no capture is active, the app holds no capture streams or screenshot event taps. Sparkle checks this fork for updates on its standard daily schedule; automatic checks and downloads can be changed in Settings › General. The original capture power targets remain:
 
 | Metric | Target |
 | --- | --- |

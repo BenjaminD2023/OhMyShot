@@ -26,6 +26,12 @@ xcodebuild \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath build \
   -quiet \
+  ARCHS=arm64 \
+  ONLY_ACTIVE_ARCH=YES \
   build
+
+task_app_name=OhMyShot
+if [ "$CONFIGURATION" = Debug ]; then task_app_name="OhMyShot Dev"; fi
+Scripts/sign-sparkle.sh "build/Build/Products/$CONFIGURATION/$task_app_name.app"
 
 find "build/Build/Products/$CONFIGURATION" -maxdepth 1 -name '*.app' -print
