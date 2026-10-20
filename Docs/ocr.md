@@ -1822,3 +1822,19 @@ pack's).
 **Not done yet:** a column the selection's edge cuts through; the panel's tables have no cell boxes to outline on the picture; text, formulas, seals, and handwriting with the
 VLM (its "OCR:" reads text better than Vision on the bench, but whole screens make it loop, › L3 spike); a reading the
 deadline cut keeps Vision's lines for that table, though the rows read so far may be right.
+
+## Image line breaks (2026-10-20)
+
+Settings → Tools → Image line breaks sets the default for Capture Text and new Recognized Text windows:
+**Keep Line Breaks** (the default, as before) keeps the image's detected rows as newline characters, and
+**Join Lines** merges wrapped lines within a paragraph through the layout-aware assembler. Code, table rows,
+and display formulas keep their structure either way. All-In-One's text mode follows the setting too.
+
+The Recognized Text window's Keep Line Breaks / Join Lines menu changes the text of that window, Copy
+included, and leaves the saved default alone; a window opened earlier keeps its own choice, a new one starts
+from the saved default. Wrap Text is separate: it reflows the display only. A cloud model's text stays as the
+model returned it.
+
+Capture Text, Joining Lines always joins. A `capture-text` URL without `linebreaks` follows the saved default,
+and `linebreaks=true|false` overrides it. The Shortcuts actions (Capture Text, Recognize Text in Image) have
+their own Keep Line Breaks parameter, on by default, so they ignore the saved default.

@@ -692,6 +692,17 @@ struct ToolsSettingsView: View {
                 }
                 .help(Text("A card by the selection with the copied text and a switch for its line breaks.", bundle: .module))
             }
+            SettingsRow(Text("Image line breaks", bundle: .module)) {
+                Picker(selection: $settings.textRecognitionKeepsLineBreaks) {
+                    Text("Keep Line Breaks", bundle: .module).tag(true)
+                    Text("Join Lines", bundle: .module).tag(false)
+                } label: {
+                    Text("Image line breaks", bundle: .module)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("Keep the detected lines from the image, or join wrapped lines within each paragraph. Sets the default for Capture Text and new Recognized Text windows; the window’s Line Breaks menu changes only that window.", bundle: .module))
+            }
             SettingsRow(Text("Recognized Text", bundle: .module)) {
                 Toggle(isOn: $settings.textRecognitionWrapsText) {
                     Text("Wrap text to window", bundle: .module)
