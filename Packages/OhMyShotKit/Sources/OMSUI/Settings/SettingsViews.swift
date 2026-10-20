@@ -721,6 +721,17 @@ struct ToolsSettingsView: View {
                 .fixedSize()
                 .help(Text("How long the copied-text card stays. It stays open while the pointer is over it and closes the chosen time after the pointer leaves; Never keeps it until you close it. A card that says nothing was found, or that the text was not copied, always stays at least as long as it used to.", bundle: .module))
             }
+            SettingsRow(Text("Image line breaks", bundle: .module)) {
+                Picker(selection: $settings.textRecognitionKeepsLineBreaks) {
+                    Text("Keep Line Breaks", bundle: .module).tag(true)
+                    Text("Join Lines", bundle: .module).tag(false)
+                } label: {
+                    Text("Image line breaks", bundle: .module)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .help(Text("Keep the detected lines from the image, or join wrapped lines within each paragraph. Sets the default for Capture Text and new Recognized Text windows; the window’s Line Breaks menu changes only that window.", bundle: .module))
+            }
             SettingsRow(Text("Recognized Text", bundle: .module)) {
                 Toggle(isOn: $settings.textRecognitionWrapsText) {
                     Text("Wrap text to window", bundle: .module)

@@ -151,6 +151,12 @@ public final class SettingsStore {
     /// What the card has always stayed: the default of `textResultCloseAfter`.
     public static let defaultTextResultCloseAfter = 4
 
+    /// Capture Text and new Recognized Text windows keep the image's detected line breaks by default.
+    /// A window's line-break choice changes only that window, without changing this saved default.
+    public var textRecognitionKeepsLineBreaks: Bool {
+        didSet { defaults.set(textRecognitionKeepsLineBreaks, forKey: Key.textRecognitionKeepsLineBreaks) }
+    }
+
     /// Whether recognized text wraps to the window's width by default. Each Recognized Text window
     /// takes this value when it opens and can change its own wrapping without changing the default.
     public var textRecognitionWrapsText: Bool {
@@ -468,6 +474,7 @@ public final class SettingsStore {
             Key.showTextResult: false,
             Key.textResultPosition: TextResultPosition.belowSelection.rawValue,
             Key.textResultCloseAfter: Self.defaultTextResultCloseAfter,
+            Key.textRecognitionKeepsLineBreaks: true,
             Key.textRecognitionWrapsText: true,
             Key.readsAppText: false,
             Key.translationTarget: "",
@@ -607,6 +614,7 @@ public final class SettingsStore {
         let storedTextResultCloseAfter = defaults.object(forKey: Key.textResultCloseAfter) as? NSNumber
         let textResultDelay = storedTextResultCloseAfter.flatMap { CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : $0 as? Int } ?? Self.defaultTextResultCloseAfter
         textResultCloseAfter = Self.textResultCloseDelays.contains(textResultDelay) ? textResultDelay : Self.defaultTextResultCloseAfter
+        textRecognitionKeepsLineBreaks = defaults.bool(forKey: Key.textRecognitionKeepsLineBreaks)
         textRecognitionWrapsText = defaults.bool(forKey: Key.textRecognitionWrapsText)
         readsAppText = defaults.bool(forKey: Key.readsAppText)
         translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
@@ -696,6 +704,7 @@ public final class SettingsStore {
         static let showTextResult = "showTextResult"
         static let textResultPosition = "textResultPosition"
         static let textResultCloseAfter = "textResultCloseAfter"
+        static let textRecognitionKeepsLineBreaks = "textRecognitionKeepsLineBreaks"
         static let textRecognitionWrapsText = "textRecognitionWrapsText"
         static let readsAppText = "readsAppText"
         static let translationTarget = "translationTarget"

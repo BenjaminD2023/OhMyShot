@@ -519,7 +519,9 @@ final class CompositionRoot {
         }
         // All-In-One hands on what it does not do itself.
         captures.allInOneText = { [weak self] area, frozen in
-            Task { await self?.textCapture.recognize(region: area, frozen: frozen, joinLines: false) }
+            guard let self else { return }
+            let joinLines = !self.settings.textRecognitionKeepsLineBreaks
+            Task { await self.textCapture.recognize(region: area, frozen: frozen, joinLines: joinLines) }
         }
         captures.allInOneScroll = { [weak self] area in self?.scrolling.begin(area: area, starts: true) }
         captures.onRecord = { [weak self] target, display, choices, app in
@@ -794,7 +796,7 @@ final class CompositionRoot {
             captures.capturePreviousArea()
         case .captureText:
             captures.cancelSelfTimer()
-            textCapture.captureText(joinLines: false)
+            textCapture.captureText(joinLines: !settings.textRecognitionKeepsLineBreaks)
         case .captureTextJoined:
             captures.cancelSelfTimer()
             textCapture.captureText(joinLines: true)
@@ -855,14 +857,16 @@ final class CompositionRoot {
             captures.cancelSelfTimer()
             recordings.recordScreen(area: area)
         case .captureText(let file?, _, let lineBreaks):
-            Task { await textCapture.recognize(fileAt: file, joinLines: lineBreaks == false) }
+            let joinLines = !(lineBreaks ?? settings.textRecognitionKeepsLineBreaks)
+            Task { await textCapture.recognize(fileAt: file, joinLines: joinLines) }
         case .captureText(nil, let region, let lineBreaks):
             guard let area = area(of: region) else { return }
             captures.cancelSelfTimer()
+            let joinLines = !(lineBreaks ?? settings.textRecognitionKeepsLineBreaks)
             if let area {
-                Task { await textCapture.recognize(region: area, joinLines: lineBreaks == false) }
+                Task { await textCapture.recognize(region: area, joinLines: joinLines) }
             } else {
-                textCapture.captureText(joinLines: lineBreaks == false, allowsCloud: false)
+                textCapture.captureText(joinLines: joinLines, allowsCloud: false)
             }
         case .captureFormula(let file?, _):
             Task { await textCapture.readFormula(fileAt: file) }
