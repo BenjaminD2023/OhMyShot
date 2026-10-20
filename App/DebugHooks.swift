@@ -29,7 +29,7 @@ struct DebugHooks {
     let showSettings: (SettingsTab) -> Void
     /// Types into the open Settings window's search field.
     let searchSettings: (String) -> Void
-    let showOnboarding: () -> Void
+    let showOnboarding: (OnboardingWindowController.Step, (hotKeys: () -> [String: Any]?, bindings: @MainActor () -> [SystemScreenshotKeys.Binding])?) -> Void
     let showHistory: () -> Void
     let restoreLatestFromHistory: () -> Void
     let annotateLatestFromHistory: () -> Void
@@ -135,7 +135,25 @@ struct DebugHooks {
         case "settings-search":
             searchSettings(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value ?? "")
         case "onboarding":
-            showOnboarding()
+            // step=shortcuts opens on macOS's screenshot keys. keys=on (as on a Mac where they were never changed), off
+            // (all five turned off), or mixed (only ⇧⌘3's turned off) shows made-up hot keys against the release build's default shortcuts, in place of
+            // the Mac's hot keys (never written) and this build's ⌃⌥⌘ keys, which never clash.
+            // act=escape sends the open onboarding window what Escape sends when no button answers it.
+            if Self.parameter("act", in: url) == "escape" {
+                let window = NSApp.windows.first { $0.isVisible && $0.windowController is OnboardingWindowController }
+                let handled = window.map { ($0.firstResponder ?? $0).tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: nil) } ?? false
+                Log.app.notice("debug.onboarding escape handled=\(handled, privacy: .public) open=\(NSApp.windows.contains { $0.isVisible && $0.windowController is OnboardingWindowController }, privacy: .public)")
+                return
+            }
+            let step: OnboardingWindowController.Step = Self.parameter("step", in: url) == "shortcuts" ? .shortcuts : .permission
+            let off = Dictionary(uniqueKeysWithValues: ["28", "29", "30", "31", "184"].map { ($0, ["enabled": false] as [String: Any]) })
+            let release: @MainActor () -> [SystemScreenshotKeys.Binding] = { SystemScreenshotKeys.defaultBindings(for: .release) }
+            switch Self.parameter("keys", in: url) {
+            case "on": showOnboarding(step, ({ nil }, release))
+            case "off": showOnboarding(step, ({ off }, release))
+            case "mixed": showOnboarding(step, ({ ["28": ["enabled": false]] }, release))
+            default: showOnboarding(step, nil)
+            }
         case "history":
             showHistory()
         case "appearance":
