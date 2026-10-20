@@ -595,6 +595,13 @@ final class CompositionRoot {
             // first: the app is listed in the shareable content only once it has windows.
             overlay.prepare()
             shareableContent.refresh()
+            // Once, after the permission (often a relaunch later): while macOS answers its screenshot keys, the
+            // shortcuts that have them never fire.
+            if !OnboardingWindowController.hasShownShortcuts,
+               SystemScreenshotKeys.clashes(hotKeys: SystemScreenshotKeys.readHotKeys(), bindings: SystemScreenshotKeys.currentBindings())
+                .contains(where: \.takenByMacOS) {
+                showOnboarding(at: .shortcuts)
+            }
         } else {
             showOnboarding()
         }
@@ -699,15 +706,27 @@ final class CompositionRoot {
         if settings.historyRetention != .never { textReader.readNow() }
     }
 
-    func showOnboarding() {
+    /// An open onboarding window is brought forward as it is. Scripted checks pass `keys`, macOS's hot keys and
+    /// OhMyShot's shortcuts to show in place of the Mac's, which replaces an open window.
+    func showOnboarding(
+        at step: OnboardingWindowController.Step = .permission,
+        keys: (hotKeys: () -> [String: Any]?, bindings: @MainActor () -> [SystemScreenshotKeys.Binding])? = nil
+    ) {
+        if keys != nil, let open = onboardingWindow {
+            open.close()
+            onboardingWindow = nil
+        }
         let controller = onboardingWindow ?? OnboardingWindowController(
             permissions: permissions,
+            startingAt: step,
+            readHotKeys: keys?.hotKeys ?? SystemScreenshotKeys.readHotKeys,
+            bindings: keys?.bindings ?? SystemScreenshotKeys.currentBindings,
             relaunch: { Relauncher.relaunch() }
         )
-        controller.onClose = { [weak self] in
+        controller.onClose = { [weak self, weak controller] in
             // Released on the next turn so the window is not deallocated inside its own delegate call.
             Task { @MainActor in
-                self?.onboardingWindow = nil
+                if self?.onboardingWindow === controller { self?.onboardingWindow = nil }
                 MemoryRelief.returnFreedPages()
             }
         }
@@ -1831,7 +1850,7 @@ final class CompositionRoot {
             quickAccess: quickAccess,
             showSettings: { [weak self] tab in self?.showSettings(tab) },
             searchSettings: { [weak self] query in self?.settingsWindow?.search(query) },
-            showOnboarding: { [weak self] in self?.showOnboarding() },
+            showOnboarding: { [weak self] step, keys in self?.showOnboarding(at: step, keys: keys) },
             showHistory: { [weak self] in self?.showHistory() },
             restoreLatestFromHistory: { [weak self] in
                 guard let self, let entry = history.items().first else { return }

@@ -80,4 +80,10 @@ public enum Theme {
         }
         return result
     }
+
+    /// An SF Symbol VoiceOver reads as `description`. A toolbar's split button hands its picture to a segment VoiceOver
+    /// names by the picture alone, and a symbol given by name is read by its English name ("download").
+    public static func symbol(_ name: String, described description: String) -> NSImage {
+        NSImage(systemSymbolName: name, accessibilityDescription: description) ?? NSImage()
+    }
 }
