@@ -336,7 +336,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .automation:
             host(AutomationSettingsView(settings: dependencies.settings, urlScheme: dependencies.urlScheme))
         case .about:
-            host(AboutSettingsView(acknowledgments: dependencies.acknowledgments))
+            host(AboutSettingsView(updates: dependencies.updates, acknowledgments: dependencies.acknowledgments))
         }
     }
 

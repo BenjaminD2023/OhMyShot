@@ -8,6 +8,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Settings › About includes Check for Updates…, using the same signed fork updater as General settings and the app menu.
+
 ### Fixed
 
 - Scrolling Capture uses the normal screenshot’s centered area picker, saved size and magnification, and cursor/first-press behavior while the screen stays live.

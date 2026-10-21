@@ -1175,6 +1175,7 @@ struct AutomationSettingsView: View {
 }
 
 struct AboutSettingsView: View {
+    var updates: SettingsDependencies.Updates? = nil
     /// The notices file in the app's Resources (App/Acknowledgments.md), or nil in a build without one.
     let acknowledgments: URL?
     @State private var readingAcknowledgments = false
@@ -1211,6 +1212,13 @@ struct AboutSettingsView: View {
             Text("Version \(Self.info("CFBundleShortVersionString") ?? "?") (\(Self.info("CFBundleVersion") ?? "?"))", bundle: .module)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+            if let updates {
+                Button(action: updates.check) {
+                    Text("Check for Updates…", bundle: .module)
+                }
+                .disabled(!updates.canCheck())
+                .padding(.top, 6)
+            }
             Text("Free software under the GNU General Public License v3.", bundle: .module)
                 .font(.callout)
                 .foregroundStyle(.secondary)
