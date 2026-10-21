@@ -71,15 +71,15 @@ struct OverlayLoupeTests {
         return (display, CapturedFrame(image: image, hdrImage: nil, displayID: display.id, frame: display.frame), points)
     }
 
-    @Test func captureAndAnnotationCenterTheLoupeOnTheSelectedPixelAtBothScales() throws {
+    @Test func captureAnnotationAndScrollingCenterTheLoupeOnTheSelectedPixelAtBothScales() throws {
         for scale in [1, 2] {
             let point = CGPoint(x: 250 + 0.5 / CGFloat(scale), y: 300 + 0.5 / CGFloat(scale))
             let fixture = try fixture(scale: scale, origin: CGPoint(x: -800, y: 100), point: point)
-            for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+            for purpose in [OverlayController.Purpose.screenshot, .annotate, .scroll] {
                 let view = OverlayView(display: fixture.display)
                 defer { view.clear() }
                 view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose)
-                view.show(fixture.frame, frozen: true)
+                view.show(fixture.frame, frozen: purpose != .scroll)
                 let lens = try #require(view.debugPointerLayers.loupe)
                 #expect(lens.midX == point.x && lens.midY == point.y)
                 #expect(lens.size == CGSize(width: 75, height: 75))
@@ -120,7 +120,7 @@ struct OverlayLoupeTests {
             let fixture = try fixture(scale: scale, origin: CGPoint(x: -800, y: 100), point: point)
             let view = OverlayView(display: fixture.display)
             defer { view.clear() }
-            for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+            for purpose in [OverlayController.Purpose.screenshot, .annotate, .scroll] {
                 for (size, expectedCount) in zip(CaptureLoupeSize.allCases, expectedCounts) {
                     view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: purpose, captureLoupeSize: size)
                     view.show(fixture.frame, frozen: true)
@@ -227,7 +227,7 @@ struct OverlayLoupeTests {
             let fixture = try fixture(scale: scale, origin: CGPoint(x: -800, y: 100), point: point)
             let view = OverlayView(display: fixture.display)
             defer { view.clear() }
-            for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+            for purpose in [OverlayController.Purpose.screenshot, .annotate, .scroll] {
                 for (magnification, expectedCounts) in zip(CaptureLoupeMagnification.allCases, counts) {
                     for (size, count) in zip(CaptureLoupeSize.allCases, expectedCounts) {
                         view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false,
@@ -277,7 +277,7 @@ struct OverlayLoupeTests {
             let fixture = try fixture(scale: scale)
             let view = OverlayView(display: fixture.display)
             defer { view.clear() }
-            for purpose in [OverlayController.Purpose.color, .text, .record, .scroll] {
+            for purpose in [OverlayController.Purpose.color, .text, .record] {
                 for magnification in CaptureLoupeMagnification.allCases {
                     view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false,
                                purpose: purpose, captureLoupeSize: .large, captureLoupeMagnification: magnification)
@@ -327,7 +327,7 @@ struct OverlayLoupeTests {
     @Test func theFirstPressHidesThePickerBeforeTheSelectionHasAnySize() throws {
         let fixture = try fixture()
         for (purpose, allInOne) in [
-            (OverlayController.Purpose.screenshot, false), (.screenshot, true), (.annotate, false),
+            (OverlayController.Purpose.screenshot, false), (.screenshot, true), (.annotate, false), (.scroll, false),
         ] {
             let view = OverlayView(display: fixture.display)
             defer { view.clear() }
@@ -440,7 +440,7 @@ struct OverlayLoupeTests {
         ]
         for scale in [1, 2] {
             let fixture = try contrastFixture(colors: samples.map(\.color), scale: scale)
-            for purpose in [OverlayController.Purpose.screenshot, .annotate, .color] {
+            for purpose in [OverlayController.Purpose.screenshot, .annotate, .scroll, .color] {
                 let view = OverlayView(display: fixture.display)
                 defer { view.clear() }
                 view.reset(pointer: fixture.points[0], mode: .area, windows: [], showsToolbar: false, purpose: purpose)
@@ -471,7 +471,7 @@ struct OverlayLoupeTests {
             OverlayController.Purpose.screenshot, .annotate, .color, .record, .scroll, .screenshot,
         ].enumerated() {
             let point = fixture.points[index % 2]
-            let isPicker = purpose == .screenshot || purpose == .annotate || purpose == .color
+            let isPicker = purpose == .screenshot || purpose == .annotate || purpose == .scroll || purpose == .color
             view.reset(pointer: point, mode: .area, windows: [], showsToolbar: false, purpose: purpose)
             if isPicker {
                 #expect(view.debugLoupeCenterColors.stroke.flatMap { ScreenColor($0) }?.hex == "#FFFFFF",

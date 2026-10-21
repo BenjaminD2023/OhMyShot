@@ -437,7 +437,7 @@ final class OverlayView: NSView {
     /// Cursor ownership starts only once the controller has taken input; other displays acquire the
     /// same policy without changing the cursor until the pointer reaches them.
     func beginCanvasCursorOwnership(at globalPoint: CGPoint) {
-        ownsCanvasCursor = !isAnnotating && (purpose == .screenshot || purpose == .annotate)
+        ownsCanvasCursor = !isAnnotating && usesCenteredPicker
         window?.invalidateCursorRects(for: self)
         refreshCanvasCursor(at: globalPoint)
     }
@@ -979,8 +979,9 @@ final class OverlayView: NSView {
     }
 
     /// The magnifier's center pixel is the capture target, replacing the separate crosshair until
-    /// the first press. Pick Color and the live recording/scrolling selectors keep their own layout.
-    private var usesCenteredPicker: Bool { purpose == .screenshot || purpose == .annotate }
+    /// the first press. Scrolling capture shares this selector on the live screen; Pick Color and
+    /// recording keep their own layout.
+    private var usesCenteredPicker: Bool { purpose == .screenshot || purpose == .annotate || purpose == .scroll }
 
     /// Choose against the sampled screen pixel, independent of the app's Light/Dark appearance.
     /// The opposite outline keeps the target legible when its neighboring pixels differ sharply.

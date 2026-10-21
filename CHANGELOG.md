@@ -8,6 +8,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- Scrolling Capture uses the normal screenshot’s centered area picker, saved size and magnification, and cursor/first-press behavior while the screen stays live.
+
 ## [0.2.1-fork.2] - 2026-10-21
 
 - Integrate upstream through 87e25df, including Settings › About acknowledgments and update status. Preserve the fork feed, signing key, saved automatic update preferences and capture guards.

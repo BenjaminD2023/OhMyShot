@@ -2,6 +2,10 @@
 
 This fork ships its complete local feature set, including changes that upstream did not accept. Releases and automatic updates come from [BenjaminD2023/OhMyShot](https://github.com/BenjaminD2023/OhMyShot). Upstream releases do not replace this fork's update feed.
 
+## Release eligibility
+
+Daily maintenance reports a summary. Publish only after explicit user permission or when reviewed and validated changes include an actual new user-facing feature. Bug fixes, documentation, dependencies and upstream synchronization alone do not authorize a release. Keep those changes on main without bumping the app version/build until a release is eligible.
+
 ## Requirements
 
 - A clean, committed checkout containing the exact release source. Increase `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `Config/Base.xcconfig` before building. Every update needs a higher build number.

@@ -28,7 +28,7 @@ struct OverlayCanvasCursorTests {
     @Test func theStationaryCanvasCursorStartsWithInputAndHasTransparentPixels() throws {
         let original = NSCursor.current
         defer { original.set() }
-        for purpose in [OverlayController.Purpose.screenshot, .annotate] {
+        for purpose in [OverlayController.Purpose.screenshot, .annotate, .scroll] {
             let view = makeView(purpose: purpose)
             NSCursor.arrow.set()
             view.cursorUpdate(with: try cursorEvent(at: canvas))
@@ -99,10 +99,10 @@ struct OverlayCanvasCursorTests {
         #expect(NSCursor.current === NSCursor.openHand, "Clearing does not replace another native cursor")
     }
 
-    @Test func textColorMeasureRecordingAndScrollingKeepTheirNativeCursorPolicy() throws {
+    @Test func textColorMeasureAndRecordingKeepTheirNativeCursorPolicy() throws {
         let original = NSCursor.current
         defer { original.set() }
-        for purpose in [OverlayController.Purpose.text, .color, .measure, .record, .scroll] {
+        for purpose in [OverlayController.Purpose.text, .color, .measure, .record] {
             let view = makeView(purpose: purpose)
             NSCursor.crosshair.set()
             view.beginCanvasCursorOwnership(at: canvas)

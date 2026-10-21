@@ -7,3 +7,5 @@ Keep upstream changes integrated while preserving the user features and saved pr
 Perform code review and relevant checks before making direct Conventional Commits to the fork's main branch. The user does not want PRs within this fork. Preserve unrelated work.
 
 Use [Docs/releasing.md](Docs/releasing.md) for versioned app, update ZIP, signed appcast and DMG releases. Keep signing keys and local signing configuration private, preserve Hardened Runtime and library validation, and publish matching source and checksums. Do not claim Apple notarization unless actually verified.
+
+Daily maintenance produces a concise summary, not a daily release. Publish only with explicit user permission or when reviewed, validated changes include a new user-facing feature. Bug fixes, documentation, dependencies and upstream synchronization alone do not authorize a release or version/build bump. Keep unreleased fixes on main until an eligible release.
