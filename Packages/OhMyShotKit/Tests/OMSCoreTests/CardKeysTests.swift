@@ -10,8 +10,14 @@ struct CardKeysTests {
         #expect(CardKeys.command(for: .character("e"), modifiers: .command) == .annotate)
         #expect(CardKeys.command(for: .space, modifiers: []) == .quickLook)
         #expect(CardKeys.command(for: .escape, modifiers: []) == .close)
-        #expect(CardKeys.command(for: .delete, modifiers: []) == .moveToTrash)
         #expect(CardKeys.command(for: .delete, modifiers: .command) == .moveToTrash)
+        #expect(CardKeys.command(for: .character("z"), modifiers: .command) == .undoTrash)
+    }
+
+    /// Delete alone means nothing: a card keeps the keys after a click, and a Delete typed for the app in front must
+    /// not throw a capture away.
+    @Test func deleteAloneDoesNotTrash() {
+        #expect(CardKeys.command(for: .delete, modifiers: []) == nil)
     }
 
     /// ⌘P is Print, as it is in a pin's menu; Pin to Screen has its own keys.

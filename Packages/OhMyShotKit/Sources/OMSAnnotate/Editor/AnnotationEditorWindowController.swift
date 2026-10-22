@@ -84,6 +84,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         window.delegate = self
 
         content.canvas.onCopy = { [weak self] in self?.copy() }
+        content.canvas.onReturn = { [weak self] in self?.copy(thenClose: true) }
         content.canvas.onSave = { [weak self] in self?.save() }
         content.canvas.onSaveProject = { [weak self] in self?.saveProject() }
         content.canvas.onPrint = { [weak self] in self?.printCapture() }
@@ -357,11 +358,16 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     // MARK: Actions
 
-    func copy() {
+    /// Copies the picture as it is now; `thenClose` (Return) closes the window once it is on the clipboard, the marks
+    /// kept as closing always keeps them. A picture that couldn't be made leaves the window open and says so.
+    func copy(thenClose: Bool = false) {
         content.canvas.endEditing()
         Task {
             guard let rendered = await render() else {
                 NSSound.beep()
+                NSAccessibility.post(element: content.canvas, notification: .announcementRequested, userInfo: [
+                    .announcement: String(localized: "The picture couldn’t be copied.", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
+                ])
                 return
             }
             if let copy = actions.copy {
@@ -374,6 +380,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                 .announcement: String(localized: "Copied", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
             ])
             _ = keep(rendered)
+            if thenClose { window?.performClose(nil) }
         }
     }
 

@@ -807,7 +807,7 @@ kana.
   that again on every panel.
 - **Warming.** Once the pack is installed, it is loaded in the text reader at utility priority (`TextReaderTool.warm`)
   to compile its models for the Neural Engine, and the history is then read as above.
-- **Settings.** `ModelPackCatalog.packs` lists the pack now, so Settings › Tools offers it.
+- **Settings.** `ModelPackCatalog.packs` lists the pack now, so Settings › Text offers it.
 - **Large pictures:** L2 reads in L1's pieces (`PictureText.pieces`) and merges them with `PieceMerge`. A picture L1
   cuts across (`PictureText.isCutAcross`) isn't read with L2, which would shrink it to 4096 wide.
 
@@ -1026,7 +1026,7 @@ MoraxCheng/ohmyshot-ppocrv6-small-coreml, on top of version 1's `f163489`, which
 - **Listed:** `ModelPackCatalog.ppocrV6Small` is version 2, its mirror that commit's `resolve/` address.
   `ModelPackTests.theL2PackIsTheOneUploaded` checks the commit, the 11 files, and their 15,829,753 bytes.
 - **What a build with it does:**
-  - It doesn't read version 1. Version 1's folder is removed as unused when Settings › Tools next reads the packs
+  - It doesn't read version 1. Version 1's folder is removed as unused when Settings › Text next reads the packs
     (`ModelPackCenter.refresh`).
   - L2 is off until version 2 is downloaded there: 15.8 MB, with the consent sheet again.
   - Then the kept texts' reading, `ppocr-v6-small/2/merge-2`, reads the Chinese and Japanese captures again once.
@@ -1523,13 +1523,13 @@ spaces.
 The roadmap's L4: a model the person has an account with reads a picture when this Mac reads it poorly (handwriting,
 dense tables, complex layouts). `CloudModel`, `CloudModelStore`, `CloudPicture`, and `CloudReader` in OMSCore
 (`CloudReading/`), `MarkdownTables` in OMSOCR; the panel's side in OMSUI (`CloudReadingViews.swift`, the model's
-`readsInCloud`), Settings › Tools › Cloud reading (`CloudReadingSettingsView.swift`), and Capture Text in the app's
+`readsInCloud`), Settings › Text › Cloud reading (`CloudReadingSettingsView.swift`), and Capture Text in the app's
 `TextCaptureCoordinator`. DESIGN.md › OCR Panel, › Cloud Reading, and › Text Selection describe what the person sees.
 
 **One model, woven into the reading there is.** The first cut (34f042b) added a list of models, a sheet to edit one, a
 line under the panel's text with Read with, an alert before the first picture to each host, and a switch between the
 two readings: five surfaces for what is one more reader. It was folded into what was there: one model, set up in place
-in Settings › Tools; in the panel a toolbar toggle beside Translate that behaves as Translate does; and Capture Text,
+in Settings › Text; in the panel a toolbar toggle beside Translate that behaves as Translate does; and Capture Text,
 which reads with it while Settings says so. Choosing a service in Settings is the person's yes to sending pictures
 there, so nothing asks again; the toggle's tooltip names the host before each picture goes.
 
@@ -1629,7 +1629,7 @@ narrower, never cut side by side); translating the cloud model's text; reading a
 
 The roadmap's L0: where the selection is over an app that shares its text through Accessibility, the app says which
 characters Vision's lines are. `AppText` in OMSCapture asks the apps; `AppTextMerge` in OMSOCR puts the answers into
-Vision's lines. Settings › Tools › Text from apps turns it on (off by default; turning it on asks for Accessibility,
+Vision's lines. Settings › Text › Text from apps turns it on (off by default; turning it on asks for Accessibility,
 which Auto-scroll already uses). It reads in Capture Text (an area, or a picked window) and in the Recognized Text
 window for a picture of the screen (an area, a window, Translate Area's); pictures from files, the clipboard, pins, and
 History have no app under them.

@@ -130,13 +130,13 @@ public struct ModelPack: Codable, Hashable, Identifiable, Sendable {
 
 /// The packs this build of the app offers.
 public enum ModelPackCatalog {
-    /// A listed pack shows in Settings › Tools. With nothing here, nothing in the app mentions packs.
+    /// A listed pack shows in Settings › Text. With nothing here, nothing in the app mentions packs.
     public static let packs: [ModelPack] = [ppocrV6Small, ppFormulaNetPlusL, paddleOCRVL]
 
     /// PP-OCRv6 small, converted to Core ML by `Tools/model-packs/ppocr_pack.py` and published on Hugging Face
     /// (Docs/ocr.md › The L2 pack): the OCR panel and the history's search read Chinese and Japanese with it beside
     /// Vision (Docs/ocr.md › L2 beside L1). Version 2 applies the recognizer's last layer on the CPU (Docs/ocr.md › The
-    /// recognizer's head on the CPU). Version 1 isn't read by this build; its folder goes when Settings › Tools next
+    /// recognizer's head on the CPU). Version 1 isn't read by this build; its folder goes when Settings › Text next
     /// reads the packs (`ModelPackCenter.refresh`).
     public static let ppocrV6Small = ModelPack(
         id: "ppocr-v6-small", version: "2",
@@ -170,8 +170,8 @@ public enum ModelPackCatalog {
     /// `Tools/model-packs/formula_pack.py` and published on Hugging Face (Docs/ocr.md › The formula pack): the text
     /// Capture Text, the OCR panel, and Recognize Text in Image read holds each formula as LaTeX (Docs/ocr.md › Formulas
     /// among text), and Capture Formula copies the formula in a selection, read on the CPU in the text reader. Until it
-    /// is installed, nothing but Settings › Tools mentions it. Version 2 adds the layout model; version 1's folder goes
-    /// when Settings › Tools next reads the packs, the files the two share carried over to version 2's download
+    /// is installed, nothing but Settings › Text mentions it. Version 2 adds the layout model; version 1's folder goes
+    /// when Settings › Text next reads the packs, the files the two share carried over to version 2's download
     /// (`ModelPackStore.removeUnused`).
     public static let ppFormulaNetPlusL = ModelPack(
         id: "pp-formulanet-plus-l", version: "2",
@@ -207,7 +207,7 @@ public enum ModelPackCatalog {
     ///  and published on Hugging Face (Docs/ocr.md › The VLM pack): the text Capture Text,
     /// the OCR panel, and Recognize Text in Image read holds the tables and charts in a picture a row a line, read in the
     /// text reader (Packages/OhMyShotVLM), and the panel shows them as tables. Until it is installed, nothing but
-    /// Settings › Tools mentions it.
+    /// Settings › Text mentions it.
     public static let paddleOCRVL = ModelPack(
         id: "paddleocr-vl-1.6", version: "1",
         name: String(localized: "Tables and Charts", bundle: .module),

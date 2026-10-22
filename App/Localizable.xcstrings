@@ -653,6 +653,40 @@
         }
       }
     },
+    "Auto-scroll needs Accessibility. The area is kept for the next Scrolling Capture." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El desplazamiento automático necesita Accesibilidad. El área se guarda para la próxima captura con desplazamiento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le défilement automatique a besoin de l’Accessibilité. La zone est gardée pour la prochaine capture défilante."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動スクロールにはアクセシビリティが必要です。この範囲は次のスクロールキャプチャで使われます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动滚动需要辅助功能权限。下次滚动截图时会沿用这个区域。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動捲動需要輔助使用權限。下次捲動擷取時會沿用這個區域。"
+          }
+        }
+      }
+    },
     "Auto-scroll needs Accessibility. Turn it on in System Settings › Privacy & Security, then start the scrolling capture again." : {
       "localizations" : {
         "es" : {
@@ -4269,6 +4303,40 @@
         }
       }
     },
+    "Open in Editor" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir en el editor"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir dans l’éditeur"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エディタで開く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在编辑器中打开"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在編輯器中打開"
+          }
+        }
+      }
+    },
     "Open the deletion link for “%@”?" : {
       "localizations" : {
         "es" : {
@@ -4813,7 +4881,42 @@
         }
       }
     },
+    "Reading formulas needs the Math Formulas model pack. Download it in OhMyShot’s Settings › Text › Model packs." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para leer fórmulas se necesita el paquete de modelos “Fórmulas matemáticas”. Descárgalo en Ajustes › Texto › Paquetes de modelos de OhMyShot."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La lecture des formules nécessite le pack de modèles Formules mathématiques. Téléchargez-le dans Réglages › Texte › Packs de modèles d’OhMyShot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数式を読み取るには「数式」モデルパックが必要です。OhMyShotの「設定」›「テキスト」›「モデルパック」でダウンロードしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取公式需要“数学公式”模型包。请在 OhMyShot 的“设置 › 文字 › 模型包”中下载。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取公式需要「數學公式」模型套件。請在 OhMyShot 的「設定」›「文字」›「模型套件」中下載。"
+          }
+        }
+      }
+    },
     "Reading formulas needs the Math Formulas model pack. Download it in OhMyShot’s Settings › Tools › Model packs." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {

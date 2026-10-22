@@ -2,10 +2,12 @@ import AppKit
 import OMSCore
 import SwiftUI
 
-/// Settings › Tools › Cloud reading: the service whose model reads pictures this Mac reads poorly, set up in place
+/// Settings › Text › Cloud reading: the service whose model reads pictures this Mac reads poorly, set up in place
 /// (model, address, key), where it reads by itself, and a Test. Off by default; Off again removes the model and its key.
 struct CloudReadingRow: View {
     let store: CloudModelStore
+    /// Its group's help, when it heads the group (without model packs to show before it).
+    var help: [HelpTopic] = []
     @State private var draft: CloudModel?
     @State private var key = ""
     @State private var problem: String?
@@ -27,26 +29,35 @@ struct CloudReadingRow: View {
         case failed(String)
     }
 
+    /// Its part of its group's help: what cloud reading is, and, with a model set up, what its switches and Test do.
+    static func help(store: CloudModelStore) -> [HelpTopic] {
+        var topics = [HelpTopic(String(localized: "Cloud reading", bundle: .module), Text("Reads pictures with a model you have an account with, such as Claude, GPT, or Qwen, or one on this Mac with Ollama, where this Mac reads them poorly: handwriting, dense tables, complex layouts. The picture goes from this Mac straight to the service, which may charge for it: when you press Read with in the Recognized Text window, and by itself where you turn that on below. Keys stay in the Keychain.", bundle: .module))]
+        guard store.model != nil else { return topics }
+        topics += [
+            HelpTopic(String(localized: "Every picture in the Recognized Text window", bundle: .module), Text("Without it, the window’s Read with button sends a picture when you press it.", bundle: .module)),
+            HelpTopic(String(localized: "Capture Text", bundle: .module), Text("Capture Text waits for the model’s reading before it copies, and copies this Mac’s reading when the model can’t read it.", bundle: .module)),
+            HelpTopic(String(localized: "Test", bundle: .module), Text("Sends a small picture of the words “\(CloudReader.testText)” to the service and checks that the model reads them back. The service may charge for it, as for any request.", bundle: .module)),
+        ]
+        return topics
+    }
+
     /// The fields' width, so they end at one edge.
-    private static let fieldWidth: CGFloat = 260
+    private static let fieldWidth: CGFloat = 250
 
     var body: some View {
-        SettingsRow(Text("Cloud reading", bundle: .module)) {
+        SettingsRow(String(localized: "Cloud reading", bundle: .module), help: help) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    Picker(selection: Binding(get: { store.model?.preset ?? (store.model == nil ? nil : .other) }, set: choose)) {
-                        Text("Off", bundle: .module).tag(CloudModel.Preset?.none)
-                        Divider()
-                        ForEach(CloudModel.Preset.allCases) { preset in
-                            Text(verbatim: preset.title).tag(CloudModel.Preset?.some(preset))
-                        }
-                    } label: {
-                        Text("Cloud reading", bundle: .module)
+                Picker(selection: Binding(get: { store.model?.preset ?? (store.model == nil ? nil : .other) }, set: choose)) {
+                    Text("Off", bundle: .module).tag(CloudModel.Preset?.none)
+                    Divider()
+                    ForEach(CloudModel.Preset.allCases) { preset in
+                        Text(verbatim: preset.title).tag(CloudModel.Preset?.some(preset))
                     }
-                    .labelsHidden()
-                    .fixedSize()
-                    InfoButton(Text("Reads pictures with a model you have an account with, such as Claude, GPT, or Qwen, or one on this Mac with Ollama, where this Mac reads them poorly: handwriting, dense tables, complex layouts. The picture goes from this Mac straight to the service, which may charge for it: when you press Read with in the Recognized Text window, and by itself where you turn that on below. Keys stay in the Keychain.", bundle: .module))
+                } label: {
+                    Text("Cloud reading", bundle: .module)
                 }
+                .labelsHidden()
+                .fixedSize()
                 if let model = draft {
                     fields(model)
                 }
@@ -146,11 +157,9 @@ struct CloudReadingRow: View {
             Toggle(isOn: Binding(get: { store.readsInPanel }, set: { store.readsInPanel = $0 })) {
                 Text("Every picture in the Recognized Text window", bundle: .module)
             }
-            .help(Text("Without it, the window’s Read with button sends a picture when you press it.", bundle: .module))
             Toggle(isOn: Binding(get: { store.readsCaptureText }, set: { store.readsCaptureText = $0 })) {
                 Text("Capture Text", bundle: .module)
             }
-            .help(Text("Capture Text waits for the model’s reading before it copies, and copies this Mac’s reading when the model can’t read it.", bundle: .module))
         }
 
         if let issue = problem ?? model.issue(hasKey: store.hasKey || !key.trimmingCharacters(in: .whitespaces).isEmpty) {
@@ -194,7 +203,6 @@ struct CloudReadingRow: View {
             HStack(spacing: 6) {
                 Button { runTest(model) } label: { Text("Test", bundle: .module) }
                     .disabled(test == .running)
-                    .help(Text("Sends a small picture of the words “\(CloudReader.testText)” to the service and checks that the model reads them back. The service may charge for it, as for any request.", bundle: .module))
                 if test == .running {
                     ProgressView().controlSize(.small)
                 }

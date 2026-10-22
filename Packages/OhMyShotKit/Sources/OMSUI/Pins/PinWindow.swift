@@ -850,7 +850,7 @@ final class PinView: NSView {
             menu.addItem(item(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", key: "s", modifiers: [.command, .shift]) { pin.savePinAs() })
             menu.addItem(item(String(localized: "Print…", bundle: .module), "printer", key: "p") { pin.printPin() })
             menu.addItem(.separator())
-            menu.addItem(item(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle") { pin.annotatePin() })
+            menu.addItem(item(String(localized: "Annotate…", bundle: .module), "pencil.and.scribble") { pin.annotatePin() })
             menu.addItem(item(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder") { pin.recognizePinText() })
         case .text:
             let selection = textView?.selectionToCopy != nil

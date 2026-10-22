@@ -38,10 +38,12 @@ public final class RecordingControlBar {
 
     /// Shows the bar by `area` (global points): centered under it, above it without room there, inside its
     /// bottom edge when neither has room (a whole display), above `clearing` points at its foot. Always on a
-    /// display. With `microphone`, a meter after the time shows how loud the microphone is.
-    public func show(by area: CGRect, displays: [CGRect], clearing: CGFloat = 0, microphone: Bool = false) {
+    /// display. With `microphone`, a meter after the time shows how loud the microphone is; with
+    /// `microphoneDenied`, a microphone that was asked for and left out, since access to it is off, says so there.
+    public func show(by area: CGRect, displays: [CGRect], clearing: CGFloat = 0, microphone: Bool = false, microphoneDenied: Bool = false) {
         hide()
-        let view = ControlBarView(actions: actions, showsMicrophone: microphone)
+        let view = ControlBarView(actions: actions, showsMicrophone: microphone || microphoneDenied)
+        if microphoneDenied, !microphone { view.showMicrophoneDenied() }
         let size = view.fittingSize
         let frame = Self.frame(for: size, by: area, inset: max(32, clearing + 12), displays: displays)
         let panel = ControlBarPanel(frame: frame.insetBy(dx: -Self.shadowRoom, dy: -Self.shadowRoom))
@@ -113,8 +115,13 @@ public final class RecordingControlBar {
 
     #if DEBUG
     /// The bar alone in a window behind the desktop picture, for scripted renders that show nothing.
-    public static func debugHiddenWindow(elapsed: Duration, paused: Bool, dark: Bool, microphoneLevel: Double? = nil, microphoneStalled: Bool = false) -> NSWindow {
-        let view = ControlBarView(actions: Actions(pause: {}, resume: {}, restart: {}, delete: {}, stop: {}), showsMicrophone: microphoneLevel != nil || microphoneStalled)
+    public static func debugHiddenWindow(
+        elapsed: Duration, paused: Bool, dark: Bool, microphoneLevel: Double? = nil, microphoneStalled: Bool = false,
+        microphoneDenied: Bool = false, asksDelete: Bool = false
+    ) -> NSWindow {
+        let view = ControlBarView(actions: Actions(pause: {}, resume: {}, restart: {}, delete: {}, stop: {}), showsMicrophone: microphoneLevel != nil || microphoneStalled || microphoneDenied)
+        if microphoneDenied { view.showMicrophoneDenied() }
+        if asksDelete { view.debugPressDelete() }
         view.update(elapsed: elapsed, paused: paused)
         if let microphoneLevel { view.updateMicrophone(level: microphoneLevel) }
         if microphoneStalled { view.updateMicrophone(stalled: true) }
@@ -164,6 +171,8 @@ final class ControlBarPanel: NSPanel {
         isMovableByWindowBackground = true
         animationBehavior = .none
         isReleasedWhenClosed = false
+        // The buttons' names and the microphone's warning show while the app being recorded is in front.
+        allowsToolTipsWhenApplicationIsInactive = true
     }
 
     @available(*, unavailable)
@@ -177,8 +186,9 @@ final class ControlBarPanel: NSPanel {
 
 /// The capsule: a red dot and the time in the reading face, the microphone's meter when it is recorded (a
 /// slashed microphone in orange when it stops sending sound), then the four buttons. Glass over an opaque
-/// window-colored backing, as the All-In-One bar is; a solid capsule with Reduce Transparency.
-private final class ControlBarView: NSView {
+/// window-colored backing, as the All-In-One bar is; a solid capsule with Reduce Transparency. Paused, the dot gives
+/// way to a pause symbol, the time pulses, and Resume is lit as a chip that is on.
+final class ControlBarView: NSView {
     private let actions: RecordingControlBar.Actions
     private let container: NSView
     private let backing = NSView()
@@ -186,6 +196,8 @@ private final class ControlBarView: NSView {
     private let rim = CAShapeLayer()
     private let stack = NSStackView()
     private let dot = NSView()
+    /// In the dot's place while recording is paused.
+    private let pauseMark = NSImageView()
     private let time = NSTextField(labelWithString: "0:00")
     /// The system's microphone-with-meter symbol, its dots lit by how loud the microphone is.
     private let meter = NSImageView()
@@ -196,11 +208,20 @@ private final class ControlBarView: NSView {
     private var litSteps = -1
     /// The microphone stopped sending sound: the meter shows a warning instead of the level.
     private var stalled = false
+    /// The microphone was left out, access to it being off: its warning stays for the whole recording.
+    private var denied = false
     private let pauseButton = CardButton(style: .barIcon, title: String(localized: "Pause", bundle: .module), symbolName: "pause.fill")
     private let restartButton = CardButton(style: .barIcon, title: String(localized: "Restart", bundle: .module), symbolName: "arrow.counterclockwise")
     private let deleteButton = CardButton(style: .barIcon, title: String(localized: "Delete", bundle: .module), symbolName: "trash")
     private let stopButton = CardButton(style: .barIcon, title: String(localized: "Stop", bundle: .module), symbolName: "stop.fill")
     private var paused = false
+    /// Delete or Restart pressed once: it waits `confirmTime` for a second press, its symbol red, and the time gives
+    /// way to its question. The button's own title is kept to put back.
+    private var armed: (button: CardButton, title: String)?
+    private var disarming: Task<Void, Never>?
+    /// The time as it last came, shown again when a question goes.
+    private var shownTime = "0:00"
+    static let confirmTime: Duration = .seconds(3)
     private static let height: CGFloat = 42
 
     init(actions: RecordingControlBar.Actions, showsMicrophone: Bool = false) {
@@ -220,8 +241,19 @@ private final class ControlBarView: NSView {
         dot.translatesAutoresizingMaskIntoConstraints = false
         dot.widthAnchor.constraint(equalToConstant: 8).isActive = true
         dot.heightAnchor.constraint(equalToConstant: 8).isActive = true
+        // Centered on the dot's slot, so nothing moves when it takes the dot's place.
+        pauseMark.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 9, weight: .bold))
+        pauseMark.contentTintColor = .secondaryLabelColor
+        pauseMark.isHidden = true
+        pauseMark.setAccessibilityElement(false)
+        pauseMark.translatesAutoresizingMaskIntoConstraints = false
+        dot.addSubview(pauseMark)
+        pauseMark.centerXAnchor.constraint(equalTo: dot.centerXAnchor).isActive = true
+        pauseMark.centerYAnchor.constraint(equalTo: dot.centerYAnchor).isActive = true
         time.font = Theme.Typeface.reading(size: 13, weight: .semibold)
         time.textColor = .labelColor
+        time.wantsLayer = true
         time.setAccessibilityElement(false)
 
         stack.orientation = .horizontal
@@ -276,8 +308,11 @@ private final class ControlBarView: NSView {
     }
 
     override var fittingSize: NSSize {
-        // Room for the longest time a short recording shows, so the bar does not grow every ten minutes.
-        let width = stack.fittingSize.width + max(0, ceil(("00:00" as NSString).size(withAttributes: [.font: time.font!]).width) - time.fittingSize.width)
+        // Room for the longest time a short recording shows, so the bar does not grow every ten minutes, and for the
+        // questions Delete and Restart ask in its place, so no button moves between the first press and the second.
+        let reserve = ["00:00", String(localized: "Delete?", bundle: .module), String(localized: "Restart?", bundle: .module)]
+            .map { ceil(($0 as NSString).size(withAttributes: [.font: time.font!]).width) }.max() ?? 0
+        let width = stack.fittingSize.width + max(0, reserve - time.fittingSize.width)
         return NSSize(width: width, height: Self.height)
     }
 
@@ -334,7 +369,7 @@ private final class ControlBarView: NSView {
     /// A microphone that stopped sending sound shows `mic.slash` in system orange in the meter's place, and says
     /// why in its tooltip and to VoiceOver; the meter comes back when sound does.
     func updateMicrophone(stalled: Bool) {
-        guard showsMicrophone, stalled != self.stalled else { return }
+        guard showsMicrophone, !denied, stalled != self.stalled else { return }
         self.stalled = stalled
         let warning = String(localized: "The microphone stopped sending sound. It may have been disconnected.", bundle: .module)
         meter.contentTintColor = stalled ? .systemOrange : .labelColor
@@ -350,13 +385,31 @@ private final class ControlBarView: NSView {
         }
     }
 
+    /// The microphone was asked for but access to it is off, so the recording has none: `mic.slash` in system orange
+    /// where the meter would be, saying why in its tooltip and to VoiceOver, from the first second.
+    func showMicrophoneDenied() {
+        guard showsMicrophone else { return }
+        stalled = true
+        denied = true
+        let warning = String(localized: "Microphone access is off, so this recording has no microphone sound. Turn on OhMyShot in System Settings › Privacy & Security › Microphone.", bundle: .module)
+        meter.contentTintColor = .systemOrange
+        meter.toolTip = warning
+        meter.setAccessibilityElement(true)
+        meter.setAccessibilityLabel(warning)
+        meter.image = NSImage(systemSymbolName: "mic.slash", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+    }
+
     func update(elapsed: Duration, paused: Bool) {
         let text = RecordingControlBar.format(elapsed)
-        if time.stringValue != text { time.stringValue = text }
+        shownTime = text
+        if armed == nil, time.stringValue != text { time.stringValue = text }
         if paused != self.paused {
             self.paused = paused
             pauseButton.symbolName = paused ? "play.fill" : "pause.fill"
             pauseButton.title = paused ? String(localized: "Resume", bundle: .module) : String(localized: "Pause", bundle: .module)
+            pauseButton.isSelected = paused
+            pauseMark.isHidden = !paused
             applyAppearance()
         }
         setAccessibilityValue(paused
@@ -364,7 +417,8 @@ private final class ControlBarView: NSView {
             : String(localized: "Recording, \(text)", bundle: .module))
     }
 
-    /// The dot is red while recording and gray while paused; the time steps back to secondary ink then.
+    /// The dot is red while recording and gives way to a pause symbol while paused; the time steps back to secondary
+    /// ink then, and pulses.
     private func applyAppearance() {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -374,16 +428,98 @@ private final class ControlBarView: NSView {
             rim.strokeColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))
                 : NSColor.separatorColor.cgColor
-            dot.layer?.backgroundColor = paused ? NSColor.tertiaryLabelColor.cgColor : NSColor.systemRed.cgColor
+            dot.layer?.backgroundColor = paused ? NSColor.clear.cgColor : NSColor.systemRed.cgColor
         }
-        time.textColor = paused ? .secondaryLabelColor : .labelColor
+        time.textColor = armed != nil ? .systemRed : paused ? .secondaryLabelColor : .labelColor
+        pulseTime(paused && armed == nil)
     }
 
+    private static let pulseKey = "paused"
+
+    /// While paused, the time fades to a third and back every 1.6 s, as a paused recorder's display blinks; never under
+    /// Reduce Motion, nor while Delete or Restart asks its question in the time's place.
+    private func pulseTime(_ on: Bool) {
+        guard let layer = time.layer else { return }
+        let pulsing = layer.animation(forKey: Self.pulseKey) != nil
+        if on, !pulsing, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = 1
+            pulse.toValue = 0.35
+            pulse.duration = 0.8
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            layer.add(pulse, forKey: Self.pulseKey)
+        } else if !on, pulsing {
+            layer.removeAnimation(forKey: Self.pulseKey)
+        }
+    }
+
+    #if DEBUG
+    /// How paused looks now, for tests: the time pulsing, Resume lit, and the pause symbol in the dot's place.
+    var debugPausedLook: (pulses: Bool, resumeLit: Bool, markShown: Bool) {
+        (time.layer?.animation(forKey: Self.pulseKey) != nil, pauseButton.isSelected, !pauseMark.isHidden)
+    }
+    #endif
+
     @objc private func pauseClicked() {
+        disarm()
         paused ? actions.resume() : actions.pause()
     }
 
-    @objc private func restartClicked() { actions.restart() }
-    @objc private func deleteClicked() { actions.delete() }
-    @objc private func stopClicked() { actions.stop() }
+    @objc private func restartClicked() {
+        confirm(restartButton, asking: String(localized: "Restart?", bundle: .module),
+                help: String(localized: "Click Restart again to throw this recording away and start over", bundle: .module), then: actions.restart)
+    }
+
+    @objc private func deleteClicked() {
+        confirm(deleteButton, asking: String(localized: "Delete?", bundle: .module),
+                help: String(localized: "Click Delete again to throw this recording away", bundle: .module), then: actions.delete)
+    }
+
+    @objc private func stopClicked() {
+        disarm()
+        actions.stop()
+    }
+
+    /// A button that throws the recording away does so on a second press within `confirmTime`: the first turns its
+    /// symbol red and puts its question where the time is, so a press that missed Stop loses nothing.
+    private func confirm(_ button: CardButton, asking question: String, help: String, then action: () -> Void) {
+        if armed?.button === button {
+            disarm()
+            action()
+            return
+        }
+        disarm()
+        armed = (button, button.title)
+        button.symbolTint = .systemRed
+        button.title = help
+        time.stringValue = question
+        applyAppearance()
+        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
+            .announcement: help, .priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ])
+        disarming = Task { [weak self] in
+            try? await Task.sleep(for: Self.confirmTime)
+            guard !Task.isCancelled else { return }
+            self?.disarm()
+        }
+    }
+
+    /// Puts a button that waited for its second press back as it was, and the time back in its place.
+    private func disarm() {
+        disarming?.cancel()
+        disarming = nil
+        guard let armed else { return }
+        armed.button.symbolTint = nil
+        armed.button.title = armed.title
+        self.armed = nil
+        time.stringValue = shownTime
+        applyAppearance()
+    }
+
+    #if DEBUG
+    /// Presses Delete once, as a click would, for a hidden render of its question.
+    func debugPressDelete() { deleteClicked() }
+    #endif
 }

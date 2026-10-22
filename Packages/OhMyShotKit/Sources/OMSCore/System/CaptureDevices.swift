@@ -15,6 +15,12 @@ public enum Microphones {
         let devices = session.devices.map { Device(id: $0.uniqueID, name: $0.localizedName) }
         return (devices, AVCaptureDevice.default(for: .audio)?.uniqueID)
     }
+
+    /// The name of the microphone `id` names, or of the system's default when `id` is empty or names one gone, as
+    /// recording falls back to it. Looks up that one device alone.
+    public static func name(of id: String) -> String? {
+        (id.isEmpty ? nil : AVCaptureDevice(uniqueID: id))?.localizedName ?? AVCaptureDevice.default(for: .audio)?.localizedName
+    }
 }
 
 /// The cameras the Mac has now, built in, attached, and iPhones nearby (Continuity Camera). Looked up only
@@ -31,5 +37,10 @@ public enum Cameras {
         )
         let devices = session.devices.map { Device(id: $0.uniqueID, name: $0.localizedName) }
         return (devices, AVCaptureDevice.default(for: .video)?.uniqueID)
+    }
+
+    /// The name of the camera `id` names, or of the system's default, as microphones are named.
+    public static func name(of id: String) -> String? {
+        (id.isEmpty ? nil : AVCaptureDevice(uniqueID: id))?.localizedName ?? AVCaptureDevice.default(for: .video)?.localizedName
     }
 }

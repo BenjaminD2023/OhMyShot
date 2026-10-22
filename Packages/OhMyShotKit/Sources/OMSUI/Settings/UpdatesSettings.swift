@@ -25,6 +25,11 @@ public final class UpdateStatus {
 struct UpdateCheckStatus: View {
     let updates: UpdateStatus
 
+    /// Its part of its group's help, which General's first row holds.
+    static var help: HelpTopic {
+        HelpTopic(String(localized: "Automatically check for updates", bundle: .module), Text("OhMyShot checks this fork’s signed release feed. Automatic downloading and installation follow your saved update preferences.", bundle: .module))
+    }
+
     var body: some View {
         if let waiting = updates.waiting {
             Text("Version \(waiting) is available.", bundle: .module)

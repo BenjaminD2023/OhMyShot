@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import OMSCapture
 import OMSCore
+import OMSUI
 import OSLog
 
 /// Scrolling capture: choose the part of the screen that scrolls, then scroll it (or let the app scroll it)
@@ -20,6 +21,10 @@ final class ScrollingCaptureCoordinator {
     /// Made for each capture, so it takes the accessibility display options as they are then.
     private var panel = ScrollingPanel()
     private var run: Run?
+    /// The area framed when Auto-scroll was chosen without Accessibility, framed again by the next Scrolling Capture.
+    private var keptArea: CGRect?
+    /// Says by the area why nothing was captured.
+    private let notice = CopiedHUD()
     /// The keys of the Scrolling Capture shortcut, which also ends a capture; set by the composition root.
     var doneKeys: (() -> String?)?
 
@@ -100,11 +105,17 @@ final class ScrollingCaptureCoordinator {
             return
         }
         overlay.startsScrollingAtOnce = starts
-        overlay.begin(mode: .area, purpose: .scroll, choosing: area) { [weak self] outcome in
+        // An area left framed when Auto-scroll asked for Accessibility is framed again.
+        let choosing = area ?? keptArea
+        keptArea = nil
+        overlay.begin(mode: .area, purpose: .scroll, choosing: choosing) { [weak self] outcome in
             guard let self, case .scroll(let area, let display, let auto) = outcome else { return }
             if auto || autoScrolls, !AutoScroller.isAllowed {
-                // Asked now, before anything is captured: macOS's question would be in the picture.
+                // Asked now, before anything is captured: macOS's question would be in the picture. The area is kept
+                // for the next Scrolling Capture, and that is said where it was.
+                keptArea = area
                 askForAccessibility()
+                notice.show(String(localized: "Auto-scroll needs Accessibility. The area is kept for the next Scrolling Capture."), near: CGPoint(x: area.midX, y: area.midY))
                 return
             }
             Task { await self.start(area, on: display, autoScrolls: auto || autoScrolls, appName: app, copiesToClipboard: copies) }

@@ -15,6 +15,22 @@ struct SettingsStoreTests {
         #expect(ReplaySound.system.keepsSystem && !ReplaySound.system.keepsMicrophone)
         #expect(!ReplaySound.none.keepsSystem && !ReplaySound.none.keepsMicrophone)
     }
+
+    /// The recording bar opens with the last of Video and GIF; a Studio take is never kept for the next.
+    @Test func studioIsNotKeptForTheNextRecording() throws {
+        let suite = "OMSCoreTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        #expect(settings.recordingOutput == .video)
+        settings.recordingOutput = .gif
+        settings.recordingOutput = .studio
+        #expect(settings.recordingOutput == .gif)
+        #expect(SettingsStore(defaults: defaults).recordingOutput == .gif)
+        // Kept by a version before this one.
+        defaults.set(RecordingOutput.studio.rawValue, forKey: "recordingOutput")
+        #expect(SettingsStore(defaults: defaults).recordingOutput == .video)
+    }
 }
 
 @MainActor

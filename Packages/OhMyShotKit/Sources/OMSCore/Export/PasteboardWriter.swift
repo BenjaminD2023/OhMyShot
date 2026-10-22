@@ -40,6 +40,13 @@ public enum PasteboardWriter {
         pasteboard.clearContents()
         pasteboard.writeObjects([fileURL as NSURL])
     }
+
+    /// Puts several files on the clipboard, as Finder's Copy does with a selection.
+    @MainActor
+    public static func write(fileURLs: [URL], to pasteboard: NSPasteboard = .general) {
+        pasteboard.clearContents()
+        pasteboard.writeObjects(fileURLs.map { $0 as NSURL })
+    }
 }
 
 private final class LazyTIFFProvider: NSObject, NSPasteboardItemDataProvider {

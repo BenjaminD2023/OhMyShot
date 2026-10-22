@@ -6,17 +6,22 @@ import SwiftUI
 struct FileNameSettings: View {
     @Bindable var settings: SettingsStore
 
+    /// Their part of their group's help, which the File name row holds.
+    static var help: [HelpTopic] {
+        [
+            HelpTopic(String(localized: "File name", bundle: .module), Text("A name is made from this pattern for each capture and each file saved. {date} and {time} are when it was taken; {app} is the app in front; {window} is the window’s title, or the front window’s for an area; {counter} is a number that goes up by one with each file saved.", bundle: .module)),
+            HelpTopic(String(localized: "Ask for a name when saving", bundle: .module), Text("Save, and saving after a capture, ask for the file’s name first, offering the one above. Return saves; Escape doesn’t save. A save started by a URL command or a shortcut never asks, nor does Save All or a card that saves itself as it closes.", bundle: .module)),
+        ]
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                TextField(text: $settings.fileNamePattern, prompt: Text(verbatim: FilenameTemplate.standard.pattern)) {
-                    Text("File name", bundle: .module)
-                }
-                .labelsHidden()
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 250)
-                InfoButton(Text("A name is made from this pattern for each capture and each file saved. {date} and {time} are when it was taken; {app} is the app in front; {window} is the window’s title, or the front window’s for an area; {counter} is a number that goes up by one with each file saved.", bundle: .module))
+            TextField(text: $settings.fileNamePattern, prompt: Text(verbatim: FilenameTemplate.standard.pattern)) {
+                Text("File name", bundle: .module)
             }
+            .labelsHidden()
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 250)
             // The token's name without its braces, so the five fit the column whole; the braces go in with it.
             HStack(spacing: 4) {
                 ForEach(FilenameTemplate.Token.allCases, id: \.self) { token in
@@ -43,11 +48,8 @@ struct FileNameSettings: View {
                     .frame(maxWidth: 300, alignment: .leading)
                     .help(preview(at: context.date))
             }
-            HStack(spacing: 6) {
-                Toggle(isOn: $settings.asksForFileName) {
-                    Text("Ask for a name when saving", bundle: .module)
-                }
-                InfoButton(Text("Save, and saving after a capture, ask for the file’s name first, offering the one above. Return saves; Escape doesn’t save. A save started by a URL command or a shortcut never asks, nor does Save All or a card that saves itself as it closes.", bundle: .module))
+            Toggle(isOn: $settings.asksForFileName) {
+                Text("Ask for a name when saving", bundle: .module)
             }
         }
     }

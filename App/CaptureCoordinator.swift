@@ -124,6 +124,7 @@ final class CaptureCoordinator {
         overlay.freezesScreen = freezes ?? settings.freezeScreen
         overlay.isAllInOne = true
         overlay.allInOneOffersUpload = canUpload?() ?? false
+        overlay.allInOneShowsCopy = !settings.copyAfterCapture
         let start = area ?? (settings.allInOneRemembersArea ? settings.allInOneArea?.area(in: displays.layout) : nil)
         configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: .area, choosing: start) { [weak self] outcome in

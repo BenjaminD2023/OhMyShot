@@ -8,6 +8,29 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Upstream integration
+
+- Capture History selects several captures as Finder does (⌘-click, ⇧-click, ⌘A) to copy, save, restore, or move them to the Trash together, and ⌘O (File › Open in Editor) opens the selection in the editor. ([6523646]; by [@fzlzjerry])
+- A right-click on the editor's tool rail lists every tool with its key. ([656bbcb]; by [@fzlzjerry])
+- Quick Access: Delete alone no longer moves a card to the Trash (⌘Delete does); a card moved to the Trash waits five seconds under Undo (also ⌘Z and Restore Recently Closed) before its capture goes; side buttons keep fixed places; and a copy made from the keyboard says Copied on the card. ([4000b7c]; by [@fzlzjerry])
+- Recording's Delete and Restart, and Scrolling Capture's Cancel once something is stitched, ask for a second click before throwing the recording or picture away. ([b67e465]; by [@fzlzjerry])
+- Return in the annotation editor copies the picture and closes the window; Background has a rail symbol of its own; Marker Yellow leads the highlighter's colors in place of Yellow; size chips name their sizes. ([656bbcb], [733fd08]; by [@fzlzjerry])
+- All-In-One leaves out its Copy chip while every capture is copied anyway, and Annotate has one symbol everywhere. ([e43c395]; by [@fzlzjerry])
+- Settings search finds more rows and opens a pane on the row it found, its title lit for a moment. ([6523646], [78c83f6]; by [@fzlzjerry])
+- Studio shows the chosen zoom's controls first in the inspector, says how to choose a stretch to cut, and dims Add Zoom where it has no room. ([97f9d2c]; by [@fzlzjerry])
+- Simplified Chinese tells the Capture pane from Screenshots and counts captures as items. ([77b18cb]; by [@fzlzjerry])
+- Settings has a Text pane for Capture Text's card, line breaks, text from apps, translation, model packs, and cloud reading, leaving Tools to colors, Measure, and pins; a search lists a pane it names first. ([892e562]; by [@fzlzjerry])
+- Settings explains each group of rows behind one help button, its popover taking the rows in order, in place of a help button or a long tooltip beside every control. ([6481709], [53de98a]; by [@fzlzjerry])
+- The recording bar's microphone and camera chips name the device they record in their tooltip and to VoiceOver. ([1d31f21]; by [@fzlzjerry])
+- A paused recording shows a pause symbol for the red dot, pulses its time, and lights Resume. ([55956a4]; by [@fzlzjerry])
+- The recording bar no longer opens in Studio after a Studio take; it opens with the last of Video and GIF. ([22e8288]; by [@fzlzjerry])
+- Capture History's Move All to Trash acts on what the window shows, states the count, and no longer says captures can be put back from the Trash. ([6523646]; by [@fzlzjerry])
+- Recording shows when the microphone was left out because access to it is off, the microphone chip shows that before recording, and a recording that can't start says so on screen. ([b67e465]; by [@fzlzjerry])
+- A scrolling capture whose Auto-scroll needs Accessibility keeps its framed area for the next try, and its warnings stand apart from its progress. ([b67e465]; by [@fzlzjerry])
+- The editor's style capsule no longer covers the next line of text under a highlight drawn freely. ([656bbcb]; by [@fzlzjerry])
+- VoiceOver names the app a History card was taken in and the action of each shortcut recorder in Settings. ([e45b631]; by [@fzlzjerry])
+- The Settings window opened on General is titled General, not "Untitled". ([8ea9c06]; by [@fzlzjerry])
+
 ### Fixed
 
 - Small Capture Text selections reuse prepared signed text/layout readers and preserve a successful native context across idle periods. Cold recovery preparation can finish instead of restarting at the first selection; cancellation and whole-request deadlines remain enforced. On the tested M4, nine ready reads took 0.51–0.78 seconds and the first after 147 seconds idle took 0.67 seconds; immediate cold startup can still take seconds. ([0b3ebe3](https://github.com/BenjaminD2023/OhMyShot/commit/0b3ebe34560cd2ce8cc9c1caa6d6b8326ad33d97), [54b76f7](https://github.com/BenjaminD2023/OhMyShot/commit/54b76f74957d3d8067a431b5b37a8e5e3fc0501d))
@@ -206,3 +229,21 @@ Each entry links its implementation commits or merged pull request and credits v
 [@fzlzjerry]: https://github.com/fzlzjerry
 
 [07c3fdf]: https://github.com/fzlzjerry/OhMyShot/commit/07c3fdf6be30c55bc3e55b70343141080efc7ddd
+
+[77b18cb]: https://github.com/fzlzjerry/OhMyShot/commit/77b18cbdac714a39f5338e7cbafde8a72ff22454
+[4000b7c]: https://github.com/fzlzjerry/OhMyShot/commit/4000b7cc3febbcddda7133414a339d38457342dc
+[6523646]: https://github.com/fzlzjerry/OhMyShot/commit/6523646dc6302412d56d33eafa1c8bc070f638b1
+[b67e465]: https://github.com/fzlzjerry/OhMyShot/commit/b67e465792577aff675d28115c1089db4be74eba
+[e43c395]: https://github.com/fzlzjerry/OhMyShot/commit/e43c3955b5bf52e841f9786d0caeafca3ca3c9cf
+[656bbcb]: https://github.com/fzlzjerry/OhMyShot/commit/656bbcba7b3bf9cfe0764069f8f37bbbfdd204be
+[97f9d2c]: https://github.com/fzlzjerry/OhMyShot/commit/97f9d2cdc702585b8aa3710c7d5207ba07ff9f69
+[733fd08]: https://github.com/fzlzjerry/OhMyShot/commit/733fd0888bc8ca99ce1e47779f825d0ceaf65a74
+[78c83f6]: https://github.com/fzlzjerry/OhMyShot/commit/78c83f6af6e5f4430afc4cd31a48a6fd8d3659e1
+[892e562]: https://github.com/fzlzjerry/OhMyShot/commit/892e56289c3bd28239e252f4b281990d0c53c297
+[6481709]: https://github.com/fzlzjerry/OhMyShot/commit/648170986ddcf368b463765beebbe7e2da24beeb
+[1d31f21]: https://github.com/fzlzjerry/OhMyShot/commit/1d31f2128dc52cca7858222220a64170840128f7
+[55956a4]: https://github.com/fzlzjerry/OhMyShot/commit/55956a475a12b5a240a724e0b883c37f6349dd05
+[22e8288]: https://github.com/fzlzjerry/OhMyShot/commit/22e82886573cf4f32ba53e585bc2ee721005cd6f
+[e45b631]: https://github.com/fzlzjerry/OhMyShot/commit/e45b631339ca0660b6a8ebdf72df23c1266282c3
+[53de98a]: https://github.com/fzlzjerry/OhMyShot/commit/53de98a3004745d40add007ab82b620de21365ba
+[8ea9c06]: https://github.com/fzlzjerry/OhMyShot/commit/8ea9c0654dce1dc928ceafeed629c892178219de

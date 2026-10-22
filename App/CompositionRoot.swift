@@ -648,6 +648,8 @@ final class CompositionRoot {
     /// Keeps edits still open in the editor before the app quits.
     func prepareForTermination() {
         annotations.keepAll()
+        // A card waiting under Undo goes to the Trash as it would have a moment later.
+        quickAccess.finishTrashingNow()
         textReader.stop()
         textCapture.stop()
     }
@@ -1749,6 +1751,11 @@ final class CompositionRoot {
             guard let self else { return nil }
             return captures.files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
         }
+        // Each in the format Settings choose, as one dragged out would be.
+        historyActions.copyFiles = { [weak self] entries in
+            guard let self else { return }
+            PasteboardWriter.write(fileURLs: entries.map { self.captures.files.fileToHandOver(self.history.fileURL(for: $0), scale: $0.pixelsPerPoint) })
+        }
         historyActions.sharing.isUploading = { [weak self] entry in self?.uploads.isUploading(entry.id) ?? false }
         historyActions.sharing.cancel = { [weak self] entry in self?.uploads.cancel(captureID: entry.id) }
         historyActions.sharing.hasLink = { [weak self] entry in self?.uploads.hasLink(entry.id) ?? false }
@@ -1915,7 +1922,14 @@ final class CompositionRoot {
             captures: captures,
             quickAccess: quickAccess,
             showSettings: { [weak self] tab in self?.showSettings(tab) },
-            searchSettings: { [weak self] query in self?.settingsWindow?.search(query) },
+            searchSettings: { [weak self] query in
+                self?.settingsWindow?.search(query)
+                // Return in the field, a moment after the typing.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(400))
+                    self?.settingsWindow?.debugOpenFirstResult()
+                }
+            },
             showOnboarding: { [weak self] step, keys in self?.showOnboarding(at: step, keys: keys) },
             showHistory: { [weak self] in self?.showHistory() },
             restoreLatestFromHistory: { [weak self] in
@@ -2060,7 +2074,7 @@ private extension SettingsTab {
         case "wallpaper": self = .screenshots
         // The cards have a tab of their own.
         case "quickaccess": self = .quickAccess
-        // Pins and the reading tools.
+        // Pins, Pick Color, and Measure; reading text has a pane of its own.
         case "annotate": self = .tools
         // CleanShot's Cloud tab is where uploads are set up.
         case "cloud": self = .sharing

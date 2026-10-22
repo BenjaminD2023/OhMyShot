@@ -2,19 +2,21 @@ import AppKit
 import OMSCore
 import SwiftUI
 
-/// Settings › Tools › Model packs: what each pack the build offers is for, what of it is on this Mac, and its
+/// Settings › Text › Model packs: what each pack the build offers is for, what of it is on this Mac, and its
 /// download. Shown only when the build offers a pack.
 ///
 /// The first download of a pack asks first, with the pack's license to read, where it comes from, and its size;
 /// going on with a paused or failed one doesn't ask again. An installed pack's license can be read again.
 struct ModelPacksRow: View {
     let center: ModelPackCenter
+    /// Its group's help, which it holds as the group's first row.
+    var help: [HelpTopic] = []
     @State private var consenting: ModelPack?
     @State private var reading: ModelPack?
     @State private var removing: ModelPack?
 
     var body: some View {
-        SettingsRow(Text("Model packs", bundle: .module)) {
+        SettingsRow(String(localized: "Model packs", bundle: .module), help: help) {
             VStack(alignment: .leading, spacing: 8) {
                 VStack(spacing: 0) {
                     ForEach(Array(center.packs.enumerated()), id: \.element.id) { index, pack in
@@ -31,10 +33,9 @@ struct ModelPacksRow: View {
                         )
                     }
                 }
-                .frame(width: 360)
+                .frame(minWidth: 280, maxWidth: 360)
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
-                InfoButton(Text("A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, math formulas, or tables and charts. It’s downloaded once, from \(hosts), and stays on this Mac; nothing you capture leaves it.", bundle: .module))
             }
         }
         .task { await center.refresh() }
@@ -76,11 +77,13 @@ struct ModelPacksRow: View {
         }
     }
 
-    /// Where the packs come from, named as each pack names its host: "Hugging Face".
-    private var hosts: String {
+    /// Its part of its group's help: what a pack is, and where the packs come from, named as each pack names its host
+    /// ("Hugging Face").
+    static func help(center: ModelPackCenter) -> HelpTopic {
         var names: [String] = []
         for pack in center.packs where !names.contains(pack.host) { names.append(pack.host) }
-        return names.formatted(.list(type: .or))
+        let hosts = names.formatted(.list(type: .or))
+        return HelpTopic(String(localized: "Model packs", bundle: .module), Text("A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, math formulas, or tables and charts. It’s downloaded once, from \(hosts), and stays on this Mac; nothing you capture leaves it.", bundle: .module))
     }
 }
 
@@ -230,7 +233,7 @@ private struct ModelPackConsent: View {
                 }
             }
             .font(.callout)
-            Text("Checked before it’s used and kept on this Mac; nothing you capture is sent. Remove it any time in Settings › Tools.", bundle: .module)
+            Text("Checked before it’s used and kept on this Mac; nothing you capture is sent. Remove it any time in Settings › Text.", bundle: .module)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -373,7 +376,7 @@ struct LicenseWell: View {
 
 #if DEBUG
 public extension Notification.Name {
-    /// Opens the first-download sheet for the pack whose id is `userInfo["id"]`, in a Tools pane on screen.
+    /// Opens the first-download sheet for the pack whose id is `userInfo["id"]`, in a Text pane on screen.
     static let debugOpenModelPackConsent = Notification.Name("OhMyShotDebugOpenModelPackConsent")
     /// Opens the installed pack's license sheet, as License… in its menu does.
     static let debugOpenModelPackLicense = Notification.Name("OhMyShotDebugOpenModelPackLicense")

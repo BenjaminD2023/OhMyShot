@@ -147,6 +147,20 @@ struct StudioEditingTests {
         #expect(document.project.zooms.count == 1)
     }
 
+    /// Add Zoom says when it has no room rather than doing nothing: zooms filling the 4 s clip leave none.
+    @Test func addZoomSaysWhenItHasNoRoom() throws {
+        let document = try document()
+        defer { try? FileManager.default.removeItem(at: document.folder) }
+        #expect(document.canAddZoom)
+        document.addZoom()
+        document.addZoom()
+        #expect(document.project.zooms.count == 2)
+        #expect(!document.canAddZoom)
+        let before = document.project.zooms
+        document.addZoom()
+        #expect(document.project.zooms == before)
+    }
+
     @Test func aZoomPlacedByHandBetweenTwoStretchesKeepsBothAutomaticZooms() {
         // Two pairs of clicks close enough to join into one automatic zoom, and a zoom placed by hand between
         // them: turned on again, the automatic zooms go on either side of it, not away with it.

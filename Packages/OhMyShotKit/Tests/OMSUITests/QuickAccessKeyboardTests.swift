@@ -66,12 +66,14 @@ struct QuickAccessKeyboardTests {
         #expect(try command(for: key("p", code: 35, modifiers: [.command, .shift])) == CardCommand.pin)
         #expect(try command(for: key("p", code: 35, modifiers: .command)) == CardCommand.print)
         #expect(try command(for: key("\u{8}", code: 51, modifiers: .command)) == CardCommand.moveToTrash)
+        #expect(try command(for: key("z", code: 6, modifiers: .command)) == CardCommand.undoTrash)
     }
 
     @Test func plainKeysReachTheStackAsCommands() throws {
         #expect(try command(for: key("\u{1B}", code: 53)) == CardCommand.close)
         #expect(try command(for: key(" ", code: 49)) == CardCommand.quickLook)
-        #expect(try command(for: key("\u{8}", code: 51)) == CardCommand.moveToTrash)
+        // Delete alone is the app in front's: it never throws a capture away.
+        #expect(try command(for: key("\u{8}", code: 51)) == nil)
         #expect(try command(for: key("\u{F700}", code: 126)) == CardCommand.selectOlder)
         #expect(try command(for: key("\u{F701}", code: 125)) == CardCommand.selectNewer)
     }
@@ -111,5 +113,27 @@ struct QuickAccessKeyboardTests {
         // 165 + 172 and one 12 pt gap, between the margins.
         #expect(CardStackView.height(for: items, size: .medium) == 165 + 172 + CardStackView.gap + margin * 2)
         #expect(CardStackView.height(for: [], size: .medium) == margin * 2)
+    }
+
+    /// A card waiting to go to the Trash offers Undo and nothing else: no menu, no hover controls, one action for VoiceOver.
+    @Test func aCardWaitingToGoOnlyComesBack() throws {
+        let card = CaptureCardView(item: try item(width: 1200, height: 800), size: .medium)
+        card.frame = CGRect(x: 0, y: 0, width: 220, height: 147)
+        var undone = 0
+        card.onUndoTrash = { undone += 1 }
+        card.isTrashing = true
+        let event = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        #expect(card.menu(for: event) == nil)
+        card.setHovering(true)
+        #expect(card.subviews.compactMap { $0 as? CardButton }.filter { !$0.isHidden }.map(\.title) == [String(localized: "Undo", bundle: .module)])
+        let actions = try #require(card.accessibilityCustomActions())
+        #expect(actions.count == 1)
+        _ = actions.first?.handler?()
+        #expect(undone == 1)
+        card.isTrashing = false
+        #expect(card.menu(for: event) != nil)
     }
 }

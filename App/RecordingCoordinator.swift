@@ -97,6 +97,10 @@ final class RecordingCoordinator {
     private var session: Session?
     /// Counting down to a recording.
     private var pending: Plan?
+    /// The microphone was asked for and left out, access to it being off: the control bar says so.
+    private var microphoneDenied = false
+    /// What could not be done, by the pointer: the recording that couldn't start.
+    private let notice = CopiedHUD()
     private var ticker: Task<Void, Never>?
     private var tickerLease: ActiveResources.Lease?
     /// Ten times a second while the microphone or the Mac's sound is recorded: the control bar's meter, and a
@@ -196,11 +200,13 @@ final class RecordingCoordinator {
     /// Asks for the microphone if it is wanted, then counts down (or not) and starts.
     private func prepare(_ plan: Plan) {
         pending = plan
+        microphoneDenied = false
         Task { [weak self] in
             guard let self else { return }
             var plan = plan
             if plan.choices.recordsMicrophone, !(await microphoneAllowed()) {
                 Log.recording.notice("Recording without the microphone: access is off")
+                microphoneDenied = true
                 announce(String(localized: "Microphone access is off in System Settings. Recording without it."))
                 var choices = plan.choices
                 choices.microphone = false
@@ -346,6 +352,8 @@ final class RecordingCoordinator {
             showStatusAfterRecording()
             NSSound.beep()
             announce(String(localized: "The recording couldn’t start."))
+            // Said where the person is looking too: a beep alone says nothing of what went wrong.
+            notice.show(String(localized: "The recording couldn’t start."), near: NSEvent.mouseLocation)
         }
     }
 
@@ -1122,7 +1130,7 @@ final class RecordingCoordinator {
             // Inside a whole display, the bar keeps clear of the keys shown at its foot.
             controls.show(
                 by: area, displays: displays.layout.displays.map(\.frame), clearing: keystrokes == nil ? 0 : KeystrokeDisplay.reservedHeight,
-                microphone: plan.choices.recordsMicrophone
+                microphone: plan.choices.recordsMicrophone, microphoneDenied: microphoneDenied
             )
         }
         if plan.choices.recordsMicrophone || plan.choices.recordsSystemAudio { startMeter() }

@@ -25,9 +25,20 @@ public final class ScrollingPanel {
         case needsAccessibility
         /// Auto-scroll stopped as the user took over.
         case autoScrollStopped(AutoScroller.TakeOver)
+        /// Cancel was pressed once with a picture made: a second press throws it away.
+        case confirmCancel
 
         var isAutoScrollStopped: Bool {
             if case .autoScrollStopped = self { true } else { false }
+        }
+
+        /// A hint about something that went wrong or will be lost, shown after an orange warning rather than in
+        /// secondary ink like the progress.
+        var isWarning: Bool {
+            switch self {
+            case .scrollBack, .full, .noScrollTarget, .needsAccessibility, .autoScrollStopped(.targetClosed), .confirmCancel: true
+            default: false
+            }
         }
     }
 
@@ -62,6 +73,9 @@ public final class ScrollingPanel {
     /// How the user took over from Auto-scroll, said for a few seconds.
     private var tookOver: AutoScroller.TakeOver?
     private var tookOverShown: Task<Void, Never>?
+    /// Cancel was pressed once with a picture made, and waits a moment for the second press.
+    private var cancelAsked = false
+    private var cancelAskedShown: Task<Void, Never>?
     private var lastHint: Hint? = .scrollToBegin
     private var lease: ActiveResources.Lease?
 
@@ -74,7 +88,7 @@ public final class ScrollingPanel {
         speedControl.isHidden = true
         speedControl.onChange = { [weak self] speed in self?.onSpeedChanged?(speed) }
         bar.onDone = { [weak self] in self?.onDone?() }
-        bar.onCancel = { [weak self] in self?.onCancel?() }
+        bar.onCancel = { [weak self] in self?.cancelPressed() }
         bar.onAutoScroll = { [weak self] on in self?.onAutoScroll?(on) }
     }
 
@@ -157,7 +171,33 @@ public final class ScrollingPanel {
         layout()
     }
 
+    /// Cancel throws away what was stitched only on a second press within 3 seconds: the first turns its mark red and
+    /// says so in the hint. Before anything is stitched there is nothing to lose, and it cancels at once.
+    private func cancelPressed() {
+        guard size != nil, !cancelAsked else {
+            setCancelAsked(false)
+            onCancel?()
+            return
+        }
+        setCancelAsked(true)
+        cancelAskedShown = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            self?.setCancelAsked(false)
+        }
+    }
+
+    private func setCancelAsked(_ asked: Bool) {
+        cancelAskedShown?.cancel()
+        cancelAsked = asked
+        bar.setCancelAsked(asked)
+        layout()
+    }
+
     public func close() {
+        cancelAskedShown?.cancel()
+        cancelAsked = false
+        bar.setCancelAsked(false)
         tookOverShown?.cancel()
         window.orderOut(nil)
         preview = nil
@@ -167,6 +207,7 @@ public final class ScrollingPanel {
 
     /// The hint shown now, the most pressing.
     private var hint: Hint? {
+        if cancelAsked { return .confirmCancel }
         if isFull { return .full }
         if lostInARow >= 2 { return .scrollBack }
         if isAutoScrolling { return .autoScrolling }
@@ -195,6 +236,7 @@ public final class ScrollingPanel {
         case .autoScrollStopped(.click), .autoScrollStopped(.key), .autoScrollStopped(.scroll): String(localized: "Paused", bundle: .module)
         case .autoScrollStopped(.targetClosed): String(localized: "Auto-scroll stopped: the target app closed.", bundle: .module)
         case .autoScrollStopped(.reachedEnd): String(localized: "Auto-scroll stopped: nothing more came into view. Click Done, or scroll on by hand.", bundle: .module)
+        case .confirmCancel: String(localized: "Click Cancel again to throw this picture away.", bundle: .module)
         }
     }
 
@@ -205,7 +247,7 @@ public final class ScrollingPanel {
         guard window.isVisible, !area.isEmpty, !displayFrame.isEmpty else { return }
         let hint = self.hint
         // What changed for the worse, Accessibility being off, or Auto-scroll handing back is said once as it shows.
-        if hint != lastHint, let hint, hint == .scrollBack || hint == .full || hint == .needsAccessibility || hint.isAutoScrollStopped { announce(hint) }
+        if hint != lastHint, let hint, hint == .scrollBack || hint == .full || hint == .needsAccessibility || hint == .confirmCancel || hint.isAutoScrollStopped { announce(hint) }
         lastHint = hint
         let sideways = axis == .horizontal
         // The picture at its own size in points, within the preview's bounds.
@@ -216,6 +258,7 @@ public final class ScrollingPanel {
         card.picture = preview
         card.reading = size.map { "\($0.width) × \($0.height)" } ?? ""
         card.hint = hint.map(Self.text(for:))
+        card.hintIsWarning = hint?.isWarning ?? false
         card.controlsHeight = hasAutoControls ? 50 : 0
         let cardSize = card.fittingSize(for: picture)
         let barSize = bar.fittingSize
@@ -266,6 +309,11 @@ public final class ScrollingPanel {
     public func debugHide() {
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
     }
+
+    /// Presses Cancel as a click would, for a render of the question a picture made asks first.
+    public func debugPressCancel() {
+        cancelPressed()
+    }
     #endif
 }
 
@@ -282,6 +330,8 @@ private final class PanelWindow: NSPanel {
         animationBehavior = .none
         isReleasedWhenClosed = false
         becomesKeyOnlyIfNeeded = true
+        // Done's keys and the chips' names show while the app being scrolled is in front.
+        allowsToolTipsWhenApplicationIsInactive = true
     }
 
     override var canBecomeKey: Bool { false }
@@ -311,11 +361,40 @@ private final class CardView: NSView {
     }
     var hint: String? {
         didSet {
-            hintField.stringValue = hint ?? ""
-            hintField.isHidden = hint == nil
-            setAccessibilityHelp(hint)
-            needsLayout = true
+            guard hint != oldValue else { return }
+            showHint()
         }
+    }
+    /// The hint is a warning: after an orange `exclamationmark.triangle.fill`, in the label's ink.
+    var hintIsWarning = false {
+        didSet {
+            guard hintIsWarning != oldValue else { return }
+            showHint()
+        }
+    }
+
+    private func showHint() {
+        let font = Theme.Typeface.label(size: 11, weight: .medium)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let text = NSMutableAttributedString()
+        if hintIsWarning, let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold).applying(.init(paletteColors: [.systemOrange]))) {
+            let mark = NSTextAttachment()
+            mark.image = symbol
+            mark.bounds = CGRect(x: 0, y: -1, width: symbol.size.width, height: symbol.size.height)
+            text.append(NSAttributedString(attachment: mark))
+            text.append(NSAttributedString(string: " "))
+        }
+        text.append(NSAttributedString(string: hint ?? ""))
+        text.addAttributes([
+            .font: font, .paragraphStyle: paragraph,
+            .foregroundColor: hintIsWarning ? NSColor.labelColor : NSColor.secondaryLabelColor,
+        ], range: NSRange(location: 0, length: text.length))
+        hintField.attributedStringValue = text
+        hintField.isHidden = hint == nil
+        setAccessibilityHelp(hint)
+        needsLayout = true
     }
 
     private static let inset: CGFloat = 6
@@ -449,6 +528,7 @@ private final class ScrollingControls: CapsuleBar {
 
     private var done: BarButton?
     private var autoScroll: BarButton?
+    private var cancel: BarButton?
     private var isAutoScrolling = false
     private var hasStarted = false
     private var direction: AutoScroller.Direction = .down
@@ -473,13 +553,21 @@ private final class ScrollingControls: CapsuleBar {
         autoScroll.setAccessibilityRole(.button)
         self.autoScroll = autoScroll
         addDivider()
-        _ = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel the scrolling capture", bundle: .module), target: self, action: #selector(cancelClicked))
+        cancel = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel the scrolling capture", bundle: .module), target: self, action: #selector(cancelClicked))
         setAccessibilityLabel(String(localized: "Scrolling Capture", bundle: .module))
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    /// Cancel waits for a second press: its mark in red.
+    func setCancelAsked(_ asked: Bool) {
+        cancel?.contentTintColor = asked ? .systemRed : .labelColor
+        let help = asked ? String(localized: "Click again to throw the picture away", bundle: .module) : String(localized: "Cancel the scrolling capture", bundle: .module)
+        cancel?.toolTip = help
+        cancel?.setAccessibilityHelp(help)
     }
 
     /// Done's tooltip names the shortcut that also ends the capture.

@@ -214,6 +214,30 @@ final class ToolRail: NSView {
         return chip
     }
 
+    /// Every tool with its key, which the rail's chips show only in their tooltips: there is no menu bar to list them.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        for (index, group) in Self.groups.enumerated() {
+            if index > 0 { menu.addItem(.separator()) }
+            for tool in group {
+                let item = NSMenuItem(title: Self.name(of: tool), action: #selector(chosenFromMenu(_:)), keyEquivalent: String(tool.key))
+                item.keyEquivalentModifierMask = []
+                item.image = NSImage(systemSymbolName: Self.symbol(for: tool), accessibilityDescription: nil)
+                item.state = tool == selected ? .on : .off
+                item.representedObject = tool.rawValue
+                item.target = self
+                menu.addItem(item)
+            }
+        }
+        return menu
+    }
+
+    @objc private func chosenFromMenu(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let tool = AnnotationTool(rawValue: raw) else { return }
+        select(tool)
+        onSelect?(tool)
+    }
+
     @objc private func clicked(_ sender: NSButton) {
         guard let tool = chips.first(where: { $0.value === sender })?.key else { return }
         // The chip toggles itself; the session decides what is selected.
@@ -236,7 +260,7 @@ final class ToolRail: NSView {
         case .redact: "checkerboard.rectangle"
         case .spotlight: "circle.dashed.inset.filled"
         case .crop: "crop"
-        case .background: "rectangle.center.inset.filled"
+        case .background: "photo.artframe"
         }
     }
 

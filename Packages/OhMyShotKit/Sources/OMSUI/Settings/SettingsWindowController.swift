@@ -9,6 +9,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     case screenshots
     case quickAccess
     case recording
+    case text
     case tools
     case sharing
     case shortcuts
@@ -18,7 +19,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
 
     /// The sidebar's groups, in order.
     static let groups: [[SettingsTab]] = [
-        [.general, .capture, .screenshots, .quickAccess, .recording, .tools],
+        [.general, .capture, .screenshots, .quickAccess, .recording, .text, .tools],
         [.sharing, .shortcuts, .automation],
         [.permissions, .about],
     ]
@@ -30,6 +31,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         case .screenshots: String(localized: "Screenshots", bundle: .module)
         case .quickAccess: String(localized: "Quick Access", bundle: .module)
         case .recording: String(localized: "Recording", bundle: .module)
+        case .text: String(localized: "Text", bundle: .module)
         case .tools: String(localized: "Tools", bundle: .module)
         case .sharing: String(localized: "Sharing", bundle: .module)
         case .shortcuts: String(localized: "Shortcuts", bundle: .module)
@@ -46,6 +48,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         case .screenshots: "photo.fill.on.rectangle.fill"
         case .quickAccess: "rectangle.stack.fill"
         case .recording: "record.circle.fill"
+        case .text: "text.viewfinder"
         case .tools: "wrench.and.screwdriver.fill"
         case .sharing: "icloud.and.arrow.up.fill"
         case .shortcuts: "command"
@@ -71,7 +74,7 @@ public struct SettingsDependencies {
     /// The uploads that finished, which only the Sharing tab lists, and what it can do with each.
     public let uploadRecords: UploadRecordStore
     public let recordActions: UploadRecordActions
-    /// The model packs, which only the Tools tab shows, and only when the build offers one.
+    /// The model packs, which only the Text tab shows, and only when the build offers one.
     public let modelPacks: ModelPackCenter?
     /// App-owned update preferences; this module does not depend on an update framework.
     public let updates: Updates?
@@ -103,7 +106,7 @@ public struct SettingsDependencies {
             self.setAutomaticallyDownloads = setAutomaticallyDownloads
         }
     }
-    /// The cloud models the OCR panel reads with, which only the Tools tab shows.
+    /// The cloud models the OCR panel reads with, which only the Text tab shows.
     public let cloudModels: CloudModelStore?
     /// The notices of OhMyShot and of the software it is built with (App/Acknowledgments.md), which About shows.
     public let acknowledgments: URL?
@@ -212,7 +215,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         var panes: [SettingsTab: NSViewController] = [:]
         let root = SettingsRootView(navigator: navigator) { tab in
             if let pane = panes[tab] { return pane }
-            let pane = Self.makeContent(for: tab, dependencies: dependencies)
+            let pane = Self.makeContent(for: tab, dependencies: dependencies, target: navigator.target)
             panes[tab] = pane
             return pane
         }
@@ -223,6 +226,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         content.sceneBridgingOptions = [.toolbars, .title]
 
         let window = NSWindow(contentViewController: content)
+        // SwiftUI hands the window a title only when it changes, so the pane the window opens on would leave it
+        // "Untitled".
+        window.title = navigator.tab.title
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
@@ -266,6 +272,12 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     }
 
     #if DEBUG
+    /// Opens the first pane the search found, as Return in the search field does, for scripted checks.
+    public func debugOpenFirstResult() {
+        guard let first = SettingsTab.found(navigator.query).first else { return }
+        navigator.open(first.tab, searchedFor: navigator.query)
+    }
+
     /// For scripted screenshots that show nothing: the window behind the wallpaper in the middle of the main
     /// display, on `tab`, ordered in without making the app active.
     public func showBehindWallpaper(_ tab: SettingsTab) {
@@ -299,8 +311,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         }
     }
 
-    private static func makeContent(for tab: SettingsTab, dependencies: SettingsDependencies) -> NSViewController {
-        switch tab {
+    private static func makeContent(for tab: SettingsTab, dependencies: SettingsDependencies, target: SettingsSearchTarget) -> NSViewController {
+        // Where the sidebar's search sends the pane.
+        func host(_ view: some View) -> NSViewController { Self.host(view.environment(target)) }
+        return switch tab {
         case .general:
             host(GeneralSettingsView(
                 settings: dependencies.settings,
@@ -320,8 +334,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             host(QuickAccessSettingsView(settings: dependencies.settings))
         case .recording:
             host(RecordingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
+        case .text:
+            host(TextSettingsView(settings: dependencies.settings, permissions: dependencies.permissions, modelPacks: dependencies.modelPacks, cloudModels: dependencies.cloudModels))
         case .tools:
-            host(ToolsSettingsView(settings: dependencies.settings, permissions: dependencies.permissions, modelPacks: dependencies.modelPacks, cloudModels: dependencies.cloudModels))
+            host(ToolsSettingsView(settings: dependencies.settings))
         case .sharing:
             host(SharingSettingsView(
                 settings: dependencies.settings, destinations: dependencies.destinations,

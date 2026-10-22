@@ -51,9 +51,16 @@ final class RecordingBar: NSView {
     /// A window is recorded on its own: what the app shows over the screen can't be in it.
     private let recordsWindow: Bool
     private var hovered: NSButton?
+    /// The name of the microphone or camera a chip that is on records, by its ID (empty for the system's default).
+    private let deviceName: (Toggle, String) -> String?
+    /// The names looked up so far, so each device is looked up once.
+    private var deviceNames: [String: String] = [:]
 
-    init(choices: RecordingChoices, recordsWindow: Bool = false) {
+    /// `deviceName` names the microphone or camera a chip records; by default the device itself is asked, once access
+    /// to it is granted (asking starts the system's capture machinery, and only for that one device).
+    init(choices: RecordingChoices, recordsWindow: Bool = false, deviceName: @escaping (Toggle, String) -> String? = RecordingBar.lookUpDevice) {
         self.recordsWindow = recordsWindow
+        self.deviceName = deviceName
         if NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency {
             let solid = NSView()
             solid.wantsLayer = true
@@ -152,9 +159,10 @@ final class RecordingBar: NSView {
         let keysApply = !recordsWindow || studio
         let cameraApplies = !recordsWindow
         states = [
-            .systemAudio: choices.recordsSystemAudio, .microphone: choices.recordsMicrophone, .clicks: choices.showsClicks,
+            .systemAudio: choices.recordsSystemAudio, .clicks: choices.showsClicks,
             .keystrokes: choices.showsKeystrokes && keysApply && keysAllowed,
             .camera: choices.camera && cameraApplies && cameraAllowed(choices),
+            .microphone: choices.recordsMicrophone && microphoneAllowed(choices),
         ]
         for (toggle, button) in toggles {
             let on = states[toggle] ?? false
@@ -166,9 +174,12 @@ final class RecordingBar: NSView {
             }
             // Without access, the chip steps back but can still be pressed: it asks, or says where to turn it on.
             let blocked = (toggle == .keystrokes && !keysAllowed) || (toggle == .camera && !cameraAllowed(choices))
+                || (toggle == .microphone && !microphoneAllowed(choices))
             button.isEnabled = enabled
             button.state = on ? .on : .off
             button.contentTintColor = on ? .controlAccentColor : enabled && !blocked ? .labelColor : .tertiaryLabelColor
+            // A microphone or camera on is named, in the tooltip and to VoiceOver, as a pop-up button names its choice.
+            let device = on && (toggle == .microphone || toggle == .camera) ? name(of: toggle, id: toggle == .microphone ? microphoneID : cameraID) : nil
             button.toolTip = !enabled
                 ? toggle == .keystrokes ? String(localized: "A window is recorded on its own, without keys shown over it", bundle: .module)
                 : toggle == .camera && studio ? String(localized: "Studio doesn’t add the camera to a window recorded on its own yet", bundle: .module)
@@ -176,12 +187,37 @@ final class RecordingBar: NSView {
                 : String(localized: "GIFs have no sound", bundle: .module)
                 : blocked
                 ? toggle == .keystrokes ? String(localized: "Input Monitoring is off. Turn on OhMyShot in System Settings › Privacy & Security › Input Monitoring.", bundle: .module)
+                : toggle == .microphone ? String(localized: "Microphone access is off, so the recording would have no microphone sound. Turn on OhMyShot in System Settings › Privacy & Security › Microphone.", bundle: .module)
                 : String(localized: "Camera access is off. Turn on OhMyShot in System Settings › Privacy & Security › Camera.", bundle: .module)
-                : help(for: toggle)
-            button.setAccessibilityValue(on ? String(localized: "On", bundle: .module) : String(localized: "Off", bundle: .module))
+                : device.map { toggle == .microphone ? String(localized: "Microphone: \($0)", bundle: .module) : String(localized: "Camera: \($0)", bundle: .module) }
+                ?? help(for: toggle)
+            let value = switch toggle {
+            case .microphone: on ? device ?? String(localized: "On", bundle: .module) : String(localized: "No Microphone", bundle: .module)
+            case .camera: on ? device ?? String(localized: "On", bundle: .module) : String(localized: "No Camera", bundle: .module)
+            default: on ? String(localized: "On", bundle: .module) : String(localized: "Off", bundle: .module)
+            }
+            button.setAccessibilityValue(value)
             button.setAccessibilityHelp(button.toolTip)
         }
         applyAppearance()
+    }
+
+    /// The device a chip records, looked up the first time it is asked for.
+    private func name(of toggle: Toggle, id: String) -> String? {
+        let key = "\(toggle)-\(id)"
+        if let known = deviceNames[key] { return known }
+        let found = deviceName(toggle, id)
+        deviceNames[key] = found
+        return found
+    }
+
+    /// The microphone or camera itself, named once access to it is granted: before that, asking would be for nothing.
+    nonisolated static func lookUpDevice(_ toggle: Toggle, id: String) -> String? {
+        switch toggle {
+        case .microphone: AVCaptureDevice.authorizationStatus(for: .audio) == .authorized ? Microphones.name(of: id) : nil
+        case .camera: AVCaptureDevice.authorizationStatus(for: .video) == .authorized ? Cameras.name(of: id) : nil
+        default: nil
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -349,6 +385,14 @@ final class RecordingBar: NSView {
     /// Whether Input Monitoring lets the keys be seen; asking for it says nothing about the screen.
     private var keysAllowed: Bool {
         CGPreflightListenEventAccess()
+    }
+
+    /// Whether the microphone chosen can be recorded: access not refused. Asked for when recording starts the first
+    /// time (`RecordingCoordinator`), so not yet asked counts as allowed.
+    private func microphoneAllowed(_ choices: RecordingChoices) -> Bool {
+        guard choices.recordsMicrophone else { return true }
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        return status == .authorized || status == .notDetermined
     }
 
     /// Whether the camera may be shown: checked only once the camera is chosen, since asking starts the

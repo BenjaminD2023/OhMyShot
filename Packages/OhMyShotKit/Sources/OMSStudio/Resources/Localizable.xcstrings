@@ -1169,6 +1169,40 @@
         }
       }
     },
+    "Chosen Zoom" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom elegido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom choisi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択中のズーム"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选缩放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所選縮放"
+          }
+        }
+      }
+    },
     "Chosen stretch" : {
       "localizations" : {
         "es" : {
@@ -1681,6 +1715,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "剪下，%1$@ 至 %2$@"
+          }
+        }
+      }
+    },
+    "Drag along the clip to choose what to cut" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra a lo largo del clip para elegir qué cortar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faites glisser le long du clip pour choisir ce qu’il faut couper"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリップに沿ってドラッグして、カットする範囲を選びます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沿片段拖移，选择要剪掉的部分"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沿片段拖移，選擇要剪掉的部分"
           }
         }
       }
@@ -2497,6 +2565,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此錄影未保留任何按鍵。當「輸入監控」已開啟且「設定」允許時，Studio 才會保留按鍵（單獨錄製的視窗僅在開啟「顯示按鍵」時保留）。"
+          }
+        }
+      }
+    },
+    "No room for a zoom at the playhead: move it past the zooms there" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay sitio para un zoom en el cabezal: llévalo más allá de los zooms que hay ahí"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pas de place pour un zoom à la tête de lecture : placez-la après les zooms qui s’y trouvent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生ヘッドの位置にズームを置く余地がありません。そこにあるズームの後ろへ移動してください"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放头处没有放缩放的空间：把播放头移到那里的缩放之后"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放頭處沒有放縮放的空間：把播放頭移到那裡的縮放之後"
           }
         }
       }

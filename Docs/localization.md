@@ -55,7 +55,8 @@ around. Open a pull request with the changed `.xcstrings` files.
   clipboard, and key names such as Return, Escape, and Shift. A button or menu item should read like one of
   macOS's own.
 - **Keep names consistent.** Translate each feature (Quick Access, Pin, Capture Text, Scrolling Capture, Studio…)
-  the same way everywhere. `DESIGN.md` describes each one.
+  the same way everywhere. `DESIGN.md` describes each one. In Simplified Chinese, the Capture pane is 截取 and the
+  Screenshots pane 截图, and a number of captures, which counts recordings as well as screenshots, is "%lld 项".
 - **VoiceOver text** (labels and announcements) is read aloud, so write it as natural speech.
 - Keep "…" where the English has it, and use your language's own punctuation and quotation marks.
 - **Check that it fits.** Most of the app grows with its text, but some places are only so wide. If a Settings
