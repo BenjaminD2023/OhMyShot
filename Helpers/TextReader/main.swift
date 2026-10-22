@@ -263,6 +263,11 @@ func send(_ result: Result) {
 
 for try await line in FileHandle.standardInput.bytes.lines {
     guard let job = try? JSONDecoder().decode(Job.self, from: Data(line.utf8)) else { continue }
+    // An interactive prediction must not be throttled as idle background work. End the activity
+    // after this job, so ready readers impose no ongoing App Nap assertion between selections.
+    let activity = job.reusesProcess == true
+        ? ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Recognize selected text") : nil
+    defer { if let activity { ProcessInfo.processInfo.endActivity(activity) } }
     do {
         if let compatibility = job.visionCompatibility {
             guard let path = job.path else { throw OCRError.unreadableImage }

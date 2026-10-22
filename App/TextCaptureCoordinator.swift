@@ -104,12 +104,14 @@ final class TextCaptureCoordinator {
     /// process, so it cannot hold the app's native recognition slot or block the OCR panel.
     func prepareCaptureText() {
         guard readerPreparation == nil, let primaryTextReader, let recoveryTextReader else { return }
-        readerPreparation = Task {
+        readerPreparation = Task { [weak self] in
             let probe = LatencyProbe("ocr.prepare")
             defer { probe.end() }
             guard let image = Self.preparationImage(), let file = Self.formulaPicture(image) else { return false }
             defer { try? FileManager.default.removeItem(at: file) }
-            let recovery = Task { try? await recoveryTextReader.visionLines(ofPictureAt: file, timeout: .seconds(3)) }
+            // Let a cold recovery model finish preparing instead of killing and loading it again
+            // at the first selection. The selection's own deadline still includes any queue wait.
+            let recovery = Task { try? await recoveryTextReader.visionLines(ofPictureAt: file, timeout: .seconds(30)) }
             defer { recovery.cancel() }
             let current = try? await primaryTextReader.visionLines(ofPictureAt: file, compatibility: false, timeout: .seconds(3))
             guard !Task.isCancelled else { return false }
@@ -119,6 +121,9 @@ final class TextCaptureCoordinator {
                 await recoveryTextReader.stop()
                 return false
             }
+            // Publish the failed current-model probe before waiting for recovery preparation;
+            // an early capture must not spend another three seconds probing the same backend.
+            self?.usesCompatibilityTextReader = true
             _ = await recovery.value
             return true
         }

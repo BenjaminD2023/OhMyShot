@@ -1,10 +1,21 @@
 import CoreGraphics
 import Foundation
+import Synchronization
 import Vision
 
 /// An explicit recovery model for an isolated reader process. It must not run beside a stalled
 /// current-model request in the app: Apple's native initialization can block both in one process.
 enum CompatibilityTextRecognition {
+    /// Keep the previous successful native pair alive until its replacement finishes. This bounds
+    /// the lifetime workaround to one pair; retaining only the request did not prevent idle errors.
+    /// The cache only retains these handles. RecognitionSlots serializes their owning operation;
+    /// VNRequest.cancel() remains the sole concurrent native access.
+    private struct Context: @unchecked Sendable {
+        let handler: VNImageRequestHandler
+        let request: VNRecognizeTextRequest
+    }
+    private static let context = Mutex<Context?>(nil)
+
     /// Nil leaves the current recognizer in charge when revision 2 cannot preserve the language
     /// configuration. Automatic language detection is a no-op before revision 3.
     @concurrent
@@ -39,7 +50,11 @@ enum CompatibilityTextRecognition {
         let cancellable = CancellableRequest(request)
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
-            try VNImageRequestHandler(cgImage: input).perform([request])
+            let handler = VNImageRequestHandler(cgImage: input)
+            try context.withLock { previous in
+                try handler.perform([request])
+                previous = Context(handler: handler, request: request)
+            }
             try Task.checkCancellation()
             return (request.results ?? []).map(RecognizedTextObservation.init)
         } onCancel: {
