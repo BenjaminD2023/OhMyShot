@@ -238,6 +238,12 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     }
 
     #if DEBUG
+    /// Opens the first pane the search found, as Return in the search field does, for scripted checks.
+    public func debugOpenFirstResult() {
+        guard let first = SettingsTab.allCases.first(where: { $0.matches(navigator.query) != nil }) else { return }
+        navigator.open(first, searchedFor: navigator.query)
+    }
+
     /// For scripted screenshots that show nothing: the window behind the wallpaper in the middle of the main
     /// display, on `tab`, ordered in without making the app active.
     public func showBehindWallpaper(_ tab: SettingsTab) {

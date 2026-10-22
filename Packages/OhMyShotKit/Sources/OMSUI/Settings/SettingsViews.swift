@@ -52,10 +52,15 @@ struct SettingsPane<Rows: View>: View {
         guard let target, target.request != landed else { return }
         landed = target.request
         guard let row = target.row else { return }
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { proxy.scrollTo(row, anchor: .center) }
         target.lit = row
         Task {
-            try? await Task.sleep(for: .seconds(2))
+            // Once the pane is laid out, and again once what it loads as it appears (the model packs, say) has
+            // taken its room: a pane opened for the first time grows under the first scroll.
+            for delay in [50, 350] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { proxy.scrollTo(row, anchor: .center) }
+            }
+            try? await Task.sleep(for: .milliseconds(1600))
             if target.lit == row { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { target.lit = nil } }
         }
     }

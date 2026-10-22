@@ -1929,7 +1929,14 @@ final class CompositionRoot {
             captures: captures,
             quickAccess: quickAccess,
             showSettings: { [weak self] tab in self?.showSettings(tab) },
-            searchSettings: { [weak self] query in self?.settingsWindow?.search(query) },
+            searchSettings: { [weak self] query in
+                self?.settingsWindow?.search(query)
+                // Return in the field, a moment after the typing.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(400))
+                    self?.settingsWindow?.debugOpenFirstResult()
+                }
+            },
             showOnboarding: { [weak self] step, keys in self?.showOnboarding(at: step, keys: keys) },
             showHistory: { [weak self] in self?.showHistory() },
             restoreLatestFromHistory: { [weak self] in
