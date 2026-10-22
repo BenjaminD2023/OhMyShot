@@ -64,6 +64,11 @@ Each entry links its implementation commits or merged pull request and credits v
 - Settings search finds more rows and opens a pane on the row it found, its title lit for a moment. ([6523646], [78c83f6]; by [@fzlzjerry])
 - Studio shows the chosen zoom's controls first in the inspector, says how to choose a stretch to cut, and dims Add Zoom where it has no room. ([97f9d2c]; by [@fzlzjerry])
 - Simplified Chinese tells the Capture pane from Screenshots and counts captures as items. ([77b18cb]; by [@fzlzjerry])
+- Settings has a Text pane for Capture Text's card, line breaks, text from apps, translation, model packs, and cloud reading, leaving Tools to colors, Measure, and pins; a search lists a pane it names first. ([892e562]; by [@fzlzjerry])
+- Settings explains each group of rows behind one help button, its popover taking the rows in order, in place of a help button or a long tooltip beside every control. ([6481709]; by [@fzlzjerry])
+- The recording bar's microphone and camera chips name the device they record in their tooltip and to VoiceOver. ([1d31f21]; by [@fzlzjerry])
+- A paused recording shows a pause symbol for the red dot, pulses its time, and lights Resume. ([55956a4]; by [@fzlzjerry])
+- The recording bar no longer opens in Studio after a Studio take; it opens with the last of Video and GIF. ([22e8288]; by [@fzlzjerry])
 
 ### Fixed
 
@@ -87,6 +92,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Recording shows when the microphone was left out because access to it is off, the microphone chip shows that before recording, and a recording that can't start says so on screen. ([b67e465]; by [@fzlzjerry])
 - A scrolling capture whose Auto-scroll needs Accessibility keeps its framed area for the next try, and its warnings stand apart from its progress. ([b67e465]; by [@fzlzjerry])
 - The editor's style capsule no longer covers the next line of text under a highlight drawn freely. ([656bbcb]; by [@fzlzjerry])
+- VoiceOver names the app a History card was taken in and the action of each shortcut recorder in Settings. ([e45b631]; by [@fzlzjerry])
 
 [Unreleased]: https://github.com/fzlzjerry/OhMyShot/commits/main/
 [c999cc0]: https://github.com/fzlzjerry/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
@@ -188,6 +194,12 @@ Each entry links its implementation commits or merged pull request and credits v
 [97f9d2c]: https://github.com/fzlzjerry/OhMyShot/commit/97f9d2cdc702585b8aa3710c7d5207ba07ff9f69
 [733fd08]: https://github.com/fzlzjerry/OhMyShot/commit/733fd0888bc8ca99ce1e47779f825d0ceaf65a74
 [78c83f6]: https://github.com/fzlzjerry/OhMyShot/commit/78c83f6af6e5f4430afc4cd31a48a6fd8d3659e1
+[892e562]: https://github.com/fzlzjerry/OhMyShot/commit/892e56289c3bd28239e252f4b281990d0c53c297
+[6481709]: https://github.com/fzlzjerry/OhMyShot/commit/648170986ddcf368b463765beebbe7e2da24beeb
+[1d31f21]: https://github.com/fzlzjerry/OhMyShot/commit/1d31f2128dc52cca7858222220a64170840128f7
+[55956a4]: https://github.com/fzlzjerry/OhMyShot/commit/55956a475a12b5a240a724e0b883c37f6349dd05
+[22e8288]: https://github.com/fzlzjerry/OhMyShot/commit/22e82886573cf4f32ba53e585bc2ee721005cd6f
+[e45b631]: https://github.com/fzlzjerry/OhMyShot/commit/e45b631339ca0660b6a8ebdf72df23c1266282c3
 [@BenjaminD2023]: https://github.com/BenjaminD2023
 [@bobbyhuang-dev]: https://github.com/bobbyhuang-dev
 [@fzlzjerry]: https://github.com/fzlzjerry
