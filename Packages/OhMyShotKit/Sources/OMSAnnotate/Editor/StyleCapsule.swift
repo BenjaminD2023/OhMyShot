@@ -320,9 +320,10 @@ final class StyleCapsule: NSView {
         savedColors.remove(color)
     }
 
-    /// The inks offered: the eight, after the marker yellow for the tools that start in it, so it can be chosen again.
+    /// The inks offered: the eight, led for the tools that start in it by the marker yellow, so it can be chosen again,
+    /// in place of the other yellow, which a highlight needs no second of (and the capsule no wider).
     private var inks: [RGBA] {
-        kind == .highlighter || kind == .highlightBox ? [.marker] + Self.palette : Self.palette
+        kind == .highlighter || kind == .highlightBox ? [.marker] + Self.palette.filter { $0 != .yellow } : Self.palette
     }
 
     /// Whether the color in use is none of the inks nor a kept one: it has the Other Color chip, and can be kept.
