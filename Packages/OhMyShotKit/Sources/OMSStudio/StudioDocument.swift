@@ -257,14 +257,23 @@ public final class StudioDocument {
     }
 
     /// A zoom at the playhead, two seconds long, at the standard scale, in the room the others leave.
-    public func addZoom() {
+    /// Where Add Zoom puts a zoom: at the playhead, past every zoom that holds its place, up to 2 seconds long and at
+    /// least half a second; nil when there is no such room.
+    private var roomForZoom: (start: Double, end: Double)? {
         let length = 2.0
         var start = min(max(time, 0), max(duration - 0.5, 0))
         // Past every zoom that holds the playhead's place, those that touch included.
         while let blocking = project.zooms.first(where: { $0.start <= start && start < $0.end }) { start = blocking.end }
         let next = project.zooms.filter { $0.start >= start }.map(\.start).min() ?? duration
         let end = min(start + length, next, duration)
-        guard end - start >= 0.5 else { return }
+        return end - start >= 0.5 ? (start, end) : nil
+    }
+
+    /// Whether Add Zoom has room at the playhead.
+    public var canAddZoom: Bool { roomForZoom != nil }
+
+    public func addZoom() {
+        guard let (start, end) = roomForZoom else { return }
         let zoom = StudioProject.Zoom(start: start, end: end, scale: AutoZoom.standardScale, isAutomatic: false)
         change(named: String(localized: "Add Zoom", bundle: .module)) {
             project.zooms = (project.zooms + [zoom]).sorted { $0.start < $1.start }

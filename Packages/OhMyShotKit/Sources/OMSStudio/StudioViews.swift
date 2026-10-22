@@ -153,7 +153,11 @@ struct TransportBar: View {
             } label: {
                 Label { Text("Add Zoom", bundle: .module) } icon: { Image(systemName: "plus.magnifyingglass") }
             }
-            .help(Text("A zoom at the playhead, following the pointer", bundle: .module))
+            // Dimmed rather than doing nothing where zooms fill the playhead's place to the end.
+            .disabled(!document.canAddZoom)
+            .help(document.canAddZoom
+                ? Text("A zoom at the playhead, following the pointer", bundle: .module)
+                : Text("No room for a zoom at the playhead: move it past the zooms there", bundle: .module))
             if document.canChangeLayoutAlongTheTimeline {
                 Button {
                     document.addCameraSegment()
@@ -170,6 +174,16 @@ struct TransportBar: View {
                 }
                 .help(Text("Put the chosen cut back in the movie", bundle: .module))
             } else {
+                // Nothing chosen yet: how to choose it, while the row has room to say so.
+                if model.selectedRange == nil {
+                    ViewThatFits(in: .horizontal) {
+                        Text("Drag along the clip to choose what to cut", bundle: .module)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Color.clear.frame(width: 0, height: 0)
+                    }
+                }
                 Button {
                     if let range = model.selectedRange {
                         document.cut(range)
@@ -217,7 +231,38 @@ struct StudioInspector: View {
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
+        ScrollViewReader { proxy in
+            form
+                // A zoom chosen on the timeline brings its section, first in the inspector, into view.
+                .onChange(of: document.selectedZoom) { _, chosen in
+                    guard chosen != nil else { return }
+                    proxy.scrollTo(Self.chosenZoomID, anchor: .top)
+                }
+        }
+    }
+
+    private static let chosenZoomID = "chosen-zoom"
+
+    private var form: some View {
         Form {
+            // The zoom chosen on the timeline, first: it is what was just picked out, at the window's bottom.
+            if let id = document.selectedZoom, let zoom = document.project.zooms.first(where: { $0.id == id }) {
+                Section {
+                    LabeledSlider(
+                        title: Text("Zoom", bundle: .module),
+                        value: Binding(get: { zoom.scale }, set: { scale in document.updateZoom(id) { $0.scale = scale } }),
+                        range: 1.2...4, reading: { String(format: "%.1f×", $0) }, document: document
+                    )
+                    Button(role: .destructive) {
+                        document.removeZoom(id)
+                    } label: {
+                        Text("Remove Zoom", bundle: .module)
+                    }
+                } header: {
+                    Text("Chosen Zoom", bundle: .module)
+                }
+                .id(Self.chosenZoomID)
+            }
             Section {
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(44), spacing: 8), count: 5), spacing: 8) {
                     ForEach(swatches) { swatch in
@@ -434,18 +479,7 @@ struct StudioInspector: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 }
-                if let id = document.selectedZoom, let zoom = document.project.zooms.first(where: { $0.id == id }) {
-                    LabeledSlider(
-                        title: Text("Zoom", bundle: .module),
-                        value: Binding(get: { zoom.scale }, set: { scale in document.updateZoom(id) { $0.scale = scale } }),
-                        range: 1.2...4, reading: { String(format: "%.1f×", $0) }, document: document
-                    )
-                    Button(role: .destructive) {
-                        document.removeZoom(id)
-                    } label: {
-                        Text("Remove Zoom", bundle: .module)
-                    }
-                } else if !document.project.zooms.isEmpty {
+                if document.selectedZoom == nil, !document.project.zooms.isEmpty {
                     Text("Choose a zoom on the timeline to change it.", bundle: .module)
                         .font(.callout)
                         .foregroundStyle(.secondary)
