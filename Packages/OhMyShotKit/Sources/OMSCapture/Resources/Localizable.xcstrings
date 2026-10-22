@@ -1027,6 +1027,40 @@
         }
       }
     },
+    "Capture and copy the area (Return or Command-C)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturar y copiar el área (Retorno o Comando-C)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturer et copier la zone (Retour ou Commande-C)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "範囲をキャプチャしてコピー（return または command-C）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截取并拷贝该区域（返回键或 Command-C）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "擷取並拷貝區域（Return 或 Command-C）"
+          }
+        }
+      }
+    },
     "Capture and pin to the screen (P)" : {
       "localizations" : {
         "es" : {

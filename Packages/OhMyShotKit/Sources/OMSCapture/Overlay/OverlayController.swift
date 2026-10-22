@@ -110,6 +110,8 @@ public final class OverlayController {
     public var isAllInOne = false
     /// Whether All-In-One's bar offers Upload: only while a destination is set up.
     public var allInOneOffersUpload = false
+    /// Whether All-In-One's bar has a Copy chip: not while Settings copy every capture, which Capture then does.
+    public var allInOneShowsCopy = true
     /// A recording is about to be set up outside Record Screen (from All-In-One): whoever records sets
     /// `recordingChoices` and `onRecordingSetupChange` for it.
     public var onWillSetUpRecording: (() -> Void)?
@@ -719,7 +721,7 @@ public final class OverlayController {
         entry.panel.level = OverlayPanel.annotationLevel
         entry.panel.makeKey()
         let setup = AllInOneSetupView(
-            display: display, area: area, offersUpload: allInOneOffersUpload && !sizing,
+            display: display, area: area, offersUpload: allInOneOffersUpload && !sizing, showsCopy: allInOneShowsCopy,
             kind: sizing ? .sizing : .allInOne, ratio: sizing ? ratio : nil
         )
         setup.frame = entry.view.bounds
@@ -787,6 +789,7 @@ public final class OverlayController {
         recapturesLive = false
         isAllInOne = false
         allInOneOffersUpload = false
+        allInOneShowsCopy = true
         allInOneMode = nil
         chosenAhead = nil
         pendingAnnotation = nil

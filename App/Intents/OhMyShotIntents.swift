@@ -39,7 +39,7 @@ nonisolated enum AfterCaptureOption: String, AppEnum {
     static let caseDisplayRepresentations: [AfterCaptureOption: DisplayRepresentation] = [
         .copy: DisplayRepresentation(title: "Copy", image: .init(systemName: "doc.on.doc")),
         .save: DisplayRepresentation(title: "Save", image: .init(systemName: "square.and.arrow.down")),
-        .annotate: DisplayRepresentation(title: "Annotate", image: .init(systemName: "pencil.tip.crop.circle")),
+        .annotate: DisplayRepresentation(title: "Annotate", image: .init(systemName: "pencil.and.scribble")),
         .upload: DisplayRepresentation(title: "Upload", image: .init(systemName: "icloud.and.arrow.up")),
         .pin: DisplayRepresentation(title: "Pin", image: .init(systemName: "pin")),
     ]

@@ -1023,6 +1023,7 @@ struct DebugHooks {
             let setup = Self.parameter("part", in: url) != "modes"
             let window = AllInOneRenders.hiddenWindow(
                 setup: setup, dark: Self.parameter("mode", in: url) == "dark", offersUpload: Self.intParameter("upload", in: url) != 0,
+                showsCopy: Self.intParameter("copy", in: url) != 0,
                 marksText: Self.intParameter("text", in: url) == 1,
                 actions: (Self.parameter("act", in: url) ?? "").split(separator: ",").map(String.init)
             )

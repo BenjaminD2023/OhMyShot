@@ -55,13 +55,15 @@ final class AllInOneSetupView: NSView {
     private(set) var ratio: AspectRatio?
 
     /// `ratio` is the shape already kept when the frame opens; the area is not reshaped to it here.
-    init(display: DisplayInfo, area: CGRect, offersUpload: Bool, kind: Kind = .allInOne, ratio: AspectRatio? = nil) {
+    /// `showsCopy`: whether the bar has a Copy chip, which only while Settings don't copy every capture says more than
+    /// Capture does; Command-C copies either way.
+    init(display: DisplayInfo, area: CGRect, offersUpload: Bool, showsCopy: Bool = true, kind: Kind = .allInOne, ratio: AspectRatio? = nil) {
         self.display = display
         self.offersUpload = offersUpload
         self.kind = kind
         self.area = area
         self.ratio = ratio
-        bar = AllInOneActionBar(offersUpload: offersUpload, sizingOnly: kind == .sizing)
+        bar = AllInOneActionBar(offersUpload: offersUpload, showsCopy: showsCopy, sizingOnly: kind == .sizing)
         super.init(frame: CGRect(origin: .zero, size: display.frame.size))
         chrome.frame = bounds
         chrome.autoresizingMask = [.width, .height]
@@ -525,15 +527,21 @@ final class AllInOneActionBar: CapsuleBar {
 
     /// `sizingOnly` is Capture Area's size control: Capture, the size, the shape, and Cancel, without the other ways to
     /// take the area.
-    init(offersUpload: Bool, sizingOnly: Bool = false) {
+    init(offersUpload: Bool, showsCopy: Bool = true, sizingOnly: Bool = false) {
         super.init()
-        let capture = add(.screenshot(nil), symbol: "camera.viewfinder", title: String(localized: "Capture", bundle: .module), help: String(localized: "Capture the area (Return)", bundle: .module))
+        // With every capture copied, Capture copies too, and says so; Copy would do the same.
+        let captureHelp = showsCopy || sizingOnly
+            ? String(localized: "Capture the area (Return)", bundle: .module)
+            : String(localized: "Capture and copy the area (Return or Command-C)", bundle: .module)
+        let capture = add(.screenshot(nil), symbol: "camera.viewfinder", title: String(localized: "Capture", bundle: .module), help: captureHelp)
         setTitle(String(localized: "Capture", bundle: .module), of: capture, emphasized: true)
         if !sizingOnly {
             addDivider()
-            add(.screenshot(.copy), symbol: "doc.on.doc", label: String(localized: "Copy", bundle: .module), help: String(localized: "Capture and copy (Command-C)", bundle: .module))
+            if showsCopy {
+                add(.screenshot(.copy), symbol: "doc.on.doc", label: String(localized: "Copy", bundle: .module), help: String(localized: "Capture and copy (Command-C)", bundle: .module))
+            }
             add(.screenshot(.save), symbol: "square.and.arrow.down", label: String(localized: "Save", bundle: .module), help: String(localized: "Capture and save to the export folder (Command-S)", bundle: .module))
-            add(.screenshot(.annotate), symbol: "pencil.tip.crop.circle", label: String(localized: "Annotate", bundle: .module), help: String(localized: "Capture and annotate (E)", bundle: .module))
+            add(.screenshot(.annotate), symbol: "pencil.and.scribble", label: String(localized: "Annotate", bundle: .module), help: String(localized: "Capture and annotate (E)", bundle: .module))
             add(.screenshot(.pin), symbol: "pin", label: String(localized: "Pin", bundle: .module), help: String(localized: "Capture and pin to the screen (P)", bundle: .module))
             if offersUpload {
                 add(.screenshot(.upload), symbol: "icloud.and.arrow.up", label: String(localized: "Upload", bundle: .module), help: String(localized: "Capture and upload (U)", bundle: .module))
@@ -803,7 +811,7 @@ public enum AllInOneRenders {
     /// before an area is chosen, Area marked.
     /// `marksText` shows the bar of modes with Window and Text both on; `actions` are pressed in the framed area first
     /// (as `allinone-act` takes them: "ratio=16:9", "size=1200x700").
-    public static func hiddenWindow(setup: Bool, dark: Bool, offersUpload: Bool = true, marksText: Bool = false, actions: [String] = []) -> NSWindow {
+    public static func hiddenWindow(setup: Bool, dark: Bool, offersUpload: Bool = true, showsCopy: Bool = true, marksText: Bool = false, actions: [String] = []) -> NSWindow {
         let size = setup ? CGSize(width: 1000, height: 620) : CGSize(width: 760, height: 90)
         let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -830,7 +838,7 @@ public enum AllInOneRenders {
                 id: 0, name: "Render", frame: CGRect(origin: .zero, size: size), pixelSize: CGSize(width: size.width * 2, height: size.height * 2),
                 backingScale: 2, maximumPotentialEDR: 1
             )
-            let setupView = AllInOneSetupView(display: display, area: CGRect(x: 240, y: 260, width: 520, height: 250), offersUpload: offersUpload)
+            let setupView = AllInOneSetupView(display: display, area: CGRect(x: 240, y: 260, width: 520, height: 250), offersUpload: offersUpload, showsCopy: showsCopy)
             setupView.frame = content.bounds
             content.addSubview(setupView)
             window.contentView = content

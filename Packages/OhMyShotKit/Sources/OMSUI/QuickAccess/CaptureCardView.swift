@@ -404,7 +404,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     private let closeButton = CardButton(style: .round, title: String(localized: "Close", bundle: .module), symbolName: "xmark")
     private let moreButton = CardButton(style: .round, title: String(localized: "More", bundle: .module), symbolName: "ellipsis")
     // The small buttons down the card's sides, which `CardControlLayout` places.
-    private let annotateButton = CardButton(style: .round, title: String(localized: "Annotate", bundle: .module), symbolName: "pencil.tip.crop.circle")
+    private let annotateButton = CardButton(style: .round, title: String(localized: "Annotate", bundle: .module), symbolName: "pencil.and.scribble")
     private let pinButton = CardButton(style: .round, title: String(localized: "Pin to Screen", bundle: .module), symbolName: "pin")
     private let uploadButton = CardButton(style: .round, title: String(localized: "Upload", bundle: .module), symbolName: "icloud.and.arrow.up")
     private let recognizeButton = CardButton(style: .round, title: String(localized: "Recognize Text", bundle: .module), symbolName: "text.viewfinder")
@@ -541,7 +541,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         annotateButton.title = item.kind == .recording
             ? isGIF ? String(localized: "Play", bundle: .module) : String(localized: "Edit", bundle: .module)
             : String(localized: "Annotate", bundle: .module)
-        annotateButton.symbolName = item.kind == .recording ? isGIF ? "play" : "timeline.selection" : "pencil.tip.crop.circle"
+        annotateButton.symbolName = item.kind == .recording ? isGIF ? "play" : "timeline.selection" : "pencil.and.scribble"
         let uploads: Bool
         switch upload {
         case .uploading?, .failed?: uploads = false
@@ -943,7 +943,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
             add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked), .open)
             add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
         } else {
-            add(String(localized: "Annotate…", bundle: .module), "pencil.tip.crop.circle", #selector(annotateClicked), .annotate)
+            add(String(localized: "Annotate…", bundle: .module), "pencil.and.scribble", #selector(annotateClicked), .annotate)
             add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked), .open)
             add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
             add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked), .recognizeText)
