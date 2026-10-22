@@ -26,14 +26,16 @@ struct UpdatesRow: View {
     @Bindable var settings: SettingsStore
     let updates: UpdateStatus
 
+    /// Its part of its group's help, which General's first row holds.
+    static var help: HelpTopic {
+        HelpTopic(String(localized: "Check for updates automatically", bundle: .module), Text("About once a day, OhMyShot asks GitHub whether there is a newer version. It asks you before it downloads anything.", bundle: .module))
+    }
+
     var body: some View {
         SettingsRow(String(localized: "Updates", bundle: .module)) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Toggle(isOn: $settings.checksForUpdates) {
-                        Text("Check for updates automatically", bundle: .module)
-                    }
-                    InfoButton(Text("About once a day, OhMyShot asks GitHub whether there is a newer version. It asks you before it downloads anything.", bundle: .module))
+                Toggle(isOn: $settings.checksForUpdates) {
+                    Text("Check for updates automatically", bundle: .module)
                 }
                 HStack(spacing: 8) {
                     Button {

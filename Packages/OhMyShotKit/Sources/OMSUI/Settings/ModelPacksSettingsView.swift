@@ -9,12 +9,14 @@ import SwiftUI
 /// going on with a paused or failed one doesn't ask again. An installed pack's license can be read again.
 struct ModelPacksRow: View {
     let center: ModelPackCenter
+    /// Its group's help, which it holds as the group's first row.
+    var help: [HelpTopic] = []
     @State private var consenting: ModelPack?
     @State private var reading: ModelPack?
     @State private var removing: ModelPack?
 
     var body: some View {
-        SettingsRow(String(localized: "Model packs", bundle: .module)) {
+        SettingsRow(String(localized: "Model packs", bundle: .module), help: help) {
             VStack(alignment: .leading, spacing: 8) {
                 VStack(spacing: 0) {
                     ForEach(Array(center.packs.enumerated()), id: \.element.id) { index, pack in
@@ -34,7 +36,6 @@ struct ModelPacksRow: View {
                 .frame(width: 360)
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
-                InfoButton(Text("A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, math formulas, or tables and charts. It’s downloaded once, from \(hosts), and stays on this Mac; nothing you capture leaves it.", bundle: .module))
             }
         }
         .task { await center.refresh() }
@@ -76,11 +77,13 @@ struct ModelPacksRow: View {
         }
     }
 
-    /// Where the packs come from, named as each pack names its host: "Hugging Face".
-    private var hosts: String {
+    /// Its part of its group's help: what a pack is, and where the packs come from, named as each pack names its host
+    /// ("Hugging Face").
+    static func help(center: ModelPackCenter) -> HelpTopic {
         var names: [String] = []
         for pack in center.packs where !names.contains(pack.host) { names.append(pack.host) }
-        return names.formatted(.list(type: .or))
+        let hosts = names.formatted(.list(type: .or))
+        return HelpTopic(String(localized: "Model packs", bundle: .module), Text("A model pack reads what macOS reads poorly or not at all, such as Chinese and Japanese text, math formulas, or tables and charts. It’s downloaded once, from \(hosts), and stays on this Mac; nothing you capture leaves it.", bundle: .module))
     }
 }
 

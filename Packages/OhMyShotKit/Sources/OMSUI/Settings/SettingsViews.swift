@@ -15,8 +15,8 @@ let paneWidth = CGFloat(Double(String(
 )) ?? 520)
 
 /// A settings pane in the classic two-column layout: short labels right-aligned in the first column,
-/// controls in the second, and groups split by dividers. Explanations wait behind a help button rather
-/// than sitting under every row. The pane fills the window beside the sidebar, its rows at the top, and
+/// controls in the second, and groups split by dividers. Explanations wait behind one help button for each
+/// group, at the end of its first row, rather than sitting under every row. The pane fills the window beside the sidebar, its rows at the top, and
 /// scrolls when they are taller than the window.
 struct SettingsPane<Rows: View>: View {
     /// How a row's label lines up with its controls: on the first line of text by default, or centered
@@ -66,25 +66,30 @@ struct SettingsPane<Rows: View>: View {
     }
 }
 
-/// A row of a settings pane: its label right-aligned in the first column, its controls in the second.
+/// A row of a settings pane: its label right-aligned in the first column, its controls in the second, and, on the
+/// first row of a group with something to explain, the group's help button in a third.
 struct SettingsRow<Content: View>: View {
     let label: Text?
     /// The row's title, which the sidebar's search lands on (`SettingsTab.searchRows`); nil for a row it doesn't.
     var anchor: String?
     /// A fixed width for the label column, so the fields of one form line up whatever its rows say.
     var labelWidth: CGFloat?
+    /// What the group this row heads explains, row by row; empty for a row that heads none, or whose group has nothing
+    /// to explain.
+    var help: [HelpTopic] = []
     @ViewBuilder var content: Content
     @Environment(SettingsSearchTarget.self) private var target: SettingsSearchTarget?
 
-    init(_ label: Text? = nil, labelWidth: CGFloat? = nil, @ViewBuilder content: () -> Content) {
+    init(_ label: Text? = nil, labelWidth: CGFloat? = nil, help: [HelpTopic] = [], @ViewBuilder content: () -> Content) {
         self.label = label
         self.labelWidth = labelWidth
+        self.help = help
         self.content = content()
     }
 
     /// A row titled `title`, already localized, which a search can land on.
-    init(_ title: String, labelWidth: CGFloat? = nil, @ViewBuilder content: () -> Content) {
-        self.init(Text(title), labelWidth: labelWidth, content: content)
+    init(_ title: String, labelWidth: CGFloat? = nil, help: [HelpTopic] = [], @ViewBuilder content: () -> Content) {
+        self.init(Text(title), labelWidth: labelWidth, help: help, content: content)
         anchor = title
     }
 
@@ -102,6 +107,9 @@ struct SettingsRow<Content: View>: View {
             .id(anchor)
             .gridColumnAlignment(.trailing)
             content
+            if !help.isEmpty {
+                GroupHelp(help)
+            }
         }
     }
 }
@@ -115,7 +123,62 @@ struct SettingsDivider: View {
     }
 }
 
-/// The round help button beside a control, with a short explanation in a popover.
+/// A row's or a control's part of its group's help: its name as the pane shows it, then what it does.
+struct HelpTopic {
+    let title: String
+    let text: Text
+
+    /// `title` is already localized: the row's or the control's own name.
+    init(_ title: String, _ text: Text) {
+        self.title = title
+        self.text = text
+    }
+}
+
+/// The round help button of a group of rows, at the trailing end of its first row: a popover explaining the group's
+/// rows one by one, each under its name in semibold, scrolling when it is taller than `maxHeight`.
+struct GroupHelp: View {
+    let topics: [HelpTopic]
+    @State private var isShown = false
+    static let width: CGFloat = 320
+    static let maxHeight: CGFloat = 440
+
+    init(_ topics: [HelpTopic]) {
+        self.topics = topics
+    }
+
+    var body: some View {
+        HelpLink { isShown.toggle() }
+            .popover(isPresented: $isShown, arrowEdge: .bottom) {
+                Self.content(topics)
+            }
+            .accessibilityLabel(Text("Help: \(topics.map(\.title).formatted(.list(type: .and)))", bundle: .module))
+    }
+
+    /// The popover's content: the topics in a column, in a scroll view as tall as they are, up to `maxHeight`.
+    static func content(_ topics: [HelpTopic]) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(topics.indices, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(topics[index].title)
+                            .fontWeight(.semibold)
+                        topics[index].text
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: width, alignment: .leading)
+            .padding(14)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxHeight: maxHeight)
+    }
+}
+
+/// The round help button beside a control, with a short explanation in a popover: in a destination's editor, where
+/// each field has its own.
 struct InfoButton: View {
     let text: Text
     @State private var isShown = false
@@ -150,24 +213,21 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(String(localized: "Language", bundle: .module)) {
+            SettingsRow(String(localized: "Language", bundle: .module), help: help) {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Picker(selection: $language) {
-                            Text("System Default", bundle: .module).tag("")
-                            Divider()
-                            ForEach(AppLanguage.available, id: \.self) { code in
-                                Text(verbatim: AppLanguage.displayName(code)).tag(code)
-                            }
-                        } label: {
-                            Text("Language", bundle: .module)
+                    Picker(selection: $language) {
+                        Text("System Default", bundle: .module).tag("")
+                        Divider()
+                        ForEach(AppLanguage.available, id: \.self) { code in
+                            Text(verbatim: AppLanguage.displayName(code)).tag(code)
                         }
-                        .labelsHidden()
-                        .fixedSize()
-                        .onChange(of: language) { _, code in
-                            AppLanguage.chosen = code.isEmpty ? nil : code
-                        }
-                        InfoButton(Text("OhMyShot can show itself in a language other than the system’s. Missing your language? Translations are welcome on GitHub.", bundle: .module))
+                    } label: {
+                        Text("Language", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .onChange(of: language) { _, code in
+                        AppLanguage.chosen = code.isEmpty ? nil : code
                     }
                     if (language.isEmpty ? nil : language) != AppLanguage.atLaunch {
                         HStack(spacing: 8) {
@@ -210,11 +270,8 @@ struct GeneralSettingsView: View {
                 UpdatesRow(settings: settings, updates: updates)
             }
             SettingsRow(String(localized: "Menu bar", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Toggle(isOn: $settings.showMenuBarIcon) {
-                        Text("Show icon", bundle: .module)
-                    }
-                    InfoButton(Text("With the icon hidden, open OhMyShot again from Finder or Spotlight to come back here.", bundle: .module))
+                Toggle(isOn: $settings.showMenuBarIcon) {
+                    Text("Show icon", bundle: .module)
                 }
             }
             SettingsRow(String(localized: "Sound", bundle: .module)) {
@@ -246,6 +303,14 @@ struct GeneralSettingsView: View {
             settings.historyRetention = retention
         }
     }
+
+    /// What the first group explains.
+    private var help: [HelpTopic] {
+        var topics = [HelpTopic(String(localized: "Language", bundle: .module), Text("OhMyShot can show itself in a language other than the system’s. Missing your language? Translations are welcome on GitHub.", bundle: .module))]
+        if updates != nil { topics.append(UpdatesRow.help) }
+        topics.append(HelpTopic(String(localized: "Show icon", bundle: .module), Text("With the icon hidden, open OhMyShot again from Finder or Spotlight to come back here.", bundle: .module)))
+        return topics
+    }
 }
 
 /// Settings › Capture: choosing what to capture, and how a window is taken.
@@ -254,19 +319,20 @@ struct CaptureSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(String(localized: "Selecting", bundle: .module)) {
+            SettingsRow(String(localized: "Selecting", bundle: .module), help: [
+                HelpTopic(String(localized: "Freeze the screen", bundle: .module), Text("Hover states and open menus stay in place until the capture is taken.", bundle: .module)),
+                HelpTopic(String(localized: "Show the pointer in screenshots", bundle: .module), Text("The pointer is in the picture where it was when you took it. With the screen frozen, that is where it was when you pressed the shortcut; All-In-One leaves it out then.", bundle: .module)),
+                HelpTopic(String(localized: "Shift keeps", bundle: .module), Text("Hold Shift while you drag out an area to keep its shape. Press Tab while choosing an area to type its width and height in pixels; a shape you choose there is the one Shift keeps from then on.", bundle: .module)),
+                HelpTopic(String(localized: "Snap the selection to text", bundle: .module), Text("On a frozen screen, the edges of a selection snap to paragraphs, lists, code, and tables near them, with a little room around. Hold Command while dragging to place the edges freely.", bundle: .module)),
+                HelpTopic(String(localized: "All-In-One remembers the last area", bundle: .module), Text("All-In-One opens with the area it last took, framed to adjust or take again.", bundle: .module)),
+                HelpTopic(String(localized: "Magnifier", bundle: .module), Text("What the screenshot and Annotate Area overlays show at the pointer before you choose an area. Magnified enlarges the pixels around it, to place an edge on the exact pixel. Actual Size shows them at their own size in a clear circle centered on the pointer, which goes when you start dragging; the crosshair stays.", bundle: .module)),
+            ]) {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Toggle(isOn: $settings.freezeScreen) {
-                            Text("Freeze the screen", bundle: .module)
-                        }
-                        InfoButton(Text("Hover states and open menus stay in place until the capture is taken.", bundle: .module))
+                    Toggle(isOn: $settings.freezeScreen) {
+                        Text("Freeze the screen", bundle: .module)
                     }
-                    HStack(spacing: 6) {
-                        Toggle(isOn: $settings.screenshotShowsCursor) {
-                            Text("Show the pointer in screenshots", bundle: .module)
-                        }
-                        InfoButton(Text("The pointer is in the picture where it was when you took it. With the screen frozen, that is where it was when you pressed the shortcut; All-In-One leaves it out then.", bundle: .module))
+                    Toggle(isOn: $settings.screenshotShowsCursor) {
+                        Text("Show the pointer in screenshots", bundle: .module)
                     }
                     HStack(spacing: 6) {
                         Text("Shift keeps", bundle: .module)
@@ -280,19 +346,12 @@ struct CaptureSettingsView: View {
                         }
                         .labelsHidden()
                         .fixedSize()
-                        InfoButton(Text("Hold Shift while you drag out an area to keep its shape. Press Tab while choosing an area to type its width and height in pixels; a shape you choose there is the one Shift keeps from then on.", bundle: .module))
                     }
-                    HStack(spacing: 6) {
-                        Toggle(isOn: $settings.snapSelectionToText) {
-                            Text("Snap the selection to text", bundle: .module)
-                        }
-                        InfoButton(Text("On a frozen screen, the edges of a selection snap to paragraphs, lists, code, and tables near them, with a little room around. Hold Command while dragging to place the edges freely.", bundle: .module))
+                    Toggle(isOn: $settings.snapSelectionToText) {
+                        Text("Snap the selection to text", bundle: .module)
                     }
-                    HStack(spacing: 6) {
-                        Toggle(isOn: $settings.allInOneRemembersArea) {
-                            Text("All-In-One remembers the last area", bundle: .module)
-                        }
-                        InfoButton(Text("All-In-One opens with the area it last took, framed to adjust or take again.", bundle: .module))
+                    Toggle(isOn: $settings.allInOneRemembersArea) {
+                        Text("All-In-One remembers the last area", bundle: .module)
                     }
                 }
             }
@@ -318,7 +377,6 @@ struct CaptureSettingsView: View {
                         .labelsHidden()
                         .fixedSize()
                     }
-                    InfoButton(Text("What the screenshot and Annotate Area overlays show at the pointer before you choose an area. Magnified enlarges the pixels around it, to place an edge on the exact pixel. Actual Size shows them at their own size in a clear circle centered on the pointer, which goes when you start dragging; the crosshair stays.", bundle: .module))
                 }
             }
             SettingsRow(String(localized: "Self-Timer", bundle: .module)) {
@@ -335,23 +393,22 @@ struct CaptureSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(String(localized: "Windows", bundle: .module)) {
+            SettingsRow(String(localized: "Windows", bundle: .module), help: [
+                HelpTopic(String(localized: "Windows", bundle: .module), Text("Desktop wallpaper puts a window on the desktop picture around it, as the screen shows it. Hold Shift as you click a window to take it the other way: with no background, or on the desktop wallpaper.", bundle: .module)),
+            ]) {
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle(isOn: $settings.windowShadow) {
                         Text("Capture the shadow", bundle: .module)
                     }
-                    HStack(spacing: 6) {
-                        Picker(selection: $settings.windowBackground) {
-                            Text("Same background as screenshots", bundle: .module).tag(WindowBackground.asScreenshots)
-                            Text("No background", bundle: .module).tag(WindowBackground.transparent)
-                            Text("Desktop wallpaper", bundle: .module).tag(WindowBackground.desktopWallpaper)
-                        } label: {
-                            Text("Window background", bundle: .module)
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                        InfoButton(Text("Desktop wallpaper puts a window on the desktop picture around it, as the screen shows it. Hold Shift as you click a window to take it the other way: with no background, or on the desktop wallpaper.", bundle: .module))
+                    Picker(selection: $settings.windowBackground) {
+                        Text("Same background as screenshots", bundle: .module).tag(WindowBackground.asScreenshots)
+                        Text("No background", bundle: .module).tag(WindowBackground.transparent)
+                        Text("Desktop wallpaper", bundle: .module).tag(WindowBackground.desktopWallpaper)
+                    } label: {
+                        Text("Window background", bundle: .module)
                     }
+                    .labelsHidden()
+                    .fixedSize()
                 }
             }
         }
@@ -369,29 +426,29 @@ struct ScreenshotsSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(String(localized: "After screenshot", bundle: .module)) {
+            SettingsRow(String(localized: "After screenshot", bundle: .module), help: [
+                HelpTopic(String(localized: "After screenshot", bundle: .module), hasDestination
+                    ? Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below. Upload sends it to your default destination.", bundle: .module)
+                    : Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below.", bundle: .module)),
+                HelpTopic(String(localized: "Background", bundle: .module), Text("Puts each new screenshot on a background. Save one as a preset with the editor’s Background tool.", bundle: .module)),
+            ]) {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        HStack(spacing: 14) {
-                            Toggle(isOn: $settings.copyAfterCapture) {
-                                Text("Copy", bundle: .module)
-                            }
-                            Toggle(isOn: $settings.showQuickAccess) {
-                                Text("Quick Access", bundle: .module)
-                            }
-                            Toggle(isOn: $settings.saveAfterCapture) {
-                                Text("Save", bundle: .module)
-                            }
-                            // Uploading is offered only to a person who has somewhere to upload to.
-                            if hasDestination {
-                                Toggle(isOn: $settings.uploadAfterCapture) {
-                                    Text("Upload", bundle: .module)
-                                }
+                    HStack(spacing: 14) {
+                        Toggle(isOn: $settings.copyAfterCapture) {
+                            Text("Copy", bundle: .module)
+                        }
+                        Toggle(isOn: $settings.showQuickAccess) {
+                            Text("Quick Access", bundle: .module)
+                        }
+                        Toggle(isOn: $settings.saveAfterCapture) {
+                            Text("Save", bundle: .module)
+                        }
+                        // Uploading is offered only to a person who has somewhere to upload to.
+                        if hasDestination {
+                            Toggle(isOn: $settings.uploadAfterCapture) {
+                                Text("Upload", bundle: .module)
                             }
                         }
-                        InfoButton(hasDestination
-                            ? Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below. Upload sends it to your default destination.", bundle: .module)
-                            : Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below.", bundle: .module))
                     }
                     if !settings.copyAfterCapture, !settings.showQuickAccess, !settings.saveAfterCapture, !(hasDestination && settings.uploadAfterCapture) {
                         Label {
@@ -425,36 +482,38 @@ struct ScreenshotsSettingsView: View {
                 }
             }
             SettingsRow(String(localized: "Background", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Picker(selection: Binding(
+                Picker(selection: Binding(
                         get: { automaticBackground },
-                        set: { choice in
-                            automaticBackground = choice
-                            backgrounds.setAutomatic(choice)
-                        }
-                    )) {
-                        Text("None", bundle: .module).tag(UUID?.none)
-                        if !backgroundPresets.isEmpty { Divider() }
-                        ForEach(backgroundPresets) { preset in
-                            Text(preset.name).tag(Optional(preset.id))
-                        }
-                    } label: {
-                        Text("Background", bundle: .module)
+                    set: { choice in
+                        automaticBackground = choice
+                        backgrounds.setAutomatic(choice)
                     }
-                    .labelsHidden()
-                    .fixedSize()
-                    .disabled(backgroundPresets.isEmpty)
-                    .onAppear {
-                        backgroundPresets = backgrounds.presets()
-                        automaticBackground = backgrounds.automatic()
+                )) {
+                    Text("None", bundle: .module).tag(UUID?.none)
+                    if !backgroundPresets.isEmpty { Divider() }
+                    ForEach(backgroundPresets) { preset in
+                        Text(preset.name).tag(Optional(preset.id))
                     }
-                    InfoButton(Text("Puts each new screenshot on a background. Save one as a preset with the editor’s Background tool.", bundle: .module))
+                } label: {
+                    Text("Background", bundle: .module)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .disabled(backgroundPresets.isEmpty)
+                .onAppear {
+                    backgroundPresets = backgrounds.presets()
+                    automaticBackground = backgrounds.automatic()
                 }
             }
 
             SettingsDivider()
 
-            SettingsRow(String(localized: "Format", bundle: .module)) {
+            SettingsRow(String(localized: "Format", bundle: .module), help: [
+                HelpTopic(String(localized: "Format", bundle: .module), Text("Screenshots you save, drag out, upload, or hand to a shortcut are written in this format; the slider sets how much JPEG and HEIC give up for size. History keeps every capture as a PNG, so editing and reading text are never affected. JPEG has no transparency, so a window’s clear corners turn white. With Freeze the screen and Convert to sRGB off, a HEIC saved as the screenshot is taken also keeps the brightness of an HDR display.", bundle: .module)),
+                HelpTopic(String(localized: "Save Retina screenshots at 1×", bundle: .module), Text("A screenshot taken at 2× is scaled down to its size in points where it leaves the app. The clipboard’s picture follows too.", bundle: .module)),
+                HelpTopic(String(localized: "Convert to sRGB", bundle: .module), Text("A wide-gamut display captures in Display P3. Converting makes colors look the same in apps that ignore color profiles.", bundle: .module)),
+                HelpTopic(String(localized: "Add a 1 px border", bundle: .module), Text("Draws a faint dark line around the picture’s edge, so a light screenshot shows on a white page. A picture with clear corners or a shadow, like a window’s, gets none.", bundle: .module)),
+            ]) {
                 HStack(spacing: 8) {
                     Picker(selection: $settings.screenshotFormat) {
                         ForEach(ImageExporter.Format.allCases, id: \.self) { format in
@@ -477,46 +536,38 @@ struct ScreenshotsSettingsView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 40, alignment: .trailing)
                         .accessibilityHidden(true)
-                    InfoButton(Text("Screenshots you save, drag out, upload, or hand to a shortcut are written in this format; the slider sets how much JPEG and HEIC give up for size. History keeps every capture as a PNG, so editing and reading text are never affected. JPEG has no transparency, so a window’s clear corners turn white. With Freeze the screen and Convert to sRGB off, a HEIC saved as the screenshot is taken also keeps the brightness of an HDR display.", bundle: .module))
                 }
             }
             SettingsRow(String(localized: "Pictures", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Toggle(isOn: $settings.savesRetinaAtOneX) {
-                            Text("Save Retina screenshots at 1×", bundle: .module)
-                        }
-                        InfoButton(Text("A screenshot taken at 2× is scaled down to its size in points where it leaves the app. The clipboard’s picture follows too.", bundle: .module))
+                    Toggle(isOn: $settings.savesRetinaAtOneX) {
+                        Text("Save Retina screenshots at 1×", bundle: .module)
                     }
-                    HStack(spacing: 6) {
-                        Toggle(isOn: $settings.convertsToSRGB) {
-                            Text("Convert to sRGB", bundle: .module)
-                        }
-                        InfoButton(Text("A wide-gamut display captures in Display P3. Converting makes colors look the same in apps that ignore color profiles.", bundle: .module))
+                    Toggle(isOn: $settings.convertsToSRGB) {
+                        Text("Convert to sRGB", bundle: .module)
                     }
-                    HStack(spacing: 6) {
-                        Toggle(isOn: $settings.addsBorder) {
-                            Text("Add a 1 px border", bundle: .module)
-                        }
-                        InfoButton(Text("Draws a faint dark line around the picture’s edge, so a light screenshot shows on a white page. A picture with clear corners or a shadow, like a window’s, gets none.", bundle: .module))
+                    Toggle(isOn: $settings.addsBorder) {
+                        Text("Add a 1 px border", bundle: .module)
                     }
                 }
             }
-            SettingsRow(String(localized: "File name", bundle: .module)) {
+
+            SettingsDivider()
+
+            SettingsRow(String(localized: "File name", bundle: .module), help: FileNameSettings.help + [
+                HelpTopic(String(localized: "Clipboard", bundle: .module), Text("File and picture also puts the file on the clipboard, in the format above, so Finder, Mail, and chat apps paste the file while image editors paste the picture. Some apps paste the file where you wanted the picture.", bundle: .module)),
+            ]) {
                 FileNameSettings(settings: settings)
             }
             SettingsRow(String(localized: "Clipboard", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Picker(selection: $settings.clipboardFormat) {
-                        Text("Picture only", bundle: .module).tag(ClipboardFormat.pictureOnly)
-                        Text("File and picture", bundle: .module).tag(ClipboardFormat.fileAndPicture)
-                    } label: {
-                        Text("Clipboard", bundle: .module)
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-                    InfoButton(Text("File and picture also puts the file on the clipboard, in the format above, so Finder, Mail, and chat apps paste the file while image editors paste the picture. Some apps paste the file where you wanted the picture.", bundle: .module))
+                Picker(selection: $settings.clipboardFormat) {
+                    Text("Picture only", bundle: .module).tag(ClipboardFormat.pictureOnly)
+                    Text("File and picture", bundle: .module).tag(ClipboardFormat.fileAndPicture)
+                } label: {
+                    Text("Clipboard", bundle: .module)
                 }
+                .labelsHidden()
+                .fixedSize()
             }
         }
     }
@@ -551,7 +602,11 @@ struct RecordingSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(String(localized: "Countdown", bundle: .module)) {
+            SettingsRow(String(localized: "Countdown", bundle: .module), help: [
+                HelpTopic(String(localized: "Show controls", bundle: .module), Text("A small bar by the recording with the time, Pause, Restart, Delete, and Stop. It stays out of the recording. The menu bar shows the time too; click it to stop.", bundle: .module)),
+                HelpTopic(String(localized: "Recorded area", bundle: .module), Text("How an area you record shows on screen, from the countdown to the end: a white outline, the rest of the display dimmed, or a red frame just outside it. None of it is in the recording. A window or a whole display is not marked.", bundle: .module)),
+                HelpTopic(String(localized: "Audio", bundle: .module), Text("Video or GIF, computer audio, the microphone, clicks, and keystrokes are chosen on the bar under what you are about to record.", bundle: .module)),
+            ]) {
                 Picker(selection: $settings.recordingCountdown) {
                     ForEach(SettingsStore.recordingCountdowns, id: \.self) { seconds in
                         if seconds == 0 {
@@ -568,11 +623,8 @@ struct RecordingSettingsView: View {
             }
             SettingsRow(String(localized: "While recording", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Toggle(isOn: $settings.recordingShowsControls) {
-                            Text("Show controls", bundle: .module)
-                        }
-                        InfoButton(Text("A small bar by the recording with the time, Pause, Restart, Delete, and Stop. It stays out of the recording. The menu bar shows the time too; click it to stop.", bundle: .module))
+                    Toggle(isOn: $settings.recordingShowsControls) {
+                        Text("Show controls", bundle: .module)
                     }
                     Toggle(isOn: $settings.recordingShowsCursor) {
                         Text("Show the pointer", bundle: .module)
@@ -580,62 +632,60 @@ struct RecordingSettingsView: View {
                 }
             }
             SettingsRow(String(localized: "Recorded area", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Picker(selection: $settings.recordingHighlight) {
-                        Text("Outline", bundle: .module).tag(RecordingHighlight.outline)
-                        Text("Dim the rest of the screen", bundle: .module).tag(RecordingHighlight.dim)
-                        Text("Red frame", bundle: .module).tag(RecordingHighlight.redFrame)
-                    } label: {
-                        Text("Recorded area", bundle: .module)
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-                    InfoButton(Text("How an area you record shows on screen, from the countdown to the end: a white outline, the rest of the display dimmed, or a red frame just outside it. None of it is in the recording. A window or a whole display is not marked.", bundle: .module))
+                Picker(selection: $settings.recordingHighlight) {
+                    Text("Outline", bundle: .module).tag(RecordingHighlight.outline)
+                    Text("Dim the rest of the screen", bundle: .module).tag(RecordingHighlight.dim)
+                    Text("Red frame", bundle: .module).tag(RecordingHighlight.redFrame)
+                } label: {
+                    Text("Recorded area", bundle: .module)
                 }
+                .labelsHidden()
+                .fixedSize()
             }
             SettingsRow(String(localized: "Audio", bundle: .module)) {
                 Text("Chosen on the bar before you record.", bundle: .module)
                     .foregroundStyle(.secondary)
-                    .help(Text("Video or GIF, computer audio, the microphone, clicks, and keystrokes are chosen on the bar under what you are about to record.", bundle: .module))
             }
-            SettingsRow(String(localized: "Clicks", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Picker(selection: $settings.recordingClickStyle) {
-                        Text("As the system shows them", bundle: .module).tag(ClickStyle.system)
-                        Text("Accent rings", bundle: .module).tag(ClickStyle.ring)
-                    } label: {
-                        Text("Clicks", bundle: .module)
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-                    InfoButton(Text("With Show Clicks on the recording bar, each click shows in the recording: as the system's dark circles, or as a ring in your accent color that widens and fades. A window recorded on its own always gets the system's circles.", bundle: .module))
+
+            SettingsDivider()
+
+            SettingsRow(String(localized: "Clicks", bundle: .module), help: [
+                HelpTopic(String(localized: "Clicks", bundle: .module), Text("With Show Clicks on the recording bar, each click shows in the recording: as the system's dark circles, or as a ring in your accent color that widens and fades. A window recorded on its own always gets the system's circles.", bundle: .module)),
+                HelpTopic(String(localized: "Keystrokes", bundle: .module), Text("With Show Keystrokes on the recording bar, the keys you press appear near the bottom of the recording. Shortcuts are keys held with Command, Control, or Option, and the function keys. Keys typed into password fields never appear. A window recorded on its own shows none. Needs Input Monitoring.", bundle: .module)),
+                HelpTopic(String(localized: "Keep the keys pressed", bundle: .module), Text("A Studio recording writes down the keys you press, even with Show Keystrokes off, so Studio can show them afterwards. Which keys is the Keystrokes choice above: under All keys, what you type is kept as typed, in the recording’s project on this Mac; under Shortcuts only, typing is never written down. Keys typed into password fields are never kept. A window recorded on its own keeps none unless Show Keystrokes is on. Needs Input Monitoring.", bundle: .module)),
+            ]) {
+                Picker(selection: $settings.recordingClickStyle) {
+                    Text("As the system shows them", bundle: .module).tag(ClickStyle.system)
+                    Text("Accent rings", bundle: .module).tag(ClickStyle.ring)
+                } label: {
+                    Text("Clicks", bundle: .module)
                 }
+                .labelsHidden()
+                .fixedSize()
             }
             SettingsRow(String(localized: "Keystrokes", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Picker(selection: $settings.recordingKeystrokeMode) {
-                        Text("All keys", bundle: .module).tag(KeystrokeMode.all)
-                        Text("Shortcuts only", bundle: .module).tag(KeystrokeMode.shortcuts)
-                    } label: {
-                        Text("Keystrokes", bundle: .module)
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-                    InfoButton(Text("With Show Keystrokes on the recording bar, the keys you press appear near the bottom of the recording. Shortcuts are keys held with Command, Control, or Option, and the function keys. Keys typed into password fields never appear. A window recorded on its own shows none. Needs Input Monitoring.", bundle: .module))
+                Picker(selection: $settings.recordingKeystrokeMode) {
+                    Text("All keys", bundle: .module).tag(KeystrokeMode.all)
+                    Text("Shortcuts only", bundle: .module).tag(KeystrokeMode.shortcuts)
+                } label: {
+                    Text("Keystrokes", bundle: .module)
                 }
+                .labelsHidden()
+                .fixedSize()
             }
             SettingsRow(String(localized: "Studio", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Toggle(isOn: $settings.recordingKeepsKeysForStudio) {
-                        Text("Keep the keys pressed", bundle: .module)
-                    }
-                    InfoButton(Text("A Studio recording writes down the keys you press, even with Show Keystrokes off, so Studio can show them afterwards. Which keys is the Keystrokes choice above: under All keys, what you type is kept as typed, in the recording’s project on this Mac; under Shortcuts only, typing is never written down. Keys typed into password fields are never kept. A window recorded on its own keeps none unless Show Keystrokes is on. Needs Input Monitoring.", bundle: .module))
+                Toggle(isOn: $settings.recordingKeepsKeysForStudio) {
+                    Text("Keep the keys pressed", bundle: .module)
                 }
             }
 
             SettingsDivider()
 
-            SettingsRow(String(localized: "Frame rate", bundle: .module)) {
+            SettingsRow(String(localized: "Frame rate", bundle: .module), help: [
+                HelpTopic(String(localized: "Frame rate", bundle: .module), Text("Low Power Mode records at 30.", bundle: .module)),
+                HelpTopic(String(localized: "Video format", bundle: .module), Text("Recordings are MP4 files at the screen’s own resolution. H.264 plays everywhere; recordings wider or taller than 4096 pixels use HEVC, which H.264 can’t encode in hardware. HEVC makes smaller files, but some players, browsers, and upload forms can’t play it.", bundle: .module)),
+                HelpTopic(String(localized: "GIF", bundle: .module), Text("Choose GIF on the recording bar to keep a recording as an animated GIF, which shows wherever pictures do. GIFs have no sound and are made as large as things were on screen, at most 1920 pixels on their longer side. More frames move more smoothly and make larger files.", bundle: .module)),
+            ]) {
                 Picker(selection: $settings.recordingFrameRate) {
                     ForEach(SettingsStore.recordingFrameRates, id: \.self) { rate in
                         Text("\(rate) frames per second", bundle: .module).tag(rate)
@@ -645,61 +695,53 @@ struct RecordingSettingsView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
-                .help(Text("Low Power Mode records at 30.", bundle: .module))
             }
             SettingsRow(String(localized: "Video format", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Picker(selection: $settings.recordingPrefersHEVC) {
-                        Text("H.264 when it fits", bundle: .module).tag(false)
-                        Text("HEVC", bundle: .module).tag(true)
-                    } label: {
-                        Text("Video format", bundle: .module)
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-                    InfoButton(Text("Recordings are MP4 files at the screen’s own resolution. H.264 plays everywhere; recordings wider or taller than 4096 pixels use HEVC, which H.264 can’t encode in hardware. HEVC makes smaller files, but some players, browsers, and upload forms can’t play it.", bundle: .module))
+                Picker(selection: $settings.recordingPrefersHEVC) {
+                    Text("H.264 when it fits", bundle: .module).tag(false)
+                    Text("HEVC", bundle: .module).tag(true)
+                } label: {
+                    Text("Video format", bundle: .module)
                 }
+                .labelsHidden()
+                .fixedSize()
             }
             SettingsRow(String(localized: "GIF", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Picker(selection: $settings.recordingGIFFrameRate) {
-                        ForEach(SettingsStore.recordingGIFFrameRates, id: \.self) { rate in
-                            Text("\(rate) frames per second", bundle: .module).tag(rate)
-                        }
-                    } label: {
-                        Text("GIF frame rate", bundle: .module)
+                Picker(selection: $settings.recordingGIFFrameRate) {
+                    ForEach(SettingsStore.recordingGIFFrameRates, id: \.self) { rate in
+                        Text("\(rate) frames per second", bundle: .module).tag(rate)
                     }
-                    .labelsHidden()
-                    .fixedSize()
-                    InfoButton(Text("Choose GIF on the recording bar to keep a recording as an animated GIF, which shows wherever pictures do. GIFs have no sound and are made as large as things were on screen, at most 1920 pixels on their longer side. More frames move more smoothly and make larger files.", bundle: .module))
+                } label: {
+                    Text("GIF frame rate", bundle: .module)
                 }
+                .labelsHidden()
+                .fixedSize()
             }
 
             SettingsDivider()
 
-            SettingsRow(String(localized: "After recording", bundle: .module)) {
+            SettingsRow(String(localized: "After recording", bundle: .module), help: [
+                HelpTopic(String(localized: "After recording", bundle: .module), hasDestination
+                    ? Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in Screenshots. Upload sends it to your default destination.", bundle: .module)
+                    : Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in Screenshots.", bundle: .module)),
+            ]) {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        HStack(spacing: 14) {
-                            Toggle(isOn: $settings.copyAfterRecording) {
-                                Text("Copy", bundle: .module)
-                            }
-                            Toggle(isOn: $settings.showRecordingQuickAccess) {
-                                Text("Quick Access", bundle: .module)
-                            }
-                            Toggle(isOn: $settings.saveAfterRecording) {
-                                Text("Save", bundle: .module)
-                            }
-                            // Uploading is offered only to a person who has somewhere to upload to.
-                            if hasDestination {
-                                Toggle(isOn: $settings.uploadAfterRecording) {
-                                    Text("Upload", bundle: .module)
-                                }
+                    HStack(spacing: 14) {
+                        Toggle(isOn: $settings.copyAfterRecording) {
+                            Text("Copy", bundle: .module)
+                        }
+                        Toggle(isOn: $settings.showRecordingQuickAccess) {
+                            Text("Quick Access", bundle: .module)
+                        }
+                        Toggle(isOn: $settings.saveAfterRecording) {
+                            Text("Save", bundle: .module)
+                        }
+                        // Uploading is offered only to a person who has somewhere to upload to.
+                        if hasDestination {
+                            Toggle(isOn: $settings.uploadAfterRecording) {
+                                Text("Upload", bundle: .module)
                             }
                         }
-                        InfoButton(hasDestination
-                            ? Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in Screenshots. Upload sends it to your default destination.", bundle: .module)
-                            : Text("Copy puts the recording on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder chosen in Screenshots.", bundle: .module))
                     }
                     if !settings.copyAfterRecording, !settings.showRecordingQuickAccess, !settings.saveAfterRecording, !(hasDestination && settings.uploadAfterRecording) {
                         Label {
@@ -731,11 +773,14 @@ struct TextSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(String(localized: "Capture Text", bundle: .module)) {
+            SettingsRow(String(localized: "Capture Text", bundle: .module), help: [
+                HelpTopic(String(localized: "Show the copied text", bundle: .module), Text("A card with the copied text and a switch for its line breaks. Choose when it closes below; hovering keeps it open.", bundle: .module)),
+                HelpTopic(String(localized: "Text card position", bundle: .module), Text("Shows the result on the display where the text or formula was selected.", bundle: .module)),
+                HelpTopic(String(localized: "Close text card", bundle: .module), Text("How long the copied-text card stays. It stays open while the pointer is over it and closes the chosen time after the pointer leaves; Never keeps it until you close it. A card that says nothing was found, or that the text was not copied, always stays at least as long as it used to.", bundle: .module)),
+            ]) {
                 Toggle(isOn: $settings.showTextResult) {
                     Text("Show the copied text", bundle: .module)
                 }
-                .help(Text("A card with the copied text and a switch for its line breaks. Choose when it closes below; hovering keeps it open.", bundle: .module))
             }
             SettingsRow(String(localized: "Text card position", bundle: .module)) {
                 Picker(selection: $settings.textResultPosition) {
@@ -746,7 +791,6 @@ struct TextSettingsView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
-                .help(Text("Shows the result on the display where the text or formula was selected.", bundle: .module))
             }
             SettingsRow(String(localized: "Close text card", bundle: .module)) {
                 Picker(selection: $settings.textResultCloseAfter) {
@@ -764,12 +808,16 @@ struct TextSettingsView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
-                .help(Text("How long the copied-text card stays. It stays open while the pointer is over it and closes the chosen time after the pointer leaves; Never keeps it until you close it. A card that says nothing was found, or that the text was not copied, always stays at least as long as it used to.", bundle: .module))
             }
 
             SettingsDivider()
 
-            SettingsRow(String(localized: "Image line breaks", bundle: .module)) {
+            SettingsRow(String(localized: "Image line breaks", bundle: .module), help: [
+                HelpTopic(String(localized: "Image line breaks", bundle: .module), Text("Keep the detected lines from the image, or join wrapped lines within each paragraph. Sets the default for Capture Text and new Recognized Text windows; the window’s Line Breaks menu changes only that window.", bundle: .module)),
+                HelpTopic(String(localized: "Wrap text to window", bundle: .module), Text("Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display.", bundle: .module)),
+                AppTextSetting.help,
+                HelpTopic(String(localized: "Translate into", bundle: .module), Text("Automatic picks the first of your preferred languages that the text isn’t already in. Translation runs on this Mac; a language is downloaded the first time it’s needed.", bundle: .module)),
+            ]) {
                 Picker(selection: $settings.textRecognitionKeepsLineBreaks) {
                     Text("Keep Line Breaks", bundle: .module).tag(true)
                     Text("Join Lines", bundle: .module).tag(false)
@@ -778,43 +826,39 @@ struct TextSettingsView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
-                .help(Text("Keep the detected lines from the image, or join wrapped lines within each paragraph. Sets the default for Capture Text and new Recognized Text windows; the window’s Line Breaks menu changes only that window.", bundle: .module))
             }
             SettingsRow(String(localized: "Recognized Text", bundle: .module)) {
                 Toggle(isOn: $settings.textRecognitionWrapsText) {
                     Text("Wrap text to window", bundle: .module)
                 }
-                .help(Text("Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display.", bundle: .module))
             }
             SettingsRow(String(localized: "Text from apps", bundle: .module)) {
                 AppTextSetting(settings: settings, permissions: permissions)
             }
             SettingsRow(String(localized: "Translate into", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Picker(selection: $settings.translationTarget) {
-                        Text("Automatic", bundle: .module).tag("")
-                        Divider()
-                        ForEach(translationOptions, id: \.self) { identifier in
-                            Text(verbatim: Translator.name(of: Locale.Language(identifier: identifier))).tag(identifier)
-                        }
-                    } label: {
-                        Text("Translate into", bundle: .module)
+                Picker(selection: $settings.translationTarget) {
+                    Text("Automatic", bundle: .module).tag("")
+                    Divider()
+                    ForEach(translationOptions, id: \.self) { identifier in
+                        Text(verbatim: Translator.name(of: Locale.Language(identifier: identifier))).tag(identifier)
                     }
-                    .labelsHidden()
-                    .fixedSize()
-                    .task { translationTargets = await Translator.targets() }
-                    InfoButton(Text("Automatic picks the first of your preferred languages that the text isn’t already in. Translation runs on this Mac; a language is downloaded the first time it’s needed.", bundle: .module))
+                } label: {
+                    Text("Translate into", bundle: .module)
                 }
+                .labelsHidden()
+                .fixedSize()
+                .task { translationTargets = await Translator.targets() }
             }
+            // The last group is headed by whichever of its rows the build shows first.
             if let modelPacks, !modelPacks.isEmpty {
                 SettingsDivider()
-                ModelPacksRow(center: modelPacks)
+                ModelPacksRow(center: modelPacks, help: [ModelPacksRow.help(center: modelPacks)] + (cloudModels.map(CloudReadingRow.help(store:)) ?? []))
                 if let cloudModels {
                     CloudReadingRow(store: cloudModels)
                 }
             } else if let cloudModels {
                 SettingsDivider()
-                CloudReadingRow(store: cloudModels)
+                CloudReadingRow(store: cloudModels, help: CloudReadingRow.help(store: cloudModels))
             }
         }
     }
@@ -834,7 +878,12 @@ struct ToolsSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(String(localized: "Copy colors as", bundle: .module)) {
+            SettingsRow(String(localized: "Copy colors as", bundle: .module), help: [
+                HelpTopic(String(localized: "Copy colors as", bundle: .module), Text("For Pick Color, and C while capturing or measuring.", bundle: .module)),
+                HelpTopic(String(localized: "Measure in", bundle: .module), Text("Tab switches between them while measuring.", bundle: .module)),
+                HelpTopic(String(localized: "Snap selections to content", bundle: .module), Text("Fits a measurement box to the content inside it when you release the pointer. Turn off to keep the box as drawn, or hold Command while releasing to skip snapping once.", bundle: .module)),
+                HelpTopic(String(localized: "Edge tolerance", bundle: .module), Text("Lower tolerance finds finer boundaries. Higher tolerance ignores small color changes. This affects ruler lines and selection snapping. While measuring, T cycles the presets and +/− adjusts them; the choice is remembered here.", bundle: .module)),
+            ]) {
                 Picker(selection: $settings.colorFormat) {
                     ForEach(ColorFormat.allCases, id: \.self) { format in
                         Text(verbatim: format.title).tag(format)
@@ -844,7 +893,6 @@ struct ToolsSettingsView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
-                .help(Text("For Pick Color, and C while capturing or measuring.", bundle: .module))
             }
             SettingsRow(String(localized: "Measure in", bundle: .module)) {
                 Picker(selection: $settings.measureUnit) {
@@ -857,32 +905,29 @@ struct ToolsSettingsView: View {
                 .horizontalRadioGroupLayout()
                 .labelsHidden()
                 .fixedSize()
-                .help(Text("Tab switches between them while measuring.", bundle: .module))
             }
             SettingsRow(String(localized: "Measurement snapping", bundle: .module)) {
                 Toggle(isOn: $settings.measureSnapsToContent) {
                     Text("Snap selections to content", bundle: .module)
                 }
-                .help(Text("Fits a measurement box to the content inside it when you release the pointer. Turn off to keep the box as drawn, or hold Command while releasing to skip snapping once.", bundle: .module))
             }
             SettingsRow(String(localized: "Edge tolerance", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Picker(selection: $settings.measureTolerance) {
-                        ForEach(MeasureTolerance.allCases, id: \.self) { tolerance in
-                            Text(verbatim: tolerance.title).tag(tolerance)
-                        }
-                    } label: {
-                        Text("Edge tolerance", bundle: .module)
+                Picker(selection: $settings.measureTolerance) {
+                    ForEach(MeasureTolerance.allCases, id: \.self) { tolerance in
+                        Text(verbatim: tolerance.title).tag(tolerance)
                     }
-                    .labelsHidden()
-                    .fixedSize()
-                    InfoButton(Text("Lower tolerance finds finer boundaries. Higher tolerance ignores small color changes. This affects ruler lines and selection snapping. While measuring, T cycles the presets and +/− adjusts them; the choice is remembered here.", bundle: .module))
+                } label: {
+                    Text("Edge tolerance", bundle: .module)
                 }
+                .labelsHidden()
+                .fixedSize()
             }
 
             SettingsDivider()
 
-            SettingsRow(String(localized: "Pins", bundle: .module)) {
+            SettingsRow(String(localized: "Pins", bundle: .module), help: [
+                HelpTopic(String(localized: "Border", bundle: .module), Text("A hairline, so a white picture still reads against a white window.", bundle: .module)),
+            ]) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
                         Text("Corners", bundle: .module)
@@ -909,7 +954,6 @@ struct ToolsSettingsView: View {
                         Toggle(isOn: $settings.pinBorder) {
                             Text("Border", bundle: .module)
                         }
-                        .help(Text("A hairline, so a white picture still reads against a white window.", bundle: .module))
                     }
                     Toggle(isOn: $settings.pinsAppearInCaptures) {
                         Text("Show in screenshots", bundle: .module)
@@ -1094,16 +1138,18 @@ private struct AppTextSetting: View {
     @Bindable var settings: SettingsStore
     let permissions: PermissionCenter?
 
+    /// Its part of its group's help, which the Image line breaks row holds.
+    static var help: HelpTopic {
+        HelpTopic(String(localized: "Use the app’s own characters", bundle: .module), Text("Capture Text and the Recognized Text window ask the app under the selection for the text it shows, through Accessibility, and use its own characters for the lines that read the same, so code, names, and numbers come out as the app has them. Apps that don’t share their text, such as Chrome and most apps built with Electron, are read from the picture alone. Nothing leaves this Mac.", bundle: .module))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Toggle(isOn: Binding(get: { settings.readsAppText }, set: { on in
-                    settings.readsAppText = on
-                    if on { allow() }
-                })) {
-                    Text("Use the app’s own characters", bundle: .module)
-                }
-                InfoButton(Text("Capture Text and the Recognized Text window ask the app under the selection for the text it shows, through Accessibility, and use its own characters for the lines that read the same, so code, names, and numbers come out as the app has them. Apps that don’t share their text, such as Chrome and most apps built with Electron, are read from the picture alone. Nothing leaves this Mac.", bundle: .module))
+            Toggle(isOn: Binding(get: { settings.readsAppText }, set: { on in
+                settings.readsAppText = on
+                if on { allow() }
+            })) {
+                Text("Use the app’s own characters", bundle: .module)
             }
             if settings.readsAppText, let permissions, permissions.status(of: .accessibility) != .granted {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1147,12 +1193,11 @@ struct AutomationSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(String(localized: "URL scheme", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Toggle(isOn: $settings.automationEnabled) {
-                        Text("Allow other apps to control OhMyShot", bundle: .module)
-                    }
-                    InfoButton(Text("Apps and scripts send commands such as \(urlScheme)://capture-area, with the same names and parameters as CleanShot X. Each app needs your approval the first time.", bundle: .module))
+            SettingsRow(String(localized: "URL scheme", bundle: .module), help: [
+                HelpTopic(String(localized: "Allow other apps to control OhMyShot", bundle: .module), Text("Apps and scripts send commands such as \(urlScheme)://capture-area, with the same names and parameters as CleanShot X. Each app needs your approval the first time.", bundle: .module)),
+            ]) {
+                Toggle(isOn: $settings.automationEnabled) {
+                    Text("Allow other apps to control OhMyShot", bundle: .module)
                 }
             }
             SettingsRow(String(localized: "Approved apps", bundle: .module)) {

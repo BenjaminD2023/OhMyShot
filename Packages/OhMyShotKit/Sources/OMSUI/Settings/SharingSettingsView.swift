@@ -30,7 +30,9 @@ struct SharingSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(String(localized: "Destinations", bundle: .module)) {
+            SettingsRow(String(localized: "Destinations", bundle: .module), help: [
+                HelpTopic(String(localized: "Destinations", bundle: .module), Text("Add storage you own, such as an S3 bucket, a WebDAV folder, or your own server. Captures go from this Mac straight to it; OhMyShot has no server of its own.", bundle: .module)),
+            ]) {
                 VStack(alignment: .leading, spacing: 10) {
                     if destinations.destinations.isEmpty {
                         Text("No destinations yet", bundle: .module)
@@ -38,28 +40,26 @@ struct SharingSettingsView: View {
                     } else {
                         list
                     }
-                    HStack(spacing: 6) {
-                        addMenu
-                        InfoButton(Text("Add storage you own, such as an S3 bucket, a WebDAV folder, or your own server. Captures go from this Mac straight to it; OhMyShot has no server of its own.", bundle: .module))
-                    }
+                    addMenu
                 }
             }
 
             SettingsDivider()
 
-            SettingsRow(String(localized: "After upload", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Toggle(isOn: $settings.copyLinkAfterUpload) {
-                        Text("Copy link after upload", bundle: .module)
-                    }
-                    InfoButton(Text("With this off, the link waits in the capture’s menu: choose Copy Link on its card.", bundle: .module))
+            SettingsRow(String(localized: "After upload", bundle: .module), help: [
+                HelpTopic(String(localized: "Copy link after upload", bundle: .module), Text("With this off, the link waits in the capture’s menu: choose Copy Link on its card.", bundle: .module)),
+            ]) {
+                Toggle(isOn: $settings.copyLinkAfterUpload) {
+                    Text("Copy link after upload", bundle: .module)
                 }
             }
 
             if !records.records.isEmpty {
                 SettingsDivider()
 
-                SettingsRow(String(localized: "Recent uploads", bundle: .module)) {
+                SettingsRow(String(localized: "Recent uploads", bundle: .module), help: [
+                    HelpTopic(String(localized: "Recent uploads", bundle: .module), Text("Forgetting an upload only takes it off this list. The file stays where it is, and its link keeps working.", bundle: .module)),
+                ]) {
                     VStack(alignment: .leading, spacing: 8) {
                         VStack(spacing: 0) {
                             ForEach(Array(records.records.prefix(Self.recentLimit).enumerated()), id: \.element.id) { index, record in
@@ -79,7 +79,6 @@ struct SharingSettingsView: View {
                             Button(action: actions.forgetAll) { Text("Forget All", bundle: .module) }
                                 .buttonStyle(.link)
                                 .font(.callout)
-                            InfoButton(Text("Forgetting an upload only takes it off this list. The file stays where it is, and its link keeps working.", bundle: .module))
                         }
                     }
                 }

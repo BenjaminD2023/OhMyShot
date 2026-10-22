@@ -7,7 +7,9 @@ struct QuickAccessSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(String(localized: "Position", bundle: .module)) {
+            SettingsRow(String(localized: "Position", bundle: .module), help: [
+                HelpTopic(String(localized: "Show on the display with the pointer", bundle: .module), Text("Cards stand on the display the capture was taken on. With this on they stand on the display where the pointer is when the capture is taken.", bundle: .module)),
+            ]) {
                 Picker(selection: $settings.quickAccessCorner) {
                     Text("Bottom left", bundle: .module).tag(QuickAccessCorner.bottomLeft)
                     Text("Bottom right", bundle: .module).tag(QuickAccessCorner.bottomRight)
@@ -29,17 +31,16 @@ struct QuickAccessSettingsView: View {
                 .fixedSize()
             }
             SettingsRow(String(localized: "Display", bundle: .module)) {
-                HStack(spacing: 6) {
-                    Toggle(isOn: $settings.quickAccessOnPointerDisplay) {
-                        Text("Show on the display with the pointer", bundle: .module)
-                    }
-                    InfoButton(Text("Cards stand on the display the capture was taken on. With this on they stand on the display where the pointer is when the capture is taken.", bundle: .module))
+                Toggle(isOn: $settings.quickAccessOnPointerDisplay) {
+                    Text("Show on the display with the pointer", bundle: .module)
                 }
             }
 
             SettingsDivider()
 
-            SettingsRow(String(localized: "Close cards", bundle: .module)) {
+            SettingsRow(String(localized: "Close cards", bundle: .module), help: [
+                HelpTopic(String(localized: "Close cards", bundle: .module), Text("A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails.", bundle: .module)),
+            ]) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Picker(selection: $settings.quickAccessCloseAfter) {
@@ -66,7 +67,6 @@ struct QuickAccessSettingsView: View {
                         .labelsHidden()
                         .fixedSize()
                         .disabled(settings.quickAccessCloseAfter == 0)
-                        InfoButton(Text("A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails.", bundle: .module))
                     }
                     if settings.quickAccessPreferences.closingDiscardsUnsavedCaptures(history: settings.historyRetention) {
                         Label {
