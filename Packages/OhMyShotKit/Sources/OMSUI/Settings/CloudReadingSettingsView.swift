@@ -31,7 +31,7 @@ struct CloudReadingRow: View {
     private static let fieldWidth: CGFloat = 260
 
     var body: some View {
-        SettingsRow(Text("Cloud reading", bundle: .module)) {
+        SettingsRow(String(localized: "Cloud reading", bundle: .module)) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
                     Picker(selection: Binding(get: { store.model?.preset ?? (store.model == nil ? nil : .other) }, set: choose)) {

@@ -24,32 +24,63 @@ struct SettingsPane<Rows: View>: View {
     var alignment: Alignment = .leadingFirstTextBaseline
     var spacing: CGFloat = 12
     @ViewBuilder var rows: Rows
+    /// Where the sidebar's search sends the pane (absent in a pane shown on its own).
+    @Environment(SettingsSearchTarget.self) private var target: SettingsSearchTarget?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The last request of the search this pane has landed.
+    @State private var landed = 0
 
     var body: some View {
-        ScrollView {
-            Grid(alignment: alignment, horizontalSpacing: 10, verticalSpacing: spacing) {
-                rows
+        ScrollViewReader { proxy in
+            ScrollView {
+                Grid(alignment: alignment, horizontalSpacing: 10, verticalSpacing: spacing) {
+                    rows
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 22)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 22)
-            .frame(maxWidth: .infinity)
+            .scrollBounceBehavior(.basedOnSize)
+            .onAppear { land(proxy) }
+            .onChange(of: target?.request) { land(proxy) }
         }
-        .scrollBounceBehavior(.basedOnSize)
         .frame(minWidth: paneWidth, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Scrolls the row a search opened the pane on into view and lights its title up for a moment, once per search.
+    private func land(_ proxy: ScrollViewProxy) {
+        guard let target, target.request != landed else { return }
+        landed = target.request
+        guard let row = target.row else { return }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { proxy.scrollTo(row, anchor: .center) }
+        target.lit = row
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if target.lit == row { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { target.lit = nil } }
+        }
     }
 }
 
 /// A row of a settings pane: its label right-aligned in the first column, its controls in the second.
 struct SettingsRow<Content: View>: View {
     let label: Text?
+    /// The row's title, which the sidebar's search lands on (`SettingsTab.searchRows`); nil for a row it doesn't.
+    var anchor: String?
     /// A fixed width for the label column, so the fields of one form line up whatever its rows say.
     var labelWidth: CGFloat?
     @ViewBuilder var content: Content
+    @Environment(SettingsSearchTarget.self) private var target: SettingsSearchTarget?
 
     init(_ label: Text? = nil, labelWidth: CGFloat? = nil, @ViewBuilder content: () -> Content) {
         self.label = label
         self.labelWidth = labelWidth
         self.content = content()
+    }
+
+    /// A row titled `title`, already localized, which a search can land on.
+    init(_ title: String, labelWidth: CGFloat? = nil, @ViewBuilder content: () -> Content) {
+        self.init(Text(title), labelWidth: labelWidth, content: content)
+        anchor = title
     }
 
     var body: some View {
@@ -61,6 +92,9 @@ struct SettingsRow<Content: View>: View {
                     label ?? Text(verbatim: "")
                 }
             }
+            // The row a search opened the pane on says so in the accent for a moment, as a selection would.
+            .foregroundStyle(anchor != nil && target?.lit == anchor ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+            .id(anchor)
             .gridColumnAlignment(.trailing)
             content
         }
@@ -111,7 +145,7 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(Text("Language", bundle: .module)) {
+            SettingsRow(String(localized: "Language", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Picker(selection: $language) {
@@ -145,7 +179,7 @@ struct GeneralSettingsView: View {
                     }
                 }
             }
-            SettingsRow(Text("Startup", bundle: .module)) {
+            SettingsRow(String(localized: "Startup", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Toggle(isOn: $launchAtLogin) {
                         Text("Launch at login", bundle: .module)
@@ -170,7 +204,7 @@ struct GeneralSettingsView: View {
             if let updates {
                 UpdatesRow(settings: settings, updates: updates)
             }
-            SettingsRow(Text("Menu bar", bundle: .module)) {
+            SettingsRow(String(localized: "Menu bar", bundle: .module)) {
                 HStack(spacing: 6) {
                     Toggle(isOn: $settings.showMenuBarIcon) {
                         Text("Show icon", bundle: .module)
@@ -178,7 +212,7 @@ struct GeneralSettingsView: View {
                     InfoButton(Text("With the icon hidden, open OhMyShot again from Finder or Spotlight to come back here.", bundle: .module))
                 }
             }
-            SettingsRow(Text("Sound", bundle: .module)) {
+            SettingsRow(String(localized: "Sound", bundle: .module)) {
                 Toggle(isOn: $settings.playSounds) {
                     Text("Play sounds", bundle: .module)
                 }
@@ -186,7 +220,7 @@ struct GeneralSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(Text("Keep captures", bundle: .module)) {
+            SettingsRow(String(localized: "Keep captures", bundle: .module)) {
                 HStack(spacing: 8) {
                     Picker(selection: retentionSelection(settings: settings, expiredCount: expiredCount, request: $retentionRequest)) {
                         ForEach(HistoryRetention.allCases, id: \.self) { retention in
@@ -215,7 +249,7 @@ struct CaptureSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(Text("Selecting", bundle: .module)) {
+            SettingsRow(String(localized: "Selecting", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Toggle(isOn: $settings.freezeScreen) {
@@ -257,7 +291,7 @@ struct CaptureSettingsView: View {
                     }
                 }
             }
-            SettingsRow(Text("Magnifier", bundle: .module)) {
+            SettingsRow(String(localized: "Magnifier", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.captureLoupeStyle) {
                         ForEach(CaptureLoupeStyle.allCases, id: \.self) { style in
@@ -282,7 +316,7 @@ struct CaptureSettingsView: View {
                     InfoButton(Text("What the screenshot and Annotate Area overlays show at the pointer before you choose an area. Magnified enlarges the pixels around it, to place an edge on the exact pixel. Actual Size shows them at their own size in a clear circle centered on the pointer, which goes when you start dragging; the crosshair stays.", bundle: .module))
                 }
             }
-            SettingsRow(Text("Self-Timer", bundle: .module)) {
+            SettingsRow(String(localized: "Self-Timer", bundle: .module)) {
                 Picker(selection: $settings.selfTimerDelay) {
                     ForEach(SettingsStore.selfTimerDelays, id: \.self) { seconds in
                         Text("\(seconds) seconds", bundle: .module).tag(seconds)
@@ -296,7 +330,7 @@ struct CaptureSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(Text("Windows", bundle: .module)) {
+            SettingsRow(String(localized: "Windows", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle(isOn: $settings.windowShadow) {
                         Text("Capture the shadow", bundle: .module)
@@ -330,7 +364,7 @@ struct ScreenshotsSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(Text("After screenshot", bundle: .module)) {
+            SettingsRow(String(localized: "After screenshot", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         HStack(spacing: 14) {
@@ -370,7 +404,7 @@ struct ScreenshotsSettingsView: View {
                     }
                 }
             }
-            SettingsRow(Text("Save to", bundle: .module)) {
+            SettingsRow(String(localized: "Save to", bundle: .module)) {
                 HStack(spacing: 8) {
                     Text(exportPath)
                         .lineLimit(1)
@@ -385,7 +419,7 @@ struct ScreenshotsSettingsView: View {
                     }
                 }
             }
-            SettingsRow(Text("Background", bundle: .module)) {
+            SettingsRow(String(localized: "Background", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: Binding(
                         get: { automaticBackground },
@@ -415,7 +449,7 @@ struct ScreenshotsSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(Text("Format", bundle: .module)) {
+            SettingsRow(String(localized: "Format", bundle: .module)) {
                 HStack(spacing: 8) {
                     Picker(selection: $settings.screenshotFormat) {
                         ForEach(ImageExporter.Format.allCases, id: \.self) { format in
@@ -441,7 +475,7 @@ struct ScreenshotsSettingsView: View {
                     InfoButton(Text("Screenshots you save, drag out, upload, or hand to a shortcut are written in this format; the slider sets how much JPEG and HEIC give up for size. History keeps every capture as a PNG, so editing and reading text are never affected. JPEG has no transparency, so a window’s clear corners turn white. With Freeze the screen and Convert to sRGB off, a HEIC saved as the screenshot is taken also keeps the brightness of an HDR display.", bundle: .module))
                 }
             }
-            SettingsRow(Text("Pictures", bundle: .module)) {
+            SettingsRow(String(localized: "Pictures", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Toggle(isOn: $settings.savesRetinaAtOneX) {
@@ -463,10 +497,10 @@ struct ScreenshotsSettingsView: View {
                     }
                 }
             }
-            SettingsRow(Text("File name", bundle: .module)) {
+            SettingsRow(String(localized: "File name", bundle: .module)) {
                 FileNameSettings(settings: settings)
             }
-            SettingsRow(Text("Clipboard", bundle: .module)) {
+            SettingsRow(String(localized: "Clipboard", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.clipboardFormat) {
                         Text("Picture only", bundle: .module).tag(ClipboardFormat.pictureOnly)
@@ -512,7 +546,7 @@ struct RecordingSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(Text("Countdown", bundle: .module)) {
+            SettingsRow(String(localized: "Countdown", bundle: .module)) {
                 Picker(selection: $settings.recordingCountdown) {
                     ForEach(SettingsStore.recordingCountdowns, id: \.self) { seconds in
                         if seconds == 0 {
@@ -527,7 +561,7 @@ struct RecordingSettingsView: View {
                 .labelsHidden()
                 .fixedSize()
             }
-            SettingsRow(Text("While recording", bundle: .module)) {
+            SettingsRow(String(localized: "While recording", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         Toggle(isOn: $settings.recordingShowsControls) {
@@ -540,7 +574,7 @@ struct RecordingSettingsView: View {
                     }
                 }
             }
-            SettingsRow(Text("Recorded area", bundle: .module)) {
+            SettingsRow(String(localized: "Recorded area", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.recordingHighlight) {
                         Text("Outline", bundle: .module).tag(RecordingHighlight.outline)
@@ -554,12 +588,12 @@ struct RecordingSettingsView: View {
                     InfoButton(Text("How an area you record shows on screen, from the countdown to the end: a white outline, the rest of the display dimmed, or a red frame just outside it. None of it is in the recording. A window or a whole display is not marked.", bundle: .module))
                 }
             }
-            SettingsRow(Text("Audio", bundle: .module)) {
+            SettingsRow(String(localized: "Audio", bundle: .module)) {
                 Text("Chosen on the bar before you record.", bundle: .module)
                     .foregroundStyle(.secondary)
                     .help(Text("Video or GIF, computer audio, the microphone, clicks, and keystrokes are chosen on the bar under what you are about to record.", bundle: .module))
             }
-            SettingsRow(Text("Clicks", bundle: .module)) {
+            SettingsRow(String(localized: "Clicks", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.recordingClickStyle) {
                         Text("As the system shows them", bundle: .module).tag(ClickStyle.system)
@@ -572,7 +606,7 @@ struct RecordingSettingsView: View {
                     InfoButton(Text("With Show Clicks on the recording bar, each click shows in the recording: as the system's dark circles, or as a ring in your accent color that widens and fades. A window recorded on its own always gets the system's circles.", bundle: .module))
                 }
             }
-            SettingsRow(Text("Keystrokes", bundle: .module)) {
+            SettingsRow(String(localized: "Keystrokes", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.recordingKeystrokeMode) {
                         Text("All keys", bundle: .module).tag(KeystrokeMode.all)
@@ -585,7 +619,7 @@ struct RecordingSettingsView: View {
                     InfoButton(Text("With Show Keystrokes on the recording bar, the keys you press appear near the bottom of the recording. Shortcuts are keys held with Command, Control, or Option, and the function keys. Keys typed into password fields never appear. A window recorded on its own shows none. Needs Input Monitoring.", bundle: .module))
                 }
             }
-            SettingsRow(Text("Studio", bundle: .module)) {
+            SettingsRow(String(localized: "Studio", bundle: .module)) {
                 HStack(spacing: 6) {
                     Toggle(isOn: $settings.recordingKeepsKeysForStudio) {
                         Text("Keep the keys pressed", bundle: .module)
@@ -596,7 +630,7 @@ struct RecordingSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(Text("Frame rate", bundle: .module)) {
+            SettingsRow(String(localized: "Frame rate", bundle: .module)) {
                 Picker(selection: $settings.recordingFrameRate) {
                     ForEach(SettingsStore.recordingFrameRates, id: \.self) { rate in
                         Text("\(rate) frames per second", bundle: .module).tag(rate)
@@ -608,7 +642,7 @@ struct RecordingSettingsView: View {
                 .fixedSize()
                 .help(Text("Low Power Mode records at 30.", bundle: .module))
             }
-            SettingsRow(Text("Video format", bundle: .module)) {
+            SettingsRow(String(localized: "Video format", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.recordingPrefersHEVC) {
                         Text("H.264 when it fits", bundle: .module).tag(false)
@@ -621,7 +655,7 @@ struct RecordingSettingsView: View {
                     InfoButton(Text("Recordings are MP4 files at the screen’s own resolution. H.264 plays everywhere; recordings wider or taller than 4096 pixels use HEVC, which H.264 can’t encode in hardware. HEVC makes smaller files, but some players, browsers, and upload forms can’t play it.", bundle: .module))
                 }
             }
-            SettingsRow(Text("GIF", bundle: .module)) {
+            SettingsRow(String(localized: "GIF", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.recordingGIFFrameRate) {
                         ForEach(SettingsStore.recordingGIFFrameRates, id: \.self) { rate in
@@ -638,7 +672,7 @@ struct RecordingSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(Text("After recording", bundle: .module)) {
+            SettingsRow(String(localized: "After recording", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         HStack(spacing: 14) {
@@ -691,13 +725,13 @@ struct ToolsSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(Text("Capture Text", bundle: .module)) {
+            SettingsRow(String(localized: "Capture Text", bundle: .module)) {
                 Toggle(isOn: $settings.showTextResult) {
                     Text("Show the copied text", bundle: .module)
                 }
                 .help(Text("A card with the copied text and a switch for its line breaks. Choose when it closes below; hovering keeps it open.", bundle: .module))
             }
-            SettingsRow(Text("Text card position", bundle: .module)) {
+            SettingsRow(String(localized: "Text card position", bundle: .module)) {
                 Picker(selection: $settings.textResultPosition) {
                     Text("Below selection", bundle: .module).tag(TextResultPosition.belowSelection)
                     Text("Bottom left", bundle: .module).tag(TextResultPosition.bottomLeft)
@@ -708,7 +742,7 @@ struct ToolsSettingsView: View {
                 .fixedSize()
                 .help(Text("Shows the result on the display where the text or formula was selected.", bundle: .module))
             }
-            SettingsRow(Text("Close text card", bundle: .module)) {
+            SettingsRow(String(localized: "Close text card", bundle: .module)) {
                 Picker(selection: $settings.textResultCloseAfter) {
                     ForEach(SettingsStore.textResultCloseDelays, id: \.self) { seconds in
                         if seconds == 0 {
@@ -726,7 +760,7 @@ struct ToolsSettingsView: View {
                 .fixedSize()
                 .help(Text("How long the copied-text card stays. It stays open while the pointer is over it and closes the chosen time after the pointer leaves; Never keeps it until you close it. A card that says nothing was found, or that the text was not copied, always stays at least as long as it used to.", bundle: .module))
             }
-            SettingsRow(Text("Image line breaks", bundle: .module)) {
+            SettingsRow(String(localized: "Image line breaks", bundle: .module)) {
                 Picker(selection: $settings.textRecognitionKeepsLineBreaks) {
                     Text("Keep Line Breaks", bundle: .module).tag(true)
                     Text("Join Lines", bundle: .module).tag(false)
@@ -737,16 +771,16 @@ struct ToolsSettingsView: View {
                 .fixedSize()
                 .help(Text("Keep the detected lines from the image, or join wrapped lines within each paragraph. Sets the default for Capture Text and new Recognized Text windows; the window’s Line Breaks menu changes only that window.", bundle: .module))
             }
-            SettingsRow(Text("Recognized Text", bundle: .module)) {
+            SettingsRow(String(localized: "Recognized Text", bundle: .module)) {
                 Toggle(isOn: $settings.textRecognitionWrapsText) {
                     Text("Wrap text to window", bundle: .module)
                 }
                 .help(Text("Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display.", bundle: .module))
             }
-            SettingsRow(Text("Text from apps", bundle: .module)) {
+            SettingsRow(String(localized: "Text from apps", bundle: .module)) {
                 AppTextSetting(settings: settings, permissions: permissions)
             }
-            SettingsRow(Text("Translate into", bundle: .module)) {
+            SettingsRow(String(localized: "Translate into", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.translationTarget) {
                         Text("Automatic", bundle: .module).tag("")
@@ -772,7 +806,7 @@ struct ToolsSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(Text("Copy colors as", bundle: .module)) {
+            SettingsRow(String(localized: "Copy colors as", bundle: .module)) {
                 Picker(selection: $settings.colorFormat) {
                     ForEach(ColorFormat.allCases, id: \.self) { format in
                         Text(verbatim: format.title).tag(format)
@@ -784,7 +818,7 @@ struct ToolsSettingsView: View {
                 .fixedSize()
                 .help(Text("For Pick Color, and C while capturing or measuring.", bundle: .module))
             }
-            SettingsRow(Text("Measure in", bundle: .module)) {
+            SettingsRow(String(localized: "Measure in", bundle: .module)) {
                 Picker(selection: $settings.measureUnit) {
                     Text("Points", bundle: .module).tag(MeasureUnit.points)
                     Text("Pixels", bundle: .module).tag(MeasureUnit.pixels)
@@ -797,13 +831,13 @@ struct ToolsSettingsView: View {
                 .fixedSize()
                 .help(Text("Tab switches between them while measuring.", bundle: .module))
             }
-            SettingsRow(Text("Measurement snapping", bundle: .module)) {
+            SettingsRow(String(localized: "Measurement snapping", bundle: .module)) {
                 Toggle(isOn: $settings.measureSnapsToContent) {
                     Text("Snap selections to content", bundle: .module)
                 }
                 .help(Text("Fits a measurement box to the content inside it when you release the pointer. Turn off to keep the box as drawn, or hold Command while releasing to skip snapping once.", bundle: .module))
             }
-            SettingsRow(Text("Edge tolerance", bundle: .module)) {
+            SettingsRow(String(localized: "Edge tolerance", bundle: .module)) {
                 HStack(spacing: 6) {
                     Picker(selection: $settings.measureTolerance) {
                         ForEach(MeasureTolerance.allCases, id: \.self) { tolerance in
@@ -820,7 +854,7 @@ struct ToolsSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(Text("Pins", bundle: .module)) {
+            SettingsRow(String(localized: "Pins", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
                         Text("Corners", bundle: .module)
@@ -893,7 +927,7 @@ struct ShortcutsSettingsView: View {
                     SettingsDivider()
                 }
                 ForEach(groups[index], id: \.self) { shortcut in
-                    SettingsRow(Text(shortcut.title)) {
+                    SettingsRow(shortcut.title) {
                         KeyboardShortcuts.Recorder(for: shortcut.name) { keys in
                             HotkeyCenter.clearOtherAssignments(of: keys, keeping: shortcut.name)
                         }
@@ -976,7 +1010,7 @@ private struct PermissionRow: View {
     let permissions: PermissionCenter
 
     var body: some View {
-        SettingsRow(Text(permission.title)) {
+        SettingsRow(permission.title) {
             Group {
                 switch permissions.status(of: permission) {
                 case .granted:
@@ -1093,7 +1127,7 @@ struct AutomationSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(Text("URL scheme", bundle: .module)) {
+            SettingsRow(String(localized: "URL scheme", bundle: .module)) {
                 HStack(spacing: 6) {
                     Toggle(isOn: $settings.automationEnabled) {
                         Text("Allow other apps to control OhMyShot", bundle: .module)
@@ -1101,7 +1135,7 @@ struct AutomationSettingsView: View {
                     InfoButton(Text("Apps and scripts send commands such as \(urlScheme)://capture-area, with the same names and parameters as CleanShot X. Each app needs your approval the first time.", bundle: .module))
                 }
             }
-            SettingsRow(Text("Approved apps", bundle: .module)) {
+            SettingsRow(String(localized: "Approved apps", bundle: .module)) {
                 if settings.approvedAutomationCallers.isEmpty {
                     Text("None yet", bundle: .module)
                         .foregroundStyle(.secondary)

@@ -27,7 +27,7 @@ struct UpdatesRow: View {
     let updates: UpdateStatus
 
     var body: some View {
-        SettingsRow(Text("Updates", bundle: .module)) {
+        SettingsRow(String(localized: "Updates", bundle: .module)) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Toggle(isOn: $settings.checksForUpdates) {

@@ -14,7 +14,7 @@ struct ModelPacksRow: View {
     @State private var removing: ModelPack?
 
     var body: some View {
-        SettingsRow(Text("Model packs", bundle: .module)) {
+        SettingsRow(String(localized: "Model packs", bundle: .module)) {
             VStack(alignment: .leading, spacing: 8) {
                 VStack(spacing: 0) {
                     ForEach(Array(center.packs.enumerated()), id: \.element.id) { index, pack in

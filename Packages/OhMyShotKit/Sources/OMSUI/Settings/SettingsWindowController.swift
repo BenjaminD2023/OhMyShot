@@ -184,7 +184,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         var panes: [SettingsTab: NSViewController] = [:]
         let root = SettingsRootView(navigator: navigator) { tab in
             if let pane = panes[tab] { return pane }
-            let pane = Self.makeContent(for: tab, dependencies: dependencies)
+            let pane = Self.makeContent(for: tab, dependencies: dependencies, target: navigator.target)
             panes[tab] = pane
             return pane
         }
@@ -271,8 +271,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         }
     }
 
-    private static func makeContent(for tab: SettingsTab, dependencies: SettingsDependencies) -> NSViewController {
-        switch tab {
+    private static func makeContent(for tab: SettingsTab, dependencies: SettingsDependencies, target: SettingsSearchTarget) -> NSViewController {
+        // Where the sidebar's search sends the pane.
+        func host(_ view: some View) -> NSViewController { Self.host(view.environment(target)) }
+        return switch tab {
         case .general:
             host(GeneralSettingsView(
                 settings: dependencies.settings,

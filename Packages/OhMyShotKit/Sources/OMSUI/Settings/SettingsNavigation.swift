@@ -20,119 +20,254 @@ extension SettingsTab {
         }
     }
 
-    /// What a search finds the pane by besides its title: the labels of its rows and the names of its controls.
-    var searchTerms: [String] {
+    /// The rows of the pane as a search finds them: each row's title, where a search for it lands, and the names of
+    /// its controls and choices. `SettingsSearchTests` checks that every row a pane draws is here.
+    var searchRows: [SettingsSearchRow] {
         switch self {
         case .general:
             [
-                String(localized: "Language", bundle: .module),
-                String(localized: "Launch at login", bundle: .module),
-                String(localized: "Updates", bundle: .module),
-                String(localized: "Check for updates automatically", bundle: .module),
-                String(localized: "Menu bar", bundle: .module),
-                String(localized: "Show icon", bundle: .module),
-                String(localized: "Play sounds", bundle: .module),
-                String(localized: "Keep captures", bundle: .module),
-                String(localized: "Open History", bundle: .module),
+                SettingsSearchRow(String(localized: "Language", bundle: .module), terms: [
+                    String(localized: "System Default", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Startup", bundle: .module), terms: [
+                    String(localized: "Launch at login", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Updates", bundle: .module), terms: [
+                    String(localized: "Check for updates automatically", bundle: .module),
+                    String(localized: "Check Now", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Menu bar", bundle: .module), terms: [
+                    String(localized: "Show icon", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Sound", bundle: .module), terms: [
+                    String(localized: "Play sounds", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Keep captures", bundle: .module), terms: [
+                    String(localized: "Open History", bundle: .module),
+                    String(localized: "Capture History", bundle: .module),
+                ]),
             ]
         case .capture:
             [
-                String(localized: "Freeze the screen", bundle: .module),
-                String(localized: "Show the pointer in screenshots", bundle: .module),
-                String(localized: "Magnifier", bundle: .module),
-                String(localized: "Shift keeps", bundle: .module),
-                String(localized: "Snap the selection to text", bundle: .module),
-                String(localized: "All-In-One remembers the last area", bundle: .module),
-                String(localized: "Self-Timer", bundle: .module),
-                String(localized: "Capture the shadow", bundle: .module),
-                String(localized: "Window background", bundle: .module),
+                SettingsSearchRow(String(localized: "Selecting", bundle: .module), terms: [
+                    String(localized: "Freeze the screen", bundle: .module),
+                    String(localized: "Show the pointer in screenshots", bundle: .module),
+                    String(localized: "Shift keeps", bundle: .module),
+                    String(localized: "A square", bundle: .module),
+                    String(localized: "Snap the selection to text", bundle: .module),
+                    String(localized: "All-In-One remembers the last area", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Magnifier", bundle: .module), terms: [
+                    String(localized: "Size", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Self-Timer", bundle: .module)),
+                SettingsSearchRow(String(localized: "Windows", bundle: .module), terms: [
+                    String(localized: "Capture the shadow", bundle: .module),
+                    String(localized: "Window background", bundle: .module),
+                    String(localized: "Same background as screenshots", bundle: .module),
+                    String(localized: "No background", bundle: .module),
+                    String(localized: "Desktop wallpaper", bundle: .module),
+                ]),
             ]
         case .screenshots:
             [
-                String(localized: "After screenshot", bundle: .module),
-                String(localized: "Save to", bundle: .module),
-                String(localized: "Background", bundle: .module),
-                String(localized: "Format", bundle: .module),
-                String(localized: "Quality", bundle: .module),
-                String(localized: "Save Retina screenshots at 1×", bundle: .module),
-                String(localized: "Convert to sRGB", bundle: .module),
-                String(localized: "Add a 1 px border", bundle: .module),
-                String(localized: "File name", bundle: .module),
-                String(localized: "Clipboard", bundle: .module),
+                SettingsSearchRow(String(localized: "After screenshot", bundle: .module), terms: [
+                    String(localized: "Copy", bundle: .module),
+                    String(localized: "Quick Access", bundle: .module),
+                    String(localized: "Save", bundle: .module),
+                    String(localized: "Upload", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Save to", bundle: .module)),
+                SettingsSearchRow(String(localized: "Background", bundle: .module)),
+                SettingsSearchRow(String(localized: "Format", bundle: .module), terms: [
+                    String(localized: "Quality", bundle: .module),
+                    "PNG",
+                    "JPEG",
+                    "HEIC",
+                ]),
+                SettingsSearchRow(String(localized: "Pictures", bundle: .module), terms: [
+                    String(localized: "Save Retina screenshots at 1×", bundle: .module),
+                    String(localized: "Convert to sRGB", bundle: .module),
+                    String(localized: "Add a 1 px border", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "File name", bundle: .module), terms: [
+                    String(localized: "Ask for a name when saving", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Clipboard", bundle: .module), terms: [
+                    String(localized: "Picture only", bundle: .module),
+                    String(localized: "File and picture", bundle: .module),
+                ]),
             ]
         case .quickAccess:
             [
-                String(localized: "Position", bundle: .module),
-                String(localized: "Size", bundle: .module),
-                String(localized: "Show on the display with the pointer", bundle: .module),
-                String(localized: "Close cards", bundle: .module),
+                SettingsSearchRow(String(localized: "Position", bundle: .module), terms: [
+                    String(localized: "Bottom left", bundle: .module),
+                    String(localized: "Bottom right", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Size", bundle: .module), terms: [
+                    String(localized: "Small", bundle: .module),
+                    String(localized: "Medium", bundle: .module),
+                    String(localized: "Large", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Display", bundle: .module), terms: [
+                    String(localized: "Show on the display with the pointer", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Close cards", bundle: .module), terms: [
+                    String(localized: "Save and Close", bundle: .module),
+                ]),
             ]
         case .recording:
             [
-                String(localized: "Countdown", bundle: .module),
-                String(localized: "Show controls", bundle: .module),
-                String(localized: "Show the pointer", bundle: .module),
-                String(localized: "Recorded area", bundle: .module),
-                String(localized: "Audio", bundle: .module),
-                String(localized: "Clicks", bundle: .module),
-                String(localized: "Keystrokes", bundle: .module),
-                String(localized: "Keep the keys pressed", bundle: .module),
-                String(localized: "Frame rate", bundle: .module),
-                String(localized: "Video format", bundle: .module),
-                String(localized: "GIF frame rate", bundle: .module),
-                String(localized: "After recording", bundle: .module),
+                SettingsSearchRow(String(localized: "Countdown", bundle: .module)),
+                SettingsSearchRow(String(localized: "While recording", bundle: .module), terms: [
+                    String(localized: "Show controls", bundle: .module),
+                    String(localized: "Show the pointer", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Recorded area", bundle: .module), terms: [
+                    String(localized: "Outline", bundle: .module),
+                    String(localized: "Dim the rest of the screen", bundle: .module),
+                    String(localized: "Red frame", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Audio", bundle: .module)),
+                SettingsSearchRow(String(localized: "Clicks", bundle: .module), terms: [
+                    String(localized: "Accent rings", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Keystrokes", bundle: .module), terms: [
+                    String(localized: "All keys", bundle: .module),
+                    String(localized: "Shortcuts only", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Studio", bundle: .module), terms: [
+                    String(localized: "Keep the keys pressed", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Frame rate", bundle: .module)),
+                SettingsSearchRow(String(localized: "Video format", bundle: .module), terms: [
+                    String(localized: "HEVC", bundle: .module),
+                    "H.264",
+                ]),
+                SettingsSearchRow(String(localized: "GIF", bundle: .module), terms: [
+                    String(localized: "GIF frame rate", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "After recording", bundle: .module)),
             ]
         case .tools:
             [
-                String(localized: "Capture Text", bundle: .module),
-                String(localized: "Show the copied text", bundle: .module),
-                String(localized: "Text card position", bundle: .module),
-                String(localized: "Close text card", bundle: .module),
-                String(localized: "Below selection", bundle: .module),
-                String(localized: "Bottom left", bundle: .module),
-                String(localized: "Image line breaks", bundle: .module),
-                String(localized: "Keep Line Breaks", bundle: .module),
-                String(localized: "Join Lines", bundle: .module),
-                String(localized: "Recognized Text", bundle: .module),
-                String(localized: "Wrap text to window", bundle: .module),
-                String(localized: "Text from apps", bundle: .module),
-                String(localized: "Accessibility", bundle: .module),
-                String(localized: "Translate into", bundle: .module),
-                String(localized: "Model packs", bundle: .module),
-                String(localized: "Cloud reading", bundle: .module),
-                String(localized: "API key", bundle: .module),
-                String(localized: "Copy colors as", bundle: .module),
-                String(localized: "Measure in", bundle: .module),
-                String(localized: "Measurement snapping", bundle: .module),
-                String(localized: "Snap selections to content", bundle: .module),
-                String(localized: "Edge tolerance", bundle: .module),
-                String(localized: "Pins", bundle: .module),
-                String(localized: "Show in screenshots", bundle: .module),
+                SettingsSearchRow(String(localized: "Capture Text", bundle: .module), terms: [
+                    String(localized: "Show the copied text", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Text card position", bundle: .module), terms: [
+                    String(localized: "Below selection", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Close text card", bundle: .module)),
+                SettingsSearchRow(String(localized: "Image line breaks", bundle: .module), terms: [
+                    String(localized: "Keep Line Breaks", bundle: .module),
+                    String(localized: "Join Lines", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Recognized Text", bundle: .module), terms: [
+                    String(localized: "Wrap text to window", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Text from apps", bundle: .module), terms: [
+                    String(localized: "Accessibility", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Translate into", bundle: .module)),
+                SettingsSearchRow(String(localized: "Model packs", bundle: .module)),
+                SettingsSearchRow(String(localized: "Cloud reading", bundle: .module), terms: [
+                    String(localized: "API key", bundle: .module),
+                    String(localized: "Base URL", bundle: .module),
+                    String(localized: "Model", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Copy colors as", bundle: .module)),
+                SettingsSearchRow(String(localized: "Measure in", bundle: .module), terms: [
+                    String(localized: "Points", bundle: .module),
+                    String(localized: "Pixels", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Measurement snapping", bundle: .module), terms: [
+                    String(localized: "Snap selections to content", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Edge tolerance", bundle: .module)),
+                SettingsSearchRow(String(localized: "Pins", bundle: .module), terms: [
+                    String(localized: "Corners", bundle: .module),
+                    String(localized: "Shadow", bundle: .module),
+                    String(localized: "Border", bundle: .module),
+                    String(localized: "Show in screenshots", bundle: .module),
+                ]),
             ]
         case .sharing:
             [
-                String(localized: "Destinations", bundle: .module),
-                String(localized: "After upload", bundle: .module),
-                String(localized: "Recent uploads", bundle: .module),
+                SettingsSearchRow(String(localized: "Destinations", bundle: .module), terms: [
+                    String(localized: "Add Destination", bundle: .module),
+                    String(localized: "Import ShareX Uploader…", bundle: .module),
+                    "S3",
+                    "WebDAV",
+                ]),
+                SettingsSearchRow(String(localized: "After upload", bundle: .module), terms: [
+                    String(localized: "Copy link after upload", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Recent uploads", bundle: .module), terms: [
+                    String(localized: "Forget All", bundle: .module),
+                ]),
             ]
         case .shortcuts:
-            CaptureShortcut.allCases.filter(\.isAvailable).map(\.title)
+            CaptureShortcut.allCases.filter(\.isAvailable).map { SettingsSearchRow($0.title) }
         case .automation:
             [
-                String(localized: "URL scheme", bundle: .module),
-                String(localized: "Approved apps", bundle: .module),
+                SettingsSearchRow(String(localized: "URL scheme", bundle: .module), terms: [
+                    String(localized: "Allow other apps to control OhMyShot", bundle: .module),
+                ]),
+                SettingsSearchRow(String(localized: "Approved apps", bundle: .module), terms: [
+                    String(localized: "Command-line tools", bundle: .module),
+                ]),
             ]
         case .permissions:
-            Permission.allCases.map(\.title)
+            Permission.allCases.map { SettingsSearchRow($0.title) }
         case .about:
-            [String(localized: "Acknowledgments", bundle: .module)]
+            [SettingsSearchRow(String(localized: "Acknowledgments", bundle: .module))]
         }
+    }
+
+    /// What a search finds the pane by besides its title: the titles of its rows and the names of their controls.
+    var searchTerms: [String] {
+        var seen = Set<String>()
+        return searchRows.flatMap { [$0.title] + $0.terms }.filter { seen.insert($0).inserted }
     }
 
     /// The rows a search finds in the pane, or nil when it finds neither them nor the pane's title.
     func matches(_ query: String) -> [String]? {
         let found = searchTerms.filter { $0.localizedStandardContains(query) }
         return found.isEmpty && !title.localizedStandardContains(query) ? nil : found
+    }
+
+    /// The title of the first row a search finds in the pane, where opening the pane from the search lands.
+    func row(matching query: String) -> String? {
+        searchRows.first { row in ([row.title] + row.terms).contains { $0.localizedStandardContains(query) } }?.title
+    }
+}
+
+/// A row of a settings pane as a search finds it.
+struct SettingsSearchRow {
+    /// The row's title, as `SettingsRow` shows it: what a search lands on.
+    let title: String
+    /// The names of its controls and choices.
+    var terms: [String] = []
+
+    init(_ title: String, terms: [String] = []) {
+        self.title = title
+        self.terms = terms
+    }
+}
+
+/// Where a search sends the pane it opens: the row to scroll to and light up for a moment.
+@Observable
+final class SettingsSearchTarget {
+    /// The title of the row to land on.
+    private(set) var row: String?
+    /// The row lit up now, which goes after a moment.
+    var lit: String?
+    /// Counts the requests, so the same row asked for twice lands twice.
+    private(set) var request = 0
+
+    func land(on row: String?) {
+        self.row = row
+        request += 1
     }
 }
 
@@ -167,6 +302,8 @@ final class SettingsNavigator {
     }
 
     var query = ""
+    /// Where a search sends the pane it opens.
+    let target = SettingsSearchTarget()
 
     private var back: [SettingsTab] = []
     private var forward: [SettingsTab] = []
@@ -201,6 +338,12 @@ final class SettingsNavigator {
         guard let next = forward.popLast() else { return }
         back.append(tab)
         tab = next
+    }
+
+    /// Opens a pane the search found, on the first row it found there.
+    func open(_ tab: SettingsTab, searchedFor query: String) {
+        go(to: tab)
+        target.land(on: tab.row(matching: query))
     }
 }
 
@@ -247,7 +390,7 @@ struct SettingsRootView: View {
         .searchFocused($isSearching)
         .onSubmit(of: .search) {
             if let first = SettingsTab.allCases.first(where: { $0.matches(navigator.query) != nil }) {
-                navigator.go(to: first)
+                navigator.open(first, searchedFor: navigator.query)
             }
         }
         .background {
@@ -268,7 +411,11 @@ private struct SettingsSidebar: View {
 
     var body: some View {
         let query = navigator.query.trimmingCharacters(in: .whitespaces)
-        let selection = Binding<SettingsTab?>(get: { navigator.tab }, set: { if let tab = $0 { navigator.go(to: tab) } })
+        let selection = Binding<SettingsTab?>(get: { navigator.tab }, set: { tab in
+            guard let tab else { return }
+            // A pane chosen from what a search found opens on the row it found.
+            if query.isEmpty { navigator.go(to: tab) } else { navigator.open(tab, searchedFor: query) }
+        })
         if query.isEmpty {
             List(selection: selection) {
                 ForEach(SettingsTab.groups.indices, id: \.self) { index in

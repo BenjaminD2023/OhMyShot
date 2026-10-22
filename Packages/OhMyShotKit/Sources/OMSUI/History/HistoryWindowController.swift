@@ -10,6 +10,8 @@ import SwiftUI
 public struct HistoryActions {
     public var restore: (HistoryItem) -> Void
     public var copy: (HistoryItem) -> Void
+    /// Puts several captures' files on the clipboard, as Finder's Copy does with a selection.
+    public var copyFiles: ([HistoryItem]) -> Void = { _ in }
     public var save: (HistoryItem) -> Void
     public var open: (HistoryItem) -> Void
     /// Opens the capture in the annotation editor, or a recording in the recording window.
@@ -21,7 +23,7 @@ public struct HistoryActions {
     public var pin: (HistoryItem) -> Void
     /// Prints a screenshot through the print panel, as a sheet on the window.
     public var print: (HistoryItem, NSWindow?) -> Void = { _, _ in }
-    /// Moves the capture to the Trash, where it can be put back from.
+    /// Moves the capture's file to the Trash; its record, marks, and text leave the history with it.
     public var moveToTrash: (HistoryItem) -> Void
     /// The file to hand to another app when a capture is dragged out: a copy in the format Settings choose, or nil for
     /// the capture's own file.
@@ -122,7 +124,7 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
     #if DEBUG
     /// Prints the selected screenshot as File › Print… does, for scripted checks, which cannot make the window key.
     public func debugPrintSelection() -> Bool {
-        guard let item = model.selectedItem, item.kind == .screenshot else { return false }
+        guard let item = model.focusedItem, item.kind == .screenshot else { return false }
         model.print(item)
         return true
     }
@@ -211,7 +213,13 @@ final class HistoryModel {
     var items: [HistoryItem] = []
     var thumbnails: [UUID: CGImage] = [:]
     var filter: Filter = .all
-    var selection: UUID?
+    /// The captures selected, as in Finder: a click selects one, ⌘-click adds one or takes it away, ⇧-click selects
+    /// the run from the capture clicked last, and ⌘A every capture shown.
+    var selection: Set<UUID> = []
+    /// The capture the arrows move from and Space looks at: the one clicked or reached last.
+    var focus: UUID?
+    /// Captures waiting for the user to confirm they go to the Trash.
+    var trashRequest: TrashRequest?
     /// What is typed in the search field.
     var query = "" {
         didSet { if query != oldValue { search() } }
@@ -265,8 +273,40 @@ final class HistoryModel {
         return matches.count - visibleItems.count
     }
 
-    var selectedItem: HistoryItem? {
-        visibleItems.first { $0.id == selection }
+    /// The selected captures shown, in the grid's order.
+    var selectedItems: [HistoryItem] {
+        visibleItems.filter { selection.contains($0.id) }
+    }
+
+    /// The selected capture the keys act on alone (Space, Print): the one clicked or reached last, else the first.
+    var focusedItem: HistoryItem? {
+        let selected = selectedItems
+        return selected.first { $0.id == focus } ?? selected.first
+    }
+
+    /// Whether the window shows every capture, nothing left out by the Show filter or a search.
+    var showsEverything: Bool {
+        visibleItems.count == items.count
+    }
+
+    /// A click on a capture, with the keys held then.
+    func click(_ id: UUID, modifiers: NSEvent.ModifierFlags) {
+        if modifiers.contains(.command) {
+            if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
+            focus = id
+        } else if modifiers.contains(.shift), let anchor = focus,
+                  let from = visibleItems.firstIndex(where: { $0.id == anchor }), let to = visibleItems.firstIndex(where: { $0.id == id }) {
+            // The run from the capture clicked last, which stays the anchor for the next ⇧-click.
+            selection = Set(visibleItems[min(from, to)...max(from, to)].map(\.id))
+        } else {
+            selection = [id]
+            focus = id
+        }
+    }
+
+    func selectAll() {
+        selection = Set(visibleItems.map(\.id))
+        if focus.map({ !selection.contains($0) }) ?? true { focus = visibleItems.first?.id }
     }
 
     func reload() {
@@ -274,7 +314,8 @@ final class HistoryModel {
         let ids = Set(items.map(\.id))
         thumbnails = thumbnails.filter { ids.contains($0.key) }
         entries = entries.filter { ids.contains($0.key) }
-        if let selection, !ids.contains(selection) { self.selection = nil }
+        selection.formIntersection(ids)
+        if let focus, !ids.contains(focus) { self.focus = nil }
         loadText(of: ids.subtracting(entries.keys))
     }
 
@@ -353,19 +394,47 @@ final class HistoryModel {
     }
 
     func moveToTrash(_ item: HistoryItem) {
-        // The selection moves on to the next capture, as in Finder.
-        if selection == item.id, let index = visibleItems.firstIndex(of: item) {
-            let rest = visibleItems.filter { $0.id != item.id }
-            selection = rest.isEmpty ? nil : rest[min(index, rest.count - 1)].id
+        moveToTrash([item])
+    }
+
+    /// Moves captures to the Trash, one at a time through the actions, so cards showing them close too. When the
+    /// selection goes with them it moves on to the capture after them, as in Finder.
+    func moveToTrash(_ gone: [HistoryItem]) {
+        let ids = Set(gone.map(\.id))
+        let visible = visibleItems
+        if !selection.isDisjoint(with: ids), selection.isSubset(of: ids), let index = visible.firstIndex(where: { ids.contains($0.id) }) {
+            let rest = visible.filter { !ids.contains($0.id) }
+            let next = rest.isEmpty ? nil : rest[min(index, rest.count - 1)].id
+            selection = next.map { [$0] } ?? []
+            focus = next
+        } else {
+            selection.subtract(ids)
         }
-        actions.moveToTrash(item)
+        gone.forEach(actions.moveToTrash)
         reload()
     }
 
-    func moveAllToTrash() {
-        // One at a time through the actions, so cards showing these captures close too.
-        items.forEach(actions.moveToTrash)
-        reload()
+    /// Moves the selection to the Trash: one capture at once, as Finder does, several once confirmed.
+    func trashSelection() {
+        let selected = selectedItems
+        guard !selected.isEmpty else { return }
+        if selected.count == 1 {
+            moveToTrash(selected[0])
+        } else {
+            trashRequest = TrashRequest(items: selected, isEverything: selected.count == items.count)
+        }
+    }
+
+    /// Asks before moving every capture the window shows to the Trash.
+    func trashShown() {
+        let shown = visibleItems
+        guard !shown.isEmpty else { return }
+        trashRequest = TrashRequest(items: shown, isEverything: showsEverything)
+    }
+
+    /// Copies one capture as Copy always has; several as their files, as Finder's Copy does.
+    func copy(_ items: [HistoryItem]) {
+        if items.count == 1 { actions.copy(items[0]) } else if !items.isEmpty { actions.copyFiles(items) }
     }
 
     func quickLook(_ item: HistoryItem) {
@@ -382,11 +451,14 @@ final class HistoryModel {
     func moveSelection(by offset: Int) {
         let visible = visibleItems
         guard !visible.isEmpty else { return }
-        guard let current = visible.firstIndex(where: { $0.id == selection }) else {
-            selection = visible.first?.id
+        guard let current = visible.firstIndex(where: { $0.id == focus }) ?? visible.firstIndex(where: { selection.contains($0.id) }) else {
+            focus = visible.first?.id
+            selection = Set(focus.map { [$0] } ?? [])
             return
         }
-        selection = visible[min(max(current + offset, 0), visible.count - 1)].id
+        let next = visible[min(max(current + offset, 0), visible.count - 1)].id
+        focus = next
+        selection = [next]
     }
 }
 
@@ -418,7 +490,6 @@ private actor Slots {
 
 struct HistoryView: View {
     @Bindable var model: HistoryModel
-    @State private var confirmingTrashAll = false
     @State private var gridWidth: CGFloat = 0
     @FocusState private var gridFocused: Bool
     @FocusState private var searchFocused: Bool
@@ -453,7 +524,8 @@ struct HistoryView: View {
         // Return in the search field goes to the first capture found, ready for the grid's keys.
         .onSubmit(of: .search) {
             guard let first = model.visibleItems.first else { return }
-            model.selection = first.id
+            model.selection = [first.id]
+            model.focus = first.id
             gridFocused = true
         }
         // ⌘F, Find… in the Edit menu: to the search field, whatever the window shows.
@@ -468,18 +540,7 @@ struct HistoryView: View {
                 : String(localized: "\(count) captures found", bundle: .module)).post()
         }
         .quickLookPreview($model.previewURL)
-        .confirmationDialog(
-            Text("Move all captures in the history to the Trash?", bundle: .module),
-            isPresented: $confirmingTrashAll
-        ) {
-            Button(role: .destructive) {
-                model.moveAllToTrash()
-            } label: {
-                Text("Move to Trash", bundle: .module)
-            }
-        } message: {
-            Text("You can put them back from the Trash. Copies you saved elsewhere are not affected.", bundle: .module)
-        }
+        .confirmingTrash($model.trashRequest) { items in model.moveToTrash(items) }
         .confirmingRetentionChange($model.retentionRequest) { retention in
             model.settings.historyRetention = retention
         }
@@ -492,7 +553,7 @@ struct HistoryView: View {
                 TimelineView(.periodic(from: .now, by: 30)) { _ in
                     LazyVGrid(columns: columns, spacing: 22) {
                         ForEach(model.visibleItems) { item in
-                            HistoryCard(item: item, model: model, isSelected: model.selection == item.id)
+                            HistoryCard(item: item, model: model, isSelected: model.selection.contains(item.id))
                                 .id(item.id)
                         }
                     }
@@ -512,15 +573,19 @@ struct HistoryView: View {
             .onKeyPress(phases: .down) { press in
                 handle(press) ? .handled : .ignored
             }
-            // ⌘C, ⌘S and ⌘⌫ arrive from the main menu as commands; with nothing selected they are disabled.
-            .onCommand(#selector(NSText.copy(_:)), perform: selectionCommand(model.actions.copy))
-            .onCommand(#selector(NSDocument.save(_:)), perform: selectionCommand(model.actions.save))
-            // ⌘P prints a selected screenshot; a recording has nothing to print.
-            .onCommand(Selector(("printCapture:")), perform: model.selectedItem?.kind == .screenshot ? selectionCommand(model.print) : nil)
-            .onCommand(#selector(NSText.delete(_:)), perform: selectionCommand(model.moveToTrash))
-            .onChange(of: model.selection) { _, selection in
-                guard let selection else { return }
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { proxy.scrollTo(selection) }
+            // ⌘C, ⌘S, ⌘O, ⌘⌫ and ⌘A arrive from the main menu as commands; with nothing selected they are disabled.
+            .onCommand(#selector(NSText.copy(_:)), perform: selectionCommand { model.copy($0) })
+            .onCommand(#selector(NSDocument.save(_:)), perform: selectionCommand { $0.forEach(model.actions.save) })
+            // ⌘O does what a double-click does: the editor, a recording's window, a GIF's player.
+            .onCommand(Selector(("openInEditor:")), perform: selectionCommand { $0.forEach(model.actions.annotate) })
+            // ⌘P prints one selected screenshot; a recording has nothing to print.
+            .onCommand(Selector(("printCapture:")), perform: model.selectedItems.count == 1 && model.focusedItem?.kind == .screenshot
+                ? { model.focusedItem.map(model.print) } : nil)
+            .onCommand(#selector(NSText.delete(_:)), perform: selectionCommand { _ in model.trashSelection() })
+            .onCommand(#selector(NSText.selectAll(_:)), perform: model.visibleItems.isEmpty ? nil : { model.selectAll() })
+            .onChange(of: model.focus) { _, focus in
+                guard let focus else { return }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { proxy.scrollTo(focus) }
             }
             .onAppear { gridFocused = true }
         }
@@ -535,10 +600,12 @@ struct HistoryView: View {
         case .upArrow: model.moveSelection(by: -columnCount)
         case .downArrow: model.moveSelection(by: columnCount)
         case .return:
-            guard let item = model.selectedItem else { return false }
-            model.actions.restore(item)
+            // Every capture selected goes back to Quick Access.
+            let selected = model.selectedItems
+            guard !selected.isEmpty else { return false }
+            selected.forEach(model.actions.restore)
         case .space:
-            guard let item = model.selectedItem else { return false }
+            guard let item = model.focusedItem else { return false }
             model.quickLook(item)
         default:
             return false
@@ -546,10 +613,11 @@ struct HistoryView: View {
         return true
     }
 
-    /// A menu command on the selected capture, or nil (a disabled command) when nothing is selected.
-    private func selectionCommand(_ action: @escaping (HistoryItem) -> Void) -> (() -> Void)? {
-        guard let item = model.selectedItem else { return nil }
-        return { action(item) }
+    /// A menu command on the selected captures, or nil (a disabled command) when nothing is selected.
+    private func selectionCommand(_ action: @escaping ([HistoryItem]) -> Void) -> (() -> Void)? {
+        let selected = model.selectedItems
+        guard !selected.isEmpty else { return nil }
+        return { action(selected) }
     }
 
     /// Columns in the adaptive grid at its current width.
@@ -586,17 +654,20 @@ struct HistoryView: View {
             .help(Text("How long captures stay in the history", bundle: .module))
         }
         ToolbarItem(placement: .primaryAction) {
+            // Every capture shown: under the Show filter or a search, only those.
             Button {
-                confirmingTrashAll = true
+                model.trashShown()
             } label: {
                 Label {
-                    Text("Move All to Trash", bundle: .module)
+                    model.showsEverything ? Text("Move All to Trash", bundle: .module) : Text("Move Shown to Trash", bundle: .module)
                 } icon: {
                     Image(systemName: "trash")
                 }
             }
-            .help(Text("Move all captures in the history to the Trash", bundle: .module))
-            .disabled(model.items.isEmpty)
+            .help(model.showsEverything
+                ? Text("Move all captures in the history to the Trash", bundle: .module)
+                : Text("Move the captures shown to the Trash", bundle: .module))
+            .disabled(model.visibleItems.isEmpty)
         }
     }
 
@@ -749,7 +820,7 @@ struct HistoryCard: View {
             // Opens the capture in the annotation editor, a recording in the recording window, as in CleanShot;
             // Return and the hover button restore it to Quick Access.
             .onTapGesture(count: 2) { model.actions.annotate(item) }
-            .simultaneousGesture(TapGesture().onEnded { model.selection = item.id })
+            .simultaneousGesture(TapGesture().onEnded { model.click(item.id, modifiers: NSEvent.modifierFlags) })
             .task { await model.loadThumbnail(for: item) }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -933,13 +1004,16 @@ struct HistoryCard: View {
         Divider()
         Button { model.quickLook(item) } label: { Text("Quick Look", bundle: .module) }
             .keyboardShortcut(.space, modifiers: [])
-        if item.kind == .screenshot {
-            Button { model.actions.annotate(item) } label: { Text("Annotate…", bundle: .module) }
-        } else if isGIF {
-            Button { model.actions.annotate(item) } label: { Text("Play", bundle: .module) }
-        } else {
-            Button { model.actions.annotate(item) } label: { Text("Edit…", bundle: .module) }
+        Group {
+            if item.kind == .screenshot {
+                Button { model.actions.annotate(item) } label: { Text("Annotate…", bundle: .module) }
+            } else if isGIF {
+                Button { model.actions.annotate(item) } label: { Text("Play", bundle: .module) }
+            } else {
+                Button { model.actions.annotate(item) } label: { Text("Edit…", bundle: .module) }
+            }
         }
+        .keyboardShortcut("o")
         Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
         if item.kind == .screenshot {
             Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }

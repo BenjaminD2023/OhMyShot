@@ -7,7 +7,7 @@ struct QuickAccessSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(Text("Position", bundle: .module)) {
+            SettingsRow(String(localized: "Position", bundle: .module)) {
                 Picker(selection: $settings.quickAccessCorner) {
                     Text("Bottom left", bundle: .module).tag(QuickAccessCorner.bottomLeft)
                     Text("Bottom right", bundle: .module).tag(QuickAccessCorner.bottomRight)
@@ -17,7 +17,7 @@ struct QuickAccessSettingsView: View {
                 .labelsHidden()
                 .fixedSize()
             }
-            SettingsRow(Text("Size", bundle: .module)) {
+            SettingsRow(String(localized: "Size", bundle: .module)) {
                 Picker(selection: $settings.quickAccessSize) {
                     Text("Small", bundle: .module).tag(QuickAccessSize.small)
                     Text("Medium", bundle: .module).tag(QuickAccessSize.medium)
@@ -28,7 +28,7 @@ struct QuickAccessSettingsView: View {
                 .labelsHidden()
                 .fixedSize()
             }
-            SettingsRow(Text("Display", bundle: .module)) {
+            SettingsRow(String(localized: "Display", bundle: .module)) {
                 HStack(spacing: 6) {
                     Toggle(isOn: $settings.quickAccessOnPointerDisplay) {
                         Text("Show on the display with the pointer", bundle: .module)
@@ -39,7 +39,7 @@ struct QuickAccessSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(Text("Close cards", bundle: .module)) {
+            SettingsRow(String(localized: "Close cards", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Picker(selection: $settings.quickAccessCloseAfter) {

@@ -20,6 +20,9 @@ enum MainMenu {
         app.addItem(withTitle: String(localized: "Quit \(appName)"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let file = submenu(String(localized: "File"), in: menu)
+        // Answered by Capture History: what a double-click on the selected captures does.
+        file.addItem(withTitle: String(localized: "Open in Editor"), action: Selector(("openInEditor:")), keyEquivalent: "o")
+        file.addItem(.separator())
         file.addItem(withTitle: String(localized: "Close Window"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         file.addItem(withTitle: String(localized: "Save"), action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
         let project = file.addItem(withTitle: String(localized: "Save a Copy as Project…"), action: Selector(("saveProject:")), keyEquivalent: "s")

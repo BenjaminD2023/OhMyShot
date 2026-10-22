@@ -30,7 +30,7 @@ struct SharingSettingsView: View {
 
     var body: some View {
         SettingsPane {
-            SettingsRow(Text("Destinations", bundle: .module)) {
+            SettingsRow(String(localized: "Destinations", bundle: .module)) {
                 VStack(alignment: .leading, spacing: 10) {
                     if destinations.destinations.isEmpty {
                         Text("No destinations yet", bundle: .module)
@@ -47,7 +47,7 @@ struct SharingSettingsView: View {
 
             SettingsDivider()
 
-            SettingsRow(Text("After upload", bundle: .module)) {
+            SettingsRow(String(localized: "After upload", bundle: .module)) {
                 HStack(spacing: 6) {
                     Toggle(isOn: $settings.copyLinkAfterUpload) {
                         Text("Copy link after upload", bundle: .module)
@@ -59,7 +59,7 @@ struct SharingSettingsView: View {
             if !records.records.isEmpty {
                 SettingsDivider()
 
-                SettingsRow(Text("Recent uploads", bundle: .module)) {
+                SettingsRow(String(localized: "Recent uploads", bundle: .module)) {
                     VStack(alignment: .leading, spacing: 8) {
                         VStack(spacing: 0) {
                             ForEach(Array(records.records.prefix(Self.recentLimit).enumerated()), id: \.element.id) { index, record in

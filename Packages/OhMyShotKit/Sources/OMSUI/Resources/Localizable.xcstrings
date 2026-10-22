@@ -13043,6 +13043,40 @@
         }
       }
     },
+    "Move All ^[%lld Capture](inflect: true) to the Trash?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Trasladar a la papelera todas las capturas (%lld)?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Placer toutes les captures (%lld) dans la corbeille ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件のキャプチャをすべてゴミ箱に入れますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要将全部 %lld 项移到废纸篓吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要將全部 %lld 個擷取內容丟到垃圾桶嗎？"
+          }
+        }
+      }
+    },
     "Move All to Trash" : {
       "localizations" : {
         "es" : {
@@ -13077,6 +13111,74 @@
         }
       }
     },
+    "Move Shown to Trash" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trasladar lo mostrado a la papelera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Placer les éléments affichés dans la corbeille"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表示中の項目をゴミ箱に入れる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将显示的项移到废纸篓"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將顯示的項目丟到垃圾桶"
+          }
+        }
+      }
+    },
+    "Move ^[%lld Capture](inflect: true) to the Trash?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Trasladar ^[%lld captura](inflect: true) a la papelera?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Placer ^[%lld capture](inflect: true) dans la corbeille ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld件のキャプチャをゴミ箱に入れますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要将 %lld 项移到废纸篓吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要將 %lld 個擷取內容丟到垃圾桶嗎？"
+          }
+        }
+      }
+    },
     "Move all captures in the history to the Trash" : {
       "localizations" : {
         "es" : {
@@ -13100,7 +13202,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "将历史记录中的所有截图移到废纸篓"
+            "value" : "将历史记录中的全部内容移到废纸篓"
           }
         },
         "zh-Hant" : {
@@ -13112,6 +13214,7 @@
       }
     },
     "Move all captures in the history to the Trash?" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -13141,6 +13244,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要將記錄中的所有擷取內容丟到垃圾桶嗎？"
+          }
+        }
+      }
+    },
+    "Move the captures shown to the Trash" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trasladar las capturas mostradas a la papelera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Placer les captures affichées dans la corbeille"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表示中のキャプチャをゴミ箱に入れます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将显示的截图和录制移到废纸篓"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將顯示的擷取內容丟到垃圾桶"
           }
         }
       }
@@ -22799,6 +22936,40 @@
         }
       }
     },
+    "They leave Capture History with their marks and text, and putting them back from the Trash doesn't bring them back here. Copies you saved elsewhere are not affected." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salen del historial de capturas con sus marcas y su texto, y sacarlas de la papelera no las devuelve aquí. Las copias que guardaste en otro lugar no se ven afectadas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elles quittent l’historique des captures avec leurs annotations et leur texte, et les remettre depuis la corbeille ne les ramène pas ici. Les copies enregistrées ailleurs ne sont pas touchées."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マークアップとテキストとともにキャプチャ履歴から消え、ゴミ箱から戻してもここには戻りません。ほかの場所に保存したコピーは影響を受けません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它们会连同标注和文字一起离开截图历史，从废纸篓放回也不会回到这里。存储在其他位置的副本不受影响。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "它們會連同標注和文字一起離開擷取記錄，從垃圾桶放回也不會回到這裡。儲存在其他位置的副本不受影響。"
+          }
+        }
+      }
+    },
     "This Mac" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -25298,6 +25469,7 @@
       }
     },
     "You can put them back from the Trash. Copies you saved elsewhere are not affected." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {

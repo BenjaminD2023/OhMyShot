@@ -1754,6 +1754,11 @@ final class CompositionRoot {
             guard let self else { return nil }
             return captures.files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
         }
+        // Each in the format Settings choose, as one dragged out would be.
+        historyActions.copyFiles = { [weak self] entries in
+            guard let self else { return }
+            PasteboardWriter.write(fileURLs: entries.map { self.captures.files.fileToHandOver(self.history.fileURL(for: $0), scale: $0.pixelsPerPoint) })
+        }
         historyActions.sharing.isUploading = { [weak self] entry in self?.uploads.isUploading(entry.id) ?? false }
         historyActions.sharing.cancel = { [weak self] entry in self?.uploads.cancel(captureID: entry.id) }
         historyActions.sharing.hasLink = { [weak self] entry in self?.uploads.hasLink(entry.id) ?? false }
