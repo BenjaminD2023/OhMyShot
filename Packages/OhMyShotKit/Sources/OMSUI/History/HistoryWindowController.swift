@@ -685,7 +685,7 @@ struct HistoryView: View {
     private var emptyState: some View {
         placeholder(
             symbol: "photo.on.rectangle.angled",
-            title: Text("No captures yet", bundle: .module),
+            title: Text("No Captures Yet", bundle: .module),
             message: emptyHint
         )
     }
@@ -730,7 +730,7 @@ struct HistoryView: View {
     private var filteredEmptyState: some View {
         placeholder(
             symbol: model.filter == .recordings ? "video" : "photo",
-            title: model.filter == .recordings ? Text("No recordings", bundle: .module) : Text("No screenshots", bundle: .module),
+            title: model.filter == .recordings ? Text("No Recordings", bundle: .module) : Text("No Screenshots", bundle: .module),
             message: String(localized: "Choose All to see every capture in the history.", bundle: .module)
         )
     }
@@ -930,12 +930,21 @@ struct HistoryCard: View {
         return Text("\(time), \(excerpt.before + excerpt.found + excerpt.after)", bundle: .module)
     }
 
+    /// What it is, the app it was taken in, as the card's caption shows, and its size.
     private var accessibilityLabel: Text {
-        item.kind == .recording
+        let (width, height) = (item.pixelWidth, item.pixelHeight)
+        guard let app = item.appName else {
+            return item.kind == .recording
+                ? isGIF
+                    ? Text("GIF, \(width) by \(height) pixels", bundle: .module)
+                    : Text("Recording, \(width) by \(height) pixels", bundle: .module)
+                : Text("Screenshot, \(width) by \(height) pixels", bundle: .module)
+        }
+        return item.kind == .recording
             ? isGIF
-                ? Text("GIF, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
-                : Text("Recording, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
-            : Text("Screenshot, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+                ? Text("GIF from \(app), \(width) by \(height) pixels", bundle: .module)
+                : Text("Recording from \(app), \(width) by \(height) pixels", bundle: .module)
+            : Text("Screenshot from \(app), \(width) by \(height) pixels", bundle: .module)
     }
 
     /// A small play badge in the corner, or "GIF" for a GIF, with the length when it is known.

@@ -21,8 +21,13 @@ struct DebugAboutHooks {
         guard hook == "about-render" || hook == "settings-render" else { return false }
         func value(_ name: String) -> String? { DebugHooks.parameter(name, in: url) }
         if hook == "settings-render" {
+            if value("close") == "1" {
+                Self.settings?.close()
+                Self.settings = nil
+                return true
+            }
             renderPane(tab: value("tab").flatMap(SettingsTab.init(rawValue:)) ?? .general, dark: value("mode") == "dark",
-                       height: value("height").flatMap(Double.init), name: value("name"))
+                       height: value("height").flatMap(Double.init), name: value("name"), keep: value("keep") == "1")
             return true
         }
         // Settings › About as <name>.png (about); acknowledgments=1 opens Acknowledgments… and captures the sheet as
@@ -74,8 +79,9 @@ struct DebugAboutHooks {
     }
 
     /// The pane `tab` as settings-<tab>-<light|dark>.png (or <name>.png), in a window of its own `height` points tall
-    /// (640 by default) in the appearance asked for, whatever the app's; the window closes once captured.
-    private func renderPane(tab: SettingsTab, dark: Bool, height: Double?, name: String?) {
+    /// (640 by default) in the appearance asked for, whatever the app's; the window closes once captured, unless `keep`
+    /// leaves it for an ax-audit until settings-render?close=1.
+    private func renderPane(tab: SettingsTab, dark: Bool, height: Double?, name: String?, keep: Bool) {
         Self.settings?.close()
         Self.settings = nil
         let controller = makeSettings()
@@ -89,7 +95,7 @@ struct DebugAboutHooks {
         controller.showBehindWallpaper(tab)
         Task {
             defer {
-                if Self.settings === controller {
+                if !keep, Self.settings === controller {
                     controller.close()
                     Self.settings = nil
                 }

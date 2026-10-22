@@ -996,6 +996,8 @@ struct ShortcutsSettingsView: View {
                             HotkeyCenter.clearOtherAssignments(of: keys, keeping: shortcut.name)
                         }
                         .keyboardShortcutsConflictPolicy(.init(menuItem: .warn))
+                        // The label beside it isn't tied to it, so VoiceOver would hear only "Record Shortcut".
+                        .accessibilityLabel(Text(shortcut.title))
                     }
                 }
             }

@@ -9952,6 +9952,46 @@
         }
       }
     },
+    "GIF from %@, %lld by %lld pixels" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "GIF from %1$@, %2$lld by %3$lld pixels"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF de %1$@, %2$lld por %3$lld píxeles"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GIF de %1$@, %2$lld sur %3$lld pixels"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@のGIF、%2$lld×%3$lldピクセル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自 %1$@ 的 GIF，%2$lld × %3$lld 像素"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "來自 %1$@ 的 GIF，%2$lld × %3$lld 像素"
+          }
+        }
+      }
+    },
     "GIF made" : {
       "localizations" : {
         "es" : {
@@ -13793,6 +13833,74 @@
         }
       }
     },
+    "No Captures Yet" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aún no hay capturas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune capture pour l’instant"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャプチャはまだありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有截图或录制"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚無擷取內容"
+          }
+        }
+      }
+    },
+    "No Recordings" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay grabaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun enregistrement"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収録はありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有录制"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有錄影"
+          }
+        }
+      }
+    },
     "No Recordings Found" : {
       "localizations" : {
         "es" : {
@@ -13891,6 +13999,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "沒有「%@」的結果"
+          }
+        }
+      }
+    },
+    "No Screenshots" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay capturas de pantalla"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune capture d’écran"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショットはありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有截图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有截圖"
           }
         }
       }
@@ -13998,6 +14140,7 @@
       }
     },
     "No captures yet" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -14169,6 +14312,7 @@
       }
     },
     "No recordings" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -14203,6 +14347,7 @@
       }
     },
     "No screenshots" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -17717,6 +17862,46 @@
         }
       }
     },
+    "Recording from %@, %lld by %lld pixels" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Recording from %1$@, %2$lld by %3$lld pixels"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grabación de %1$@, %2$lld por %3$lld píxeles"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement de %1$@, %2$lld sur %3$lld pixels"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@の収録、%2$lld×%3$lldピクセル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自 %1$@ 的录制，%2$lld × %3$lld 像素"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "來自 %1$@ 的錄影，%2$lld × %3$lld 像素"
+          }
+        }
+      }
+    },
     "Recording, %@" : {
       "localizations" : {
         "es" : {
@@ -19467,6 +19652,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已開啟螢幕錄製"
+          }
+        }
+      }
+    },
+    "Screenshot from %@, %lld by %lld pixels" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Screenshot from %1$@, %2$lld by %3$lld pixels"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Captura de pantalla de %1$@, %2$lld por %3$lld píxeles"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capture d’écran de %1$@, %2$lld sur %3$lld pixels"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@のスクリーンショット、%2$lld×%3$lldピクセル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自 %1$@ 的截图，%2$lld × %3$lld 像素"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "來自 %1$@ 的截圖，%2$lld × %3$lld 像素"
           }
         }
       }
