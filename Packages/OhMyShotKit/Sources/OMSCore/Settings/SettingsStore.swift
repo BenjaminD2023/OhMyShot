@@ -366,9 +366,16 @@ public final class SettingsStore {
         }
     }
 
-    /// What recordings are kept as. Chosen on the recording bar.
+    /// What the recording bar opens with: the last of Video and GIF chosen on it. Studio is never kept, so a take for
+    /// Studio, which leaves the pointer and the camera out for Studio to draw, is never followed by another by mistake.
     public var recordingOutput: RecordingOutput {
-        didSet { defaults.set(recordingOutput.rawValue, forKey: Key.recordingOutput) }
+        didSet {
+            if recordingOutput == .studio {
+                recordingOutput = oldValue
+            } else {
+                defaults.set(recordingOutput.rawValue, forKey: Key.recordingOutput)
+            }
+        }
     }
 
     /// Frames per second in a GIF: more is smoother and larger.
@@ -580,7 +587,8 @@ public final class SettingsStore {
         recordingShowsKeystrokes = defaults.bool(forKey: Key.recordingShowsKeystrokes)
         recordingKeystrokeMode = defaults.string(forKey: Key.recordingKeystrokeMode).flatMap(KeystrokeMode.init(rawValue:)) ?? .all
         recordingKeepsKeysForStudio = defaults.bool(forKey: Key.recordingKeepsKeysForStudio)
-        recordingOutput = defaults.string(forKey: Key.recordingOutput).flatMap(RecordingOutput.init(rawValue:)) ?? .video
+        // Studio, kept before it was left out, opens as Video.
+        recordingOutput = defaults.string(forKey: Key.recordingOutput).flatMap(RecordingOutput.init(rawValue:)).flatMap { $0 == .studio ? nil : $0 } ?? .video
         let gifFrameRate = defaults.integer(forKey: Key.recordingGIFFrameRate)
         recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : 15
         replaySound = defaults.string(forKey: Key.replaySound).flatMap(ReplaySound.init(rawValue:)) ?? .all
