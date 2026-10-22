@@ -186,8 +186,9 @@ final class ControlBarPanel: NSPanel {
 
 /// The capsule: a red dot and the time in the reading face, the microphone's meter when it is recorded (a
 /// slashed microphone in orange when it stops sending sound), then the four buttons. Glass over an opaque
-/// window-colored backing, as the All-In-One bar is; a solid capsule with Reduce Transparency.
-private final class ControlBarView: NSView {
+/// window-colored backing, as the All-In-One bar is; a solid capsule with Reduce Transparency. Paused, the dot gives
+/// way to a pause symbol, the time pulses, and Resume is lit as a chip that is on.
+final class ControlBarView: NSView {
     private let actions: RecordingControlBar.Actions
     private let container: NSView
     private let backing = NSView()
@@ -195,6 +196,8 @@ private final class ControlBarView: NSView {
     private let rim = CAShapeLayer()
     private let stack = NSStackView()
     private let dot = NSView()
+    /// In the dot's place while recording is paused.
+    private let pauseMark = NSImageView()
     private let time = NSTextField(labelWithString: "0:00")
     /// The system's microphone-with-meter symbol, its dots lit by how loud the microphone is.
     private let meter = NSImageView()
@@ -238,8 +241,19 @@ private final class ControlBarView: NSView {
         dot.translatesAutoresizingMaskIntoConstraints = false
         dot.widthAnchor.constraint(equalToConstant: 8).isActive = true
         dot.heightAnchor.constraint(equalToConstant: 8).isActive = true
+        // Centered on the dot's slot, so nothing moves when it takes the dot's place.
+        pauseMark.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 9, weight: .bold))
+        pauseMark.contentTintColor = .secondaryLabelColor
+        pauseMark.isHidden = true
+        pauseMark.setAccessibilityElement(false)
+        pauseMark.translatesAutoresizingMaskIntoConstraints = false
+        dot.addSubview(pauseMark)
+        pauseMark.centerXAnchor.constraint(equalTo: dot.centerXAnchor).isActive = true
+        pauseMark.centerYAnchor.constraint(equalTo: dot.centerYAnchor).isActive = true
         time.font = Theme.Typeface.reading(size: 13, weight: .semibold)
         time.textColor = .labelColor
+        time.wantsLayer = true
         time.setAccessibilityElement(false)
 
         stack.orientation = .horizontal
@@ -394,6 +408,8 @@ private final class ControlBarView: NSView {
             self.paused = paused
             pauseButton.symbolName = paused ? "play.fill" : "pause.fill"
             pauseButton.title = paused ? String(localized: "Resume", bundle: .module) : String(localized: "Pause", bundle: .module)
+            pauseButton.isSelected = paused
+            pauseMark.isHidden = !paused
             applyAppearance()
         }
         setAccessibilityValue(paused
@@ -401,7 +417,8 @@ private final class ControlBarView: NSView {
             : String(localized: "Recording, \(text)", bundle: .module))
     }
 
-    /// The dot is red while recording and gray while paused; the time steps back to secondary ink then.
+    /// The dot is red while recording and gives way to a pause symbol while paused; the time steps back to secondary
+    /// ink then, and pulses.
     private func applyAppearance() {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -411,10 +428,39 @@ private final class ControlBarView: NSView {
             rim.strokeColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))
                 : NSColor.separatorColor.cgColor
-            dot.layer?.backgroundColor = paused ? NSColor.tertiaryLabelColor.cgColor : NSColor.systemRed.cgColor
+            dot.layer?.backgroundColor = paused ? NSColor.clear.cgColor : NSColor.systemRed.cgColor
         }
         time.textColor = armed != nil ? .systemRed : paused ? .secondaryLabelColor : .labelColor
+        pulseTime(paused && armed == nil)
     }
+
+    private static let pulseKey = "paused"
+
+    /// While paused, the time fades to a third and back every 1.6 s, as a paused recorder's display blinks; never under
+    /// Reduce Motion, nor while Delete or Restart asks its question in the time's place.
+    private func pulseTime(_ on: Bool) {
+        guard let layer = time.layer else { return }
+        let pulsing = layer.animation(forKey: Self.pulseKey) != nil
+        if on, !pulsing, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = 1
+            pulse.toValue = 0.35
+            pulse.duration = 0.8
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            layer.add(pulse, forKey: Self.pulseKey)
+        } else if !on, pulsing {
+            layer.removeAnimation(forKey: Self.pulseKey)
+        }
+    }
+
+    #if DEBUG
+    /// How paused looks now, for tests: the time pulsing, Resume lit, and the pause symbol in the dot's place.
+    var debugPausedLook: (pulses: Bool, resumeLit: Bool, markShown: Bool) {
+        (time.layer?.animation(forKey: Self.pulseKey) != nil, pauseButton.isSelected, !pauseMark.isHidden)
+    }
+    #endif
 
     @objc private func pauseClicked() {
         disarm()

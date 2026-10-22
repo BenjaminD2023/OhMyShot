@@ -44,6 +44,12 @@ final class CardButton: NSControl {
         didSet { needsDisplay = true }
     }
 
+    /// A bar's chip that is on: the bar's selected fill under an accent symbol, as the recording bar's chips that are
+    /// on have (Resume while recording is paused).
+    var isSelected = false {
+        didSet { needsDisplay = true }
+    }
+
     /// A pill's width: a little narrower on a small card, which has less room around it.
     var pillWidth: CGFloat = 112 {
         didSet {
@@ -149,10 +155,12 @@ final class CardButton: NSControl {
             NSColor(white: dark ? 1 : 0, alpha: (dark ? 0.1 : 0.06) * strength).setFill()
             ink = .labelColor
         case .barIcon:
-            // The bar's own hover and pressed fills, doubled under Increase Contrast.
-            let strength: CGFloat = (pressed ? 2 : hovering ? 1 : 0) * (increaseContrast ? 2 : 1)
-            NSColor(white: dark ? 1 : 0, alpha: (dark ? 0.09 : 0.045) * strength).setFill()
-            ink = .labelColor
+            // The bar's own hover and pressed fills, or its selected fill (a press adds the hover fill to it), doubled
+            // under Increase Contrast.
+            let hoverFill: CGFloat = dark ? 0.09 : 0.045
+            let fill = isSelected ? (dark ? 0.16 : 0.08) + (pressed ? hoverFill : 0) : hoverFill * (pressed ? 2 : hovering ? 1 : 0)
+            NSColor(white: dark ? 1 : 0, alpha: fill * (increaseContrast ? 2 : 1)).setFill()
+            ink = isSelected ? .controlAccentColor : .labelColor
         }
         NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
         if increaseContrast {
