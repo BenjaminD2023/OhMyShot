@@ -31,6 +31,28 @@ actor RecognitionSlots {
         }
     }
 
+    /// Background warmup is useful only when it can start now. It must never queue ahead of a real
+    /// recognition. As with `run`, a started native operation owns the slot until it actually ends.
+    nonisolated func runIfAvailable<T>(_ operation: () async throws -> T) async throws -> T? {
+        guard try await acquireIfAvailable() else { return nil }
+        do {
+            try Task.checkCancellation()
+            let value = try await operation()
+            await release()
+            return value
+        } catch {
+            await release()
+            throw error
+        }
+    }
+
+    private func acquireIfAvailable() throws -> Bool {
+        try Task.checkCancellation()
+        guard free > 0, waiting.isEmpty else { return false }
+        free -= 1
+        return true
+    }
+
     private func acquire() async throws {
         try Task.checkCancellation()
         if free > 0 {

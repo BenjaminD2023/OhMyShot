@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Synchronization
 import Testing
@@ -187,5 +188,34 @@ struct OCRTimeoutTests {
         await #expect(throws: Failure.self) {
             try await withTimeout(.seconds(10)) { throw Failure() }
         }
+    }
+
+    @Test func aWholeImageDeadlineAlsoBoundsTheWaitForABusyVisionSlot() async throws {
+        let gate = Gate()
+        defer { gate.open() }
+        let runs = Runs()
+        let holder = Task {
+            try await RecognitionSlots.shared.run {
+                runs.start()
+                await gate.wait()
+                runs.finish()
+            }
+        }
+        try await Self.settle { runs.counts.withLock { $0.running == 1 } }
+        let context = try #require(CGContext(
+            data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ))
+        let image = try #require(context.makeImage())
+        // The individual request would wait five seconds, but the image's entire budget is shorter.
+        let pipeline = VisionPipeline(options: .init(timeout: .seconds(5), overallTimeout: .milliseconds(40)))
+        let started = ContinuousClock.now
+        await #expect(throws: OCRError.timedOut) { try await pipeline.recognize(image) }
+        #expect(ContinuousClock.now - started < .seconds(1))
+        #expect(runs.counts.withLock { $0.running == 1 })
+        gate.open()
+        try await holder.value
+        // The timed-out queued recognition must not run when the holder finally releases the slot.
+        #expect(try await withTimeout(.seconds(1)) { try await RecognitionSlots.shared.run { 42 } } == 42)
     }
 }

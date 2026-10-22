@@ -1854,7 +1854,20 @@ their own Keep Line Breaks parameter, on by default, so they ignore the saved de
 Vision request deadlines include waiting for a recognition slot. Cancelling or timing out a caller
 removes queued work promptly; a native request that ignores cancellation retains its slot until it
 actually finishes. This keeps accurate requests serialized, including after a timeout. The
-app's 30-second request deadline is unchanged.
+app's 30-second request deadline also bounds the whole image, including language and repair passes;
+other pipeline callers have a configurable 60-second whole-image budget. Optional panel table/code
+analysis uses the remaining budget and leaves recognized text available if it expires.
+
+Warmups start only in an idle recognition slot and never join the request queue. Successful language
+warmups are kept for the process, concurrent duplicates skip, and completing or cancelling a selection
+stops its remaining warmup passes. Starting another Capture Text cancels the old reading; a late answer
+cannot replace the new selection's highlight or clipboard result. Native Vision work can ignore
+cancellation, so its slot remains occupied until it actually ends; the caller still leaves on time.
+
+The one-picture model helper has a complete-run deadline, including loading and compilation (120 seconds
+by default). Capture Text's optional formula/table helper is limited to 10 seconds, and the panel's to
+60 seconds; a helper that ignores termination is killed after a short grace period. Ordinary OCR text
+remains available when optional model work exceeds its deadline.
 
 ![Image OCR line breaks and temporary window overrides](assets/ocr-image-line-breaks.gif)
 

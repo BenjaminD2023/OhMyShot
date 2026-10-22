@@ -42,10 +42,19 @@ extension VisionPipeline {
     /// cells take their text from the pieces' lines all the same.
     @concurrent
     public func analyze(_ image: CGImage) async throws -> TextAnalysis {
+        let started = ContinuousClock.now
         let result = try await recognize(image)
-        async let codes = detectCodes(in: image)
-        let tables = ((try? await documentTables(in: image)) ?? []).map { $0.filled(from: result.lines) }
-        return TextAnalysis(result: result, tables: tables, codes: (try? await codes) ?? [])
+        let remaining = options.overallTimeout - (ContinuousClock.now - started)
+        try Task.checkCancellation()
+        guard remaining > .zero else { return TextAnalysis(result: result, tables: [], codes: []) }
+        // Once the text is read, optional table/code detection cannot keep it hidden indefinitely.
+        let extra = try? await withTimeout(remaining) {
+            async let codes = detectCodes(in: image)
+            let tables = ((try? await documentTables(in: image)) ?? []).map { $0.filled(from: result.lines) }
+            return TextAnalysis(result: result, tables: tables, codes: (try? await codes) ?? [])
+        }
+        try Task.checkCancellation()
+        return extra ?? TextAnalysis(result: result, tables: [], codes: [])
     }
 
     private func detectCodes(in image: CGImage) async throws -> [OCRCode] {
