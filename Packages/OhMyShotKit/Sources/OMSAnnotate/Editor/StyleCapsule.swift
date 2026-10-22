@@ -203,7 +203,7 @@ final class StyleCapsule: NSView {
 
         var sections: [[NSView]] = []
         if usesColor {
-            sections.append(Self.palette.map(colorChip) + savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip())
+            sections.append(inks.map(colorChip) + savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip())
         }
         let sizes = sizeChips()
         if !sizes.isEmpty { sections.append(sizes) }
@@ -320,9 +320,14 @@ final class StyleCapsule: NSView {
         savedColors.remove(color)
     }
 
+    /// The inks offered: the eight, after the marker yellow for the tools that start in it, so it can be chosen again.
+    private var inks: [RGBA] {
+        kind == .highlighter || kind == .highlightBox ? [.marker] + Self.palette : Self.palette
+    }
+
     /// Whether the color in use is none of the inks nor a kept one: it has the Other Color chip, and can be kept.
     private var usesUnsavedColor: Bool {
-        !Self.palette.contains(settings.color.withAlpha(1)) && !savedColors.contains(settings.color)
+        !inks.contains(settings.color.withAlpha(1)) && !savedColors.contains(settings.color)
     }
 
     /// Keeps the color in use, when it is one of the person's own that is not kept yet. With the colors full,
@@ -350,7 +355,10 @@ final class StyleCapsule: NSView {
         let image = isCustom ? Self.dot(settings.color, selected: true) : Self.wheel()
         let chip = CapsuleChip(image: image, width: 24) { [weak self] in self?.pickColor() }
         chip.highlightsSelection = false
+        // Showing the color in use, it is the selected one, and says so.
+        chip.isSelected = isCustom
         chip.setAccessibilityLabel(String(localized: "Other Color…", bundle: .module))
+        chip.setAccessibilityValue(isCustom ? Self.colorName(settings.color.withAlpha(1)) : nil)
         chip.toolTip = String(localized: "Other Color…", bundle: .module)
         return chip
     }
@@ -402,7 +410,12 @@ final class StyleCapsule: NSView {
                     self?.change(String(localized: "Size", bundle: .module)) { $0.lineWidth = width }
                 }
                 chip.isSelected = selected
-                chip.setAccessibilityLabel(String(localized: "Size \(index + 1)", bundle: .module))
+                chip.setAccessibilityLabel(String(localized: "\(Int(width)) points", bundle: .module))
+                // A highlight snapped to text is as tall as its letters: the size is for one drawn freely.
+                chip.toolTip = kind == .highlighter
+                    ? String(localized: "\(Int(width)) pt, for strokes drawn freely (hold Command). Over text, a highlight is as tall as the letters.", bundle: .module)
+                    : String(localized: "\(Int(width)) pt", bundle: .module)
+                if kind == .highlighter { chip.setAccessibilityHelp(chip.toolTip) }
                 return chip
             }
         }
@@ -887,6 +900,7 @@ final class StyleCapsule: NSView {
         case .purple: String(localized: "Purple", bundle: .module)
         case .black: String(localized: "Black", bundle: .module)
         case .white: String(localized: "White", bundle: .module)
+        case .marker: String(localized: "Marker Yellow", bundle: .module)
         default: String(localized: "Custom Color", bundle: .module)
         }
     }

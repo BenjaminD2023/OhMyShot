@@ -308,9 +308,15 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         placeCapsule()
     }
 
-    /// Whether a highlight snapped to text is among the selected marks.
+    /// Whether a highlight is among the selected marks: snapped to text, or drawn freely over it, whose capsule would
+    /// cover the next line to highlight just the same.
     private var selectsTextHighlight: Bool {
-        session.selectedItems.contains { if case .textHighlight = $0.shape { true } else { false } }
+        session.selectedItems.contains {
+            switch $0.shape {
+            case .textHighlight, .highlighter: true
+            default: false
+            }
+        }
     }
 
     /// Beside the selection: 10 pt below it, above it without room, inside the view's bottom when it

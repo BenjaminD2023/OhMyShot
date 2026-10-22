@@ -171,6 +171,74 @@
         }
       }
     },
+    "%lld pt" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pt"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldポイント"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 点"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 點"
+          }
+        }
+      }
+    },
+    "%lld pt, for strokes drawn freely (hold Command). Over text, a highlight is as tall as the letters." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pt, para trazos libres (mantén pulsada la tecla Comando). Sobre texto, el resaltado tiene la altura de las letras."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pt, pour les traits libres (maintenez Commande). Sur du texte, le surlignage a la hauteur des lettres."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldポイント、自由に描くストローク用（commandキーを押したまま）。テキストの上では、ハイライトは文字の高さになります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 点，用于自由绘制的笔画（按住 Command）。在文字上，高亮与字母等高。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 點，用於自由繪製的筆畫（按住 Command）。在文字上，螢光標記與字母等高。"
+          }
+        }
+      }
+    },
     "%lld suggestions to redact" : {
       "localizations" : {
         "es" : {
@@ -3583,6 +3651,40 @@
         }
       }
     },
+    "Marker Yellow" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amarillo marcador"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jaune surligneur"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マーカーイエロー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "马克笔黄"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "螢光黃"
+          }
+        }
+      }
+    },
     "Mint" : {
       "localizations" : {
         "es" : {
@@ -6180,6 +6282,7 @@
       }
     },
     "Size %lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -6549,6 +6652,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法讀取此專案中的擷取畫面。"
+          }
+        }
+      }
+    },
+    "The picture couldn’t be copied." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido copiar la imagen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de copier l’image."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像をコピーできませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法拷贝图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法拷貝圖片。"
           }
         }
       }

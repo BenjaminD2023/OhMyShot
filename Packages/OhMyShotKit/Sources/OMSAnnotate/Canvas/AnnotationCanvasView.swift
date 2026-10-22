@@ -32,6 +32,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// reach over it (the in-place selection's edges); nil leaves it to the canvas.
     public var cursorOverride: ((CGPoint) -> NSCursor?)?
     public var onCopy: (() -> Void)?
+    /// Return with nothing of its own to do (no crop or background to finish, no text mark to open): the editor copies
+    /// and closes, as Return copies and finishes in place. Not called in place, where the toolbar has Return.
+    public var onReturn: (() -> Void)?
     public var onSave: (() -> Void)?
     public var onSaveProject: (() -> Void)?
     public var onPrint: (() -> Void)?
@@ -1498,6 +1501,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
             if session.selection.count == 1, let item = session.selectedItems.first, case .text = item.shape {
                 beginEditing(item.id, isNew: false)
+                return true
+            }
+            // A drag under way ends first; typing in a text mark never comes here (its field has the keys).
+            if let onReturn, !isInPlace, !session.isInLiveChange, editing == nil {
+                onReturn()
                 return true
             }
             return false
