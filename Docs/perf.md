@@ -6,6 +6,40 @@ Every milestone ends with a power gate. Numbers here are measured, never estimat
 Targets: idle CPU 0.0% (60 s average), fewer than 1 idle wakeup per second, footprint under 30 MB after
 launch and under 60 MB after use.
 
+## Fork — short Capture Text latency (2026-10-22)
+
+Apple M4, macOS 27.0 (26A428), signed Release app. Three synthetic 720×140 pictures contain a few
+English, Chinese or mixed words. Nine serial calls through the documented Capture Text file URL use
+the shortcut's recognition, optional layout, assembly, clipboard and result-card path. The
+`ocr.recognize` measurement begins after image acquisition; it excludes dragging an area and taking
+the screenshot. Each result's successful copy was checked in the app's count-only logs.
+
+| Measurement | Result |
+| --- | --- |
+| Final installed app, nine reads after preparation: minimum / median / maximum | 515 / 649 / 780 ms |
+| Final installed app, first read after 147 seconds idle | 674 ms |
+| Earlier process-only candidate, first read after 130 seconds idle | 3260 ms |
+| Retained-context installed candidate, first read after 144 seconds idle | 752 ms |
+| Separate native retention probe, different pictures after 130 seconds idle | 273 / 118 ms |
+| Final app's startup preparation | 3229 ms |
+
+Keeping the reader process alone did not prevent a native context from failing after idle. The
+compatibility reader now retains its last successful request and image handler until the next read
+finishes; requests and results themselves are still fresh. Interactive helpers declare activity only
+while processing a job. No idle activity lease or recognition heartbeat runs between captures.
+
+Startup preparation is separate from a small selection's warm latency. A genuinely cold model can
+still take seconds: an earlier installed candidate took 9.57 seconds when its three-second warmup
+was killed and recognition had to reload it. Recovery preparation now gets up to 30 seconds in the
+background, while each selection keeps its existing cancellation and overall deadline. These samples
+establish subsecond results for the tested ready/idle cases, not a guarantee for cold compilation,
+other Macs, unsupported layouts/languages, cloud requests, or formula/table recognition.
+
+Retaining the readers intentionally exceeds the old idle memory target. Their combined resident
+memory was approximately 147 MiB after the idle test, versus approximately 266 MiB just after earlier
+warmups. The compatibility cache additionally holds at most the previous input and native buffers.
+Formula recognition and table/chart VLM jobs retire their process after answering, even on failure.
+
 ## M0 — foundations (2026-10-07)
 
 Debug build (`-Onone`), MacBook Pro M3 Max, macOS 27.2 beta, two displays (3440×1440 at 2× HiDPI as

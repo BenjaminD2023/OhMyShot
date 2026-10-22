@@ -1860,7 +1860,11 @@ analysis uses the remaining budget and leaves recognized text available if it ex
 
 Capture Text prepares its readers once after launch, using a few rendered glyphs, not a screen
 capture. The current recognizer is tested in an isolated signed helper with a three-second deadline;
-a compatibility reader is prepared in parallel. If the current model answers, its worker stays ready
+a compatibility reader is prepared in parallel with up to 30 seconds for cold model preparation.
+Stopping it at three seconds forced the first selection to load that model again on the tested Mac.
+The failed current-model choice is recorded before waiting for recovery preparation, so an early
+selection does not repeat that failed probe. Its own 30-second deadline includes the preparation queue.
+If the current model answers, its worker stays ready
 and the spare compatibility worker stops. Otherwise the failed process is killed and supported short
 selections use the compatible reader. No abandoned startup request occupies the app's recognition slot.
 Translate Area does not prewarm in the app; the standalone warmup API remains idle-only and deduplicates
@@ -1870,10 +1874,20 @@ Short, clearly horizontal selections reuse that signed worker, returning when it
 rather than waiting for native process teardown. The optional formula/table detector uses a second
 worker in parallel, so ordinary text does not reload its layout model on each capture. The two readers
 stay ready across idle periods until app exit, with no polling or repeated warmups. Measured resident
-memory for the compatibility and layout workers together was about 266 MiB; this deliberately trades
+memory for the compatibility and layout workers together was about 266 MiB just after warmups and
+147 MiB after an idle test; this deliberately trades
 memory for fast first selections after idle. A job that loads a formula recognizer or a table/chart VLM
 retires its process after delivering the answer, including when the model fails, so those larger models
 are released. The next layout job starts a fresh process.
+
+The compatibility reader also keeps its previous successful Vision request and image handler alive
+until the next successful read replaces them. Keeping only the process, or only the request, did not
+prevent native-context errors after idle on the tested Mac. Each read still uses a new request and
+handler for its own picture. This retains at most one previous input and its native buffers until the
+next successful read or process exit, including that request's results in memory; it never reuses an
+earlier picture's recognized answers. Interactive helper jobs
+declare user-initiated activity only while they run, and end it on every exit path. No activity lease,
+recognition heartbeat or repeated warmup runs between captures.
 
 The isolated shortcut path is restricted to selections no taller than 1024 pixels and at least as wide
 as tall. A short independent text-layout check must also find every text region clearly horizontal.

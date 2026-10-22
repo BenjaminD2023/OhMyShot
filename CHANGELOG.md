@@ -10,6 +10,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Fixed
 
+- Small Capture Text selections reuse prepared signed text/layout readers and preserve a successful native context across idle periods. Cold recovery preparation can finish instead of restarting at the first selection; cancellation and whole-request deadlines remain enforced. On the tested M4, nine ready reads took 0.51–0.78 seconds and the first after 147 seconds idle took 0.67 seconds; immediate cold startup can still take seconds. ([0b3ebe3](https://github.com/BenjaminD2023/OhMyShot/commit/0b3ebe34560cd2ce8cc9c1caa6d6b8326ad33d97), [54b76f7](https://github.com/BenjaminD2023/OhMyShot/commit/54b76f74957d3d8067a431b5b37a8e5e3fc0501d))
 - Short horizontal Capture Text selections retry a stalled native recognizer in a fresh signed helper using a compatible accurate model for supported languages. Later eligible selections reuse this recovery path, retain line-break and spacing preferences, and stop waiting when cancelled. Removed selection-time warmups that could block useful recognition; failures now show a result card. ([39f2a55](https://github.com/BenjaminD2023/OhMyShot/commit/39f2a55d21b14aa81ec29ed6ad734e93fdfaea57))
 
 ## [0.2.2-fork.3] - 2026-10-22
