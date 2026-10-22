@@ -66,6 +66,7 @@ struct Job: Decodable {
     /// what happens when it is pressed.
     var pressure: String?
     var visionCompatibility: Bool?
+    var reusesProcess: Bool?
     var visionFormulas: [TextReaderTool.FoundFormula]?
     var visionInputLines: Data?
 }
@@ -94,6 +95,7 @@ nonisolated struct Result: Encodable {
     var text: String?
     var lines: [Line]?
     var visionLines: Data?
+    var retire: Bool?
     var latex: String?
     var ending: String?
     var found: Int?
@@ -262,12 +264,12 @@ func send(_ result: Result) {
 for try await line in FileHandle.standardInput.bytes.lines {
     guard let job = try? JSONDecoder().decode(Job.self, from: Data(line.utf8)) else { continue }
     do {
-        if job.visionCompatibility == true {
+        if let compatibility = job.visionCompatibility {
             guard let path = job.path else { throw OCRError.unreadableImage }
             var options = VisionPipeline.Options.preferred()
             options.timeout = .seconds(30)
             options.overallTimeout = .seconds(30)
-            options.prefersCompatibilityRecognition = true
+            options.prefersCompatibilityRecognition = compatibility
             let recovery = VisionPipeline(options: options)
             let lines: [OCRLine]
             if let formulas = job.visionFormulas, !formulas.isEmpty {
@@ -335,12 +337,17 @@ for try await line in FileHandle.standardInput.bytes.lines {
             ) { formulas, tables in
                 sendNow(Result(id: id, found: formulas + tables, foundTables: tables))
             }
+            // Interactive workers retain the layout detector, but a real formula/table can load
+            // hundreds of megabytes or a multi-gigabyte VLM. Retire that worker after its answer.
+            let retire = job.reusesProcess == true && (!formulaReaders.isEmpty || !vlmReaders.isEmpty)
             send(Result(
                 id: job.id,
+                retire: retire ? true : nil,
                 formulas: (found?.formulas ?? []).map { Formula(kind: $0.kind.rawValue, box: $0.box, latex: $0.latex) },
                 tables: (found?.tables ?? []).map { Table(kind: $0.kind.rawValue, box: $0.box, rows: $0.rows, whole: $0.isWhole) },
                 tablesLeft: found.map { $0.left > 0 ? $0.left : nil } ?? nil
             ))
+            if retire { break }
             continue
         }
         var result = try await reading(with: job.pack).recognize(fileAt: file)
@@ -357,6 +364,8 @@ for try await line in FileHandle.standardInput.bytes.lines {
         let text = job.joinsWrappedLines.map { TextAssembler.assemble(result.lines, options: .init(joinsWrappedLines: $0)) } ?? result.text
         send(Result(id: job.id, text: text))
     } catch {
-        send(Result(id: job.id, error: String(describing: error)))
+        let retire = job.reusesProcess == true && (!formulaReaders.isEmpty || !vlmReaders.isEmpty)
+        send(Result(id: job.id, retire: retire ? true : nil, error: String(describing: error)))
+        if retire { break }
     }
 }

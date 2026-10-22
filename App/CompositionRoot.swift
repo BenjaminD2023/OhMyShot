@@ -628,6 +628,7 @@ final class CompositionRoot {
         // After the permission is known: without it the cover draws the wallpaper's file, never asking for the screen.
         if settings.hidesDesktopIcons { desktopIcons.setShown(true) }
         if permissions.status(of: .screenRecording) == .granted {
+            textCapture.prepareCaptureText()
             // Built and fetched once now so the first capture does not pay for them. The panels come
             // first: the app is listed in the shareable content only once it has windows.
             overlay.prepare()
@@ -648,6 +649,7 @@ final class CompositionRoot {
     func prepareForTermination() {
         annotations.keepAll()
         textReader.stop()
+        textCapture.stop()
     }
 
     /// Stops a recording and keeps it before the app quits, and the replay's buffers once the clips being

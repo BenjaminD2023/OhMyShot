@@ -1858,33 +1858,53 @@ app's 30-second request deadline also bounds the whole image, including language
 other pipeline callers have a configurable 60-second whole-image budget. Optional panel table/code
 analysis uses the remaining budget and leaves recognized text available if it expires.
 
-Capture Text and Translate Area no longer prewarm on selection. An abandoned native warmup can retain
-its slot after cancellation and block useful recognition. The standalone warmup API remains idle-only
-and deduplicates completed languages.
+Capture Text prepares its readers once after launch, using a few rendered glyphs, not a screen
+capture. The current recognizer is tested in an isolated signed helper with a three-second deadline;
+a compatibility reader is prepared in parallel. If the current model answers, its worker stays ready
+and the spare compatibility worker stops. Otherwise the failed process is killed and supported short
+selections use the compatible reader. No abandoned startup request occupies the app's recognition slot.
+Translate Area does not prewarm in the app; the standalone warmup API remains idle-only and deduplicates
+completed languages.
 
-For horizontal selections no taller than 1024 pixels, Capture Text gives the usual pipeline three
-seconds to answer, then cancels that caller and retries in a fresh signed text-reader process. A short independent text-layout check must also find horizontal lines; ambiguous, vertical, larger
-and portrait selections retain the current recognizer’s full budget: the older model loses vertical
-text and too much detail on tall images. This is necessary on Macs where Apple's current recognizer fails
-during model initialization: another request in the same process can block even after cancellation.
-The isolated pipeline explicitly uses Vision's revision 2 accurate recognizer only when it supports
+Short, clearly horizontal selections reuse that signed worker, returning when its answer arrives
+rather than waiting for native process teardown. The optional formula/table detector uses a second
+worker in parallel, so ordinary text does not reload its layout model on each capture. The two readers
+stay ready across idle periods until app exit, with no polling or repeated warmups. Measured resident
+memory for the compatibility and layout workers together was about 266 MiB; this deliberately trades
+memory for fast first selections after idle. A job that loads a formula recognizer or a table/chart VLM
+retires its process after delivering the answer, including when the model fails, so those larger models
+are released. The next layout job starts a fresh process.
+
+The isolated shortcut path is restricted to selections no taller than 1024 pixels and at least as wide
+as tall. A short independent text-layout check must also find every text region clearly horizontal.
+Ambiguous, vertical, larger and portrait selections retain the app's current recognizer and full budget:
+the older model loses vertical text and too much detail on tall images. Isolation is necessary on Macs
+where Apple's current recognizer fails during model initialization; another request in the same process
+can block even after cancellation. If a later current-model job stops answering, its worker is discarded
+and the session keeps using recovery for eligible selections. Error responses also discard their worker:
+a native context that fails after idle is retried once in a fresh process within the original deadline.
+
+The recovery pipeline explicitly uses Vision's revision 2 accurate recognizer only when it supports
 every requested language; automatic/unspecified language detection and unsupported languages keep the
 current recognizer. The recovery model supports Chinese and several Western languages; Japanese and
 Korean are not silently removed from a request. English-only refinement uses the bilingual Chinese/English
 model because the separate Latin model can hit the same initialization failure. Its accuracy can differ
-from the current model, especially on code; it is a recovery for a failed reading, not the default model.
+from the current model, especially on code; healthy systems keep the current model.
 
-A successful recovery makes later Capture Text selections use a fresh helper directly until the app
-relaunches. This is not a saved preference. Image bands, glyph-based spacing and icon cleanup, reading
-order, code formatting and the existing line-break choice still pass through the same pipeline. Full
-line geometry and formatting metadata cross the process boundary; optional formula repair also stays
-in a helper after recovery and consumes the remaining local 30-second budget. Stuck helpers are
-terminated, then killed if needed. A failure shows a result card even when copied-text cards are off.
-The optional cloud-model wait remains separate and follows its existing setting.
+The backend choice is process state, not a saved preference. Image bands, glyph-based spacing and icon
+cleanup, reading order, code formatting and the existing line-break choice still use the same pipeline.
+Full line geometry and formatting metadata cross the process boundary. Optional formula repair uses the
+same isolated backend as that selection, preserving exact app text and the remaining local 30-second
+budget. Stuck helpers are terminated, then killed if needed. A failure shows a result card even when
+copied-text cards are off. The optional cloud-model wait remains separate and follows its existing setting.
 
-Starting another Capture Text cancels the old reading and its helper; a late answer cannot replace the
-new selection's highlight or clipboard result. Native work still running in the app keeps its original
-slot until it actually finishes. Phase timing logs contain counts and durations, never recognized text.
+Starting another Capture Text cancels the old reading and its active helper job; a late answer cannot
+replace the new selection's highlight or clipboard result. Every queued job has its own deadline, and
+cancelling a queued job leaves the active one alone. Native work still running in the app keeps its
+original slot until it actually finishes. Phase timing logs contain counts and durations, never
+recognized text. Captures made immediately during app startup can still wait for the bounded readiness
+check; the sub-second target applies once readers are ready and to ordinary small selections, not model
+compilation, cloud requests or actual formula/table recognition.
 
 The recovery path can be measured with `ocr-bench --engine l1-compatible`; this probe uses Chinese and
 English rather than silently asking the older model for unsupported fallback languages.

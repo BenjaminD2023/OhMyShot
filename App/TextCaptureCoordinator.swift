@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import Foundation
 import OMSCapture
 import OMSCore
@@ -34,9 +35,19 @@ final class TextCaptureCoordinator {
     private let lens = TranslationLens()
     private let hud = TextResultHUD()
     private var captureReading: Task<Void, Never>?
-    /// Keep later hotkey readings out of a native Vision instance that has stopped answering.
+    /// Keep the compatibility choice after the current isolated recognizer stops answering.
     /// This is process state, not a saved preference; a relaunch tries the current recognizer again.
-    private var usesIsolatedTextReader = false
+    private var usesCompatibilityTextReader = false
+    /// Keep models resident across idle periods. A separate worker keeps optional layout work out
+    /// of the text reader's queue; neither runs or polls while idle.
+    private let primaryTextReader = Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader")
+        .map { TextReaderWorker(helper: $0, idleTimeout: nil) }
+    private let recoveryTextReader = Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader")
+        .map { TextReaderWorker(helper: $0, idleTimeout: nil) }
+    private let elementTextReader = Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader")
+        .map { TextReaderWorker(helper: $0, idleTimeout: nil) }
+    private var readerPreparation: Task<Bool, Never>?
+    private var elementPreparation: Task<Void, Never>?
     private var panel: TextRecognitionWindowController?
     /// The last recognition, so the card can switch between kept and joined line breaks.
     private var last: Recognition?
@@ -89,6 +100,64 @@ final class TextCaptureCoordinator {
         hud.onCopy = { [weak self] in self?.copyUncopied() }
     }
 
+    /// Test model readiness before a shortcut selection. A failed startup request is killed with its
+    /// process, so it cannot hold the app's native recognition slot or block the OCR panel.
+    func prepareCaptureText() {
+        guard readerPreparation == nil, let primaryTextReader, let recoveryTextReader else { return }
+        readerPreparation = Task {
+            let probe = LatencyProbe("ocr.prepare")
+            defer { probe.end() }
+            guard let image = Self.preparationImage(), let file = Self.formulaPicture(image) else { return false }
+            defer { try? FileManager.default.removeItem(at: file) }
+            let recovery = Task { try? await recoveryTextReader.visionLines(ofPictureAt: file, timeout: .seconds(3)) }
+            defer { recovery.cancel() }
+            let current = try? await primaryTextReader.visionLines(ofPictureAt: file, compatibility: false, timeout: .seconds(3))
+            guard !Task.isCancelled else { return false }
+            if current != nil {
+                recovery.cancel()
+                _ = await recovery.value
+                await recoveryTextReader.stop()
+                return false
+            }
+            _ = await recovery.value
+            return true
+        }
+        if let reader = elementReader?(), let elementTextReader {
+            elementPreparation = Task {
+                guard let image = Self.preparationImage(), let file = Self.formulaPicture(image) else { return }
+                defer { try? FileManager.default.removeItem(at: file) }
+                _ = try? await elementTextReader.elements(
+                    ofPictureAt: file, formulas: reader.formulas, vlm: reader.vlm, seconds: Self.tableWait, timeout: .seconds(2)
+                )
+            }
+        }
+    }
+
+    func stop() {
+        captureReading?.cancel()
+        waitingForCloud?.cancel()
+        readerPreparation?.cancel()
+        elementPreparation?.cancel()
+        let workers = [primaryTextReader, recoveryTextReader, elementTextReader].compactMap { $0 }
+        Task { for worker in workers { await worker.stop() } }
+    }
+
+    /// A few real glyphs reach the recognizer, unlike a blank warmup. Nothing on screen is captured.
+    private static func preparationImage() -> CGImage? {
+        guard let context = CGContext(data: nil, width: 320, height: 80, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
+        context.setFillColor(gray: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: 320, height: 80))
+        let font = CTFontCreateUIFontForLanguage(.system, 28, "zh-Hans" as CFString) ?? CTFontCreateWithName("Helvetica" as CFString, 28, nil)
+        let text = NSAttributedString(string: "文字 Text", attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1),
+        ])
+        context.textPosition = CGPoint(x: 16, y: 24)
+        CTLineDraw(CTLineCreateWithAttributedString(text), context)
+        return context.makeImage()
+    }
+
     /// Where Quick Access's cards stand, for the result card to keep clear of in the bottom-left corner.
     var cardsInTheWay: () -> CGRect? {
         get { hud.cardsInTheWay }
@@ -110,8 +179,7 @@ final class TextCaptureCoordinator {
         captureReading?.cancel()
         waitingForCloud?.cancel()
         highlight.hide()
-        // Read useful pixels first: an abandoned warmup can keep Vision's native slot occupied
-        // even after cancellation, leaving this selection waiting behind it.
+        prepareCaptureText()
         overlay.freezesScreen = settings.freezeScreen
         overlay.begin(mode: .area, purpose: .text) { [weak self] outcome in
             // The highlight appears in the same turn the overlay closes, so no frame goes by without
@@ -266,17 +334,21 @@ final class TextCaptureCoordinator {
         let vlm = reader?.vlm.flatMap { isTerminal(place) ? nil : $0 }
         if reader?.vlm != nil, vlm == nil { Log.capture.notice("Capture Text leaves the tables to Vision: the picture is of a terminal") }
         let formulas = reader.map { reader in
-            Task { await Self.elements(in: image, formulas: reader.formulas, vlm: vlm, seconds: Self.tableWait, helper: reader.helper) }
+            let worker = elementTextReader
+            return Task { await Self.elements(in: image, formulas: reader.formulas, vlm: vlm, seconds: Self.tableWait, helper: reader.helper, worker: worker) }
         }
         defer {
             cloudReading?.cancel()
             formulas?.cancel()
         }
         let visionLines: [OCRLine]?
+        var visionReader: (worker: TextReaderWorker, compatibility: Bool)?
         var visionFailure: String?
         let vision = LatencyProbe("ocr.vision")
         do {
-            visionLines = try await captureTextLines(in: image, deadline: localDeadline)
+            let result = try await captureTextLines(in: image, deadline: localDeadline)
+            visionLines = result.lines
+            visionReader = result.reader
         } catch {
             Log.capture.error("Capture Text failed to recognize: \(String(describing: error), privacy: .public)")
             if error as? OCRError == .timedOut || error as? TextReaderTool.Failure == .timedOut {
@@ -359,9 +431,9 @@ final class TextCaptureCoordinator {
             if !found.formulas.isEmpty {
                 let remaining = ContinuousClock.now.duration(to: localDeadline)
                 if remaining > .zero {
-                    if usesIsolatedTextReader, let helper = Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader") {
+                    if let visionReader {
                         // Formula repair must also stay outside the failed native instance.
-                        if let repaired = try? await Self.isolatedTextLines(in: image, helper: helper, timeout: remaining, formulas: found.formulas, inputLines: lines) {
+                        if let repaired = try? await Self.isolatedTextLines(in: image, worker: visionReader.worker, compatibility: visionReader.compatibility, timeout: remaining, formulas: found.formulas, inputLines: lines) {
                             lines = repaired
                         }
                     } else {
@@ -412,15 +484,14 @@ final class TextCaptureCoordinator {
         done?(text)
     }
 
-    /// The usual pipeline gets a short head start. If it stalls or fails, a fresh signed helper reads
-    /// with the compatible accurate model where its languages are supported. A second request in this
-    /// process is insufficient: the failed native recognizer can block it even after cancellation.
-    private func captureTextLines(in image: CGImage, deadline: ContinuousClock.Instant) async throws -> [OCRLine] {
+    /// Short selections reuse isolated models, answering as soon as the reader writes its result.
+    /// Waiting for process exit adds seconds while Apple's native resources finish shutting down.
+    private func captureTextLines(in image: CGImage, deadline: ContinuousClock.Instant) async throws -> (lines: [OCRLine], reader: (worker: TextReaderWorker, compatibility: Bool)?) {
         // Revision 2 loses vertical text and too much detail on large selections. Keep the current
         // recognizer's full budget there; recovery is for the short horizontal selections it reads well.
         guard image.height <= 1024, image.width >= image.height,
-              let helper = Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader") else {
-            return try await pipeline.recognize(image).lines
+              let primaryTextReader, let recoveryTextReader else {
+            return (try await pipeline.recognize(image).lines, nil)
         }
         let layout = Task { try await Self.allowsTextRecovery(in: image) }
         defer { layout.cancel() }
@@ -428,22 +499,31 @@ final class TextCaptureCoordinator {
         // Unknown layout keeps the current recognizer, including its remaining full-image budget.
         let orientation = await Self.first(layout, within: .milliseconds(250))
         try Task.checkCancellation()
-        guard case .success(true)? = orientation else { return try await pipeline.recognize(image).lines }
-        if !usesIsolatedTextReader {
-            let pipeline = pipeline
-            let reading = Task { try await pipeline.recognize(image).lines }
-            defer { reading.cancel() }
-            let outcome = await Self.first(reading, within: .seconds(3))
-            try Task.checkCancellation()
-            if case .success(let lines)? = outcome { return lines }
+        guard case .success(true)? = orientation else { return (try await pipeline.recognize(image).lines, nil) }
+        prepareCaptureText()
+        if let readerPreparation,
+           case .success(let recovery)? = await Self.first(readerPreparation, within: .seconds(4)) {
+            usesCompatibilityTextReader = usesCompatibilityTextReader || recovery
+        }
+        try Task.checkCancellation()
+        if !usesCompatibilityTextReader {
+            let remaining = min(.seconds(3), ContinuousClock.now.duration(to: deadline))
+            guard remaining > .zero else { throw OCRError.timedOut }
+            do {
+                let lines = try await Self.isolatedTextLines(in: image, worker: primaryTextReader, compatibility: false, timeout: remaining)
+                return (lines, (primaryTextReader, false))
+            } catch {
+                try Task.checkCancellation()
+            }
+            usesCompatibilityTextReader = true
             Log.capture.notice("Capture Text is retrying in an isolated text reader: Vision did not answer promptly")
         }
         let remaining = ContinuousClock.now.duration(to: deadline)
         guard remaining > .zero else { throw OCRError.timedOut }
-        let lines = try await Self.isolatedTextLines(in: image, helper: helper, timeout: remaining)
+        let lines = try await Self.isolatedTextLines(in: image, worker: recoveryTextReader, timeout: remaining)
         try Task.checkCancellation()
-        usesIsolatedTextReader = true
-        return lines
+        usesCompatibilityTextReader = true
+        return (lines, (recoveryTextReader, true))
     }
 
     @concurrent
@@ -456,7 +536,7 @@ final class TextCaptureCoordinator {
 
     @concurrent
     private nonisolated static func isolatedTextLines(
-        in image: CGImage, helper: URL, timeout: Duration, formulas: [FormulaMerge.Formula]? = nil, inputLines: [OCRLine]? = nil
+        in image: CGImage, worker: TextReaderWorker, compatibility: Bool = true, timeout: Duration, formulas: [FormulaMerge.Formula]? = nil, inputLines: [OCRLine]? = nil
     ) async throws -> [OCRLine] {
         let deadline = ContinuousClock.now + timeout
         try Task.checkCancellation()
@@ -466,7 +546,18 @@ final class TextCaptureCoordinator {
         guard remaining > .zero else { throw OCRError.timedOut }
         let found = formulas.map { $0.map { TextReaderTool.FoundFormula(kind: $0.kind == .display ? "display" : "inline", box: $0.box, latex: $0.latex) } }
         let base = try inputLines.map { try JSONEncoder().encode($0) }
-        let data = try await TextReaderTool.visionLines(ofPictureAt: file, helper: helper, formulas: found, inputLines: base, timeout: remaining)
+        let data: Data
+        do {
+            data = try await worker.visionLines(ofPictureAt: file, compatibility: compatibility, formulas: found, inputLines: base, timeout: remaining)
+        } catch TextReaderTool.Failure.unreadable {
+            // Apple's cached native context can become invalid after idle. The worker discards an
+            // erroring process; retry this picture once with a fresh context, within the same budget.
+            try Task.checkCancellation()
+            let remaining = ContinuousClock.now.duration(to: deadline)
+            guard remaining > .zero else { throw OCRError.timedOut }
+            Log.capture.notice("Capture Text is replacing a failed native text reader")
+            data = try await worker.visionLines(ofPictureAt: file, compatibility: compatibility, formulas: found, inputLines: base, timeout: remaining)
+        }
         return try JSONDecoder().decode([OCRLine].self, from: data)
     }
 
@@ -499,7 +590,7 @@ final class TextCaptureCoordinator {
     }
 
     /// The task's outcome, or nil when it takes longer than `limit` (the task goes on; the caller may cancel it).
-    nonisolated static func first<Value: Sendable>(_ task: Task<Value, any Error>, within limit: Duration) async -> Result<Value, any Error>? {
+    nonisolated static func first<Value: Sendable, Failure: Error>(_ task: Task<Value, Failure>, within limit: Duration) async -> Result<Value, any Error>? {
         let (outcomes, outcome) = AsyncStream.makeStream(of: Result<Value, any Error>?.self)
         let waiting = Task {
             do {
@@ -688,7 +779,7 @@ final class TextCaptureCoordinator {
     @concurrent
     nonisolated static func elements(
         in image: CGImage, formulas: URL?, vlm: URL?, seconds: Double, helper: URL,
-        found: (@Sendable (TextRecognitionWindowController.Elements.Counts) -> Void)? = nil
+        found: (@Sendable (TextRecognitionWindowController.Elements.Counts) -> Void)? = nil, worker: TextReaderWorker? = nil
     ) async -> TextRecognitionWindowController.Elements.Found {
         guard formulas != nil || vlm != nil, LayoutFinder.finds(width: image.width, height: image.height), let file = formulaPicture(image) else { return .init() }
         defer { try? FileManager.default.removeItem(at: file) }
@@ -701,10 +792,16 @@ final class TextCaptureCoordinator {
         pressure = UserDefaults.standard.string(forKey: "debugMemoryPressure").flatMap(MemoryPressure.init(name:))
         #endif
         do {
-            let read = try await TextReaderTool.elements(
-                ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, helper: helper, found: counted,
-                timeout: .milliseconds(Int64(seconds * 1000))
-            )
+            let read: (formulas: [TextReaderTool.FoundFormula], tables: [TextReaderTool.FoundTable], tablesLeft: Int)
+            if let worker {
+                read = try await worker.elements(ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, found: counted,
+                                                 timeout: .milliseconds(Int64(seconds * 1000)))
+            } else {
+                read = try await TextReaderTool.elements(
+                    ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, helper: helper, found: counted,
+                    timeout: .milliseconds(Int64(seconds * 1000))
+                )
+            }
             if read.tablesLeft > 0 {
                 Log.capture.notice("Left \(read.tablesLeft, privacy: .public) tables and charts as Vision read them: the system is short of memory for the VLM pack")
             }
