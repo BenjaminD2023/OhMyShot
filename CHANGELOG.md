@@ -8,13 +8,16 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.2.2-fork.3] - 2026-10-22
+
 ### Added
 
-- Settings › About includes Check for Updates…, using the same signed fork updater as General settings and the app menu.
+- Settings › About includes Check for Updates…, using the same signed fork updater as General settings and the app menu. ([01aae9c]; by [@BenjaminD2023])
 
 ### Fixed
 
-- Scrolling Capture uses the normal screenshot’s centered area picker, saved size and magnification, and cursor/first-press behavior while the screen stays live.
+- Scrolling Capture uses the normal screenshot’s centered area picker, saved size and magnification, and cursor/first-press behavior while the screen stays live. ([8ee6b09]; by [@BenjaminD2023])
+- Capture Text avoids duplicate model warmups and cancels obsolete shortcut readings. Whole-image recognition and model-helper deadlines keep stalled native work from leaving the caller waiting indefinitely. Saved line-break, wrapping and result-card preferences are preserved. ([125a334]; by [@BenjaminD2023])
 
 ## [0.2.1-fork.2] - 2026-10-21
 
@@ -92,7 +95,12 @@ Each entry links its implementation commits or merged pull request and credits v
 - Recording warns when a microphone stops delivering audio instead of leaving a disconnected microphone silently recording. ([450f4a6]; by [@fzlzjerry])
 - Closing History and editors releases more memory, clipboard TIFFs use compression, and GIF frame buffers return their memory when freed. ([cff3ddb], [0182817], [6d3b0af]; by [@fzlzjerry])
 
-[Unreleased]: https://github.com/BenjaminD2023/OhMyShot/compare/v0.2.0-fork.1...main
+[Unreleased]: https://github.com/BenjaminD2023/OhMyShot/compare/v0.2.2-fork.3...main
+[0.2.2-fork.3]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.2.2-fork.3
+[0.2.1-fork.2]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.2.1-fork.2
+[125a334]: https://github.com/BenjaminD2023/OhMyShot/commit/125a33471bf12769504876167288d165320a895b
+[01aae9c]: https://github.com/BenjaminD2023/OhMyShot/commit/01aae9cdf548ee43fae76ba41542cba444600423
+[8ee6b09]: https://github.com/BenjaminD2023/OhMyShot/commit/8ee6b09733cf337bb0765f8747ff04318bb1f577
 [0.2.0-fork.1]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.2.0-fork.1
 [8c038d1]: https://github.com/BenjaminD2023/OhMyShot/commit/8c038d1f61a7cafb8057b0da04cf70501bbe1748
 [1897ae9]: https://github.com/BenjaminD2023/OhMyShot/commit/1897ae9
