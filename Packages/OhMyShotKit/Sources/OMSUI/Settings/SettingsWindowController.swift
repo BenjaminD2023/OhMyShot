@@ -198,6 +198,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         content.sceneBridgingOptions = [.toolbars, .title]
 
         let window = NSWindow(contentViewController: content)
+        // SwiftUI hands the window a title only when it changes, so the pane the window opens on would leave it
+        // "Untitled".
+        window.title = navigator.tab.title
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
