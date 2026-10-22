@@ -795,6 +795,8 @@ final class QuickAccessPanel: NSPanel {
         isMovable = false
         isReleasedWhenClosed = false
         animationBehavior = .none
+        // The buttons' names show while the app in front is another's, as it nearly always is.
+        allowsToolTipsWhenApplicationIsInactive = true
     }
 
     @available(*, unavailable)

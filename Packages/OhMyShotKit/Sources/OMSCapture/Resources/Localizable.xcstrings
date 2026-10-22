@@ -1469,6 +1469,40 @@
         }
       }
     },
+    "Click Cancel again to throw this picture away." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a hacer clic en Cancelar para descartar esta imagen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez de nouveau sur Annuler pour jeter cette image."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度「キャンセル」をクリックすると、この画像を破棄します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再点一次“取消”即丢弃这张图。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再按一次「取消」即可丟棄這張圖。"
+          }
+        }
+      }
+    },
     "Click a window to capture it (Space)" : {
       "localizations" : {
         "es" : {
@@ -1499,6 +1533,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按一下視窗以擷取（空白鍵）"
+          }
+        }
+      }
+    },
+    "Click again to throw the picture away" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a hacer clic para descartar la imagen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez de nouveau pour jeter l’image"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度クリックすると画像を破棄します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再点一次即丢弃这张图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再按一次即可丟棄這張圖"
           }
         }
       }
@@ -2757,6 +2825,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "麥克風"
+          }
+        }
+      }
+    },
+    "Microphone access is off, so the recording would have no microphone sound. Turn on OhMyShot in System Settings › Privacy & Security › Microphone." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El acceso al micrófono está desactivado, así que la grabación no tendría sonido del micrófono. Activa OhMyShot en Ajustes del Sistema › Privacidad y seguridad › Micrófono."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’accès au micro est désactivé : l’enregistrement n’aurait pas le son du micro. Activez OhMyShot dans Réglages Système › Confidentialité et sécurité › Micro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクへのアクセスがオフのため、収録にマイクの音が入りません。「システム設定」›「プライバシーとセキュリティ」›「マイク」でOhMyShotをオンにしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风访问权限已关闭，录制将没有麦克风声音。请在“系统设置 › 隐私与安全性 › 麦克风”中打开 OhMyShot。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麥克風取用權限已關閉，錄影將沒有麥克風聲音。請在「系統設定」›「隱私權與安全性」›「麥克風」中開啟 OhMyShot。"
           }
         }
       }

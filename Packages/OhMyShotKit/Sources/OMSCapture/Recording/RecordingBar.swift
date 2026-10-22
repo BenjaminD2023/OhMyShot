@@ -152,9 +152,10 @@ final class RecordingBar: NSView {
         let keysApply = !recordsWindow || studio
         let cameraApplies = !recordsWindow
         states = [
-            .systemAudio: choices.recordsSystemAudio, .microphone: choices.recordsMicrophone, .clicks: choices.showsClicks,
+            .systemAudio: choices.recordsSystemAudio, .clicks: choices.showsClicks,
             .keystrokes: choices.showsKeystrokes && keysApply && keysAllowed,
             .camera: choices.camera && cameraApplies && cameraAllowed(choices),
+            .microphone: choices.recordsMicrophone && microphoneAllowed(choices),
         ]
         for (toggle, button) in toggles {
             let on = states[toggle] ?? false
@@ -166,6 +167,7 @@ final class RecordingBar: NSView {
             }
             // Without access, the chip steps back but can still be pressed: it asks, or says where to turn it on.
             let blocked = (toggle == .keystrokes && !keysAllowed) || (toggle == .camera && !cameraAllowed(choices))
+                || (toggle == .microphone && !microphoneAllowed(choices))
             button.isEnabled = enabled
             button.state = on ? .on : .off
             button.contentTintColor = on ? .controlAccentColor : enabled && !blocked ? .labelColor : .tertiaryLabelColor
@@ -176,6 +178,7 @@ final class RecordingBar: NSView {
                 : String(localized: "GIFs have no sound", bundle: .module)
                 : blocked
                 ? toggle == .keystrokes ? String(localized: "Input Monitoring is off. Turn on OhMyShot in System Settings › Privacy & Security › Input Monitoring.", bundle: .module)
+                : toggle == .microphone ? String(localized: "Microphone access is off, so the recording would have no microphone sound. Turn on OhMyShot in System Settings › Privacy & Security › Microphone.", bundle: .module)
                 : String(localized: "Camera access is off. Turn on OhMyShot in System Settings › Privacy & Security › Camera.", bundle: .module)
                 : help(for: toggle)
             button.setAccessibilityValue(on ? String(localized: "On", bundle: .module) : String(localized: "Off", bundle: .module))
@@ -349,6 +352,14 @@ final class RecordingBar: NSView {
     /// Whether Input Monitoring lets the keys be seen; asking for it says nothing about the screen.
     private var keysAllowed: Bool {
         CGPreflightListenEventAccess()
+    }
+
+    /// Whether the microphone chosen can be recorded: access not refused. Asked for when recording starts the first
+    /// time (`RecordingCoordinator`), so not yet asked counts as allowed.
+    private func microphoneAllowed(_ choices: RecordingChoices) -> Bool {
+        guard choices.recordsMicrophone else { return true }
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        return status == .authorized || status == .notDetermined
     }
 
     /// Whether the camera may be shown: checked only once the camera is chosen, since asking starts the

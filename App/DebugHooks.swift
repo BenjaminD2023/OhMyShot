@@ -957,7 +957,8 @@ struct DebugHooks {
             Task { await DebugScrollingDemo.runFlow(options, coordinator: scrolling, display: display, dark: dark, render: render) }
         case "scroll-panel-render":
             // The scrolling capture's panel on its own, behind the desktop picture, with a made-up picture and
-            // progress, captured into scroll-panel.png (mode=dark, hint=back|full|auto|access|stopped, axis=horizontal).
+            // progress, captured into scroll-panel.png (mode=dark, hint=back|full|auto|access|stopped|cancel, axis=horizontal;
+            // cancel presses Cancel once, after the picture).
             let panel = ScrollingPanel()
             let horizontal = Self.parameter("axis", in: url) == "horizontal"
             panel.debugWindow.appearance = NSAppearance(named: Self.parameter("mode", in: url) == "dark" ? .darkAqua : .aqua)
@@ -989,6 +990,7 @@ struct DebugHooks {
                 step: .scrolled(offset: 40), axis: horizontal ? .horizontal : .vertical, pictureWidth: horizontal ? 9600 : 1280,
                 pictureHeight: horizontal ? 960 : 8548, lostInARow: hint == .scrollBack ? 3 : 0, isFull: hint == .full, preview: context?.makeImage(), views: 40
             ))
+            if Self.parameter("hint", in: url) == "cancel" { panel.debugPressCancel() }
             Task {
                 await captureHiddenWindow(panel.debugWindow, name: "scroll-panel")
                 panel.close()
@@ -1098,16 +1100,20 @@ struct DebugHooks {
         case "record-bar-render":
             // The control bar alone behind the desktop picture, captured without showing anything:
             // elapsed= (seconds), paused=1, mode=light|dark, mic=<percent> for the microphone's meter, stalled=1
-            // for the microphone that stopped sending sound. Writes record-bar-<mode>[-paused][-stalled].png.
+            // for the microphone that stopped sending sound, denied=1 for one left out without access, ask=1 for Delete
+            // pressed once. Writes record-bar-<mode>[-paused][-stalled][-denied][-ask].png.
             let paused = Self.intParameter("paused", in: url) == 1
             let stalled = Self.intParameter("stalled", in: url) == 1
+            let denied = Self.intParameter("denied", in: url) == 1
+            let asks = Self.intParameter("ask", in: url) == 1
             let dark = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "mode" }?.value == "dark"
             let window = RecordingControlBar.debugHiddenWindow(
                 elapsed: .seconds(Self.intParameter("elapsed", in: url) ?? 42), paused: paused, dark: dark,
-                microphoneLevel: Self.intParameter("mic", in: url).map { Double($0) / 100 }, microphoneStalled: stalled
+                microphoneLevel: Self.intParameter("mic", in: url).map { Double($0) / 100 }, microphoneStalled: stalled,
+                microphoneDenied: denied, asksDelete: asks
             )
             Task {
-                await captureHiddenWindow(window, name: "record-bar-\(dark ? "dark" : "light")\(paused ? "-paused" : "")\(stalled ? "-stalled" : "")")
+                await captureHiddenWindow(window, name: "record-bar-\(dark ? "dark" : "light")\(paused ? "-paused" : "")\(stalled ? "-stalled" : "")\(denied ? "-denied" : "")\(asks ? "-ask" : "")")
                 window.orderOut(nil)
             }
         case "pin-render":

@@ -653,6 +653,40 @@
         }
       }
     },
+    "Auto-scroll needs Accessibility. The area is kept for the next Scrolling Capture." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El desplazamiento automático necesita Accesibilidad. El área se guarda para la próxima captura con desplazamiento."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le défilement automatique a besoin de l’Accessibilité. La zone est gardée pour la prochaine capture défilante."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動スクロールにはアクセシビリティが必要です。この範囲は次のスクロールキャプチャで使われます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动滚动需要辅助功能权限。下次滚动截图时会沿用这个区域。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動捲動需要輔助使用權限。下次捲動擷取時會沿用這個區域。"
+          }
+        }
+      }
+    },
     "Auto-scroll needs Accessibility. Turn it on in System Settings › Privacy & Security, then start the scrolling capture again." : {
       "localizations" : {
         "es" : {

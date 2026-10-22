@@ -5540,6 +5540,74 @@
         }
       }
     },
+    "Click Delete again to throw this recording away" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a hacer clic en Eliminar para descartar esta grabación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez de nouveau sur Supprimer pour jeter cet enregistrement"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度「削除」をクリックすると、この収録を破棄します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再点一次“删除”即丢弃这段录制"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再按一次「刪除」即可丟棄這段錄影"
+          }
+        }
+      }
+    },
+    "Click Restart again to throw this recording away and start over" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a hacer clic en Reiniciar para descartar esta grabación y empezar de nuevo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez de nouveau sur Recommencer pour jeter cet enregistrement et repartir de zéro"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度「やり直す」をクリックすると、この収録を破棄して最初から収録します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再点一次“重新开始”即丢弃这段录制并重录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再按一次「重新開始」即可丟棄這段錄影並重錄"
+          }
+        }
+      }
+    },
     "Clicks" : {
       "localizations" : {
         "es" : {
@@ -7813,6 +7881,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從儲存空間刪除…"
+          }
+        }
+      }
+    },
+    "Delete?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Eliminar?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除？"
           }
         }
       }
@@ -12903,6 +13005,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "麥克風"
+          }
+        }
+      }
+    },
+    "Microphone access is off, so this recording has no microphone sound. Turn on OhMyShot in System Settings › Privacy & Security › Microphone." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El acceso al micrófono está desactivado, así que esta grabación no tiene sonido del micrófono. Activa OhMyShot en Ajustes del Sistema › Privacidad y seguridad › Micrófono."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’accès au micro est désactivé : cet enregistrement n’a pas le son du micro. Activez OhMyShot dans Réglages Système › Confidentialité et sécurité › Micro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクへのアクセスがオフのため、この収録にはマイクの音が入りません。「システム設定」›「プライバシーとセキュリティ」›「マイク」でOhMyShotをオンにしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风访问权限已关闭，因此这段录制没有麦克风声音。请在“系统设置 › 隐私与安全性 › 麦克风”中打开 OhMyShot。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麥克風取用權限已關閉，因此這段錄影沒有麥克風聲音。請在「系統設定」›「隱私權與安全性」›「麥克風」中開啟 OhMyShot。"
           }
         }
       }
@@ -18166,6 +18302,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新開始錄製"
+          }
+        }
+      }
+    },
+    "Restart?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Reiniciar?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommencer ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "やり直す？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重录？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重錄？"
           }
         }
       }
