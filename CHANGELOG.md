@@ -65,7 +65,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Studio shows the chosen zoom's controls first in the inspector, says how to choose a stretch to cut, and dims Add Zoom where it has no room. ([97f9d2c]; by [@fzlzjerry])
 - Simplified Chinese tells the Capture pane from Screenshots and counts captures as items. ([77b18cb]; by [@fzlzjerry])
 - Settings has a Text pane for Capture Text's card, line breaks, text from apps, translation, model packs, and cloud reading, leaving Tools to colors, Measure, and pins; a search lists a pane it names first. ([892e562]; by [@fzlzjerry])
-- Settings explains each group of rows behind one help button, its popover taking the rows in order, in place of a help button or a long tooltip beside every control. ([6481709]; by [@fzlzjerry])
+- Settings explains each group of rows behind one help button, its popover taking the rows in order, in place of a help button or a long tooltip beside every control. ([6481709], [53de98a]; by [@fzlzjerry])
 - The recording bar's microphone and camera chips name the device they record in their tooltip and to VoiceOver. ([1d31f21]; by [@fzlzjerry])
 - A paused recording shows a pause symbol for the red dot, pulses its time, and lights Resume. ([55956a4]; by [@fzlzjerry])
 - The recording bar no longer opens in Studio after a Studio take; it opens with the last of Video and GIF. ([22e8288]; by [@fzlzjerry])
@@ -200,6 +200,7 @@ Each entry links its implementation commits or merged pull request and credits v
 [55956a4]: https://github.com/fzlzjerry/OhMyShot/commit/55956a475a12b5a240a724e0b883c37f6349dd05
 [22e8288]: https://github.com/fzlzjerry/OhMyShot/commit/22e82886573cf4f32ba53e585bc2ee721005cd6f
 [e45b631]: https://github.com/fzlzjerry/OhMyShot/commit/e45b631339ca0660b6a8ebdf72df23c1266282c3
+[53de98a]: https://github.com/fzlzjerry/OhMyShot/commit/53de98a3004745d40add007ab82b620de21365ba
 [@BenjaminD2023]: https://github.com/BenjaminD2023
 [@bobbyhuang-dev]: https://github.com/bobbyhuang-dev
 [@fzlzjerry]: https://github.com/fzlzjerry
