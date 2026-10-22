@@ -101,6 +101,12 @@ public final class QuickAccessController {
     /// The cards' panel while it shows, for scripted captures of it.
     public var debugPanel: NSWindow? { panel }
 
+    /// Moves the newest card to the Trash as its Trash button does, for scripted checks.
+    public func debugTrashLatest() {
+        guard let latest = liveItems.last else { return }
+        trash(latest)
+    }
+
     /// Opens the system share sheet for the newest card, as its Share… does.
     public func debugShareLatest() {
         guard let latest = items.last else { return }
@@ -121,6 +127,12 @@ public final class QuickAccessController {
     private let saves = SingleFlight<UUID, URL?>()
     private var items: [QuickAccessItem] = []
     private var recentlyClosed: [QuickAccessItem] = []
+    /// Cards moved to the Trash and waiting to go, oldest first, each with the task that sends it on. A card stays
+    /// `trashDelay` under Undo, still in `items`, and only then is its capture moved to the Trash, which takes its
+    /// record, marks, and text with it: Undo, ⌘Z, and Restore Recently Closed bring it back until then.
+    private var trashing: [(id: UUID, sender: Task<Void, Never>)] = []
+    /// How long a card moved to the Trash waits under Undo.
+    static let trashDelay: Duration = .seconds(5)
     /// The display the stack sits on.
     private var displayID: CGDirectDisplayID?
     private var windowLease: ActiveResources.Lease?
@@ -149,16 +161,30 @@ public final class QuickAccessController {
     }
 
     public var canRestoreRecentlyClosed: Bool {
-        recentlyClosed.contains { FileManager.default.fileExists(atPath: $0.fileURL.path(percentEncoded: false)) }
+        !trashing.isEmpty || recentlyClosed.contains { FileManager.default.fileExists(atPath: $0.fileURL.path(percentEncoded: false)) }
+    }
+
+    private func isTrashing(_ id: UUID) -> Bool {
+        trashing.contains { $0.id == id }
+    }
+
+    /// The cards not waiting to go to the Trash: what the keyboard, closing by itself, and the stack's commands act on.
+    private var liveItems: [QuickAccessItem] {
+        items.filter { !isTrashing($0.id) }
     }
 
     /// Shows a card for `item`, or brings an existing card for it back to the bottom of the stack.
     public func add(_ item: QuickAccessItem) {
+        // Restored while its card waits to go to the Trash: it stays.
+        if let index = trashing.firstIndex(where: { $0.id == item.id }) {
+            trashing.remove(at: index).sender.cancel()
+            stack?.setTrashing(false, for: item.id)
+        }
         items.removeAll { $0.id == item.id }
         recentlyClosed.removeAll { $0.id == item.id }
         items.append(item)
         while items.count > maximumCards {
-            close(items.removeFirst())
+            letGo(items.removeFirst())
         }
         let preferences = actions.preferences()
         let target = QuickAccessPlacement.display(forCaptureOn: item.displayID, pointerOn: Self.pointerDisplayID(), followsPointer: preferences.onPointerDisplay)
@@ -232,7 +258,7 @@ public final class QuickAccessController {
 
     /// Copies the newest card's capture: the keyboard path to Quick Access.
     public func copyLatest() {
-        guard let latest = items.last else { return }
+        guard let latest = liveItems.last else { return }
         actions.copy(latest)
         stack?.showCopied(latest.id)
     }
@@ -240,45 +266,65 @@ public final class QuickAccessController {
     /// Gives the newest card the keyboard, without the pointer: the cards then answer the keys of
     /// `CardKeys`. The app in front stays in front; Escape gives the keyboard back.
     public func focusLatest() {
-        focus(on: items.last?.id)
+        focus(on: liveItems.last?.id)
     }
 
     /// Opens the newest card's capture in the editor, as a double-click would, for scripted checks.
     public func annotateLatest() {
-        guard let latest = items.last else { return }
+        guard let latest = liveItems.last else { return }
         actions.annotate(latest)
     }
 
     /// Shows the newest card's hover state without a pointer, for scripted checks.
     public func previewHoverOnLatest() {
-        guard let latest = items.last else { return }
+        guard let latest = liveItems.last else { return }
         stack?.previewHover(latest.id)
     }
 
     public func dismiss(_ id: UUID) {
-        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        guard !isTrashing(id), let index = items.firstIndex(where: { $0.id == id }) else { return }
         close(items.remove(at: index))
         refresh()
     }
 
     /// Closes the newest card, the one nearest the corner.
     public func dismissLatest() {
-        guard let latest = items.last else { return }
+        guard let latest = liveItems.last else { return }
         dismiss(latest.id)
     }
 
+    /// Closes every card; one waiting to go to the Trash goes there now.
     public func dismissAll() {
         // The cards are out of the stack when each is told it closed, so none of them still counts as holding its capture.
         let closing = items
         items.removeAll()
-        closing.forEach(close)
+        closing.forEach(letGo)
         refresh()
+    }
+
+    /// Sends every card waiting under Undo on to the Trash at once: the app is quitting.
+    public func finishTrashingNow() {
+        for id in trashing.map(\.id) { finishTrashing(id) }
+    }
+
+    /// Brings back a card waiting to go to the Trash: the one moved last, without `id`. False when none waits.
+    @discardableResult
+    public func undoTrash(_ id: UUID? = nil) -> Bool {
+        let index = if let id { trashing.firstIndex { $0.id == id } } else { trashing.indices.last }
+        guard let index else { return false }
+        let pending = trashing.remove(at: index)
+        pending.sender.cancel()
+        stack?.setTrashing(false, for: pending.id)
+        // Brought back, it starts its time again, as a card restored from Recently Closed does.
+        schedule.restart(pending.id)
+        updateCountdowns()
+        return true
     }
 
     /// Saves a copy of every card's capture that has not been saved, as Save does on each, but under the file name
     /// pattern without asking: it is one command for many files, which Escape on one would not stop.
     public func saveAll() {
-        let unsaved = items.filter { $0.savedURL == nil }
+        let unsaved = liveItems.filter { $0.savedURL == nil }
         Task {
             for item in unsaved { await save(item, .quiet) }
         }
@@ -288,6 +334,7 @@ public final class QuickAccessController {
     /// can no longer be restored.
     public func remove(_ id: UUID) {
         recentlyClosed.removeAll { $0.id == id }
+        if let index = trashing.firstIndex(where: { $0.id == id }) { trashing.remove(at: index).sender.cancel() }
         guard items.contains(where: { $0.id == id }) else { return }
         items.removeAll { $0.id == id }
         schedule.forget(id)
@@ -301,14 +348,21 @@ public final class QuickAccessController {
         present(entering: nil, on: displayID)
     }
 
-    /// Brings back the most recently closed card whose capture still exists.
+    /// Brings back the card moved to the Trash last while it waits to go, or else the most recently closed card
+    /// whose capture still exists.
     public func restoreRecentlyClosed() {
+        if undoTrash() { return }
         while let item = recentlyClosed.popLast() {
             if FileManager.default.fileExists(atPath: item.fileURL.path(percentEncoded: false)) {
                 add(item)
                 return
             }
         }
+    }
+
+    /// A card that left the stack goes on as it was: to the Trash if it waited to go there, else closed.
+    private func letGo(_ item: QuickAccessItem) {
+        if isTrashing(item.id) { sendToTrash(item) } else { close(item) }
     }
 
     private func close(_ item: QuickAccessItem) {
@@ -339,7 +393,7 @@ public final class QuickAccessController {
         let preferences = actions.preferences()
         let margin = CardStackView.margin
         while CardStackView.height(for: items, size: preferences.size) - margin * 2 > QuickAccessPlacement.tallestStack(visible: visible), items.count > 1 {
-            close(items.removeFirst())
+            letGo(items.removeFirst())
         }
         let stack = self.stack ?? makeStack()
         stack.size = preferences.size
@@ -397,6 +451,7 @@ public final class QuickAccessController {
         stack.onPin = { [weak self] item in self?.actions.pin(item) }
         stack.onPrint = { [weak self] item in self?.actions.print(item) }
         stack.onMoveToTrash = { [weak self] item in self?.trash(item) }
+        stack.onUndoTrash = { [weak self] item in self?.undoTrash(item.id) }
         stack.onClose = { [weak self] item in self?.dismiss(item.id) }
         stack.fileToHandOver = { [weak self] item in self?.actions.fileToHandOver(item) ?? item.fileURL }
         let sharing = actions.sharing
@@ -411,7 +466,7 @@ public final class QuickAccessController {
         stack.currentUpload = sharing.current
         stack.onCommand = { [weak self] command, item in self?.perform(command, on: item) }
         stack.pictureOffer = actions.pictureChangeOffer
-        stack.cardCount = { [weak self] in self?.items.count ?? 0 }
+        stack.cardCount = { [weak self] in self?.liveItems.count ?? 0 }
         stack.onHold = { [weak self] id, hold, on in self?.hold(hold, for: id, if: on) }
         stack.onFocus = { [weak self] id in self?.focus(on: id) }
         stack.onKey = { [weak self] command in self?.performKeyed(command) ?? false }
@@ -457,17 +512,43 @@ public final class QuickAccessController {
         stack?.markSaved(item.id, at: url)
     }
 
-    /// Moves a capture to the Trash: its card goes, and when that card had the keyboard it moves on to the card
-    /// beside it. A card trashed with the pointer leaves the keyboard where it is.
+    /// Moves a capture to the Trash: its card waits `trashDelay` under Undo, then goes, and its capture with it. When
+    /// that card had the keyboard, the keyboard moves on to the card beside it; a card trashed with the pointer leaves
+    /// the keyboard where it is.
     private func trash(_ item: QuickAccessItem) {
+        guard items.contains(where: { $0.id == item.id }), !isTrashing(item.id) else { return }
         let next = neighbor(of: item.id)
         let hadKeyboard = selectedID == item.id
-        items.removeAll { $0.id == item.id }
         schedule.forget(item.id)
-        if hadKeyboard { selectedID = nil }
-        actions.moveToTrash(item)
-        refresh()
+        if hadKeyboard { select(nil) }
+        let sender = Task { [weak self] in
+            try? await Task.sleep(for: Self.trashDelay)
+            guard !Task.isCancelled else { return }
+            self?.finishTrashing(item.id)
+        }
+        trashing.append((item.id, sender))
+        stack?.setTrashing(true, for: item.id)
+        updateCountdowns()
         if hadKeyboard, next != nil, panel?.isKeyWindow == true { select(next) }
+        if let panel {
+            NSAccessibility.post(element: panel, notification: .announcementRequested, userInfo: [
+                .announcement: String(localized: "Moved to Trash", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ])
+        }
+    }
+
+    /// A card's wait under Undo is over: it goes, and its capture to the Trash.
+    private func finishTrashing(_ id: UUID) {
+        guard isTrashing(id), let index = items.firstIndex(where: { $0.id == id }) else { return }
+        sendToTrash(items.remove(at: index))
+        refresh()
+    }
+
+    /// Moves the capture of a card that waited under Undo, and is out of the stack, to the Trash.
+    private func sendToTrash(_ item: QuickAccessItem) {
+        if let index = trashing.firstIndex(where: { $0.id == item.id }) { trashing.remove(at: index).sender.cancel() }
+        if keyboardHolder == item.id { keyboardHolder = nil }
+        actions.moveToTrash(item)
     }
 
     // MARK: Closing by itself
@@ -478,7 +559,7 @@ public final class QuickAccessController {
     /// A card is kept from closing by itself (the pointer over it, its menu open, a drag out of it, an upload),
     /// or let go.
     private func hold(_ hold: CardCountdown.Hold, for id: UUID, if on: Bool) {
-        guard items.contains(where: { $0.id == id }) else { return }
+        guard items.contains(where: { $0.id == id }), !isTrashing(id) else { return }
         schedule.hold(hold, for: id, if: on, at: Self.now)
         if schedule.isCounting(id) { scheduleCloser() }
     }
@@ -486,7 +567,7 @@ public final class QuickAccessController {
     /// Starts the time of every card that has none while Settings has cards close by themselves, and stops all of
     /// it while they do not. Cards already counting keep their own time, whatever the interval was.
     private func updateCountdowns() {
-        schedule.sync(cards: items.map(\.id), interval: actions.preferences().closeInterval, at: Self.now)
+        schedule.sync(cards: liveItems.map(\.id), interval: actions.preferences().closeInterval, at: Self.now)
         scheduleCloser()
     }
 
@@ -567,8 +648,8 @@ public final class QuickAccessController {
 
     /// The keyboard moves to the newest card when the card that had it is gone.
     private func reselectIfNeeded() {
-        guard let selectedID, !items.contains(where: { $0.id == selectedID }) else { return }
-        select(items.last?.id)
+        guard let selectedID, !liveItems.contains(where: { $0.id == selectedID }) else { return }
+        select(liveItems.last?.id)
     }
 
     private func previewClosed() {
@@ -576,15 +657,17 @@ public final class QuickAccessController {
         if let selectedID { focus(on: selectedID) }
     }
 
+    /// The card beside `id` that is not waiting to go to the Trash: the newer one, else the older.
     private func neighbor(of id: UUID) -> UUID? {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return nil }
-        if index + 1 < items.count { return items[index + 1].id }
-        return index > 0 ? items[index - 1].id : nil
+        let live = { (item: QuickAccessItem) in !self.isTrashing(item.id) }
+        return items[(index + 1)...].first(where: live)?.id ?? items[..<index].last(where: live)?.id
     }
 
     /// Moves the keyboard `offset` cards on (-1 is the card above, an older one); the card it lands on, if any.
     @discardableResult
     private func move(by offset: Int) -> QuickAccessItem? {
+        let items = liveItems
         guard let selectedID, let index = items.firstIndex(where: { $0.id == selectedID }) else { return nil }
         let target = index + offset
         guard items.indices.contains(target) else { return nil }
@@ -594,6 +677,8 @@ public final class QuickAccessController {
 
     /// A key of the table arrived: done on the card that has the keyboard. False when no card has it.
     private func performKeyed(_ command: CardCommand) -> Bool {
+        // ⌘Z brings back the card moved to the Trash last, whichever card has the ring.
+        if command == .undoTrash { return undoTrash() }
         guard let selectedID, let item = item(selectedID) else { return false }
         perform(command, on: item)
         return true
@@ -603,6 +688,11 @@ public final class QuickAccessController {
 
     /// What a card is told to do by its menu, its buttons, or the keyboard.
     private func perform(_ command: CardCommand, on item: QuickAccessItem) {
+        // A card waiting to go to the Trash only comes back.
+        guard !isTrashing(item.id) else {
+            if command == .undoTrash { undoTrash(item.id) }
+            return
+        }
         switch command {
         case .copy:
             actions.copy(item)
@@ -637,6 +727,8 @@ public final class QuickAccessController {
             actions.changePicture(item, change)
         case .moveToTrash:
             trash(item)
+        case .undoTrash:
+            undoTrash()
         case .close:
             dismiss(item.id)
             endKeyboard()

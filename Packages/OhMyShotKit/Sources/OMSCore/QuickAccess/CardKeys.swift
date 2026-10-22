@@ -16,6 +16,8 @@ public enum CardCommand: Equatable, Sendable {
     /// Turns, flips, or scales the capture's picture.
     case picture(PictureChange)
     case moveToTrash
+    /// Brings back the card moved to the Trash last, while it waits to go (`QuickAccessController`).
+    case undoTrash
     case close
     /// Every card of the stack.
     case saveAll
@@ -71,8 +73,10 @@ public enum CardKeys {
         Binding(key: .character("u"), modifiers: [.command, .shift], command: .upload),
         Binding(key: .character("l"), modifiers: .command, command: .picture(.rotateLeft)),
         Binding(key: .character("r"), modifiers: .command, command: .picture(.rotateRight)),
+        // Only with ⌘, as in Finder: a card keeps the keys after a click, and a Delete meant for the app in front
+        // would throw a capture away.
         Binding(key: .delete, modifiers: .command, command: .moveToTrash),
-        Binding(key: .delete, modifiers: [], command: .moveToTrash),
+        Binding(key: .character("z"), modifiers: .command, command: .undoTrash),
         Binding(key: .escape, modifiers: [], command: .close),
         Binding(key: .character("w"), modifiers: .command, command: .close),
         Binding(key: .character("w"), modifiers: [.command, .option], command: .closeAll),

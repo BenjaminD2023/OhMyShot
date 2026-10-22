@@ -629,6 +629,8 @@ final class CompositionRoot {
     /// Keeps edits still open in the editor before the app quits.
     func prepareForTermination() {
         annotations.keepAll()
+        // A card waiting under Undo goes to the Trash as it would have a moment later.
+        quickAccess.finishTrashingNow()
         textReader.stop()
     }
 

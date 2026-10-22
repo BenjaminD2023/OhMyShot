@@ -175,6 +175,11 @@ struct DebugHooks {
             quickAccess.restoreRecentlyClosed()
         case "qa-dismiss-latest":
             quickAccess.dismissLatest()
+        case "qa-trash":
+            // The newest card to the Trash as its button does: it waits under Undo, then its capture goes.
+            quickAccess.debugTrashLatest()
+        case "qa-undo":
+            Log.app.notice("debug.qa-undo \(quickAccess.undoTrash(), privacy: .public)")
         case "qa-render":
             // The Quick Access panel captured on its own (only this app's cards, nothing else of the screen)
             // into qa-cards.png. It holds every card showing: run it only when the cards are the checks' own.

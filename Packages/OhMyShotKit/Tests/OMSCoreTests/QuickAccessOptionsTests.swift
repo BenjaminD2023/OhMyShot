@@ -62,24 +62,40 @@ struct CardControlLayoutTests {
         #expect(CardControlLayout.rows(height: 100, reserve: 24) == 1)
     }
 
-    @Test func buttonsFillTheColumnsAlternatelyLeftFirst() {
-        let slots = CardControlLayout.slots(count: 4, height: 100)
-        #expect(slots == [
-            .init(side: .leading, row: 0), .init(side: .trailing, row: 0), .init(side: .leading, row: 1), .init(side: .trailing, row: 1),
-        ])
+    private let screenshot: [CardControlLayout.Extra] = [.annotate, .pin, .upload, .recognizeText, .trash]
+
+    /// An upload that starts or ends takes Upload away or brings it back, and no other button moves: a click aimed at
+    /// Recognize Text or Trash lands where it was aimed.
+    @Test func uploadComingOrGoingMovesNoOtherButton() {
+        let with = CardControlLayout.slots(for: screenshot, onRecording: false, height: 172)
+        let without = CardControlLayout.slots(for: screenshot.filter { $0 != .upload }, onRecording: false, height: 172)
+        #expect(with.enumerated().filter { screenshot[$0.offset] != .upload }.map(\.element) == without)
+        #expect(without == [.init(side: .leading, row: 0), .init(side: .leading, row: 1), .init(side: .trailing, row: 0), .init(side: .trailing, row: 1)])
     }
 
-    @Test func aCardTooShortForAllLeavesTheLastOnesToTheMenu() {
-        let slots = CardControlLayout.slots(count: 5, height: 100)
-        #expect(slots.prefix(4).allSatisfy { $0 != nil })
-        #expect(slots[4] == nil)
-        #expect(CardControlLayout.slots(count: 5, height: 130).allSatisfy { $0 != nil })
+    @Test func trashIsNeverBesideClose() {
+        for height in stride(from: CGFloat(100), through: 203, by: 1) {
+            for onRecording in [false, true] {
+                let slots = CardControlLayout.slots(for: [.trash], onRecording: onRecording, height: height, leadingReserve: onRecording ? 24 : 0)
+                #expect(slots[0] != CardControlLayout.Slot(side: .leading, row: 0))
+            }
+        }
     }
 
+    /// A 100 pt card has two places a side: Upload, last on its side, goes to the menu.
+    @Test func aCardTooShortForAButtonsPlaceLeavesItToTheMenu() {
+        let slots = CardControlLayout.slots(for: screenshot, onRecording: false, height: 100)
+        #expect(slots.compactMap(\.self).count == 4)
+        #expect(slots[2] == nil)
+        #expect(CardControlLayout.slots(for: screenshot, onRecording: false, height: 130).allSatisfy { $0 != nil })
+    }
+
+    /// A recording's leading column stops above its length badge.
     @Test func aReservedLeadingColumnTakesFewerButtons() {
-        // A recording's length badge stands at the bottom-left.
-        let slots = CardControlLayout.slots(count: 3, height: 100, leadingReserve: 24)
-        #expect(slots == [.init(side: .leading, row: 0), .init(side: .trailing, row: 0), .init(side: .trailing, row: 1)])
+        let short = CardControlLayout.slots(for: [.annotate, .upload, .trash], onRecording: true, height: 100, leadingReserve: 24)
+        #expect(short == [.init(side: .leading, row: 0), nil, .init(side: .trailing, row: 0)])
+        let tall = CardControlLayout.slots(for: [.annotate, .upload, .trash], onRecording: true, height: 130, leadingReserve: 24)
+        #expect(tall[1] == .init(side: .leading, row: 1))
     }
 
     @Test func slotsLieUnderTheCornerButtonsAtTheCardsSides() {

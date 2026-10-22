@@ -29,8 +29,9 @@ public enum QuickAccessPlacement {
 }
 
 /// Where the small buttons of a card's hover state stand. Columns run down the card's two sides under the
-/// Close and More buttons; buttons fill them alternately, left first. A card too short for them all leaves the
-/// last ones to its menu, which has every action anyway.
+/// Close and More buttons, and each button has a place of its own there, so none moves while the pointer is over
+/// the card (an upload that starts or ends leaves its place empty rather than moving the others up). A card too
+/// short for a button's place leaves it to its menu, which has every action anyway.
 public enum CardControlLayout {
     public static let buttonSize: CGFloat = 24
     public static let gap: CGFloat = 6
@@ -53,6 +54,16 @@ public enum CardControlLayout {
         }
     }
 
+    /// The side buttons a card can have.
+    public enum Extra: Equatable, Sendable {
+        /// Annotate, or Edit or Play on a recording.
+        case annotate
+        case pin
+        case upload
+        case recognizeText
+        case trash
+    }
+
     /// How many buttons fit in a column of a card `height` tall below its corner button, with `reserve` points
     /// kept free at the bottom.
     public static func rows(height: CGFloat, reserve: CGFloat = 0) -> Int {
@@ -61,21 +72,30 @@ public enum CardControlLayout {
         return Int((room + gap) / (buttonSize + gap))
     }
 
-    /// The slot of each of `count` buttons in order, or nil for one that has no room. `leadingReserve` is the
-    /// height the leading column keeps free at the bottom (a recording's length badge stands there).
-    public static func slots(count: Int, height: CGFloat, leadingReserve: CGFloat = 0) -> [Slot?] {
-        var free: [Side: Int] = [.leading: rows(height: height, reserve: leadingReserve), .trailing: rows(height: height)]
-        var used: [Side: Int] = [.leading: 0, .trailing: 0]
-        var side = Side.leading
-        return (0..<count).map { _ in
-            let other: Side = side == .leading ? .trailing : .leading
-            let chosen: Side? = (free[side] ?? 0) > (used[side] ?? 0) ? side : (free[other] ?? 0) > (used[other] ?? 0) ? other : nil
-            guard let chosen else { return nil }
-            defer {
-                used[chosen, default: 0] += 1
-                side = chosen == .leading ? .trailing : .leading
-            }
-            return Slot(side: chosen, row: used[chosen] ?? 0)
+    /// A button's place, whether or not the card has room for it. A screenshot's editor, Pin, and Upload run down
+    /// the leading side and Recognize Text and Trash down the trailing one; a recording's editor and Upload run down
+    /// the leading side and Trash stands under More. Trash is never beside Close, and Upload is last on its side,
+    /// the first to give way on a short card, since its badge and the menu have it too.
+    public static func place(of extra: Extra, onRecording: Bool) -> Slot? {
+        switch (extra, onRecording) {
+        case (.annotate, _): Slot(side: .leading, row: 0)
+        case (.pin, false): Slot(side: .leading, row: 1)
+        case (.upload, false): Slot(side: .leading, row: 2)
+        case (.recognizeText, false): Slot(side: .trailing, row: 0)
+        case (.trash, false): Slot(side: .trailing, row: 1)
+        case (.upload, true): Slot(side: .leading, row: 1)
+        case (.trash, true): Slot(side: .trailing, row: 0)
+        case (.pin, true), (.recognizeText, true): nil
+        }
+    }
+
+    /// The place of each of `extras` on a card `height` tall, or nil for one it has no room for. `leadingReserve` is
+    /// the height the leading column keeps free at the bottom (a recording's length badge stands there).
+    public static func slots(for extras: [Extra], onRecording: Bool, height: CGFloat, leadingReserve: CGFloat = 0) -> [Slot?] {
+        let rows: [Side: Int] = [.leading: rows(height: height, reserve: leadingReserve), .trailing: rows(height: height)]
+        return extras.map { extra in
+            guard let slot = place(of: extra, onRecording: onRecording), slot.row < rows[slot.side] ?? 0 else { return nil }
+            return slot
         }
     }
 
