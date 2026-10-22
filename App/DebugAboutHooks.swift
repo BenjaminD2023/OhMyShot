@@ -27,7 +27,8 @@ struct DebugAboutHooks {
                 return true
             }
             renderPane(tab: value("tab").flatMap(SettingsTab.init(rawValue:)) ?? .general, dark: value("mode") == "dark",
-                       height: value("height").flatMap(Double.init), name: value("name"), keep: value("keep") == "1")
+                       width: value("width").flatMap(Double.init), height: value("height").flatMap(Double.init), name: value("name"),
+                       keep: value("keep") == "1")
             return true
         }
         // Settings › About as <name>.png (about); acknowledgments=1 opens Acknowledgments… and captures the sheet as
@@ -78,10 +79,10 @@ struct DebugAboutHooks {
         return true
     }
 
-    /// The pane `tab` as settings-<tab>-<light|dark>.png (or <name>.png), in a window of its own `height` points tall
-    /// (640 by default) in the appearance asked for, whatever the app's; the window closes once captured, unless `keep`
-    /// leaves it for an ax-audit until settings-render?close=1.
-    private func renderPane(tab: SettingsTab, dark: Bool, height: Double?, name: String?, keep: Bool) {
+    /// The pane `tab` as settings-<tab>-<light|dark>.png (or <name>.png), in a window of its own `width` by `height`
+    /// points (by default the size the user's Settings window was left at) in the appearance asked for, whatever the
+    /// app's; the window closes once captured, unless `keep` leaves it for an ax-audit until settings-render?close=1.
+    private func renderPane(tab: SettingsTab, dark: Bool, width: Double?, height: Double?, name: String?, keep: Bool) {
         Self.settings?.close()
         Self.settings = nil
         let controller = makeSettings()
@@ -89,8 +90,9 @@ struct DebugAboutHooks {
         // Its frame isn't saved, so the height asked for and the place behind the wallpaper never reach the user's window.
         controller.window?.setFrameAutosaveName("")
         controller.window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        if let height, let window = controller.window {
-            window.setContentSize(NSSize(width: window.contentRect(forFrameRect: window.frame).width, height: height))
+        if width != nil || height != nil, let window = controller.window {
+            let size = window.contentRect(forFrameRect: window.frame).size
+            window.setContentSize(NSSize(width: width ?? size.width, height: height ?? size.height))
         }
         controller.showBehindWallpaper(tab)
         Task {

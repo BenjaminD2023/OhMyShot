@@ -42,7 +42,7 @@ struct CloudReadingRow: View {
     }
 
     /// The fields' width, so they end at one edge.
-    private static let fieldWidth: CGFloat = 260
+    private static let fieldWidth: CGFloat = 250
 
     var body: some View {
         SettingsRow(String(localized: "Cloud reading", bundle: .module), help: help) {

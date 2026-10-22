@@ -67,7 +67,7 @@ struct SharingSettingsView: View {
                                 RecordRow(record: record, actions: actions)
                             }
                         }
-                        .frame(width: 360)
+                        .frame(minWidth: 280, maxWidth: 360)
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
                         HStack(spacing: 8) {
@@ -153,7 +153,7 @@ struct SharingSettingsView: View {
                 )
             }
         }
-        .frame(width: 360)
+        .frame(minWidth: 280, maxWidth: 360)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
     }

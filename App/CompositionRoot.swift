@@ -2081,7 +2081,7 @@ private extension SettingsTab {
         case "wallpaper": self = .screenshots
         // The cards have a tab of their own.
         case "quickaccess": self = .quickAccess
-        // Pins and the reading tools.
+        // Pins, Pick Color, and Measure; reading text has a pane of its own.
         case "annotate": self = .tools
         // CleanShot's Cloud tab is where uploads are set up.
         case "cloud": self = .sharing
