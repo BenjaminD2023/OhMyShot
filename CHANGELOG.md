@@ -8,6 +8,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- Short horizontal Capture Text selections retry a stalled native recognizer in a fresh signed helper using a compatible accurate model for supported languages. Later eligible selections reuse this recovery path, retain line-break and spacing preferences, and stop waiting when cancelled. Removed selection-time warmups that could block useful recognition; failures now show a result card. ([39f2a55](https://github.com/BenjaminD2023/OhMyShot/commit/39f2a55d21b14aa81ec29ed6ad734e93fdfaea57))
+
 ## [0.2.2-fork.3] - 2026-10-22
 
 ### Added

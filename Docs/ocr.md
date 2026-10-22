@@ -1858,11 +1858,36 @@ app's 30-second request deadline also bounds the whole image, including language
 other pipeline callers have a configurable 60-second whole-image budget. Optional panel table/code
 analysis uses the remaining budget and leaves recognized text available if it expires.
 
-Warmups start only in an idle recognition slot and never join the request queue. Successful language
-warmups are kept for the process, concurrent duplicates skip, and completing or cancelling a selection
-stops its remaining warmup passes. Starting another Capture Text cancels the old reading; a late answer
-cannot replace the new selection's highlight or clipboard result. Native Vision work can ignore
-cancellation, so its slot remains occupied until it actually ends; the caller still leaves on time.
+Capture Text and Translate Area no longer prewarm on selection. An abandoned native warmup can retain
+its slot after cancellation and block useful recognition. The standalone warmup API remains idle-only
+and deduplicates completed languages.
+
+For horizontal selections no taller than 1024 pixels, Capture Text gives the usual pipeline three
+seconds to answer, then cancels that caller and retries in a fresh signed text-reader process. A short independent text-layout check must also find horizontal lines; ambiguous, vertical, larger
+and portrait selections retain the current recognizer’s full budget: the older model loses vertical
+text and too much detail on tall images. This is necessary on Macs where Apple's current recognizer fails
+during model initialization: another request in the same process can block even after cancellation.
+The isolated pipeline explicitly uses Vision's revision 2 accurate recognizer only when it supports
+every requested language; automatic/unspecified language detection and unsupported languages keep the
+current recognizer. The recovery model supports Chinese and several Western languages; Japanese and
+Korean are not silently removed from a request. English-only refinement uses the bilingual Chinese/English
+model because the separate Latin model can hit the same initialization failure. Its accuracy can differ
+from the current model, especially on code; it is a recovery for a failed reading, not the default model.
+
+A successful recovery makes later Capture Text selections use a fresh helper directly until the app
+relaunches. This is not a saved preference. Image bands, glyph-based spacing and icon cleanup, reading
+order, code formatting and the existing line-break choice still pass through the same pipeline. Full
+line geometry and formatting metadata cross the process boundary; optional formula repair also stays
+in a helper after recovery and consumes the remaining local 30-second budget. Stuck helpers are
+terminated, then killed if needed. A failure shows a result card even when copied-text cards are off.
+The optional cloud-model wait remains separate and follows its existing setting.
+
+Starting another Capture Text cancels the old reading and its helper; a late answer cannot replace the
+new selection's highlight or clipboard result. Native work still running in the app keeps its original
+slot until it actually finishes. Phase timing logs contain counts and durations, never recognized text.
+
+The recovery path can be measured with `ocr-bench --engine l1-compatible`; this probe uses Chinese and
+English rather than silently asking the older model for unsupported fallback languages.
 
 The one-picture model helper has a complete-run deadline, including loading and compilation (120 seconds
 by default). Capture Text's optional formula/table helper is limited to 10 seconds, and the panel's to
