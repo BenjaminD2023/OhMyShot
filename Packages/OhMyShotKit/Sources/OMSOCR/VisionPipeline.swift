@@ -20,6 +20,9 @@ public struct VisionPipeline: OCREngine {
         public var timeout: Duration
         /// The entire image, including queued requests, pieces and language/repair passes.
         public var overallTimeout: Duration
+        /// Explicit recovery mode for a fresh isolated reader: use the older accurate model for
+        /// language configurations it supports, retaining the current model for all others.
+        public var prefersCompatibilityRecognition: Bool
         /// Told how long each step and each Vision request took, for the benchmark's `--trace`.
         public var trace: (@Sendable (String) -> Void)?
 
@@ -28,13 +31,15 @@ public struct VisionPipeline: OCREngine {
             fallbackLanguages: [[Locale.Language]] = [[Locale.Language(identifier: "en-US")]],
             assembly: TextAssembler.Options = .init(),
             timeout: Duration = .seconds(10),
-            overallTimeout: Duration = .seconds(60)
+            overallTimeout: Duration = .seconds(60),
+            prefersCompatibilityRecognition: Bool = false
         ) {
             self.primaryLanguages = primaryLanguages
             self.fallbackLanguages = fallbackLanguages
             self.assembly = assembly
             self.timeout = timeout
             self.overallTimeout = overallTimeout
+            self.prefersCompatibilityRecognition = prefersCompatibilityRecognition
         }
     }
 
@@ -228,7 +233,14 @@ public struct VisionPipeline: OCREngine {
         let timeout = options.timeout
         let requested = ContinuousClock.now
         let observations = try await withTimeout(timeout) {
-            try await RecognitionSlots.shared.run { try await configured.perform(on: image) }
+            try await RecognitionSlots.shared.run {
+                if options.prefersCompatibilityRecognition,
+                   let recovered = try await CompatibilityTextRecognition.recognize(configured, on: image) {
+                    options.trace?("  recognition backend: compatibility revision 2")
+                    return recovered
+                }
+                return try await configured.perform(on: image)
+            }
         }
         let read = ContinuousClock.now
         defer {

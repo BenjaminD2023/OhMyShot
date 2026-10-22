@@ -36,6 +36,11 @@
 // {"id": "…", "removed": 2}, {"id": "…", "text": "…", "ending": "end"} (or "length", "stopped") for the VLM pack, or
 // {"id": "…", "error": "…"}. The process exits once its input ends and every picture is
 // read.
+// With "visionCompatibility": true, the compatibility Vision pipeline reads the picture without any
+// model packs. "visionLines" is the base64 JSON encoding of complete OMSOCR lines, retaining geometry,
+// direction and wrapping metadata for the app's existing assembly and merge rules. "visionFormulas"
+// optionally supplies already recognized formulas, merged with the same compatibility pipeline;
+// "visionInputLines" may supply base64 JSON lines to preserve exact text already taken from apps.
 
 import CoreGraphics
 import Foundation
@@ -60,6 +65,9 @@ struct Job: Decodable {
     /// What to take the system's memory pressure to be, by name (`MemoryPressure`), rather than ask the kernel: for checking
     /// what happens when it is pressed.
     var pressure: String?
+    var visionCompatibility: Bool?
+    var visionFormulas: [TextReaderTool.FoundFormula]?
+    var visionInputLines: Data?
 }
 
 nonisolated struct Line: Encodable {
@@ -85,6 +93,7 @@ nonisolated struct Result: Encodable {
     let id: String
     var text: String?
     var lines: [Line]?
+    var visionLines: Data?
     var latex: String?
     var ending: String?
     var found: Int?
@@ -253,6 +262,31 @@ func send(_ result: Result) {
 for try await line in FileHandle.standardInput.bytes.lines {
     guard let job = try? JSONDecoder().decode(Job.self, from: Data(line.utf8)) else { continue }
     do {
+        if job.visionCompatibility == true {
+            guard let path = job.path else { throw OCRError.unreadableImage }
+            var options = VisionPipeline.Options.preferred()
+            options.timeout = .seconds(30)
+            options.overallTimeout = .seconds(30)
+            options.prefersCompatibilityRecognition = true
+            let recovery = VisionPipeline(options: options)
+            let lines: [OCRLine]
+            if let formulas = job.visionFormulas, !formulas.isEmpty {
+                let image = try PictureText.image(at: URL(filePath: path))
+                let input: [OCRLine]
+                if let encoded = job.visionInputLines {
+                    input = try JSONDecoder().decode([OCRLine].self, from: encoded)
+                } else {
+                    input = try await recovery.recognize(image).lines
+                }
+                lines = await recovery.lines(input, with: formulas.map { formula in
+                    FormulaMerge.Formula(kind: formula.kind == "display" ? .display : .inline, box: formula.box, latex: formula.latex)
+                }, in: image)
+            } else {
+                lines = try await recovery.recognize(fileAt: URL(filePath: path)).lines
+            }
+            send(Result(id: job.id, visionLines: try JSONEncoder().encode(lines)))
+            continue
+        }
         if job.tidy == true {
             // Core ML keeps its cache under the process's bundle identifier, which the Info.plist in this binary names.
             let removed = Bundle.main.bundleIdentifier.map { CompiledModelCache.removeStale(in: CompiledModelCache.folder(forBundleIdentifier: $0)) }

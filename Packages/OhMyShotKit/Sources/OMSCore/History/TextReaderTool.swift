@@ -162,6 +162,25 @@ public enum TextReaderTool {
         throw Failure.unreadable(answer.error ?? "")
     }
 
+    /// The compatibility Vision pipeline's complete lines, encoded by OMSOCR. Kept opaque here so
+    /// OMSCore stays independent of OCR types; callers decode the payload as `[OCRLine]`.
+    /// Runs in a fresh helper so stalled native work in the app cannot hold up this reading.
+    /// Already recognized formulas may be merged there too, keeping adjacent-text repairs isolated;
+    /// `inputLines` preserves the app's exact-text enrichment instead of reading the whole image again.
+    @concurrent
+    public static func visionLines(
+        ofPictureAt url: URL, helper: URL, formulas: [FoundFormula]? = nil, inputLines: Data? = nil, priority: QualityOfService = .userInitiated,
+        resources: ActiveResources = .shared, timeout: Duration = .seconds(30)
+    ) async throws -> Data {
+        let job = Job(
+            id: UUID().uuidString, path: url.path(percentEncoded: false), visionCompatibility: true,
+            visionFormulas: formulas, visionInputLines: inputLines
+        )
+        let answer = try await run(job, helper: helper, priority: priority, resources: resources, timeout: timeout)
+        if let lines = answer.visionLines { return lines }
+        throw Failure.unreadable(answer.error ?? "")
+    }
+
     /// Loads the pack in `pack` once, reading nothing: its first load compiles its models for the Neural Engine, which
     /// takes seconds, and later loads, in any run, find that done (Docs/ocr.md › The L2 pack).
     @concurrent
@@ -370,12 +389,16 @@ public enum TextReaderTool {
         var vlm: String?
         var seconds: Double?
         var pressure: String?
+        var visionCompatibility: Bool?
+        var visionFormulas: [FoundFormula]?
+        var visionInputLines: Data?
     }
 
     private struct Answer: Decodable {
         let id: String
         let text: String?
         let lines: [Line]?
+        let visionLines: Data?
         let latex: String?
         let ending: String?
         let found: Int?
@@ -388,7 +411,7 @@ public enum TextReaderTool {
 
         /// How many formulas, tables, and charts the reader found, said before it reads them.
         var isProgress: Bool {
-            found != nil && text == nil && lines == nil && latex == nil && formulas == nil && tables == nil && removed == nil && error == nil
+            found != nil && text == nil && lines == nil && visionLines == nil && latex == nil && formulas == nil && tables == nil && removed == nil && error == nil
         }
     }
 }

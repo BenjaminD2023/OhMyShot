@@ -2,15 +2,15 @@ import CoreGraphics
 import Foundation
 
 /// One line of recognized text, as an engine reports it.
-public struct OCRLine: Sendable, Equatable {
-    public enum Direction: Sendable, Equatable {
+public struct OCRLine: Codable, Sendable, Equatable {
+    public enum Direction: Codable, Sendable, Equatable {
         case leftToRight
         case rightToLeft
         case topToBottom
     }
 
     /// Formulas a line holds as LaTeX between `$` signs (`FormulaMerge`).
-    public enum Math: Sendable, Equatable {
+    public enum Math: Codable, Sendable, Equatable {
         /// Within its text, as `$…$`.
         case inline
         /// The whole line, a formula set apart, as `$$…$$`.

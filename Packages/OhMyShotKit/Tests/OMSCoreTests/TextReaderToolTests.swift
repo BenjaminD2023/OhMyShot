@@ -64,6 +64,67 @@ struct TextReaderToolTests {
         #expect(resources.isIdle)
     }
 
+    @Test func compatibilityVisionAsksForNoPacksAndKeepsTheCompleteLinePayload() async throws {
+        // OMSCore transports the full OCR payload without interpreting or dropping any metadata.
+        let payload = Data(#"[{"text":"打开设置 Text","box":[[10,20],[120,30]],"confidence":0.98,"direction":"leftToRight","wrapsToNextLine":true}]"#.utf8)
+        let reader = try helper(answering + """
+
+        case "$line" in *'"visionCompatibility":true'*) ;; *) exit 4 ;; esac
+        case "$line" in *'"pack"'*|*'"formulas"'*|*'"vlm"'*|*'"lines"'*) exit 5 ;; esac
+        case "$line" in *'"path":"/tmp/p.tiff"'*) ;; *) exit 6 ;; esac
+        printf '{"id":"%s","visionLines":"\(payload.base64EncodedString())"}\\n' "$id"
+        """)
+        let resources = ActiveResources()
+        let lines = try await TextReaderTool.visionLines(ofPictureAt: URL(filePath: "/tmp/p.tiff"), helper: reader, resources: resources)
+        #expect(lines == payload)
+        #expect(resources.isIdle)
+    }
+
+    @Test func compatibilityVisionCanReturnNoLines() async throws {
+        let reader = try helper(answering + "\nprintf '{\"id\":\"%s\",\"visionLines\":\"W10=\"}\\n' \"$id\"")
+        let lines = try await TextReaderTool.visionLines(ofPictureAt: URL(filePath: "/tmp/p.tiff"), helper: reader, resources: ActiveResources())
+        #expect(lines == Data("[]".utf8))
+    }
+
+    @Test func compatibilityVisionCarriesFormulaGeometryWithoutLoadingAPack() async throws {
+        let reader = try helper(answering + """
+
+        printf '%s' "$line" > "$0.job"
+        printf '{"id":"%s","visionLines":"W10="}\\n' "$id"
+        """)
+        let formulas = [TextReaderTool.FoundFormula(kind: "display", box: CGRect(x: 10.5, y: 20, width: 120, height: 30.25), latex: "x^{2}")]
+        let input = Data(#"[{"text":"exact original","box":[[1,2],[3,4]],"confidence":1,"isExact":true,"isTableRow":false}]"#.utf8)
+        _ = try await TextReaderTool.visionLines(
+            ofPictureAt: URL(filePath: "/tmp/p.tiff"), helper: reader, formulas: formulas, inputLines: input, resources: ActiveResources()
+        )
+        struct Posted: Decodable {
+            let visionCompatibility: Bool
+            let visionFormulas: [TextReaderTool.FoundFormula]
+            let visionInputLines: Data
+            let pack: String?
+            let formulas: String?
+            let vlm: String?
+        }
+        let posted = try JSONDecoder().decode(Posted.self, from: Data(contentsOf: URL(filePath: reader.path + ".job")))
+        #expect(posted.visionCompatibility && posted.visionFormulas == formulas)
+        #expect(posted.visionInputLines == input)
+        #expect(posted.pack == nil && posted.formulas == nil && posted.vlm == nil)
+    }
+
+    @Test func compatibilityVisionReportsItsFailure() async throws {
+        let reader = try helper(answering + "\nprintf '{\"id\":\"%s\",\"error\":\"unsupportedLanguages\"}\\n' \"$id\"")
+        await #expect(throws: TextReaderTool.Failure.unreadable("unsupportedLanguages")) {
+            try await TextReaderTool.visionLines(ofPictureAt: URL(filePath: "/tmp/p.tiff"), helper: reader, resources: ActiveResources())
+        }
+    }
+
+    @Test func compatibilityVisionDoesNotAcceptAnUnrelatedAnswer() async throws {
+        let reader = try helper(answering + "\nprintf '{\"id\":\"%s\",\"text\":\"unrelated\"}\\n' \"$id\"")
+        await #expect(throws: TextReaderTool.Failure.unreadable("")) {
+            try await TextReaderTool.visionLines(ofPictureAt: URL(filePath: "/tmp/p.tiff"), helper: reader, resources: ActiveResources())
+        }
+    }
+
     @Test func warmingAPackReadsNoPicture() async throws {
         let reader = try helper(answering + """
 
@@ -187,6 +248,46 @@ struct TextReaderToolTests {
             try await TextReaderTool.text(
                 ofPictureAt: URL(filePath: "/tmp/p.png"), joinsWrappedLines: true, helper: reader, resources: resources
             )
+        }
+        defer { reading.cancel() }
+        try await eventually { FileManager.default.fileExists(atPath: reader.path + ".pid") }
+        let pid = try #require(Int32(String(contentsOfFile: reader.path + ".pid", encoding: .utf8)))
+        let started = ContinuousClock.now
+        reading.cancel()
+        await #expect(throws: CancellationError.self) { try await reading.value }
+        #expect(ContinuousClock.now - started < .seconds(1))
+        try await eventually { resources.isIdle && kill(pid, 0) != 0 }
+    }
+
+    @Test func compatibilityVisionHasACompleteRunDeadline() async throws {
+        let reader = try helper("""
+        trap '' TERM
+        read line
+        printf '%s' "$$" > "$0.pid"
+        while :; do :; done
+        """)
+        let resources = ActiveResources()
+        let started = ContinuousClock.now
+        await #expect(throws: TextReaderTool.Failure.timedOut) {
+            try await TextReaderTool.visionLines(
+                ofPictureAt: URL(filePath: "/tmp/p.tiff"), helper: reader, resources: resources, timeout: .seconds(2)
+            )
+        }
+        #expect(ContinuousClock.now - started < .seconds(4))
+        let pid = try #require(Int32(String(contentsOfFile: reader.path + ".pid", encoding: .utf8)))
+        try await eventually { resources.isIdle && kill(pid, 0) != 0 }
+    }
+
+    @Test func cancellingCompatibilityVisionKillsItsNativeProcess() async throws {
+        let reader = try helper("""
+        trap '' TERM
+        read line
+        printf '%s' "$$" > "$0.pid"
+        while :; do :; done
+        """)
+        let resources = ActiveResources()
+        let reading = Task {
+            try await TextReaderTool.visionLines(ofPictureAt: URL(filePath: "/tmp/p.tiff"), helper: reader, resources: resources)
         }
         defer { reading.cancel() }
         try await eventually { FileManager.default.fileExists(atPath: reader.path + ".pid") }

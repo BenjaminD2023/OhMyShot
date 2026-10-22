@@ -6,6 +6,7 @@ import OMSOCR
 import OMSUI
 import OSLog
 import UniformTypeIdentifiers
+import Vision
 
 /// Capture Text: drag over text, or pick a window, and the text goes to the clipboard, any formula in it as LaTeX while
 /// the formula pack is installed. The selection stays highlighted while the text is read and fades once it is copied; a
@@ -24,6 +25,7 @@ final class TextCaptureCoordinator {
         var options = VisionPipeline.Options.preferred()
         options.timeout = .seconds(30)
         options.overallTimeout = .seconds(30)
+        options.trace = { step in Log.performance.notice("ocr.pipeline \(step, privacy: .public)") }
         return VisionPipeline(options: options)
     }()
     /// Shared by the panel and Translate Area: a language pair's first translation loads its model.
@@ -31,8 +33,10 @@ final class TextCaptureCoordinator {
     private let highlight = TextSelectionHighlight()
     private let lens = TranslationLens()
     private let hud = TextResultHUD()
-    private var warmup: Task<Void, Never>?
     private var captureReading: Task<Void, Never>?
+    /// Keep later hotkey readings out of a native Vision instance that has stopped answering.
+    /// This is process state, not a saved preference; a relaunch tries the current recognizer again.
+    private var usesIsolatedTextReader = false
     private var panel: TextRecognitionWindowController?
     /// The last recognition, so the card can switch between kept and joined line breaks.
     private var last: Recognition?
@@ -106,21 +110,13 @@ final class TextCaptureCoordinator {
         captureReading?.cancel()
         waitingForCloud?.cancel()
         highlight.hide()
-        // The model loads while the person selects, which hides its first-use cost.
-        let pipeline = pipeline
-        warmup?.cancel()
-        warmup = Task {
-            let probe = LatencyProbe("ocr.prewarm")
-            await pipeline.prewarm()
-            probe.end()
-        }
+        // Read useful pixels first: an abandoned warmup can keep Vision's native slot occupied
+        // even after cancellation, leaving this selection waiting behind it.
         overlay.freezesScreen = settings.freezeScreen
         overlay.begin(mode: .area, purpose: .text) { [weak self] outcome in
             // The highlight appears in the same turn the overlay closes, so no frame goes by without
             // the selection.
             guard let self else { done?(nil); return }
-            warmup?.cancel()
-            warmup = nil
             switch outcome {
             case .region(let rect, _, let modifiers, let frozen) where modifiers.contains(.option):
                 done?(nil)
@@ -256,6 +252,8 @@ final class TextCaptureCoordinator {
         guard !Task.isCancelled else { done?(nil); return }
         let showsCard = settings.showTextResult
         let probe = LatencyProbe("ocr.recognize")
+        defer { probe.end() }
+        let localDeadline = ContinuousClock.now + .seconds(30)
         readings += 1
         let reading = readings
         waitingForCloud?.cancel()
@@ -275,12 +273,20 @@ final class TextCaptureCoordinator {
             formulas?.cancel()
         }
         let visionLines: [OCRLine]?
+        var visionFailure: String?
+        let vision = LatencyProbe("ocr.vision")
         do {
-            visionLines = try await pipeline.recognize(image).lines
+            visionLines = try await captureTextLines(in: image, deadline: localDeadline)
         } catch {
             Log.capture.error("Capture Text failed to recognize: \(String(describing: error), privacy: .public)")
+            if error as? OCRError == .timedOut || error as? TextReaderTool.Failure == .timedOut {
+                visionFailure = String(localized: "Text recognition took too long. Try the selection again.")
+            } else if !(error is CancellationError) {
+                visionFailure = String(localized: "Text recognition failed. Try the selection again.")
+            }
             visionLines = nil
         }
+        vision.end()
         guard !Task.isCancelled, reading == readings else {
             cloudReading?.cancel()
             formulas?.cancel()
@@ -307,7 +313,6 @@ final class TextCaptureCoordinator {
                 let text = cloudText.text
                 if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     formulas?.cancel()
-                    probe.end()
                     last = nil
                     let readBy = String(localized: "Read by \(cloud.model.displayName)")
                     Log.capture.notice("Capture Text read \(text.count, privacy: .public) characters with the cloud model, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
@@ -334,6 +339,7 @@ final class TextCaptureCoordinator {
 
         guard var lines = visionLines else {
             formulas?.cancel()
+            note = note ?? visionFailure
             highlight.finish(copied: nil, announces: !showsCard)
             if showsCard || note != nil { presentCard(.empty, near: selection, note: note) }
             done?(nil)
@@ -351,7 +357,19 @@ final class TextCaptureCoordinator {
             let started = ContinuousClock.now
             let found = await formulas.value
             if !found.formulas.isEmpty {
-                lines = await pipeline.lines(lines, with: found.formulas, in: image)
+                let remaining = ContinuousClock.now.duration(to: localDeadline)
+                if remaining > .zero {
+                    if usesIsolatedTextReader, let helper = Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader") {
+                        // Formula repair must also stay outside the failed native instance.
+                        if let repaired = try? await Self.isolatedTextLines(in: image, helper: helper, timeout: remaining, formulas: found.formulas, inputLines: lines) {
+                            lines = repaired
+                        }
+                    } else {
+                        var repair = pipeline
+                        repair.options.overallTimeout = remaining
+                        lines = await repair.lines(lines, with: found.formulas, in: image)
+                    }
+                }
                 Log.capture.notice("Capture Text put \(found.formulas.count, privacy: .public) formulas into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
             }
             if !found.tables.isEmpty {
@@ -360,7 +378,6 @@ final class TextCaptureCoordinator {
                 Self.log(merge, of: found.tables, in: "Capture Text", after: ContinuousClock.now - started)
             }
         }
-        probe.end()
 
         guard !Task.isCancelled, reading == readings else { done?(nil); return }
 
@@ -393,6 +410,64 @@ final class TextCaptureCoordinator {
             presentCard(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, note: recognition.note)
         }
         done?(text)
+    }
+
+    /// The usual pipeline gets a short head start. If it stalls or fails, a fresh signed helper reads
+    /// with the compatible accurate model where its languages are supported. A second request in this
+    /// process is insufficient: the failed native recognizer can block it even after cancellation.
+    private func captureTextLines(in image: CGImage, deadline: ContinuousClock.Instant) async throws -> [OCRLine] {
+        // Revision 2 loses vertical text and too much detail on large selections. Keep the current
+        // recognizer's full budget there; recovery is for the short horizontal selections it reads well.
+        guard image.height <= 1024, image.width >= image.height,
+              let helper = Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader") else {
+            return try await pipeline.recognize(image).lines
+        }
+        let layout = Task { try await Self.allowsTextRecovery(in: image) }
+        defer { layout.cancel() }
+        // Geometry of the picture alone cannot distinguish vertical text drawn on a wide canvas.
+        // Unknown layout keeps the current recognizer, including its remaining full-image budget.
+        let orientation = await Self.first(layout, within: .milliseconds(250))
+        try Task.checkCancellation()
+        guard case .success(true)? = orientation else { return try await pipeline.recognize(image).lines }
+        if !usesIsolatedTextReader {
+            let pipeline = pipeline
+            let reading = Task { try await pipeline.recognize(image).lines }
+            defer { reading.cancel() }
+            let outcome = await Self.first(reading, within: .seconds(3))
+            try Task.checkCancellation()
+            if case .success(let lines)? = outcome { return lines }
+            Log.capture.notice("Capture Text is retrying in an isolated text reader: Vision did not answer promptly")
+        }
+        let remaining = ContinuousClock.now.duration(to: deadline)
+        guard remaining > .zero else { throw OCRError.timedOut }
+        let lines = try await Self.isolatedTextLines(in: image, helper: helper, timeout: remaining)
+        try Task.checkCancellation()
+        usesIsolatedTextReader = true
+        return lines
+    }
+
+    @concurrent
+    private nonisolated static func allowsTextRecovery(in image: CGImage) async throws -> Bool {
+        let size = CGSize(width: image.width, height: image.height)
+        let regions = try await DetectTextRectanglesRequest().perform(on: image)
+            .map { $0.boundingBox.toImageCoordinates(size, origin: .upperLeft) }
+        return OCRRecoveryLayout.allows(size: size, textRegions: regions)
+    }
+
+    @concurrent
+    private nonisolated static func isolatedTextLines(
+        in image: CGImage, helper: URL, timeout: Duration, formulas: [FormulaMerge.Formula]? = nil, inputLines: [OCRLine]? = nil
+    ) async throws -> [OCRLine] {
+        let deadline = ContinuousClock.now + timeout
+        try Task.checkCancellation()
+        guard let file = formulaPicture(image) else { throw OCRError.unreadableImage }
+        defer { try? FileManager.default.removeItem(at: file) }
+        let remaining = ContinuousClock.now.duration(to: deadline)
+        guard remaining > .zero else { throw OCRError.timedOut }
+        let found = formulas.map { $0.map { TextReaderTool.FoundFormula(kind: $0.kind == .display ? "display" : "inline", box: $0.box, latex: $0.latex) } }
+        let base = try inputLines.map { try JSONEncoder().encode($0) }
+        let data = try await TextReaderTool.visionLines(ofPictureAt: file, helper: helper, formulas: found, inputLines: base, timeout: remaining)
+        return try JSONDecoder().decode([OCRLine].self, from: data)
     }
 
     /// Where a picture of the screen was, for asking the apps there for their text; a window's own app for a window.
@@ -676,13 +751,8 @@ final class TextCaptureCoordinator {
     func translateArea() {
         guard !overlay.isActive else { return }
         lens.close(animated: false)
-        let pipeline = pipeline
-        warmup?.cancel()
-        warmup = Task { await pipeline.prewarm() }
         overlay.freezesScreen = settings.freezeScreen
         overlay.begin(mode: .area, purpose: .text) { [weak self] outcome in
-            self?.warmup?.cancel()
-            self?.warmup = nil
             switch outcome {
             case .region(let rect, _, let modifiers, let frozen):
                 self?.highlight.show(rect)

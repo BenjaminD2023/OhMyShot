@@ -48,6 +48,11 @@ struct OCRBench {
     /// Single-purpose engines for questions about Vision itself (for example, whether the first
     /// language picks the model). They run only when named with --engine.
     static let probes: [any OCREngine] = [
+        // Recovery in a fresh helper process; use only languages the older accurate model supports.
+        VisionPipeline(name: "l1-compatible", options: .init(
+            primaryLanguages: [zhHans, en], fallbackLanguages: [[en]], timeout: timeout,
+            prefersCompatibilityRecognition: true
+        )),
         // Every language in one request: scores exactly like text-zh-en (one model per request).
         VisionTextEngine(name: "text-cjk", configuration: .init(languages: [zhHans, zhHant, en, ja, ko]), timeout: timeout),
         VisionDocumentEngine(name: "documents-cjk", languages: [zhHans, zhHant, en, ja, ko], timeout: timeout),
