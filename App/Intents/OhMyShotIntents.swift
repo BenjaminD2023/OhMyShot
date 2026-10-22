@@ -89,7 +89,7 @@ nonisolated enum ShortcutFailure: Error, CustomLocalizedStringResourceConvertibl
         case .needsScreenRecording: "OhMyShot needs Screen Recording permission. Turn it on in System Settings › Privacy & Security, then try again."
         case .noUploadDestination: "No upload destination is set up. Add one in OhMyShot’s Settings › Sharing."
         case .unreadableImage: "The image couldn’t be read."
-        case .needsFormulaPack: "Reading formulas needs the Math Formulas model pack. Download it in OhMyShot’s Settings › Tools › Model packs."
+        case .needsFormulaPack: "Reading formulas needs the Math Formulas model pack. Download it in OhMyShot’s Settings › Text › Model packs."
         }
     }
 }

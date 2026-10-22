@@ -2,7 +2,7 @@ import AppKit
 import OMSCore
 import SwiftUI
 
-/// Settings › Tools › Cloud reading: the service whose model reads pictures this Mac reads poorly, set up in place
+/// Settings › Text › Cloud reading: the service whose model reads pictures this Mac reads poorly, set up in place
 /// (model, address, key), where it reads by itself, and a Test. Off by default; Off again removes the model and its key.
 struct CloudReadingRow: View {
     let store: CloudModelStore

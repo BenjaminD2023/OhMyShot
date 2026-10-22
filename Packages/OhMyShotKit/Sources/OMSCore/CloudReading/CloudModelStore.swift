@@ -4,7 +4,7 @@ import Observation
 /// The cloud model the person reads with, kept in the app's defaults with its key in the Keychain, and where it reads
 /// by itself (Docs/ocr.md › Cloud models).
 ///
-/// One model: choosing a service in Settings › Tools sets it up, and choosing Off removes it and its key. Choosing it
+/// One model: choosing a service in Settings › Text sets it up, and choosing Off removes it and its key. Choosing it
 /// is the person's yes to sending pictures there: from the Recognized Text window's Read with button whenever they
 /// press it, and on its own wherever they turn that on (every picture in that window, or Capture Text).
 @MainActor

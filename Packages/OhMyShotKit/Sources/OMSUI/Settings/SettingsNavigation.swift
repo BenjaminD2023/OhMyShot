@@ -11,6 +11,7 @@ extension SettingsTab {
         case .screenshots: .purple
         case .quickAccess: .orange
         case .recording: .red
+        case .text: .green
         case .tools: .indigo
         case .sharing: .cyan
         case .shortcuts: .gray
@@ -149,7 +150,7 @@ extension SettingsTab {
                 ]),
                 SettingsSearchRow(String(localized: "After recording", bundle: .module)),
             ]
-        case .tools:
+        case .text:
             [
                 SettingsSearchRow(String(localized: "Capture Text", bundle: .module), terms: [
                     String(localized: "Show the copied text", bundle: .module),
@@ -175,6 +176,9 @@ extension SettingsTab {
                     String(localized: "Base URL", bundle: .module),
                     String(localized: "Model", bundle: .module),
                 ]),
+            ]
+        case .tools:
+            [
                 SettingsSearchRow(String(localized: "Copy colors as", bundle: .module)),
                 SettingsSearchRow(String(localized: "Measure in", bundle: .module), terms: [
                     String(localized: "Points", bundle: .module),
@@ -234,6 +238,13 @@ extension SettingsTab {
     func matches(_ query: String) -> [String]? {
         let found = searchTerms.filter { $0.localizedStandardContains(query) }
         return found.isEmpty && !title.localizedStandardContains(query) ? nil : found
+    }
+
+    /// The panes a search finds, with the rows it found in each: those whose title it found first ("text" lists Text
+    /// before Capture's "Snap the selection to text"), then the others in the sidebar's order. Return opens the first.
+    static func found(_ query: String) -> [(tab: SettingsTab, rows: [String])] {
+        let found = allCases.compactMap { tab in tab.matches(query).map { (tab: tab, rows: $0) } }
+        return found.filter { $0.tab.title.localizedStandardContains(query) } + found.filter { !$0.tab.title.localizedStandardContains(query) }
     }
 
     /// The title of the first row a search finds in the pane, where opening the pane from the search lands.
@@ -389,8 +400,8 @@ struct SettingsRootView: View {
         .searchable(text: $navigator.query, placement: .sidebar, prompt: Text("Search", bundle: .module))
         .searchFocused($isSearching)
         .onSubmit(of: .search) {
-            if let first = SettingsTab.allCases.first(where: { $0.matches(navigator.query) != nil }) {
-                navigator.open(first, searchedFor: navigator.query)
+            if let first = SettingsTab.found(navigator.query).first {
+                navigator.open(first.tab, searchedFor: navigator.query)
             }
         }
         .background {
@@ -427,12 +438,12 @@ private struct SettingsSidebar: View {
                 }
             }
         } else {
-            let results = SettingsTab.allCases.compactMap { tab in tab.matches(query).map { (tab, $0) } }
+            let results = SettingsTab.found(query)
             if results.isEmpty {
                 ContentUnavailableView.search(text: query)
             } else {
                 List(selection: selection) {
-                    ForEach(results, id: \.0) { tab, rows in
+                    ForEach(results, id: \.tab) { tab, rows in
                         SettingsSidebarRow(tab: tab, found: rows).tag(tab)
                     }
                 }

@@ -4779,7 +4779,42 @@
         }
       }
     },
+    "Reading formulas needs the Math Formulas model pack. Download it in OhMyShot’s Settings › Text › Model packs." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para leer fórmulas se necesita el paquete de modelos “Fórmulas matemáticas”. Descárgalo en Ajustes › Texto › Paquetes de modelos de OhMyShot."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La lecture des formules nécessite le pack de modèles Formules mathématiques. Téléchargez-le dans Réglages › Texte › Packs de modèles d’OhMyShot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数式を読み取るには「数式」モデルパックが必要です。OhMyShotの「設定」›「テキスト」›「モデルパック」でダウンロードしてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取公式需要“数学公式”模型包。请在 OhMyShot 的“设置 › 文字 › 模型包”中下载。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取公式需要「數學公式」模型套件。請在 OhMyShot 的「設定」›「文字」›「模型套件」中下載。"
+          }
+        }
+      }
+    },
     "Reading formulas needs the Math Formulas model pack. Download it in OhMyShot’s Settings › Tools › Model packs." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {

@@ -721,7 +721,8 @@ struct RecordingSettingsView: View {
     }
 }
 
-struct ToolsSettingsView: View {
+/// Settings › Text: reading text out of pictures, from Capture Text's card to the model packs and cloud reading.
+struct TextSettingsView: View {
     @Bindable var settings: SettingsStore
     var permissions: PermissionCenter?
     var modelPacks: ModelPackCenter?
@@ -765,6 +766,9 @@ struct ToolsSettingsView: View {
                 .fixedSize()
                 .help(Text("How long the copied-text card stays. It stays open while the pointer is over it and closes the chosen time after the pointer leaves; Never keeps it until you close it. A card that says nothing was found, or that the text was not copied, always stays at least as long as it used to.", bundle: .module))
             }
+
+            SettingsDivider()
+
             SettingsRow(String(localized: "Image line breaks", bundle: .module)) {
                 Picker(selection: $settings.textRecognitionKeepsLineBreaks) {
                     Text("Keep Line Breaks", bundle: .module).tag(true)
@@ -803,14 +807,33 @@ struct ToolsSettingsView: View {
                 }
             }
             if let modelPacks, !modelPacks.isEmpty {
+                SettingsDivider()
                 ModelPacksRow(center: modelPacks)
-            }
-            if let cloudModels {
+                if let cloudModels {
+                    CloudReadingRow(store: cloudModels)
+                }
+            } else if let cloudModels {
+                SettingsDivider()
                 CloudReadingRow(store: cloudModels)
             }
+        }
+    }
 
-            SettingsDivider()
+    /// The languages to translate into, by identifier; the chosen one even before the list has loaded.
+    private var translationOptions: [String] {
+        var options = translationTargets.map(Translator.identifier(of:))
+        let choice = settings.translationTarget
+        if !choice.isEmpty, !options.contains(choice) { options.insert(choice, at: 0) }
+        return options
+    }
+}
 
+/// Settings › Tools: Pick Color, Measure, and pins.
+struct ToolsSettingsView: View {
+    @Bindable var settings: SettingsStore
+
+    var body: some View {
+        SettingsPane {
             SettingsRow(String(localized: "Copy colors as", bundle: .module)) {
                 Picker(selection: $settings.colorFormat) {
                     ForEach(ColorFormat.allCases, id: \.self) { format in
@@ -894,14 +917,6 @@ struct ToolsSettingsView: View {
                 }
             }
         }
-    }
-
-    /// The languages to translate into, by identifier; the chosen one even before the list has loaded.
-    private var translationOptions: [String] {
-        var options = translationTargets.map(Translator.identifier(of:))
-        let choice = settings.translationTarget
-        if !choice.isEmpty, !options.contains(choice) { options.insert(choice, at: 0) }
-        return options
     }
 }
 
@@ -1072,7 +1087,7 @@ extension Permission {
     }
 }
 
-/// Settings › Tools › Text from apps: Capture Text and the Recognized Text window take the characters the app under the
+/// Settings › Text › Text from apps: Capture Text and the Recognized Text window take the characters the app under the
 /// selection shows (L0, Docs/ocr.md › Text from apps). Turning it on asks for Accessibility; while OhMyShot doesn't
 /// have it, a line under the switch says so, with the way to it.
 private struct AppTextSetting: View {

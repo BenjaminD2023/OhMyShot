@@ -1889,7 +1889,7 @@ Debug build, the same machine, a fresh launch. A made-up 25 MB pack was served f
 | Idle after it, 60 s | 0.00% CPU, 0 wakeups, 39 MB, no live resources | 0.0%, < 60, < 60 MB |
 
 - **Nothing at launch.** The center is made when Settings or a hook first asks for it. It reads the disk only
-  when the Tools pane appears.
+  when the Text pane appears.
 - **The 15 MB a first download leaves** (24 → 39 MB) was not looked into: it is the first use of the network
   stack in the process, plus whatever the allocator keeps.
 

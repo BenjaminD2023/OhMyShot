@@ -2,7 +2,7 @@ import AppKit
 import OMSCore
 import SwiftUI
 
-/// Settings › Tools › Model packs: what each pack the build offers is for, what of it is on this Mac, and its
+/// Settings › Text › Model packs: what each pack the build offers is for, what of it is on this Mac, and its
 /// download. Shown only when the build offers a pack.
 ///
 /// The first download of a pack asks first, with the pack's license to read, where it comes from, and its size;
@@ -230,7 +230,7 @@ private struct ModelPackConsent: View {
                 }
             }
             .font(.callout)
-            Text("Checked before it’s used and kept on this Mac; nothing you capture is sent. Remove it any time in Settings › Tools.", bundle: .module)
+            Text("Checked before it’s used and kept on this Mac; nothing you capture is sent. Remove it any time in Settings › Text.", bundle: .module)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -373,7 +373,7 @@ struct LicenseWell: View {
 
 #if DEBUG
 public extension Notification.Name {
-    /// Opens the first-download sheet for the pack whose id is `userInfo["id"]`, in a Tools pane on screen.
+    /// Opens the first-download sheet for the pack whose id is `userInfo["id"]`, in a Text pane on screen.
     static let debugOpenModelPackConsent = Notification.Name("OhMyShotDebugOpenModelPackConsent")
     /// Opens the installed pack's license sheet, as License… in its menu does.
     static let debugOpenModelPackLicense = Notification.Name("OhMyShotDebugOpenModelPackLicense")

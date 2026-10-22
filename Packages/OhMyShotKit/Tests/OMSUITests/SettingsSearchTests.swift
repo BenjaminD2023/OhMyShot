@@ -21,11 +21,22 @@ struct SettingsSearchTests {
 
     @Test func aSearchLandsOnTheRowThatHasWhatItFound() {
         #expect(SettingsTab.tools.row(matching: "shadow") == "Pins")
+        #expect(SettingsTab.text.row(matching: "wrap") == "Recognized Text")
+        #expect(SettingsTab.text.row(matching: "API key") == "Cloud reading")
         #expect(SettingsTab.capture.row(matching: "shadow") == "Windows")
         #expect(SettingsTab.screenshots.row(matching: "JPEG") == "Format")
         #expect(SettingsTab.screenshots.row(matching: "ask for a name") == "File name")
         #expect(SettingsTab.quickAccess.row(matching: "bottom left") == "Position")
         #expect(SettingsTab.general.row(matching: "nothing like this") == nil)
+    }
+
+    /// A pane whose title a search finds comes before one that only has the words in a row, so Return opens it.
+    @Test func aPaneNamedByTheSearchComesFirst() {
+        let found = SettingsTab.found("text").map(\.tab)
+        #expect(found.first == .text)
+        #expect(found.contains(.capture))
+        #expect(SettingsTab.found("pins").map(\.tab) == [.tools])
+        #expect(SettingsTab.found("nothing like this").isEmpty)
     }
 
     @Test func eachPanesRowsHaveTitlesOfTheirOwn() {

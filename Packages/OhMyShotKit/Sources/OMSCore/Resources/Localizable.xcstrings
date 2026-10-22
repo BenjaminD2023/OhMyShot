@@ -1686,7 +1686,42 @@
         }
       }
     },
+    "The API key is missing from the Keychain. Open the model in Settings › Text and enter it again." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta la clave de API en el Llavero. Abre el modelo en Ajustes › Texto y vuelve a introducirla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clé d’API est absente du trousseau. Ouvrez le modèle dans Réglages › Texte et saisissez-la à nouveau."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "APIキーがキーチェーンにありません。「設定」›「テキスト」でモデルを開いて、もう一度入力してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "钥匙串中没有这个 API 密钥。请在“设置 › 文字”中打开该模型并重新输入。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鑰匙圈中沒有這個 API 密鑰。請在「設定」›「文字」中打開該模型並重新輸入。"
+          }
+        }
+      }
+    },
     "The API key is missing from the Keychain. Open the model in Settings › Tools and enter it again." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -2480,7 +2515,42 @@
         }
       }
     },
+    "The service doesn’t know this address or model. Check both in Settings › Text." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servicio no reconoce esta dirección o este modelo. Comprueba ambos en Ajustes › Texto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le service ne connaît pas cette adresse ou ce modèle. Vérifiez les deux dans Réglages › Texte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サービスはこのアドレスまたはモデルを認識しません。「設定」›「テキスト」で両方を確認してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务不认识这个地址或模型。请在“设置 › 文字”中检查两者。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服務不認得這個位址或模型。請在「設定」›「文字」中檢查兩者。"
+          }
+        }
+      }
+    },
     "The service doesn’t know this address or model. Check both in Settings › Tools." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {

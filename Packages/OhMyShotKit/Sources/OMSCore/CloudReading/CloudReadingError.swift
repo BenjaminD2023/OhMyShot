@@ -33,11 +33,11 @@ public enum CloudReadingError: Error, LocalizedError, Equatable, Sendable {
         case .notSetUp(let reason):
             String(localized: "This model isn’t set up yet: \(reason)", bundle: .module)
         case .keyMissing:
-            String(localized: "The API key is missing from the Keychain. Open the model in Settings › Tools and enter it again.", bundle: .module)
+            String(localized: "The API key is missing from the Keychain. Open the model in Settings › Text and enter it again.", bundle: .module)
         case .keyRejected(let detail):
             Self.withDetail(String(localized: "The service didn’t accept the API key.", bundle: .module), detail)
         case .notFound(let detail):
-            Self.withDetail(String(localized: "The service doesn’t know this address or model. Check both in Settings › Tools.", bundle: .module), detail)
+            Self.withDetail(String(localized: "The service doesn’t know this address or model. Check both in Settings › Text.", bundle: .module), detail)
         case .rateLimited(let detail):
             Self.withDetail(String(localized: "The service is turning requests away for now: too many, or the account’s limit or credit ran out.", bundle: .module), detail)
         case .overloaded(let detail):

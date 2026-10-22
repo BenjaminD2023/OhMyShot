@@ -9,6 +9,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     case screenshots
     case quickAccess
     case recording
+    case text
     case tools
     case sharing
     case shortcuts
@@ -18,7 +19,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
 
     /// The sidebar's groups, in order.
     static let groups: [[SettingsTab]] = [
-        [.general, .capture, .screenshots, .quickAccess, .recording, .tools],
+        [.general, .capture, .screenshots, .quickAccess, .recording, .text, .tools],
         [.sharing, .shortcuts, .automation],
         [.permissions, .about],
     ]
@@ -30,6 +31,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         case .screenshots: String(localized: "Screenshots", bundle: .module)
         case .quickAccess: String(localized: "Quick Access", bundle: .module)
         case .recording: String(localized: "Recording", bundle: .module)
+        case .text: String(localized: "Text", bundle: .module)
         case .tools: String(localized: "Tools", bundle: .module)
         case .sharing: String(localized: "Sharing", bundle: .module)
         case .shortcuts: String(localized: "Shortcuts", bundle: .module)
@@ -46,6 +48,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         case .screenshots: "photo.fill.on.rectangle.fill"
         case .quickAccess: "rectangle.stack.fill"
         case .recording: "record.circle.fill"
+        case .text: "text.viewfinder"
         case .tools: "wrench.and.screwdriver.fill"
         case .sharing: "icloud.and.arrow.up.fill"
         case .shortcuts: "command"
@@ -71,9 +74,9 @@ public struct SettingsDependencies {
     /// The uploads that finished, which only the Sharing tab lists, and what it can do with each.
     public let uploadRecords: UploadRecordStore
     public let recordActions: UploadRecordActions
-    /// The model packs, which only the Tools tab shows, and only when the build offers one.
+    /// The model packs, which only the Text tab shows, and only when the build offers one.
     public let modelPacks: ModelPackCenter?
-    /// The cloud models the OCR panel reads with, which only the Tools tab shows.
+    /// The cloud models the OCR panel reads with, which only the Text tab shows.
     public let cloudModels: CloudModelStore?
     /// The updater, which only the General tab shows, and only in builds that look for updates.
     public let updates: UpdateStatus?
@@ -240,8 +243,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     #if DEBUG
     /// Opens the first pane the search found, as Return in the search field does, for scripted checks.
     public func debugOpenFirstResult() {
-        guard let first = SettingsTab.allCases.first(where: { $0.matches(navigator.query) != nil }) else { return }
-        navigator.open(first, searchedFor: navigator.query)
+        guard let first = SettingsTab.found(navigator.query).first else { return }
+        navigator.open(first.tab, searchedFor: navigator.query)
     }
 
     /// For scripted screenshots that show nothing: the window behind the wallpaper in the middle of the main
@@ -300,8 +303,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             host(QuickAccessSettingsView(settings: dependencies.settings))
         case .recording:
             host(RecordingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
+        case .text:
+            host(TextSettingsView(settings: dependencies.settings, permissions: dependencies.permissions, modelPacks: dependencies.modelPacks, cloudModels: dependencies.cloudModels))
         case .tools:
-            host(ToolsSettingsView(settings: dependencies.settings, permissions: dependencies.permissions, modelPacks: dependencies.modelPacks, cloudModels: dependencies.cloudModels))
+            host(ToolsSettingsView(settings: dependencies.settings))
         case .sharing:
             host(SharingSettingsView(
                 settings: dependencies.settings, destinations: dependencies.destinations,

@@ -113,7 +113,7 @@ struct DebugModelPackHooks {
                 }
             }
         case "modelpack-render":
-            // Settings › Tools behind the wallpaper as <name>.png (modelpack-tools); consent=1 opens the first-download
+            // Settings › Text behind the wallpaper as <name>.png (modelpack-tools); consent=1 opens the first-download
             // sheet for the pack (license=1 an installed pack's license sheet, switch=1 the confirmation of turning cloud
             // reading off, with cloud-demo's model) and renders it as <name>-consent.png. The
             // window closes once captured.
@@ -123,7 +123,7 @@ struct DebugModelPackHooks {
             if value("close") == "1" { return true }
             let controller = makeSettings()
             Self.settings = controller
-            controller.showBehindWallpaper(.tools)
+            controller.showBehindWallpaper(.text)
             Task {
                 defer {
                     if Self.settings === controller {

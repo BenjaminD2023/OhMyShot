@@ -5234,7 +5234,42 @@
         }
       }
     },
+    "Checked before it’s used and kept on this Mac; nothing you capture is sent. Remove it any time in Settings › Text." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se comprueba antes de usarse y se guarda en este Mac; no se envía nada de lo que capturas. Puedes eliminarlo cuando quieras en Ajustes › Texto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérifié avant d’être utilisé et conservé sur ce Mac ; rien de ce que vous capturez n’est envoyé. Supprimez-le à tout moment dans Réglages › Texte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用前に検証され、このMacに保存されます。キャプチャした内容が送信されることはありません。「設定」›「テキスト」でいつでも削除できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用前会先校验，并保存在这台 Mac 上；你截取的任何内容都不会被发送。随时可以在“设置 › 文字”中移除它。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用前會先檢查，並保存在這台 Mac 上；你擷取的任何內容都不會被傳送。隨時可以在「設定」›「文字」中移除它。"
+          }
+        }
+      }
+    },
     "Checked before it’s used and kept on this Mac; nothing you capture is sent. Remove it any time in Settings › Tools." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
