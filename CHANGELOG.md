@@ -44,6 +44,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - An onboarding step, after Screen Recording, for turning off the macOS screenshot keys that answer OhMyShot's shortcuts first. ([b3ee8ce]; by [@fzlzjerry])
 - Updates for release builds with Sparkle: about once a day (Settings › General › Updates, on by default), from signed appcasts on this repository's GitHub releases; a version found in the background waits in the menu bar menu and in Settings rather than in a window, and nothing is downloaded before it is chosen. ([d69ff9c]; by [@fzlzjerry])
 - Settings › About › Acknowledgments…, with the licenses of OhMyShot and of the software it is built with. ([42c6bfa]; by [@fzlzjerry])
+- Capture History selects several captures as Finder does (⌘-click, ⇧-click, ⌘A) to copy, save, restore, or move them to the Trash together, and ⌘O (File › Open in Editor) opens the selection in the editor. ([6523646]; by [@fzlzjerry])
+- A right-click on the editor's tool rail lists every tool with its key. ([656bbcb]; by [@fzlzjerry])
 
 ### Changed
 
@@ -55,6 +57,13 @@ Each entry links its implementation commits or merged pull request and credits v
 - Recording and Studio expose quality controls and estimated movie size; recording areas can be dimmed or framed, and automatic zooms better follow sustained activity. ([8cf6555], [202dc77], [a2f2527]; by [@fzlzjerry])
 - Large and tall OCR images are read in bands, then assembled in image order to limit memory use. ([a8b2131], [14fdf15]; by [@fzlzjerry])
 - Model-pack updates download only changed files instead of fetching the whole pack again. ([5a1dcd2]; by [@fzlzjerry])
+- Quick Access: Delete alone no longer moves a card to the Trash (⌘Delete does); a card moved to the Trash waits five seconds under Undo (also ⌘Z and Restore Recently Closed) before its capture goes; side buttons keep fixed places; and a copy made from the keyboard says Copied on the card. ([4000b7c]; by [@fzlzjerry])
+- Recording's Delete and Restart, and Scrolling Capture's Cancel once something is stitched, ask for a second click before throwing the recording or picture away. ([b67e465]; by [@fzlzjerry])
+- Return in the annotation editor copies the picture and closes the window; Background has a rail symbol of its own; Marker Yellow leads the highlighter's colors in place of Yellow; size chips name their sizes. ([656bbcb], [733fd08]; by [@fzlzjerry])
+- All-In-One leaves out its Copy chip while every capture is copied anyway, and Annotate has one symbol everywhere. ([e43c395]; by [@fzlzjerry])
+- Settings search finds more rows and opens a pane on the row it found, its title lit for a moment. ([6523646], [78c83f6]; by [@fzlzjerry])
+- Studio shows the chosen zoom's controls first in the inspector, says how to choose a stretch to cut, and dims Add Zoom where it has no room. ([97f9d2c]; by [@fzlzjerry])
+- Simplified Chinese tells the Capture pane from Screenshots and counts captures as items. ([77b18cb]; by [@fzlzjerry])
 
 ### Fixed
 
@@ -74,6 +83,10 @@ Each entry links its implementation commits or merged pull request and credits v
 - Scrolling and Auto-scroll continue through long blank stretches, and repeated table cells retain the correct row numbers. ([0d32c35], [b65fad1], [35c03e9]; by [@fzlzjerry])
 - Recording warns when a microphone stops delivering audio instead of leaving a disconnected microphone silently recording. ([450f4a6]; by [@fzlzjerry])
 - Closing History and editors releases more memory, clipboard TIFFs use compression, and GIF frame buffers return their memory when freed. ([cff3ddb], [0182817], [6d3b0af]; by [@fzlzjerry])
+- Capture History's Move All to Trash acts on what the window shows, states the count, and no longer says captures can be put back from the Trash. ([6523646]; by [@fzlzjerry])
+- Recording shows when the microphone was left out because access to it is off, the microphone chip shows that before recording, and a recording that can't start says so on screen. ([b67e465]; by [@fzlzjerry])
+- A scrolling capture whose Auto-scroll needs Accessibility keeps its framed area for the next try, and its warnings stand apart from its progress. ([b67e465]; by [@fzlzjerry])
+- The editor's style capsule no longer covers the next line of text under a highlight drawn freely. ([656bbcb]; by [@fzlzjerry])
 
 [Unreleased]: https://github.com/fzlzjerry/OhMyShot/commits/main/
 [c999cc0]: https://github.com/fzlzjerry/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
@@ -166,6 +179,15 @@ Each entry links its implementation commits or merged pull request and credits v
 [b3ee8ce]: https://github.com/fzlzjerry/OhMyShot/commit/b3ee8ce17153c308b1247a9eb28f487af92dca85
 [745e2f4]: https://github.com/fzlzjerry/OhMyShot/commit/745e2f4e76a8be01f02ca25c84a8e4dc6d08ffef
 [d69ff9c]: https://github.com/fzlzjerry/OhMyShot/commit/d69ff9c7a0c3b71e9eb6a7146d831af4fcb36f6c
+[77b18cb]: https://github.com/fzlzjerry/OhMyShot/commit/77b18cbdac714a39f5338e7cbafde8a72ff22454
+[4000b7c]: https://github.com/fzlzjerry/OhMyShot/commit/4000b7cc3febbcddda7133414a339d38457342dc
+[6523646]: https://github.com/fzlzjerry/OhMyShot/commit/6523646dc6302412d56d33eafa1c8bc070f638b1
+[b67e465]: https://github.com/fzlzjerry/OhMyShot/commit/b67e465792577aff675d28115c1089db4be74eba
+[e43c395]: https://github.com/fzlzjerry/OhMyShot/commit/e43c3955b5bf52e841f9786d0caeafca3ca3c9cf
+[656bbcb]: https://github.com/fzlzjerry/OhMyShot/commit/656bbcba7b3bf9cfe0764069f8f37bbbfdd204be
+[97f9d2c]: https://github.com/fzlzjerry/OhMyShot/commit/97f9d2cdc702585b8aa3710c7d5207ba07ff9f69
+[733fd08]: https://github.com/fzlzjerry/OhMyShot/commit/733fd0888bc8ca99ce1e47779f825d0ceaf65a74
+[78c83f6]: https://github.com/fzlzjerry/OhMyShot/commit/78c83f6af6e5f4430afc4cd31a48a6fd8d3659e1
 [@BenjaminD2023]: https://github.com/BenjaminD2023
 [@bobbyhuang-dev]: https://github.com/bobbyhuang-dev
 [@fzlzjerry]: https://github.com/fzlzjerry
