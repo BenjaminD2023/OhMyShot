@@ -94,6 +94,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - The editor's style capsule no longer covers the next line of text under a highlight drawn freely. ([656bbcb]; by [@fzlzjerry])
 - VoiceOver names the app a History card was taken in and the action of each shortcut recorder in Settings. ([e45b631]; by [@fzlzjerry])
 - The Settings window opened on General is titled General, not "Untitled". ([8ea9c06]; by [@fzlzjerry])
+- The capture overlay shows one pointer at a time: the system's pointer no longer stays beside the drawn crosshair (two crosshairs after Capture Text), and Capture Text's crosshair shows from the start. ([43a1529]; by [@fzlzjerry])
 
 [Unreleased]: https://github.com/fzlzjerry/OhMyShot/commits/main/
 [c999cc0]: https://github.com/fzlzjerry/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
@@ -203,6 +204,7 @@ Each entry links its implementation commits or merged pull request and credits v
 [e45b631]: https://github.com/fzlzjerry/OhMyShot/commit/e45b631339ca0660b6a8ebdf72df23c1266282c3
 [53de98a]: https://github.com/fzlzjerry/OhMyShot/commit/53de98a3004745d40add007ab82b620de21365ba
 [8ea9c06]: https://github.com/fzlzjerry/OhMyShot/commit/8ea9c0654dce1dc928ceafeed629c892178219de
+[43a1529]: https://github.com/fzlzjerry/OhMyShot/commit/43a15294271a0090ffb0da5f84a4cedf97301019
 [@BenjaminD2023]: https://github.com/BenjaminD2023
 [@bobbyhuang-dev]: https://github.com/bobbyhuang-dev
 [@fzlzjerry]: https://github.com/fzlzjerry
