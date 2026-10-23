@@ -50,25 +50,6 @@ struct OverlayToolbarTests {
         #expect(view.debugPointerLayers.crosshair)
     }
 
-    /// Until the app is active the system's pointer shows, and the overlay draws none beside it; once hidden, the drawn
-    /// one appears where the pointer is. A scripted render draws its own regardless.
-    @Test func noPointerIsDrawnWhileTheSystemsShows() {
-        let view = makeView(showsToolbar: false)
-        view.systemPointerShows = true
-        view.layoutSubtreeIfNeeded()
-        let point = global(CGPoint(x: 720, y: 450))
-        view.movePointer(to: point)
-        #expect(!view.debugPointerLayers.crosshair && view.debugPointerLayers.loupe == nil && view.debugPointerLayers.colorReading == nil)
-
-        view.systemPointerShows = false
-        #expect(view.debugPointerLayers.crosshair && view.debugPointerLayers.colorReading != nil)
-        view.systemPointerShows = true
-        #expect(!view.debugPointerLayers.crosshair && view.debugPointerLayers.colorReading == nil)
-
-        view.simulate(pointer: point)
-        #expect(view.debugPointerLayers.crosshair)
-    }
-
     @Test func withoutABarThePointerIsAlwaysDrawn() {
         let view = makeView(showsToolbar: false)
         view.layoutSubtreeIfNeeded()

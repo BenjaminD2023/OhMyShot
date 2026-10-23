@@ -107,14 +107,6 @@ final class OverlayView: NSView {
     private var colorFormat: ColorFormat = .hex
     /// The ruler, while measuring.
     private var measure: MeasureOverlay?
-    /// Whether the system's pointer is showing: until the app is active the overlay cannot hide it, and the crosshair
-    /// and magnifier wait, so there is one pointer, never two. Scripted renders draw theirs anyway.
-    var systemPointerShows = false {
-        didSet {
-            guard systemPointerShows != oldValue, !isAnnotating else { return }
-            withoutAnimation { updatePointer(pointer) }
-        }
-    }
 
     init(display: DisplayInfo) {
         self.display = display
@@ -269,7 +261,7 @@ final class OverlayView: NSView {
     }
 
     private func updateMeasureCrosshair() {
-        guard purpose == .measure, let measure, pointer != nil, isSimulated || !systemPointerShows else { return }
+        guard purpose == .measure, let measure, pointer != nil else { return }
         setAccessibilityValue(measure.accessibilityValue)
         withoutAnimation {
             crosshair.isHidden = measure.showsLines
@@ -868,7 +860,7 @@ final class OverlayView: NSView {
             pointerLayers.forEach { $0.isHidden = true }
             return
         }
-        guard let point, purpose != .text, isSimulated || !systemPointerShows else {
+        guard let point, purpose != .text else {
             pointerLayers.forEach { $0.isHidden = true }
             measure?.movePointer(to: nil)
             return
