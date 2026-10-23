@@ -2,16 +2,29 @@ import AppKit
 
 /// Owns one balanced cursor hide while the selection draws its pointer. Native controls temporarily
 /// give that hide back; ending selection ownership prevents later tracking events from hiding again.
+///
+/// The overlay's app is seldom the one in front (the overlay takes the keyboard without it), and some apps in front keep
+/// the pointer shown over a hide made from behind them; the image set from behind still shows. So while hidden the
+/// pointer is also the blank cursor, put back on every move (`keepHidden`), and it comes back as the arrow.
 @MainActor
 final class OverlayCursorVisibility {
+    /// A cursor with nothing in it.
+    static let blank = NSCursor(image: NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in true }, hotSpot: .zero)
+
     private(set) var isHidden = false
     private var drawsPointer = false
     private let hide: () -> Void
     private let unhide: () -> Void
+    private let keepHidden: () -> Void
 
-    init(hide: @escaping () -> Void = { NSCursor.hide() }, unhide: @escaping () -> Void = { NSCursor.unhide() }) {
+    init(
+        hide: @escaping () -> Void = { NSCursor.hide() },
+        unhide: @escaping () -> Void = { NSCursor.unhide(); NSCursor.arrow.set() },
+        keepHidden: @escaping () -> Void = { OverlayCursorVisibility.blank.set() }
+    ) {
         self.hide = hide
         self.unhide = unhide
+        self.keepHidden = keepHidden
     }
 
     func begin(drawsPointer: Bool, overControls: Bool) {
@@ -21,6 +34,7 @@ final class OverlayCursorVisibility {
 
     func update(overControls: Bool) {
         setHidden(drawsPointer && !overControls)
+        if isHidden { keepHidden() }
     }
 
     func end() {

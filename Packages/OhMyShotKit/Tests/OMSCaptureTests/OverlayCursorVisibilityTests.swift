@@ -5,7 +5,7 @@ import Testing
 struct OverlayCursorVisibilityTests {
     @Test func movesBeforeTakingInputNeverHideThePointer() {
         var calls: [String] = []
-        let cursor = OverlayCursorVisibility(hide: { calls.append("hide") }, unhide: { calls.append("unhide") })
+        let cursor = OverlayCursorVisibility(hide: { calls.append("hide") }, unhide: { calls.append("unhide") }, keepHidden: {})
 
         cursor.update(overControls: false)
         cursor.update(overControls: true)
@@ -15,7 +15,7 @@ struct OverlayCursorVisibilityTests {
 
     @Test func controlHandoffsAreBalancedAndRepeatedTrackingIsIdempotent() {
         var calls: [String] = []
-        let cursor = OverlayCursorVisibility(hide: { calls.append("hide") }, unhide: { calls.append("unhide") })
+        let cursor = OverlayCursorVisibility(hide: { calls.append("hide") }, unhide: { calls.append("unhide") }, keepHidden: {})
 
         cursor.begin(drawsPointer: true, overControls: false)
         cursor.update(overControls: false)
@@ -31,7 +31,7 @@ struct OverlayCursorVisibilityTests {
 
     @Test func openingOnControlsAndTextSessionsKeepTheSystemPointer() {
         var calls: [String] = []
-        let cursor = OverlayCursorVisibility(hide: { calls.append("hide") }, unhide: { calls.append("unhide") })
+        let cursor = OverlayCursorVisibility(hide: { calls.append("hide") }, unhide: { calls.append("unhide") }, keepHidden: {})
 
         cursor.begin(drawsPointer: true, overControls: true)
         #expect(calls.isEmpty)
@@ -45,7 +45,7 @@ struct OverlayCursorVisibilityTests {
 
     @Test func setupOrCancellationEndsOwnershipUntilTheNextInputSession() {
         var calls: [String] = []
-        let cursor = OverlayCursorVisibility(hide: { calls.append("hide") }, unhide: { calls.append("unhide") })
+        let cursor = OverlayCursorVisibility(hide: { calls.append("hide") }, unhide: { calls.append("unhide") }, keepHidden: {})
 
         cursor.begin(drawsPointer: true, overControls: false)
         cursor.update(overControls: true)
@@ -59,9 +59,30 @@ struct OverlayCursorVisibilityTests {
         #expect(calls == ["hide", "unhide", "hide", "unhide"])
     }
 
+    /// An app in front may keep the pointer shown over the hide: the blank cursor goes back on every move while hidden,
+    /// and never over controls, after the session, or in a text session.
+    @Test func everyMoveWhileHiddenPutsTheBlankCursorBack() {
+        var calls: [String] = []
+        let cursor = OverlayCursorVisibility(
+            hide: { calls.append("hide") }, unhide: { calls.append("unhide") }, keepHidden: { calls.append("blank") }
+        )
+
+        cursor.begin(drawsPointer: true, overControls: false)
+        cursor.update(overControls: false)
+        cursor.update(overControls: true)
+        cursor.update(overControls: true)
+        cursor.update(overControls: false)
+        #expect(calls == ["hide", "blank", "blank", "unhide", "hide", "blank"])
+        cursor.end()
+        cursor.update(overControls: false)
+        cursor.begin(drawsPointer: false, overControls: false)
+        cursor.update(overControls: false)
+        #expect(calls == ["hide", "blank", "blank", "unhide", "hide", "blank", "unhide"])
+    }
+
     @Test func releasingTheOwnerReturnsOnlyItsOutstandingHide() {
         var calls: [String] = []
-        var cursor: OverlayCursorVisibility? = OverlayCursorVisibility(hide: { calls.append("hide") }, unhide: { calls.append("unhide") })
+        var cursor: OverlayCursorVisibility? = OverlayCursorVisibility(hide: { calls.append("hide") }, unhide: { calls.append("unhide") }, keepHidden: {})
 
         cursor?.begin(drawsPointer: true, overControls: false)
         cursor = nil
