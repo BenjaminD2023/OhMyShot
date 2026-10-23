@@ -140,6 +140,7 @@ public final class OverlayController {
     /// closing after it (Return) rather than staying, with "Copied" in its reading (⌘C).
     public var onCopyMeasurement: ((String, CGPoint?, Bool) -> Void)?
     private let cursorVisibility = OverlayCursorVisibility()
+    private var activationObservers: [NSObjectProtocol] = []
 
     public private(set) var isActive = false
     /// Whether the overlay has the keyboard and the pointer: at once on a live screen, once the
@@ -204,6 +205,14 @@ public final class OverlayController {
     public init(topology: DisplayTopology, capturer: ScreenCapturer) {
         self.topology = topology
         self.capturer = capturer
+        cursorVisibility.onChange = { [weak self] hidden in
+            self?.entries.values.forEach { $0.view.systemPointerShows = !hidden }
+        }
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+            activationObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.activationChanged() }
+            })
+        }
     }
 
     /// Creates the panels for the current displays ahead of time, so the hotkey only has to show them.
@@ -217,6 +226,7 @@ public final class OverlayController {
             let panel = OverlayPanel(frame: display.frame)
             let view = OverlayView(display: display)
             view.delegate = self
+            view.systemPointerShows = !cursorVisibility.isHidden
             panel.contentView = view
             entries[display.id] = Entry(panel: panel, view: view)
         }
@@ -379,8 +389,10 @@ public final class OverlayController {
             entry.panel.makeFirstResponder(entry.view)
         }
         // A screenshot draws its own crosshair and magnifier, but over the bar the system's arrow shows; copying text
-        // keeps the system crosshair. Only once the overlay has input, so an early move never hides the pointer.
+        // keeps the system crosshair. Only once the overlay has input, so an early move never hides the pointer; and
+        // only once the app is active, which `activate()` above only asks for.
         cursorVisibility.begin(drawsPointer: purpose != .text, overControls: wantsSystemCursor(at: pointer))
+        setSystemCursor()
         CATransaction.flush()
         // A frozen overlay asks for activation a moment after the shortcut, not while handling it: the log
         // says whether it was granted, which only a real shortcut press can show.
@@ -408,6 +420,21 @@ public final class OverlayController {
 
     private func updateCursorVisibility(at point: CGPoint) {
         cursorVisibility.update(overControls: wantsSystemCursor(at: point))
+    }
+
+    /// The window server hides the pointer, and changes it, only for the active app, which the overlay becomes a moment
+    /// after it takes input: the hide waits for that, the system's pointer showing until then in place of the drawn one.
+    private func activationChanged() {
+        guard isActive, hasInput, !isAnnotating else { return }
+        cursorVisibility.activationChanged()
+        setSystemCursor()
+    }
+
+    /// Copying text's crosshair from the start, not from the first move; the arrow otherwise, for the bar and for the
+    /// moment the hidden pointer comes back, where an earlier text session's crosshair would have stayed.
+    private func setSystemCursor() {
+        guard NSApp.isActive else { return }
+        (purpose == .text ? NSCursor.crosshair : NSCursor.arrow).set()
     }
 
     /// Ends in-place annotation: the overlay goes away and the previous app gets the keyboard back.
