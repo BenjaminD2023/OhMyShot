@@ -10,6 +10,8 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Upstream integration
 
+- The capture overlay shows one pointer at a time even before macOS activates OhMyShot, restores the transparent canvas cursor on each move, and starts Capture Text with its crosshair. Fork picker, toolbar and drag cursors are retained. ([43a1529], [7fc5a39], [1134e64]; by [@fzlzjerry])
+
 - Capture History selects several captures as Finder does (⌘-click, ⇧-click, ⌘A) to copy, save, restore, or move them to the Trash together, and ⌘O (File › Open in Editor) opens the selection in the editor. ([6523646]; by [@fzlzjerry])
 - A right-click on the editor's tool rail lists every tool with its key. ([656bbcb]; by [@fzlzjerry])
 - Quick Access: Delete alone no longer moves a card to the Trash (⌘Delete does); a card moved to the Trash waits five seconds under Undo (also ⌘Z and Restore Recently Closed) before its capture goes; side buttons keep fixed places; and a copy made from the keyboard says Copied on the card. ([4000b7c]; by [@fzlzjerry])
@@ -247,3 +249,9 @@ Each entry links its implementation commits or merged pull request and credits v
 [e45b631]: https://github.com/fzlzjerry/OhMyShot/commit/e45b631339ca0660b6a8ebdf72df23c1266282c3
 [53de98a]: https://github.com/fzlzjerry/OhMyShot/commit/53de98a3004745d40add007ab82b620de21365ba
 [8ea9c06]: https://github.com/fzlzjerry/OhMyShot/commit/8ea9c0654dce1dc928ceafeed629c892178219de
+
+[43a1529]: https://github.com/fzlzjerry/OhMyShot/commit/43a15294271a0090ffb0da5f84a4cedf97301019
+
+[7fc5a39]: https://github.com/fzlzjerry/OhMyShot/commit/7fc5a392938eb0df2f07ee4e2c238fd569a4070d
+
+[1134e64]: https://github.com/fzlzjerry/OhMyShot/commit/1134e6464c53f5dae261be1fa041c64098684c69

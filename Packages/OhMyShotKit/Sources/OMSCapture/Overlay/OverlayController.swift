@@ -394,8 +394,13 @@ public final class OverlayController {
             entry.panel.makeKey()
             entry.panel.makeFirstResponder(entry.view)
         }
-        // The canvas draws its own pointer; native controls retain the system cursor. This ownership
-        // starts only after taking input, so early tracking events cannot hide the user's pointer.
+        // A screenshot draws its own crosshair and magnifier, but over the bar the system's arrow shows; copying text
+        // keeps the system crosshair, from the start rather than the first move. Only once the overlay has input, so an
+        // early move never hides the pointer; and the pointer is the overlay's whether or not the activation asked for
+        // above has come. The arrow, for the bar and for the moment the hidden pointer comes back, in place of whatever
+        // cursor was set last (an earlier text session's crosshair).
+        BackgroundCursor.allow(true)
+        (purpose == .text ? NSCursor.crosshair : NSCursor.arrow).set()
         cursorVisibility.begin(drawsPointer: purpose != .text, overControls: wantsSystemCursor(at: pointer))
         for entry in entries.values { entry.view.beginCanvasCursorOwnership(at: pointer) }
         CATransaction.flush()
@@ -841,6 +846,9 @@ public final class OverlayController {
         }
         toolbarHiddenByUser = false
         systemCursorPoint = nil
+        // Return cursor changes to the active app after clearing the overlay views.
+        if hasInput { NSCursor.arrow.set() }
+        BackgroundCursor.allow(false)
         frameLeases.removeAll()
         windowLease = nil
         windows = []
