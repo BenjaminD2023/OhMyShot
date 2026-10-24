@@ -8,6 +8,8 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.3.0-fork.4] - 2026-10-24
+
 ### Upstream integration
 
 - The capture overlay shows one pointer at a time even before macOS activates OhMyShot, restores the transparent canvas cursor on each move, and starts Capture Text with its crosshair. Fork picker, toolbar and drag cursors are retained. ([43a1529], [7fc5a39], [1134e64]; by [@fzlzjerry])
@@ -125,7 +127,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - Recording warns when a microphone stops delivering audio instead of leaving a disconnected microphone silently recording. ([450f4a6]; by [@fzlzjerry])
 - Closing History and editors releases more memory, clipboard TIFFs use compression, and GIF frame buffers return their memory when freed. ([cff3ddb], [0182817], [6d3b0af]; by [@fzlzjerry])
 
-[Unreleased]: https://github.com/BenjaminD2023/OhMyShot/compare/v0.2.2-fork.3...main
+[Unreleased]: https://github.com/BenjaminD2023/OhMyShot/compare/v0.3.0-fork.4...main
+[0.3.0-fork.4]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.3.0-fork.4
 [0.2.2-fork.3]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.2.2-fork.3
 [0.2.1-fork.2]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.2.1-fork.2
 [125a334]: https://github.com/BenjaminD2023/OhMyShot/commit/125a33471bf12769504876167288d165320a895b
