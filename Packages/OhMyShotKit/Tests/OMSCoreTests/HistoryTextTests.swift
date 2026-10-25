@@ -228,13 +228,21 @@ struct HistoryTextReaderTests {
 
     /// A stand-in reader answering "read <id>" for each picture, or, with `answering`, for that many and then
     /// exiting; every start appends a line to `starts`.
-    private func fakeReader(in directory: URL, answering limit: Int? = nil, pause: Double = 0) throws -> (helper: URL, starts: URL) {
+    private func fakeReader(in directory: URL, answering limit: Int? = nil, pause: Double = 0, holdFirstRun: Bool = false) throws -> (helper: URL, starts: URL) {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let helper = directory.appending(path: "fake-reader.sh"), starts = directory.appending(path: "starts")
         let stop = limit.map { "[ \"$n\" -ge \($0) ] && exit 0" } ?? ""
+        // Keep the first process alive until the production reader terminates it. A wall-clock sleep
+        // cannot establish this precondition when other tests temporarily occupy the main actor.
+        let hold = holdFirstRun ? """
+        if mkdir '\(directory.appending(path: "first-run").path(percentEncoded: false))' 2>/dev/null; then
+          while :; do sleep 0.02; done
+        fi
+        """ : ""
         let script = """
         #!/bin/sh
         echo started >> '\(starts.path(percentEncoded: false))'
+        \(hold)
         n=0
         while IFS= read -r line; do
           \(stop)
@@ -304,10 +312,15 @@ struct HistoryTextReaderTests {
         let store = makeStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }
         let items = try (1...6).map { try store.add(data: Data([UInt8($0)]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil) }
-        let (helper, startsFile) = try fakeReader(in: store.directory.appending(path: "bin"), pause: 0.15)
+        let (helper, startsFile) = try fakeReader(in: store.directory.appending(path: "bin"), holdFirstRun: true)
         let reader = HistoryTextReader(store: store, helper: helper)
+        defer { reader.stop() }
         reader.read(priority: .background)
-        try? await Task.sleep(for: .milliseconds(400))
+        let deadline = ContinuousClock.now + .seconds(5)
+        while starts(startsFile) == 0, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(starts(startsFile) == 1)
         // History opens.
         reader.readNow()
         await settled(reader)

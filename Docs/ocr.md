@@ -254,8 +254,13 @@ lines taken for code (step 8). Still open:
 
 - **English words inside a Chinese line** are still read by the Chinese model ("macOS" as "macos" in
   `zh-en-chat`): step 5 replaces whole lines only.
-- **Reading order across columns**: lines are ordered top to bottom, so a caption beside a column is
-  read in the middle of it.
+
+Reading order across sustained text columns is handled by `ReadingOrder`'s automatic layout mode (2026-10-25).
+Stable text edges and vertical coexistence establish separate columns; full-width headings and paragraphs divide
+those columns into bands. Smaller side notes are kept outside the main paragraph. Explicit RTL direction orders
+rows and columns from right to left without reversing the characters. Code, short tabular labels, alternating chat
+bubbles and uncertain layouts retain row order; table cells explicitly request `.rows`. This is conservative
+geometric layout inference, not semantic reconstruction of arbitrary magazine or overlapping layouts.
 
 ## Translation (`Translator`, `TranslationUnits`, `TranslationOverlay`, 2026-10-08)
 

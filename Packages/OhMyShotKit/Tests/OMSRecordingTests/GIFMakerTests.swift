@@ -6,6 +6,76 @@ import Testing
 @testable import OMSRecording
 
 struct GIFMakerTests {
+    @Test(arguments: [65_535, 65_536, 120_000, 131_071])
+    func longFrameDelaysAreSplitWithoutLosingTime(delay: Int) throws {
+        let url = Self.temporaryGIF()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let context = try #require(CGContext(
+            data: nil, width: 12, height: 12, bitsPerComponent: 8, bytesPerRow: 48,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(srgbRed: 0.5, green: 0.5, blue: 0.5, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 12, height: 12))
+        let picture = try #require(context.makeImage())
+        let frame = try #require(GIFFileWriter.encode(picture, x: 0, y: 0))
+        let writer = try GIFFileWriter(url: url, width: 12, height: 12)
+        try writer.write(frame, delay: delay)
+        try writer.finish()
+        let frames = try Self.frames(of: url)
+        #expect(frames.map(\.delay).reduce(0, +) == delay)
+        #expect(frames.allSatisfy { (2...65_535).contains($0.delay) })
+        #expect(frames.count == writer.frameCount)
+        let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+        for index in frames.indices {
+            let decoded = try #require(CGImageSourceCreateImageAtIndex(source, index, nil))
+            #expect(abs(try Self.gray(of: decoded, x: 6, y: 6) - 128) < 4)
+        }
+    }
+
+    @Test func repeatingATransparentDeltaPreservesTheCanvas() throws {
+        let url = Self.temporaryGIF()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let context = try #require(CGContext(
+            data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(srgbRed: 0.25, green: 0.25, blue: 0.25, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+        let backgroundImage = try #require(context.makeImage())
+        let background = try #require(GIFFileWriter.encode(backgroundImage, x: 0, y: 0))
+        context.clear(CGRect(x: 0, y: 0, width: 16, height: 16))
+        context.setFillColor(CGColor(srgbRed: 0.9, green: 0.9, blue: 0.9, alpha: 1))
+        context.fill(CGRect(x: 4, y: 4, width: 4, height: 4))
+        let deltaImage = try #require(context.makeImage())
+        let delta = try #require(GIFFileWriter.encode(deltaImage, x: 0, y: 0))
+        #expect(delta.transparentIndex != nil)
+        let writer = try GIFFileWriter(url: url, width: 16, height: 16)
+        try writer.write(background, delay: 100)
+        try writer.write(delta, delay: 120_000)
+        try writer.finish()
+        let frames = try Self.frames(of: url)
+        #expect(frames.map(\.delay).reduce(0, +) == 120_100)
+        let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+        for index in 1..<frames.count {
+            let picture = try #require(CGImageSourceCreateImageAtIndex(source, index, nil))
+            #expect(abs(try Self.gray(of: picture, x: 1, y: 1) - 64) < 4)
+            #expect(try Self.gray(of: picture, x: 5, y: 10) > 220)
+        }
+    }
+
+    @Test func aTwentyMinuteStillMovieKeepsItsFullGIFDuration() async throws {
+        let movie = try await Self.movie(seconds: 1_200) { second in
+            second == 0 ? [TestMedia.frame(at: 0, gray: 100), TestMedia.frame(at: 1_199, gray: 100)] : []
+        }
+        let url = Self.temporaryGIF()
+        defer { [movie, url].forEach { try? FileManager.default.removeItem(at: $0) } }
+        let gif = try await GIFMaker.make(from: movie, to: url, options: .init(framesPerSecond: 10))
+        let frames = try Self.frames(of: url)
+        #expect(abs(gif.duration - 1_200) < 0.01)
+        #expect(frames.map(\.delay).reduce(0, +) == 120_000)
+        #expect(gif.frameCount == frames.count && frames.count >= 2)
+    }
+
     @Test func aStillStretchIsOneFrameShownForAsLong() async throws {
         let movie = try await Self.movie(seconds: 2) { second in
             [TestMedia.frame(at: 0, gray: 40), TestMedia.frame(at: 1, gray: 200)].filter { _ in second == 0 }

@@ -11,7 +11,7 @@ import OMSCore
 ///
 /// The recording is read once, in order. GIF frames come at a steady rate, each showing what the recording
 /// showed when it begins, and a run of them with the same picture becomes one frame shown longer, so a
-/// screen that sits still costs one frame however long it sits. Every frame after the first holds only the
+/// screen that sits still costs one frame per GIF delay limit (655.35 seconds). Every changed frame holds only the
 /// part of the picture that changed; when less than half of that part changed, the pixels left as they
 /// were are transparent, so a pointer moving over a still page adds next to nothing. Pictures are scaled
 /// with high-quality resampling, which keeps small text readable. Memory stays the same however long the

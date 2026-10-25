@@ -155,6 +155,7 @@ nonisolated public final class ScrollStitcher {
 
     /// Takes in a view: BGRA pixels, `width` × `height`, rows `bytesPerRow` apart.
     public func add(_ pixels: UnsafeRawPointer, bytesPerRow: Int) -> Step {
+        canvas?.beginFrame()
         innerPart = nil
         viewsSinceMoved += 1
         guard !isFull, taken == nil else { return .full }
@@ -846,13 +847,20 @@ nonisolated public final class ScrollStitcher {
             return place(match, view: view, old: old, band: band, track: &track)
         }
         canvas.noteColumns(new: view, old: old, offset: match.offset, lines: match.first ..< match.end, at: next)
+        canvas.noteFixedOverlays(view, old: old, offset: match.offset, rows: match.from..<match.to)
         position = next
         // The lines both views show back, segment by segment, what moved with the content; what just came into
         // view is taken in but for what stays where it is on screen. A sidebar that never moves and an avatar
         // stuck while its post scrolls back nothing, so they never spread down the picture.
         canvas.settleTentative(view, at: position)
         canvas.beginView(travel: abs(match.offset), lines: position + match.from ..< position + match.to)
-        let rows = (match.from..<match.to).filter { !pulledOut(position + $0) }
+        // A freshly changed image can shorten the matching band although its page position is known
+        // from the surrounding text. Count its changes across the previously confirmed scrolling area,
+        // not only inside the rows that still match this particular frame.
+        let previouslyScrolling = self.band ?? band
+        let overlapStart = max(0, -match.offset, min(band.lowerBound, previouslyScrolling.lowerBound))
+        let overlapEnd = min(view.count, old.count - match.offset, max(band.upperBound, previouslyScrolling.upperBound))
+        let rows = (overlapStart..<max(overlapStart, overlapEnd)).filter { !pulledOut(position + $0) }
         canvas.noteChanges(view: view, old: old, offset: match.offset, rows: rows, at: position)
         canvas.noteDrifted(view: view, old: old, offset: match.offset, rows: rows, at: position)
         for line in match.from..<match.to where !pulledOut(position + line) {
@@ -1693,6 +1701,9 @@ nonisolated private final class Canvas {
         /// view before did there: nothing on it changing; and views whose line showed it changing.
         var calm = [UInt8](repeating: 0, count: Canvas.chunkLines)
         var restless = [UInt8](repeating: 0, count: Canvas.chunkLines)
+        /// An in-place update spanning a substantial part of the scrolling content, rather than a
+        /// displaced avatar or an isolated caret. Its stable new state may supersede old sharpness.
+        var coherentChanges = [Bool](repeating: false, count: Canvas.chunkLines)
         /// Per line and segment, how much the views back what it holds.
         let support: UnsafeMutablePointer<UInt8>
         /// Distance from an occluding edge of the clearest observation at a verified page position.
@@ -1790,6 +1801,21 @@ nonisolated private final class Canvas {
     private var weighedIndex = 0
     /// Per segment of the line being taken in: grounded as over the content (1), or one color where it was on screen (2).
     private var overlay: [UInt8] = []
+    /// Pixel ranges belonging to a compact screen-fixed foreground component, including its enclosed
+    /// background-colored marks. These are excluded from evidence even when an individual 8-pixel cell
+    /// is indistinguishable from the page's background.
+    private var fixedRows: [[Range<Int>]] = []
+    private var fixedVisited: [UInt8] = []
+    private var fixedIsCurrent = false
+    private struct FixedBounds: Hashable {
+        let top: Int
+        let bottom: Int
+        let left: Int
+        let right: Int
+    }
+    private var fixedShapes: [FixedBounds: [(row: Int, bytes: Range<Int>)]] = [:]
+
+    func beginFrame() { fixedIsCurrent = false }
     /// The rows of the view being taken in whose lines `noteChanges` looked at, which of them show something that
     /// keeps changing, and per row and segment what it saw there (`changedNow`, `keepsChanging`).
     private var noted: [Bool] = []
@@ -2126,6 +2152,119 @@ nonisolated private final class Canvas {
         groundNewlyStaying(newly)
     }
 
+    /// Find compact foreground components that agree in screen coordinates but disagree at the verified
+    /// page offset. Grow through screen-stationary foreground, then include enclosed marks row by row.
+    /// Pure page content agrees at its page offset and cannot seed a component; full-height sidebars remain
+    /// the responsibility of the column model. Pixels never observed unobscured keep the known ground.
+    func noteFixedOverlays(_ view: Lines, old: Lines, offset: Int, rows: Range<Int>) {
+        let previousShapes = fixedShapes
+        fixedShapes = [:]
+        fixedRows = Array(repeating: [], count: view.count)
+        fixedIsCurrent = true
+        guard let ground, offset != 0 else { return }
+        let width = lineBytes / 4, count = view.count * width
+        let source = UnsafeRawPointer(view.pixels.baseAddress).assumingMemoryBound(to: UInt32.self)
+        let stationary = UnsafeRawPointer(old.pixels.baseAddress).assumingMemoryBound(to: UInt32.self)
+        let floor = UnsafeRawPointer(ground.baseAddress).assumingMemoryBound(to: UInt32.self)
+        var stack: [Int] = []
+        var visitsReady = false
+        for row in rows {
+            guard row + offset >= 0, row + offset < old.count else { continue }
+            for (band, part) in view.bands.enumerated()
+                where view.hashes[band * view.count + row] != old.hashes[band * old.count + row + offset] {
+                // Whole cells already explained by the page or the stationary-column model need
+                // no pixel search. Most frames consequently never allocate or clear the flood bitmap.
+                for column in part.lowerBound * 4 / Self.segmentBytes...(part.upperBound * 4 - 1) / Self.segmentBytes
+                    where !stays[column] && !adrift[column] {
+                    let left = max(column * Self.segmentBytes, part.lowerBound * 4)
+                    let right = min((column + 1) * Self.segmentBytes, part.upperBound * 4)
+                    guard memcmp(view.line(row) + left, ground.baseAddress + left, right - left) != 0,
+                          !Self.nearlyAlike(view.line(row) + left, old.line(row + offset) + left, right - left) else { continue }
+                    for x in left / 4..<right / 4 {
+                        let seed = row * width + x
+                        guard (!visitsReady || fixedVisited[seed] == 0), source[seed] != floor[x], source[seed] == stationary[seed],
+                              !Self.nearlyAlike(view.line(row) + x * 4, old.line(row + offset) + x * 4, 4) else { continue }
+                        if !visitsReady {
+                            if fixedVisited.count != count { fixedVisited = [UInt8](repeating: 0, count: count) }
+                            else { fixedVisited.withUnsafeMutableBufferPointer { $0.update(repeating: 0) } }
+                            visitsReady = true
+                        }
+                        stack.removeAll(keepingCapacity: true)
+                        stack.append(seed)
+                        fixedVisited[seed] = 1
+                        let foreground = source[seed]
+                        var bounds: [Int: (left: Int, right: Int)] = [:]
+                        var first = row, last = row, area = 0
+                        var changingContour = false
+                        while let pixel = stack.popLast() {
+                            let y = pixel / width, column = pixel % width
+                            first = min(first, y); last = max(last, y); area += 1
+                            if let held = bounds[y] { bounds[y] = (min(held.left, column), max(held.right, column)) }
+                            else { bounds[y] = (column, column) }
+                            for next in [column > 0 ? pixel - 1 : -1, column + 1 < width ? pixel + 1 : -1,
+                                         y > 0 ? pixel - width : -1, y + 1 < view.count ? pixel + width : -1] {
+                                if next >= 0, (source[next] == foreground) != (stationary[next] == foreground) { changingContour = true }
+                                guard next >= 0, fixedVisited[next] == 0, source[next] == foreground,
+                                      source[next] == stationary[next], source[next] != floor[next % width] else { continue }
+                                fixedVisited[next] = 1
+                                stack.append(next)
+                            }
+                        }
+                        // Isolated matching glyph pixels are not a fixed control, nor is a sidebar or a large
+                        // stationary background. The component needs two-dimensional extent and substantial area.
+                        guard !changingContour, area >= 12, last > first, first > 0, last + 1 < view.count,
+                              (last - first + 1) * 2 < view.count, area * 4 < count else { continue }
+                        var shape: [(row: Int, bytes: Range<Int>)] = []
+                        for (y, extent) in bounds {
+                            var begin: Int?
+                            for column in extent.left...extent.right + 1 {
+                                let same = column <= extent.right && source[y * width + column] == stationary[y * width + column]
+                                if same { if begin == nil { begin = column } }
+                                else if let start = begin {
+                                    fixedRows[y].append(start * 4 ..< column * 4)
+                                    shape.append((y, start * 4..<column * 4))
+                                    begin = nil
+                                }
+                            }
+                        }
+                        let outline = FixedBounds(top: first, bottom: last, left: bounds.values.map(\.left).min()!, right: bounds.values.map(\.right).max()!)
+                        fixedShapes[outline] = shape
+                    }
+                }
+            }
+        }
+        // Previously verified silhouettes remain useful when a large step puts a button entirely
+        // in the arriving strip, or when it touches moving content of the same color. Carry a row
+        // only while its entire recorded silhouette still matches, including any interior mark.
+        for (outline, shape) in previousShapes where fixedShapes[outline] == nil {
+            guard shape.allSatisfy({ row, range in
+                row < view.count && memcmp(view.line(row) + range.lowerBound, old.line(row) + range.lowerBound, range.count) == 0
+            }) else { continue }
+            let overlapping = shape.filter { $0.row + offset >= 0 && $0.row + offset < old.count }
+            guard overlapping.isEmpty || overlapping.contains(where: { row, range in
+                !Self.nearlyAlike(view.line(row) + range.lowerBound, old.line(row + offset) + range.lowerBound, range.count)
+            }) else { continue }
+            fixedShapes[outline] = shape
+            for (row, range) in shape { fixedRows[row].append(range) }
+        }
+        for row in fixedRows.indices where fixedRows[row].count > 1 {
+            var joined: [Range<Int>] = []
+            for range in fixedRows[row].sorted(by: { $0.lowerBound < $1.lowerBound }) {
+                if let last = joined.last, range.lowerBound <= last.upperBound {
+                    joined[joined.count - 1] = last.lowerBound..<max(last.upperBound, range.upperBound)
+                } else { joined.append(range) }
+            }
+            fixedRows[row] = joined
+        }
+    }
+
+    private func fixedRanges(of source: UnsafeRawPointer) -> [Range<Int>] {
+        guard fixedIsCurrent, let currentView else { return [] }
+        let offset = UnsafeRawPointer(currentView.pixels.baseAddress).distance(to: source)
+        guard offset >= 0, offset.isMultiple(of: lineBytes), offset / lineBytes < fixedRows.count else { return [] }
+        return fixedRows[offset / lineBytes]
+    }
+
     /// A column that stays put takes as its ground the plain color the first view showed in it past what was seen
     /// still there, when it showed one: the page's background under a sticky card shorter than the view, which
     /// the card's own color outnumbered in the first view. Not what it showed before it: that scrolled away (a site's
@@ -2396,6 +2535,25 @@ nonisolated private final class Canvas {
         let loose = chunk.loose + slot * segments
         let changes = chunk.changes + slot * segments
         let state = chunk.states[slot]
+        let masked = fixedRanges(of: source)
+        let saved = state == 0 ? [] : masked.map { Data(bytes: target + $0.lowerBound, count: $0.count) }
+        let covered = Set(masked.flatMap { $0.lowerBound / Self.segmentBytes ... ($0.upperBound - 1) / Self.segmentBytes })
+        let qualities = chunk.quality + slot * segments
+        let evidence = covered.map { (segment: $0, support: support[$0], quality: qualities[$0], loose: loose[$0]) }
+        defer {
+            if !masked.isEmpty, let ground {
+                for (part, range) in masked.enumerated() {
+                    if state == 0 { memcpy(target + range.lowerBound, ground.baseAddress + range.lowerBound, range.count) }
+                    else { saved[part].withUnsafeBytes { bytes in _ = memcpy(target + range.lowerBound, bytes.baseAddress!, range.count) } }
+                }
+                for entry in evidence {
+                    support[entry.segment] = state == 0 ? 0 : entry.support
+                    qualities[entry.segment] = state == 0 ? 0 : entry.quality
+                    loose[entry.segment] = state == 0 ? 1 : entry.loose
+                }
+                rehash(target, chunk: chunk, slot: slot)
+            }
+        }
         if state == 0 {
             memcpy(target, source, lineBytes)
             loose.update(repeating: 0, count: segments)
@@ -2453,6 +2611,7 @@ nonisolated private final class Canvas {
         case .agreeing(let previous, let sameRow, let formerRow, let confirmed, let atEdge, let belowStart):
             driftedLine = driftedRow(of: sameRow)
             weighedIndex = index
+            let coherentChange = chunk.coherentChanges[slot]
             // Whether the line still holds just what the first view showed, to tell below whether that gave way.
             let wasFirst: Bool = {
                 guard let firstSnapshot, let firstLines, firstLines.contains(index) else { return false }
@@ -2466,12 +2625,18 @@ nonisolated private final class Canvas {
                 firstLines.flatMap { $0.contains(index) ? UnsafeRawPointer(snapshot.baseAddress + (index - $0.lowerBound) * lineBytes) : nil }
             }
             stale.removeAll(keepingCapacity: true)
+            var updatedState = false
             let weighed = weigh(
                 source, into: target, support: support, previous: previous, sameRow: sameRow, formerRow: formerRow,
                 held: state == 2, atEdge: atEdge, belowStart: belowStart, qualities: chunk.quality + slot * segments, loose: loose, changes: changes,
                 quality: quality,
-                firstRow: firstRow, calm: &chunk.calm[slot], restless: &chunk.restless[slot]
+                firstRow: firstRow, calm: &chunk.calm[slot], restless: &chunk.restless[slot], coherentChange: coherentChange, updatedState: &updatedState
             )
+            if scrollingEnds.contains(where: { memcmp(source + $0.lowerBound, target + $0.lowerBound, $0.count) != 0 }) {
+                let newState = updatedState || coherentChange && scrollingMiddle.allSatisfy { memcmp(source + $0.lowerBound, target + $0.lowerBound, $0.count) == 0 }
+                    && (0..<segments).contains { changes[$0] & (Self.video | Self.restless) == 0 && changes[$0] & Self.counted > 0 }
+                if newState { refreshChangedEnds(source, target: target, previous: previous, sameRow: sameRow, chunk: chunk, slot: slot) }
+            }
             if preferred || weighed {
                 rehash(target, chunk: chunk, slot: slot)
                 // What the first view showed of the line gave way, most of it, to something else altogether (a picture
@@ -2626,6 +2791,11 @@ nonisolated private final class Canvas {
                     flags[segment] |= Self.keepsChanging
                     noisy[row] = true
                 }
+                let changed = (0..<segments).filter {
+                    isBetweenEnds($0) && !stays[$0] && changes[$0] & (Self.video | Self.restless) == 0 && changes[$0] & Self.counted > 0
+                }
+                let contentWidth = scrollingMiddle.reduce(0) { $0 + $1.count } / Self.segmentBytes
+                chunk.coherentChanges[slot] = changed.count >= 4 && (changed.last! - changed.first! + 1) * 2 >= contentWidth
             }
         }
     }
@@ -3101,7 +3271,8 @@ nonisolated private final class Canvas {
         _ source: UnsafeRawPointer, into target: UnsafeMutableRawPointer, support: UnsafeMutablePointer<UInt8>,
         previous: UnsafeRawPointer, sameRow: UnsafeRawPointer, formerRow: UnsafeRawPointer, held: Bool, atEdge: Bool, belowStart: Bool,
         qualities: UnsafeMutablePointer<UInt8>, loose: UnsafeMutablePointer<UInt8>, changes: UnsafeMutablePointer<UInt8>, quality: UInt8,
-        firstRow: UnsafeRawPointer?, calm: UnsafeMutablePointer<UInt8>, restless: UnsafeMutablePointer<UInt8>
+        firstRow: UnsafeRawPointer?, calm: UnsafeMutablePointer<UInt8>, restless: UnsafeMutablePointer<UInt8>, coherentChange: Bool,
+        updatedState: inout Bool
     ) -> Bool {
         for run in stayingMiddle {
             var from = run.lowerBound
@@ -3171,22 +3342,35 @@ nonisolated private final class Canvas {
                     // not move says nothing: what it shows there stayed put or moved otherwise. Nor does a line that shows
                     // what moved part of the way, where the lines the view looked at missed it.
                     let drifted = drifting(segment)
-                    if drifted, loose[segment] == 0 { continue }
-                    // Repeated passes close to a sticky edge cannot overrule a clearer interior observation; but where
-                    // the line still holds what the first view showed, changed once or twice since, and three views in
-                    // a row now show it alike and otherwise, the page changed there after the first view (a picture
-                    // loaded, a skeleton filled in, a highlight gone). Away from the bars, what they show takes its
-                    // place, once the view is all in and where lines enough in a row give way (`endView`): a video or
-                    // an animation that follows the scrolling, changing on and on, keeps its first frame, and nothing
-                    // changes a line or two at a time.
+                    if drifted, loose[segment] == 0,
+                       !(coherentChange && Self.nearlyAlike(source + start, previous + start, length) && memcmp(source + start, sameRow + start, length) != 0) { continue }
+                    // Repeated passes close to a sticky edge cannot overrule a clearer interior observation.
+                    // A broad, confirmed in-place update which subsequent aligned views show unchanged can:
+                    // a carousel's older sharp frame is no longer its current state. Isolated avatars and
+                    // continuously changing video retain their existing protection. The original viewport's
+                    // placeholder still uses the grouped `endView` path, including its margin-vote reset.
                     if quality < qualities[segment] {
-                        guard calm.pointee >= 2, restless.pointee <= 2, !atEdge, !belowStart, Self.nearlyAlike(source + start, previous + start, length),
-                              let firstRow, memcmp(target + start, firstRow + start, length) == 0,
+                        let changedInPlace = coherentChange && changes[segment] & (Self.video | Self.restless) == 0 && changes[segment] & Self.counted > 0
+                        let original = firstRow.map { memcmp(target + start, $0 + start, length) == 0 } ?? false
+                        guard calm.pointee >= 2, restless.pointee <= 2, !atEdge, !belowStart || changedInPlace,
+                              original || changedInPlace, Self.nearlyAlike(source + start, previous + start, length),
                               // What stayed where it was on screen is over the content; but a plain stretch over one (a
                               // placeholder's color, a blank row of the picture that replaced it) looks alike everywhere.
-                              memcmp(source + start, sameRow + start, length) != 0
+                              changedInPlace || memcmp(source + start, sameRow + start, length) != 0
                                   || Self.isPlain(source + start, length) && Self.isPlain(target + start, length) else { continue }
-                        stale.append(start)
+                        if !original && changedInPlace {
+                            // In-place change is positive evidence, independent of the first viewport:
+                            // after repeated aligned observations of the new state, old sharpness cannot
+                            // preserve an earlier carousel slide or stale document text indefinitely.
+                            memcpy(target + start, source + start, length)
+                            support[segment] = Self.firstSupport
+                            qualities[segment] = quality
+                            loose[segment] = 0
+                            changed = true
+                            updatedState = true
+                        } else {
+                            stale.append(start)
+                        }
                         continue
                     }
                     if Self.nearlyAlike(source + start, previous + start, length) {
@@ -3234,6 +3418,31 @@ nonisolated private final class Canvas {
             }
         }
         return changed
+    }
+
+    /// A confirmed new content state also replaces its matching margins. Old votes for a carousel's
+    /// previous slide must not retain strips of that slide beside the newly settled middle. A fixed
+    /// overlay or sidebar at an end still does not vote: an end must either already agree or have
+    /// moved with the same stable content, with plain ends continuing the adjoining content color.
+    private func refreshChangedEnds(
+        _ source: UnsafeRawPointer, target: UnsafeMutableRawPointer, previous: UnsafeRawPointer, sameRow: UnsafeRawPointer,
+        chunk: Chunk, slot: Int
+    ) {
+        guard !scrollingEnds.isEmpty, scrollingEnds.allSatisfy({ part in
+            if memcmp(source + part.lowerBound, target + part.lowerBound, part.count) == 0 { return true }
+            guard Self.nearlyAlike(source + part.lowerBound, previous + part.lowerBound, part.count),
+                  !(part.lowerBound / Self.segmentBytes...((part.upperBound - 1) / Self.segmentBytes)).contains(where: { adrift[$0] }) else { return false }
+            if memcmp(source + part.lowerBound, sameRow + part.lowerBound, part.count) != 0 { return true }
+            let adjacent = part.upperBound <= endBytes ? part.upperBound : part.lowerBound - 4
+            return adjacent >= 0 && adjacent + 4 <= lineBytes && Self.isPlain(source + part.lowerBound, part.count)
+                && (source + part.lowerBound).load(as: UInt32.self) == (source + adjacent).load(as: UInt32.self)
+        }) else { return }
+        for part in scrollingEnds { memcpy(target + part.lowerBound, source + part.lowerBound, part.count) }
+        let first = slot * Self.variants
+        for variant in 0..<Self.variants { chunk.endCounts[first + variant] = 0 }
+        chunk.endHashes[first] = endsHash(source)
+        chunk.endCounts[first] = Self.stillCount
+        chunk.shown[slot] = 0
     }
 
     /// The line's hash in each band, for finding views in the picture, after it changed.

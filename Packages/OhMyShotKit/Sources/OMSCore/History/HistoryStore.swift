@@ -471,15 +471,28 @@ public final class HistoryStore: Sendable {
 
     /// Every item, newest first.
     public func items() -> [HistoryItem] {
+        readItems(cancelled: { false })
+    }
+
+    /// Directory enumeration and sidecar decoding for an open history window. Work stays off its actor
+    /// and cancellation stops before reading the next file; a cancelled listing is never a partial list.
+    @concurrent public func loadItems() async -> [HistoryItem] {
+        readItems(cancelled: { Task.isCancelled })
+    }
+
+    private func readItems(cancelled: () -> Bool) -> [HistoryItem] {
+        guard !cancelled() else { return [] }
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)) else { return [] }
-        return names
-            .filter { $0.hasSuffix(".json") }
-            .compactMap { name in
-                guard let data = FileManager.default.contents(atPath: directory.appending(path: name).path(percentEncoded: false)) else { return nil }
-                return try? JSONDecoder.history.decode(HistoryItem.self, from: data)
-            }
-            .filter { FileManager.default.fileExists(atPath: fileURL(for: $0).path(percentEncoded: false)) }
-            .sorted { $0.createdAt > $1.createdAt }
+        var items: [HistoryItem] = []
+        for name in names where name.hasSuffix(".json") {
+            guard !cancelled() else { return [] }
+            guard let data = FileManager.default.contents(atPath: directory.appending(path: name).path(percentEncoded: false)),
+                  let item = try? JSONDecoder.history.decode(HistoryItem.self, from: data),
+                  FileManager.default.fileExists(atPath: fileURL(for: item).path(percentEncoded: false)) else { continue }
+            items.append(item)
+        }
+        guard !cancelled() else { return [] }
+        return items.sorted { $0.createdAt > $1.createdAt }
     }
 
     public func item(id: UUID) -> HistoryItem? {

@@ -148,9 +148,7 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
 
     /// Picks up new pictures of existing captures (marked up, or put back as taken).
     public func reload(changed ids: Set<UUID>) {
-        model.forgetText(of: ids)
-        model.reload()
-        model.refreshThumbnails(for: ids)
+        model.reload(changed: ids)
     }
 
     /// Picks up the text just read in a capture, for searching it.
@@ -205,12 +203,23 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
 @MainActor
 @Observable
 final class HistoryModel {
+    typealias TextLoader = @MainActor @Sendable ([HistoryItem], HistoryStore) async -> [UUID: HistorySearch.Entry]
+    typealias ItemsLoader = @MainActor @Sendable (HistoryStore) async -> [HistoryItem]
+    typealias Searcher = @MainActor @Sendable (String, [UUID: UInt64], HistorySearchIndex) async throws -> HistorySearchIndex.Result
+    typealias ThumbnailLoader = @MainActor @Sendable (URL) async -> CGImage?
+
     enum Filter: String, CaseIterable, Identifiable {
         case all, screenshots, recordings
         var id: String { rawValue }
     }
 
-    var items: [HistoryItem] = []
+    var items: [HistoryItem] = [] {
+        didSet { reconcileItems(from: oldValue) }
+    }
+    private(set) var isReloading = false
+    private(set) var isSearchPending = false
+    private(set) var isIndexing = false
+    private(set) var searchResultRevision: UInt64 = 0
     var thumbnails: [UUID: CGImage] = [:]
     var filter: Filter = .all
     /// The captures selected, as in Finder: a click selects one, ⌘-click adds one or takes it away, ⇧-click selects
@@ -229,8 +238,27 @@ final class HistoryModel {
     /// Captures whose text is still being read.
     var reading = 0
     /// The captures' text, ready for searching, as it has been read.
-    @ObservationIgnored private var entries: [UUID: HistorySearch.Entry] = [:]
+    @ObservationIgnored private var indexedIDs: Set<UUID> = []
+    @ObservationIgnored private let searchIndex = HistorySearchIndex()
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
+    @ObservationIgnored private var searchRevision: UInt64 = 0
+    @ObservationIgnored private var searchTerms: [String] = []
+    @ObservationIgnored private var excerptLoaded: Set<UUID> = []
+    @ObservationIgnored private var excerptLoading: Set<UUID> = []
+    @ObservationIgnored private var reloadTask: Task<Void, Never>?
+    @ObservationIgnored private var reloadRevision: UInt64 = 0
+    @ObservationIgnored private let itemsLoader: ItemsLoader
+    @ObservationIgnored private let searcher: Searcher
+    @ObservationIgnored private let searchDelay: Duration
+    @ObservationIgnored private let thumbnailLoader: ThumbnailLoader
+    @ObservationIgnored private var thumbnailGenerations: [UUID: UInt64] = [:]
+    @ObservationIgnored private var pendingThumbnails: Set<UUID> = []
+    @ObservationIgnored private var thumbnailLoads: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var loading: Set<UUID> = []
+    @ObservationIgnored private var textGenerations: [UUID: UInt64] = [:]
+    @ObservationIgnored private var pendingText: Set<UUID> = []
+    @ObservationIgnored private var textLoads: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private let textLoader: TextLoader
     /// The file shown in Quick Look, if any.
     var previewURL: URL?
     var retentionRequest: RetentionChangeRequest?
@@ -247,11 +275,20 @@ final class HistoryModel {
     /// The history window, for the print panel to come down from.
     @ObservationIgnored weak var window: NSWindow?
 
-    init(store: HistoryStore, settings: SettingsStore, actions: HistoryActions, expiredCount: @escaping (HistoryRetention) -> Int) {
+    init(
+        store: HistoryStore, settings: SettingsStore, actions: HistoryActions, expiredCount: @escaping (HistoryRetention) -> Int,
+        textLoader: TextLoader? = nil, itemsLoader: ItemsLoader? = nil, searcher: Searcher? = nil,
+        searchDelay: Duration = .milliseconds(100), thumbnailLoader: ThumbnailLoader? = nil
+    ) {
         self.store = store
         self.settings = settings
         self.actions = actions
         self.expiredCount = expiredCount
+        self.textLoader = textLoader ?? { items, store in await Self.entries(of: items, in: store) }
+        self.itemsLoader = itemsLoader ?? { store in await store.loadItems() }
+        self.searcher = searcher ?? { query, generations, index in try await index.search(query, generations: generations) }
+        self.searchDelay = searchDelay
+        self.thumbnailLoader = thumbnailLoader ?? { url in await HistoryStore.cardThumbnail(of: url, maxPixels: 520) }
     }
 
     var visibleItems: [HistoryItem] {
@@ -266,6 +303,7 @@ final class HistoryModel {
 
     /// Whether something is searched for.
     var isSearching: Bool { matches != nil }
+    var isUpdatingSearch: Bool { isSearchPending || (isSearching && isIndexing) }
 
     /// Captures the search found that the Show filter leaves out.
     var foundElsewhere: Int {
@@ -309,29 +347,139 @@ final class HistoryModel {
         if focus.map({ !selection.contains($0) }) ?? true { focus = visibleItems.first?.id }
     }
 
+    /// Coalesce changes received during a directory scan into one follow-up scan, with only the newest
+    /// listing allowed to publish. Reading a large history never occupies the main actor.
     func reload() {
-        items = store.items()
+        guard !isReleased else { return }
+        reloadRevision &+= 1
+        isReloading = true
+        if reloadTask == nil { startReload() }
+    }
+
+    func reload(changed ids: Set<UUID>) {
+        guard !isReleased else { return }
+        forgetText(of: ids)
+        invalidateThumbnails(ids)
+        pendingThumbnails.formUnion(ids)
+        reload()
+    }
+
+    private func startReload() {
+        let mine = reloadRevision
+        let store = store, loader = itemsLoader
+        reloadTask = Task { [weak self] in
+            let loaded = await loader(store)
+            guard let self, !Task.isCancelled, !isReleased else { return }
+            reloadTask = nil
+            guard mine == reloadRevision else {
+                startReload()
+                return
+            }
+            items = loaded
+            isReloading = false
+            let refresh = pendingThumbnails.intersection(items.map(\.id))
+            pendingThumbnails = []
+            refreshThumbnails(for: refresh)
+            search()
+            loadText(of: Set(items.map(\.id)).subtracting(indexedIDs))
+        }
+    }
+
+    private func reconcileItems(from old: [HistoryItem]) {
         let ids = Set(items.map(\.id))
+        let previous = Dictionary(uniqueKeysWithValues: old.map { ($0.id, $0) })
+        let changed = Set(items.filter { item in previous[item.id].map { $0 != item } ?? false }.map(\.id))
+        let removed = Set(old.map(\.id)).subtracting(ids)
         thumbnails = thumbnails.filter { ids.contains($0.key) }
-        entries = entries.filter { ids.contains($0.key) }
+        pendingText.formIntersection(ids)
         selection.formIntersection(ids)
         if let focus, !ids.contains(focus) { self.focus = nil }
-        loadText(of: ids.subtracting(entries.keys))
+        if !removed.isEmpty { forgetText(of: removed) }
+        invalidateThumbnails(removed.union(changed))
+        if !changed.isEmpty {
+            forgetText(of: changed)
+            pendingThumbnails.formUnion(changed)
+        }
+        if let matches { self.matches = matches.filter { ids.contains($0.key) } }
+    }
+
+    /// Awaitable completion boundaries for Return in the search field and deterministic integration tests.
+    func waitForReload() async {
+        while let task = reloadTask { await task.value }
+    }
+
+    @discardableResult func waitForSearch() async -> Bool {
+        while let task = searchTask { await task.value }
+        return !isReleased && !isSearchPending
+    }
+
+    func waitForCurrentResults() async -> Bool {
+        let requested = query
+        if isSearching { await waitForTextLoads() }
+        guard query == requested else { return false }
+        let ready = await waitForSearch()
+        return ready && query == requested
+    }
+
+    func waitForTextLoads() async {
+        while !textLoads.isEmpty {
+            let tasks = Array(textLoads.values)
+            for task in tasks { await task.value }
+        }
+    }
+
+    /// Captures the current operations before cancellation, for deterministic teardown verification.
+    func pendingWork() -> Task<Void, Never> {
+        let tasks = [reloadTask, searchTask].compactMap { $0 } + Array(textLoads.values) + Array(thumbnailLoads.values)
+        return Task { for task in tasks { await task.value } }
     }
 
     /// Reads the kept text of these captures and makes it ready for searching, off the main actor: a long
     /// history holds megabytes of text. Captures not read yet are skipped; they come with `textRead`.
     func loadText(of ids: Set<UUID>) {
+        guard !isReleased else { return }
+        let requested = ids.intersection(items.map(\.id))
+        for id in requested {
+            textGenerations[id, default: 0] &+= 1
+            if loading.contains(id) { pendingText.insert(id) }
+        }
+        startTextLoad(of: requested.subtracting(loading))
+    }
+
+    /// One read per capture at a time. Notifications during that read merge into one fresh read;
+    /// only the generation requested most recently is allowed to publish its text.
+    private func startTextLoad(of ids: Set<UUID>) {
         let wanted = items.filter { ids.contains($0.id) && !loading.contains($0.id) }
         guard !wanted.isEmpty else { return }
-        loading.formUnion(wanted.map(\.id))
+        let wantedIDs = Set(wanted.map(\.id))
+        let generations = Dictionary(uniqueKeysWithValues: wanted.map { ($0.id, textGenerations[$0.id, default: 0]) })
+        loading.formUnion(wantedIDs)
+        isIndexing = true
         let store = store
-        Task {
-            let loaded = await Self.entries(of: wanted, in: store)
-            loading.subtract(wanted.map(\.id))
+        let loader = textLoader
+        let taskID = UUID()
+        let index = searchIndex
+        textLoads[taskID] = Task { [weak self] in
+            let loaded = await loader(wanted, store)
+            guard let self, !Task.isCancelled, !isReleased else { return }
             let present = Set(items.map(\.id))
-            for (id, entry) in loaded where present.contains(id) { entries[id] = entry }
+            let changes = wantedIDs.compactMap { id -> HistorySearchIndex.Change? in
+                guard present.contains(id), textGenerations[id] == generations[id], let generation = generations[id] else { return nil }
+                return .init(id: id, generation: generation, entry: loaded[id])
+            }
+            await index.update(changes)
+            guard !Task.isCancelled, !isReleased else { return }
+            textLoads[taskID] = nil
+            isIndexing = !textLoads.isEmpty
+            loading.subtract(wantedIDs)
+            let stillPresent = Set(items.map(\.id))
+            for change in changes where stillPresent.contains(change.id) && textGenerations[change.id] == change.generation {
+                if change.entry != nil { indexedIDs.insert(change.id) } else { indexedIDs.remove(change.id) }
+            }
+            let retry = pendingText.intersection(wantedIDs).intersection(stillPresent)
+            pendingText.subtract(wantedIDs)
             search()
+            startTextLoad(of: retry)
         }
     }
 
@@ -340,6 +488,7 @@ final class HistoryModel {
         var folding = HistorySearch.Folding()
         var entries: [UUID: HistorySearch.Entry] = [:]
         for item in items {
+            guard !Task.isCancelled else { break }
             // Recordings have no text, but are found by their app.
             let text = item.kind == .screenshot ? store.text(of: item) : ""
             guard let text else { continue }
@@ -350,47 +499,144 @@ final class HistoryModel {
 
     /// Forgets the text of captures whose picture changed: it is read again.
     func forgetText(of ids: Set<UUID>) {
-        for id in ids { entries[id] = nil }
+        guard !isReleased else { return }
+        for id in ids {
+            indexedIDs.remove(id)
+            textGenerations[id, default: 0] &+= 1
+            if loading.contains(id) { pendingText.insert(id) }
+            // A redacted picture must stop showing its old excerpt immediately, even during an update.
+            matches?[id] = nil
+        }
+        let changes = ids.map { HistorySearchIndex.Change(id: $0, generation: textGenerations[$0, default: 0], entry: nil) }
+        let index = searchIndex
+        Task { await index.update(changes) }
         search()
     }
 
     private func search() {
-        let terms = HistorySearch.terms(in: query)
-        guard !terms.isEmpty else {
+        guard !isReleased else { return }
+        searchRevision &+= 1
+        let mine = searchRevision
+        searchTask?.cancel()
+        searchTask = nil
+        excerptLoaded = []
+        excerptLoading = []
+        searchResultRevision &+= 1
+        let query = query
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             matches = nil
+            searchTerms = []
+            isSearchPending = false
             return
         }
-        var found: [UUID: HistorySearch.Match] = [:]
-        for (id, entry) in entries {
-            if let match = HistorySearch.match(terms, in: entry) { found[id] = match }
+        // Keep the previous results visible with an explicit updating state while typing settles.
+        if matches == nil { matches = [:] }
+        isSearchPending = true
+        let index = searchIndex, searcher = searcher, delay = searchDelay
+        let generations = textGenerations
+        searchTask = Task { [weak self] in
+            do {
+                if delay > .zero { try await Task.sleep(for: delay) }
+                try Task.checkCancellation()
+                let result = try await searcher(query, generations, index)
+                guard let self, !Task.isCancelled, !isReleased, mine == searchRevision else { return }
+                let present = Set(items.map(\.id))
+                matches = result.terms.isEmpty ? nil : result.matches.filter { present.contains($0.key) }
+                searchTerms = result.terms
+                isSearchPending = false
+                searchResultRevision &+= 1
+                searchTask = nil
+            } catch {
+                guard let self, !isReleased, mine == searchRevision else { return }
+                isSearchPending = false
+                searchTask = nil
+            }
         }
-        matches = found
+    }
+
+    /// Only visible grid cards ask for excerpts. Membership matching and excerpt construction both stay
+    /// on the index actor; stale cards cannot publish text for a different query or picture.
+    func loadExcerpt(for id: UUID) async {
+        guard !isReleased, !isSearchPending, matches?[id] != nil, !excerptLoaded.contains(id),
+              !excerptLoading.contains(id), let generation = textGenerations[id] else { return }
+        let mine = searchRevision
+        excerptLoading.insert(id)
+        defer { if mine == searchRevision { excerptLoading.remove(id) } }
+        guard let match = try? await searchIndex.excerpt(for: id, terms: searchTerms, generation: generation),
+              !Task.isCancelled, !isReleased, mine == searchRevision, generation == textGenerations[id], matches?[id] != nil else { return }
+        matches?[id] = match
+        excerptLoaded.insert(id)
     }
 
     /// Loads the thumbnails of captures whose picture changed, keeping the old ones until then.
     func refreshThumbnails(for ids: Set<UUID>) {
+        guard !isReleased else { return }
         for item in items where ids.contains(item.id) {
-            Task {
-                if let image = await HistoryStore.cardThumbnail(of: store.fileURL(for: item), maxPixels: 520), !isReleased {
-                    thumbnails[item.id] = image
-                }
+            let generation = thumbnailGenerations[item.id, default: 0]
+            let loader = thumbnailLoader, url = store.fileURL(for: item)
+            let slots = decodeSlots
+            thumbnailLoads[item.id]?.cancel()
+            thumbnailLoads[item.id] = Task { [weak self] in
+                await slots.acquire()
+                let shouldRead = !Task.isCancelled && self?.isReleased == false && self?.thumbnailGenerations[item.id, default: 0] == generation
+                let image = shouldRead ? await loader(url) : nil
+                await slots.release()
+                guard let self, !isReleased, !Task.isCancelled, thumbnailGenerations[item.id, default: 0] == generation else { return }
+                thumbnailLoads[item.id] = nil
+                if items.contains(where: { $0.id == item.id }), let image { thumbnails[item.id] = image }
             }
+        }
+    }
+
+    private func invalidateThumbnails(_ ids: Set<UUID>) {
+        for id in ids {
+            thumbnailGenerations[id, default: 0] &+= 1
+            thumbnailLoads[id]?.cancel()
+            thumbnailLoads[id] = nil
         }
     }
 
     func loadThumbnail(for item: HistoryItem) async {
         guard thumbnails[item.id] == nil, !isReleased else { return }
+        let generation = thumbnailGenerations[item.id, default: 0]
         // A few at a time, and not for a card scrolled away while it waited.
         await decodeSlots.acquire()
-        let image = Task.isCancelled || isReleased ? nil : await HistoryStore.cardThumbnail(of: store.fileURL(for: item), maxPixels: 520)
+        let image = Task.isCancelled || isReleased || thumbnailGenerations[item.id, default: 0] != generation
+            ? nil : await thumbnailLoader(store.fileURL(for: item))
         await decodeSlots.release()
-        if let image, !isReleased { thumbnails[item.id] = image }
+        if let image, !Task.isCancelled, !isReleased, thumbnailGenerations[item.id, default: 0] == generation,
+           items.contains(where: { $0.id == item.id }) { thumbnails[item.id] = image }
     }
 
-    /// Lets go of the thumbnails, for good: the window has closed, and what is still loading is dropped.
+    /// The window has closed: release its pictures and search text, and cancel pending reads.
     func release() {
         isReleased = true
+        for task in textLoads.values { task.cancel() }
+        textLoads = [:]
+        isIndexing = false
+        loading = []
+        pendingText = []
+        textGenerations = [:]
+        for task in thumbnailLoads.values { task.cancel() }
+        thumbnailLoads = [:]
+        thumbnailGenerations = [:]
+        pendingThumbnails = []
+        indexedIDs = []
+        searchTask?.cancel()
+        searchTask = nil
+        reloadTask?.cancel()
+        reloadTask = nil
+        searchRevision &+= 1
+        reloadRevision &+= 1
+        isReloading = false
+        isSearchPending = false
+        searchTerms = []
+        excerptLoaded = []
+        excerptLoading = []
+        matches = nil
         thumbnails = [:]
+        let index = searchIndex
+        Task { await index.release() }
     }
 
     func moveToTrash(_ item: HistoryItem) {
@@ -502,7 +748,13 @@ struct HistoryView: View {
 
     var body: some View {
         Group {
-            if model.items.isEmpty {
+            if model.items.isEmpty && model.isReloading {
+                ProgressView { Text("Loading captures…", bundle: .module) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.isUpdatingSearch && model.visibleItems.isEmpty {
+                ProgressView { Text("Updating search results…", bundle: .module) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.items.isEmpty {
                 emptyState
             } else if model.visibleItems.isEmpty {
                 if !model.isSearching {
@@ -518,22 +770,39 @@ struct HistoryView: View {
         }
         .frame(minWidth: 560, minHeight: 420)
         .background(.background)
+        .overlay(alignment: .bottom) {
+            if !model.visibleItems.isEmpty && (model.isUpdatingSearch || model.isReloading) {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    if model.isUpdatingSearch { Text("Updating search results…", bundle: .module) }
+                    else { Text("Loading captures…", bundle: .module) }
+                }
+                .font(.callout)
+                .padding(10)
+                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+                .padding(8)
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .combine)
+            }
+        }
         .toolbar { toolbar }
         .searchable(text: $model.query, placement: .toolbar, prompt: Text("Search Text", bundle: .module))
         .searchFocused($searchFocused)
         // Return in the search field goes to the first capture found, ready for the grid's keys.
         .onSubmit(of: .search) {
-            guard let first = model.visibleItems.first else { return }
-            model.selection = [first.id]
-            model.focus = first.id
-            gridFocused = true
+            Task {
+                guard await model.waitForCurrentResults(), searchFocused, let first = model.visibleItems.first else { return }
+                model.selection = [first.id]
+                model.focus = first.id
+                gridFocused = true
+            }
         }
         // ⌘F, Find… in the Edit menu: to the search field, whatever the window shows.
         .onCommand(#selector(NSTextView.performFindPanelAction(_:))) { searchFocused = true }
         // What a search found is said once typing pauses, for VoiceOver.
-        .task(id: model.query) {
+        .task(id: model.searchResultRevision) {
             try? await Task.sleep(for: .milliseconds(700))
-            guard !Task.isCancelled, model.isSearching else { return }
+            guard !Task.isCancelled, !model.isUpdatingSearch, model.isSearching else { return }
             let count = model.visibleItems.count
             AccessibilityNotification.Announcement(count == 0
                 ? String(localized: "No Results", bundle: .module)
@@ -842,6 +1111,7 @@ struct HistoryCard: View {
             .padding(.horizontal, 2)
         }
         .contextMenu { menu }
+        .task(id: model.searchResultRevision) { await model.loadExcerpt(for: item.id) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(accessibilityValue)

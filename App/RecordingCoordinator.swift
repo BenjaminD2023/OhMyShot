@@ -112,7 +112,8 @@ final class RecordingCoordinator {
     private var systemAudioStalled = false
     /// Recordings being finished; the app waits for them before quitting.
     private var finishing = 0
-    private var finishingDone: [() -> Void] = []
+    private var finishingDone: [(Bool) -> Void] = []
+    private var finishingMayQuit = true
     /// Recordings being made into GIFs, and how far along the newest is: the menu bar shows it.
     private var makingGIFs = 0
     private var gifProgress = 0.0
@@ -738,7 +739,7 @@ final class RecordingCoordinator {
 
     /// Stops a recording before the app quits, and keeps the edits in open recording windows; `done` runs
     /// once every recording is kept. Returns false when there was nothing to wait for.
-    func finishBeforeQuitting(_ done: @escaping () -> Void) -> Bool {
+    func finishBeforeQuitting(_ done: @escaping (Bool) -> Void) -> Bool {
         if pending != nil { cancelCountdown() }
         if session != nil { stop() }
         // Edits in an open recording window are kept as its closing keeps them.
@@ -746,21 +747,24 @@ final class RecordingCoordinator {
             finishing += 1
             window.close { [weak self] in self?.finished() }
         }
-        for window in studioWindows.values where window.hasUnexportedChanges {
+        for window in studioWindows.values where window.hasUnexportedChanges || window.hasPendingProjectSave {
             finishing += 1
-            window.close { [weak self] in self?.finished() }
+            window.closeIfSaved { [weak self] saved in self?.finished(permitsQuit: saved) }
         }
         guard finishing > 0 else { return false }
         finishingDone.append(done)
         return true
     }
 
-    private func finished() {
+    private func finished(permitsQuit: Bool = true) {
+        finishingMayQuit = finishingMayQuit && permitsQuit
         finishing -= 1
         guard finishing == 0 else { return }
         let done = finishingDone
         finishingDone = []
-        done.forEach { $0() }
+        let mayQuit = finishingMayQuit
+        finishingMayQuit = true
+        done.forEach { $0(mayQuit) }
     }
 
     // MARK: Editing
@@ -858,11 +862,9 @@ final class RecordingCoordinator {
             )
         )
         controller.onClose = { [weak self] in
-            Task { @MainActor in
-                self?.studioWindows[id] = nil
-                self?.windowClosed?(id)
-                MemoryRelief.returnFreedPages()
-            }
+            self?.studioWindows[id] = nil
+            self?.windowClosed?(id)
+            MemoryRelief.returnFreedPages()
         }
         studioWindows[id] = controller
         if shows { controller.show() }

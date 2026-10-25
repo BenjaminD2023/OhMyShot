@@ -26,8 +26,8 @@ struct StudioTimeline: View {
     private static let layoutTop: CGFloat = 110
     private static let layoutHeight: CGFloat = 26
     /// How tall the timeline is, with and without the lane for the camera's layouts.
-    static let height: CGFloat = 128
-    static let heightWithLayouts: CGFloat = 156
+    static let height: CGFloat = 180
+    static let heightWithLayouts: CGFloat = 208
     /// How near a zoom's end a press grabs that end, in points.
     private static let handleReach: CGFloat = 7
     /// How far the keys move the playhead, and VoiceOver a zoom's ends.
@@ -45,30 +45,71 @@ struct StudioTimeline: View {
     }
 
     @State private var drag: Drag?
+    @State private var viewport: StudioTimelineViewport
+    @State private var filmstrip = StudioTimelineFilmstrip()
+    @FocusState private var timelineFocused: Bool
+
+    init(document: StudioDocument, model: StudioWindowModel) {
+        self.document = document
+        self.model = model
+        _viewport = State(initialValue: StudioTimelineViewport(duration: document.duration))
+    }
 
     var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            ZStack(alignment: .topLeading) {
-                ruler(width: width)
-                zooms(width: width)
-                clip(width: width)
-                if document.canChangeLayoutAlongTheTimeline { layouts(width: width) }
-                playhead(width: width, height: geometry.size.height)
+        VStack(spacing: 4) {
+            viewportControls
+            GeometryReader { geometry in
+                let width = geometry.size.width
+                let request = filmstripRequest(width: width)
+                ZStack(alignment: .topLeading) {
+                    ruler(width: width)
+                    zooms(width: width)
+                    clip(width: width, request: request)
+                    if document.canChangeLayoutAlongTheTimeline { layouts(width: width) }
+                    playhead(width: width, height: geometry.size.height)
+                }
+                .frame(width: width, height: geometry.size.height, alignment: .topLeading)
+                .clipped()
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            timelineFocused = true
+                            dragChanged(value, width: width)
+                        }
+                        .onEnded { value in dragEnded(value, width: width) }
+                )
+                .overlay {
+                    StudioTimelineWheel { delta in
+                        viewport.scroll(to: viewport.start + delta / max(width - Self.inset * 2, 1) * viewport.span)
+                    }
+                    .accessibilityHidden(true)
+                }
+                .task(id: request) { await filmstrip.load(source: document.source, request: request) }
             }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in dragChanged(value, width: width) }
-                    .onEnded { value in dragEnded(value, width: width) }
-            )
+            if viewport.isFit {
+                Color.clear.frame(height: 14)
+            } else {
+                StudioTimelineScroller(
+                    position: Binding(get: { viewport.start }, set: { viewport.scroll(to: $0) }),
+                    visible: viewport.span, duration: document.duration
+                )
+                .frame(height: 14)
+                .padding(.horizontal, Self.inset)
+            }
         }
         .padding(.vertical, 8)
         .background(Color(nsColor: .controlBackgroundColor))
         .focusable()
+        .focused($timelineFocused)
         .onKeyPress(keys: [.leftArrow, .rightArrow], phases: [.down, .repeat]) { press in
+            if press.modifiers.contains(.option) {
+                chooseAdjacent(forward: press.key == .rightArrow)
+                return .handled
+            }
             let step = press.modifiers.contains(.shift) ? Self.longStep : Self.step
             model.controller?.seek(toRecordingTime: document.time + (press.key == .leftArrow ? -step : step))
+            viewport.reveal(document.time)
             return .handled
         }
         .onKeyPress(characters: CharacterSet(charactersIn: "iIoO"), phases: .down) { press in
@@ -76,23 +117,66 @@ struct StudioTimeline: View {
             return .handled
         }
         .onKeyPress(keys: [.delete, .deleteForward], phases: .down) { _ in
-            removeChosen()
+            document.deleteSelection()
             return .handled
+        }
+        .onKeyPress(.escape) {
+            document.selection = .none
+            return .handled
+        }
+        .onChange(of: document.time) { _, time in
+            if document.isPlaying { viewport.reveal(time) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Timeline", bundle: .module))
+        .accessibilityIdentifier("studio-timeline")
+        .help(Text("← and → move the playhead. Option-← and Option-→ choose an edit. I and O mark a range; Delete removes it. Scroll to move along a zoomed timeline.", bundle: .module))
+    }
+
+    private var viewportControls: some View {
+        HStack(spacing: 8) {
+            Button { viewport.fit() } label: { Text("Fit", bundle: .module) }
+                .help(Text("Show the whole recording", bundle: .module))
+                .disabled(viewport.isFit)
+            Button {
+                if let range = selectionRange { viewport.fit(range) }
+            } label: { Text("Fit Selection", bundle: .module) }
+                .disabled(selectionRange == nil)
+                .help(Text("Show the chosen edit or range in detail", bundle: .module))
+            Spacer(minLength: 4)
+            Button { viewport.zoom(by: 0.5, around: document.time) } label: { Image(systemName: "minus.magnifyingglass") }
+                .accessibilityLabel(Text("Zoom Out Timeline", bundle: .module))
+                .help(Text("Zoom Out Timeline", bundle: .module))
+                .disabled(viewport.isFit)
+            Button { viewport.zoom(by: 2, around: document.time) } label: { Image(systemName: "plus.magnifyingglass") }
+                .accessibilityLabel(Text("Zoom In Timeline", bundle: .module))
+                .help(Text("Zoom In Timeline", bundle: .module))
+                .disabled(!viewport.canZoomIn)
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .padding(.horizontal, Self.inset)
+        .frame(height: 26)
+    }
+
+    private var selectionRange: ClosedRange<Double>? {
+        switch document.selection {
+        case .range(let range): range
+        case .zoom(let id): document.project.zooms.first { $0.id == id }.map { $0.start...$0.end }
+        case .cut(let start): document.project.cuts.first { $0.lowerBound == start }
+        case .cameraSegment(let id): document.project.cameraSegments.first { $0.id == id }.map { $0.start...$0.end }
+        case .none: nil
+        }
     }
 
     // MARK: Drawing
 
     private func x(_ time: Double, width: CGFloat) -> CGFloat {
-        let span = width - Self.inset * 2
-        return Self.inset + CGFloat(document.duration > 0 ? time / document.duration : 0) * span
+        Self.inset + viewport.position(of: time, width: width - Self.inset * 2)
     }
 
     private func time(_ x: CGFloat, width: CGFloat) -> Double {
-        let span = max(width - Self.inset * 2, 1)
-        return min(max(Double((x - Self.inset) / span) * document.duration, 0), document.duration)
+        viewport.time(at: x - Self.inset, width: max(width - Self.inset * 2, 1))
     }
 
     /// Lines around the clip, the cuts, and the zooms: the separator's hairline, or the contrast hairline
@@ -108,9 +192,11 @@ struct StudioTimeline: View {
     /// Ticks at a step that keeps their labels apart, each labeled with monospaced digits.
     private func ruler(width: CGFloat) -> some View {
         let span = max(width - Self.inset * 2, 1)
-        let steps: [Double] = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600]
-        let step = steps.first { Double(span) / (document.duration / $0) >= 64 } ?? 600
-        let marks = Array(stride(from: 0.0, through: document.duration, by: step))
+        let steps: [Double] = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600]
+        let step = steps.first { Double(span) / (max(viewport.span, 0.001) / $0) >= 64 }
+            ?? max(3600, viewport.span / max(Double(span) / 64, 1))
+        let first = (viewport.start / step).rounded(.up) * step
+        let marks = Array(stride(from: first, through: viewport.end, by: step))
         return ZStack(alignment: .topLeading) {
             ForEach(marks, id: \.self) { mark in
                 let position = x(mark, width: width)
@@ -135,7 +221,7 @@ struct StudioTimeline: View {
     /// Zooms as chips: the chip fill with the scale in label ink; the chosen one ringed in the accent, its
     /// scale semibold, with grips at its ends.
     private func zooms(width: CGFloat) -> some View {
-        ForEach(document.project.zooms) { zoom in
+        ForEach(document.project.zooms.filter { viewport.contains($0.start, $0.end) }) { zoom in
             let left = x(zoom.start, width: width), right = x(zoom.end, width: width)
             let chosen = document.selectedZoom == zoom.id
             let shape = RoundedRectangle(cornerRadius: Self.zoomHeight / 2, style: .continuous)
@@ -186,7 +272,7 @@ struct StudioTimeline: View {
     /// The camera's layouts as chips under the clip, like the zooms above it: the chip fill with the layout's
     /// symbol, and its name where there is room, in label ink; the chosen one ringed in the accent with grips.
     private func layouts(width: CGFloat) -> some View {
-        ForEach(document.project.cameraSegments) { segment in
+        ForEach(document.project.cameraSegments.filter { viewport.contains($0.start, $0.end) }) { segment in
             let left = x(segment.start, width: width), right = x(segment.end, width: width)
             let chosen = document.selectedSegment == segment.id
             let shape = RoundedRectangle(cornerRadius: Self.layoutHeight / 2, style: .continuous)
@@ -234,18 +320,18 @@ struct StudioTimeline: View {
         }
     }
 
-    private func clip(width: CGFloat) -> some View {
-        let left = x(0, width: width), right = x(document.duration, width: width)
+    private func clip(width: CGFloat, request: StudioFilmstripRequest) -> some View {
+        let left = Self.inset, right = width - Self.inset
         let clipWidth = max(right - left, 1)
         return ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color(nsColor: .quaternaryLabelColor))
-                .overlay(alignment: .leading) { filmstrip(width: clipWidth) }
+                .overlay(alignment: .leading) { filmstrip(width: clipWidth, request: request) }
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(lineColor, lineWidth: lineWidth))
                 .frame(width: clipWidth, height: Self.clipHeight)
                 .offset(x: left, y: Self.clipTop)
-            ForEach(document.project.cuts, id: \.lowerBound) { cut in
+            ForEach(document.project.cuts.filter { viewport.contains($0.lowerBound, $0.upperBound) }, id: \.lowerBound) { cut in
                 let chosen = document.selectedCut == cut.lowerBound
                 let cutLeft = x(cut.lowerBound, width: width), cutRight = x(cut.upperBound, width: width)
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -278,7 +364,7 @@ struct StudioTimeline: View {
                     .accessibilityAction { choose(cut: cut.lowerBound) }
                     .accessibilityAction(named: Text("Restore Cut", bundle: .module)) { document.restoreCut(at: cut.lowerBound) }
             }
-            if let range = model.selectedRange {
+            if let range = document.selectedRange, viewport.contains(range.lowerBound, range.upperBound) {
                 let rangeLeft = x(range.lowerBound, width: width), rangeRight = x(range.upperBound, width: width)
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color.accentColor.opacity(0.22))
@@ -290,22 +376,25 @@ struct StudioTimeline: View {
         }
     }
 
-    /// The recording's pictures side by side along the clip, each as wide as the recording's shape makes it
-    /// at the clip's height, each showing its own stretch.
-    private func filmstrip(width: CGFloat) -> some View {
-        let pictures = model.filmstrip
-        let shape = document.recordingSize.height > 0 ? document.recordingSize.width / document.recordingSize.height : 16.0 / 10
-        let slot = max(Self.clipHeight * shape, 8)
-        let count = pictures.isEmpty ? 0 : max(1, Int((width / slot).rounded(.up)))
-        return HStack(spacing: 0) {
-            ForEach(0..<count, id: \.self) { index in
-                let middle = (CGFloat(index) + 0.5) * slot / width
-                let picture = pictures[min(pictures.count - 1, max(0, Int(middle * CGFloat(pictures.count))))]
-                Image(decorative: picture, scale: 2)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: slot, height: Self.clipHeight)
-                    .clipped()
+    private func filmstripRequest(width: CGFloat) -> StudioFilmstripRequest {
+        let aspect = document.recordingSize.height > 0 ? document.recordingSize.width / document.recordingSize.height : 16.0 / 10
+        return StudioFilmstripRequest(viewport: viewport, width: max(width - Self.inset * 2, 1), aspect: aspect)
+    }
+
+    /// Missing frames keep their own slot, so a failed decode cannot shift later pictures to the wrong time.
+    private func filmstrip(width: CGFloat, request: StudioFilmstripRequest) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(request.samples) { sample in
+                if let picture = filmstrip.images[sample.id] {
+                    let left = viewport.position(of: sample.start, width: width)
+                    let right = viewport.position(of: sample.end, width: width)
+                    Image(decorative: picture, scale: 2)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: max(right - left, 1), height: Self.clipHeight)
+                        .clipped()
+                        .offset(x: left)
+                }
             }
         }
         .frame(width: width, height: Self.clipHeight, alignment: .leading)
@@ -326,6 +415,7 @@ struct StudioTimeline: View {
                 .offset(y: Self.rulerHeight - 8)
         }
         .offset(x: position - 1)
+        .opacity(viewport.contains(document.time, document.time) ? 1 : 0)
         .allowsHitTesting(false)
         .accessibilityElement()
         .accessibilityLabel(Text("Playhead", bundle: .module))
@@ -333,27 +423,36 @@ struct StudioTimeline: View {
         .accessibilityAdjustableAction { direction in
             let step = direction == .increment ? 0.5 : -0.5
             model.controller?.seek(toRecordingTime: document.time + step)
+            viewport.reveal(document.time)
         }
     }
 
     // MARK: Commands
 
     private func choose(zoom id: UUID) {
-        document.selectedZoom = id
-        document.selectedCut = nil
-        document.selectedSegment = nil
+        document.selection = .zoom(id)
     }
 
     private func choose(cut start: Double) {
-        document.selectedCut = start
-        document.selectedZoom = nil
-        document.selectedSegment = nil
+        document.selection = .cut(start)
     }
 
     private func choose(layout id: UUID) {
-        document.selectedSegment = id
-        document.selectedZoom = nil
-        document.selectedCut = nil
+        document.selection = .cameraSegment(id)
+    }
+
+    /// Option-arrows reach every edit, including edits outside the current viewport, without using a mouse.
+    private func chooseAdjacent(forward: Bool) {
+        let items = StudioTimelineNavigation.items(
+            zooms: document.project.zooms, cuts: document.project.cuts,
+            layouts: document.canChangeLayoutAlongTheTimeline ? document.project.cameraSegments : []
+        )
+        guard let chosen = StudioTimelineNavigation.adjacent(
+            in: items, selection: document.selection, time: document.time, forward: forward
+        ) else { return }
+        document.selection = chosen.selection
+        model.controller?.seek(toRecordingTime: chosen.start)
+        viewport.reveal(chosen.start)
     }
 
     private func nudge(_ id: UUID, start: Bool, by shift: Double) {
@@ -371,20 +470,10 @@ struct StudioTimeline: View {
     /// I chooses a stretch from the playhead (to the end of the one chosen, or of the recording); O to it.
     private func mark(start: Bool) {
         let now = document.time
-        let range = model.selectedRange
+        let range = document.selectedRange
         let lower = start ? now : (range?.lowerBound ?? 0)
         let upper = start ? (range?.upperBound ?? document.duration) : now
-        model.selectedRange = upper - lower > 0.05 ? lower...upper : nil
-    }
-
-    /// Delete: the chosen zoom, layout, or cut goes, or else the chosen stretch is cut.
-    private func removeChosen() {
-        if document.selectedZoom != nil || document.selectedCut != nil || document.selectedSegment != nil {
-            document.deleteSelection()
-        } else if let range = model.selectedRange {
-            document.cut(range)
-            model.selectedRange = nil
-        }
+        document.selection = upper - lower > 0.05 ? .range(lower...upper) : .none
     }
 
     // MARK: Dragging
@@ -400,7 +489,7 @@ struct StudioTimeline: View {
             model.controller?.seek(toRecordingTime: now)
         case .select(let from):
             let lower = min(from, now), upper = max(from, now)
-            model.selectedRange = upper - lower > 0.05 ? lower...upper : nil
+            document.selection = upper - lower > 0.05 ? .range(lower...upper) : .none
         case .moveZoom(let id, let grabbedAt, let start, let end):
             let shift = min(max(now - grabbedAt, -start), document.duration - end)
             document.updateZoom(id) { zoom in
@@ -441,11 +530,8 @@ struct StudioTimeline: View {
             } else if point.y >= Self.clipTop, point.y <= Self.clipTop + Self.clipHeight, let cut = document.project.cuts.first(where: { $0.contains(at) }) {
                 choose(cut: cut.lowerBound)
             } else {
-                document.selectedZoom = nil
-                document.selectedCut = nil
-                document.selectedSegment = nil
+                document.selection = .none
             }
-            model.selectedRange = nil
             model.controller?.seek(toRecordingTime: at)
         }
         // A dragged zoom is taken back in one step.
@@ -475,8 +561,7 @@ struct StudioTimeline: View {
             return .moveLayout(layout.id, grabbedAt: at, start: layout.start, end: layout.end)
         }
         if point.y >= Self.clipTop, point.y <= Self.clipTop + Self.clipHeight {
-            document.selectedZoom = nil
-            document.selectedSegment = nil
+            document.selection = .none
             return .select(from: at)
         }
         return .scrub

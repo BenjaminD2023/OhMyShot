@@ -45,13 +45,18 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     private let halo: CIImage
     private let clicks: [StudioTelemetry.Click]
     let captions: [Caption]
+    private let captionRuns: [(start: Double, end: Double)]
     /// The click effect's picture for the main button's clicks, and the dimmer one for the others'.
     private let clickPictures: (primary: CIImage, secondary: CIImage)
     /// The camera's bubble, picture, or fill of the movie; nil without a camera, or with it hidden.
     let camera: CameraLook?
     private let lock = NSLock()
-    /// Caption pictures by their text, made the first time each shows.
+    /// A bounded working set of caption pictures; evicted text is drawn again if the user seeks back.
     private var captionImages: [String: CIImage] = [:]
+    private var captionImageOrder: [String] = []
+    static let captionCacheLimit = 64
+
+    var cachedCaptionCount: Int { lock.withLock { captionImages.count } }
 
     /// The longest side a movie is filmed at: 4K's.
     public static let largestSide = 3840.0
@@ -116,14 +121,15 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     ///     draws the project's plain color, or white.
     ///   - largestSide: the longest side the movie may have; the preview films it smaller than the export.
     ///   - ringColor: the clicks' rings, in sRGB: the user's accent, as the rings shown while recording.
+    ///   - preparedTrack: a track already built for these motion settings; shared by preview and export.
     public init(
         telemetry: StudioTelemetry, project: StudioProject, duration: Double, recordingSize: CGSize, background: CGImage?,
-        largestSide: Double = StudioRenderer.largestSide, ringColor: RingColor = .systemBlue
+        largestSide: Double = StudioRenderer.largestSide, ringColor: RingColor = .systemBlue, preparedTrack: StudioTrack? = nil
     ) {
         self.project = project
         self.recordingSize = recordingSize
         pixelsPerPoint = telemetry.width > 0 ? Double(recordingSize.width) / telemetry.width : telemetry.pixelsPerPoint
-        track = StudioTrack(telemetry: telemetry, project: project, duration: duration)
+        track = preparedTrack ?? StudioTrack(telemetry: telemetry, project: project, duration: duration)
         let layout = Self.layout(recordingSize: recordingSize, project: project, hasCamera: telemetry.camera != nil, largestSide: largestSide)
         self.layout = layout
         let canvas = CGRect(origin: .zero, size: layout.canvas)
@@ -154,6 +160,7 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         halo = Self.haloImage()
         clicks = telemetry.clicks.sorted { $0.time < $1.time }
         captions = project.showsKeys ? Self.captions(for: telemetry.keys, mode: project.keystrokeMode) : []
+        captionRuns = Self.captionRuns(for: captions)
         let effectColor = project.cursor.clickColor.rgb.map { RingColor(red: $0.red, green: $0.green, blue: $0.blue) } ?? ringColor
         clickPictures = (
             Self.clickPicture(project.cursor.clickEffect, color: effectColor, strokeAlpha: 0.9),
@@ -244,7 +251,7 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
             // The click effects, at each click still showing.
             if project.cursor.showsClicks {
                 let effect = project.cursor.clickEffect
-                for click in clicks where click.time <= time && time - click.time < effect.lifetime {
+                for click in activeClicks(at: time) {
                     let picture = click.button == .primary ? clickPictures.primary : clickPictures.secondary
                     let point = onMovie(click.x, click.y)
                     for piece in effect.pieces(age: time - click.time) {
@@ -533,7 +540,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     /// The caption showing at `time`, as a reading capsule centered near the foot of the movie, fading in and
     /// out over 0.12 s.
     private func caption(at time: Double) -> CIImage? {
-        guard let caption = captions.last(where: { $0.start <= time && time < $0.end }) else { return nil }
+        guard let index = captionIndex(at: time) else { return nil }
+        let caption = captions[index]
         let image: CIImage
         lock.lock()
         if let cached = captionImages[caption.text] {
@@ -543,19 +551,68 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
             lock.unlock()
             let made = captionImage(caption.text)
             lock.lock()
-            captionImages[caption.text] = made
+            if captionImages[caption.text] == nil {
+                if captionImageOrder.count == Self.captionCacheLimit {
+                    captionImages.removeValue(forKey: captionImageOrder.removeFirst())
+                }
+                captionImageOrder.append(caption.text)
+                captionImages[caption.text] = made
+            }
+            image = captionImages[caption.text] ?? made
             lock.unlock()
-            image = made
         }
-        let fadeIn = min(1, (time - caption.start) / 0.12)
-        let fadeOut = min(1, (caption.end - time) / 0.12)
-        // Only a caption's first appearance fades in; one that follows another replaces it at once.
-        let follows = captions.contains { $0.end == caption.start && $0.text != caption.text }
-        let opacity = min(follows ? 1 : fadeIn, fadeOut)
+        let opacity = captionOpacity(at: time, index: index)
         // The capsule's foot 28 points above the recording's, centered on it; the picture has room around it.
         let x = layout.frame.midX - image.extent.width / 2
         let y = layout.frame.minY + (28 - Self.captionRoom) * pixelsPerPoint * layout.scale
         return Self.faded(image.transformed(by: CGAffineTransform(translationX: x, y: y)), opacity: opacity)
+    }
+
+    /// Independent binary searches keep scrubbing backwards and concurrent compositor requests deterministic.
+    func activeClicks(at time: Double) -> ArraySlice<StudioTelemetry.Click> {
+        // Compare ages in the same direction as the effect itself. Subtracting lifetime from time first
+        // changes floating-point rounding at the exact expiration boundary.
+        let lifetime = project.cursor.clickEffect.lifetime
+        var start = 0, high = clicks.count
+        while start < high {
+            let middle = (start + high) / 2
+            if time - clicks[middle].time >= lifetime { start = middle + 1 } else { high = middle }
+        }
+        let end = Self.upperBound(clicks, at: time, by: { $0.time })
+        return clicks[start..<end]
+    }
+
+    func captionIndex(at time: Double) -> Int? {
+        let index = Self.upperBound(captions, at: time, by: { $0.start }) - 1
+        return index >= 0 && time < captions[index].end ? index : nil
+    }
+
+    /// Text changes within a typing run replace one another at full opacity. Only the whole run fades.
+    func captionOpacity(at time: Double, index: Int) -> Double {
+        let run = captionRuns[index]
+        return max(0, min(1, (time - run.start) / 0.12, (run.end - time) / 0.12))
+    }
+
+    private static func captionRuns(for captions: [Caption]) -> [(start: Double, end: Double)] {
+        var result = Array(repeating: (start: 0.0, end: 0.0), count: captions.count)
+        var first = 0
+        while first < captions.count {
+            var last = first
+            while last + 1 < captions.count, captions[last].end == captions[last + 1].start { last += 1 }
+            let run = (start: captions[first].start, end: captions[last].end)
+            for index in first...last { result[index] = run }
+            first = last + 1
+        }
+        return result
+    }
+
+    private static func upperBound<T>(_ values: [T], at time: Double, by timestamp: (T) -> Double) -> Int {
+        var low = 0, high = values.count
+        while low < high {
+            let middle = (low + high) / 2
+            if timestamp(values[middle]) <= time { low = middle + 1 } else { high = middle }
+        }
+        return low
     }
 
     /// A caption's capsule as the keystroke display draws it: the reading capsule's light surface (white

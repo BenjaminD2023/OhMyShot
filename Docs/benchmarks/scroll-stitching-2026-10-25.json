@@ -1,0 +1,48 @@
+{
+  "configuration": "Release, isolated package, skip-build",
+  "view_pixels": [
+    3500,
+    2400
+  ],
+  "moving_views_per_run": 90,
+  "stationary_control_views_per_run": 30,
+  "note": "Paired alternating runs; host also had unrelated compilation/indexing activity. Measures stitching only, not capture or UI frame rate.",
+  "runs": [
+    {
+      "version": "baseline",
+      "run": 1,
+      "moving_ms": 11.777096277777776,
+      "still_ms": 2.490244366666666
+    },
+    {
+      "version": "fixed",
+      "run": 1,
+      "moving_ms": 15.168107411111112,
+      "still_ms": 2.6686137666666663
+    },
+    {
+      "version": "baseline",
+      "run": 2,
+      "moving_ms": 11.729045822222222,
+      "still_ms": 2.5465709333333333
+    },
+    {
+      "version": "fixed",
+      "run": 2,
+      "moving_ms": 15.206575444444445,
+      "still_ms": 2.4926263666666664
+    },
+    {
+      "version": "baseline",
+      "run": 3,
+      "moving_ms": 11.700475855555556,
+      "still_ms": 2.617744333333333
+    },
+    {
+      "version": "fixed",
+      "run": 3,
+      "moving_ms": 14.969250444444445,
+      "still_ms": 2.661001433333333
+    }
+  ]
+}

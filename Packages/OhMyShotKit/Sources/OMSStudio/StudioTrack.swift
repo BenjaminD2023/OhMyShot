@@ -33,6 +33,9 @@ nonisolated public struct StudioTrack: Sendable {
     /// The recording's size in points.
     public let width: Double
     public let height: Double
+    /// Exact event positions between the regular samples. Seeking to a click must land on its hotspot,
+    /// even when the event falls between two 120 Hz frames or several clicks share a frame interval.
+    private let clickAnchors: [StudioTelemetry.Click]
 
     /// How long a zoom takes to ease in or out, at most.
     public static let transition = 0.5
@@ -62,13 +65,31 @@ nonisolated public struct StudioTrack: Sendable {
     static let returnFade = 0.12
 
     public init(telemetry: StudioTelemetry, project: StudioProject, duration: Double, rate: Double = 120) {
+        self.init(telemetry: telemetry, project: project, duration: duration, rate: rate, checkCancellation: {})
+    }
+
+    /// The same deterministic track, built off the caller's actor and interruptible during a long recording.
+    @concurrent
+    public static func make(telemetry: StudioTelemetry, project: StudioProject, duration: Double, rate: Double = 120) async throws -> StudioTrack {
+        try StudioTrack(telemetry: telemetry, project: project, duration: duration, rate: rate, checkCancellation: { try Task.checkCancellation() })
+    }
+
+    init(
+        telemetry: StudioTelemetry, project: StudioProject, duration: Double, rate: Double,
+        checkCancellation: () throws -> Void
+    ) rethrows {
+        try checkCancellation()
         self.rate = rate
         width = telemetry.width
         height = telemetry.height
         let count = max(1, Int((duration * rate).rounded(.up)) + 1)
         let step = 1 / rate
-        let samples = telemetry.samples
+        let clicks = telemetry.clicks.sorted { $0.time < $1.time }
+        clickAnchors = clicks
+        let samples = Self.anchoredSamples(telemetry.samples, clicks: clicks)
         let zooms = project.zooms.sorted { $0.start < $1.start }
+        var zoomIndex = 0
+        var activeZooms: [StudioProject.Zoom] = []
 
         // The cursor's spring: a time constant at rest from 0.02 s (barely smoothed) to 0.15 s, shorter the
         // faster the pointer goes, by its velocity averaged over `speedWindow`.
@@ -84,6 +105,7 @@ nonisolated public struct StudioTrack: Sendable {
         var index = 0
         var lastMove = -Double.infinity
         var lastRaw: (x: Double, y: Double)?
+        var activityPosition: (x: Double, y: Double)?
         var cursor = Self.pointer(at: 0, in: samples, index: &index)
         var cursorVelocity = (x: 0.0, y: 0.0)
         var pointerVelocity = (x: 0.0, y: 0.0)
@@ -91,22 +113,26 @@ nonisolated public struct StudioTrack: Sendable {
         var centerVelocity = (x: 0.0, y: 0.0)
         var opacity = 1.0
         var clickIndex = 0
-        let clicks = telemetry.clicks.map(\.time).sorted()
         // Typing, shortcuts left out: ⌘S doesn't hide the cursor, as it doesn't on screen.
         let typing = project.cursor.hidesWhileTyping ? telemetry.keys.filter(\.isTyping).map(\.time).sorted() : []
         var typingIndex = 0
         var lastTyped = -Double.infinity
 
         for frameIndex in 0..<count {
+            if frameIndex.isMultiple(of: 512) { try checkCancellation() }
             let time = Double(frameIndex) * step
             let raw = Self.pointer(at: time, in: samples, index: &index)
-            if let last = lastRaw, hypot(raw.x - last.x, raw.y - last.y) > 0.5 { lastMove = time }
-            if lastRaw == nil { lastMove = time }
+            // Measure displacement since the last confirmed activity, not since the previous interpolated
+            // frame: slow motion accumulates, while sub-point jitter around a resting position does not.
+            if activityPosition.map({ hypot(raw.x - $0.x, raw.y - $0.y) > 0.5 }) ?? true {
+                lastMove = time
+                activityPosition = (raw.x, raw.y)
+            }
             let rawVelocity = lastRaw.map { ((raw.x - $0.x) / step, (raw.y - $0.y) / step) } ?? (0, 0)
             lastRaw = (raw.x, raw.y)
             var clicked = false
-            while clickIndex < clicks.count, clicks[clickIndex] <= time {
-                lastMove = max(lastMove, clicks[clickIndex])
+            while clickIndex < clicks.count, clicks[clickIndex].time <= time {
+                lastMove = max(lastMove, clicks[clickIndex].time)
                 clickIndex += 1
                 clicked = true
             }
@@ -127,10 +153,11 @@ nonisolated public struct StudioTrack: Sendable {
             cursor.cursor = raw.cursor
             // Into the next click, the cursor drawn closes on the pointer.
             var drawn = (x: cursor.x, y: cursor.y)
-            if smoothed, clickIndex < clicks.count, clicks[clickIndex] - time < Self.clickApproach {
-                let t = 1 - (clicks[clickIndex] - time) / Self.clickApproach
+            if smoothed, clickIndex < clicks.count, clicks[clickIndex].time - time < Self.clickApproach {
+                let click = clicks[clickIndex]
+                let t = 1 - (click.time - time) / Self.clickApproach
                 let eased = t * t * (3 - 2 * t)
-                drawn = (cursor.x + (raw.x - cursor.x) * eased, cursor.y + (raw.y - cursor.y) * eased)
+                drawn = (cursor.x + (click.x - cursor.x) * eased, cursor.y + (click.y - cursor.y) * eased)
             }
 
             // Fading while typing, until the pointer moves or clicks after the last key typed, and when the
@@ -148,8 +175,13 @@ nonisolated public struct StudioTrack: Sendable {
             }
 
             // The camera: how far into a zoom, and where it looks.
-            let zoom = Self.zoom(at: time, zooms: zooms)
-            let fullyIn = zooms.contains { zoom in
+            while zoomIndex < zooms.count, zooms[zoomIndex].start <= time {
+                activeZooms.append(zooms[zoomIndex])
+                zoomIndex += 1
+            }
+            activeZooms.removeAll { $0.end < time }
+            let zoom = Self.zoom(at: time, zooms: activeZooms)
+            let fullyIn = activeZooms.contains { zoom in
                 time >= zoom.start + Self.transitionLength(zoom) && time <= zoom.end - Self.transitionLength(zoom)
             }
             var target = drawn
@@ -175,6 +207,7 @@ nonisolated public struct StudioTrack: Sendable {
                 cursorOpacity: opacity
             ))
         }
+        try checkCancellation()
         self.frames = frames
     }
 
@@ -189,14 +222,57 @@ nonisolated public struct StudioTrack: Sendable {
         let a = frames[lower], b = frames[lower + 1]
         let t = position - Double(lower)
         func mix(_ x: Double, _ y: Double) -> Double { x + (y - x) * t }
+        let cursor = anchoredCursor(at: position / rate, lower: lower, a: a, b: b)
         return Frame(
             zoom: mix(a.zoom, b.zoom), centerX: mix(a.centerX, b.centerX), centerY: mix(a.centerY, b.centerY),
-            cursorX: mix(a.cursorX, b.cursorX), cursorY: mix(a.cursorY, b.cursorY), cursor: a.cursor,
+            cursorX: cursor.x, cursorY: cursor.y, cursor: a.cursor,
             cursorOpacity: mix(a.cursorOpacity, b.cursorOpacity)
         )
     }
 
     // MARK: Private
+
+    /// Split the interpolation interval at actual click times. This keeps arbitrary seeks continuous on
+    /// both sides of every anchor, without changing the fixed-rate storage used by the camera.
+    private func anchoredCursor(at time: Double, lower: Int, a: Frame, b: Frame) -> (x: Double, y: Double) {
+        var low = 0, high = clickAnchors.count
+        while low < high {
+            let middle = (low + high) / 2
+            if clickAnchors[middle].time <= time { low = middle + 1 } else { high = middle }
+        }
+        var left = (time: Double(lower) / rate, x: a.cursorX, y: a.cursorY)
+        var right = (time: Double(lower + 1) / rate, x: b.cursorX, y: b.cursorY)
+        if low > 0, clickAnchors[low - 1].time >= left.time {
+            let click = clickAnchors[low - 1]
+            left = (click.time, click.x, click.y)
+        }
+        if low < clickAnchors.count, clickAnchors[low].time <= right.time {
+            let click = clickAnchors[low]
+            right = (click.time, click.x, click.y)
+        }
+        let fraction = right.time > left.time ? (time - left.time) / (right.time - left.time) : 0
+        return (left.x + (right.x - left.x) * fraction, left.y + (right.y - left.y) * fraction)
+    }
+
+    /// Merge recorded events into the sampled path; a click's coordinates win over a simultaneous sample.
+    private static func anchoredSamples(_ samples: [StudioTelemetry.Sample], clicks: [StudioTelemetry.Click]) -> [StudioTelemetry.Sample] {
+        guard !clicks.isEmpty else { return samples }
+        var result: [StudioTelemetry.Sample] = []
+        result.reserveCapacity(samples.count + clicks.count)
+        var index = 0
+        var cursor = samples.first?.cursor ?? 0
+        for click in clicks {
+            while index < samples.count, samples[index].time <= click.time {
+                cursor = samples[index].cursor
+                if samples[index].time < click.time { result.append(samples[index]) }
+                index += 1
+            }
+            if result.last?.time == click.time { result.removeLast() }
+            result.append(.init(time: click.time, x: click.x, y: click.y, cursor: cursor))
+        }
+        result.append(contentsOf: samples[index...])
+        return result
+    }
 
     /// How much the picture is zoomed at `time`: easing in at each zoom's start and out at its end.
     static func zoom(at time: Double, zooms: [StudioProject.Zoom]) -> Double {

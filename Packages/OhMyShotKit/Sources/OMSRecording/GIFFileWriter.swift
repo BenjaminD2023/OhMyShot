@@ -52,9 +52,23 @@ final class GIFFileWriter {
 
     /// Adds `frame`, shown for `delay` hundredths of a second, over the frames before it.
     func write(_ frame: Frame, delay: Int) throws {
+        var remaining = max(delay, 0)
+        repeat {
+            var part = min(remaining, 0xFFFF)
+            // Browsers clamp one-centisecond frames. Borrow one tick from the preceding part so even
+            // the remainder of a long hold respects the maker's two-centisecond minimum.
+            if remaining > 0xFFFF, remaining - part == 1 { part -= 1 }
+            try writePart(frame, delay: part)
+            remaining -= part
+        } while remaining > 0
+    }
+
+    /// Repeating a frame is idempotent under disposal 1, including a transparent delta frame. The
+    /// existing pixels stay put while the full requested delay is carried by as many frames as needed.
+    private func writePart(_ frame: Frame, delay: Int) throws {
         // Disposal 1 leaves the frame in place, so the next one's transparent pixels show it.
         let flags: UInt8 = 1 << 2 | (frame.transparentIndex == nil ? 0 : 1)
-        var block: [UInt8] = [0x21, 0xF9, 0x04, flags] + Self.littleEndian(min(max(delay, 0), 0xFFFF)) + [frame.transparentIndex ?? 0, 0x00]
+        var block: [UInt8] = [0x21, 0xF9, 0x04, flags] + Self.littleEndian(delay) + [frame.transparentIndex ?? 0, 0x00]
         block += [0x2C] + Self.littleEndian(frame.x) + Self.littleEndian(frame.y) + Self.littleEndian(frame.width) + Self.littleEndian(frame.height)
         block.append(0x80 | frame.paletteBits)
         block += frame.palette

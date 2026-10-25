@@ -698,6 +698,10 @@ struct DebugHooks {
             let seconds = Self.intParameter("seconds", in: url) ?? 4
             let size = CGSize(width: Self.intParameter("w", in: url) ?? 800, height: Self.intParameter("h", in: url) ?? 500)
             Task { await DebugRecordingDemo.runStudio(seconds: seconds, size: size) }
+        case "studio-long-check":
+            DebugRecordingDemo.startLongStudioCheck()
+        case "studio-long-cancel":
+            DebugRecordingDemo.cancelLongStudioCheck()
         case "studio-window":
             // The Studio window on a copy of studio-demo.mp4 with a made-up pointer, put in the history as
             // "Demo Studio Recording", behind the desktop picture, nothing shown. action=open (mode=dark,
@@ -753,9 +757,12 @@ struct DebugHooks {
                         if let cut = range("cut") { studio?.debugCut(cut) }
                         if let chosen = range("choose") { studio?.debugChoose(chosen) }
                         studio?.debugSeek(to: Double(value("at") ?? "1") ?? 1)
-                        // height=<points> makes the window taller, to see all of the inspector.
-                        if let height = value("height").flatMap(Double.init) {
-                            window.setContentSize(CGSize(width: window.contentLayoutRect.width, height: height))
+                        // Explicit dimensions exercise the editor's smallest window as well as tall inspectors.
+                        if value("width") != nil || value("height") != nil {
+                            window.setContentSize(CGSize(
+                                width: value("width").flatMap(Double.init) ?? window.contentLayoutRect.width,
+                                height: value("height").flatMap(Double.init) ?? window.contentLayoutRect.height
+                            ))
                         }
                         try? await Task.sleep(for: .milliseconds(Int(value("wait") ?? "1500") ?? 1500))
                         await captureHiddenWindow(window, name: dark ? "studio-window-dark" : "studio-window")
@@ -770,6 +777,21 @@ struct DebugHooks {
                     }
                 case "play":
                     recordings.debugStudioDemoWindow?.debugTogglePlay()
+                case "keyboard-check":
+                    if let studio = recordings.debugStudioDemoWindow {
+                        let checks = await studio.debugKeyboardChecks()
+                        if let data = try? JSONSerialization.data(withJSONObject: checks, options: [.prettyPrinted, .sortedKeys]) {
+                            try? data.write(to: Self.snapshotDirectory.appending(path: "studio-keyboard-check.json"), options: .atomic)
+                        }
+                        Log.app.notice("debug.studio-window keyboard: \(checks.filter { !$0.value }.keys.sorted().joined(separator: ","), privacy: .public)")
+                    }
+                case "zoom-in", "zoom-out", "fit-selection", "fit":
+                    let pressed = recordings.debugStudioDemoWindow?.debugTimelineControl(action) ?? false
+                    Log.app.notice("debug.studio-window timeline \(action, privacy: .public): pressed \(pressed, privacy: .public)")
+                    try? await Task.sleep(for: .milliseconds(1000))
+                    if let window = recordings.debugStudioDemoWindow?.window {
+                        await captureHiddenWindow(window, name: "studio-timeline-\(action)")
+                    }
                 case "render":
                     // The open demo's window as it is now (wait=<ms> first), to studio-window-now.png.
                     try? await Task.sleep(for: .milliseconds(Int(value("wait") ?? "0") ?? 0))

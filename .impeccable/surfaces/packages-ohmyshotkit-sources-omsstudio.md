@@ -145,3 +145,70 @@ so it waits for their word), the bubble double-clicked while recording, a camera
 
 Left for later: editing when the camera fills the frame (it follows the recording), the camera for windows
 recorded alone, speed changes, redaction in the movie, a GIF from Studio, zooming the timeline.
+
+## Built (2026-10-25): timeline detail and editing feedback
+
+The timeline opens fitted to the whole recording. Fit returns to that view; Fit Selection frames the chosen
+zoom, cut, camera layout, or range with room on either side. The minus and plus magnifying-glass buttons halve
+or double the timeline's magnification, keeping the playhead at the same position in the view; an offscreen
+playhead is centered first. The closest view spans one second, or the whole recording when it is shorter.
+The viewport is window state only: it is not written to the project, changes no edit times, and starts fitted
+again when the project reopens.
+
+At magnification, a native horizontal scrollbar shows how much of the recording is visible; its thumb and
+wheel or trackpad scrolling move the visible range. Playback and keyboard seeking bring an offscreen playhead
+back into view. Only visible zooms, cuts, camera layouts, ruler ticks, and thumbnail slots are drawn. The
+timeline is 180 pt high, or 208 pt with the camera-layout lane, including its view controls and scrollbar.
+The inspector, semantic colors, selected outlines, and contrast responses keep the existing visual system.
+
+The thumbnail grid is anchored to recording time, so nearby views reuse frames. It requests at most 65 slots
+for the current viewport, waits 80 ms for rapid navigation to settle, and decodes pictures up to 640 × 80 px.
+The per-window cache retains at most 96 pictures and 24 MiB, evicting the least recently used entries; the
+visible pictures share those image objects. Changing the viewport cancels its previous request and pending
+image generation. A generation check rejects late results; an unreadable frame leaves its own slot empty
+instead of shifting later pictures to an incorrect time. Closing the view ends its thumbnail task.
+
+There is one selection shared by every control: a range, zoom, cut, camera-layout segment, or nothing.
+Dragging a range and marking it with I/O release any previously selected object. Choosing an object by mouse,
+keyboard, or VoiceOver releases the range. Delete and the transport's Cut use the same document command, so
+their target cannot disagree. With the timeline focused, Option-← and Option-→ choose the preceding or next
+edit in recording-time order and bring it into view; Escape clears the selection. The existing ←/→ seeking
+(Shift for a second), I/O marking, Delete, context menus, and VoiceOver actions remain. A timeline tooltip
+lists these navigation commands.
+
+A chosen zoom or camera-layout segment has Start and End fields in its inspector section. They accept
+seconds, minutes:seconds, or hours:minutes:seconds, including fractional seconds, and display milliseconds.
+Return or leaving the field commits one change; incomplete typing does not move an edit. Invalid input says
+"Enter a time such as 0:12.500." Valid input is constrained by the document's duration and segment limits,
+and the fields show the effective result. Choosing either kind of segment scrolls its controls into view.
+Add Layout is unavailable when there is no room at the playhead, with a reason in its tooltip, as Add Zoom is.
+
+A fixed 24 pt status row under the transport says "Project saved" or "Saving project…" without changing the
+preview's size. A failed write says "Project changes haven’t been saved", exposes the system reason through
+help and accessibility, and offers Retry Saving. Project saves are asynchronous, serial, and coalesced;
+ending a drag requests an immediate save, and exporting or closing waits for the latest project revision.
+A failed project save keeps the window open and cancels an app quit rather than losing the editable project.
+
+The first preview has its preparing spinner. Updating an existing preview keeps its previous image and adds
+a small "Updating preview…" reading near the bottom. Failure identifies an unreadable first preview or one
+that could not be updated, gives the reason, and offers Retry Preview; an old image is not silently presented
+as the latest edit. Playback failures use the same visible state. These are window controls and feedback,
+not elements drawn into the exported movie.
+
+Verification for the 2026-10-25 refinement: rebuilt the native app and captured only the synthetic Studio
+demo, in light appearance at 1180 × 780 pt and dark appearance at 900 × 560 pt content size. A first pass
+caught duplicated time-field labels; the confirmation pass verified their removal, visible duration,
+transport, viewport controls, and scrolling inspector. The app's own accessibility tree successfully
+pressed Zoom In Timeline and Fit Selection; the zoomed capture shows the new ruler range and horizontal
+scrollbar. The accessibility audit found names for the new controls; its one unnamed toolbar split-menu
+segment is the existing SwiftUI limitation documented above. This was not a physical-keyboard/VoiceOver
+session or a test of every system accessibility setting. Synthetic demo entries were removed afterward.
+
+Additional remaining-issue validation (2026-10-25): the demo window now has an opt-in `keyboard-check` action
+covering 15 real responder/AX behaviors, including Option-arrow selection, object/range Delete and Undo,
+I/O, arrow seek, accessible time-field input/Return, and AX playhead adjustment. All passed; the structured
+record is in `Docs/benchmarks/studio-keyboard-2026-10-25.json`. A generated 30-minute file also completed
+preview seek and real compositor/encoder export; `Docs/perf.md` records its 1 fps source, 60 fps composition,
+measured timing, process/Metal resource peaks and idle results. These do not stand in for human VoiceOver
+speech testing or watt-level power measurement. Save As now stages a complete sibling copy and atomically
+renames it over the destination; copy failure or cancellation preserves the user's previous file.

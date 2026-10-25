@@ -109,16 +109,23 @@ public enum HistorySearch {
     }
 
     /// Where `entry` holds every one of `terms`, or nil when one is missing.
-    public static func match(_ terms: [String], in entry: Entry) -> Match? {
+    public static func match(_ terms: [String], in entry: Entry, includingExcerpt: Bool = true) -> Match? {
         guard !terms.isEmpty else { return nil }
-        var excerpt: Excerpt?
+        var firstFound: Range<String.Index>?
         for term in terms {
-            if let found = entry.key.range(of: term) {
-                if excerpt == nil { excerpt = Self.excerpt(of: found, in: entry) }
-            } else if !entry.appKey.contains(term) {
+            // ASCII query terms have already had case, width and Latin accents folded. Literal lookup
+            // avoids asking Foundation to collate every non-ASCII character in a long OCR document.
+            // Non-ASCII terms retain canonical matching, including combining marks in other scripts.
+            let options: String.CompareOptions = term.utf8.allSatisfy { $0 < 0x80 } ? .literal : []
+            if let found = entry.key.range(of: term, options: options) {
+                if firstFound == nil { firstFound = found }
+            } else if entry.appKey.range(of: term, options: options) == nil {
                 return nil
             }
         }
+        // A late missing term used to discard an excerpt already built for the first term. The history
+        // grid also asks for membership alone, then builds excerpts only for cards that become visible.
+        let excerpt = includingExcerpt ? firstFound.flatMap { Self.excerpt(of: $0, in: entry) } : nil
         return Match(excerpt: excerpt)
     }
 

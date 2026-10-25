@@ -20,6 +20,17 @@ nonisolated public enum StudioExporter {
     public static func export(
         _ composition: StudioComposition, to destination: URL, progress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> Movie {
+        try await export(composition, to: destination, progress: progress, finishing: {})
+    }
+
+    /// The finalization boundary is injectable so cancellation during file packaging can be exercised
+    /// without relying on encoder speed. All callers, including this boundary, use the same cleanup.
+    @concurrent
+    static func export(
+        _ composition: StudioComposition, to destination: URL, progress: (@Sendable (Double) -> Void)? = nil,
+        finishing: @escaping @Sendable () async throws -> Void
+    ) async throws -> Movie {
+        try Task.checkCancellation()
         let asset = composition.asset
         let canvas = composition.renderer.layout.canvas
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
@@ -45,7 +56,17 @@ nonisolated public enum StudioExporter {
         }
 
         try? FileManager.default.removeItem(at: destination)
+        var completed = false
+        defer {
+            if !completed { try? FileManager.default.removeItem(at: destination) }
+        }
         let writer = try AVAssetWriter(outputURL: destination, fileType: .mp4)
+        defer {
+            if !completed {
+                reader.cancelReading()
+                writer.cancelWriting()
+            }
+        }
         writer.shouldOptimizeForNetworkUse = true
         let videoInput = AVAssetWriterInput(
             mediaType: .video, outputSettings: videoSettings(canvas: canvas, quality: composition.renderer.project.quality, colors: composition.colors)
@@ -76,23 +97,27 @@ nonisolated public enum StudioExporter {
                 async let audio: Void = audioPump?.run() ?? ()
                 _ = await (video, audio)
                 try Task.checkCancellation()
+                guard reader.status != .failed else { throw StudioError.readingFailed(String(describing: reader.error)) }
+                guard writer.status == .writing else { throw StudioError.writingFailed(String(describing: writer.error)) }
+                writer.endSession(atSourceTime: StudioComposition.time(duration))
+                await writer.finishWriting()
+                try await finishing()
+                try Task.checkCancellation()
             } onCancel: {
                 stopper.stop()
+                videoPump.stop()
+                audioPump?.stop()
             }
         } catch {
             writer.cancelWriting()
             try? FileManager.default.removeItem(at: destination)
             throw error
         }
-        guard reader.status != .failed else {
-            writer.cancelWriting()
-            throw StudioError.readingFailed(String(describing: reader.error))
-        }
-        writer.endSession(atSourceTime: StudioComposition.time(duration))
-        await writer.finishWriting()
         guard writer.status == .completed else { throw StudioError.writingFailed(String(describing: writer.error)) }
+        try Task.checkCancellation()
         progress?(1)
         let bytes = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        completed = true
         return Movie(url: destination, pixelWidth: Int(canvas.width), pixelHeight: Int(canvas.height), duration: duration, byteCount: bytes)
     }
 
@@ -182,6 +207,7 @@ nonisolated private final class Pump: @unchecked Sendable {
     private let onSample: ((Double) -> Void)?
     /// Touched only on `queue`.
     private var isDone = false
+    private var continuation: CheckedContinuation<Void, Never>?
 
     init(output: AVAssetReaderOutput, input: AVAssetWriterInput, label: String, onSample: ((Double) -> Void)? = nil) {
         self.output = output
@@ -192,24 +218,33 @@ nonisolated private final class Pump: @unchecked Sendable {
 
     func run() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            input.requestMediaDataWhenReady(on: queue) { [self] in
-                guard !isDone else { return }
-                while input.isReadyForMoreMediaData {
-                    guard let sample = output.copyNextSampleBuffer() else {
-                        input.markAsFinished()
-                        isDone = true
-                        continuation.resume()
-                        return
+            queue.async { [self] in
+                guard !isDone else { return continuation.resume() }
+                self.continuation = continuation
+                input.requestMediaDataWhenReady(on: queue) { [self] in
+                    guard !isDone else { return }
+                    while input.isReadyForMoreMediaData {
+                        guard let sample = output.copyNextSampleBuffer() else { return finish() }
+                        guard CMSampleBufferGetDataBuffer(sample) != nil || CMSampleBufferGetImageBuffer(sample) != nil else { continue }
+                        guard input.append(sample) else { return finish() }
+                        onSample?(sample.presentationTimeStamp.seconds)
                     }
-                    guard CMSampleBufferGetDataBuffer(sample) != nil || CMSampleBufferGetImageBuffer(sample) != nil else { continue }
-                    if !input.append(sample) {
-                        isDone = true
-                        continuation.resume()
-                        return
-                    }
-                    onSample?(sample.presentationTimeStamp.seconds)
                 }
             }
         }
+    }
+
+    /// Cancelling must also finish a pump waiting for encoder capacity, whose readiness callback may
+    /// otherwise never run again. All continuation state belongs to the pump's serial queue.
+    func stop() {
+        queue.async { [self] in finish() }
+    }
+
+    private func finish() {
+        guard !isDone else { return }
+        isDone = true
+        input.markAsFinished()
+        continuation?.resume()
+        continuation = nil
     }
 }

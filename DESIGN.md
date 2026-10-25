@@ -905,8 +905,20 @@ The mark is the app's own capture loupe: a white ring over magnified pixels with
 - In a Studio movie, a zoom eases in and out over up to 0.5 s (a third of it when shorter, cubic ease-in-out), the camera glides after the cursor through a spring (0.35 s) and, fully zoomed, only when the cursor nears the edge of what it shows; click rings and captions move as recording draws them. These are the movie's own motion, drawn into it for its viewers, and are kept under Reduce Motion. The Studio window itself animates nothing: its timeline, inspector, and preview change at once.
 - Under Reduce Motion all of these are instant (a pin's reading and the Copied reading simply go after 0.9 s, and a paused recording's time stays still); the Self-Timer countdown appears without a fade and its ring steps down each second instead of running out. Nothing trails the pointer: overlay layers update without animation. The two durations live in `Theme.Motion` (`slide` 0.22 s, `fade` 0.12 s).
 
+### Studio editing refinement (2026-10-25)
+
+The timeline keeps recording time while its viewport zooms and scrolls. A small native control row offers Fit, Fit Selection, and zoom out/in; an AppKit horizontal scroller appears while zoomed, and trackpad or mouse-wheel scrolling pans the visible range. Fit is the initial view, zoom anchors to the playhead, and viewport changes are not project edits or saved settings. Only visible edits and thumbnail tiles are drawn. The playhead remains adjustable with VoiceOver; Option-left/right selects the previous/next edit and reveals it, Escape clears the selection, and I/O and Delete keep their existing roles. All inputs share one mutually exclusive selection.
+
+The selected zoom or camera layout has Start and End fields in the inspector, accepting seconds or minutes:seconds with milliseconds, and a duration reading. Committing a value applies the same minimum duration and boundary constraints as dragging and displays the resulting value. Add Layout is disabled, with an explanatory tooltip, when no room remains at the playhead.
+
+A fixed-height 24 pt status line below the transport distinguishes project saving, saved, and failed, so edits do not resize the preview as they save. Failed saving offers Retry Saving. The preview keeps its last frame while rebuilding, with a small Updating preview notice; failure identifies the stale frame and provides Retry Preview. Both use semantic system surfaces and label colors, no decorative motion. Closing or quitting waits for the latest project snapshot; a write failure keeps the window and its edits open. The toolbar's Save/Copy still refer to the movie, distinct from the project status.
+
+### History loading and search feedback (2026-10-25)
+
+The first directory read shows a native progress indicator labelled Loading captures… instead of a premature empty state. While a new search or initial text indexing is pending, an otherwise empty result area shows Updating search results…; existing cards remain visible with a small, solid, system-colored status at the bottom. Search announcements wait for the current result. Return waits for the current query and available text index before moving focus to its first result; further typing or closing cancels that pending submission. Excerpts are loaded only for visible result cards. These states add no idle work after the window closes and preserve the existing selection, keyboard and filter behavior.
+
 ### Future Surfaces
-Studio's speed changes, redaction in the movie, a GIF from Studio, and a zoomable timeline for long recordings are not built. They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings off-window, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.
+Studio's speed changes, redaction in the movie, and a GIF from Studio are not built. They must use this system (system colors and accent, 12 pt cards and capsules, soft lift shadows, rounded readings off-window, small glass only, the three accessibility responses); their specs are recorded when they ship, not before.
 
 ## Do's and Don'ts
 

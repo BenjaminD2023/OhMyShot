@@ -504,6 +504,46 @@ struct StudioExportTests {
         ])
     }
 
+    @Test func cancellingAfterPackagingRemovesTheMovieAndAllowsRetry() async throws {
+        let source = try await Self.movie(seconds: 1)
+        let output = FileManager.default.temporaryDirectory.appending(path: "OMSStudioCancel-\(UUID()).mp4")
+        defer { [source, output].forEach { try? FileManager.default.removeItem(at: $0) } }
+        let renderer = StudioRenderer(
+            telemetry: Self.telemetry(), project: StudioProject(), duration: 1,
+            recordingSize: CGSize(width: 320, height: 200), background: nil
+        )
+        let composition = try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: [])
+        let boundary = StudioExportBoundary()
+        let export = Task {
+            try await StudioExporter.export(composition, to: output, finishing: { await boundary.arrive() })
+        }
+        await boundary.waitUntilArrived()
+        export.cancel()
+        await boundary.release()
+        await #expect(throws: CancellationError.self) { try await export.value }
+        #expect(!FileManager.default.fileExists(atPath: output.path))
+        let retried = try await StudioExporter.export(composition, to: output)
+        #expect(retried.byteCount > 0)
+    }
+
+    @Test func cancellingWhilePumpingStopsAndCleansUp() async throws {
+        let source = try await Self.movie(seconds: 3)
+        let output = FileManager.default.temporaryDirectory.appending(path: "OMSStudioCancelPump-\(UUID()).mp4")
+        defer { [source, output].forEach { try? FileManager.default.removeItem(at: $0) } }
+        let renderer = StudioRenderer(
+            telemetry: Self.telemetry(), project: StudioProject(), duration: 3,
+            recordingSize: CGSize(width: 320, height: 200), background: nil
+        )
+        let composition = try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: [])
+        let cancellation = StudioExportCancellation()
+        let export = Task {
+            try await StudioExporter.export(composition, to: output, progress: { _ in cancellation.cancel() })
+        }
+        cancellation.set(export)
+        await #expect(throws: CancellationError.self) { try await export.value }
+        #expect(!FileManager.default.fileExists(atPath: output.path))
+    }
+
     /// The pixel's red, green, and blue in sRGB.
     private static func color(of image: CGImage, x: Int, y: Int) throws -> [Double] {
         let context = try #require(CGContext(
@@ -522,5 +562,47 @@ struct StudioExportTests {
         ))
         context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
         return Double(try #require(context.data).assumingMemoryBound(to: UInt8.self)[1])
+    }
+}
+
+private actor StudioExportBoundary {
+    private var arrived = false
+    private var listener: CheckedContinuation<Void, Never>?
+    private var resume: CheckedContinuation<Void, Never>?
+
+    func arrive() async {
+        await withCheckedContinuation { continuation in
+            resume = continuation
+            arrived = true
+            listener?.resume()
+            listener = nil
+        }
+    }
+
+    func waitUntilArrived() async {
+        if arrived { return }
+        await withCheckedContinuation { listener = $0 }
+    }
+
+    func release() { resume?.resume(); resume = nil }
+}
+
+nonisolated private final class StudioExportCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<StudioExporter.Movie, Error>?
+    private var cancelled = false
+
+    func set(_ task: Task<StudioExporter.Movie, Error>) {
+        lock.withLock {
+            self.task = task
+            if cancelled { task.cancel() }
+        }
+    }
+
+    func cancel() {
+        lock.withLock {
+            cancelled = true
+            task?.cancel()
+        }
     }
 }

@@ -38,9 +38,10 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
 
     /// Puts `source` (the recording's movie) together with `renderer`, leaving out `cuts`; the camera's movie
     /// goes in beside it when there is one, kept in step and cut alike.
-    public static func make(
+    @concurrent public static func make(
         source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], camera: CameraSource? = nil
     ) async throws -> StudioComposition {
+        try Task.checkCancellation()
         let sourceDuration = try await source.load(.duration).seconds
         let segments = keptSegments(duration: sourceDuration, cuts: cuts)
         let composition = AVMutableComposition()
@@ -54,6 +55,7 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         // are rounded at the ends, never per length, so no gap or overlap of a 6000th of a second opens.
         var cursor = CMTime.zero
         for segment in segments {
+            try Task.checkCancellation()
             let until = time(segment.movieStart + segment.duration)
             guard until > cursor else { continue }
             let range = CMTimeRange(start: time(segment.sourceStart), duration: until - cursor)
@@ -83,6 +85,7 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
                 cursor = end
             }
             for range in ranges {
+                try Task.checkCancellation()
                 let at = time(range.movieStart), from = time(range.cameraStart)
                 try hold(from, until: at)
                 // Never past the camera's own end, nor the movie's.
@@ -114,6 +117,7 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         configuration.colorPrimaries = colors.primaries
         configuration.colorTransferFunction = colors.transferFunction
         configuration.colorYCbCrMatrix = colors.matrix
+        try Task.checkCancellation()
         return StudioComposition(
             asset: composition.copy() as? AVComposition ?? composition, videoComposition: AVVideoComposition(configuration: configuration),
             renderer: renderer, duration: duration, colors: colors
@@ -220,7 +224,13 @@ nonisolated final class StudioInstruction: NSObject, AVVideoCompositionInstructi
 
     /// The recording's time at the movie's `time`.
     func sourceTime(_ time: Double) -> Double {
-        guard let segment = segments.last(where: { $0.movieStart <= time }) ?? segments.first else { return time }
+        guard !segments.isEmpty else { return time }
+        var low = 0, high = segments.count
+        while low < high {
+            let middle = (low + high) / 2
+            if segments[middle].movieStart <= time { low = middle + 1 } else { high = middle }
+        }
+        let segment = segments[max(0, low - 1)]
         return segment.sourceStart + min(max(time - segment.movieStart, 0), segment.duration)
     }
 }

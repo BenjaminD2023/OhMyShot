@@ -181,11 +181,20 @@ public enum TextAssembler {
         var characters = Array(text)
         let hasCJK = characters.contains(where: Script.isCJK)
         let mostlyLatin = characters.filter(Script.isLatinOrDigit).count > characters.filter(Script.isCJK).count * 2
+        // Only the nearest letter/digit's script matters. Read it once in each direction instead of
+        // rescanning a long run of punctuation and whitespace for every character in that run.
+        var nextIsSquare = Array(repeating: false, count: characters.count)
+        var nearestIsSquare = false
+        for index in characters.indices.reversed() {
+            nextIsSquare[index] = nearestIsSquare
+            let character = characters[index]
+            if character.isLetter || character.isNumber { nearestIsSquare = isSquare(character) }
+        }
+        var previousIsSquare = false
         for index in characters.indices {
             let character = characters[index]
-            let previous = neighbor(of: index, in: characters, step: -1)
-            let next = neighbor(of: index, in: characters, step: 1)
-            let betweenCJK = previous.map(isSquare) == true && next.map(isSquare) == true
+            let betweenCJK = previousIsSquare && nextIsSquare[index]
+            if character.isLetter || character.isNumber { previousIsSquare = isSquare(character) }
             if mostlyLatin {
                 if let half = Punctuation.halfWidth[character], !betweenCJK, !(character == "。" && hasCJK) {
                     characters[index] = half
@@ -202,18 +211,6 @@ public enum TextAssembler {
             result.append(character)
         }
         return String(result)
-    }
-
-    /// The nearest letter, digit, or CJK character before or after `index`, skipping spaces and other
-    /// punctuation.
-    private static func neighbor(of index: Int, in characters: [Character], step: Int) -> Character? {
-        var cursor = index + step
-        while characters.indices.contains(cursor) {
-            let character = characters[cursor]
-            if character.isLetter || character.isNumber { return character }
-            cursor += step
-        }
-        return nil
     }
 
     /// Han or kana: the scripts written without spaces.
@@ -242,8 +239,8 @@ public enum TextAssembler {
             guard sameLeft, gap >= -lineHeight * 0.3, gap < lineHeight * 0.9 else { return false }
             // The paragraph's right edge: the widest of the neighboring lines that share this left edge (a table's rows,
             // boxed across the whole table, aren't the paragraph's).
-            let neighbors = lines.indices
-                .filter { abs($0 - index) <= 3 && abs(lines[$0].box.minX - line.box.minX) < lineHeight * 0.8 && !lines[$0].isTableRow }
+            let neighbors = (max(0, index - 3)..<min(lines.count, index + 4))
+                .filter { abs(lines[$0].box.minX - line.box.minX) < lineHeight * 0.8 && !lines[$0].isTableRow }
             let rightEdge = neighbors.map { lines[$0].box.maxX }.max() ?? line.box.maxX
             let width = rightEdge - line.box.minX
             guard width > 0, line.box.maxX - line.box.minX >= width * 0.85 else { return false }
