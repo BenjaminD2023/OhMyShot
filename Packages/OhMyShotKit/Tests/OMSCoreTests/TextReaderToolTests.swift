@@ -153,6 +153,53 @@ struct TextReaderToolTests {
         try #require(condition())
     }
 
+    @Test func finishingTheElementBudgetStillReturnsCompletedFormulasAndTables() async throws {
+        let reader = try helper(answering + """
+
+        seconds=$(printf '%s' "$line" | sed -E 's/.*"seconds":([0-9.]+).*/\\1/')
+        # Startup and decoding precede the helper's own reading budget.
+        /bin/sleep 0.05
+        printf '{"id":"%s","found":3,"foundTables":2}\\n' "$id"
+        # The first formula and table are complete; the last table uses the remaining budget.
+        /bin/sleep "$seconds"
+        printf '{"id":"%s","formulas":[{"kind":"inline","box":[[1,2],[3,4]],"latex":"x"}],"tables":[{"kind":"table","box":[[10,20],[30,40]],"rows":[["A","B"]],"whole":true}]}\\n' "$id"
+        /bin/sleep 0.05
+        """)
+        defer { try? FileManager.default.removeItem(at: reader.deletingLastPathComponent()) }
+        let resources = ActiveResources()
+        let read = try await TextReaderTool.elements(
+            ofPictureAt: URL(filePath: "/tmp/p.png"), formulas: URL(filePath: "/packs/formula"), vlm: URL(filePath: "/packs/vlm"),
+            seconds: 0.3, helper: reader, resources: resources
+        )
+        #expect(read.formulas.map(\.latex) == ["x"])
+        #expect(read.tables.map(\.rows) == [[["A", "B"]]])
+        #expect(resources.isIdle)
+    }
+
+    @Test func anElementBudgetStillBoundsAReaderThatNeverAnswers() async throws {
+        let reader = try helper("""
+        trap '' TERM
+        read line
+        while :; do :; done
+        """)
+        defer { try? FileManager.default.removeItem(at: reader.deletingLastPathComponent()) }
+        let resources = ActiveResources()
+        let reading = Task {
+            try await TextReaderTool.elements(
+                ofPictureAt: URL(filePath: "/tmp/p.png"), vlm: URL(filePath: "/packs/vlm"), seconds: 0.1,
+                helper: reader, resources: resources
+            )
+        }
+        // Bound the test too if the implicit process deadline ever regresses to the 120-second default.
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(4))
+            if !Task.isCancelled { reading.cancel() }
+        }
+        defer { watchdog.cancel(); reading.cancel() }
+        await #expect(throws: TextReaderTool.Failure.timedOut) { try await reading.value }
+        try await eventually { resources.isIdle }
+    }
+
     @Test func aDeadlineStopsNativeWorkThatIgnoresTermination() async throws {
         let reader = try helper("""
         trap '' TERM

@@ -121,12 +121,13 @@ struct OCRTimeoutTests {
         #expect(runs.counts.withLock { $0.started == 1 })
     }
 
-    @Test func processWideRequestsInitializeOneAtATime() async throws {
+    @Test func theDefaultSlotCountInitializesOneRequestAtATime() async throws {
+        let slots = RecognitionSlots()
         let gate = Gate()
         defer { gate.open() }
         let runs = Runs()
         let first = Task {
-            try await RecognitionSlots.shared.run {
+            try await slots.run {
                 runs.start()
                 await gate.wait()
                 runs.finish()
@@ -134,7 +135,7 @@ struct OCRTimeoutTests {
         }
         try await Self.settle { runs.counts.withLock { $0.running == 1 } }
         let second = Task {
-            try await RecognitionSlots.shared.run {
+            try await slots.run {
                 runs.start()
                 runs.finish()
             }
@@ -191,11 +192,12 @@ struct OCRTimeoutTests {
     }
 
     @Test func aWholeImageDeadlineAlsoBoundsTheWaitForABusyVisionSlot() async throws {
+        let slots = RecognitionSlots()
         let gate = Gate()
         defer { gate.open() }
         let runs = Runs()
         let holder = Task {
-            try await RecognitionSlots.shared.run {
+            try await slots.run {
                 runs.start()
                 await gate.wait()
                 runs.finish()
@@ -208,7 +210,7 @@ struct OCRTimeoutTests {
         ))
         let image = try #require(context.makeImage())
         // The individual request would wait five seconds, but the image's entire budget is shorter.
-        let pipeline = VisionPipeline(options: .init(timeout: .seconds(5), overallTimeout: .milliseconds(40)))
+        let pipeline = VisionPipeline(options: .init(timeout: .seconds(5), overallTimeout: .milliseconds(40)), slots: slots)
         let started = ContinuousClock.now
         await #expect(throws: OCRError.timedOut) { try await pipeline.recognize(image) }
         #expect(ContinuousClock.now - started < .seconds(1))
@@ -216,6 +218,100 @@ struct OCRTimeoutTests {
         gate.open()
         try await holder.value
         // The timed-out queued recognition must not run when the holder finally releases the slot.
-        #expect(try await withTimeout(.seconds(1)) { try await RecognitionSlots.shared.run { 42 } } == 42)
+        #expect(try await withTimeout(.seconds(1)) { try await slots.run { 42 } } == 42)
+    }
+
+    @Test(arguments: [true, false])
+    func aCompletedOptionalReadingSurvivesTheOtherDeadline(stallsTables: Bool) async throws {
+        let gate = Gate()
+        defer { gate.open() }
+        let result = OCRResult(
+            lines: [.init(text: "Kept table", box: CGRect(x: 10, y: 10, width: 80, height: 20), confidence: 1)],
+            text: "Text already read", duration: .zero
+        )
+        let table = OCRTable(rows: [["Original cell"]], cellBoxes: [[CGRect(x: 0, y: 0, width: 100, height: 40)]])
+        let code = OCRCode(payload: "https://example.com", kind: .qr, box: .zero)
+        let analysis = try await withTimeout(.seconds(2)) {
+            try await VisionPipeline.analyze(
+                result, until: .now + .milliseconds(100),
+                tables: {
+                    if stallsTables { await gate.wait() }
+                    return [table]
+                },
+                codes: {
+                    if !stallsTables { await gate.wait() }
+                    return [code]
+                }
+            )
+        }
+        #expect(analysis.result.text == result.text)
+        #expect(analysis.tables.map(\.rows) == (stallsTables ? [] : [[["Kept table"]]]))
+        #expect(analysis.codes == (stallsTables ? [code] : []))
+    }
+
+    @Test(arguments: [true, false])
+    func aFailedOptionalReadingKeepsTheOtherResult(failsTables: Bool) async throws {
+        struct Failure: Error {}
+        let result = OCRResult(lines: [], text: "Text already read", duration: .zero)
+        let table = OCRTable(rows: [["Kept table"]])
+        let code = OCRCode(payload: "https://example.com", kind: .qr, box: .zero)
+        let analysis = try await VisionPipeline.analyze(
+            result, until: .now + .seconds(2),
+            tables: {
+                if failsTables { throw Failure() }
+                return [table]
+            },
+            codes: {
+                if !failsTables { throw Failure() }
+                return [code]
+            }
+        )
+        #expect(analysis.result.text == result.text)
+        #expect(analysis.tables == (failsTables ? [] : [table]))
+        #expect(analysis.codes == (failsTables ? [code] : []))
+    }
+
+    @Test func anExpiredImageBudgetStartsNoOptionalReading() async throws {
+        let runs = Runs()
+        let result = OCRResult(lines: [], text: "Text already read", duration: .zero)
+        let analysis = try await VisionPipeline.analyze(
+            result, until: .now - .seconds(1),
+            tables: { runs.start(); return [] }, codes: { runs.start(); return [] }
+        )
+        #expect(analysis.result.text == result.text)
+        #expect(analysis.tables.isEmpty && analysis.codes.isEmpty)
+        #expect(runs.counts.withLock { $0.started == 0 })
+    }
+
+    @Test func cancellingOptionalReadingsReturnsBeforeNativeWorkEnds() async throws {
+        let gate = Gate()
+        defer { gate.open() }
+        let runs = Runs()
+        let reading = Task {
+            try await VisionPipeline.analyze(
+                OCRResult(lines: [], text: "Text already read", duration: .zero), until: .now + .seconds(10),
+                tables: {
+                    runs.start()
+                    await gate.wait()
+                    runs.finish()
+                    return []
+                },
+                codes: {
+                    runs.start()
+                    await gate.wait()
+                    runs.finish()
+                    return []
+                }
+            )
+        }
+        defer { reading.cancel() }
+        try await Self.settle { runs.counts.withLock { $0.running == 2 } }
+        reading.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await withTimeout(.seconds(1)) { try await reading.value }
+        }
+        #expect(runs.counts.withLock { $0.running == 2 })
+        gate.open()
+        try await Self.settle { runs.counts.withLock { $0.running == 0 } }
     }
 }

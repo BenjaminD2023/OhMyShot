@@ -627,8 +627,7 @@ final class TextCaptureCoordinator {
         #endif
         do {
             let read = try await TextReaderTool.elements(
-                ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, helper: helper, found: counted,
-                timeout: .milliseconds(Int64(seconds * 1000))
+                ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, helper: helper, found: counted
             )
             if read.tablesLeft > 0 {
                 Log.capture.notice("Left \(read.tablesLeft, privacy: .public) tables and charts as Vision read them: the system is short of memory for the VLM pack")
