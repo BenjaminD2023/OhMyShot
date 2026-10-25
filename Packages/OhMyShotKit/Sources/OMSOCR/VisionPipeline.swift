@@ -18,6 +18,8 @@ public struct VisionPipeline: OCREngine {
         public var assembly: TextAssembler.Options
         /// Per Vision request.
         public var timeout: Duration
+        /// The entire image, including queued requests, pieces and language/repair passes.
+        public var overallTimeout: Duration
         /// Told how long each step and each Vision request took, for the benchmark's `--trace`.
         public var trace: (@Sendable (String) -> Void)?
 
@@ -25,21 +27,30 @@ public struct VisionPipeline: OCREngine {
             primaryLanguages: [Locale.Language] = [Locale.Language(identifier: "zh-Hans"), Locale.Language(identifier: "en-US")],
             fallbackLanguages: [[Locale.Language]] = [[Locale.Language(identifier: "en-US")]],
             assembly: TextAssembler.Options = .init(),
-            timeout: Duration = .seconds(10)
+            timeout: Duration = .seconds(10),
+            overallTimeout: Duration = .seconds(60)
         ) {
             self.primaryLanguages = primaryLanguages
             self.fallbackLanguages = fallbackLanguages
             self.assembly = assembly
             self.timeout = timeout
+            self.overallTimeout = overallTimeout
         }
     }
 
     public let name: String
     public var options: Options
+    let slots: RecognitionSlots
 
     public init(name: String = "l1", options: Options = .init()) {
+        self.init(name: name, options: options, slots: .shared)
+    }
+
+    /// Tests can occupy a private queue without holding up unrelated native Vision requests.
+    init(name: String = "l1", options: Options = .init(), slots: RecognitionSlots) {
         self.name = name
         self.options = options
+        self.slots = slots
     }
 
     private static let english = [Locale.Language(identifier: "en-US")]
@@ -52,13 +63,19 @@ public struct VisionPipeline: OCREngine {
     @concurrent
     public func recognize(_ image: CGImage) async throws -> OCRResult {
         let started = ContinuousClock.now
-        return assembled(try await readImage(image), started: started)
+        return try await withTimeout(options.overallTimeout) {
+            assembled(try await readImage(image), started: started)
+        }
     }
 
     /// The picture in the file at `url`: a tall PNG's pieces are read from the file a band at a time
     /// (`PictureText.Bands`), the picture never decoded whole; any other picture is decoded and read as above.
     @concurrent
     public func recognize(fileAt url: URL) async throws -> OCRResult {
+        try await withTimeout(options.overallTimeout) { try await recognizeFile(at: url) }
+    }
+
+    private func recognizeFile(at url: URL) async throws -> OCRResult {
         let started = ContinuousClock.now
         if let bands = PictureText.Bands(fileAt: url) {
             do {
@@ -99,6 +116,7 @@ public struct VisionPipeline: OCREngine {
     private func readPieces(_ pieces: [CGRect], size: CGSize, part: (CGRect) throws -> CGImage?) async throws -> [OCRLine] {
         var readings: [[OCRLine]] = []
         for (number, piece) in pieces.enumerated() {
+            try Task.checkCancellation()
             guard let part = try part(piece) else {
                 readings.append([])
                 continue
@@ -157,13 +175,12 @@ public struct VisionPipeline: OCREngine {
             trace("\(step): \(Self.milliseconds(now - mark)) ms")
             mark = now
         }
-        // The first pass, the Latin model over the whole page, and text detection run side by side.
-        // Vision runs the two models at once for about 17 ms more than the first pass alone (measured),
-        // and the Latin reading serves both an English page and the English lines of a Chinese one.
-        async let primary = readLines(in: image, languages: options.primaryLanguages)
+        // Finish the primary model before starting other requests: simultaneous model initialization
+        // can stall Vision. The Latin reading still serves both English pages and English lines in CJK.
+        options.trace?("primary pass started")
+        var lines = try await readLines(in: image, languages: options.primaryLanguages)
         async let latinPage = readLines(in: image, languages: Self.english)
         async let detected = textRectangles(in: image)
-        var lines = try await primary
         let latin = (try? await latinPage) ?? []
         let rectangles = try await detected
         lap("first pass")
@@ -204,6 +221,7 @@ public struct VisionPipeline: OCREngine {
     /// Lines in `region` (the whole image when nil), in image pixels with a top-left origin, with spaces
     /// restored where the image shows them.
     private func readLines(in image: CGImage, languages: [Locale.Language], region: CGRect? = nil) async throws -> [OCRLine] {
+        try Task.checkCancellation()
         let size = CGSize(width: image.width, height: image.height)
         var request = RecognizeTextRequest()
         request.recognitionLevel = .accurate
@@ -216,8 +234,8 @@ public struct VisionPipeline: OCREngine {
         let configured = request
         let timeout = options.timeout
         let requested = ContinuousClock.now
-        let observations = try await RecognitionSlots.shared.run {
-            try await withTimeout(timeout) { try await configured.perform(on: image) }
+        let observations = try await withTimeout(timeout) {
+            try await slots.run { try await configured.perform(on: image) }
         }
         let read = ContinuousClock.now
         defer {
@@ -263,8 +281,8 @@ public struct VisionPipeline: OCREngine {
     // MARK: Gaps
 
     /// Reads again, with each fallback model, the text regions the lines leave empty. The regions of one
-    /// model are read side by side (two at a time, as `RecognitionSlots` allows): a request costs about
-    /// the same whatever its size, 60–170 ms, so read one after another they added up. The Latin model
+    /// model queue through `RecognitionSlots`: a request costs about the same whatever its size,
+    /// 60–170 ms, so repeated regions add up. The Latin model
     /// has read the whole page already (`page`), so its fallback takes that reading of each region
     /// instead of asking again: on the benchmark and the real screenshots, no region it read again was
     /// ever kept, and each such request cost 20–120 ms.
@@ -705,13 +723,31 @@ extension VisionPipeline.Options {
 extension VisionPipeline {
     /// Loads both models a recognition uses, the primary and the Latin, before the first real request by
     /// reading a few rendered characters (a blank image might never reach the recognizer). Run it while
-    /// the person is still selecting.
+    /// the person is still selecting. Warmups never queue behind recognition or repeat successful work.
     @concurrent
     public func prewarm() async {
         guard let image = Self.warmupImage() else { return }
-        async let primary = try? readLines(in: image, languages: options.primaryLanguages)
-        async let latin = try? readLines(in: image, languages: Self.english)
-        _ = await (primary, latin)
+        for languages in [options.primaryLanguages, Self.english] {
+            do {
+                let warmed = try await RecognitionWarmup.shared.run(for: languages.map(\.minimalIdentifier)) {
+                    var request = RecognizeTextRequest()
+                    request.recognitionLevel = .accurate
+                    request.usesLanguageCorrection = false
+                    request.recognitionLanguages = languages
+                    let configured = request
+                    return try await withTimeout(options.timeout) {
+                        try await slots.runIfAvailable {
+                            _ = try await configured.perform(on: image)
+                            return true
+                        } ?? false
+                    }
+                }
+                guard warmed else { return }
+            } catch {
+                // A cancelled, busy, or failed primary warmup must not add a Latin warmup behind it.
+                return
+            }
+        }
     }
 
     private static func warmupImage() -> CGImage? {
@@ -745,7 +781,9 @@ extension VisionPipeline {
         let size = CGSize(width: image.width, height: image.height)
         let crops = FormulaMerge.crops(plan, lines: lines, formulas: formulas, size: size) { InkProfile(image: image, box: $0) }
         do {
-            let read = try await read(crops: crops.compactMap(\.self), in: image, latin: plan.latin)
+            let read = try await withTimeout(options.overallTimeout) {
+                try await self.read(crops: crops.compactMap(\.self), in: image, latin: plan.latin)
+            }
             var texts = read.makeIterator()
             let pieces = crops.map { $0 == nil ? "" : texts.next() ?? "" }
             return ReadingOrder.sorted(FormulaMerge.lines(lines, formulas: formulas, plan: plan, pieces: pieces))
