@@ -2462,3 +2462,240 @@ signed test feed on 127.0.0.1 (`debug/updates-start`, `debug/updates-schedule?on
 
 Not measured: a real release (none exists; it needs Developer ID), installing an update, and the activity firing on its
 own (the system decides when; it wasn't waited for).
+
+## OCR — paragraph neighbor scanning (2026-10-25)
+
+Measured on this Mac: Apple M3 Max, Mac15,9, arm64; macOS 27.2 (26B118), Xcode 27.2 (27B5019j),
+Apple Swift 6.4 (`swiftlang-6.4.0.34.1`, clang 2100.3.34.1). Both sides used Release optimization with
+`-Xswiftc -DDEBUG`, five repetitions of the same fixture, reporting the median. The fixture is
+`OCRWrapSpeedTests.densePageNeighborScan`: 100, 1,000, or 10,000 recognized lines, each 640 × 20 px,
+24 px apart, holding the same unfinished sentence. Fixture creation and assertions are outside the timed region.
+
+Only `TextAssembler.inferredWraps` is timed: the paragraph-wrap decision after text recognition has finished.
+Previously, each line scanned all line indices to find its three neighbors on each side. It now visits only those
+seven indices. The neighbor scan changes from quadratic to linear; the function still sorts heights for its median.
+
+| Recognized lines | Before, median | After, median |
+| --- | --- | --- |
+| 100 | 0.038417 ms | 0.029375 ms |
+| 1,000 | 0.613959 ms | 0.312125 ms |
+| 10,000 | 31.791209 ms | 2.910416 ms |
+
+The 10,000-line fixture is about 10.9× faster in this step. This is **not total OCR latency**: image decoding,
+Vision/model inference, text assembly, translation, and UI updates were not timed. Every repetition checked the same
+output: all lines except the last wrap to the next one. Existing paragraph, punctuation, code-indentation, and table
+tests also passed; the optimization changes no wrap decision.
+
+The baseline used sources from `011139b`; the after measurement used the working-tree change. To keep simultaneous
+Studio work out of the measurement, both ran in one isolated package at `/tmp/ohmyshot-ocr-wrap-benchmark-20261025`,
+containing `TextAssembler`, `Script`, `ReadingOrder`, the `OCRLine`/`OCRTable` declarations, and the unchanged benchmark
+fixture. Both used this command, replacing only the implementation sources between runs:
+
+```sh
+OMS_OCR_WRAP_SPEED=1 swift test --package-path /tmp/ohmyshot-ocr-wrap-benchmark-20261025 -c release -Xswiftc -DDEBUG --filter OCRWrapSpeedTests
+```
+
+The committed fixture can be rerun in the full package with:
+
+```sh
+OMS_OCR_WRAP_SPEED=1 swift test --package-path Packages/OhMyShotKit -c release -Xswiftc -DDEBUG --filter OCRWrapSpeedTests
+```
+
+`DEBUG` is defined because other existing test targets use debug-only helpers; optimization remains Release, and
+the measured algorithm has no conditional debug path. The benchmark is skipped unless `OMS_OCR_WRAP_SPEED` is set.
+No idle-power or memory measurement was made in this pass.
+
+## Studio — motion planning and event lookup (2026-10-25)
+
+Measured on the same Apple M3 Max / Mac15,9, macOS 27.2 (26B118), Xcode 27.2 (27B5019j), and
+Apple Swift 6.4 environment as the OCR measurement above. Both sides used **Release**, without a `DEBUG`
+definition, with three repetitions of the identical `StudioAlgorithmBenchmarks.longRecordingTrackAndRandomSeek`
+fixture; the table reports medians. No other tests ran concurrently with the final benchmark measurements.
+
+The synthetic recording is 1600 × 1000 points with 60 pointer samples per second, one click every three seconds,
+and two keys per second. A 10-minute recording has 300 zooms; a 60-minute recording has 600. Each zoom lasts
+1.5 seconds, and scales cycle through 1.5, 1.7, and 1.9. Motion planning creates the same 120 Hz frame array as
+before. Instead of scanning every zoom twice per frame, it advances through sorted zoom starts and evaluates
+only the active zooms, preserving overlapping-zoom behavior. Input construction is outside the timed region.
+
+| Fixture | Before, median | After, median |
+| --- | --- | --- |
+| Build the 10-minute motion track, 300 zooms | 60.152 ms | 2.733 ms |
+| Build the 60-minute motion track, 600 zooms | 723.231 ms | 14.901 ms |
+| Build 300 scene graphs at out-of-order times in the 10-minute recording | 5.489 ms | 3.430 ms |
+| Build 300 scene graphs at out-of-order times in the 60-minute recording | 6.690 ms | 3.476 ms |
+
+The scene-graph measurement calls `StudioRenderer.image` with motion blur off and a fixed white source image.
+It includes click/caption lookup and graph construction, but **does not render pixels on the GPU, decode a video,
+or encode an export**. It is not a playback-frame-rate or export-speed result. The seek sequence is deterministic
+and deliberately out of order, so a mutable forward-only event cursor cannot satisfy it.
+
+The frame-array payload remains 4,032,056 bytes for 10 minutes and 24,192,056 bytes for 60 minutes
+(`frames.count × MemoryLayout<StudioTrack.Frame>.stride`, 56 bytes per frame). These are calculated payload
+sizes, **not measured process footprint or peak memory**. The track cache avoids rebuilding this array for
+appearance-only edits; that cache, whole-app idle power, GPU memory, and end-to-end export were not timed here.
+Caption images now have a 64-entry FIFO bound and can be recreated after a backward seek.
+
+The baseline used `011139b` in an isolated package at
+`/tmp/ohmyshot-studio-algorithm-baseline-20261025/Packages/OhMyShotKit`; the after package at
+`/tmp/ohmyshot-studio-algorithm-optimized-20261025/Packages/OhMyShotKit` used the same sources with only
+`StudioTrack.swift`, `AutoZoom.swift`, and `StudioRenderer.swift` replaced by the working-tree implementations.
+Both package manifests included OMSPixels, OMSCore, OMSStudio, and the Studio test target only, avoiding other
+targets' debug-only test helpers. Both measurements used the same unchanged benchmark fixture and command
+(substituting the appropriate isolated package path):
+
+```sh
+OMS_STUDIO_BENCHMARK=1 swift test --package-path /tmp/ohmyshot-studio-algorithm-optimized-20261025/Packages/OhMyShotKit -c release --filter StudioAlgorithmBenchmarks
+```
+
+The fixture is skipped unless `OMS_STUDIO_BENCHMARK=1`. It can also run in the full repository with
+`-c release -Xswiftc -DDEBUG` to satisfy other test targets' existing debug-only helpers; compare both sides
+using the same configuration. The isolated optimized package passed 138 Studio tests, including regressions
+for slow-pointer visibility, exact click positions between sampled frames, cancellation, spatial zoom grouping,
+continuous typing captions, out-of-order event lookup, and the caption-cache limit.
+
+### Supplementary memory check
+
+After the functional and visual checks, the already-built isolated packages were run sequentially with the
+same fixture, baseline first and optimized second, without another build or concurrent test run:
+
+```sh
+/usr/bin/time -l env OMS_STUDIO_BENCHMARK=1 swift test --package-path /tmp/ohmyshot-studio-algorithm-baseline-20261025/Packages/OhMyShotKit -c release --skip-build --filter StudioAlgorithmBenchmarks
+/usr/bin/time -l env OMS_STUDIO_BENCHMARK=1 swift test --package-path /tmp/ohmyshot-studio-algorithm-optimized-20261025/Packages/OhMyShotKit -c release --skip-build --filter StudioAlgorithmBenchmarks
+```
+
+| Metric reported by macOS `/usr/bin/time -l` | Baseline | Optimized |
+| --- | --- | --- |
+| Maximum resident set size | 126,058,496 bytes | 134,348,800 bytes |
+| Peak memory footprint | 26,182,376 bytes | 26,346,240 bytes |
+
+Both invocations passed their benchmark test. These are single-run measurements of the complete command and
+its test harness, with SwiftPM/test-runner overhead, not isolated motion-track allocations or the application's
+peak memory. They do not establish a memory reduction: the reported maximum RSS increased, while reported
+peak footprint was nearly unchanged. The optimized track also materializes a pointer path containing exact
+click anchors. No whole-app idle-power or GPU-memory conclusion is drawn from these readings.
+
+## Remaining correctness and responsiveness checks (2026-10-25)
+
+Save As in Studio and the ordinary recording window now copies to a sibling staging file before an atomic
+rename replaces the destination. Five filesystem tests cover successful replacement, partial-copy failure,
+cancellation before commit, failed rename, saving onto the source and replacing a symlink without changing its
+referent. No test removes or overwrites a user's file.
+
+Long GIF holds are represented by repeated, idempotent disposal-1 frames instead of truncating their 16-bit delays.
+The boundary fixtures cover 65,535, 65,536, 120,000 and 131,071 centiseconds, including splitting a one-tick
+remainder into two ticks and borrowing from the preceding frame. Decoded pixels, transparent deltas, delay sums,
+and a complete 20-minute generated movie-to-GIF conversion pass. The GIF's reported duration agrees with its
+encoded frame delays.
+
+### OCR punctuation and layout
+
+The same independent Release harness used the old and new punctuation paths, three repetitions per fixture.
+Only punctuation/space post-processing is timed; these intentionally pathological strings are not typical OCR
+requests. The linear path is also compared character-for-character with the old algorithm on multilingual input.
+
+| Characters in the punctuation/space fixture | Before, median | After, median |
+| --- | --- | --- |
+| 1,002 | 46.692 ms | 0.202 ms |
+| 3,002 | 430.680 ms | 0.596 ms |
+| 10,002 | 4,687.768 ms | 2.020 ms |
+
+The new conservative column inference has a separate cost. Release checks with 100 / 1,000 / 10,000 lines took
+0.273 / 2.731 / 28.084 ms for one column and 3.571 / 33.940 / 370.965 ms for two. Ordering assertions passed;
+the measured growth was approximately linear over these fixture sizes, but a 10,000-line layout still takes
+about 371 ms. This is not a claim that all OCR processing is constant-time. Source regressions cover explicit
+RTL, spanning headings, side notes, tables, code, chat, vertical text, and input permutations.
+
+### History responsiveness
+
+The background index owns folded OCR text. Query membership matching passes only the query and revisions;
+visible cards request excerpts afterward. Directory enumeration and JSON decoding run away from the main actor,
+with refresh coalescing, cancellation and generation checks for reads, queries and thumbnails.
+
+| Synthetic indexed captures | Old matching, Release median | New matching, Release median |
+| --- | --- | --- |
+| 300 | 43.94 ms | 10.65 ms |
+| 1,000 | 145.63 ms | 36.06 ms |
+| 3,000 | 427.15 ms | 108.17 ms |
+
+These are five-repetition medians of the same matching fixture. The folded-ASCII literal path accounts for much
+of the reduction; non-ASCII queries retain canonical matching. This does not include the UI or disk reads.
+A separate Debug directory/interaction fixture gave:
+
+| Captures | Old synchronous directory scan | New main-actor reload submission | New background reload completion | Main-actor query submission, median | Query plus first visible excerpt |
+| --- | --- | --- | --- | --- | --- |
+| 300 | 85.3 ms | 0.066 ms | 53.5 ms | 0.015 ms | 13.6 ms |
+| 1,000 | 106.5 ms | 0.020 ms | 141.3 ms | 0.015 ms | 38.5 ms |
+| 3,000 | 593.3 ms | 0.020 ms | 887.9 ms | 0.019 ms | 120.4 ms |
+
+The directory's total work did not become uniformly faster; the improvement is that it no longer blocks input.
+The benchmark disables query debounce to isolate this work; production keeps a 100 ms debounce.
+These submission timings do not include SwiftUI layout and should not be described as full-frame latency.
+
+### Long Studio pipeline and keyboard/accessibility actions
+
+The Debug app read a generated 30-minute, 1280 × 720, **1 fps** H.264 test-pattern source. It prepared a real
+preview composition, rendered four out-of-order preview requests, and exported through the real compositor and
+encoder configured for 60 fps, with 300 zooms, motion blur and a two-second cut. This is a long-file pipeline
+check, not a live 60 fps screen-capture or camera benchmark. The complete report is in
+[studio-long-2026-10-25.json](benchmarks/studio-long-2026-10-25.json).
+
+- Preview preparation: 0.313 s; random preview requests: 129 / 15 / 15 / 16 ms.
+- Export: 1,798 seconds of 1394 × 834 video, 178,049,833 bytes, completed in 168.154 s; output duration checked.
+- Sampled process physical footprint peaked at 336.50 MiB; Metal allocated resources peaked at 308.45 MiB.
+  These unified-memory measurements overlap and must not be added together. The sampler ran every 100 ms
+  during the operation only, so these are observed peaks, not guarantees about unsampled instants.
+- During export, process CPU averaged 82.89% and the encoder service 9.57% (100% is one core). Other processes
+  and whole-device power are outside these readings.
+- After completion, a 30-second idle check measured 0.01% average CPU, 0.3% peak, zero idle wakeups and 62 MB
+  footprint. That footprint is slightly above the project's 60 MB after-use target; no claim is made that the
+  memory target was met. `powermetrics` could not run without administrator authentication, so watts were not
+  measured. CPU and wakeups are power proxies only.
+
+The synthetic Studio window also passed 15 real responder/accessibility checks: timeline focus, Option-arrow
+selection, Delete and Undo for objects/ranges, I/O marking, arrow seeking, accessible time-field focus/value,
+Return committing the time, and the playhead's AX increment action. Events are delivered to the demo window's
+own responder chain, never to other apps. These automate keyboard and accessibility actions; they are not a
+human-operated VoiceOver speech session. The demo entry was removed after checking.
+
+### Scroll stitching correctness and cost
+
+All three former known-issue wrappers were removed without weakening their seven parameterized assertions.
+The full isolated Release `ScrollStitcherTests` suite passed 72 tests, and the opt-in 120-seed random back-and-forth
+sweep found zero differing rows. New counterexamples include moving colored cards with background-colored
+marks, transparent fixed outlines, fixed buttons touching same/different-colored moving content, and a carousel
+beside a fixed sidebar. Existing gradient dithering, lazy image loading and sticky-avatar cases also pass.
+
+The fixed-overlay model requires screen-stationary foreground that disagrees at a verified page offset, with
+color tolerance and contour checks. Its mask includes enclosed background-colored marks, expires per frame,
+and does not expand into moving neighbors. Already observed underlying pixels are retained. Where a pixel has
+never appeared unobscured, the existing known-background fallback is used: this removes the overlay but cannot
+recover permanently hidden text or claim lossless reconstruction. Stable, spatially broad in-place changes can
+replace an old carousel state, including its margins, while first-view placeholders and narrow sticky avatars
+retain their existing safeguards.
+
+The same large-view speed fixture was run baseline/fixed in alternating order three times using already-built
+isolated Release packages. Each run stitches 90 views of 3500 × 2400 pixels and then 30 stationary views with only
+a video changing. The median of each run's per-view average was:
+
+| Operation | Baseline | Fixed |
+| --- | --- | --- |
+| Moving view stitching | 11.729 ms | 15.168 ms |
+| Stationary video-only control | 2.547 ms | 2.661 ms |
+
+The new detection has a real cost: about 3.44 ms per large moving view, or 29%. A targeted optimization skips
+already-classified columns and ground/page-aligned segments, and allocates or clears the pixel visitation map
+only after finding a real seed. This is a correctness improvement, not a speedup. These numbers exclude capture,
+image export and display, and should not be called an end-to-end frame rate. The host had unrelated compiler
+and indexing activity; raw paired readings are retained in
+[scroll-stitching-2026-10-25.json](benchmarks/scroll-stitching-2026-10-25.json).
+
+Final integration verification: the Debug app built successfully. The package run reported 151 UI, 155 Studio,
+55 Recording, 298 OCR, 510 Core, 280 Capture and 185 Annotation tests (1,634 total, including configured skips).
+The only failure in that first combined run was an existing helper-priority test which assumed its first process
+would still be reading after a 400 ms sleep; concurrent main-actor work invalidated that timing assumption.
+Its fake helper now handshakes startup and holds the first run until the production cancellation terminates it;
+the original exact two-start and complete-text assertions remain. All 510 Core tests passed on rerun, as had
+all other targets. No known-issue wrapper remains in the scroll-stitching tests. Localization placeholder checks
+and `git diff --check` passed. Generated long-video fixtures and the synthetic Studio history entry were cleaned
+up; the JSON validation reports are retained under `Docs/benchmarks`.

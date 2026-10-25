@@ -75,7 +75,7 @@ public struct OCRTable: Sendable, Equatable {
                     return shared.width * shared.height >= line.box.width * line.box.height * 0.75
                 }
                 guard !inside.isEmpty else { continue }
-                let ordered = inside.sorted { abs($0.box.minY - $1.box.minY) < $0.box.height / 2 ? $0.box.minX < $1.box.minX : $0.box.minY < $1.box.minY }
+                let ordered = ReadingOrder.sorted(inside, layout: .rows)
                 let text = ordered.map(\.text).reduce("") { text, next in
                     guard let last = text.last, let first = next.first else { return text + next }
                     return text + (Script.isCJK(last) || Script.isCJK(first) ? "" : " ") + next

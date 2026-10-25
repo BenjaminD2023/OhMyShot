@@ -796,9 +796,7 @@ struct ScrollStitcherTests {
         #expect(blueRows.isEmpty, "\(blueRows.count) rows show some of the button: \(blueRows.prefix(4)) … \(blueRows.suffix(4)): \(stitcher.summary)")
         // Its mark is the page's own color, which is also the page come out from under what was over it: where a line
         // passes under the mark nearer the view's middle than any view shows it again, the mark takes its place.
-        withKnownIssue("A mark of the page's color inside a button fixed mid-view is stamped down the picture") {
-            #expect(rows.isEmpty, "\(rows.count) rows: \(rows.prefix(4)) … \(rows.suffix(4)): \(stitcher.summary)")
-        }
+        #expect(rows.isEmpty, "\(rows.count) rows: \(rows.prefix(4)) … \(rows.suffix(4)): \(stitcher.summary)")
     }
 
     @Test(arguments: [false, true]) func aButtonFixedAtTheFootLeavesNothingOfItInTheLastRows(bigSteps: Bool) throws {
@@ -826,12 +824,83 @@ struct ScrollStitcherTests {
         let picture = try #require(stitcher.picture())
         let pixels = Self.pixels(of: picture)
         let left = (300 ..< picture.height).filter { y in (0..<400).contains { pixels[y * 400 + $0] == green } }
-        // Over the page's text, the segments its round edge crosses never stay put on screen as a whole, so nothing beside
-        // its flat inside says it is over the line when the line comes in; lines no later view shows keep it. (Over a
-        // blank margin it leaves nothing.)
-        withKnownIssue("A round button fixed over text at the foot leaves its inside in the last lines") {
-            #expect(left.isEmpty, "\(left.count) rows show some of the button, from \(left.first ?? -1): \(stitcher.summary)")
+        // The rounded contour, its inside, and its mark form one screen-fixed object, even across
+        // segment boundaries and when a large step puts the whole object in the newly arriving strip.
+        // Unobserved pixels use the known ground; this does not claim to recover text hidden in every view.
+        #expect(left.isEmpty, "\(left.count) rows show some of the button, from \(left.first ?? -1): \(stitcher.summary)")
+    }
+
+    @Test func coloredCardsMovingWithThePageKeepTheirBackgroundColoredMarks() throws {
+        var page = Page(width: 400, height: 1800, seed: 53)
+        for (top, color) in [(360, UInt32(0xFF9A_3571)), (740, UInt32(0xFF28_7C63)), (1120, UInt32(0xFF37_5C91))] {
+            for y in top..<top + 56 {
+                for x in 37..<185 {
+                    page.pixels[y * page.width + x] = (top + 22..<top + 30).contains(y) && (72..<136).contains(x) ? Self.white : color
+                }
+            }
         }
+        let stitcher = Self.stitcher(width: page.width, height: 300)
+        var offset = 0
+        Self.add(Self.view(page, at: offset, size: 300), to: stitcher)
+        while offset < 1400 {
+            let step = min([7, 23, 41, 61][offset % 4], 1400 - offset)
+            offset += step
+            #expect(Self.add(Self.view(page, at: offset, size: 300), to: stitcher) == .scrolled(offset: step))
+        }
+        let output = Self.pixels(of: try #require(stitcher.picture()))
+        #expect(Self.differingRows(output, Array(page.pixels.prefix((offset + 300) * page.width)), width: page.width).isEmpty)
+    }
+
+    @Test func aFixedOutlineDoesNotEraseContentVisibleThroughItsCenter() throws {
+        let page = Page(width: 400, height: 1800, seed: 57)
+        let stitcher = Self.stitcher(width: page.width, height: 300)
+        func outline(_ pixels: inout [UInt32], _ width: Int, _ height: Int) {
+            for y in 104..<152 {
+                for x in 41..<181 where y < 108 || y >= 148 || x < 45 || x >= 177 {
+                    pixels[y * width + x] = 0xFF96_3D8E
+                }
+            }
+        }
+        var offset = 0
+        Self.add(Self.view(page, at: offset, size: 300, draw: outline), to: stitcher)
+        while offset < 1400 {
+            let step = min(37, 1400 - offset)
+            offset += step
+            #expect(Self.add(Self.view(page, at: offset, size: 300, draw: outline), to: stitcher) == .scrolled(offset: step))
+        }
+        let output = Self.pixels(of: try #require(stitcher.picture()))
+        let differences = Self.differingRows(output, Array(page.pixels.prefix((offset + 300) * page.width)), width: page.width)
+        #expect(differences.filter { $0 >= 300 && $0 < offset }.isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    func aFixedButtonTouchingAMovingColoredCardDoesNotMaskTheCard(sameColor: Bool) throws {
+        var page = Page(width: 400, height: 1800, seed: 59)
+        let buttonColor: UInt32 = 0xFF9A_3571
+        let cardColor: UInt32 = sameColor ? buttonColor : 0xFF28_7C63
+        for y in 360..<980 {
+            for x in 32..<224 {
+                page.pixels[y * page.width + x] = y % 23 < 5 && (80..<164).contains(x) ? Self.white : cardColor
+            }
+        }
+        let stitcher = Self.stitcher(width: page.width, height: 300)
+        func button(_ pixels: inout [UInt32], _ width: Int, _ height: Int) {
+            for y in 112..<144 {
+                for x in 40..<136 {
+                    pixels[y * width + x] = (125..<131).contains(y) && (70..<110).contains(x) ? Self.white : buttonColor
+                }
+            }
+        }
+        var offset = 0
+        Self.add(Self.view(page, at: offset, size: 300, draw: button), to: stitcher)
+        while offset < 1400 {
+            let step = min(37, 1400 - offset)
+            offset += step
+            #expect(Self.add(Self.view(page, at: offset, size: 300, draw: button), to: stitcher) == .scrolled(offset: step))
+        }
+        let output = Self.pixels(of: try #require(stitcher.picture()))
+        let differences = Self.differingRows(output, Array(page.pixels.prefix((offset + 300) * page.width)), width: page.width)
+        #expect(differences.filter { $0 >= 300 && $0 < offset }.isEmpty)
     }
 
     @Test(arguments: 1...12) func forumScrolledEveryWhichWay(seed: Int) throws {
@@ -1531,16 +1600,41 @@ struct ScrollStitcherTests {
         let picture = Self.pixels(of: try #require(stitcher.picture()))
         let shown = Array(picture[rows.lowerBound * width ..< rows.upperBound * width])
         let off = slides.map { slide in (0..<rows.count).filter { y in (0..<width).contains { shown[y * width + $0] != slide[y * width + $0] } } }
-        // Above the lines where a view clearer than any before the change shows the new slide, the old one stays: the
-        // views after the change show those lines nearer the view's top, never clearer, and a line's out-of-date
-        // picture gives way to what three views in a row show only where the first view took it, and only in runs of
-        // three margins of lines together.
-        withKnownIssue("A carousel whose slide changes once while in view comes out the first slide above the second") {
-            #expect(off.contains { $0.isEmpty }, "rows off slide A \(off[0].count), slide B \(off[1].count) (the first \(off[1].first ?? -1)...\(off[1].last ?? -1))")
-        }
+        // A stable new state replaces the earlier slide across the whole region and its margins,
+        // including plain new background where the older sharper observation contained text.
+        #expect(off.contains { $0.isEmpty }, "rows off slide A \(off[0].count), slide B \(off[1].count) (the first \(off[1].first ?? -1)...\(off[1].last ?? -1))")
     }
 
     // MARK: - Pages that move on their own
+
+    @Test func aChangingCarouselKeepsItsMarginsWithoutChangingAFixedSidebar() throws {
+        let page = Page(width: 600, height: 1600, seed: 67)
+        let rows = 500..<680
+        let slides = [(68, UInt32(0xFF53_8B7D)), (69, UInt32(0xFF96_4B6F))].map { seed, color in
+            Page(width: 440, height: rows.count, seed: UInt64(seed)).pixels.map { $0 == Self.white ? color : $0 }
+        }
+        func view(_ offset: Int) -> [UInt32] {
+            Self.view(page, at: offset, size: 300) { pixels, width, height in
+                for y in 0..<height {
+                    for x in 0..<120 { pixels[y * width + x] = (8..<20).contains(y % 44) && (20..<100).contains(x) ? 0xFF3A_3A3A : Self.white }
+                    if rows.contains(offset + y) {
+                        for x in 160..<width { pixels[y * width + x] = slides[offset >= 420 ? 1 : 0][(offset + y - rows.lowerBound) * 440 + x - 160] }
+                    }
+                }
+            }
+        }
+        let stitcher = Self.stitcher(width: page.width, height: 300)
+        Self.add(view(0), to: stitcher)
+        for offset in stride(from: 20, through: 1000, by: 20) {
+            #expect(Self.add(view(offset), to: stitcher) == .scrolled(offset: 20))
+        }
+        let output = Self.pixels(of: try #require(stitcher.picture()))
+        let differing = slides.map { slide in rows.flatMap { y in
+            (160..<600).filter { x in output[y * 600 + x] != slide[(y - rows.lowerBound) * 440 + x - 160] }.map { y * 600 + $0 }
+        } }
+        #expect(differing.contains { $0.isEmpty }, "slide differences \(differing.map(\.count)), new slide first pixels \(differing[1].prefix(12).map { ($0 % 600, $0 / 600) })")
+        #expect((300..<1300).allSatisfy { y in (0..<120).allSatisfy { output[y * 600 + $0] == Self.white } })
+    }
 
     @Test func aPlayingVideoDoesNotStopTheCapture() throws {
         // A video 240 rows tall in the page, a new picture in every view: more than half the view as it passes.

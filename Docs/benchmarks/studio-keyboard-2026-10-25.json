@@ -1,0 +1,23 @@
+{
+  "build": "Debug",
+  "checks": {
+    "arrowSeeks": true,
+    "deleteCutsRange": true,
+    "deleteRemovesChosenZoom": true,
+    "markIn": true,
+    "markOut": true,
+    "optionArrowSelectsZoom": true,
+    "playheadAXIncrement": true,
+    "playheadAXMoves": true,
+    "returnCommitsTime": true,
+    "timeFieldFocus": true,
+    "timeFieldSet": true,
+    "timelineAccessible": true,
+    "timelineFocus": true,
+    "undoRestoresRange": true,
+    "undoRestoresZoom": true
+  },
+  "fixture": "synthetic Studio demo",
+  "method": "NSEvents sent to the demo window responder chain and accessibility actions in its own process; not a human VoiceOver speech session.",
+  "status": "passed"
+}

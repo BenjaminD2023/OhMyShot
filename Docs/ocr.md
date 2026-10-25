@@ -71,12 +71,11 @@ one per engine and major macOS version; a run reports cases that got worse than 
 What the pipeline does, in order, and why (an image more than 2560 pixels tall, or very wide, is cut into
 overlapping pieces first and each piece goes through all of this: see Large selections in bands):
 
-1. **Primary pass** with `[zh-Hans, en-US]`, language correction off, before the Latin model `[en-US]`
-   reads the whole page alongside `DetectTextRectanglesRequest`. Starting the primary model alone
-   avoids competing model initialization; barcode detection starts after text recognition too.
-   Every accurate request holds the process-wide slot (`RecognitionSlots`), including warmup, since
-   concurrent initialization can stall Vision. Each line Vision returns loses the icons at its ends (`Icons`): an
-   app's symbol before a label, a status icon, emoji, or unread dot after it, all of which Vision reads
+1. **Primary pass** with `[zh-Hans, en-US]`, language correction off, followed by the Latin model `[en-US]`
+   over the whole page alongside `DetectTextRectanglesRequest`. Accurate requests share one process-wide
+   slot (`RecognitionSlots`) to avoid simultaneous model initialization; a cancelled or timed-out caller
+   leaves that slot occupied until its native request actually ends. Each line Vision returns loses the icons
+   at its ends (`Icons`): an app's symbol before a label, a status icon, emoji, or unread dot after it, all of which Vision reads
    as characters. One goes when it is about as wide as the line is tall (a dot: small and read as one),
    sits at an end, and is set apart by a gap at least 0.4 of the line's height and twice any other gap in
    the line, the blank half of full-width punctuation not counted as a gap. Only what Vision put on it
@@ -87,7 +86,7 @@ overlapping pieces first and each piece goes through all of this: see Large sele
    glyph (a closing brace read as 子) must not keep code on the CJK model.
 3. **Gap filling**: text regions the lines leave empty, or cover with less than half the characters
    their width holds, are merged, padded, and read again with each fallback model (Korean, then
-   English, in the benchmark), the regions of one model side by side. The English fallback takes the
+   English, in the benchmark), the regions queued through the same slot. The English fallback takes the
    Latin page reading of each region instead of a new request: that model has read the whole page
    already, and of the three regions it read again across the benchmark and the real screenshots (all
    three icons on the forum thread), none was kept. What this gives up: text that neither model read on
@@ -99,7 +98,7 @@ overlapping pieces first and each piece goes through all of this: see Large sele
    numbers too), is an editor's gutter and goes, but only when what remains is code: a numbered list or
    `cat -n` output keeps its numbers.
 5. **Code with CJK comments**: each run of code lines between CJK lines is read again on its own with
-   the Latin model, the runs side by side, the region kept clear of the CJK lines so its detector does
+   the Latin model, the runs queued through the same slot, the region kept clear of the CJK lines so its detector does
    not fail. (Taking a run from the page reading when it read every line was tried: it never applied on
    the benchmark or the real screenshots, so it was not kept.)
 6. **English lines on a CJK page** (not code): every line in Latin script alone takes the Latin page
@@ -244,9 +243,12 @@ without inserting or removing line breaks, changing copied text, or discarding e
 existing Keep Line Breaks / Join Lines control still chooses the actual text's paragraph formatting.
 
 The panel shows everything about one image: the L1 lines, tables, QR codes and barcodes, and the links,
-mail addresses, phone numbers, dates, and addresses in the text (`NSDataDetector`). `analyze` runs the
-barcode request after L1 and the document request after it; accurate requests share the process-wide
-slot. The document request runs on every image: a table whose columns sit close comes back from L1
+mail addresses, phone numbers, dates, and addresses in the text (`NSDataDetector`). `analyze` runs L1 first,
+then the barcode and document requests together; the document request uses the same accurate-recognition
+slot as L1. Both optional requests use the image's remaining deadline, independently: a stalled document
+request cannot discard a barcode already read, nor a stalled barcode request a completed table. The text
+already read is kept if either optional request fails or times out. The document request runs on every image:
+a table whose columns sit close comes back from L1
 as one line per row, so the lines cannot rule a table out, and skipping it on table-free pages saved
 only about 80 ms and 15 MB. Each table cell takes the text of the L1 lines that lie at least 75% inside
 it; a line that straddles cells is left out, and when both readings have the same characters but only
@@ -262,8 +264,13 @@ lines taken for code (step 8). Still open:
 
 - **English words inside a Chinese line** are still read by the Chinese model ("macOS" as "macos" in
   `zh-en-chat`): step 5 replaces whole lines only.
-- **Reading order across columns**: lines are ordered top to bottom, so a caption beside a column is
-  read in the middle of it.
+
+Reading order across sustained text columns is handled by `ReadingOrder`'s automatic layout mode (2026-10-25).
+Stable text edges and vertical coexistence establish separate columns; full-width headings and paragraphs divide
+those columns into bands. Smaller side notes are kept outside the main paragraph. Explicit RTL direction orders
+rows and columns from right to left without reversing the characters. Code, short tabular labels, alternating chat
+bubbles and uncertain layouts retain row order; table cells explicitly request `.rows`. This is conservative
+geometric layout inference, not semantic reconstruction of arbitrary magazine or overlapping layouts.
 
 ## Translation (`Translator`, `TranslationUnits`, `TranslationOverlay`, 2026-10-08)
 
@@ -287,7 +294,7 @@ correction off. The suggestions also read it with `[en-US]` alone. One `TextReco
 serves both, so the Chinese reading is made once (`SharedWork`): whoever asks first starts it, later
 askers wait for the same run or take what it kept, a failed run is forgotten so the next ask makes it
 again, and a run nobody waits for any more is cancelled (one still waiting for a `RecognitionSlots`
-slot never starts; one already inside Vision runs to its end or the timeout, as before). The editor's
+slot never starts; one already inside Vision keeps its slot until it ends, even after the caller's timeout). The editor's
 session keeps one reading for both tools while the combined images and the canvas allow
 (`AnnotationSession.sharedReading`).
 
@@ -337,7 +344,7 @@ Capture Text, the OCR panel, and Translate Area read in bands too, from `VisionP
 `recognize` cuts an image the way `PictureText.pieces` does (bands 2048 tall with 256 pixels of overlap when the
 image is more than 2560 tall; also columns as wide as the image is tall when it is over 4096 wide and 2.5 times
 wider than tall) and reads the pieces one after another, each through the whole pipeline above (both models, gaps,
-code, Latin lines, lone brackets), so every piece's Vision requests still hold two slots at most. Then:
+code, Latin lines, lone brackets), with accurate requests using the same single slot. Then:
 
 1. **Each line is placed in the whole image** (its box moved by the piece's origin) and kept from the piece that
    owns its spot: a piece owns its *core*, itself less half the overlap (128 pixels) on every side it shares with
@@ -1810,9 +1817,13 @@ rest; they have no cell boxes, which nothing in the panel needs. Translated (the
 left as it is on the image, as a formula set apart is: its box spans the table, and one run of text drawn there would
 cover its cells.
 
-**Where.** Capture Text waits for the tables at most 10 s (`TextCaptureCoordinator.tableWait`) and copies Vision's
+**Where.** Capture Text gives the VLM a 10 s reading budget (`TextCaptureCoordinator.tableWait`) and copies Vision's
 reading of what is left; the panel shows Vision's reading first, with "Reading tables…" (or "Reading formulas and
 tables…") under it, and lets the VLM read for 60 s; Recognize Text in Image reads them in its run of the text reader.
+For the one-picture element helper, `TextReaderTool.elements` allows two more seconds for startup, returning the
+completed formulas and tables, and exiting. Its hard process deadline is therefore 12 s in Capture Text and 62 s
+in the panel; a helper that hangs is still terminated and then killed if needed. An explicit `timeout` overrides
+this deadline; without a reading budget the default stays 120 s for model compilation.
 The history's search text doesn't, nor will it: it reads in the background, where plan rule 7 keeps the VLM's 2.6 GB
 out, and Vision's reading of a table's cells is in it already (only their order in rows is the VLM's). The text reader
 loads the VLM only once a table or chart was found, and not at all while the system is short of memory: with the

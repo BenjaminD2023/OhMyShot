@@ -365,10 +365,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
             let response = await panel.beginSheetModal(for: window)
             guard response == .OK, let destination = panel.url else { return }
             do {
-                if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) {
-                    try FileManager.default.removeItem(at: destination)
-                }
-                try FileManager.default.copyItem(at: url, to: destination)
+                try await AtomicFileCopy.copy(from: url, to: destination)
                 model.flashSaved()
             } catch {
                 fail(error)

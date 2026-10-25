@@ -8,6 +8,15 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Studio timeline supports detailed navigation, filmstrip previews and editable time ranges. (upstream [49e3114](https://github.com/fzlzjerry/OhMyShot/commit/49e3114ea72c4c61169fbef674d614de7084dae3))
+
+### Fixed
+
+- Integrate upstream Studio project saving, preview/export cancellation, scrolling stitching, asynchronous History search, OCR reading order and long GIF delays. Preserve fork capture controls, OCR workers and saved preferences. (upstream [49e3114](https://github.com/fzlzjerry/OhMyShot/commit/49e3114ea72c4c61169fbef674d614de7084dae3))
+- Keep completed optional OCR codes/tables when the other reader times out, and allow element readers two seconds to return completed work after their reading budget. (upstream [ed6610f](https://github.com/fzlzjerry/OhMyShot/commit/ed6610faf5e6859b86126a5b7a05c479353aa48c))
+
 ## [0.3.0-fork.4] - 2026-10-24
 
 ### Upstream integration

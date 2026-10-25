@@ -45,10 +45,17 @@ public struct VisionPipeline: OCREngine {
 
     public let name: String
     public var options: Options
+    let slots: RecognitionSlots
 
     public init(name: String = "l1", options: Options = .init()) {
+        self.init(name: name, options: options, slots: .shared)
+    }
+
+    /// Tests can occupy a private queue without holding up unrelated native Vision requests.
+    init(name: String = "l1", options: Options = .init(), slots: RecognitionSlots) {
         self.name = name
         self.options = options
+        self.slots = slots
     }
 
     private static let english = [Locale.Language(identifier: "en-US")]
@@ -233,7 +240,7 @@ public struct VisionPipeline: OCREngine {
         let timeout = options.timeout
         let requested = ContinuousClock.now
         let observations = try await withTimeout(timeout) {
-            try await RecognitionSlots.shared.run {
+            try await slots.run {
                 if options.prefersCompatibilityRecognition,
                    let recovered = try await CompatibilityTextRecognition.recognize(configured, on: image) {
                     options.trace?("  recognition backend: compatibility revision 2")
@@ -286,8 +293,8 @@ public struct VisionPipeline: OCREngine {
     // MARK: Gaps
 
     /// Reads again, with each fallback model, the text regions the lines leave empty. The regions of one
-    /// model are read side by side (two at a time, as `RecognitionSlots` allows): a request costs about
-    /// the same whatever its size, 60–170 ms, so read one after another they added up. The Latin model
+    /// model queue through `RecognitionSlots`: a request costs about the same whatever its size,
+    /// 60–170 ms, so repeated regions add up. The Latin model
     /// has read the whole page already (`page`), so its fallback takes that reading of each region
     /// instead of asking again: on the benchmark and the real screenshots, no region it read again was
     /// ever kept, and each such request cost 20–120 ms.
@@ -766,7 +773,7 @@ extension VisionPipeline {
                     request.recognitionLanguages = languages
                     let configured = request
                     return try await withTimeout(options.timeout) {
-                        try await RecognitionSlots.shared.runIfAvailable {
+                        try await slots.runIfAvailable {
                             _ = try await configured.perform(on: image)
                             return true
                         } ?? false

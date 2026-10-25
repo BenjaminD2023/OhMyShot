@@ -19,6 +19,7 @@ struct StudioView: View {
                     .background(Color(nsColor: .underPageBackgroundColor))
                 Divider()
                 TransportBar(document: document, model: model)
+                saveStatus
                 StudioTimeline(document: document, model: model)
                     .frame(height: document.canChangeLayoutAlongTheTimeline ? StudioTimeline.heightWithLayouts : StudioTimeline.height)
             }
@@ -54,27 +55,80 @@ struct StudioView: View {
         .onDeleteCommand { document.deleteSelection() }
     }
 
-    /// Over the preview until its first movie is made, or when the recording can't be read.
+    /// Keep an existing frame visible while a new composition is prepared, but identify a stale preview.
     @ViewBuilder private var previewState: some View {
-        if document.composition == nil {
-            if document.compositionFailed {
+        switch document.previewState {
+        case .preparing:
+            ProgressView()
+                .controlSize(.regular)
+                .accessibilityLabel(Text("Preparing the preview", bundle: .module))
+        case .updating:
+            VStack {
+                Spacer()
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Updating preview…", bundle: .module).font(.callout)
+                }
+                .padding(8)
+                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .padding(12)
+            }
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .combine)
+        case .failed(let reason):
+            VStack {
+                if document.composition != nil { Spacer() }
                 VStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundStyle(.tertiary)
-                    Text("The recording couldn’t be read", bundle: .module)
-                        .font(.title3)
-                    Text("It may have been moved or damaged.", bundle: .module)
+                    Label {
+                        document.composition == nil
+                            ? Text("The recording couldn’t be read", bundle: .module)
+                            : Text("The preview couldn’t be updated", bundle: .module)
+                    } icon: { Image(systemName: "exclamationmark.triangle") }
+                    Text(verbatim: reason)
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .help(reason)
+                    Button {
+                        Task { await document.makeComposition() }
+                    } label: { Text("Retry Preview", bundle: .module) }
                 }
-                .accessibilityElement(children: .combine)
+                .padding(12)
+                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                .padding(12)
+                .accessibilityElement(children: .contain)
+            }
+        case .ready:
+            EmptyView()
+        }
+    }
+
+    private var saveStatus: some View {
+        HStack(spacing: 8) {
+            if case .failed(let reason) = document.saveState {
+                Label { Text("Project changes haven’t been saved", bundle: .module) } icon: { Image(systemName: "exclamationmark.triangle") }
+                    .font(.callout)
+                    .lineLimit(1)
+                    .help(reason)
+                    .accessibilityHint(reason)
+                Spacer(minLength: 4)
+                Button {
+                    Task { try? await document.flushSave() }
+                } label: { Text("Retry Saving", bundle: .module) }
+                    .controlSize(.small)
             } else {
-                ProgressView()
-                    .controlSize(.regular)
-                    .accessibilityLabel(Text("Preparing the preview", bundle: .module))
+                Group {
+                    if document.saveState == .saved { Text("Project saved", bundle: .module) }
+                    else { Text("Saving project…", bundle: .module) }
+                }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
             }
         }
+        .padding(.horizontal, 14)
+        .frame(height: 24)
+        .accessibilityElement(children: .contain)
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
@@ -164,9 +218,12 @@ struct TransportBar: View {
                 } label: {
                     Label { Text("Add Layout", bundle: .module) } icon: { Image(systemName: "rectangle.on.rectangle") }
                 }
-                .help(Text("Shows the camera another way from the playhead: filling the movie, or hidden", bundle: .module))
+                .disabled(!document.canAddCameraSegment)
+                .help(document.canAddCameraSegment
+                    ? Text("Shows the camera another way from the playhead: filling the movie, or hidden", bundle: .module)
+                    : Text("No room for a layout at the playhead: move it past the layouts there", bundle: .module))
             }
-            if model.selectedRange == nil, let cut = document.selectedCut {
+            if document.selectedRange == nil, let cut = document.selectedCut {
                 Button {
                     document.restoreCut(at: cut)
                 } label: {
@@ -175,7 +232,7 @@ struct TransportBar: View {
                 .help(Text("Put the chosen cut back in the movie", bundle: .module))
             } else {
                 // Nothing chosen yet: how to choose it, while the row has room to say so.
-                if model.selectedRange == nil {
+                if document.selectedRange == nil {
                     ViewThatFits(in: .horizontal) {
                         Text("Drag along the clip to choose what to cut", bundle: .module)
                             .font(.callout)
@@ -185,14 +242,11 @@ struct TransportBar: View {
                     }
                 }
                 Button {
-                    if let range = model.selectedRange {
-                        document.cut(range)
-                        model.selectedRange = nil
-                    }
+                    if document.selectedRange != nil { document.deleteSelection() }
                 } label: {
                     Label { Text("Cut", bundle: .module) } icon: { Image(systemName: "scissors") }
                 }
-                .disabled(model.selectedRange == nil)
+                .disabled(document.selectedRange == nil)
                 .help(Text("Leave the stretch chosen on the clip out of the movie (drag along the clip, or I and O)", bundle: .module))
             }
         }
@@ -238,16 +292,28 @@ struct StudioInspector: View {
                     guard chosen != nil else { return }
                     proxy.scrollTo(Self.chosenZoomID, anchor: .top)
                 }
+                .onChange(of: document.selectedSegment) { _, chosen in
+                    guard chosen != nil else { return }
+                    proxy.scrollTo(Self.chosenLayoutID, anchor: .top)
+                }
         }
     }
 
     private static let chosenZoomID = "chosen-zoom"
+    private static let chosenLayoutID = "chosen-layout"
 
     private var form: some View {
         Form {
             // The zoom chosen on the timeline, first: it is what was just picked out, at the window's bottom.
             if let id = document.selectedZoom, let zoom = document.project.zooms.first(where: { $0.id == id }) {
                 Section {
+                    StudioTimeRangeFields(start: zoom.start, end: zoom.end) { value, start in
+                        document.updateZoom(id) {
+                            if start { $0.start = min(value, $0.end - 0.3) } else { $0.end = max(value, $0.start + 0.3) }
+                        }
+                        return document.project.zooms.first { $0.id == id }.map { $0.start...$0.end } ?? zoom.start...zoom.end
+                    }
+                    .id(id)
                     LabeledSlider(
                         title: Text("Zoom", bundle: .module),
                         value: Binding(get: { zoom.scale }, set: { scale in document.updateZoom(id) { $0.scale = scale } }),
@@ -421,6 +487,15 @@ struct StudioInspector: View {
                     // Other layouts for stretches of the movie: not side by side, which widens all of it.
                     if document.canChangeLayoutAlongTheTimeline {
                         if let id = document.selectedSegment, let segment = document.project.cameraSegments.first(where: { $0.id == id }) {
+                            StudioTimeRangeFields(start: segment.start, end: segment.end) { value, start in
+                                document.updateCameraSegment(id) {
+                                    if start { $0.start = min(value, $0.end - StudioProject.shortestSegment) }
+                                    else { $0.end = max(value, $0.start + StudioProject.shortestSegment) }
+                                }
+                                return document.project.cameraSegments.first { $0.id == id }.map { $0.start...$0.end } ?? segment.start...segment.end
+                            }
+                            .id(id)
+                            .id(Self.chosenLayoutID)
                             Picker(selection: Binding(get: { segment.layout }, set: { document.setCameraSegmentLayout(id, $0) })) {
                                 ForEach(StudioProject.Camera.Layout.stretchLayouts, id: \.self) { layout in
                                     Text(verbatim: layout.name).tag(layout)

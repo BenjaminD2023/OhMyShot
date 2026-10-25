@@ -800,11 +800,11 @@ final class TextCaptureCoordinator {
             let read: (formulas: [TextReaderTool.FoundFormula], tables: [TextReaderTool.FoundTable], tablesLeft: Int)
             if let worker {
                 read = try await worker.elements(ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, found: counted,
-                                                 timeout: .milliseconds(Int64(seconds * 1000)))
+                                                 timeout: .milliseconds(Int64((seconds + 2) * 1000)))
             } else {
                 read = try await TextReaderTool.elements(
                     ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, helper: helper, found: counted,
-                    timeout: .milliseconds(Int64(seconds * 1000))
+                    timeout: .milliseconds(Int64((seconds + 2) * 1000))
                 )
             }
             if read.tablesLeft > 0 {

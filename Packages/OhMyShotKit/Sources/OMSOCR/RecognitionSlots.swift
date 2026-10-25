@@ -1,7 +1,7 @@
 /// Accurate Vision requests share one process-wide slot, including warmups. Concurrent model
 /// initialization can stall them; a timed-out request must not overlap its replacement.
 actor RecognitionSlots {
-    static let shared = RecognitionSlots(count: 1)
+    static let shared = RecognitionSlots()
 
     private struct Waiter {
         let id: Int
@@ -12,7 +12,7 @@ actor RecognitionSlots {
     private var waiting: [Waiter] = []
     private var nextWaiter = 0
 
-    init(count: Int) {
+    init(count: Int = 1) {
         free = count
     }
 

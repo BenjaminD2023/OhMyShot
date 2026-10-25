@@ -24,7 +24,8 @@ public struct TextReaderPack: Sendable, Equatable {
 /// Vision keeps what a recognition used for as long as its process lives (Docs/perf.md, M2 and M5 — power gate:
 /// the action read in the app left it 56 MB larger for good); read in the text reader, the app stays as it was.
 /// The run holds an `ActiveResources` lease while its process lasts. Every operation has a complete-run
-/// `timeout` (120 seconds by default to allow first-use compilation); cancellation or the deadline stops
+/// `timeout` (120 seconds by default to allow first-use compilation, or the elements' budget plus a short
+/// allowance to return their results); cancellation or the deadline stops
 /// waiting immediately and ends the helper, forcibly if native work ignores termination.
 public enum TextReaderTool {
     public enum Failure: Error, Equatable {
@@ -135,11 +136,16 @@ public enum TextReaderTool {
     /// The VLM pack); the VLM reads for `seconds` at most, and not at all while the system is short of memory, when
     /// `tablesLeft` says how many tables and charts were left to Vision (`pressure` stands in for the system's, to check
     /// that). `found` is told how many there are to read, before they are.
+    ///
+    /// Unless overridden, the process deadline is `seconds` plus two seconds for startup, returning the
+    /// completed elements and exiting (120 seconds with no reading budget). Killing it at the VLM's own
+    /// deadline would discard the formulas and tables it finished before that deadline.
     @concurrent
     public static func elements(
         ofPictureAt url: URL, formulas: URL? = nil, vlm: URL? = nil, seconds: Double? = nil, pressure: MemoryPressure? = nil, helper: URL,
-        found: (@Sendable (Found) -> Void)? = nil, priority: QualityOfService = .userInitiated, resources: ActiveResources = .shared, timeout: Duration = .seconds(120)
+        found: (@Sendable (Found) -> Void)? = nil, priority: QualityOfService = .userInitiated, resources: ActiveResources = .shared, timeout: Duration? = nil
     ) async throws -> (formulas: [FoundFormula], tables: [FoundTable], tablesLeft: Int) {
+        let timeout = timeout ?? seconds.map { .seconds($0) + .seconds(2) } ?? .seconds(120)
         let job = Job(
             id: UUID().uuidString, path: url.path(percentEncoded: false), formulas: formulas?.path(percentEncoded: false),
             vlm: vlm?.path(percentEncoded: false), seconds: seconds, pressure: pressure?.name

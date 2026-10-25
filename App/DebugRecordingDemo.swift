@@ -6,6 +6,7 @@ import CoreMedia
 import CoreText
 import Darwin
 import Foundation
+import Metal
 import OMSCapture
 import OMSCore
 import OMSRecording
@@ -24,6 +25,113 @@ import ScreenCaptureKit
 enum DebugRecordingDemo {
     /// Where the demo's movies go: the snapshot folder.
     static var directory: URL { DebugHooks.snapshotDirectory }
+
+    private static var longStudioCheck: Task<Void, Never>?
+
+    /// End-to-end diagnostic over a generated movie, never a user's recording. The fixture is prepared
+    /// independently as studio-long-source.mp4; the report describes its actual duration and frame rate.
+    static func startLongStudioCheck() {
+        guard longStudioCheck == nil else { return }
+        longStudioCheck = Task {
+            await checkLongStudio()
+            longStudioCheck = nil
+        }
+    }
+
+    static func cancelLongStudioCheck() { longStudioCheck?.cancel() }
+
+    private static func checkLongStudio() async {
+        let source = directory.appending(path: "studio-long-source.mp4")
+        let output = directory.appending(path: "studio-long-output.mp4")
+        let projectFolder = directory.appending(path: "studio-long-project")
+        let reportURL = directory.appending(path: "studio-long-report.json")
+        let device = MTLCreateSystemDefaultDevice()
+        var report: [String: Any] = ["fixture": "generated", "started": Date().description]
+        var peakFootprint = Memory.footprint()
+        var peakMetalBytes = device?.currentAllocatedSize ?? 0
+        var memorySamples = 0
+        let sampler = Task {
+            while !Task.isCancelled {
+                peakFootprint = max(peakFootprint, Memory.footprint())
+                peakMetalBytes = max(peakMetalBytes, device?.currentAllocatedSize ?? 0)
+                memorySamples += 1
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { break }
+            }
+        }
+        defer {
+            sampler.cancel()
+            report["peak_process_footprint_bytes"] = peakFootprint
+            report["peak_metal_allocated_bytes"] = peakMetalBytes
+            report["memory_samples"] = memorySamples
+            report["finished"] = Date().description
+            if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: reportURL, options: .atomic)
+            }
+            try? FileManager.default.removeItem(at: output)
+            try? FileManager.default.removeItem(at: projectFolder)
+            MemoryRelief.returnFreedPages()
+        }
+        do {
+            let asset = AVURLAsset(url: source)
+            guard let video = try await asset.loadTracks(withMediaType: .video).first else { throw StudioError.noVideo }
+            let duration = try await asset.load(.duration).seconds
+            let size = try await video.load(.naturalSize)
+            report["source_seconds"] = duration
+            report["source_fps"] = try await video.load(.nominalFrameRate)
+            report["source_size"] = [size.width, size.height]
+            guard duration >= 30, duration <= 3_601 else { throw StudioError.noVideo }
+            let telemetry = syntheticTelemetry(size: CGSize(width: size.width / 2, height: size.height / 2), duration: duration)
+            var project = StudioProject()
+            project.zooms = stride(from: 1.0, to: duration - 3, by: 6).map {
+                .init(start: $0, end: $0 + 2.4, scale: 1.8, isAutomatic: true)
+            }
+            project.cuts = [duration / 3 ... duration / 3 + 2]
+            let document = StudioDocument(
+                source: source, telemetry: telemetry, project: project, duration: duration,
+                recordingSize: size, folder: projectFolder, hasBeenExported: false,
+                background: { name, size in BackdropGradient(rawValue: name)?.image(width: Int(size.width), height: Int(size.height)) }
+            )
+            defer { document.releaseDiagnosticPreview() }
+            document.setPreviewSize(CGSize(width: 1280, height: 720))
+            try await document.flushSave()
+            let previewStart = ContinuousClock.now
+            await document.makeComposition()
+            guard let preview = document.composition, !document.compositionFailed else { throw StudioError.renderFailed }
+            report["preview_prepare_seconds"] = (ContinuousClock.now - previewStart) / .seconds(1)
+            let images = AVAssetImageGenerator(asset: preview.asset)
+            images.videoComposition = preview.videoComposition
+            images.requestedTimeToleranceBefore = .zero
+            images.requestedTimeToleranceAfter = .zero
+            var seeks: [Double] = []
+            for time in [preview.duration - 1, 0, preview.duration / 2, 1] {
+                try Task.checkCancellation()
+                let began = ContinuousClock.now
+                _ = try await images.image(at: CMTime(seconds: time, preferredTimescale: 600))
+                seeks.append((ContinuousClock.now - began) / .seconds(1))
+            }
+            report["random_preview_seek_seconds"] = seeks
+            let beforeCPU = CPUTimes.now()
+            let began = ContinuousClock.now
+            let composition = try await document.makeExportComposition()
+            let movie = try await StudioExporter.export(composition, to: output)
+            let wall = (ContinuousClock.now - began) / .seconds(1)
+            let cpu = CPUTimes.now() - beforeCPU
+            let exportedDuration = try await AVURLAsset(url: movie.url).load(.duration).seconds
+            guard abs(exportedDuration - (duration - 2)) < 0.05 else { throw StudioError.renderFailed }
+            report["export_seconds"] = wall
+            report["output_seconds"] = exportedDuration
+            report["output_bytes"] = movie.byteCount
+            report["output_size"] = [movie.pixelWidth, movie.pixelHeight]
+            report["app_cpu_percent_during_export"] = cpu.app / wall * 100
+            report["encoder_cpu_percent_during_export"] = cpu.encoder / wall * 100
+            report["status"] = "passed"
+            Log.app.notice("debug.studio-long-check passed: \(exportedDuration, privacy: .public)s in \(wall, privacy: .public)s, peak footprint \(peakFootprint, privacy: .public), Metal \(peakMetalBytes, privacy: .public)")
+        } catch {
+            report["status"] = error is CancellationError ? "cancelled" : "failed"
+            report["error"] = String(describing: error)
+            Log.app.error("debug.studio-long-check failed: \(String(describing: error), privacy: .public)")
+        }
+    }
 
     /// Records `seconds` of the scrolling page in a window of `size` points, then finishes it as the app
     /// would. `speed` is points per second; 0 keeps the page still.

@@ -656,13 +656,17 @@ final class CompositionRoot {
 
     /// Stops a recording and keeps it before the app quits, and the replay's buffers once the clips being
     /// saved are kept; `done` runs once all of it is. False when nothing needed waiting for.
-    func finishRecordingBeforeQuitting(_ done: @escaping () -> Void) -> Bool {
+    func finishRecordingBeforeQuitting(_ done: @escaping (Bool) -> Void) -> Bool {
         var waiting = 1
+        var mayQuit = true
         let finished = {
             waiting -= 1
-            if waiting == 0 { done() }
+            if waiting == 0 { done(mayQuit) }
         }
-        if recordings.finishBeforeQuitting(finished) { waiting += 1 }
+        if recordings.finishBeforeQuitting({ saved in
+            mayQuit = mayQuit && saved
+            finished()
+        }) { waiting += 1 }
         // An upload still going is cancelled, and quitting waits until its transfer has stopped and cleaned up.
         if uploads.cancelAll(then: finished) { waiting += 1 }
         if #available(macOS 27, *), replay?.finishBeforeQuitting(finished) == true { waiting += 1 }

@@ -42,19 +42,31 @@ extension VisionPipeline {
     /// cells take their text from the pieces' lines all the same.
     @concurrent
     public func analyze(_ image: CGImage) async throws -> TextAnalysis {
-        let started = ContinuousClock.now
+        let deadline = ContinuousClock.now + options.overallTimeout
         let result = try await recognize(image)
-        let remaining = options.overallTimeout - (ContinuousClock.now - started)
+        return try await Self.analyze(
+            result, until: deadline,
+            tables: { try await documentTables(in: image) }, codes: { try await detectCodes(in: image) }
+        )
+    }
+
+    /// Optional readings share the image's deadline, but keep their outcomes independently: a stalled
+    /// table request must not discard a code already read, or the other way round.
+    static func analyze(
+        _ result: OCRResult, until deadline: ContinuousClock.Instant,
+        tables: @escaping @Sendable () async throws -> [OCRTable],
+        codes: @escaping @Sendable () async throws -> [OCRCode]
+    ) async throws -> TextAnalysis {
         try Task.checkCancellation()
-        guard remaining > .zero else { return TextAnalysis(result: result, tables: [], codes: []) }
-        // Once the text is read, optional table/code detection cannot keep it hidden indefinitely.
-        let extra = try? await withTimeout(remaining) {
-            async let codes = detectCodes(in: image)
-            let tables = ((try? await documentTables(in: image)) ?? []).map { $0.filled(from: result.lines) }
-            return TextAnalysis(result: result, tables: tables, codes: (try? await codes) ?? [])
+        guard deadline > .now else { return TextAnalysis(result: result, tables: [], codes: []) }
+        async let tableReading = withTimeout(deadline - .now) {
+            try await tables().map { $0.filled(from: result.lines) }
         }
+        async let codeReading = withTimeout(deadline - .now, codes)
+        let foundTables = (try? await tableReading) ?? []
+        let foundCodes = (try? await codeReading) ?? []
         try Task.checkCancellation()
-        return extra ?? TextAnalysis(result: result, tables: [], codes: [])
+        return TextAnalysis(result: result, tables: foundTables, codes: foundCodes)
     }
 
     private func detectCodes(in image: CGImage) async throws -> [OCRCode] {
@@ -79,7 +91,7 @@ extension VisionPipeline {
         let configured = request
         let timeout = options.timeout
         let observations = try await withTimeout(timeout) {
-            try await RecognitionSlots.shared.run { try await configured.perform(on: image) }
+            try await slots.run { try await configured.perform(on: image) }
         }
         let size = CGSize(width: image.width, height: image.height)
         return observations.first?.document.tables.map { table in

@@ -10,6 +10,16 @@ import OSLog
 /// set, with the composition the preview plays, made again shortly after each change.
 @Observable
 public final class StudioDocument {
+    public enum SaveState: Equatable, Sendable {
+        case saved, pending, saving
+        case failed(String)
+    }
+
+    public enum PreviewState: Equatable, Sendable {
+        case preparing, ready, updating
+        case failed(String)
+    }
+
     public let source: URL
     public let telemetry: StudioTelemetry
     /// The recording's length in seconds, and its size in pixels.
@@ -40,21 +50,47 @@ public final class StudioDocument {
 
     /// The zoom chosen on the timeline, by its identifier. One thing is chosen at a time, a zoom, a cut, or a
     /// stretch of the camera's layout: choosing one lets go of the others, so Delete takes away what is shown as chosen.
+    public var selection: StudioSelection = .none
+
     public var selectedZoom: UUID? {
-        didSet { if selectedZoom != nil { selectedCut = nil; selectedSegment = nil } }
+        get { if case .zoom(let id) = selection { id } else { nil } }
+        set {
+            if let newValue { selection = .zoom(newValue) }
+            else if case .zoom = selection { selection = .none }
+        }
     }
     /// The cut chosen on the timeline, by its start.
     public var selectedCut: Double? {
-        didSet { if selectedCut != nil { selectedZoom = nil; selectedSegment = nil } }
+        get { if case .cut(let start) = selection { start } else { nil } }
+        set {
+            if let newValue { selection = .cut(newValue) }
+            else if case .cut = selection { selection = .none }
+        }
     }
     /// The stretch of the camera's layout chosen on the timeline, by its identifier.
     public var selectedSegment: UUID? {
-        didSet { if selectedSegment != nil { selectedZoom = nil; selectedCut = nil } }
+        get { if case .cameraSegment(let id) = selection { id } else { nil } }
+        set {
+            if let newValue { selection = .cameraSegment(newValue) }
+            else if case .cameraSegment = selection { selection = .none }
+        }
+    }
+    public var selectedRange: ClosedRange<Double>? {
+        get { if case .range(let range) = selection { range } else { nil } }
+        set {
+            if let newValue { selection = .range(newValue) }
+            else if case .range = selection { selection = .none }
+        }
     }
     /// The movie the preview plays now; nil until it is first made.
     public private(set) var composition: StudioComposition?
     /// The newest composition couldn't be made (the recording couldn't be read).
-    public private(set) var compositionFailed = false
+    public private(set) var previewState: PreviewState = .preparing
+    public var compositionFailed: Bool {
+        if case .failed = previewState { true } else { false }
+    }
+    public private(set) var saveState: SaveState = .saved
+    public var hasPendingSave: Bool { savedRevision < projectRevision }
     /// Counts the compositions made, so the window knows to play the newest.
     public private(set) var compositionGeneration = 0
     /// Where the preview is, in the recording's seconds.
@@ -78,6 +114,15 @@ public final class StudioDocument {
     /// be filmed at.
     @ObservationIgnored private var previewPixels: CGSize?
     @ObservationIgnored private var previewSide: Double?
+    @ObservationIgnored private var projectWriter = StudioProjectWriter()
+    @ObservationIgnored private var pendingSave: Task<Void, Never>?
+    @ObservationIgnored private var projectRevision = 0
+    @ObservationIgnored private var savedRevision = -1
+    @ObservationIgnored private var previewBuild: Task<StudioComposition, Error>?
+    @ObservationIgnored private var cachedMotion: (key: StudioMotionKey, track: StudioTrack)?
+    @ObservationIgnored private(set) var motionBuildCount = 0
+    /// Tests can control completion order without requiring a media decoder or wall-clock delays.
+    @ObservationIgnored var compositionLoader: (@Sendable (StudioProject, Double) async throws -> StudioComposition)?
 
     /// - Parameter background: paints a built-in gradient, by name, at a size in pixels.
     public init(
@@ -96,6 +141,17 @@ public final class StudioDocument {
         let camera = folder.appending(path: StudioFiles.camera)
         cameraMovie = telemetry.camera != nil && FileManager.default.fileExists(atPath: camera.path(percentEncoded: false)) ? camera : nil
         hasUnexportedChanges = !hasBeenExported
+        if self.project == project, FileManager.default.fileExists(atPath: folder.appending(path: StudioFiles.project).path) {
+            savedRevision = 0
+        } else {
+            saveState = .pending
+        }
+    }
+
+    deinit {
+        pendingSave?.cancel()
+        rebuild?.cancel()
+        previewBuild?.cancel()
     }
 
     /// Whether a camera was recorded beside the recording, so it can be shown.
@@ -132,27 +188,64 @@ public final class StudioDocument {
     /// The preview is filmed no larger than it shows, which keeps the frames played ahead small: at the
     /// export's 4K, a full-screen recording held some 400 MB of them while it played.
     public func makeComposition() async {
+        rebuild?.cancel()
+        rebuild = nil
+        await buildPreview()
+    }
+
+    private func buildPreview() async {
         generation += 1
         let mine = generation
+        previewBuild?.cancel()
         let side = previewLargestSide()
         previewSide = side
+        previewState = composition == nil ? .preparing : .updating
+        let snapshot = project
+        let task = Task { try await composition(project: snapshot, largestSide: side) }
+        previewBuild = task
         do {
-            let made = try await composition(largestSide: side)
-            guard mine == generation else { return }
+            let made = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            guard mine == generation, !Task.isCancelled else { return }
             composition = made
-            compositionFailed = false
+            previewState = .ready
             compositionGeneration += 1
         } catch {
+            guard mine == generation, !(error is CancellationError), !Task.isCancelled else { return }
             Log.studio.error("Making the Studio composition failed: \(String(describing: error), privacy: .public)")
-            guard mine == generation else { return }
-            compositionFailed = true
+            previewState = .failed(error.localizedDescription)
         }
+        if mine == generation { previewBuild = nil }
     }
 
     /// The composition the export writes: the project as it is now, at the movie's full size.
-    public func makeExportComposition() async throws -> StudioComposition {
-        try await composition(largestSide: StudioRenderer.largestSide)
+    public func makeExportComposition(project snapshot: StudioProject? = nil) async throws -> StudioComposition {
+        try Task.checkCancellation()
+        return try await composition(project: snapshot ?? project, largestSide: StudioRenderer.largestSide)
     }
+
+    func previewFailed(_ message: String) {
+        isPlaying = false
+        previewState = .failed(message)
+    }
+
+    /// Releases preview work on close. An export has its own snapshot and task and is not cancelled here.
+    func releasePreview() {
+        generation += 1
+        rebuild?.cancel()
+        previewBuild?.cancel()
+        rebuild = nil
+        previewBuild = nil
+        composition = nil
+        cachedMotion = nil
+    }
+
+    #if DEBUG
+    public func releaseDiagnosticPreview() { releasePreview() }
+    #endif
 
     /// Tells the document how large the preview is, in pixels; the preview is filmed again when that asks
     /// for a different size.
@@ -164,31 +257,52 @@ public final class StudioDocument {
         scheduleComposition()
     }
 
-    private func composition(largestSide: Double) async throws -> StudioComposition {
-        let project = project
+    private func composition(project: StudioProject, largestSide: Double) async throws -> StudioComposition {
+        try Task.checkCancellation()
+        if let compositionLoader { return try await compositionLoader(project, largestSide) }
         let telemetry = drawnTelemetry
-        let duration = duration
-        let size = recordingSize
-        let layout = movieLayout(largestSide: largestSide)
-        var backdrop: CGImage?
-        if case .gradient(let name) = project.background {
-            backdrop = background(name, layout.canvas)
-        }
-        let picture = backdrop
-        let source = source
-        let cameraMovie = cameraMovie
-        let cameraStart = telemetry.camera?.start ?? 0
+        let track = try await preparedMotion(for: project)
+        try Task.checkCancellation()
         // The user's accent, as the rings shown while recording take it.
         let accent = NSColor.controlAccentColor.usingColorSpace(.sRGB)
         let ringColor = accent.map { StudioRenderer.RingColor(red: $0.redComponent, green: $0.greenComponent, blue: $0.blueComponent) } ?? .systemBlue
-        return try await Task.detached(priority: .userInitiated) {
-            let renderer = StudioRenderer(
-                telemetry: telemetry, project: project, duration: duration, recordingSize: size, background: picture, largestSide: largestSide,
-                ringColor: ringColor
-            )
-            let camera = cameraMovie.map { StudioComposition.CameraSource(asset: AVURLAsset(url: $0), start: cameraStart) }
-            return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, camera: camera)
-        }.value
+        return try await Self.assemble(
+            project: project, telemetry: telemetry, duration: duration, recordingSize: recordingSize,
+            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, background: background, ringColor: ringColor
+        )
+    }
+
+    /// A single completed motion track per document. Export and preview share its immutable frame storage;
+    /// a cancelled preview never owns or cancels the export's work.
+    func preparedMotion(for project: StudioProject) async throws -> StudioTrack {
+        try Task.checkCancellation()
+        let key = StudioMotionKey(project)
+        if let cachedMotion, cachedMotion.key == key { return cachedMotion.track }
+        let track = try await StudioTrack.make(telemetry: telemetry, project: project, duration: duration)
+        try Task.checkCancellation()
+        motionBuildCount += 1
+        if key == StudioMotionKey(self.project) { cachedMotion = (key, track) }
+        return track
+    }
+
+    @concurrent
+    private static func assemble(
+        project: StudioProject, telemetry: StudioTelemetry, duration: Double, recordingSize: CGSize,
+        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?,
+        background: @Sendable (String, CGSize) -> CGImage?, ringColor: StudioRenderer.RingColor
+    ) async throws -> StudioComposition {
+        try Task.checkCancellation()
+        let layout = StudioRenderer.layout(recordingSize: recordingSize, project: project, hasCamera: cameraMovie != nil, largestSide: largestSide)
+        let picture: CGImage?
+        if case .gradient(let name) = project.background { picture = background(name, layout.canvas) } else { picture = nil }
+        try Task.checkCancellation()
+        let renderer = StudioRenderer(
+            telemetry: telemetry, project: project, duration: duration, recordingSize: recordingSize, background: picture,
+            largestSide: largestSide, ringColor: ringColor, preparedTrack: track
+        )
+        try Task.checkCancellation()
+        let camera = cameraMovie.map { StudioComposition.CameraSource(asset: AVURLAsset(url: $0), start: telemetry.camera?.start ?? 0) }
+        return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, camera: camera)
     }
 
     /// The longest side the preview needs: the movie fitted in the preview's pixels, in steps of 128 so a
@@ -300,6 +414,8 @@ public final class StudioDocument {
             removeCameraSegment(id)
         } else if let start = selectedCut {
             restoreCut(at: start)
+        } else if let range = selectedRange {
+            cut(range)
         }
     }
 
@@ -332,14 +448,21 @@ public final class StudioDocument {
 
     /// A stretch of the camera's layout at the playhead, three seconds long, in the room the others leave: camera
     /// only, or the bubble where the layout is camera only already.
-    public func addCameraSegment() {
+    private var roomForCameraSegment: (start: Double, end: Double)? {
+        guard canChangeLayoutAlongTheTimeline else { return nil }
         let length = 3.0
         var start = min(max(time, 0), max(duration - StudioProject.shortestSegment, 0))
         // Past every stretch that holds the playhead's place, those that touch included.
         while let blocking = project.cameraSegments.first(where: { $0.start <= start && start < $0.end }) { start = blocking.end }
         let next = project.cameraSegments.filter { $0.start >= start }.map(\.start).min() ?? duration
         let end = min(start + length, next, duration)
-        guard end - start >= StudioProject.shortestSegment else { return }
+        return end - start >= StudioProject.shortestSegment ? (start, end) : nil
+    }
+
+    public var canAddCameraSegment: Bool { roomForCameraSegment != nil }
+
+    public func addCameraSegment() {
+        guard let (start, end) = roomForCameraSegment else { return }
         let segment = StudioProject.CameraSegment(
             start: start, end: end, layout: project.camera.layout == .cameraOnly ? .pictureInPicture : .cameraOnly
         )
@@ -403,8 +526,9 @@ public final class StudioDocument {
 
     /// Leaves `range` (the recording's seconds) out of the movie, joined with cuts it meets.
     public func cut(_ range: ClosedRange<Double>) {
-        let clamped = max(0, range.lowerBound)...min(duration, range.upperBound)
-        guard clamped.upperBound - clamped.lowerBound >= 0.05 else { return }
+        let lower = max(0, range.lowerBound), upper = min(duration, range.upperBound)
+        guard upper - lower >= 0.05 else { return }
+        let clamped = lower...upper
         var merged = clamped
         var kept: [ClosedRange<Double>] = []
         for cut in project.cuts {
@@ -431,6 +555,7 @@ public final class StudioDocument {
 
     public func endContinuousChange() {
         continuousRegistered = nil
+        scheduleSave(immediately: true)
     }
 
     /// Makes `body`'s change to the project as one step that Undo names `name`.
@@ -485,14 +610,53 @@ public final class StudioDocument {
 
     // MARK: Keeping
 
-    /// The project saved in its folder, so the Studio window opens it as it was left.
+    /// Requests an immediate asynchronous save. Call `flushSave` when the caller must wait for the file.
     public func save() {
-        do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try JSONEncoder().encode(project).write(to: folder.appending(path: StudioFiles.project), options: .atomic)
-        } catch {
-            Log.studio.error("Saving the Studio project failed: \(String(describing: error), privacy: .public)")
+        scheduleSave(immediately: true)
+    }
+
+    /// Waits for the newest revision, including edits made while an earlier snapshot was being written.
+    /// Failed writes leave the document dirty and are surfaced to the window rather than merely logged.
+    public func flushSave() async throws {
+        pendingSave?.cancel()
+        pendingSave = nil
+        try await persistLatest()
+    }
+
+    private func persistLatest() async throws {
+        while savedRevision < projectRevision {
+            let revision = projectRevision
+            let snapshot = project
+            saveState = .saving
+            do {
+                try await projectWriter.save(snapshot, revision: revision, to: folder.appending(path: StudioFiles.project))
+                savedRevision = max(savedRevision, revision)
+                saveState = savedRevision == projectRevision ? .saved : .pending
+            } catch {
+                // A failed superseded snapshot does not override the state of a newer save.
+                if revision != projectRevision || savedRevision >= revision { continue }
+                saveState = .failed(error.localizedDescription)
+                Log.studio.error("Saving the Studio project failed: \(String(describing: error), privacy: .public)")
+                throw error
+            }
         }
+    }
+
+    private func scheduleSave(immediately: Bool = false) {
+        guard hasPendingSave else { return }
+        pendingSave?.cancel()
+        pendingSave = Task { [weak self] in
+            if !immediately {
+                do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            }
+            guard !Task.isCancelled, let self else { return }
+            try? await persistLatest()
+        }
+    }
+
+    /// Internal storage injection for deterministic failure and ordering tests.
+    func setProjectWriter(_ writer: StudioProjectWriter) {
+        projectWriter = writer
     }
 
     public func markExported() {
@@ -501,7 +665,11 @@ public final class StudioDocument {
 
     private func projectChanged(from old: StudioProject) {
         hasUnexportedChanges = true
-        save()
+        projectRevision += 1
+        saveState = .pending
+        scheduleSave()
+        if let id = selectedZoom, !project.zooms.contains(where: { $0.id == id }) { selectedZoom = nil }
+        if let start = selectedCut, !project.cuts.contains(where: { $0.lowerBound == start }) { selectedCut = nil }
         // A layout chosen on the timeline that is gone (taken back, or the layout made side by side) is no longer chosen.
         if let id = selectedSegment, !canChangeLayoutAlongTheTimeline || !project.cameraSegments.contains(where: { $0.id == id }) {
             selectedSegment = nil
@@ -513,12 +681,16 @@ public final class StudioDocument {
     }
 
     private func scheduleComposition() {
+        // Invalidate immediately, including during the debounce, so an older in-flight result cannot win.
+        generation += 1
         rebuild?.cancel()
+        previewBuild?.cancel()
+        previewState = composition == nil ? .preparing : .updating
         rebuild = Task { [weak self] in
             // Shortly after the last change, so a slider being dragged doesn't make a movie per step.
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
-            await self?.makeComposition()
+            await self?.buildPreview()
         }
     }
 }

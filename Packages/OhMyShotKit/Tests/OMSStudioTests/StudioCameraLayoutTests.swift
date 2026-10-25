@@ -374,7 +374,7 @@ struct StudioCameraSegmentEditingTests {
         #expect(document.project.cameraSegments.isEmpty && document.selectedSegment == nil)
     }
 
-    @Test func openingAProjectMakesTheRecordedFillsStretchesWithoutChangingTheMovie() throws {
+    @Test func openingAProjectMakesTheRecordedFillsStretchesWithoutChangingTheMovie() async throws {
         let document = try Self.document(fills: [2...3.5, 6...6.1])
         defer { try? FileManager.default.removeItem(at: document.folder) }
         #expect(document.project.camera.recordedFillsAreSegments)
@@ -385,7 +385,7 @@ struct StudioCameraSegmentEditingTests {
         defer { try? FileManager.default.removeItem(at: exported.folder) }
         #expect(!exported.hasUnexportedChanges)
         // The stretches are kept with the project once it is saved.
-        document.save()
+        try await document.flushSave()
         let saved = try JSONDecoder().decode(StudioProject.self, from: Data(contentsOf: document.folder.appending(path: StudioFiles.project)))
         #expect(saved == document.project)
     }

@@ -5,6 +5,9 @@ import Observation
 import OMSCore
 import OSLog
 import SwiftUI
+#if DEBUG
+import ApplicationServices
+#endif
 
 /// The Studio window: the recording filmed again in the preview, its timeline along the bottom, and the
 /// inspector on the right, as the user chose on 2026-10-11.
@@ -68,7 +71,10 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     /// Set by Cancel: exporting stops, including the export after it that a change made meanwhile asks for.
     private var cancelled = false
     /// Runs once the window has closed and its movie is kept.
-    private var closed: (() -> Void)?
+    private var closeCompletions: [(Bool) -> Void] = []
+    private var preparingToClose: Task<Void, Never>?
+    private var didClose = false
+    private var finishedClosing = false
 
     /// - Parameter movie: the movie in the history, when it was exported from the project as it is now.
     public init(document: StudioDocument, title: String, swatches: [Swatch], movie: URL?, actions: Actions) {
@@ -112,12 +118,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             }
         }
         Task { await studio.makeComposition() }
-        Task { [weak self] in
-            guard let source = self?.studio.source else { return }
-            for await pictures in Filmstrip.pictures(of: source, count: 24, pixelHeight: 80) {
-                self?.model.filmstrip = pictures
-            }
-        }
+        studio.save()
     }
 
     @available(*, unavailable)
@@ -126,6 +127,13 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public func show() {
+        guard !finishedClosing else { return }
+        if didClose {
+            // History can reopen this window while its background export is still running. That export
+            // may finish normally, but it must not tear down a window the user has returned to.
+            didClose = false
+            completeClose(saved: false)
+        }
         if windowLease == nil { windowLease = ActiveResources.shared.acquire(.window) }
         showWindow(nil)
         AppActivation.bringForward(window)
@@ -134,6 +142,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     // MARK: Playing
 
     func togglePlay() {
+        guard !studio.compositionFailed, studio.composition != nil else { return }
         if player.rate > 0 {
             player.pause()
             studio.isPlaying = false
@@ -168,10 +177,16 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         guard let composition = studio.composition else { return }
         let item = AVPlayerItem(asset: composition.asset)
         item.videoComposition = composition.videoComposition
-        // A preview that can't play says why in the log; the window shows its last frame meanwhile.
-        itemStatus = item.observe(\.status) { item, _ in
+        let generation = studio.compositionGeneration
+        itemStatus = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             guard item.status == .failed else { return }
             Log.studio.error("The Studio preview couldn't play: \(String(describing: item.error), privacy: .public)")
+            let message = item.error?.localizedDescription ?? String(localized: "The recording couldn’t be read", bundle: .module)
+            Task { @MainActor [weak self] in
+                guard let self, self.studio.compositionGeneration == generation else { return }
+                self.player.pause()
+                self.studio.previewFailed(message)
+            }
         }
         let wasPlaying = player.rate > 0
         player.replaceCurrentItem(with: item)
@@ -187,8 +202,10 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     private func exportIfNeeded() async -> URL? {
         cancelled = false
         while true {
-            if let exported, !studio.hasUnexportedChanges { return exported }
             guard !cancelled else { return nil }
+            do { try await studio.flushSave() } catch { return nil }
+            guard !cancelled, !Task.isCancelled else { return nil }
+            if let exported, !studio.hasUnexportedChanges { return exported }
             if let exporting {
                 guard await exporting.value != nil else { return nil }
                 continue
@@ -213,14 +230,18 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             }
             let temporary = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).mp4")
             do {
-                let composition = try await studio.makeExportComposition()
+                try Task.checkCancellation()
+                let composition = try await studio.makeExportComposition(project: project)
+                try Task.checkCancellation()
                 let movie = try await StudioExporter.export(composition, to: temporary) { fraction in
                     // The export holds the window controller until it ends, so this may too.
                     Task { @MainActor in
+                        guard self.exporting != nil, !self.cancelled else { return }
                         self.model.progress = fraction
                         if self.window?.isVisible != true { self.actions.progress(fraction) }
                     }
                 }
+                try Task.checkCancellation()
                 let url = try actions.keep(movie, project)
                 if studio.project == project { studio.markExported() }
                 exported = url
@@ -259,10 +280,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             panel.allowedContentTypes = [.mpeg4Movie]
             guard await panel.beginSheetModal(for: window) == .OK, let destination = panel.url else { return }
             do {
-                if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) {
-                    try FileManager.default.removeItem(at: destination)
-                }
-                try FileManager.default.copyItem(at: url, to: destination)
+                try await AtomicFileCopy.copy(from: url, to: destination)
                 model.flashSaved()
             } catch {
                 fail(error)
@@ -276,6 +294,8 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     public var hasUnexportedChanges: Bool {
         studio.hasUnexportedChanges
     }
+
+    public var hasPendingProjectSave: Bool { studio.hasPendingSave }
 
     /// Whether a movie is being exported after the window closed (the menu bar shows how far along).
     public var isExportingAfterClosing: Bool {
@@ -291,12 +311,40 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
 
     /// Closes the window, exporting its movie; `done` runs once it is kept.
     public func close(then done: @escaping () -> Void) {
-        closed = done
-        window?.close()
+        closeIfSaved { saved in if saved { done() } }
+    }
+
+    /// A failed project write cancels closing (and, for the app coordinator, quitting). The window stays
+    /// open with its unsaved state and Retry action; exported movies never stand in for the editable project.
+    public func closeIfSaved(then done: @escaping (Bool) -> Void) {
+        guard !finishedClosing else { return done(true) }
+        closeCompletions.append(done)
+        if !didClose { prepareClose() }
+    }
+
+    public func windowShouldClose(_ sender: NSWindow) -> Bool {
+        prepareClose()
+        return false
+    }
+
+    private func prepareClose() {
+        guard preparingToClose == nil, !didClose else { return }
+        preparingToClose = Task {
+            defer { preparingToClose = nil }
+            do {
+                try await studio.flushSave()
+                window?.close()
+            } catch {
+                show()
+                completeClose(saved: false)
+            }
+        }
     }
 
     public func windowWillClose(_ notification: Notification) {
+        didClose = true
         player.pause()
+        studio.isPlaying = false
         if studio.hasUnexportedChanges {
             // Exported after the window has gone, as the editor keeps marks; the menu bar shows how far along.
             Task {
@@ -309,14 +357,23 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     }
 
     private func finishClosing() {
+        guard didClose, !finishedClosing else { return }
+        finishedClosing = true
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
         observation?.cancel()
         player.replaceCurrentItem(with: nil)
+        itemStatus = nil
+        studio.releasePreview()
         windowLease = nil
         onClose?()
-        closed?()
-        closed = nil
+        completeClose(saved: true)
+    }
+
+    private func completeClose(saved: Bool) {
+        let completions = closeCompletions
+        closeCompletions = []
+        completions.forEach { $0(saved) }
     }
 
     private func fail(_ error: any Error) {
@@ -344,6 +401,133 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     }
 
     #if DEBUG
+    /// Runs against the synthetic demo's real responder chain and accessibility elements. It leaves
+    /// the project as it found it and never posts a key to another app or to the global event stream.
+    public func debugKeyboardChecks() async -> [String: Bool] {
+        guard let window else { return ["window": false] }
+        let original = studio.project
+        let originalTime = studio.time
+        let originalSelection = studio.selection
+        defer {
+            studio.project = original
+            studio.selection = originalSelection
+            seek(toRecordingTime: originalTime)
+        }
+        func value(_ element: AXUIElement, _ attribute: CFString) -> CFTypeRef? {
+            var result: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, attribute, &result) == .success else { return nil }
+            return result
+        }
+        func find(_ predicate: (AXUIElement) -> Bool) -> AXUIElement? {
+            let app = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
+            let windows = value(app, kAXWindowsAttribute as CFString) as? [AXUIElement] ?? []
+            guard let target = windows.first(where: { value($0, kAXTitleAttribute as CFString) as? String == window.title }) else { return nil }
+            var pending = [target]
+            while let element = pending.popLast() {
+                if predicate(element) { return element }
+                pending += value(element, kAXChildrenAttribute as CFString) as? [AXUIElement] ?? []
+            }
+            return nil
+        }
+        func key(_ code: UInt16, _ characters: String, modifiers: NSEvent.ModifierFlags = []) {
+            guard let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, characters: characters,
+                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+            ) else { return }
+            window.sendEvent(event)
+        }
+        func until(_ predicate: () -> Bool) async -> Bool {
+            let deadline = ContinuousClock.now + .seconds(2)
+            while !predicate(), ContinuousClock.now < deadline {
+                do { try await Task.sleep(for: .milliseconds(10)) } catch { return false }
+            }
+            return predicate()
+        }
+        guard let timeline = find({ value($0, kAXIdentifierAttribute as CFString) as? String == "studio-timeline" }) else {
+            return ["timelineAccessible": false]
+        }
+        var checks: [String: Bool] = ["timelineAccessible": true]
+        checks["timelineFocus"] = AXUIElementSetAttributeValue(timeline, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
+        studio.selection = .none
+        seek(toRecordingTime: 0)
+        key(124, String(UnicodeScalar(NSRightArrowFunctionKey)!), modifiers: .option)
+        checks["optionArrowSelectsZoom"] = await until { studio.selectedZoom != nil }
+        let count = studio.project.zooms.count
+        if checks["optionArrowSelectsZoom"] == true {
+            key(51, "\u{7F}")
+            checks["deleteRemovesChosenZoom"] = await until { studio.project.zooms.count == count - 1 }
+            _ = debugUndo()
+            checks["undoRestoresZoom"] = await until { studio.project.zooms.count == count }
+        }
+        studio.selection = .none
+        seek(toRecordingTime: min(0.5, studio.duration / 4))
+        key(34, "i")
+        checks["markIn"] = await until { studio.selectedRange != nil }
+        let before = studio.time
+        key(124, String(UnicodeScalar(NSRightArrowFunctionKey)!))
+        checks["arrowSeeks"] = await until { studio.time > before }
+        key(31, "o")
+        checks["markOut"] = await until { studio.selectedRange.map { abs($0.upperBound - studio.time) < 0.001 } ?? false }
+        if checks["markOut"] == true {
+            let oldCuts = studio.project.cuts
+            key(51, "\u{7F}")
+            checks["deleteCutsRange"] = await until { studio.project.cuts != oldCuts }
+            _ = debugUndo()
+            checks["undoRestoresRange"] = await until { studio.project.cuts == oldCuts }
+        }
+        if let id = studio.project.zooms.first?.id {
+            studio.selectedZoom = id
+            _ = await until { find { value($0, kAXIdentifierAttribute as CFString) as? String == "studio-start-time" } != nil }
+            if let field = find({ value($0, kAXIdentifierAttribute as CFString) as? String == "studio-start-time" }) {
+                checks["timeFieldFocus"] = AXUIElementSetAttributeValue(field, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
+                let start = min(studio.project.zooms[0].start + 0.1, studio.project.zooms[0].end - 0.3)
+                checks["timeFieldSet"] = AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, StudioTimeInput.format(start) as CFString) == .success
+                key(36, "\r")
+                checks["returnCommitsTime"] = await until { abs((studio.project.zooms.first { $0.id == id }?.start ?? -1) - start) < 0.002 }
+            }
+        }
+        let playheadLabel = String(localized: "Playhead", bundle: .module)
+        if let playhead = find({ value($0, kAXDescriptionAttribute as CFString) as? String == playheadLabel }) {
+            let before = studio.time
+            checks["playheadAXIncrement"] = AXUIElementPerformAction(playhead, kAXIncrementAction as CFString) == .success
+            checks["playheadAXMoves"] = await until { studio.time > before }
+        }
+        return checks
+    }
+
+    /// Exercises the actual SwiftUI buttons through this process's own accessibility tree. No global
+    /// input, external application or user capture is involved in the synthetic Studio checks.
+    public func debugTimelineControl(_ action: String) -> Bool {
+        let label: String
+        switch action {
+        case "zoom-in": label = String(localized: "Zoom In Timeline", bundle: .module)
+        case "zoom-out": label = String(localized: "Zoom Out Timeline", bundle: .module)
+        case "fit-selection": label = String(localized: "Fit Selection", bundle: .module)
+        case "fit": label = String(localized: "Fit", bundle: .module)
+        default: return false
+        }
+        func attribute(_ element: AXUIElement, _ name: CFString) -> CFTypeRef? {
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(element, name, &value) == .success else { return nil }
+            return value
+        }
+        let application = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
+        let windows = attribute(application, kAXWindowsAttribute as CFString) as? [AXUIElement] ?? []
+        guard let target = windows.first(where: { attribute($0, kAXTitleAttribute as CFString) as? String == window?.title }) else { return false }
+        var pending = [target]
+        while let element = pending.popLast() {
+            let role = attribute(element, kAXRoleAttribute as CFString) as? String
+            let title = attribute(element, kAXTitleAttribute as CFString) as? String
+            let description = attribute(element, kAXDescriptionAttribute as CFString) as? String
+            if role == kAXButtonRole as String, title == label || description == label {
+                return AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
+            }
+            pending += attribute(element, kAXChildrenAttribute as CFString) as? [AXUIElement] ?? []
+        }
+        return false
+    }
+
     /// For scripted screenshots that show nothing: the window behind the wallpaper in the middle of the
     /// main display.
     public func showBehindWallpaper() {
@@ -395,7 +579,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
 
     /// Chooses a stretch on the clip, as a drag along it does, for scripted renders.
     public func debugChoose(_ range: ClosedRange<Double>?) {
-        model.selectedRange = range
+        studio.selectedRange = range
     }
 
     /// Sends Undo down the window's responder chain as Edit › Undo would, for scripted checks; returns who
@@ -439,10 +623,6 @@ final class StudioWindowModel {
     var progress: Double?
     var copied = false
     var saved = false
-    /// A stretch chosen on the timeline's clip, for Cut.
-    var selectedRange: ClosedRange<Double>?
-    /// Pictures along the recording for the timeline's clip, evenly spaced; empty until they are read.
-    var filmstrip: [CGImage] = []
     @ObservationIgnored private var copiedReset: Task<Void, Never>?
     @ObservationIgnored private var savedReset: Task<Void, Never>?
 
@@ -551,51 +731,5 @@ final class PlayerLayerView: NSView {
         guard size.width > 0, size.height > 0, size != reportedSize else { return }
         reportedSize = size
         onPixelSizeChange?(size)
-    }
-}
-
-/// Pictures along a recording, for the timeline's clip.
-nonisolated enum Filmstrip {
-    /// `count` pictures `pixelHeight` pixels high, one for each equal stretch of the recording: first the
-    /// key frames nearest them, which come at once, then, where those repeat, a frame from each stretch.
-    /// Read exactly from the start, a short full-screen recording took seconds, decoding up to two seconds
-    /// of frames for each picture. Any that can't be read are left out; the reading stops when the stream's
-    /// listener goes.
-    static func pictures(of url: URL, count: Int, pixelHeight: Int) -> AsyncStream<[CGImage]> {
-        AsyncStream { continuation in
-            let task = Task.detached(priority: .utility) {
-                let asset = AVURLAsset(url: url)
-                guard let duration = try? await asset.load(.duration).seconds, duration > 0, count > 0 else { return continuation.finish() }
-                let times = (0..<count).map { CMTime(seconds: duration * (Double($0) + 0.5) / Double(count), preferredTimescale: 600) }
-                let quick = await read(asset, at: times, pixelHeight: pixelHeight, tolerance: .positiveInfinity)
-                continuation.yield(quick.pictures)
-                if quick.distinct < count, !Task.isCancelled {
-                    let tolerance = CMTime(seconds: duration / Double(count) / 2, preferredTimescale: 600)
-                    let exact = await read(asset, at: times, pixelHeight: pixelHeight, tolerance: tolerance)
-                    if !Task.isCancelled { continuation.yield(exact.pictures) }
-                }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
-    }
-
-    /// The pictures nearest `times` within `tolerance`, and how many different frames they are.
-    @concurrent private static func read(_ asset: AVAsset, at times: [CMTime], pixelHeight: Int, tolerance: CMTime) async -> (pictures: [CGImage], distinct: Int) {
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.maximumSize = CGSize(width: pixelHeight * 4, height: pixelHeight)
-        generator.appliesPreferredTrackTransform = true
-        generator.requestedTimeToleranceBefore = tolerance
-        generator.requestedTimeToleranceAfter = tolerance
-        var pictures: [CGImage] = []
-        var frames = Set<Double>()
-        for time in times {
-            guard !Task.isCancelled else { break }
-            if let picture = try? await generator.image(at: time) {
-                pictures.append(picture.image)
-                frames.insert(picture.actualTime.seconds)
-            }
-        }
-        return (pictures, frames.count)
     }
 }
