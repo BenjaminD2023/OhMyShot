@@ -594,8 +594,13 @@ final class CompositionRoot {
         annotations.onChange = { [weak self] entry, data in
             self?.pictureChanged(entry, data: data)
         }
-        // A card is not closed by itself under the editor that has its capture open.
-        annotations.onEditing = { [weak self] id, editing in self?.quickAccess.setEditing(editing, for: id) }
+        // Hold the card while its image loads; once the editor owns it, the card can close.
+        annotations.onEditing = { [weak self] id, editing in
+            guard let self else { return }
+            quickAccess.setEditing(editing, for: id)
+            if !editing { releaseIfUnheld(id) }
+        }
+        annotations.onOpen = { [weak self] id in self?.quickAccess.dismiss(id) }
         annotations.saveCopy = { [weak self] entry, file in
             guard let self, let saved = await captures.files.saveScreenshot(fileAt: file, entry: entry, asks: true) else { return nil }
             quickAccess.markSaved(entry.id, at: saved)

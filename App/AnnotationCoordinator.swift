@@ -19,8 +19,10 @@ final class AnnotationCoordinator {
     var saveFile: ((URL, Double) async -> URL?)?
     /// A capture's picture changed: its record, and the picture's encoded data.
     var onChange: ((HistoryItem, Data) -> Void)?
-    /// A capture's editor opened (true) or closed (false).
+    /// The editor is loading or holding a capture (true), or has released it (false).
     var onEditing: ((UUID, Bool) -> Void)?
+    /// A capture's editor is on screen and owns the capture, so its Quick Access card can close.
+    var onOpen: ((UUID) -> Void)?
     /// Saves a copy of a capture's file to the export location; returns where it went.
     var saveCopy: ((HistoryItem, URL) async -> URL?)?
     /// The file to hand to another app when an editor's picture is dragged out, from the picture's file and its scale
@@ -49,6 +51,7 @@ final class AnnotationCoordinator {
         if let editor = editors[entry.id] {
             if presentation == .editor { editor.expandToFullEditor() }
             editor.show()
+            onOpen?(entry.id)
             return
         }
         guard entry.kind == .screenshot else { return }
@@ -97,6 +100,7 @@ final class AnnotationCoordinator {
             }
             editors[id] = editor
             editor.show()
+            onOpen?(id)
         }
     }
 

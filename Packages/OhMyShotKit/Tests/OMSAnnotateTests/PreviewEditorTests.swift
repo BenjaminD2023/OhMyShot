@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OMSCore
 import Testing
 @testable import OMSAnnotate
 
@@ -148,7 +149,7 @@ struct PreviewEditorTests {
             controller.session.commit(document, actionName: "Add Rectangle")
         }
         let copiedDocument = controller.session.document
-        let _: Void = controller.copy()
+        controller.copyCapture(thenClose: false)
         for _ in 0..<200 {
             if keptDocument != nil { break }
             try await Task.sleep(for: .milliseconds(10))
@@ -168,5 +169,122 @@ struct PreviewEditorTests {
         #expect(controller.session.hasUnkeptChanges)
         #expect(controller.fileForDragging() == nil)
         #expect(controller.session.hasUnkeptChanges)
+    }
+
+    @Test func copyAppliesThePendingCropAndCopiesMarkedPixelsBeforeClosing() async throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        var keptDocument: AnnotationDocument?
+        var closed = false
+        var copied = false
+        var actions = AnnotationEditorWindowController.Actions(keep: { document, _, _ in
+            keptDocument = document
+            return URL.temporaryDirectory.appending(path: "preview-copy.png")
+        }, save: { _ in nil })
+        actions.copy = { image, png in
+            #expect(!closed)
+            await Task.yield()
+            PasteboardWriter.write(png: png, image: image, to: pasteboard)
+            copied = true
+        }
+        let controller = makePreview(actions: actions)
+        defer { controller.window?.delegate = nil; controller.close() }
+        controller.onClose = {
+            #expect(copied)
+            #expect(pasteboard.data(forType: .png) != nil)
+            closed = true
+        }
+        step(controller.session) {
+            var document = controller.session.document
+            document.items.append(Annotation(
+                shape: .rectangle(Box(rect: CGRect(x: 70, y: 10, width: 40, height: 20))),
+                style: Style(color: .red, lineWidth: 2, shadow: false)
+            ))
+            controller.session.commit(document, actionName: "Add Rectangle")
+        }
+        controller.session.tool = .crop
+        controller.content.canvas.chooseCropRatio(.fixed(1, 1))
+        #expect(controller.session.document.canvas.width == 200)
+        step(controller.session) { controller.content.canvas.copy(nil) }
+        for _ in 0..<200 {
+            if closed { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(closed)
+        #expect(keptDocument?.canvas.width == 100)
+        #expect(!controller.session.hasUnkeptChanges)
+        let data = try #require(pasteboard.data(forType: .png))
+        let image = try #require(NSBitmapImageRep(data: data)?.cgImage)
+        #expect(image.width == 100 && image.height == 100)
+        let pixel = Pixels(image)[20, 20]
+        #expect(pixel.r > 240 && pixel.g < 80 && pixel.b < 80)
+    }
+
+    @Test func copyFinishesTheTextBeingEditedBeforeRenderingAndClosing() async throws {
+        var keptDocument: AnnotationDocument?
+        var copiedPNG: Data?
+        var closed = false
+        var actions = AnnotationEditorWindowController.Actions(keep: { document, _, _ in
+            keptDocument = document
+            return URL.temporaryDirectory.appending(path: "preview-text.png")
+        }, save: { _ in nil })
+        actions.copy = { _, png in copiedPNG = png }
+        let controller = makePreview(actions: actions)
+        defer { controller.window?.delegate = nil; controller.close() }
+        controller.onClose = { closed = true }
+        let text = Annotation(shape: .text(TextBlock(origin: CGPoint(x: 20, y: 20), string: "New text")), style: Style())
+        step(controller.session) {
+            var document = controller.session.document
+            document.items.append(text)
+            controller.session.commit(document, selecting: [text.id], actionName: "Add Text")
+        }
+        controller.content.canvas.beginEditing(text.id, isNew: false)
+        #expect(controller.content.canvas.isEditingText)
+        let textView = try #require(controller.window?.firstResponder as? NSTextView)
+        textView.insertText("Edited text", replacementRange: NSRange(location: 0, length: textView.string.utf16.count))
+        step(controller.session) { controller.copyCapture() }
+        for _ in 0..<200 {
+            if closed { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(closed && !controller.content.canvas.isEditingText)
+        let keptText = try #require(keptDocument?.items.first)
+        guard case .text(let block) = keptText.shape else {
+            Issue.record("The edited text mark was not kept")
+            return
+        }
+        #expect(keptText.id == text.id && block.string == "Edited text")
+        let image = try #require(copiedPNG.flatMap { NSBitmapImageRep(data: $0)?.cgImage })
+        #expect(Pixels(image).region(CGRect(x: 15, y: 15, width: 160, height: 25)) != Pixels(makeBase()).region(CGRect(x: 15, y: 15, width: 160, height: 25)))
+    }
+
+    @Test(arguments: [true, false]) func saveExportsThePendingCropAndLeavesThePreviewOpen(succeeds: Bool) async throws {
+        let file = URL.temporaryDirectory.appending(path: "preview-save-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: file) }
+        var saved = false
+        var closed = false
+        let actions = AnnotationEditorWindowController.Actions(keep: { _, png, _ in
+            try? png.write(to: file)
+            return file
+        }, save: { url in
+            #expect(url == file)
+            saved = true
+            return succeeds ? url : nil
+        })
+        let controller = makePreview(actions: actions)
+        defer { controller.window?.delegate = nil; controller.close() }
+        controller.onClose = { closed = true }
+        controller.session.tool = .crop
+        controller.content.canvas.chooseCropRatio(.fixed(1, 1))
+        step(controller.session) { controller.content.canvas.save(nil) }
+        for _ in 0..<200 {
+            if saved { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(saved && !closed)
+        #expect(controller.presentation == .preview)
+        let image = try #require(NSBitmapImageRep(data: Data(contentsOf: file))?.cgImage)
+        #expect(image.width == 100 && image.height == 100)
+        #expect(!controller.session.hasUnkeptChanges)
     }
 }

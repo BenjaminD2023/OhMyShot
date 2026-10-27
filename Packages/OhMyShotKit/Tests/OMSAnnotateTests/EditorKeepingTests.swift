@@ -56,7 +56,7 @@ struct EditorKeepingTests {
             controller.session.commit(document, actionName: "Add Rectangle")
         }
         let copiedDocument = controller.session.document
-        let _: Void = controller.copy()
+        controller.copyCapture()
         for _ in 0..<200 {
             if keptDocument != nil { break }
             try await Task.sleep(for: .milliseconds(10))

@@ -83,8 +83,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         window.center()
         window.delegate = self
 
-        content.canvas.onCopy = { [weak self] in self?.copy() }
-        content.canvas.onReturn = { [weak self] in self?.copy(thenClose: true) }
+        content.canvas.onCopy = { [weak self] in self?.copyCapture() }
+        content.canvas.onReturn = { [weak self] in self?.copyCapture(thenClose: true) }
         content.canvas.onSave = { [weak self] in self?.save() }
         content.canvas.onSaveProject = { [weak self] in self?.saveProject() }
         content.canvas.onPrint = { [weak self] in self?.printCapture() }
@@ -358,10 +358,13 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     // MARK: Actions
 
-    /// Copies the picture as it is now; `thenClose` (Return) closes the window once it is on the clipboard, the marks
+    /// Copies the picture as it is now. Compact previews and Return close once it is on the clipboard, the marks
     /// kept as closing always keeps them. A picture that couldn't be made leaves the window open and says so.
-    func copy(thenClose: Bool = false) {
+    /// A distinct name avoids NSObject.copy(), which can win overload resolution over a default argument.
+    func copyCapture(thenClose: Bool? = nil) {
+        let closesAfterCopy = thenClose ?? (presentation == .preview)
         content.canvas.endEditing()
+        content.canvas.commitCrop()
         Task {
             guard let rendered = await render() else {
                 NSSound.beep()
@@ -380,12 +383,13 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                 .announcement: String(localized: "Copied", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
             ])
             _ = keep(rendered)
-            if thenClose { window?.performClose(nil) }
+            if closesAfterCopy { window?.performClose(nil) }
         }
     }
 
     func save() {
         content.canvas.endEditing()
+        content.canvas.commitCrop()
         Task {
             guard let file = await exportAndKeep() else {
                 NSSound.beep()
@@ -685,18 +689,22 @@ struct EditorView: View {
         } else {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    model.controller?.expandToFullEditor()
+                    model.controller?.save()
                 } label: {
-                    Label { Text("Edit", bundle: .module) } icon: { Image(systemName: "pencil") }
-                        .labelStyle(.titleAndIcon)
+                    Label {
+                        model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module)
+                    } icon: {
+                        Image(systemName: model.saved ? "checkmark" : "square.and.arrow.down")
+                    }
+                    .labelStyle(.titleAndIcon)
                 }
-                .help(Text("Open the full editor with these marks", bundle: .module))
+                .help(Text("Save a Copy (⌘S)", bundle: .module))
             }
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {
             Button {
-                model.controller?.copy()
+                model.controller?.copyCapture()
             } label: {
                 Label {
                     model.copied ? Text("Copied", bundle: .module) : Text("Copy", bundle: .module)
