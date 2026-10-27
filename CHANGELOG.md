@@ -8,12 +8,17 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.3.1-fork.5] - 2026-10-28
+
 ### Added
 
 - Studio timeline supports detailed navigation, filmstrip previews and editable time ranges. (upstream [49e3114](https://github.com/fzlzjerry/OhMyShot/commit/49e3114ea72c4c61169fbef674d614de7084dae3))
 
 ### Fixed
 
+- Space preview copies the edited picture and closes after copying. Copy and Save apply a pending crop before exporting; active text edits are included. ([48bbbe2](https://github.com/BenjaminD2023/OhMyShot/commit/48bbbe29c649461255429096da0220fc5d1e6619))
+- Replace the Space preview's Edit button with Save, using the existing export location and filename preferences. ([48bbbe2](https://github.com/BenjaminD2023/OhMyShot/commit/48bbbe29c649461255429096da0220fc5d1e6619))
+- Dismiss a capture's Quick Access popup once its editor opens successfully, retaining the capture until the editor closes even when History is off. ([48bbbe2](https://github.com/BenjaminD2023/OhMyShot/commit/48bbbe29c649461255429096da0220fc5d1e6619))
 - Integrate upstream Studio project saving, preview/export cancellation, scrolling stitching, asynchronous History search, OCR reading order and long GIF delays. Preserve fork capture controls, OCR workers and saved preferences. (upstream [49e3114](https://github.com/fzlzjerry/OhMyShot/commit/49e3114ea72c4c61169fbef674d614de7084dae3))
 - Keep completed optional OCR codes/tables when the other reader times out, and allow element readers two seconds to return completed work after their reading budget. (upstream [ed6610f](https://github.com/fzlzjerry/OhMyShot/commit/ed6610faf5e6859b86126a5b7a05c479353aa48c))
 
