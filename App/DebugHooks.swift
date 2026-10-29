@@ -278,6 +278,9 @@ struct DebugHooks {
                 let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
                 Task { await captures.captureArea(rect, appName: "Test", copiesToClipboard: false) }
             }
+        case "text-prepare":
+            // The same readiness check as pressing Capture Text, without opening an overlay.
+            textCapture.prepareCaptureText()
         case "text-test":
             // Capture Text on the same centered region as capture-test, without touching the clipboard; path=<a picture>
             // reads that file instead. The log says how many characters were read, and the formulas put in.

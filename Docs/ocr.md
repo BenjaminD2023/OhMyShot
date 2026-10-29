@@ -1875,16 +1875,20 @@ a compatibility reader is prepared in parallel with up to 30 seconds for cold mo
 Stopping it at three seconds forced the first selection to load that model again on the tested Mac.
 The failed current-model choice is recorded before waiting for recovery preparation, so an early
 selection does not repeat that failed probe. Its own 30-second deadline includes the preparation queue.
-If the current model answers, its worker stays ready
-and the spare compatibility worker stops. Otherwise the failed process is killed and supported short
+The two preparation tasks own separate temporary images. Primary readiness resolves without waiting for
+the recovery model to load. If the current model answers, both workers stay ready: stopping the spare
+would make a later current-model failure pay for another cold recovery load. Otherwise the failed process is killed and supported short
 selections use the compatible reader. No abandoned startup request occupies the app's recognition slot.
 Translate Area does not prewarm in the app; the standalone warmup API remains idle-only and deduplicates
 completed languages.
 
 Short, clearly horizontal selections reuse that signed worker, returning when its answer arrives
 rather than waiting for native process teardown. The optional formula/table detector uses a second
-worker in parallel, so ordinary text does not reload its layout model on each capture. The two readers
-stay ready across idle periods until app exit, with no polling or repeated warmups. Measured resident
+worker in parallel, so ordinary text does not reload its layout model on each capture. These workers
+stay resident across idle periods until app exit, with no polling. On a new Capture Text intent after
+at least a minute without using recovery, a small readiness reading runs while the person selects.
+It replaces an expired context once in a fresh process, inside the same bounded preparation; recent
+readings and an existing preparation suppress duplicate work. No timer starts OCR while idle. Measured resident
 memory for the compatibility and layout workers together was about 266 MiB just after warmups and
 147 MiB after an idle test; this deliberately trades
 memory for fast first selections after idle. A job that loads a formula recognizer or a table/chart VLM
@@ -1896,9 +1900,13 @@ until the next successful read replaces them. Keeping only the process, or only 
 prevent native-context errors after idle on the tested Mac. Each read still uses a new request and
 handler for its own picture. This retains at most one previous input and its native buffers until the
 next successful read or process exit, including that request's results in memory; it never reuses an
-earlier picture's recognized answers. Interactive helper jobs
+earlier picture's recognized answers. Retention does not guarantee the native context stays valid:
+on the tested Mac all four controlled variants (new or reused requests, a sequence handler, and explicit
+CPU assignment) still returned `e5rtError` 13 after 150 seconds idle. Intent-time readiness and bounded
+process replacement handle that failure without changing recognition models. A successful readiness
+check cannot prevent a later native failure; the selected image retains its bounded retry. Interactive helper jobs
 declare user-initiated activity only while they run, and end it on every exit path. No activity lease,
-recognition heartbeat or repeated warmup runs between captures.
+recognition heartbeat or periodic warmup runs while idle.
 
 The isolated shortcut path is restricted to selections no taller than 1024 pixels and at least as wide
 as tall. A short independent text-layout check must also find every text region clearly horizontal.
@@ -1927,7 +1935,7 @@ Starting another Capture Text cancels the old reading and its active helper job;
 replace the new selection's highlight or clipboard result. Every queued job has its own deadline, and
 cancelling a queued job leaves the active one alone. Native work still running in the app keeps its
 original slot until it actually finishes. Phase timing logs contain counts and durations, never
-recognized text. Captures made immediately during app startup can still wait for the bounded readiness
+recognized text. Captures made immediately during app startup or after idle can still wait for bounded readiness
 check; the sub-second target applies once readers are ready and to ordinary small selections, not model
 compilation, cloud requests or actual formula/table recognition.
 

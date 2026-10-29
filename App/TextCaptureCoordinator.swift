@@ -47,6 +47,8 @@ final class TextCaptureCoordinator {
     private let elementTextReader = Bundle.main.url(forAuxiliaryExecutable: "OhMyShot Text Reader")
         .map { TextReaderWorker(helper: $0, idleTimeout: nil) }
     private var readerPreparation: Task<Bool, Never>?
+    private var recoveryPreparation: Task<Void, Never>?
+    private var recoveryLastUsed: ContinuousClock.Instant?
     private var elementPreparation: Task<Void, Never>?
     private var panel: TextRecognitionWindowController?
     /// The last recognition, so the card can switch between kept and joined line breaks.
@@ -102,29 +104,38 @@ final class TextCaptureCoordinator {
 
     /// Test model readiness before a shortcut selection. A failed startup request is killed with its
     /// process, so it cannot hold the app's native recognition slot or block the OCR panel.
-    func prepareCaptureText() {
-        guard readerPreparation == nil, let primaryTextReader, let recoveryTextReader else { return }
+    func prepareCaptureText(refreshIdleRecovery: Bool = true) {
+        guard let primaryTextReader, let recoveryTextReader else { return }
+        // Native contexts can expire while their process is idle. Check only on capture intent,
+        // while the user selects text; a recently used reader needs no extra job or idle heartbeat.
+        if (refreshIdleRecovery || readerPreparation == nil), recoveryPreparation == nil,
+           recoveryLastUsed.map({ ContinuousClock.now - $0 >= .seconds(60) }) ?? true {
+            recoveryPreparation = Task { [weak self] in
+                let probe = LatencyProbe("ocr.prepare.recovery")
+                defer {
+                    probe.end()
+                    self?.recoveryPreparation = nil
+                }
+                guard let image = Self.preparationImage() else { return }
+                // The same bounded recovery as a real selection replaces an expired native context
+                // while the user selects, without repeating a failed primary probe.
+                if (try? await Self.isolatedTextLines(in: image, worker: recoveryTextReader, timeout: .seconds(30))) != nil {
+                    self?.recoveryLastUsed = .now
+                }
+            }
+        }
+        guard readerPreparation == nil else { return }
         readerPreparation = Task { [weak self] in
             let probe = LatencyProbe("ocr.prepare")
             defer { probe.end() }
             guard let image = Self.preparationImage(), let file = Self.formulaPicture(image) else { return false }
             defer { try? FileManager.default.removeItem(at: file) }
-            // Let a cold recovery model finish preparing instead of killing and loading it again
-            // at the first selection. The selection's own deadline still includes any queue wait.
-            let recovery = Task { try? await recoveryTextReader.visionLines(ofPictureAt: file, timeout: .seconds(30)) }
-            defer { recovery.cancel() }
             let current = try? await primaryTextReader.visionLines(ofPictureAt: file, compatibility: false, timeout: .seconds(3))
             guard !Task.isCancelled else { return false }
-            if current != nil {
-                recovery.cancel()
-                _ = await recovery.value
-                await recoveryTextReader.stop()
-                return false
-            }
-            // Publish the failed current-model probe before waiting for recovery preparation;
-            // an early capture must not spend another three seconds probing the same backend.
+            if current != nil { return false }
+            // An early capture must not spend another three seconds probing the same backend;
+            // its recovery job can queue behind the independent preparation within its deadline.
             self?.usesCompatibilityTextReader = true
-            _ = await recovery.value
             return true
         }
         if let reader = elementReader?(), let elementTextReader {
@@ -142,6 +153,7 @@ final class TextCaptureCoordinator {
         captureReading?.cancel()
         waitingForCloud?.cancel()
         readerPreparation?.cancel()
+        recoveryPreparation?.cancel()
         elementPreparation?.cancel()
         let workers = [primaryTextReader, recoveryTextReader, elementTextReader].compactMap { $0 }
         Task { for worker in workers { await worker.stop() } }
@@ -505,7 +517,8 @@ final class TextCaptureCoordinator {
         let orientation = await Self.first(layout, within: .milliseconds(250))
         try Task.checkCancellation()
         guard case .success(true)? = orientation else { return (try await pipeline.recognize(image).lines, nil) }
-        prepareCaptureText()
+        // The image already exists: only first-use setup belongs ahead of it, not an idle probe.
+        prepareCaptureText(refreshIdleRecovery: false)
         if let readerPreparation,
            case .success(let recovery)? = await Self.first(readerPreparation, within: .seconds(4)) {
             usesCompatibilityTextReader = usesCompatibilityTextReader || recovery
@@ -526,6 +539,7 @@ final class TextCaptureCoordinator {
         let remaining = ContinuousClock.now.duration(to: deadline)
         guard remaining > .zero else { throw OCRError.timedOut }
         let lines = try await Self.isolatedTextLines(in: image, worker: recoveryTextReader, timeout: remaining)
+        recoveryLastUsed = .now
         try Task.checkCancellation()
         usesCompatibilityTextReader = true
         return (lines, (recoveryTextReader, true))
@@ -554,13 +568,13 @@ final class TextCaptureCoordinator {
         let data: Data
         do {
             data = try await worker.visionLines(ofPictureAt: file, compatibility: compatibility, formulas: found, inputLines: base, timeout: remaining)
-        } catch TextReaderTool.Failure.unreadable {
+        } catch TextReaderTool.Failure.unreadable(let reason) {
             // Apple's cached native context can become invalid after idle. The worker discards an
             // erroring process; retry this picture once with a fresh context, within the same budget.
             try Task.checkCancellation()
             let remaining = ContinuousClock.now.duration(to: deadline)
             guard remaining > .zero else { throw OCRError.timedOut }
-            Log.capture.notice("Capture Text is replacing a failed native text reader")
+            Log.capture.notice("Capture Text is replacing a failed native text reader: \(reason, privacy: .public)")
             data = try await worker.visionLines(ofPictureAt: file, compatibility: compatibility, formulas: found, inputLines: base, timeout: remaining)
         }
         return try JSONDecoder().decode([OCRLine].self, from: data)
