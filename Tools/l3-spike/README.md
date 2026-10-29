@@ -2,7 +2,7 @@
 
 How the L3 choices were measured (Docs/ocr.md › L3 spike): formula recognition (PP-FormulaNet_plus-L on Core ML) and
 document VLMs (PaddleOCR-VL-1.6 and GLM-OCR on MLX, and PaddleOCR-VL's language model on Core ML), for size,
-accuracy, latency, memory, and energy. Nothing here is built into the app; the models, the corpus's pictures, and the
+accuracy, latency, memory, and energy; and Unlimited-OCR 2 against the VLM pack (Docs/ocr.md › Unlimited-OCR 2). Nothing here is built into the app; the models, the corpus's pictures, and the
 Python environment stay outside the repository. `Tools/model-packs/formula_pack.py` reads the formula corpus through
 `render.py` and `score.py`.
 
@@ -14,6 +14,9 @@ uv venv $L3/venv --python 3.13
 uv pip install --python $L3/venv/bin/python --exclude-newer 2026-10-04 \
   torch==2.14.1 torchvision==0.29.1 transformers==5.18.0 coremltools==9.0 mlx==0.32.3 mlx-vlm==0.7.4 \
   ftfy==6.3.1 numpy pillow safetensors tokenizers "huggingface-hub==1.33.0" psutil opencv-python-headless
+uv venv $L3/venv-uocr --python 3.13      # Unlimited-OCR 2 came to mlx-vlm in 0.7.11 (2026-10-28)
+uv pip install --python $L3/venv-uocr/bin/python --exclude-newer 2026-10-30 \
+  mlx-vlm==0.7.11 mlx==0.32.4 transformers==5.22.0 tokenizers==0.23.3 huggingface-hub psutil pillow numpy
 swiftc -O -o $L3/energy Tools/l3-spike/energy.swift -lIOReport
 swiftc -O -o $L3/fprobe Tools/l3-spike/fprobe.swift
 swiftc -parse-as-library -O -o $L3/fm_probe Tools/l3-spike/fm_probe.swift
@@ -27,6 +30,7 @@ The models, each in its own folder under `$L3/models`, at these revisions (all c
 | PaddlePaddle/PaddleOCR-VL-1.6 | c5630abae1d940eafe0697512a0325494b02ab42 | Apache-2.0 |
 | zai-org/GLM-OCR | 2e85a62840ccac27daa451df36c736c4636b8628 | MIT |
 | PaddlePaddle/PP-DocLayoutV3_safetensors | e4f489dc536556fc1be02b973ba06756e0d4a2ac | Apache-2.0 |
+| mlx-community/Unlimited-OCR-2-8bit (baidu/Unlimited-OCR-2, converted by mlx-vlm) | 455c2df42a9df93fe4fbd945784d635d74b6261c | MIT |
 
 ```sh
 PY=$L3/venv/bin/python Tools/l3-spike/fetch.sh PaddlePaddle/PP-FormulaNet_plus-L_safetensors $L3/models/PaddlePaddle_PP-FormulaNet_plus-L_safetensors
@@ -45,10 +49,16 @@ $P $T/render.py $L3/corpus                   # f01_s1.png … f40_d2.png: formul
 $P $T/render_font.py $L3/corpus              # f01_x2.png …, f01_p2.png …: STIX Two Math, TeX Gyre Pagella Math
 swift run -c release --package-path Tools/ocr-bench ocr-bench --engine l1 --save $L3/corpus/bench
 $P $T/tables.py $L3/corpus/tables $L3/corpus/bench   # 4 screen-style tables at 1x and 2x, and the bench's 2
+swift run -c release --package-path Tools/ocr-bench ocr-bench --real Tools/ocr-bench/real --case real- --engine l1 --save $L3/corpus/bench
 ```
 
 `render.py` needs a TeX installation with xelatex (the formulas are drawn as `$\displaystyle …$` in a standalone
-document, CJK in Hiragino Sans GB) and pdftoppm and ImageMagick; `tables.py` needs Google Chrome.
+document, CJK in Hiragino Sans GB) and pdftoppm and ImageMagick; `tables.py` needs Google Chrome. The last line adds
+the benchmark's 12 real regions, which stay out of the repository (Tools/ocr-bench/real). `$L3/corpus/screens` holds the
+five whole captures those regions were cut from, at full size (`NAME-4k.png`) and at the 2000-pixel copies
+(`NAME-2k.png`), each with `NAME-*.txt`, its regions' truths, joined (`vscode-gutter` left out: it repeats
+`vscode-code`); `ocr-bench --real $L3/corpus/screens --case real- --engine l1+l2 --pack PACK --save DIR` reads them with
+Vision and L2.
 
 ## Runs
 
@@ -65,6 +75,9 @@ $P $T/formula_picture.py $L3/corpus "f0[1-6]_*.png" --dump $L3/parity   # for OM
 
 $P $T/mlx_convert.py $L3/models/PaddlePaddle_PaddleOCR-VL-1.6 $L3/mlx/paddle-8 8   # 16 for bf16, or 4
 L3=$L3 $T/vlm_all.sh paddle-8                                      # text, tables, formulas, with energy
+$P $T/vlm_mlx.py $L3/mlx/paddle-8 "OCR:" screen.json $L3/corpus/screens/*.png
+L3=$L3 $T/uocr_all.sh uocr2-8       # Unlimited-OCR 2: text, tables, whole screens, the tall page in bands, formulas
+$P $T/screen_score.py $L3/corpus/screens screen.json "DIR/real-%s.l1+l2.txt"   # the known text found in whole screens
 $P $T/vlm_text_coreml.py $L3/models/PaddlePaddle_PaddleOCR-VL-1.6 $L3/coreml/vlmtext
 $P $T/vlm_text_speed.py $L3/coreml/vlmtext gpu
 ```
