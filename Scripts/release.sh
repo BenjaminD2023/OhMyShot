@@ -92,7 +92,7 @@ else
 fi
 
 echo "Building OhMyShot $VERSION ($BUILD)..."
-for app in build/Build/Products/Release/*.app; do
+for app in build/Build/Products/Release/*.app build/Build/Products/Release/*.appex; do
   if [ -d "$app" ]; then xattr -cr "$app"; fi
 done
 # Stripped, as an archive would be, and without the debugging entitlement a development identity adds, which

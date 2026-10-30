@@ -221,7 +221,10 @@ struct CaptureToolbarSetupTests {
         #expect(view.area.size == CGSize(width: 80, height: 40))
         #expect(view.debugBarState.isHidden)
         _ = view.debugAct("h")
-        #expect(!view.debugBarState.isHidden && view.debugBarState.frame == bar)
+        #expect(!view.debugBarState.isHidden)
+        // The size fields now fit their digits, so a smaller area can shrink the bar; its dragged position stays.
+        #expect(view.debugBarState.frame.origin == bar.origin)
+        #expect(view.debugBarState.frame.height == bar.height)
     }
 
     @Test func movingTheGripReportsWindowDeltasAndEndsWithACursorRefresh() throws {

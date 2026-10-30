@@ -1967,3 +1967,57 @@ Problem cards stay readable for at least 2.5 seconds; a Not copied card, whose C
 text left off a changed clipboard, stays for at least ten seconds. Never applies to these too.
 A card shown only to explain a fallback while Show the copied text is off keeps its own interval
 (four seconds for a copied result, 2.5 seconds for no text or formula, ten seconds for Not copied).
+
+## Unlimited-OCR 2 (2026-10-29)
+
+Baidu's Unlimited-OCR 2 (2026-10-27, MIT) is a document VLM made from DeepSeek-OCR's design: SAM-B and CLIP-L as the
+vision tower, a 12-layer DeepseekV2 MoE (64 experts, 6 a token: about 3B parameters, 0.57B active, as reported
+at its release), and DASH block-sparse attention so that a book's pages read in one request. Its reported wins are on
+documents of dozens to hundreds of pages (MPDocBench 84.6, MarathonDocBench 77.1); on single pages, OmniDocBench v1.6,
+it is reported at 94.0, against PaddleOCR-VL-1.6's own 96.3. It could only take the VLM pack's place (L1, L2, and the formula
+pack are other kinds of model), so it was measured against that pack, on the L3 spike's corpus, plus whole screens: the
+benchmark's five real captures, at full size and 2000 wide, scored by how much of their 12 regions' known text a reading
+of the whole capture holds (`screen_score.py`). It reads with mlx-vlm 0.7.11 (which took it in on 2026-10-28), at
+mlx-community's 8-bit conversion, in upstream's own way: one picture as one page in gundam mode (a 1024 view and up to
+16 crops of 640), its one prompt "Multi page parsing.", greedy, and upstream's guard against loops (no 35-gram repeated
+within the last 128 tokens; `uocr_mlx.py`, `uocr_all.sh`). PaddleOCR-VL ran again beside it as the pack reads, at 8 bits
+with mlx-vlm 0.7.4: the conversion came out byte for byte the installed pack's, text, tables, and formulas scored as in
+the L3 spike (its 89.2% is the 120 formulas `render.py` draws; all 200 give 87.5%). M3 Max, 48 GB, macOS 27.2 beta.
+
+| | Unlimited-OCR 2, 8-bit | PaddleOCR-VL-1.6, 8-bit (the pack) | L1 / L1 with L2 |
+| --- | --- | --- | --- |
+| Size | 3.93 GB (the vision towers and the router in bfloat16) | 1.0 GB | — |
+| Text, the bench's 38 cases (content CER) | 7.27% | 4.35% | 2.1% / 1.6% |
+| Tables, 10 (cells, shape) | 261 of 261, 10 of 10 | 261 of 261, 10 of 10 | — |
+| Formulas, 200 (same render; the 120 `render.py` draws) | 84.5% (85.0%) | 87.5% (89.2%) | — |
+| Whole screens, 10 (known text found) | 31.3%, 241 of 388 lines missed | 75.3%, 111 missed | 90.8%, 11 / 91.7%, 9 |
+| The tall page, whole (content CER) | 55.9%, 81.5 s | 54.3% | 1.2% / 0.0% |
+| The tall page, as 7 pages | 0.0%, 57 s | — | — |
+| A table / a formula, p50 | 1.75 / 0.72 s | 0.45 / 0.19 s | — |
+| A whole screen, p50 / p95 | 16.7 / 90.6 s | 4.7 / 7.8 s | 2.4 / 8.7 s and 3.8 / 10.5 s (in ocr-bench) |
+| Decoding | 94–103 tokens a second (99–108 without the guard) | 321–371 | — |
+| MLX peak / process footprint peak | 5.2–6.8 / 6.3–10.0 GB | 1.6–2.1 / 2.2–3.4 GB | — |
+| GPU energy, a table / a formula, the model's load included | 38 / 17 J | 14 / 6 J | — |
+
+- **Whole screens are worse than PaddleOCR-VL's.** Three of the ten (both terminal captures and WeChat at 2000 wide)
+  came back as one `image` block, the whole screen with no text in it. LINUX DO at 2000 wide read "首页" over and over, VS
+  Code at 2000 wide a column of "...", and X at full size wrote 511 empty `header` blocks, one for each mark in the
+  browser's tab strip, until the 8192-token limit (86 s). The four it did read (LINUX DO, VS Code, and WeChat at full
+  size, X at 2000 wide) it read well, 91.5–98.2% found, but in 16.7–90.6 s, against Vision's p50 of 2.4 s: VS Code and
+  WeChat ran on past their text to the token limit, in empty blocks.
+- **Text.** Most of the bench reads clean; what costs it: the chat bubbles read a column at a time (47.1%: the words are
+  right, the order is not), a terminal line taken as a picture (`real-terminal-ls`, 100%), a Korean line read as "丈"
+  (`multilingual`, 15.5%), and the tall page read whole, where lines come out cut short.
+- **The tall page in pages.** Cut where the rows are emptiest into seven pages about 1128 tall and read as one document
+  (base mode, 273 tokens a page; the prompt was 7 × 273 + 12), it read all 150 lines exactly. That is the one thing it
+  does that the pack can't, but L1 with L2 already reads that page at 0.0%, in bands of its own (› Large pictures, in
+  bands).
+- **Speed.** Decoding is a third of PaddleOCR-VL's, guard or not; mlx-vlm's DASH attention and MoE step run without
+  Metal kernels of their own (mlx-vlm pull request 2605 added some and was closed unmerged), so this may improve.
+
+**Decided** (2026-10-29): the VLM pack stays PaddleOCR-VL-1.6. Unlimited-OCR 2 ties it on tables (charts weren't
+tried) and is behind on everything else the pack is used for, at four times the time a table, three times the memory, and three and a half
+times the download; nothing here makes it worth a second Swift port. Not measured: handwriting, the model through
+SGLang on CUDA, mlx-vlm with DASH kernels on Metal, and whole screens cut into pages as the tall page was (pages
+took that page from 55.9% to 0.0%, so the screens' failures may be gundam mode's; at 57 s for the page, past Capture
+Text's 10 s, it wouldn't change this).

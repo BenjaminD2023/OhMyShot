@@ -63,7 +63,7 @@ def parse_table(text):
 def cer(a, b):
     return score.edit(a, b) / max(1, len(b))
 
-mode = sys.argv[1]
+mode = sys.argv[1] if __name__ == "__main__" else None  # screen_score.py imports content() and strip_markup()
 if mode == "formula":
     corpus, res = Path(sys.argv[2]), json.loads(Path(sys.argv[3]).read_text())
     preds = {}

@@ -69,4 +69,18 @@ struct FilenameTemplateTests {
     @Test func theTokensAreTheOnesSettingsOffer() {
         #expect(FilenameTemplate.Token.allCases.map(\.placeholder) == ["{date}", "{time}", "{app}", "{window}", "{counter}"])
     }
+
+    @Test func aPatternIsCutIntoTokensWordsAndSeparators() {
+        #expect(FilenameTemplate.standard.pieces == [
+            .word("OhMyShot"), .separator(" "), .token(.date), .separator(" "), .word("at"), .separator(" "), .token(.time),
+        ])
+        #expect(FilenameTemplate(pattern: "{time}{window}x{foo}").pieces == [.token(.time), .token(.window), .word("x{foo}")])
+        #expect(FilenameTemplate(pattern: "").pieces.isEmpty)
+    }
+
+    @Test func piecesJoinBackIntoThePatternTheyCameFrom() {
+        for pattern in ["OhMyShot {date} at {time}", "{app} – {counter} – {date}", "  a__b{", "{date", "界 {window}.{app}"] {
+            #expect(FilenameTemplate(pieces: FilenameTemplate(pattern: pattern).pieces).pattern == pattern)
+        }
+    }
 }

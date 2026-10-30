@@ -84,7 +84,7 @@ class CapsuleBar: NSView {
     /// A chip: a symbol, a title, or both (symbol leading), that calls `action` on `target`.
     func addChip(symbol: String?, title: String?, help: String, target: AnyObject?, action: Selector) -> BarButton {
         let image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: title == nil ? help : nil) }?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+            .withSymbolConfiguration(.init(pointSize: 15, weight: .medium))
         let button = BarButton(title: "", image: image ?? NSImage(), target: target, action: action)
         button.isBordered = false
         button.wantsLayer = true
@@ -95,6 +95,8 @@ class CapsuleBar: NSView {
         if let title {
             button.imagePosition = symbol == nil ? .noImage : .imageLeading
             button.imageHugsTitle = true
+            // The All-In-One bar's padding, so the highlight does not end at the title's last letter.
+            button.horizontalPadding = 11
             setTitle(title, of: button)
             button.setAccessibilityLabel(title)
         } else {
@@ -134,6 +136,11 @@ class CapsuleBar: NSView {
         stack.addArrangedSubview(view)
     }
 
+    /// The room after `view`, in place of the 2 pt between chips.
+    func setSpacing(_ spacing: CGFloat, after view: NSView) {
+        stack.setCustomSpacing(spacing, after: view)
+    }
+
     func addDivider() {
         let divider = NSBox()
         divider.boxType = .separator
@@ -170,10 +177,21 @@ class CapsuleBar: NSView {
             let boost: CGFloat = contrast ? 2 : 1
             let selected = dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost)
             let hover = dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
+            var fillsAll = false
+            #if DEBUG
+            fillsAll = debugFillsAll
+            #endif
             for chip in chips {
                 chip.layer?.backgroundColor = on.contains(ObjectIdentifier(chip)) ? selected
-                    : chip === hovered && chip.isEnabled ? hover : .clear
+                    : (chip === hovered || fillsAll) && chip.isEnabled ? hover : .clear
             }
         }
     }
+
+    #if DEBUG
+    /// Every chip in the hover fill, for renders that check how the symbols sit in their fills.
+    var debugFillsAll = false {
+        didSet { applyAppearance() }
+    }
+    #endif
 }

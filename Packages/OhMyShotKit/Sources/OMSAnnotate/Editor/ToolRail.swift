@@ -312,6 +312,11 @@ final class RailChip: NSButton {
     /// the frame, and it must be the square the constraints give, for a round chip.
     override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
+    override class var cellClass: AnyClass? {
+        get { CenteredImageCell.self }
+        set {}
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)

@@ -299,6 +299,23 @@ final class BarButton: NSButton {
     /// alignment rect wanted rather than the chip's height.
     override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
+    /// A symbol alone sits on the chip's middle, as its round highlight shows it.
+    override class var cellClass: AnyClass? {
+        get { CenteredImageCell.self }
+        set {}
+    }
+
+    /// Room on each side of a titled chip's content, inside its highlight, kept as the title changes.
+    var horizontalPadding: CGFloat = 0 {
+        didSet { invalidateIntrinsicContentSize() }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.width += horizontalPadding * 2
+        return size
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)

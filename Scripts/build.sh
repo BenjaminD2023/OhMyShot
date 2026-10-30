@@ -22,7 +22,7 @@ fi
 # The repository can live in a file-provider folder (iCloud Desktop & Documents), which tags existing
 # bundles with Finder info that codesign then rejects ("resource fork, Finder information, or similar
 # detritus not allowed"); clear it from earlier builds first.
-for app in "build/Build/Products/$CONFIGURATION"/*.app; do
+for app in "build/Build/Products/$CONFIGURATION"/*.app "build/Build/Products/$CONFIGURATION"/*.appex; do
   if [ -d "$app" ]; then xattr -cr "$app"; fi
 done
 

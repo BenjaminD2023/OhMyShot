@@ -353,7 +353,7 @@ final class StyleCapsule: NSView {
 
     private func customColorChip() -> NSView {
         let isCustom = usesUnsavedColor
-        let image = isCustom ? Self.dot(settings.color, selected: true) : Self.wheel()
+        let image = isCustom ? Self.dot(settings.color, selected: true) : Self.wheel(size: Self.inkChip, inset: Self.inkInset)
         let chip = CapsuleChip(image: image, width: 24) { [weak self] in self?.pickColor() }
         chip.highlightsSelection = false
         // Showing the color in use, it is the selected one, and says so.
@@ -747,18 +747,31 @@ final class StyleCapsule: NSView {
 
     // MARK: Icons
 
+    /// An ink's chip: a 16 pt disc filling its 24 pt chip but for room for the ring of the chosen one.
+    private static let inkChip: CGFloat = 24
+    private static let inkInset: CGFloat = 4
+
     private static func dot(_ color: RGBA, selected: Bool) -> NSImage {
-        let image = NSImage(size: CGSize(width: 22, height: 22), flipped: true) { rect in
+        let image = NSImage(size: CGSize(width: inkChip, height: inkChip), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            let disc = rect.insetBy(dx: 5, dy: 5)
+            let disc = rect.insetBy(dx: inkInset, dy: inkInset)
             context.setFillColor(color.withAlpha(1).cgColor)
             context.fillEllipse(in: disc)
-            // An edge so white and yellow hold on the light capsule, black on the dark.
-            strokeSwatchEdge(context, around: disc)
+            // An edge only on an ink the capsule would swallow (white on the light capsule, black on the dark):
+            // a hairline around every ink read as a thin gray outline.
+            let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            if blendsIntoCapsule(color, dark: dark) {
+                let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+                context.setStrokeColor(dark ? CGColor(gray: 1, alpha: contrast ? 0.6 : 0.45) : CGColor(gray: 0, alpha: contrast ? 0.4 : 0.22))
+                context.setLineWidth(1)
+                context.strokeEllipse(in: disc.insetBy(dx: 0.5, dy: 0.5))
+            }
+            // The chosen ink's ring is in the label ink, not the accent, which can be a hue beside the ink it rings
+            // (a pink accent around red); 2 pt of the capsule show between the ring and the disc.
             if selected {
-                context.setStrokeColor(NSColor.controlAccentColor.cgColor)
+                context.setStrokeColor(NSColor.labelColor.cgColor)
                 context.setLineWidth(2)
-                context.strokeEllipse(in: rect.insetBy(dx: 1.5, dy: 1.5))
+                context.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
             }
             return true
         }
@@ -766,10 +779,21 @@ final class StyleCapsule: NSView {
         return image
     }
 
-    private static func wheel() -> NSImage {
-        NSImage(size: CGSize(width: 22, height: 22), flipped: true) { rect in
+    /// Whether an ink is too close to the capsule behind it to hold without an edge: nearly its luminance (a pale
+    /// yellow on white), or a gray not far from it (black on the dark capsule). Yellow on white, saturated, holds.
+    private static func blendsIntoCapsule(_ color: RGBA, dark: Bool) -> Bool {
+        let capsule = dark ? RGBA(red: 0.17, green: 0.17, blue: 0.17).luminance : 1
+        let ink = color.withAlpha(1).luminance
+        let ratio = (max(ink, capsule) + 0.05) / (min(ink, capsule) + 0.05)
+        let chroma = max(color.red, color.green, color.blue) - min(color.red, color.green, color.blue)
+        return ratio < 1.25 || (chroma < 0.15 && ratio < 2)
+    }
+
+    /// The hue wheel that opens the color panel: 12 pt in a background swatch's 22 pt image, or an ink's size.
+    private static func wheel(size: CGFloat = 22, inset: CGFloat = 5) -> NSImage {
+        NSImage(size: CGSize(width: size, height: size), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            let disc = rect.insetBy(dx: 5, dy: 5)
+            let disc = rect.insetBy(dx: inset, dy: inset)
             let center = CGPoint(x: disc.midX, y: disc.midY)
             let steps = 36
             for step in 0..<steps {
@@ -986,6 +1010,10 @@ final class CapsuleChip: NSButton {
     private var isHovered = false
     private let prominent: Bool
 
+    /// No padding around the frame, as a button otherwise keeps for its bezel: the layer's fill covers the frame,
+    /// and it must be the size the constraints give, or a symbol's chip fills the capsule's height as an oval.
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
+
     init(image: NSImage, width: CGFloat, action: @escaping () -> Void) {
         handler = action
         prominent = false
@@ -1016,12 +1044,14 @@ final class CapsuleChip: NSButton {
         setButtonType(.momentaryChange)
         target = self
         action = #selector(clicked)
+        // A chip narrower than the capsule's 30 is as tall as it is wide, so its fill is a circle, not an oval.
+        let height = min(width, 30)
         wantsLayer = true
-        layer?.cornerRadius = 15
+        layer?.cornerRadius = height / 2
         contentTintColor = .labelColor
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: width).isActive = true
-        heightAnchor.constraint(equalToConstant: 30).isActive = true
+        heightAnchor.constraint(equalToConstant: height).isActive = true
         applyAppearance()
     }
 
