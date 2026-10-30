@@ -2665,3 +2665,101 @@ the original exact two-start and complete-text assertions remain. All 510 Core t
 all other targets. No known-issue wrapper remains in the scroll-stitching tests. Localization placeholder checks
 and `git diff --check` passed. Generated long-video fixtures and the synthetic Studio history entry were cleaned
 up; the JSON validation reports are retained under `Docs/benchmarks`.
+
+## Studio — framing after the fact (2026-10-30)
+
+`StudioFraming` replaces the camera's live spring (time constant 0.35 s) and its middle-30% deadzone.
+`StudioTrack` now builds in two passes: the first is the cursor, its opacity, and the zoom level, all unchanged
+but for the zoom's ease, which now runs on the scale's logarithm. The second is where the camera looks, worked
+out with the whole cursor path known (DESIGN.md › Motion). The project format and the cursor's path are unchanged.
+
+`StudioFramingTests` was written first, and four of its first six tests failed against `HEAD` (3c09290). In each
+row below, the inset is how far inside the view the cursor or click was, as a share of the view; negative is
+outside. The click insets were read from the probe's paths of both versions.
+
+| Check, 1600 × 1000 pt recording | Before | After |
+| --- | --- | --- |
+| A hand-placed 2× zoom: worst cursor inset while fully zoomed, pointer crossing at 500 pt/s | −0.17 | 0.10 |
+| The same at 1000 pt/s | −0.36 | 0.10 |
+| The same at 2000 pt/s | −0.49 | 0.10 |
+| The same at 4000 pt/s (the 6% floor takes over, with a kink in the camera's path) | not run | 0.06 |
+| An automatic zoom: inset of its first click, pointer rushing in from the top left | −0.31 | 0.375 |
+| The same zoom: inset of its second click, 0.4 s later | −0.05 | 0.375 |
+| Zoom in and out scale about one point | no: the pivot slid from the edge toward the cursor | yes, to 1e-6 |
+
+The chart [studio-framing-2026-10-30.png](benchmarks/studio-framing-2026-10-30.png) plots both scenes from
+both versions: x over time, the view as a band, the cursor in red, clicks in black, and the cursor outside the
+view in orange. The "before" paths came from an archive of `HEAD` built in the scratchpad, with the same probe.
+
+The motion-track benchmark ran in Release (`-Xswiftc -DDEBUG`, as above), `StudioAlgorithmBenchmarks`, median
+of three. `HEAD` and the working tree were run one after the other on the same machine the same afternoon.
+Building the track takes about as long as before; the 10-25 figures (2.7 / 14.9 ms) were from another day's
+machine state.
+
+| Fixture | HEAD | Framing |
+| --- | --- | --- |
+| Build the 10-minute motion track, 300 zooms | 4.91 ms | 4.04 ms |
+| Build the 60-minute motion track, 600 zooms | 16.65 ms | 18.85 ms |
+
+All 163 Studio tests pass, `betweenShotsTheCameraMovesOnceAndArrivesBeforeTheClick` among them for the move between
+shots. One existing test changed on purpose: `zoomsEaseInAndOut` now expects √2 halfway
+into a zoom to 2, where it expected 1.5. Nothing here was rendered to pixels or tried in a real recording.
+
+## Studio — pointer events at their own time (2026-10-30)
+
+`TelemetryRecorder` used to read the pointer with a 60 Hz main-run-loop timer, and clicks with a global
+monitor, both stamped when they arrived. Now every pointer event is written down at its own time and place.
+- With Input Monitoring already on, a listen-only `CGEventTap` on its own thread (`PointerTap`) hears moves, drags,
+  presses and releases.
+- Without it, global and local NSEvent monitors do, and the tap is never made: making one might bring up the
+  permission prompt mid-recording.
+- The timer keeps the cursor's look, and the place where no event came.
+- Releases are kept on the click (`releaseTime`/`releaseX`/`releaseY`, optional, absent from older files).
+  `AutoZoom` counts a drag as its press, its release, and the pointer every 0.2 s between.
+- Presses and releases on OhMyShot's own windows only place the pointer: recordings leave those windows out,
+  and the bar's Pause and Stop would otherwise ring over the movie.
+
+Measured with a scratch tool running the real recorder beside a copy of the old one. It ran 10 s with a
+250 ms main-thread block every 1.5–2 s, the pointer posted around a 40 pt circle at about 200 pt/s. Release build.
+
+| | Old timer | NSEvent monitors | Event tap |
+| --- | --- | --- | --- |
+| Readings inside each 250 ms block | 0 | 0–1 | 26–28 |
+| Largest gap | about 250 ms | about 250 ms | 13 ms |
+| Jumps after a block | 5, each 47–50 pt | as the old timer | 0 |
+
+- Tap readings matched the old timer's nearest reading to a median of 0.0 pt and a 95th percentile of 2.0 pt.
+- In the Dev app (`debug/studio-demo?seconds=8`, pointer circling, with the user's OK), the tap gave 859 readings
+  over 8.02 s, a median gap of 9.6 ms, and none over 50 ms. Its first event arrived 0.9 ms after its own time.
+- Not verified:
+  - real clicks and drags through the tap, which were only unit-tested;
+  - whether a mouse-only tap works without Input Monitoring;
+  - a display rearranged mid-recording: the main display's height is read once at start.
+
+## Studio — an asynchronous compositor (2026-10-30)
+
+`StudioCompositor` now builds each frame on a queue of its own and renders it with
+`CIRenderDestination`/`startTask`, up to three frames in flight, finishing them in order. While nothing drawn
+changes (`StudioRenderer.isStill`), it hands back the frame it last drew from the same source buffer. With a
+camera track it always draws.
+
+Every composed frame is the same as before: the benchmark's 1800 frames had the same SHA-256 before and after, in
+Debug and Release. The benchmark is `StudioExportBenchmarks` (`OMS_STUDIO_BENCHMARK=1`): a generated 30 s
+1920×1200 recording with still and scrolling stretches, two zooms, four clicks and a caption, at a 2112×1392
+canvas. Median of three, with before and after interleaved.
+
+| | Debug before | Debug after | Release before | Release after |
+| --- | --- | --- | --- | --- |
+| Export | 6.087 s | 6.093 s | 6.105 s | 6.065 s |
+| Composing alone (no encoder) | 1.762 s | 0.568 s | 1.576 s | 0.525 s |
+| App CPU during export | 39.2% | 28.1% | 38.3% | 27.7% |
+| Frames handed back | — | 619 of 1800 | — | 618 of 1800 |
+
+**Export time is bound by the hardware H.264 encoder, not the compositor.** Encoding alone runs about 298 fps at
+2112×1392 and about 651 fps at 1394×834. The 30-minute long-check replica (`OMS_STUDIO_BENCHMARK_LONG=1`) went
+from 166.8 s to 165.3 s, with no frames handed back because its pointer never rests.
+
+Two possible next steps, both measured as probes only:
+- Skipping the encode of handed-back frames (variable frame rate) took 6.07 s to 4.02 s. The output's duration,
+  last-frame hold, seeking and playback were not checked.
+- More frames would be reused if the cursor's spring settled exactly sooner.
