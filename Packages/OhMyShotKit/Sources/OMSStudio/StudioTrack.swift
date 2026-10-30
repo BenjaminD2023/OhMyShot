@@ -293,7 +293,14 @@ nonisolated public struct StudioTrack: Sendable {
         let decay = exp(-omega * step)
         let newX = (x + (velocity + omega * x) * step) * decay
         velocity = (velocity - omega * (velocity + omega * x) * step) * decay
-        value = target + newX
+        // Settled, within a thousandth of a point and all but still: exactly there, so a cursor at rest stops
+        // and the frames after it are the same.
+        if abs(newX) < 0.001, abs(velocity) < 0.01 {
+            value = target
+            velocity = 0
+        } else {
+            value = target + newX
+        }
     }
 
     /// The pointer at `time`: between two readings a frame or so apart it moves straight from one to the next;

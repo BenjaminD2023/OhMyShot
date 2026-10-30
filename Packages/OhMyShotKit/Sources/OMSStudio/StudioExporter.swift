@@ -5,6 +5,11 @@ import VideoToolbox
 /// Writes a Studio composition out as an MP4: the frames its compositor films, encoded as fast as the
 /// hardware goes (H.264 while the movie fits it, HEVC beyond 4096 pixels) at the project's quality, and the
 /// sound mixed into one AAC track.
+///
+/// A frame the compositor handed back again unchanged is not encoded again: the one before it shows on until
+/// the next that differs, as the recording held its own frames, and the encoder, which sets how fast an export
+/// goes, does a third less on a recording a third of whose frames hold still. The last frame is written again
+/// a frame before the end when it was one of those, so the video lasts as long as the movie.
 nonisolated public enum StudioExporter {
     public struct Movie: Equatable, Sendable {
         public let url: URL
@@ -86,7 +91,7 @@ nonisolated public enum StudioExporter {
         guard writer.startWriting() else { throw StudioError.writingFailed(String(describing: writer.error)) }
         writer.startSession(atSourceTime: .zero)
         let duration = composition.duration
-        let videoPump = Pump(output: videoOutput, input: videoInput, label: "studio.video") { time in
+        let videoPump = Pump(output: videoOutput, input: videoInput, label: "studio.video", skipsRepeatedFrames: true) { time in
             if duration > 0 { progress?(min(time / duration, 1)) }
         }
         let audioPump = audioOutput.flatMap { output in audioInput.map { Pump(output: output, input: $0, label: "studio.audio") } }
@@ -205,14 +210,24 @@ nonisolated private final class Pump: @unchecked Sendable {
     private let input: AVAssetWriterInput
     private let queue: DispatchQueue
     private let onSample: ((Double) -> Void)?
+    /// Frames whose picture is the very buffer appended before are left out.
+    private let skipsRepeatedFrames: Bool
     /// Touched only on `queue`.
     private var isDone = false
     private var continuation: CheckedContinuation<Void, Never>?
+    /// The picture appended last, held so no one can fill the same buffer with another, and the newest frame
+    /// left out since: the one to write at the end, if the movie ends on it.
+    private var lastPicture: CVImageBuffer?
+    private var leftOut: CMSampleBuffer?
 
-    init(output: AVAssetReaderOutput, input: AVAssetWriterInput, label: String, onSample: ((Double) -> Void)? = nil) {
+    init(
+        output: AVAssetReaderOutput, input: AVAssetWriterInput, label: String, skipsRepeatedFrames: Bool = false,
+        onSample: ((Double) -> Void)? = nil
+    ) {
         self.output = output
         self.input = input
         self.onSample = onSample
+        self.skipsRepeatedFrames = skipsRepeatedFrames
         queue = DispatchQueue(label: "OhMyShot.\(label)")
     }
 
@@ -224,8 +239,23 @@ nonisolated private final class Pump: @unchecked Sendable {
                 input.requestMediaDataWhenReady(on: queue) { [self] in
                     guard !isDone else { return }
                     while input.isReadyForMoreMediaData {
-                        guard let sample = output.copyNextSampleBuffer() else { return finish() }
-                        guard CMSampleBufferGetDataBuffer(sample) != nil || CMSampleBufferGetImageBuffer(sample) != nil else { continue }
+                        guard let sample = output.copyNextSampleBuffer() else {
+                            // The last frame, one left out, written after all: the video reaches the movie's end
+                            // (ending the session alone stretches it only without sound).
+                            if let leftOut { _ = input.append(leftOut) }
+                            return finish()
+                        }
+                        let picture = CMSampleBufferGetImageBuffer(sample)
+                        guard CMSampleBufferGetDataBuffer(sample) != nil || picture != nil else { continue }
+                        if skipsRepeatedFrames, let picture {
+                            if picture === lastPicture {
+                                leftOut = sample
+                                onSample?(sample.presentationTimeStamp.seconds)
+                                continue
+                            }
+                            lastPicture = picture
+                            leftOut = nil
+                        }
                         guard input.append(sample) else { return finish() }
                         onSample?(sample.presentationTimeStamp.seconds)
                     }
