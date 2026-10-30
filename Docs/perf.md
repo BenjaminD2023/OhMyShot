@@ -2759,7 +2759,28 @@ canvas. Median of three, with before and after interleaved.
 2112×1392 and about 651 fps at 1394×834. The 30-minute long-check replica (`OMS_STUDIO_BENCHMARK_LONG=1`) went
 from 166.8 s to 165.3 s, with no frames handed back because its pointer never rests.
 
-Two possible next steps, both measured as probes only:
-- Skipping the encode of handed-back frames (variable frame rate) took 6.07 s to 4.02 s. The output's duration,
-  last-frame hold, seeking and playback were not checked.
-- More frames would be reused if the cursor's spring settled exactly sooner.
+### Leaving handed-back frames out of the movie
+
+`StudioExporter` no longer encodes a frame whose picture is the very buffer it appended before: the frame before
+shows on until the next that differs, as a recording holds its own frames, so an exported Studio movie has a
+variable frame rate. When the movie ends on such a frame, that frame is written once more a frame before the end,
+so the video track lasts as long as the movie (ending the session alone stretches it only without sound). The
+cursor's spring now lands exactly on its target once within 0.001 pt and all but still, so a cursor at rest stops
+and the frames after it can be handed back too.
+
+Release with `-Xswiftc -DDEBUG -Xswiftc -enable-testing` (the benchmark prints `config=debug` for it), medians of
+three, run after, before, after:
+
+| | Before (e822ccc) | After | After, again |
+| --- | --- | --- | --- |
+| Export | 6.084 s | 3.028 s | 3.021 s |
+| Frames handed back | 685 of 1800 | 932 of 1800 | 933 of 1800 |
+| Composing alone (no encoder) | 0.533 s | 0.449 s | 0.463 s |
+| App CPU during export | 29.4% | 40.2% | 39.5% |
+
+App CPU is higher because the same composing is done in half the time. One composed frame of 1800 differs from
+before (at 12.217 s, per-frame digests), where the cursor's last thousandth of a point now lands at once; the
+export session saw three luma bytes there one level apart. In `StudioCompositorTests` the exported movie keeps
+209 to 212 of 360 frames over three runs, is 6.0 s long in all and in its video track, seeks into held frames correctly, and shows at
+every 1/60 s the picture the movie made of every frame shows, to a mean difference of at most 0.28. A long
+recording whose pointer never rests is no faster: it has no frames to hand back.

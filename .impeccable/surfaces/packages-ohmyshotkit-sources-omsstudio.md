@@ -70,7 +70,8 @@ history with its project (`<file>.studio/`: telemetry.json, project.json, source
 exported.json) and opens the Studio window. The window: preview (the export's composition, filmed at the
 view's pixels), transport, timeline (ruler, zoom chips, filmstrip clip, cuts, playhead), inspector
 (Background, Frame, Cursor, Zoom, Keys). Export: custom compositor in 4:2:0 with the recording's color tags,
-H.264 up to 4096 and HEVC beyond. Specs in DESIGN.md › Studio; measurements in Docs/perf.md › Studio.
+up to three frames in flight, handing back the last frame where nothing changed; the exporter leaves those out,
+so the movie has a variable frame rate as recordings do; H.264 up to 4096 and HEVC beyond. Specs in DESIGN.md › Studio; measurements in Docs/perf.md › Studio.
 
 Finish review (impeccable-finish-reviewer, disposition fix) — all eight must-fixes applied:
 1. Captions follow Settings › Recording › Keystrokes (project `keystrokeMode`; the recorder never writes
