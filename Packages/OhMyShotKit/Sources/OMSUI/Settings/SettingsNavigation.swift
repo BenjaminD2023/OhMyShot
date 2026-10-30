@@ -284,6 +284,11 @@ final class SettingsSearchTarget {
 
 let sidebarWidth: CGFloat = 215
 
+/// The smallest and largest the settings window's content gets. Wider than the maximum, a pane's rows sit in a band
+/// of empty space; taller, there is nothing more to show.
+let settingsMinSize = CGSize(width: sidebarWidth + paneWidth, height: 420)
+let settingsMaxSize = CGSize(width: settingsMinSize.width + 280, height: 900)
+
 /// The pane's symbol, white on a rounded tile of its color, as System Settings draws its panes.
 struct SettingsIcon: View {
     let tab: SettingsTab
@@ -370,7 +375,10 @@ struct SettingsRootView: View {
         NavigationSplitView {
             SettingsSidebar(navigator: navigator)
                 .toolbar(removing: .sidebarToggle)
-                .navigationSplitViewColumnWidth(sidebarWidth)
+                // The sidebar can't be dragged: not wider or narrower, and not shut, as it could not be opened again
+                // with no sidebar button.
+                .navigationSplitViewColumnWidth(min: sidebarWidth, ideal: sidebarWidth, max: sidebarWidth)
+                .background(FixedSidebar())
         } detail: {
             SettingsPaneHost(controller: pane(navigator.tab))
                 .id(navigator.tab)
@@ -411,7 +419,50 @@ struct SettingsRootView: View {
                 .opacity(0)
                 .accessibilityHidden(true)
         }
-        .frame(minWidth: sidebarWidth + paneWidth, minHeight: 420)
+        .frame(
+            minWidth: settingsMinSize.width, maxWidth: settingsMaxSize.width,
+            minHeight: settingsMinSize.height, maxHeight: settingsMaxSize.height
+        )
+    }
+}
+
+/// Keeps the sidebar from collapsing, which SwiftUI has no way to say: it finds the split view the sidebar sits in and
+/// marks the sidebar's column as one that can't collapse, neither by dragging its edge nor by narrowing the window.
+/// SwiftUI marks it collapsible again each time it updates the split view (on choosing a pane, say), so it is
+/// watched and set back.
+private struct FixedSidebar: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Probe() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class Probe: NSView {
+        private var observation: NSKeyValueObservation?
+        private weak var sidebar: NSSplitViewItem?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observation = nil
+            guard window != nil else { return }
+            // The split view is laid out around the sidebar a moment after the sidebar joins the window.
+            DispatchQueue.main.async { [weak self] in self?.pin() }
+        }
+
+        private func pin() {
+            var view = superview
+            while let current = view, !(current is NSSplitView) { view = current.superview }
+            guard let controller = (view as? NSSplitView)?.delegate as? NSSplitViewController,
+                  let sidebar = controller.splitViewItems.first else { return }
+            self.sidebar = sidebar
+            fix()
+            observation = sidebar.observe(\.canCollapse) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.fix() }
+            }
+        }
+
+        private func fix() {
+            guard let sidebar else { return }
+            if sidebar.canCollapse { sidebar.canCollapse = false }
+            if sidebar.canCollapseFromWindowResize { sidebar.canCollapseFromWindowResize = false }
+        }
     }
 }
 

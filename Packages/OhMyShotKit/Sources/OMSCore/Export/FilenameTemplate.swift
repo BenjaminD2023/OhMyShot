@@ -23,6 +23,62 @@ public struct FilenameTemplate: Equatable, Sendable {
         public var placeholder: String { "{\(rawValue)}" }
     }
 
+    /// A pattern as the bricks Settings lays it out in: tokens, words, and the separators between them. Each
+    /// separator is a brick of its own, so a space can be dragged as easily as a word; joined, the pieces give
+    /// the pattern back exactly.
+    public enum Piece: Hashable, Sendable {
+        case token(Token)
+        case word(String)
+        case separator(Character)
+
+        /// The piece as it is written in a pattern.
+        public var text: String {
+            switch self {
+            case .token(let token): token.placeholder
+            case .word(let word): word
+            case .separator(let character): String(character)
+            }
+        }
+    }
+
+    /// The characters that stand between words in a name, each a piece of its own.
+    public static let separators: Set<Character> = [" ", "-", "_", ".", ",", "–", "—", "·", "+", "@", "(", ")", "[", "]"]
+
+    /// The pattern cut into pieces. Braces that make no token (`{foo}`) are part of a word.
+    public var pieces: [Piece] { Self.pieces(of: pattern) }
+
+    /// The pattern the pieces make.
+    public init(pieces: [Piece]) {
+        self.pattern = pieces.map(\.text).joined()
+    }
+
+    /// `text` cut into pieces, as `pieces` cuts a pattern.
+    public static func pieces(of text: String) -> [Piece] {
+        var result: [Piece] = []
+        var word = ""
+        var rest = Substring(text)
+        func endWord() {
+            if !word.isEmpty { result.append(.word(word)) }
+            word = ""
+        }
+        while let first = rest.first {
+            if first == "{", let token = Token.allCases.first(where: { rest.hasPrefix($0.placeholder) }) {
+                endWord()
+                result.append(.token(token))
+                rest = rest.dropFirst(token.placeholder.count)
+            } else if separators.contains(first) {
+                endWord()
+                result.append(.separator(first))
+                rest = rest.dropFirst()
+            } else {
+                word.append(first)
+                rest = rest.dropFirst()
+            }
+        }
+        endWord()
+        return result
+    }
+
     /// The most a name may take, in UTF-8 bytes: file systems allow 255 for the whole file name, and the
     /// extension and a " (12)" for a name already taken come after.
     public static let longestName = 200

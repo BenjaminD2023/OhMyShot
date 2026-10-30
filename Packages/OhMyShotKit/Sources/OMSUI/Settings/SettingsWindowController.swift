@@ -192,20 +192,22 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             return pane
         }
         let content = NSHostingController(rootView: root)
-        // The window keeps its size whichever pane is chosen; a pane taller than it scrolls.
-        content.sizingOptions = []
+        // The window keeps its size whichever pane is chosen; a pane taller than it scrolls. Its smallest and largest
+        // sizes come from the root view's frame: without these options the hosting controller clears any the window
+        // is given.
+        content.sizingOptions = [.minSize, .maxSize]
         // The toolbar's Back and Forward and the pane's title come from SwiftUI.
         content.sceneBridgingOptions = [.toolbars, .title]
 
-        let window = NSWindow(contentViewController: content)
+        let window = SettingsWindow(contentViewController: content)
         // SwiftUI hands the window a title only when it changes, so the pane the window opens on would leave it
         // "Untitled".
         window.title = navigator.tab.title
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        let minimum = NSSize(width: sidebarWidth + paneWidth, height: 420)
-        window.contentMinSize = minimum
+        let minimum = settingsMinSize
+        let maximum = settingsMaxSize
         window.setContentSize(NSSize(width: minimum.width, height: 640))
         self.navigator = navigator
         super.init(window: window)
@@ -213,10 +215,14 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         window.center()
         window.setFrameAutosaveName("Settings")
         // A size saved before the sidebar was as wide as it is now would cut its edge off: the content keeps its
-        // width and hangs out of the window on both sides.
+        // width and hangs out of the window on both sides. One saved before the maximum would stay larger than it.
         let restored = window.contentRect(forFrameRect: window.frame).size
-        if restored.width < minimum.width || restored.height < minimum.height {
-            window.setContentSize(NSSize(width: max(restored.width, minimum.width), height: max(restored.height, minimum.height)))
+        let clamped = NSSize(
+            width: min(max(restored.width, minimum.width), maximum.width),
+            height: min(max(restored.height, minimum.height), maximum.height)
+        )
+        if clamped != restored {
+            window.setContentSize(clamped)
         }
 
         navigator.onChange = { [weak window] _ in Self.leaveNothingFocused(in: window) }
@@ -333,5 +339,32 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         // The window keeps its size whichever pane is chosen; a pane taller than it scrolls.
         controller.sizingOptions = []
         return controller
+    }
+}
+
+/// The settings window. A click anywhere but in a text field leaves no field holding the keyboard: SwiftUI hands it to
+/// the pane's first text field, all of it selected, on a click in the pane's empty space, and a click beside a field
+/// being typed in would not end the typing.
+private final class SettingsWindow: NSWindow {
+    override func sendEvent(_ event: NSEvent) {
+        guard event.type == .leftMouseDown else {
+            super.sendEvent(event)
+            return
+        }
+        let onText = Self.isText(contentView?.superview?.hitTest(event.locationInWindow))
+        super.sendEvent(event)
+        if !onText, firstResponder is NSText {
+            makeFirstResponder(nil)
+        }
+    }
+
+    /// Whether the view is, or is inside, a text field or a text view.
+    private static func isText(_ view: NSView?) -> Bool {
+        var view = view
+        while let current = view {
+            if current is NSTextField || current is NSTextView { return true }
+            view = current.superview
+        }
+        return false
     }
 }

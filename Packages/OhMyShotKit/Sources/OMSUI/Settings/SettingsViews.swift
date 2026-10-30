@@ -524,18 +524,37 @@ struct ScreenshotsSettingsView: View {
                     }
                     .labelsHidden()
                     .fixedSize()
-                    Slider(value: $settings.screenshotQuality, in: ScreenshotOutput.qualities, step: 0.05) {
-                        Text("Quality", bundle: .module)
+                    // Only JPEG and HEIC give up anything for size; a PNG is lossless, and a slider shown dimmed for
+                    // it looked stuck, so it says so in the slider's place. The label sits beside the slider rather
+                    // than in it: a slider's own label shares the slider's width, and the track ran over it.
+                    if settings.screenshotFormat == .png {
+                        Text("Lossless", bundle: .module)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        HStack(spacing: 8) {
+                            Text("Quality", bundle: .module)
+                                .accessibilityHidden(true)
+                            // Steps of 5 percent, rounded here rather than given as the slider's step: a stepped
+                            // slider draws a dot for each stop under its track, eleven crowded under a short track,
+                            // inset from its ends and covered by the knob.
+                            Slider(value: Binding {
+                                settings.screenshotQuality
+                            } set: {
+                                settings.screenshotQuality = ($0 * 20).rounded() / 20
+                            }, in: ScreenshotOutput.qualities) {
+                                Text("Quality", bundle: .module)
+                            }
+                            .labelsHidden()
+                            .frame(width: 110)
+                            // The slider spans 50 to 100 percent, so it would read as 0 to 100 of that.
+                            .accessibilityValue(Text(settings.screenshotQuality, format: .percent.precision(.fractionLength(0))))
+                            Text(settings.screenshotQuality, format: .percent.precision(.fractionLength(0)))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .frame(width: 40, alignment: .trailing)
+                                .accessibilityHidden(true)
+                        }
                     }
-                    .frame(width: 110)
-                    .disabled(settings.screenshotFormat == .png)
-                    // The slider spans 50 to 100 percent, so it would read as 0 to 100 of that.
-                    .accessibilityValue(Text(settings.screenshotQuality, format: .percent.precision(.fractionLength(0))))
-                    Text(settings.screenshotQuality, format: .percent.precision(.fractionLength(0)))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 40, alignment: .trailing)
-                        .accessibilityHidden(true)
                 }
             }
             SettingsRow(String(localized: "Pictures", bundle: .module)) {
