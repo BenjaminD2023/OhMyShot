@@ -397,6 +397,8 @@ final class AllInOneSetupView: NSView {
             return summary
         }
         if action.hasPrefix("width=") { type(width: Int(action.dropFirst(6)), height: nil); return summary }
+        // Every chip and size field in its hover fill, for renders.
+        if action == "fills" { bar.debugFillsAll = true; return summary }
         if action.hasPrefix("height=") { type(width: nil, height: Int(action.dropFirst(7))); return summary }
         if action.hasPrefix("ratio=") {
             let parts = action.dropFirst(6).split(separator: ":").compactMap { Double($0) }
@@ -451,6 +453,12 @@ final class AllInOneActionBar: CapsuleBar {
     /// The ratio chip's width while it shows its symbol alone.
     private var squareRatioChip: NSLayoutConstraint?
     private var ratio: AspectRatio?
+
+    #if DEBUG
+    override var debugFillsAll: Bool {
+        didSet { sizeFields.debugFillsAll = debugFillsAll }
+    }
+    #endif
 
     /// Shows the area's size and the shape kept; a field being typed in keeps what is typed.
     func show(pixelSize: CGSize, ratio: AspectRatio?) {
@@ -554,6 +562,8 @@ final class AllInOneActionBar: CapsuleBar {
         addDivider()
         addView(sizeFields)
         ratioChip = addChip(symbol: "aspectratio", title: nil, help: String(localized: "Keep a shape while resizing", bundle: .module), target: self, action: #selector(ratioClicked))
+        // The fields' pair set apart from the ratio chip, as from the divider before it.
+        setSpacing(6, after: sizeFields)
         ratioChip.setAccessibilityLabel(String(localized: "Aspect Ratio", bundle: .module))
         ratioChip.setAccessibilityValue(String(localized: "Any shape", bundle: .module))
         squareRatioChip = ratioChip.constraints.first { $0.firstAttribute == .width && $0.secondItem == nil }
@@ -612,19 +622,19 @@ final class AreaSizeFields: NSView, NSTextFieldDelegate {
             field.onStateChange = { [weak self] in self?.applyAppearance() }
             addSubview(field)
         }
-        // The digits hug the "×", as a reading has them.
-        width.alignment = .right
-        height.alignment = .left
+        // Each number in the middle of its capsule: hugging the "×" left it at one end of the capsule behind it.
+        width.alignment = .center
+        height.alignment = .center
         width.setAccessibilityLabel(String(localized: "Width in pixels", bundle: .module))
         height.setAccessibilityLabel(String(localized: "Height in pixels", bundle: .module))
         width.nextKeyView = height
-        times.font = Theme.Typeface.reading(size: 12, weight: .medium)
+        // Larger than the digits: at their size the "×" read as a dot between the capsules.
+        times.font = Theme.Typeface.reading(size: 16, weight: .medium)
         times.textColor = .secondaryLabelColor
         times.setAccessibilityElement(false)
         addSubview(times)
         translatesAutoresizingMaskIntoConstraints = false
         heightAnchor.constraint(equalToConstant: CapsuleBar.chip).isActive = true
-        widthAnchor.constraint(equalToConstant: Self.fieldWidth * 2 + Self.gap).isActive = true
         applyAppearance()
     }
 
@@ -633,31 +643,71 @@ final class AreaSizeFields: NSView, NSTextFieldDelegate {
         fatalError("init(coder:) is not supported")
     }
 
-    private static let fieldWidth: CGFloat = 50
-    /// Room for the "×" between the fields.
-    private static let gap: CGFloat = 14
-    private static let fillHeight: CGFloat = 24
+    /// Room on each side of a number inside its capsule, as a titled chip has around its title.
+    private static let padding: CGFloat = 12
+    /// Room for the "×" between the fields' capsules, which stop short of it.
+    private static let gap: CGFloat = 18
+    /// As tall as the chips, as their highlights are.
+    private static let fillHeight: CGFloat = CapsuleBar.chip
+
+    /// Each capsule as wide as the number it shows and the same room on both sides, so "640" and "1920" sit in their
+    /// capsules alike; never narrower than a chip is tall. Typing keeps the capsule the shown number gave it (the field
+    /// scrolls), so the bar does not shift under the keys.
+    private var capsuleWidths: (width: CGFloat, height: CGFloat) = (CapsuleBar.chip, CapsuleBar.chip)
+
+    private func capsuleWidth(for field: AreaSizeField) -> CGFloat {
+        let text = field.stringValue.isEmpty ? "0" : field.stringValue
+        let advance = NSAttributedString(string: text, attributes: [.font: field.font ?? NSFont.systemFont(ofSize: 13)]).size().width
+        return max(Self.fillHeight, ceil(advance) + Self.padding * 2)
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: capsuleWidths.width + Self.gap + capsuleWidths.height, height: Self.fillHeight)
+    }
 
     /// The fields' frames, for the frame's I-beam.
     var fieldFrames: [CGRect] { [width.frame, height.frame] }
 
     override func layout() {
         super.layout()
-        // As tall as a line of the reading's face, so its digits sit on the chips' middle.
-        let fieldHeight = ceil(width.intrinsicContentSize.height)
-        let y = (bounds.height - fieldHeight) / 2
-        let inset: CGFloat = 6
-        width.frame = CGRect(x: 0, y: y, width: Self.fieldWidth - inset, height: fieldHeight)
+        let fillY = (bounds.height - Self.fillHeight) / 2
+        let widthCapsule = CGRect(x: 0, y: fillY, width: capsuleWidths.width, height: Self.fillHeight)
+        let heightCapsule = CGRect(x: widthCapsule.maxX + Self.gap, y: fillY, width: capsuleWidths.height, height: Self.fillHeight)
+        // Each number's ink on its capsule's middle, not its advance: a tabular "1" is mostly room on its left, which
+        // left "1040" two points right of the middle.
+        width.frame = Self.frame(for: width, inkCenteredOn: CGPoint(x: widthCapsule.midX, y: widthCapsule.midY), width: widthCapsule.width)
+        height.frame = Self.frame(for: height, inkCenteredOn: CGPoint(x: heightCapsule.midX, y: heightCapsule.midY), width: heightCapsule.width)
+        // The "×" on the gap's middle and on the digits' middle height, not on its own line's: it sits low in it.
         times.sizeToFit()
-        times.frame.origin = CGPoint(x: Self.fieldWidth + (Self.gap - times.frame.width) / 2, y: (bounds.height - times.frame.height) / 2)
-        height.frame = CGRect(x: Self.fieldWidth + Self.gap + inset, y: y, width: Self.fieldWidth - inset, height: fieldHeight)
+        times.frame = Self.frame(for: times, inkCenteredOn: CGPoint(x: widthCapsule.maxX + Self.gap / 2, y: widthCapsule.midY), width: times.frame.width)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let fillY = (bounds.height - Self.fillHeight) / 2
-        widthFill.frame = CGRect(x: 0, y: fillY, width: Self.fieldWidth + 2, height: Self.fillHeight)
-        heightFill.frame = CGRect(x: Self.fieldWidth + Self.gap - 2, y: fillY, width: Self.fieldWidth + 2, height: Self.fillHeight)
+        widthFill.frame = widthCapsule
+        heightFill.frame = heightCapsule
         for fill in [widthFill, heightFill] { fill.cornerRadius = Self.fillHeight / 2 }
         CATransaction.commit()
+    }
+
+    /// A frame `width` wide for centered `field` that puts the ink of its text (or of "0" while it is empty) on `point`,
+    /// on the backing's pixels.
+    private static func frame(for field: NSTextField, inkCenteredOn point: CGPoint, width: CGFloat) -> CGRect {
+        let font = field.font ?? NSFont.systemFont(ofSize: 13)
+        let text = field.stringValue.isEmpty ? "0" : field.stringValue
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+        let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+        let advance = CTLineGetTypographicBounds(line, nil, nil, nil)
+        // The ink's middle from the advance's middle, and above the middle of the line the field sets the text in.
+        let inkX = ink.midX - advance / 2
+        let lineHeight = ceil(field.intrinsicContentSize.height)
+        let lineMiddle = (font.ascender + font.descender) / 2
+        let inkY = ink.midY - lineMiddle
+        let frame = CGRect(
+            x: point.x - width / 2 - inkX,
+            y: point.y - lineHeight / 2 - inkY,
+            width: width,
+            height: lineHeight
+        )
+        return field.backingAlignedRect(frame, options: .alignAllEdgesNearest)
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -675,18 +725,38 @@ final class AreaSizeFields: NSView, NSTextFieldDelegate {
             let hover = dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
+            var fillsAll = false
+            #if DEBUG
+            fillsAll = debugFillsAll
+            #endif
             for (field, fill) in [(width, widthFill), (height, heightFill)] {
-                fill.backgroundColor = field.isEditing ? selected : field.isHovered ? hover : .clear
+                fill.backgroundColor = field.isEditing ? selected : field.isHovered || fillsAll ? hover : .clear
             }
             CATransaction.commit()
         }
     }
+
+    #if DEBUG
+    /// Both fields in the hover fill, for renders.
+    var debugFillsAll = false {
+        didSet { applyAppearance() }
+    }
+    #endif
 
     /// The area's size in pixels; a field being typed in keeps what is typed unless `typedOver`.
     func show(_ size: CGSize, typedOver: Bool = false) {
         shown = size
         if typedOver || !width.isEditing { width.stringValue = String(Int(size.width)) }
         if typedOver || !height.isEditing { height.stringValue = String(Int(size.height)) }
+        let widths = (
+            width: width.isEditing && !typedOver ? capsuleWidths.width : capsuleWidth(for: width),
+            height: height.isEditing && !typedOver ? capsuleWidths.height : capsuleWidth(for: height)
+        )
+        if widths != capsuleWidths {
+            capsuleWidths = widths
+            invalidateIntrinsicContentSize()
+        }
+        needsLayout = true
     }
 
     func focusWidth() {
@@ -702,6 +772,8 @@ final class AreaSizeFields: NSView, NSTextFieldDelegate {
         if let editor = field.currentEditor() as? NSTextView, editor.hasMarkedText() { return }
         let digits = String(Self.digits(in: field.stringValue).prefix(5))
         if digits != field.stringValue { field.stringValue = digits }
+        // The typed number's ink back on its capsule's middle.
+        needsLayout = true
     }
 
     /// The ASCII digits in `text`, full-width ones (as Chinese and Japanese input gives them) turned into them.
@@ -765,7 +837,9 @@ final class AreaSizeField: NSTextField {
         isBezeled = false
         drawsBackground = false
         focusRingType = .none
-        font = Theme.Typeface.reading(size: 12, weight: .medium)
+        // A point over the bar's titles: the numbers are what the fields are for, and at 12 pt they looked small in
+        // capsules as tall as the chips.
+        font = Theme.Typeface.reading(size: 13, weight: .medium)
         textColor = .labelColor
         usesSingleLineMode = true
         cell?.isScrollable = true

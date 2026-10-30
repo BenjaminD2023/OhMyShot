@@ -603,13 +603,32 @@ struct EditorView: View {
             .accessibilityLabel(Text("Zoom, \(model.zoomLabel)", bundle: .module))
         }
         ToolbarItem(placement: .primaryAction) {
+            let size = DragOutHandle.size(of: model.thumbnail)
             DragOutHandle(model: model)
-                .frame(width: 34, height: 24)
+                .frame(width: size.width, height: size.height)
+                // Room on each side, so the picture clears the group's rounded end and Save's highlight.
+                .padding(.horizontal, 6)
                 .help(Text("Drag the capture into another app", bundle: .module))
                 .accessibilityLabel(Text("Drag Capture", bundle: .module))
         }
+        // Save keeps a copy of the picture; the chevron beside it keeps the capture and marks as a project.
+        // Two items, not a split button, whose hairline between its halves crowded the chevron.
         ToolbarItem(placement: .primaryAction) {
-            // Save keeps a copy of the picture; its menu keeps the capture and marks as a project.
+            Button {
+                model.controller?.save()
+            } label: {
+                Label {
+                    model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module)
+                } icon: {
+                    // By name, so the toolbar sizes and centers it as its other symbols; a plain button, unlike
+                    // a split button's segment, is named by its label, not its picture.
+                    Image(systemName: model.saved ? "checkmark" : "square.and.arrow.down")
+                }
+            }
+            .help(Text("Save a Copy (⌘S)", bundle: .module))
+            .accessibilityLabel(model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module))
+        }
+        ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button {
                     model.controller?.saveProject()
@@ -618,17 +637,13 @@ struct EditorView: View {
                 }
             } label: {
                 Label {
-                    model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module)
+                    Text("Save Options", bundle: .module)
                 } icon: {
-                    Image(nsImage: Theme.symbol(
-                        model.saved ? "checkmark" : "square.and.arrow.down",
-                        described: model.saved ? String(localized: "Saved", bundle: .module) : String(localized: "Save", bundle: .module)
-                    ))
+                    Image(systemName: "chevron.down")
                 }
-            } primaryAction: {
-                model.controller?.save()
             }
-            .help(Text("Save a Copy (⌘S)", bundle: .module))
+            .menuIndicator(.hidden)
+            .help(Text("Save Options", bundle: .module))
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {
@@ -660,6 +675,14 @@ struct EditorArea: NSViewRepresentable {
 struct DragOutHandle: NSViewRepresentable {
     let model: EditorModel
 
+    /// The whole picture, at its own shape, fitted in 34 × 24 pt: a crop would hide the picture's edges.
+    static func size(of picture: CGImage?) -> CGSize {
+        let box = CGSize(width: 34, height: 24)
+        guard let picture, picture.width > 0, picture.height > 0 else { return box }
+        let scale = min(box.width / CGFloat(picture.width), box.height / CGFloat(picture.height))
+        return CGSize(width: max(8, (CGFloat(picture.width) * scale).rounded()), height: max(8, (CGFloat(picture.height) * scale).rounded()))
+    }
+
     func makeNSView(context: Context) -> DragOutView {
         let view = DragOutView()
         view.thumbnail = model.thumbnail
@@ -683,7 +706,7 @@ final class DragOutView: NSView, NSDraggingSource {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.contentsGravity = .resizeAspectFill
+        layer?.contentsGravity = .resizeAspect
         layer?.cornerRadius = 4
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
