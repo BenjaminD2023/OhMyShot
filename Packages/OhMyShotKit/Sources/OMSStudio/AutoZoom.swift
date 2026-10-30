@@ -30,6 +30,8 @@ nonisolated public enum AutoZoom {
     public static let gentlestScale = 1.3
     /// Room around what happens, in the recording's points, when fitting it into a zoom.
     public static let margin = 80.0
+    /// A drag counts as its press, its release, and where the pointer was this often in between.
+    public static let dragStep = 0.2
 
     typealias Event = (time: Double, x: Double, y: Double, isKey: Bool)
 
@@ -57,8 +59,22 @@ nonisolated public enum AutoZoom {
     }
 
     /// Every click, and every key at the pointer's place when it was pressed, inside the recording, in order.
+    /// A drag (`Click.isDrag`) is its press, its release, and the pointer every `dragStep` in between, so a
+    /// zoom frames all of it.
     static func events(in telemetry: StudioTelemetry) -> [Event] {
-        var events = telemetry.clicks.map { (time: $0.time, x: $0.x, y: $0.y, isKey: false) }
+        var events: [Event] = []
+        for click in telemetry.clicks {
+            events.append((time: click.time, x: click.x, y: click.y, isKey: false))
+            guard click.isDrag, let release = click.releaseTime, let releaseX = click.releaseX, let releaseY = click.releaseY else { continue }
+            var step = 1.0
+            while click.time + step * dragStep < release {
+                let time = click.time + step * dragStep
+                let place = pointer(at: time, in: telemetry.samples)
+                events.append((time: time, x: place.x, y: place.y, isKey: false))
+                step += 1
+            }
+            events.append((time: release, x: releaseX, y: releaseY, isKey: false))
+        }
         events += telemetry.keys.filter { !$0.isRepeat }.map { key in
             let place = pointer(at: key.time, in: telemetry.samples)
             return (time: key.time, x: place.x, y: place.y, isKey: true)

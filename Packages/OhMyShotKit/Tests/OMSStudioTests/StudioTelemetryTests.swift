@@ -47,6 +47,53 @@ struct StudioTelemetryTests {
         #expect(try JSONDecoder().decode(StudioTelemetry.self, from: data) == original)
     }
 
+    @Test func telemetryKeptBeforeReleasesWereStillOpens() throws {
+        // A telemetry.json from before releases were written down.
+        let old = """
+        {"width":800,"height":500,"pixelsPerPoint":2,"samples":[{"time":1,"x":10,"y":20,"cursor":0}],"cursors":[],
+         "clicks":[{"time":1.5,"x":10,"y":20,"button":"primary"},{"time":2,"x":30,"y":40,"button":"secondary"}],"keys":[]}
+        """
+        let telemetry = try JSONDecoder().decode(StudioTelemetry.self, from: Data(old.utf8))
+        #expect(telemetry.clicks == [
+            .init(time: 1.5, x: 10, y: 20, button: .primary), .init(time: 2, x: 30, y: 40, button: .secondary),
+        ])
+        #expect(telemetry.clicks.allSatisfy { $0.releaseTime == nil && $0.releaseX == nil && $0.releaseY == nil && !$0.isDrag })
+        // A click with no release is kept as it was before.
+        let kept = try #require(String(data: JSONEncoder().encode(telemetry.clicks[0]), encoding: .utf8))
+        #expect(!kept.contains("release"), "\(kept)")
+    }
+
+    @Test func releasesAreKeptAsJSON() throws {
+        var original = telemetry()
+        original.clicks[1].releaseTime = 100.9
+        original.clicks[1].releaseX = 60
+        original.clicks[1].releaseY = 30
+        let decoded = try JSONDecoder().decode(StudioTelemetry.self, from: JSONEncoder().encode(original))
+        #expect(decoded == original)
+        #expect(decoded.clicks[1].isDrag && !decoded.clicks[0].isDrag)
+    }
+
+    @Test func releasesMoveOntoTheMovieAndOneInAPauseIsLeftOut() {
+        var raw = telemetry()
+        // Pressed at 100.6 s and released after a pause, 100.8–101.5 s; pressed at 101.9 s and released at 102.4 s,
+        // after another, 102.1–102.3 s.
+        raw.clicks[1].releaseTime = 101.7
+        raw.clicks[1].releaseX = 200
+        raw.clicks[1].releaseY = 30
+        raw.clicks[3].releaseTime = 102.4
+        raw.clicks[3].releaseX = 40
+        raw.clicks[3].releaseY = 51
+        // Pressed at 101.9 s too, released inside a later pause.
+        raw.clicks.append(.init(time: 101.9, x: 300, y: 300, button: .other, releaseTime: 102.2, releaseX: 350, releaseY: 300))
+        let moved = raw.retimed(start: 100, pauses: [100.8...101.5, 102.1...102.3])
+        #expect(moved.clicks.count == 3)
+        #expect(abs((moved.clicks[0].releaseTime ?? 0) - 1.0) < 1e-9 && moved.clicks[0].releaseX == 200 && moved.clicks[0].releaseY == 30)
+        #expect(abs((moved.clicks[1].releaseTime ?? 0) - 1.5) < 1e-9 && moved.clicks[1].releaseY == 51)
+        // Released in the pause: kept as a click, with no release.
+        #expect(moved.clicks[2].button == .other && abs(moved.clicks[2].time - 1.2) < 1e-9)
+        #expect(moved.clicks[2].releaseTime == nil && moved.clicks[2].releaseX == nil && moved.clicks[2].releaseY == nil)
+    }
+
     @Test func theCamerasTimesSpanThePauses() {
         // The camera's movie began 0.2 s before the screen's; it filled what was recorded from inside the
         // pause to the end, and once before the movie began.
