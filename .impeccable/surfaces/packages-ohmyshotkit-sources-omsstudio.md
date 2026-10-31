@@ -62,13 +62,16 @@ Studio components.
 ## Built (2026-10-11)
 
 Recording: the Studio chip on the bar; the stream records without the cursor or click circles while
-`TelemetryRecorder` writes down the pointer (60 Hz, `NSCursor.currentSystem`), clicks (a global monitor), and
+`TelemetryRecorder` writes down the pointer, clicks and their releases, each at its event's own time and place
+(a listen-only event tap on its own thread when Input Monitoring is on, else NSEvent monitors; presses on
+OhMyShot's own windows are no clicks), the cursor's look at 60 Hz (`NSCursor.currentSystem`), and
 keys under Settings' mode (Shortcuts only keeps typing as bare presses); stopping keeps the recording in the
 history with its project (`<file>.studio/`: telemetry.json, project.json, source.mp4 cloned at first open,
 exported.json) and opens the Studio window. The window: preview (the export's composition, filmed at the
 view's pixels), transport, timeline (ruler, zoom chips, filmstrip clip, cuts, playhead), inspector
 (Background, Frame, Cursor, Zoom, Keys). Export: custom compositor in 4:2:0 with the recording's color tags,
-H.264 up to 4096 and HEVC beyond. Specs in DESIGN.md › Studio; measurements in Docs/perf.md › Studio.
+up to three frames in flight, handing back the last frame where nothing changed; the exporter leaves those out,
+so the movie has a variable frame rate as recordings do; H.264 up to 4096 and HEVC beyond. Specs in DESIGN.md › Studio; measurements in Docs/perf.md › Studio.
 
 Finish review (impeccable-finish-reviewer, disposition fix) — all eight must-fixes applied:
 1. Captions follow Settings › Recording › Keystrokes (project `keystrokeMode`; the recorder never writes
@@ -212,3 +215,16 @@ preview seek and real compositor/encoder export; `Docs/perf.md` records its 1 fp
 measured timing, process/Metal resource peaks and idle results. These do not stand in for human VoiceOver
 speech testing or watt-level power measurement. Save As now stages a complete sibling copy and atomically
 renames it over the destination; copy failure or cancellation preserves the user's previous file.
+
+Framing (2026-10-30): the camera is placed after the cursor path is known (`StudioFraming`), not chased
+live. A test reproduced three faults first. With the old spring (0.35 s) and its middle-30% deadzone,
+a 2× zoom let the cursor leave the view at 500–2000 pt/s, coming to −17% to −49% of the view from its
+edge. An automatic zoom's first click landed outside the view (−31%), because the camera aimed at the
+pointer still on its way in. And zooms slid sideways while they scaled. Now:
+- the camera holds on what the clicks and keys of each shot frame together;
+- it moves between shots with a minimum-jerk ease that arrives 0.15 s early;
+- otherwise it moves only to keep the shown cursor 10% inside, with a 6% floor that a 4000 pt/s flick
+  falls back to;
+- each zoom scales about one pivot inside the recording, eased evenly in scale.
+
+The project format and the cursor's path are unchanged.

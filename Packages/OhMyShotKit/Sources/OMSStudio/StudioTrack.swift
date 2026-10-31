@@ -11,8 +11,9 @@ import Foundation
 /// over the last `clickApproach` before a click it closes on the pointer, so it presses where the pointer did
 /// and the click's ring lands under its tip, and the click starts it afresh there. It fades when the pointer
 /// rests and, as the system hides it, while typing, until the pointer moves or clicks.
-/// The camera eases into each zoom toward the pointer and, fully zoomed, moves only when the cursor nears the
-/// edge of what it shows, through a slower spring, never past the recording's edges.
+/// Each zoom eases in and out evenly in scale, and the camera is placed by `StudioFraming` once the whole cursor
+/// path is known: still on what happens, moving ahead of the cursor only to keep it in view, zooming about one
+/// point, never past the recording's edges.
 nonisolated public struct StudioTrack: Sendable {
     public struct Frame: Equatable, Sendable {
         /// 1 shows the whole recording.
@@ -97,11 +98,12 @@ nonisolated public struct StudioTrack: Sendable {
         let smoothed = smoothing > 0
         let restTime = Self.cursorQuickest + 0.13 * smoothing
         let speedBlend = 1 - exp(-step / Self.speedWindow)
-        // The camera's spring is slower: it should glide, not chase.
-        let cameraOmega = 1 / 0.35
 
         var frames: [Frame] = []
         frames.reserveCapacity(count)
+        // Whether a zoom is fully in at each frame, for the framing.
+        var steady: [Bool] = []
+        steady.reserveCapacity(count)
         var index = 0
         var lastMove = -Double.infinity
         var lastRaw: (x: Double, y: Double)?
@@ -109,8 +111,6 @@ nonisolated public struct StudioTrack: Sendable {
         var cursor = Self.pointer(at: 0, in: samples, index: &index)
         var cursorVelocity = (x: 0.0, y: 0.0)
         var pointerVelocity = (x: 0.0, y: 0.0)
-        var center = (x: cursor.x, y: cursor.y)
-        var centerVelocity = (x: 0.0, y: 0.0)
         var opacity = 1.0
         var clickIndex = 0
         // Typing, shortcuts left out: ⌘S doesn't hide the cursor, as it doesn't on screen.
@@ -174,39 +174,24 @@ nonisolated public struct StudioTrack: Sendable {
                 opacity = min(1, opacity + step / Self.returnFade)
             }
 
-            // The camera: how far into a zoom, and where it looks.
+            // How far into a zoom, and whether one is fully in; where the camera looks comes after.
             while zoomIndex < zooms.count, zooms[zoomIndex].start <= time {
                 activeZooms.append(zooms[zoomIndex])
                 zoomIndex += 1
             }
             activeZooms.removeAll { $0.end < time }
-            let zoom = Self.zoom(at: time, zooms: activeZooms)
-            let fullyIn = activeZooms.contains { zoom in
+            steady.append(activeZooms.contains { zoom in
                 time >= zoom.start + Self.transitionLength(zoom) && time <= zoom.end - Self.transitionLength(zoom)
-            }
-            var target = drawn
-            if fullyIn {
-                // Fully zoomed, the camera moves only to keep the cursor within the middle of what it shows.
-                let reachX = width / zoom * 0.3, reachY = height / zoom * 0.3
-                target = (
-                    min(max(center.x, drawn.x - reachX), drawn.x + reachX),
-                    min(max(center.y, drawn.y - reachY), drawn.y + reachY)
-                )
-            }
-            if frameIndex == 0 {
-                center = target
-            } else {
-                Self.spring(&center.x, &centerVelocity.x, toward: target.x, omega: cameraOmega, step: step)
-                Self.spring(&center.y, &centerVelocity.y, toward: target.y, omega: cameraOmega, step: step)
-            }
-            let halfWidth = width / zoom / 2, halfHeight = height / zoom / 2
-            let clampedX = min(max(center.x, halfWidth), width - halfWidth)
-            let clampedY = min(max(center.y, halfHeight), height - halfHeight)
+            })
             frames.append(Frame(
-                zoom: zoom, centerX: clampedX, centerY: clampedY, cursorX: drawn.x, cursorY: drawn.y, cursor: cursor.cursor,
-                cursorOpacity: opacity
+                zoom: Self.zoom(at: time, zooms: activeZooms), centerX: width / 2, centerY: height / 2, cursorX: drawn.x, cursorY: drawn.y,
+                cursor: cursor.cursor, cursorOpacity: opacity
             ))
         }
+        try StudioFraming.place(
+            &frames, steady: steady, zooms: zooms, events: AutoZoom.events(in: telemetry), width: width, height: height, rate: rate,
+            checkCancellation: checkCancellation
+        )
         try checkCancellation()
         self.frames = frames
     }
@@ -274,13 +259,15 @@ nonisolated public struct StudioTrack: Sendable {
         return result
     }
 
-    /// How much the picture is zoomed at `time`: easing in at each zoom's start and out at its end.
+    /// How much the picture is zoomed at `time`: easing in at each zoom's start and out at its end, evenly in
+    /// scale (its logarithm eased), so each moment of the ease enlarges the picture by the same proportion
+    /// rather than rushing at first and crawling at the end.
     static func zoom(at time: Double, zooms: [StudioProject.Zoom]) -> Double {
         var level = 1.0
-        for zoom in zooms where time >= zoom.start && time <= zoom.end {
+        for zoom in zooms where time >= zoom.start && time <= zoom.end && zoom.scale > 1 {
             let length = transitionLength(zoom)
             let progress = min(1, (time - zoom.start) / length, (zoom.end - time) / length)
-            level = max(level, 1 + (zoom.scale - 1) * easeInOut(max(0, progress)))
+            level = max(level, exp(log(zoom.scale) * easeInOut(max(0, progress))))
         }
         return level
     }
@@ -306,7 +293,14 @@ nonisolated public struct StudioTrack: Sendable {
         let decay = exp(-omega * step)
         let newX = (x + (velocity + omega * x) * step) * decay
         velocity = (velocity - omega * (velocity + omega * x) * step) * decay
-        value = target + newX
+        // Settled, within a thousandth of a point and all but still: exactly there, so a cursor at rest stops
+        // and the frames after it are the same.
+        if abs(newX) < 0.001, abs(velocity) < 0.01 {
+            value = target
+            velocity = 0
+        } else {
+            value = target + newX
+        }
     }
 
     /// The pointer at `time`: between two readings a frame or so apart it moves straight from one to the next;

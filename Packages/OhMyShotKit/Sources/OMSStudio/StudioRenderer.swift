@@ -216,7 +216,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     }
 
     /// The movie's frame at `time` (the recording's seconds) from the recording's frame `source` and, when
-    /// there is one, the camera's frame then.
+    /// there is one, the camera's frame then. Whatever it takes from `time` has to be in `isStill` too, or the
+    /// compositor hands back a frame that should have changed.
     public func image(source: CIImage, camera cameraFrame: CIImage? = nil, at time: Double) -> CIImage {
         let state = track.frame(at: time)
         let height = Double(recordingSize.height)
@@ -304,6 +305,30 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         if let look = camera, let picture, bubbleOpacity > 0.001 { movie = bubble(look, picture: picture, opacity: bubbleOpacity, over: movie) }
         if let caption = caption(at: time) { movie = caption.composited(over: movie) }
         return movie.cropped(to: CGRect(origin: .zero, size: layout.canvas))
+    }
+
+    /// Whether the frames at `a` and `b` (the recording's seconds) come out alike from the same recording's
+    /// frame, with no camera's: everything `image` takes from the time is the same at both. The camera holds
+    /// the same view, the cursor stands as it stood, and each is drawn once, with no blur; no click's effect
+    /// shows; the caption is the same, at full opacity or none at both; the camera's bubble and fill are
+    /// at the same levels. False where any of that may differ, so a frame is drawn again rather than kept
+    /// wrongly.
+    func isStill(from a: Double, to b: Double) -> Bool {
+        guard track.frame(at: a) == track.frame(at: b) else { return false }
+        if project.motionBlur, exposures(at: a).count != 1 || exposures(at: b).count != 1 { return false }
+        if project.cursor.showsClicks, !activeClicks(at: a).isEmpty || !activeClicks(at: b).isEmpty { return false }
+        switch (captionIndex(at: a), captionIndex(at: b)) {
+        case (nil, nil):
+            break
+        case (let first?, let second?):
+            // A caption at 0.999 or more is drawn as it is, unfaded.
+            let opacities = (captionOpacity(at: a, index: first), captionOpacity(at: b, index: second))
+            guard captions[first].text == captions[second].text,
+                  opacities.0 >= 0.999 && opacities.1 >= 0.999 || opacities.0 == 0 && opacities.1 == 0 else { return false }
+        default:
+            return false
+        }
+        return camera?.plan.levels(at: a) == camera?.plan.levels(at: b)
     }
 
     // MARK: Motion

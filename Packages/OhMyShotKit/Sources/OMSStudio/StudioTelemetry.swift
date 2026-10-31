@@ -48,6 +48,7 @@ nonisolated public struct StudioTelemetry: Codable, Equatable, Sendable {
         }
     }
 
+    /// A press, where and when, and its release.
     public struct Click: Codable, Equatable, Sendable {
         public enum Button: String, Codable, Sendable {
             case primary
@@ -59,12 +60,32 @@ nonisolated public struct StudioTelemetry: Codable, Equatable, Sendable {
         public var x: Double
         public var y: Double
         public var button: Button
+        /// When the button came up and where: nil when that wasn't seen, as in recordings made before releases
+        /// were written down, for a button still held when recording stopped, or for one released in a pause.
+        /// Set together or not at all.
+        public var releaseTime: Double?
+        public var releaseX: Double?
+        public var releaseY: Double?
 
-        public init(time: Double, x: Double, y: Double, button: Button) {
+        /// How far, in points, the pointer moves between the press and the release for a drag rather than a click.
+        public static let dragDistance = 4.0
+
+        public init(
+            time: Double, x: Double, y: Double, button: Button, releaseTime: Double? = nil, releaseX: Double? = nil, releaseY: Double? = nil
+        ) {
             self.time = time
             self.x = x
             self.y = y
             self.button = button
+            self.releaseTime = releaseTime
+            self.releaseX = releaseX
+            self.releaseY = releaseY
+        }
+
+        /// Whether it was released `dragDistance` or farther from where it was pressed.
+        public var isDrag: Bool {
+            guard releaseTime != nil, let releaseX, let releaseY else { return false }
+            return hypot(releaseX - x, releaseY - y) >= Self.dragDistance
         }
     }
 
@@ -159,8 +180,9 @@ nonisolated public struct StudioTelemetry: Codable, Equatable, Sendable {
 
     /// The same, on the movie's timeline: seconds from `start` (the movie's first frame, host seconds), with
     /// what happened during `pauses` left out and what came after each pause moved earlier by its length.
-    /// The pointer's last place before the start begins the movie. The camera's times, which span the
-    /// pauses, take the movie's time where each pause was cut out.
+    /// The pointer's last place before the start begins the movie. A release in a pause is left out with
+    /// the rest of the pause, its press kept as a click. The camera's times, which span the pauses, take the
+    /// movie's time where each pause was cut out.
     public func retimed(start: Double, pauses: [ClosedRange<Double>]) -> StudioTelemetry {
         let pauses = pauses.sorted { $0.lowerBound < $1.lowerBound }
         func movieTime(_ time: Double) -> Double? {
@@ -201,7 +223,14 @@ nonisolated public struct StudioTelemetry: Codable, Equatable, Sendable {
         moved.samples = samples
         moved.clicks = clicks.compactMap { click in
             guard let time = movieTime(click.time), time >= 0 else { return nil }
-            return Click(time: time, x: click.x, y: click.y, button: click.button)
+            var moved = click
+            moved.time = time
+            moved.releaseTime = click.releaseTime.flatMap(movieTime)
+            if moved.releaseTime == nil {
+                moved.releaseX = nil
+                moved.releaseY = nil
+            }
+            return moved
         }
         moved.keys = keys.compactMap { key in
             guard let time = movieTime(key.time), time >= 0 else { return nil }

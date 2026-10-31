@@ -41,6 +41,13 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
     @concurrent public static func make(
         source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], camera: CameraSource? = nil
     ) async throws -> StudioComposition {
+        try await make(source: source, renderer: renderer, cuts: cuts, camera: camera, reusesFrames: true)
+    }
+
+    /// The same; `reusesFrames` false draws every frame, even where the one before could be handed back.
+    @concurrent static func make(
+        source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], camera: CameraSource? = nil, reusesFrames: Bool
+    ) async throws -> StudioComposition {
         try Task.checkCancellation()
         let sourceDuration = try await source.load(.duration).seconds
         let segments = keptSegments(duration: sourceDuration, cuts: cuts)
@@ -104,7 +111,7 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         // One instruction over the whole movie, to the tracks' own end.
         let instruction = StudioInstruction(
             timeRange: CMTimeRange(start: .zero, end: composition.duration), trackID: video.trackID, cameraTrackID: cameraTrackID,
-            renderer: renderer, segments: segments
+            renderer: renderer, segments: segments, reusesFrames: reusesFrames
         )
         var configuration = AVVideoComposition.Configuration(
             customVideoCompositorClass: StudioCompositor.self, frameDuration: CMTime(value: 1, timescale: 60),
@@ -181,8 +188,15 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         CMTime(value: CMTimeValue((seconds * 6_000).rounded()), timescale: 6_000)
     }
 
+    /// The frames this composition's compositors finished so far: drawn, handed back again unchanged, and
+    /// the most asked for and not yet finished at once.
+    var frameCounts: StudioInstruction.FrameCounts.Counts {
+        (videoComposition.instructions.first as? StudioInstruction)?.frameCounts.counts ?? .init()
+    }
+
     #if DEBUG
-    /// Frames every Studio compositor was asked for and drew so far, for scripted checks.
+    /// Frames every Studio compositor was asked for and finished with a picture (drawn, or handed back again)
+    /// so far, for scripted checks.
     public static var debugCompositorCounts: (asked: Int, drawn: Int) {
         StudioCompositor.debugCounts
     }
@@ -209,17 +223,45 @@ nonisolated final class StudioInstruction: NSObject, AVVideoCompositionInstructi
     let cameraTrackID: CMPersistentTrackID?
     let renderer: StudioRenderer
     let segments: [StudioComposition.Segment]
+    /// A frame drawn as the one before it may be that one handed back again.
+    let reusesFrames: Bool
+    let frameCounts = FrameCounts()
 
     init(
         timeRange: CMTimeRange, trackID: CMPersistentTrackID, cameraTrackID: CMPersistentTrackID? = nil, renderer: StudioRenderer,
-        segments: [StudioComposition.Segment]
+        segments: [StudioComposition.Segment], reusesFrames: Bool = true
     ) {
         self.timeRange = timeRange
         self.trackID = trackID
         self.cameraTrackID = cameraTrackID
         self.renderer = renderer
         self.segments = segments
+        self.reusesFrames = reusesFrames
         requiredSourceTrackIDs = ([trackID] + [cameraTrackID].compactMap(\.self)).map { NSNumber(value: $0) }
+    }
+
+    /// What the compositors did with this instruction's frames, for tests and benchmarks.
+    final class FrameCounts: @unchecked Sendable {
+        struct Counts: Equatable {
+            var drawn = 0
+            var reused = 0
+            var mostInFlight = 0
+        }
+
+        private let lock = NSLock()
+        private var values = Counts()
+
+        var counts: Counts { lock.withLock { values } }
+
+        func finished(reused: Bool) {
+            lock.withLock {
+                if reused { values.reused += 1 } else { values.drawn += 1 }
+            }
+        }
+
+        func inFlight(_ count: Int) {
+            lock.withLock { values.mostInFlight = max(values.mostInFlight, count) }
+        }
     }
 
     /// The recording's time at the movie's `time`.
@@ -235,12 +277,22 @@ nonisolated final class StudioInstruction: NSObject, AVVideoCompositionInstructi
     }
 }
 
-/// Draws each frame of a Studio composition with its instruction's renderer.
+/// Draws each frame of a Studio composition with its instruction's renderer, a few at once: a frame's picture
+/// is put together on one queue and drawn on the GPU while the next is put together, and the frames are
+/// finished in the order they were asked for on another. Drawn one at a time, the CPU waited for the GPU
+/// and the GPU for the CPU.
+///
+/// Where nothing drawn changes from one frame to the next (`StudioRenderer.isStill`), with the recording's
+/// frame the same one and no camera, the frame drawn last is handed back again: a recording holds one frame
+/// for as long as the screen holds still, and the movie asks for sixty a second.
 nonisolated final class StudioCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
-    private static let context = CIContext(options: [
+    static let context = CIContext(options: [
         .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, .cacheIntermediates: false,
     ])
     private static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+    /// The most frames asked for and not yet finished: one put together, one drawing, one waiting to be
+    /// finished. More only holds more of the decoder's frames and the movie's.
+    static let framesInFlight = 3
 
     /// The recording's frames as the decoder makes them, 4:2:0 (a byte and a half a pixel), which Core Image
     /// reads as they are: asked for in BGRA, every frame of a full-screen recording was converted into 66 MB
@@ -258,14 +310,44 @@ nonisolated final class StudioCompositor: NSObject, AVVideoCompositing, @uncheck
         kCVPixelBufferMetalCompatibilityKey as String: true,
     ]
 
+    /// A frame drawn, kept to be handed back while nothing changes: what it was drawn for, from, and into.
+    /// Holding the recording's frame keeps the decoder from filling the same buffer with another. Its buffers
+    /// are only read once it is drawn.
+    private struct Drawn: @unchecked Sendable {
+        let instruction: StudioInstruction
+        let renderContext: AVVideoCompositionRenderContext
+        let source: CVPixelBuffer
+        /// The recording's time it shows.
+        let time: Double
+        let output: CVPixelBuffer
+        let generation: Int
+    }
+
     private let lock = NSLock()
-    /// The color space of the frames drawn, read from the first one's tags.
-    private var outputColorSpace: CGColorSpace?
+    /// The color space of the frames drawn, read from the first one's tags in each render context.
+    private var outputColorSpace: (renderContext: AVVideoCompositionRenderContext, space: CGColorSpace)?
     /// A frame that couldn't be drawn has been reported: once per compositor is enough.
     private var reportedFailure = false
+    /// The frames asked for and not yet finished, by the order they came in. Whoever takes one out
+    /// finishes it, once: its drawing, or cancelling.
+    private var pending: [Int: AVAsynchronousVideoCompositionRequest] = [:]
+    private var lastNumber = 0
+    /// Moves on with each render context, so a frame drawn for the one before is never kept.
+    private var generation = 0
+    /// The last frame drawn: only one.
+    private var last: Drawn?
+    private let slots = DispatchSemaphore(value: framesInFlight)
+    private let building = DispatchQueue(label: "OhMyShot.studio.compositor.build", qos: .userInitiated)
+    private let finishing = DispatchQueue(label: "OhMyShot.studio.compositor.finish", qos: .userInitiated)
+    private static let onFinishing = DispatchSpecificKey<Bool>()
+
+    override init() {
+        super.init()
+        finishing.setSpecific(key: Self.onFinishing, value: true)
+    }
 
     #if DEBUG
-    /// Frames drawn and asked for by every compositor so far, for scripted checks.
+    /// Frames asked for, and finished with a picture, by every compositor so far, for scripted checks.
     nonisolated(unsafe) private static var counts = (asked: 0, drawn: 0)
     private static let countsLock = NSLock()
     static var debugCounts: (asked: Int, drawn: Int) {
@@ -273,34 +355,147 @@ nonisolated final class StudioCompositor: NSObject, AVVideoCompositing, @uncheck
     }
     #endif
 
+    /// Frames asked for and not yet finished, for tests: none once every one has been.
+    var pendingCount: Int { lock.withLock { pending.count } }
+    /// How many times this compositor was told to cancel its frames, for tests.
+    var cancelCount: Int { lock.withLock { cancels } }
+    private var cancels = 0
+
     func renderContextChanged(_ newRenderContext: AVVideoCompositionRenderContext) {
-        lock.lock()
-        outputColorSpace = nil
-        lock.unlock()
+        lock.withLock {
+            outputColorSpace = nil
+            last = nil
+            generation += 1
+        }
     }
 
     func startRequest(_ request: AVAsynchronousVideoCompositionRequest) {
         #if DEBUG
         Self.countsLock.withLock { Self.counts.asked += 1 }
         #endif
+        // The decoder waits here while enough frames are on their way, as it waited for each one before.
+        slots.wait()
+        let (number, inFlight, generation) = lock.withLock {
+            lastNumber += 1
+            pending[lastNumber] = request
+            return (lastNumber, pending.count, generation)
+        }
+        (request.videoCompositionInstruction as? StudioInstruction)?.frameCounts.inFlight(inFlight)
+        building.async { [self] in build(request, number: number, generation: generation) }
+    }
+
+    /// Cancels the frames not yet finished, and returns once each has been: none is finished after.
+    func cancelAllPendingVideoCompositionRequests() {
+        let cancel = { [self] in
+            let requests = lock.withLock {
+                defer {
+                    pending.removeAll()
+                    last = nil
+                    cancels += 1
+                }
+                return pending.sorted { $0.key < $1.key }.map(\.value)
+            }
+            for request in requests {
+                slots.signal()
+                request.finishCancelledRequest()
+            }
+        }
+        // Every frame is finished on `finishing`, so one being finished now is done when this runs.
+        if DispatchQueue.getSpecific(key: Self.onFinishing) == true { cancel() } else { finishing.sync(execute: cancel) }
+    }
+
+    /// Puts frame `number` together and starts drawing it, or hands back the last one drawn where it would
+    /// come out the same; `finishing` finishes it. `generation` is the render context's when it was asked for.
+    private func build(_ request: AVAsynchronousVideoCompositionRequest, number: Int, generation: Int) {
+        guard lock.withLock({ pending[number] != nil }) else { return }
         guard
             let instruction = request.videoCompositionInstruction as? StudioInstruction,
-            let source = request.sourceFrame(byTrackID: instruction.trackID),
-            let output = request.renderContext.newPixelBuffer()
-        else {
-            report(request)
-            request.finish(with: StudioError.renderFailed)
+            let source = request.sourceFrame(byTrackID: instruction.trackID)
+        else { return fail(request, number: number) }
+        let time = instruction.sourceTime(request.compositionTime.seconds)
+        if let kept = reusable(for: request, instruction: instruction, source: source, at: time) {
+            finishing.async { [self] in finish(number, with: kept, reused: true) }
             return
         }
-        let time = instruction.sourceTime(request.compositionTime.seconds)
+        guard let output = request.renderContext.newPixelBuffer() else { return fail(request, number: number) }
         // The camera's frame, where its movie has one.
         let camera = instruction.cameraTrackID.flatMap { request.sourceFrame(byTrackID: $0) }.map { CIImage(cvPixelBuffer: $0) }
         let image = instruction.renderer.image(source: CIImage(cvPixelBuffer: source), camera: camera, at: time)
-        Self.context.render(image, to: output, bounds: CGRect(origin: .zero, size: instruction.renderer.layout.canvas), colorSpace: colorSpace(of: output))
-        request.finish(withComposedVideoFrame: output)
+        let drawing: Drawing
+        do {
+            let task = try Self.startDrawing(
+                image, into: output, canvas: instruction.renderer.layout.canvas, colorSpace: colorSpace(of: output, in: request.renderContext)
+            )
+            let drawn = Drawn(
+                instruction: instruction, renderContext: request.renderContext, source: source, time: time, output: output, generation: generation
+            )
+            drawing = Drawing(task: task, drawn: drawn)
+        } catch {
+            return fail(request, number: number)
+        }
+        finishing.async { [self] in
+            do {
+                _ = try drawing.task.waitUntilCompleted()
+            } catch {
+                return fail(request, number: number)
+            }
+            finish(number, with: drawing.drawn, reused: false)
+        }
+    }
+
+    /// Starts drawing `image`'s `canvas` into `output`, in `colorSpace`, as `CIContext.render(_:to:bounds:colorSpace:)`
+    /// draws it, without waiting for the GPU.
+    static func startDrawing(_ image: CIImage, into output: CVPixelBuffer, canvas: CGSize, colorSpace: CGColorSpace) throws -> CIRenderTask {
+        let destination = CIRenderDestination(pixelBuffer: output)
+        destination.colorSpace = colorSpace
+        return try context.startTask(toRender: image, from: CGRect(origin: .zero, size: canvas), to: destination, at: .zero)
+    }
+
+    /// A frame being drawn on the GPU, and what it will be once it is.
+    private struct Drawing: @unchecked Sendable {
+        let task: CIRenderTask
+        let drawn: Drawn
+    }
+
+    /// The last frame drawn, when this one, `time` in the recording from `source`, would come out the same:
+    /// the same composition and render context, the same recording's frame, no camera, and nothing else
+    /// drawn changed between the two times.
+    private func reusable(
+        for request: AVAsynchronousVideoCompositionRequest, instruction: StudioInstruction, source: CVPixelBuffer, at time: Double
+    ) -> Drawn? {
+        guard instruction.reusesFrames, instruction.cameraTrackID == nil, let drawn = lock.withLock({ last }),
+              drawn.instruction === instruction, drawn.renderContext === request.renderContext, drawn.source === source,
+              instruction.renderer.isStill(from: drawn.time, to: time) else { return nil }
+        return drawn
+    }
+
+    /// Finishes frame `number` with `drawn`'s picture, unless it was cancelled meanwhile. A frame just drawn,
+    /// for the render context still current, is kept for the frames after it. On `finishing`.
+    private func finish(_ number: Int, with drawn: Drawn, reused: Bool) {
+        let request: AVAsynchronousVideoCompositionRequest? = lock.withLock {
+            guard let request = pending.removeValue(forKey: number) else { return nil }
+            if !reused, drawn.generation == generation { last = drawn }
+            return request
+        }
+        guard let request else { return }
+        // The slot first: finishing may ask for the next frame at once.
+        slots.signal()
+        request.finish(withComposedVideoFrame: drawn.output)
+        drawn.instruction.frameCounts.finished(reused: reused)
         #if DEBUG
         Self.countsLock.withLock { Self.counts.drawn += 1 }
         #endif
+    }
+
+    /// Says why frame `number` couldn't be drawn, and finishes it with that, on `finishing`.
+    private func fail(_ request: AVAsynchronousVideoCompositionRequest, number: Int) {
+        report(request)
+        let finish: @Sendable () -> Void = { [self] in
+            guard let request = lock.withLock({ pending.removeValue(forKey: number) }) else { return }
+            slots.signal()
+            request.finish(with: StudioError.renderFailed)
+        }
+        if DispatchQueue.getSpecific(key: Self.onFinishing) == true { finish() } else { finishing.async(execute: finish) }
     }
 
     /// Says once why a frame couldn't be drawn.
@@ -316,13 +511,13 @@ nonisolated final class StudioCompositor: NSObject, AVVideoCompositing, @uncheck
     }
 
     /// The color space a frame is tagged with (the composition's), the one it is drawn in.
-    private func colorSpace(of buffer: CVPixelBuffer) -> CGColorSpace {
+    private func colorSpace(of buffer: CVPixelBuffer, in renderContext: AVVideoCompositionRenderContext) -> CGColorSpace {
         lock.lock()
         defer { lock.unlock() }
-        if let outputColorSpace { return outputColorSpace }
+        if let outputColorSpace, outputColorSpace.renderContext === renderContext { return outputColorSpace.space }
         let made = CVBufferCopyAttachments(buffer, .shouldPropagate)
             .flatMap { CVImageBufferCreateColorSpaceFromAttachments($0)?.takeRetainedValue() } ?? Self.colorSpace
-        outputColorSpace = made
+        outputColorSpace = (renderContext, made)
         return made
     }
 }

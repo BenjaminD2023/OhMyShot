@@ -127,7 +127,8 @@ struct StudioMotionTests {
         let zoom = StudioProject.Zoom(start: 2, end: 6, scale: 2, isAutomatic: false)
         #expect(StudioTrack.zoom(at: 1.9, zooms: [zoom]) == 1)
         #expect(StudioTrack.zoom(at: 2, zooms: [zoom]) == 1)
-        #expect(abs(StudioTrack.zoom(at: 2.25, zooms: [zoom]) - 1.5) < 1e-9)
+        // Halfway through the ease, halfway in scale: √2 of 2.
+        #expect(abs(StudioTrack.zoom(at: 2.25, zooms: [zoom]) - 2.0.squareRoot()) < 1e-9)
         #expect(StudioTrack.zoom(at: 4, zooms: [zoom]) == 2)
         #expect(StudioTrack.zoom(at: 6, zooms: [zoom]) == 1)
     }
