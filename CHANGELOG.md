@@ -8,6 +8,23 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.4.0-fork.6] - 2026-10-31
+
+### Added
+
+- Edit screenshot filenames with a draggable token tray in Settings. (upstream [3c09290](https://github.com/fzlzjerry/OhMyShot/commit/3c0929043350efed6ae093bd3adad5b5e766b52b))
+- Studio plans zoom framing from the complete pointer path, keeping clicks and drags in view, and records pointer events at their original times, including releases and drag paths. (upstream [8f329e8](https://github.com/fzlzjerry/OhMyShot/commit/8f329e86357870199f9a2728c6a110ed987dafd2), [468526b](https://github.com/fzlzjerry/OhMyShot/commit/468526b))
+
+### Changed
+
+- Studio composes frames asynchronously, reuses unchanged frames and avoids encoding held frames again, reducing export work while retaining the movie's duration. (upstream [84ecfd2](https://github.com/fzlzjerry/OhMyShot/commit/84ecfd2), [7294035](https://github.com/fzlzjerry/OhMyShot/commit/7294035))
+- Center capture and editor chips and fit size fields to their digits, while preserving the fork's draggable toolbar. (upstream [e81313e](https://github.com/fzlzjerry/OhMyShot/commit/e81313e))
+
+### Fixed
+
+- Prepare idle OCR recovery readers when Capture Text is requested, retaining a separately prepared fallback without adding background polling. Native OCR can still require a fresh-process retry; this is a latency mitigation, not a guarantee against native timeouts. ([a40bf55](https://github.com/BenjaminD2023/OhMyShot/commit/a40bf555b9c63f49c5fc5dac03c4def36244645e))
+- Clear Finder information from the Share extension before signing builds. (upstream [b824e1a](https://github.com/fzlzjerry/OhMyShot/commit/b824e1a))
+
 ## [0.3.1-fork.5] - 2026-10-28
 
 ### Added
@@ -141,7 +158,9 @@ Each entry links its implementation commits or merged pull request and credits v
 - Recording warns when a microphone stops delivering audio instead of leaving a disconnected microphone silently recording. ([450f4a6]; by [@fzlzjerry])
 - Closing History and editors releases more memory, clipboard TIFFs use compression, and GIF frame buffers return their memory when freed. ([cff3ddb], [0182817], [6d3b0af]; by [@fzlzjerry])
 
-[Unreleased]: https://github.com/BenjaminD2023/OhMyShot/compare/v0.3.0-fork.4...main
+[Unreleased]: https://github.com/BenjaminD2023/OhMyShot/compare/v0.4.0-fork.6...main
+[0.4.0-fork.6]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.4.0-fork.6
+[0.3.1-fork.5]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.3.1-fork.5
 [0.3.0-fork.4]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.3.0-fork.4
 [0.2.2-fork.3]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.2.2-fork.3
 [0.2.1-fork.2]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.2.1-fork.2
