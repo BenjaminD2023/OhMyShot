@@ -637,13 +637,13 @@ public final class SettingsStore {
     }
 
     /// Puts every choice back as a new install has it, as Settings › General › Reset does. What the app keeps rather
-    /// than chooses stays: the next `{counter}` number (a file saved under a number already taken would replace
+    /// than chooses stays: the history retention period (reducing it expires captures), the next `{counter}` number (a file saved under a number already taken would replace
     /// it), the area All-In-One last took, whether the desktop icons are hidden (a cover window shows that, which the
     /// menu bar's toggle shows and hides together with it), and the apps allowed to send commands, which the
     /// Automation pane manages one by one. Shortcuts, destinations, the cloud model, and the language are kept
     /// elsewhere and stay too.
     public func resetToDefaults() {
-        let kept: Set<String> = [Key.nextFileNumber, Key.allInOneArea, Key.hidesDesktopIcons, Key.approvedAutomationCallers]
+        let kept: Set<String> = [Key.nextFileNumber, Key.allInOneArea, Key.hidesDesktopIcons, Key.approvedAutomationCallers, Key.historyRetention]
         for key in Key.all where !kept.contains(key) {
             defaults.removeObject(forKey: key)
         }
@@ -661,7 +661,6 @@ public final class SettingsStore {
         showRecordingQuickAccess = fresh.showRecordingQuickAccess
         saveAfterRecording = fresh.saveAfterRecording
         uploadAfterRecording = fresh.uploadAfterRecording
-        historyRetention = fresh.historyRetention
         exportDirectory = fresh.exportDirectory
         screenshotFormat = fresh.screenshotFormat
         screenshotQuality = fresh.screenshotQuality

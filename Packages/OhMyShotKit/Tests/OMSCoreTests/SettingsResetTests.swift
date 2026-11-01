@@ -10,6 +10,7 @@ struct SettingsResetTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = SettingsStore(defaults: defaults)
+        settings.historyRetention = .oneMonth
         settings.playSounds = false
         settings.captureLoupeMagnification = .eight
         settings.colorCopyGesture = .command
@@ -33,6 +34,7 @@ struct SettingsResetTests {
             #expect(store.colorCopyGesture == .option)
             #expect(defaults.object(forKey: "SUEnableAutomaticChecks") as? Bool == false)
             #expect(defaults.object(forKey: "SUAutomaticallyUpdate") as? Bool == true)
+            #expect(store.historyRetention == .oneMonth)
             #expect(store.playSounds)
             #expect(store.freezeScreen)
             #expect(store.screenshotFormat == .png)
@@ -56,7 +58,7 @@ struct SettingsResetTests {
         let stored = Set(source.matches(of: /public (?:internal\(set\) )?var (\w+): [^{\n]+\{\n\s+didSet/).map { String($0.1) })
         #expect(stored.count > 70)
         let reset = Set(source.matches(of: /(\w+) = fresh\.(\w+)/).filter { $0.1 == $0.2 }.map { String($0.1) })
-        let kept: Set = ["nextFileNumber", "allInOneArea", "hidesDesktopIcons", "approvedAutomationCallers"]
+        let kept: Set = ["nextFileNumber", "allInOneArea", "hidesDesktopIcons", "approvedAutomationCallers", "historyRetention"]
         for name in stored {
             #expect(reset.contains(name) || kept.contains(name), "\(name) is not reset")
         }
