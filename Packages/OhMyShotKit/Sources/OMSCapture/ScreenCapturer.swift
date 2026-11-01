@@ -90,6 +90,73 @@ public final class ScreenCapturer {
         return CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: target.frame)
     }
 
+    /// Captures several windows on their own and composites them in back-to-front order onto a transparent canvas
+    /// covering their bounding box, preserving each window's rounded corners and shadow.
+    public func captureWindows(
+        _ targets: [WindowTarget], shadow: Bool, layout: DisplayLayout, showsCursor: Bool = false
+    ) async throws -> CapturedFrame {
+        guard let first = targets.first else { throw CaptureError.emptyResult }
+        if targets.count == 1 {
+            return try await captureWindow(first, shadow: shadow, layout: layout, showsCursor: showsCursor)
+        }
+        // Preserve on-screen z-order (WindowCatalog lists front to back; draw back to front).
+        let catalogOrder = WindowCatalog.snapshot(layout: layout).map(\.id)
+        let sorted = targets.sorted { a, b in
+            let ia = catalogOrder.firstIndex(of: a.id) ?? Int.max
+            let ib = catalogOrder.firstIndex(of: b.id) ?? Int.max
+            return ia > ib
+        }
+        var parts: [(image: CGImage, windowFrame: CGRect, pixelsPerPoint: CGFloat)] = []
+        var displayID: CGDirectDisplayID = layout.display(at: CGPoint(x: first.frame.midX, y: first.frame.midY))?.id ?? layout.primary?.id ?? 0
+        var scale: CGFloat = 1
+        for target in sorted {
+            let captured = try await captureWindow(target, shadow: shadow, layout: layout, showsCursor: showsCursor)
+            let sourceScale = layout.display(id: captured.displayID)?.pixelsPerPoint ?? layout.primary?.pixelsPerPoint ?? 2
+            // Callers derive the capture’s scale from its display; keep that metadata at the output scale.
+            if parts.isEmpty || sourceScale > scale {
+                scale = sourceScale
+                displayID = captured.displayID
+            }
+            parts.append((captured.image, target.frame, sourceScale))
+        }
+        guard let composited = Self.compositeWindows(parts, scale: scale, displayID: displayID) else {
+            throw CaptureError.emptyResult
+        }
+        return composited
+    }
+
+    /// Composites captured window images (in back-to-front order) onto a single transparent canvas at `scale` pixels per point.
+    public static func compositeWindows(
+        _ parts: [(image: CGImage, windowFrame: CGRect, pixelsPerPoint: CGFloat)], scale: CGFloat, displayID: CGDirectDisplayID
+    ) -> CapturedFrame? {
+        guard let first = parts.first else { return nil }
+        let placed = parts.map { part -> (image: CGImage, windowFrame: CGRect, pictureRect: CGRect) in
+            let rect = WallpaperCrop.pictureFrame(of: part.image, window: part.windowFrame, pixelsPerPoint: max(part.pixelsPerPoint, 1))
+            return (part.image, part.windowFrame, rect)
+        }
+        let totalPicture = placed.dropFirst().reduce(placed[0].pictureRect) { $0.union($1.pictureRect) }
+        let totalWindow = placed.dropFirst().reduce(first.windowFrame) { $0.union($1.windowFrame) }
+        let width = max(Int((totalPicture.width * scale).rounded()), 1)
+        let height = max(Int((totalPicture.height * scale).rounded()), 1)
+        let space = first.image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return nil }
+        context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        for item in placed {
+            let drawRect = CGRect(
+                x: (item.pictureRect.minX - totalPicture.minX) * scale,
+                y: (item.pictureRect.minY - totalPicture.minY) * scale,
+                width: item.pictureRect.width * scale,
+                height: item.pictureRect.height * scale
+            )
+            context.draw(item.image, in: drawRect)
+        }
+        guard let image = context.makeImage() else { return nil }
+        return CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: totalWindow)
+    }
+
     /// The wallpaper of each of `displays` as it shows under the desktop icons: the windows below the icons' level
     /// and nothing above them, at the display's pixels. What Hide Desktop Icons lays over the icons. One fetch of the
     /// shareable content serves every display; a display whose wallpaper cannot be taken is left out.

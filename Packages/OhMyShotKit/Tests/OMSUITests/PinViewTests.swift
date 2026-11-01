@@ -162,4 +162,46 @@ extension PinViewTests {
         let titles = try #require(textView.menu(for: click)).items.map(\.title)
         #expect(titles.contains("Copy All Text") && titles.last == "Close All Pins", "\(titles)")
     }
+
+    @Test func lockedPinProvidesClickableUnlockBadgeAndCornerDragResizesWindow() throws {
+        let (view, _) = try card("Quick Access keeps every capture one click away.")
+        let pin = try #require(view.pinWindow)
+        let originalFrame = pin.frame
+
+        // Dragging bottomRight corner scales the pin proportionally around topLeft.
+        let down = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: CGPoint(x: originalFrame.width - 3, y: 3), modifierFlags: [], timestamp: 0,
+            windowNumber: pin.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let dragged = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: CGPoint(x: originalFrame.width * 1.5, y: -originalFrame.height * 0.5), modifierFlags: [], timestamp: 0,
+            windowNumber: pin.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let up = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: originalFrame.width * 1.5, y: -originalFrame.height * 0.5), modifierFlags: [], timestamp: 0,
+            windowNumber: pin.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseDown(with: down)
+        view.mouseDragged(with: dragged)
+        view.mouseUp(with: up)
+        #expect(abs(pin.zoom - 1.5) < 0.01)
+
+        // Locking sets ignoresMouseEvents on main window, creates lockBadgePanel, and clicking badge unlocks this pin alone.
+        pin.setLocked(true)
+        #expect(pin.isLocked && pin.ignoresMouseEvents)
+        let badgePanel = try #require(pin.lockBadgePanel)
+        #expect(!badgePanel.ignoresMouseEvents)
+        view.lockMark.sendAction(view.lockMark.action, to: view.lockMark.target)
+        #expect(!pin.isLocked && !pin.ignoresMouseEvents && pin.lockBadgePanel == nil)
+
+        // Double-clicking on non-text area toggles between 100% and previous zoom (1.5x).
+        let doubleClick = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: CGPoint(x: 4, y: 20), modifierFlags: [], timestamp: 0,
+            windowNumber: pin.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1
+        ))
+        view.mouseDown(with: doubleClick)
+        #expect(abs(pin.zoom - 1.0) < 0.01)
+        view.mouseDown(with: doubleClick)
+        #expect(abs(pin.zoom - 1.5) < 0.01)
+    }
 }

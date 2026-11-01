@@ -44,7 +44,20 @@ struct StudioTimeline: View {
         case resizeLayout(UUID, start: Bool)
     }
 
+    enum LaneHit: Equatable, Sendable {
+        case ruler
+        case zoomResize(UUID, start: Bool)
+        case zoomMove(UUID)
+        case layoutResize(UUID, start: Bool)
+        case layoutMove(UUID)
+        case cut(Double)
+        case clipRange
+    }
+
     @State private var drag: Drag?
+    @State private var hoverX: CGFloat?
+    @State private var snappedX: CGFloat?
+    @State private var lastClick: (uptime: TimeInterval, location: CGPoint)?
     @State private var viewport: StudioTimelineViewport
     @State private var filmstrip = StudioTimelineFilmstrip()
     @FocusState private var timelineFocused: Bool
@@ -66,11 +79,22 @@ struct StudioTimeline: View {
                     zooms(width: width)
                     clip(width: width, request: request)
                     if document.canChangeLayoutAlongTheTimeline { layouts(width: width) }
+                    snapGuide(height: geometry.size.height)
+                    ghostPlayhead(width: width, height: geometry.size.height)
                     playhead(width: width, height: geometry.size.height)
                 }
                 .frame(width: width, height: geometry.size.height, alignment: .topLeading)
                 .clipped()
                 .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        let clamped = min(max(location.x, Self.inset), max(Self.inset, width - Self.inset))
+                        hoverX = location.x >= Self.inset && location.x <= width - Self.inset ? clamped : nil
+                    case .ended:
+                        hoverX = nil
+                    }
+                }
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
@@ -330,6 +354,7 @@ struct StudioTimeline: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(lineColor, lineWidth: lineWidth))
                 .frame(width: clipWidth, height: Self.clipHeight)
+                .pointerStyle(.horizontalText)
                 .offset(x: left, y: Self.clipTop)
             ForEach(document.project.cuts.filter { viewport.contains($0.lowerBound, $0.upperBound) }, id: \.lowerBound) { cut in
                 let chosen = document.selectedCut == cut.lowerBound
@@ -354,6 +379,7 @@ struct StudioTimeline: View {
                             .strokeBorder(chosen ? Color.accentColor : lineColor, lineWidth: chosen ? 2 : lineWidth)
                     )
                     .frame(width: max(cutRight - cutLeft, 6), height: Self.clipHeight)
+                    .pointerStyle(.link)
                     .contextMenu {
                         Button { document.restoreCut(at: cut.lowerBound) } label: { Text("Restore Cut", bundle: .module) }
                     }
@@ -400,6 +426,84 @@ struct StudioTimeline: View {
         .frame(width: width, height: Self.clipHeight, alignment: .leading)
         .clipped()
         .accessibilityHidden(true)
+    }
+
+    /// A subtle hover indicator showing where a click or I/O mark on the timeline will land.
+    @ViewBuilder
+    private func ghostPlayhead(width: CGFloat, height: CGFloat) -> some View {
+        if let hoverX, drag == nil {
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.28))
+                .frame(width: 1, height: height)
+                .offset(x: hoverX - 0.5)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private func snapGuide(height: CGFloat) -> some View {
+        if let snappedX {
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.65))
+                .frame(width: 1, height: height)
+                .offset(x: snappedX - 0.5)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Snaps `time` to the nearest candidate boundary within 5 pt on the timeline when `enabled` is true.
+    static func snappedTime(
+        _ time: Double, candidates: [Double], duration: Double, width: CGFloat, viewport: StudioTimelineViewport,
+        enabled: Bool = true
+    ) -> (time: Double, snapped: Bool) {
+        guard enabled else { return (time, false) }
+        let span = max(width - Self.inset * 2, 1)
+        let targetX = viewport.position(of: time, width: span)
+        let threshold: CGFloat = 5
+        var best: (candidate: Double, distance: CGFloat)?
+        for candidate in ([0, duration] + candidates) {
+            let candidateX = viewport.position(of: candidate, width: span)
+            let dist = abs(candidateX - targetX)
+            guard dist <= threshold else { continue }
+            if best == nil || dist < best!.distance {
+                best = (candidate, dist)
+            }
+        }
+        if let best { return (best.candidate, true) }
+        return (time, false)
+    }
+
+    /// Classifies what a point on the timeline hits, for lane cursor and interaction testing.
+    static func laneHit(
+        at point: CGPoint, width: CGFloat, viewport: StudioTimelineViewport,
+        zooms: [StudioProject.Zoom], cuts: [ClosedRange<Double>],
+        cameraSegments: [StudioProject.CameraSegment] = []
+    ) -> LaneHit {
+        let span = max(width - Self.inset * 2, 1)
+        func x(_ t: Double) -> CGFloat { Self.inset + viewport.position(of: t, width: span) }
+        let at = viewport.time(at: point.x - Self.inset, width: span)
+        if point.y < Self.rulerHeight { return .ruler }
+        if point.y >= Self.zoomTop, point.y <= Self.zoomTop + Self.zoomHeight,
+           let zoom = zooms.first(where: { point.x >= x($0.start) - Self.handleReach && point.x <= x($0.end) + Self.handleReach }) {
+            if abs(point.x - x(zoom.start)) <= Self.handleReach { return .zoomResize(zoom.id, start: true) }
+            if abs(point.x - x(zoom.end)) <= Self.handleReach { return .zoomResize(zoom.id, start: false) }
+            return .zoomMove(zoom.id)
+        }
+        if !cameraSegments.isEmpty, point.y >= Self.layoutTop, point.y <= Self.layoutTop + Self.layoutHeight,
+           let seg = cameraSegments.first(where: { point.x >= x($0.start) - Self.handleReach && point.x <= x($0.end) + Self.handleReach }) {
+            if abs(point.x - x(seg.start)) <= Self.handleReach { return .layoutResize(seg.id, start: true) }
+            if abs(point.x - x(seg.end)) <= Self.handleReach { return .layoutResize(seg.id, start: false) }
+            return .layoutMove(seg.id)
+        }
+        if point.y >= Self.clipTop, point.y <= Self.clipTop + Self.clipHeight {
+            if let cut = cuts.first(where: { $0.contains(at) }) {
+                return .cut(cut.lowerBound)
+            }
+            return .clipRange
+        }
+        return .ruler
     }
 
     /// The playhead; for VoiceOver, where the movie is, moved half a second at a time.
@@ -478,39 +582,89 @@ struct StudioTimeline: View {
 
     // MARK: Dragging
 
+    private func snapCandidates(excludingZoom zoomID: UUID? = nil, excludingSegment segmentID: UUID? = nil, includePlayhead: Bool = true) -> [Double] {
+        var points: [Double] = []
+        if includePlayhead { points.append(document.time) }
+        for cut in document.project.cuts {
+            points.append(cut.lowerBound)
+            points.append(cut.upperBound)
+        }
+        for zoom in document.project.zooms where zoom.id != zoomID {
+            points.append(zoom.start)
+            points.append(zoom.end)
+        }
+        for seg in document.project.cameraSegments where seg.id != segmentID {
+            points.append(seg.start)
+            points.append(seg.end)
+        }
+        return points
+    }
+
     private func dragChanged(_ value: DragGesture.Value, width: CGFloat) {
         let point = value.location
-        let now = time(point.x, width: width)
+        let rawNow = time(point.x, width: width)
         if drag == nil {
             drag = beginDrag(at: value.startLocation, width: width)
         }
+        let snapEnabled = !NSEvent.modifierFlags.contains(.command)
         switch drag {
         case .scrub:
-            model.controller?.seek(toRecordingTime: now)
+            let snapped = Self.snappedTime(
+                rawNow, candidates: snapCandidates(includePlayhead: false),
+                duration: document.duration, width: width, viewport: viewport, enabled: snapEnabled
+            )
+            snappedX = snapped.snapped ? x(snapped.time, width: width) : nil
+            model.controller?.seek(toRecordingTime: snapped.time)
         case .select(let from):
-            let lower = min(from, now), upper = max(from, now)
+            let snapped = Self.snappedTime(
+                rawNow, candidates: snapCandidates(),
+                duration: document.duration, width: width, viewport: viewport, enabled: snapEnabled
+            )
+            snappedX = snapped.snapped ? x(snapped.time, width: width) : nil
+            let lower = min(from, snapped.time), upper = max(from, snapped.time)
             document.selection = upper - lower > 0.05 ? .range(lower...upper) : .none
         case .moveZoom(let id, let grabbedAt, let start, let end):
-            let shift = min(max(now - grabbedAt, -start), document.duration - end)
+            var shift = min(max(rawNow - grabbedAt, -start), document.duration - end)
+            let snappedStart = Self.snappedTime(
+                start + shift, candidates: snapCandidates(excludingZoom: id),
+                duration: document.duration, width: width, viewport: viewport, enabled: snapEnabled
+            )
+            if snappedStart.snapped {
+                shift = min(max(snappedStart.time - start, -start), document.duration - end)
+                snappedX = x(start + shift, width: width)
+            } else {
+                snappedX = nil
+            }
             document.updateZoom(id) { zoom in
                 zoom.start = start + shift
                 zoom.end = end + shift
             }
         case .resizeZoom(let id, let start):
+            let snapped = Self.snappedTime(
+                rawNow, candidates: snapCandidates(excludingZoom: id),
+                duration: document.duration, width: width, viewport: viewport, enabled: snapEnabled
+            )
+            snappedX = snapped.snapped ? x(snapped.time, width: width) : nil
             document.updateZoom(id) { zoom in
-                if start { zoom.start = min(now, zoom.end - 0.3) } else { zoom.end = max(now, zoom.start + 0.3) }
+                if start { zoom.start = min(snapped.time, zoom.end - 0.3) } else { zoom.end = max(snapped.time, zoom.start + 0.3) }
             }
         case .moveLayout(let id, let grabbedAt, let start, let end):
             // Kept to the room between its neighbors, whole.
             let limits = document.limits(ofCameraSegment: id)
-            let shift = min(max(now - grabbedAt, limits.lowerBound - start), limits.upperBound - end)
+            let shift = min(max(rawNow - grabbedAt, limits.lowerBound - start), limits.upperBound - end)
+            snappedX = nil
             document.updateCameraSegment(id) { segment in
                 segment.start = start + shift
                 segment.end = end + shift
             }
         case .resizeLayout(let id, let start):
+            let snapped = Self.snappedTime(
+                rawNow, candidates: snapCandidates(excludingSegment: id),
+                duration: document.duration, width: width, viewport: viewport, enabled: snapEnabled
+            )
+            snappedX = snapped.snapped ? x(snapped.time, width: width) : nil
             document.updateCameraSegment(id) { segment in
-                if start { segment.start = min(now, segment.end - StudioProject.shortestSegment) } else { segment.end = max(now, segment.start + StudioProject.shortestSegment) }
+                if start { segment.start = min(snapped.time, segment.end - StudioProject.shortestSegment) } else { segment.end = max(snapped.time, segment.start + StudioProject.shortestSegment) }
             }
         case nil:
             break
@@ -518,13 +672,30 @@ struct StudioTimeline: View {
     }
 
     private func dragEnded(_ value: DragGesture.Value, width: CGFloat) {
+        snappedX = nil
         let moved = hypot(value.translation.width, value.translation.height) > 3
         if !moved {
             // A click: choose what is under it, and move the playhead there.
             let point = value.startLocation
             let at = time(point.x, width: width)
+            let nowUptime = ProcessInfo.processInfo.systemUptime
+            let isDoubleClick: Bool = if let prev = lastClick,
+                                        nowUptime - prev.uptime <= NSEvent.doubleClickInterval,
+                                        hypot(point.x - prev.location.x, point.y - prev.location.y) <= 6 {
+                true
+            } else {
+                false
+            }
+            lastClick = isDoubleClick ? nil : (nowUptime, point)
             if let zoom = zoom(at: point, width: width) {
                 choose(zoom: zoom.id)
+            } else if isDoubleClick, point.y >= Self.zoomTop, point.y <= Self.zoomTop + Self.zoomHeight {
+                model.controller?.seek(toRecordingTime: at)
+                document.time = at
+                if document.canAddZoom { document.addZoom() }
+                document.endContinuousChange()
+                drag = nil
+                return
             } else if let layout = layout(at: point, width: width) {
                 choose(layout: layout.id)
             } else if point.y >= Self.clipTop, point.y <= Self.clipTop + Self.clipHeight, let cut = document.project.cuts.first(where: { $0.contains(at) }) {

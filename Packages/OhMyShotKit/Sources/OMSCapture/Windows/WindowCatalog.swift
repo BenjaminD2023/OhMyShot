@@ -79,4 +79,24 @@ public enum WindowCatalog {
     public static func target(at point: CGPoint, in windows: [WindowTarget]) -> WindowTarget? {
         windows.first { $0.frame.contains(point) }
     }
+
+    /// All windows under a point in AppKit's global space, front to back.
+    public static func targets(at point: CGPoint, in windows: [WindowTarget]) -> [WindowTarget] {
+        windows.filter { $0.frame.contains(point) }
+    }
+
+    /// Cycles to the next (or previous) window: among the overlapping windows under `point` when there are two or more,
+    /// otherwise across all `windows` on screen.
+    public static func cycledTarget(
+        from current: WindowTarget?, at point: CGPoint?, in windows: [WindowTarget], backward: Bool = false
+    ) -> WindowTarget? {
+        let under = point.map { targets(at: $0, in: windows) } ?? []
+        let pool = under.count > 1 ? under : windows
+        guard !pool.isEmpty else { return nil }
+        if let current, let index = pool.firstIndex(of: current) {
+            let step = backward ? -1 : 1
+            return pool[(index + step + pool.count) % pool.count]
+        }
+        return backward ? pool.last : pool.first
+    }
 }

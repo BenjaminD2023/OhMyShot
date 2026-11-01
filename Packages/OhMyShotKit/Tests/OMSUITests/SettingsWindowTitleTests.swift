@@ -31,4 +31,31 @@ struct SettingsWindowTitleTests {
         #expect(window.title == SettingsTab.general.title)
         window.close()
     }
+
+    @Test func standardWindowsTrackCommandTabActivationAndCachedLanguages() {
+        let titled = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 400, height: 300),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        titled.isReleasedWhenClosed = false
+        #expect(AppActivation.isStandardWindow(titled))
+        let floating = NSPanel(
+            contentRect: CGRect(x: 0, y: 0, width: 200, height: 100),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        floating.isReleasedWhenClosed = false
+        #expect(!AppActivation.isStandardWindow(floating))
+        titled.close()
+        floating.close()
+
+        let langs = AppLanguage.available
+        #expect(langs == AppLanguage.available)
+        for code in langs {
+            #expect(!AppLanguage.displayName(code).isEmpty)
+        }
+    }
 }

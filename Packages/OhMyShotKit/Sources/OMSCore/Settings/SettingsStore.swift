@@ -636,6 +636,94 @@ public final class SettingsStore {
         translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
     }
 
+    /// Puts every choice back as a new install has it, as Settings › General › Reset does. What the app keeps rather
+    /// than chooses stays: the next `{counter}` number (a file saved under a number already taken would replace
+    /// it), the area All-In-One last took, whether the desktop icons are hidden (a cover window shows that, which the
+    /// menu bar's toggle shows and hides together with it), and the apps allowed to send commands, which the
+    /// Automation pane manages one by one. Shortcuts, destinations, the cloud model, and the language are kept
+    /// elsewhere and stay too.
+    public func resetToDefaults() {
+        let kept: Set<String> = [Key.nextFileNumber, Key.allInOneArea, Key.hidesDesktopIcons, Key.approvedAutomationCallers]
+        for key in Key.all where !kept.contains(key) {
+            defaults.removeObject(forKey: key)
+        }
+        // Read back as a launch reads them; each value is set here so whatever observes it hears the change.
+        let fresh = SettingsStore(defaults: defaults)
+        showMenuBarIcon = fresh.showMenuBarIcon
+        playSounds = fresh.playSounds
+        automationEnabled = fresh.automationEnabled
+        copyAfterCapture = fresh.copyAfterCapture
+        uploadAfterCapture = fresh.uploadAfterCapture
+        copyLinkAfterUpload = fresh.copyLinkAfterUpload
+        saveAfterCapture = fresh.saveAfterCapture
+        showQuickAccess = fresh.showQuickAccess
+        copyAfterRecording = fresh.copyAfterRecording
+        showRecordingQuickAccess = fresh.showRecordingQuickAccess
+        saveAfterRecording = fresh.saveAfterRecording
+        uploadAfterRecording = fresh.uploadAfterRecording
+        historyRetention = fresh.historyRetention
+        exportDirectory = fresh.exportDirectory
+        screenshotFormat = fresh.screenshotFormat
+        screenshotQuality = fresh.screenshotQuality
+        savesRetinaAtOneX = fresh.savesRetinaAtOneX
+        convertsToSRGB = fresh.convertsToSRGB
+        addsBorder = fresh.addsBorder
+        fileNamePattern = fresh.fileNamePattern
+        asksForFileName = fresh.asksForFileName
+        clipboardFormat = fresh.clipboardFormat
+        showTextResult = fresh.showTextResult
+        textResultPosition = fresh.textResultPosition
+        textResultCloseAfter = fresh.textResultCloseAfter
+        textRecognitionKeepsLineBreaks = fresh.textRecognitionKeepsLineBreaks
+        textRecognitionWrapsText = fresh.textRecognitionWrapsText
+        readsAppText = fresh.readsAppText
+        translationTarget = fresh.translationTarget
+        freezeScreen = fresh.freezeScreen
+        screenshotShowsCursor = fresh.screenshotShowsCursor
+        captureLoupeMagnification = fresh.captureLoupeMagnification
+        colorCopyGesture = fresh.colorCopyGesture
+        captureLoupeSize = fresh.captureLoupeSize
+        areaShape = fresh.areaShape
+        snapSelectionToText = fresh.snapSelectionToText
+        selfTimerDelay = fresh.selfTimerDelay
+        pinCornerRadius = fresh.pinCornerRadius
+        pinShadow = fresh.pinShadow
+        pinBorder = fresh.pinBorder
+        pinsAppearInCaptures = fresh.pinsAppearInCaptures
+        colorFormat = fresh.colorFormat
+        measureUnit = fresh.measureUnit
+        measureTolerance = fresh.measureTolerance
+        measureSnapsToContent = fresh.measureSnapsToContent
+        recordingFrameRate = fresh.recordingFrameRate
+        recordingPrefersHEVC = fresh.recordingPrefersHEVC
+        recordingCountdown = fresh.recordingCountdown
+        recordingHighlight = fresh.recordingHighlight
+        recordingShowsCursor = fresh.recordingShowsCursor
+        recordingShowsClicks = fresh.recordingShowsClicks
+        recordingClickStyle = fresh.recordingClickStyle
+        recordingSystemAudio = fresh.recordingSystemAudio
+        recordingMicrophone = fresh.recordingMicrophone
+        recordingMicrophoneID = fresh.recordingMicrophoneID
+        recordingShowsControls = fresh.recordingShowsControls
+        recordingShowsKeystrokes = fresh.recordingShowsKeystrokes
+        recordingKeystrokeMode = fresh.recordingKeystrokeMode
+        recordingKeepsKeysForStudio = fresh.recordingKeepsKeysForStudio
+        recordingCamera = fresh.recordingCamera
+        recordingCameraID = fresh.recordingCameraID
+        recordingCameraStyle = fresh.recordingCameraStyle
+        recordingOutput = fresh.recordingOutput
+        recordingGIFFrameRate = fresh.recordingGIFFrameRate
+        replaySound = fresh.replaySound
+        windowShadow = fresh.windowShadow
+        windowBackground = fresh.windowBackground
+        allInOneRemembersArea = fresh.allInOneRemembersArea
+        quickAccessCorner = fresh.quickAccessCorner
+        quickAccessSize = fresh.quickAccessSize
+        quickAccessOnPointerDisplay = fresh.quickAccessOnPointerDisplay
+        quickAccessCloseAfter = fresh.quickAccessCloseAfter
+        quickAccessCloseAction = fresh.quickAccessCloseAction
+    }
+
     /// A recording's choice: its own once it has one, else the choice for screenshots as it stands now, kept from then
     /// on. It is not registered as a default, since a default would stand in for the screenshots' value.
     private static func recordingChoice(_ key: String, startingAs screenshotKey: String, in defaults: UserDefaults) -> Bool {
@@ -725,5 +813,28 @@ public final class SettingsStore {
         static let textRecognitionWrapsText = "textRecognitionWrapsText"
         static let readsAppText = "readsAppText"
         static let translationTarget = "translationTarget"
+        /// Every key the store keeps, for `resetToDefaults`.
+        static let all = [
+            showMenuBarIcon, playSounds, automationEnabled,
+            approvedAutomationCallers, exportDirectory, freezeScreen, screenshotShowsCursor,
+            captureLoupeMagnification, colorCopyGesture, captureLoupeSize, areaShape, snapSelectionToText,
+            selfTimerDelay, pinCornerRadius, pinShadow, pinBorder,
+            pinsAppearInCaptures, colorFormat, measureUnit, measureTolerance,
+            measureSnapsToContent, recordingFrameRate, recordingPrefersHEVC, recordingCountdown,
+            recordingHighlight, recordingShowsCursor, recordingShowsClicks, recordingClickStyle,
+            recordingSystemAudio, recordingMicrophone, recordingMicrophoneID, recordingShowsControls,
+            recordingCamera, recordingCameraID, recordingCameraShape, recordingCameraSize,
+            recordingCameraMirrored, recordingShowsKeystrokes, recordingKeystrokeMode, recordingKeepsKeysForStudio,
+            recordingOutput, recordingGIFFrameRate, replaySound, copyAfterCapture,
+            hidesDesktopIcons, allInOneRemembersArea, windowShadow, windowBackground,
+            allInOneArea, quickAccessCorner, quickAccessSize, quickAccessOnPointerDisplay,
+            quickAccessCloseAfter, quickAccessCloseAction, uploadAfterCapture, copyLinkAfterUpload,
+            saveAfterCapture, screenshotFormat, screenshotQuality, savesRetinaAtOneX,
+            convertsToSRGB, addsBorder, fileNamePattern, nextFileNumber,
+            asksForFileName, clipboardFormat, showQuickAccess, copyAfterRecording,
+            showRecordingQuickAccess, saveAfterRecording, uploadAfterRecording, historyRetention,
+            showTextResult, textResultPosition, textResultCloseAfter, textRecognitionKeepsLineBreaks,
+            textRecognitionWrapsText, readsAppText, translationTarget,
+        ]
     }
 }

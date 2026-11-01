@@ -291,8 +291,9 @@ final class AllInOneBar: NSView {
     @objc private func hideClicked() { onHide?() }
 }
 
-/// A borderless bar button that reports the pointer entering and leaving it, for its hover highlight.
-final class BarButton: NSButton {
+/// A borderless bar button that reports the pointer entering and leaving it, for its hover highlight; a symbol
+/// alone names itself in a hover tag.
+final class BarButton: HoverTagButton {
     var onHover: ((Bool) -> Void)?
 
     /// Its frame is the chip: no bezel margins, which made a symbol-only chip as tall as its symbol's own
@@ -322,6 +323,13 @@ final class BarButton: NSButton {
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
 
-    override func mouseEntered(with event: NSEvent) { onHover?(true) }
-    override func mouseExited(with event: NSEvent) { onHover?(false) }
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        onHover?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        onHover?(false)
+    }
 }

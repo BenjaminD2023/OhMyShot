@@ -1,4 +1,7 @@
+import AppKit
 import CoreGraphics
+import Foundation
+import OMSCore
 import Testing
 @testable import OMSUI
 
@@ -48,5 +51,41 @@ struct CaptureCardPictureTests {
             let image = picture(width: width, height: height, splitsAcross: true)
             #expect(CaptureCardView.shownPart(of: image) === image)
         }
+    }
+
+    @MainActor
+    @Test func swipeFeedbackCountdownRingAndCompactShortCardLayout() {
+        let thumb = picture(width: 400, height: 120, splitsAcross: true)
+        let item = QuickAccessItem(
+            id: UUID(), kind: .screenshot, fileURL: URL(filePath: "/tmp/test.png"),
+            thumbnail: thumb, pixelWidth: 400, pixelHeight: 120, displayID: 1
+        )
+        let card = CaptureCardView(item: item, size: .medium)
+        card.frame = CGRect(x: 0, y: 0, width: 220, height: 100)
+        card.layout()
+        // Short card (< 124 pt) uses compact 26 pt pills with 4 pt spacing.
+        #expect(card.copyButton.pillHeight == 26)
+        #expect(card.actions.spacing == 4)
+
+        // Countdown ring shows while counting and hides when cleared.
+        #expect(!card.isCountdownRingVisible)
+        card.setCountdown((remaining: 5, interval: 10))
+        #expect(card.isCountdownRingVisible)
+        card.setCountdown(nil)
+        #expect(!card.isCountdownRingVisible)
+
+        // Swipe translation follows gesture, springs back under threshold, and closes past threshold.
+        var closed = 0
+        card.onClose = { closed += 1 }
+        card.applySwipePhase(.began, deltaX: 0)
+        card.applySwipePhase(.changed, deltaX: -30)
+        #expect(card.swipeTranslation == -30)
+        card.applySwipePhase(.ended, deltaX: 0)
+        #expect(closed == 0 && card.swipeTranslation == 0)
+
+        card.applySwipePhase(.began, deltaX: 0)
+        card.applySwipePhase(.changed, deltaX: -65)
+        card.applySwipePhase(.ended, deltaX: 0)
+        #expect(closed == 1)
     }
 }

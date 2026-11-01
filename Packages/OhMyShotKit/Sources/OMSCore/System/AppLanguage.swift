@@ -10,14 +10,22 @@ public enum AppLanguage {
     private static let key = "AppleLanguages"
 
     /// The codes of the languages the app is translated into ("en", "fr", "zh-Hans"…), English first, then by
-    /// their names in their own language.
-    public static var available: [String] {
+    /// their names in their own language. Cached once so opening Settings never re-enumerates or re-sorts locales.
+    public static let available: [String] = {
         let codes = Bundle.main.localizations.filter { $0 != "Base" }
         return codes.sorted { a, b in
             if a == "en" || b == "en" { return a == "en" }
-            return displayName(a).localizedStandardCompare(displayName(b)) == .orderedAscending
+            return computeDisplayName(a).localizedStandardCompare(computeDisplayName(b)) == .orderedAscending
         }
-    }
+    }()
+
+    private static let cachedDisplayNames: [String: String] = {
+        var map: [String: String] = [:]
+        for code in Bundle.main.localizations where code != "Base" {
+            map[code] = computeDisplayName(code)
+        }
+        return map
+    }()
 
     /// The language picked for the app, or nil when it follows the system.
     public static var chosen: String? {
@@ -41,6 +49,10 @@ public enum AppLanguage {
 
     /// A language's name in that language, as people look for it in a list: "Français", "日本語".
     public static func displayName(_ code: String) -> String {
+        cachedDisplayNames[code] ?? computeDisplayName(code)
+    }
+
+    private static func computeDisplayName(_ code: String) -> String {
         let locale = Locale(identifier: code)
         guard let name = locale.localizedString(forIdentifier: code) else { return code }
         return name.prefix(1).uppercased(with: locale) + name.dropFirst()

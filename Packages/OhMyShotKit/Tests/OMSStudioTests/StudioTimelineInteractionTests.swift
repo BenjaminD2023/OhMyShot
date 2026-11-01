@@ -135,4 +135,39 @@ struct StudioTimelineInteractionTests {
         #expect(loader.images[firstKey] == nil)
         #expect(loader.images[secondKey] != nil)
     }
+
+    @Test func timelineLaneHitDistinguishesRulerZoomHandlesClipRangeAndCuts() {
+        let viewport = StudioTimelineViewport(duration: 10)
+        let zoom = StudioProject.Zoom(start: 2, end: 4, scale: 2, isAutomatic: false)
+        let layout = StudioProject.CameraSegment(start: 6, end: 8, layout: .cameraOnly)
+        let cuts: [ClosedRange<Double>] = [4.5...5.5]
+        let width: CGFloat = 1032 // span = 1000 -> 100 pt per second, inset = 16
+
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 200, y: 10), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .ruler)
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 200, y: 40), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .zoomResize(zoom.id, start: true))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 300, y: 40), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .zoomMove(zoom.id))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 500, y: 80), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .cut(4.5))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 100, y: 80), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .clipRange)
+        #expect(StudioTimeline.laneHit(
+            at: CGPoint(x: 16 + 700, y: 120), width: width, viewport: viewport, zooms: [zoom], cuts: cuts, cameraSegments: [layout]
+        ) == .layoutMove(layout.id))
+    }
+
+    @Test func magneticSnappingAlignsWithinFivePointsAndRespectsCommandBypass() {
+        let viewport = StudioTimelineViewport(duration: 10)
+        let width: CGFloat = 1032 // span = 1000 -> 100 pt/s -> 5 pt = 0.05 s
+        let candidates: [Double] = [2.0, 4.5]
+
+        // Within 5 pt (2.03 s is 3 pt away from 2.0 s) -> snaps to 2.0
+        let snapped = StudioTimeline.snappedTime(2.03, candidates: candidates, duration: 10, width: width, viewport: viewport, enabled: true)
+        #expect(snapped.snapped && abs(snapped.time - 2.0) < 0.0001)
+
+        // Outside 5 pt (2.08 s is 8 pt away from 2.0 s) -> does not snap
+        let unsnapped = StudioTimeline.snappedTime(2.08, candidates: candidates, duration: 10, width: width, viewport: viewport, enabled: true)
+        #expect(!unsnapped.snapped && abs(unsnapped.time - 2.08) < 0.0001)
+
+        // Disabled (Command held) -> does not snap even within 5 pt
+        let bypassed = StudioTimeline.snappedTime(2.03, candidates: candidates, duration: 10, width: width, viewport: viewport, enabled: false)
+        #expect(!bypassed.snapped && abs(bypassed.time - 2.03) < 0.0001)
+    }
 }

@@ -20,6 +20,7 @@ public final class OverlayController {
         /// display's frame had not arrived), and the area is captured now instead.
         case region(CGRect, display: DisplayInfo, modifiers: NSEvent.ModifierFlags, frozen: CapturedFrame?)
         case window(WindowTarget, modifiers: NSEvent.ModifierFlags)
+        case windows([WindowTarget], modifiers: NSEvent.ModifierFlags)
         /// In-place annotation finished (`finishAnnotation`); its own handler has the result.
         case annotated
         /// A color taken off the frozen screen (the color picker, or C over a capture's magnifier), where
@@ -95,6 +96,8 @@ public final class OverlayController {
     public var recapturesLive = false
     /// The shape Shift keeps while an area is dragged out; nil for a square. Set from Settings.
     public var keptShape: AspectRatio?
+    /// The area last captured, recalled with L before a drag begins.
+    public var lastArea: CGRect?
     /// A shape chosen on Capture Area's size control, which Shift keeps from now on: whoever keeps the setting sets
     /// `keptShape` to it.
     public var onKeptShapeChange: ((AspectRatio) -> Void)?
@@ -1187,6 +1190,29 @@ extension OverlayController: OverlayViewDelegate {
         startAllInOneSetup(on: display, area: start.area, sizing: true, ratio: start.ratio)
     }
 
+    func overlayViewDidRequestLastArea(_ view: OverlayView) {
+        guard isActive, hasInput, dragPoint == nil, purpose == .screenshot || purpose == .annotate, !isAnnotating,
+              let rect = lastArea, let display = startDisplay(of: rect) else {
+            NSSound.beep()
+            return
+        }
+        let area = rect.intersection(display.frame)
+        guard !area.isNull, area.width >= AreaFrame.smallest, area.height >= AreaFrame.smallest else {
+            NSSound.beep()
+            return
+        }
+        startAllInOneSetup(on: display, area: area, sizing: !isAllInOne, ratio: nil)
+    }
+
+    func overlayViewDidResetDrag(_ view: OverlayView) {
+        guard dragPoint != nil else { return }
+        dragPoint = nil
+        spaceHeld = false
+        selection.reset()
+        showSelection()
+        if let pointer { updateCursorVisibility(at: pointer) }
+    }
+
     /// The area the size control opens on, and the shape it keeps. A drag in hand is framed as it is, free; one dragged
     /// with Shift held was kept to a shape, `kept` or a square, and keeps it. With no drag, an area around `point` is
     /// framed free.
@@ -1274,6 +1300,25 @@ extension OverlayController: OverlayViewDelegate {
             return
         }
         end(.window(target, modifiers: modifiers))
+    }
+
+    func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
+        guard let first = targets.first else { return }
+        if targets.count == 1 {
+            overlayView(view, didSelectWindow: first, modifiers: modifiers)
+            return
+        }
+        let unionFrame = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+        if isAllInOne, purpose == .screenshot, let mode = allInOneMode {
+            endAllInOne(mode, unionFrame.intersection(view.display.frame), on: view.display)
+            return
+        }
+        if purpose == .annotate {
+            let area = unionFrame.intersection(view.display.frame)
+            if !area.isNull, area.width >= 1, area.height >= 1 { startAnnotating(on: view.display.id, area: area) }
+            return
+        }
+        end(.windows(targets, modifiers: modifiers))
     }
 
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) {

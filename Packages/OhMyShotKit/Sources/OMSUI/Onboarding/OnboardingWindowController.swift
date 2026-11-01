@@ -313,8 +313,8 @@ struct OnboardingView: View {
 }
 
 /// Buttons of one width side by side, or one above the other, full width, when a language's labels are too long for
-/// each to fit its share of the row.
-private struct ButtonRow: Layout {
+/// each to fit its share of the row. The community invitation lays its buttons out the same way.
+struct ButtonRow: Layout {
     var horizontalSpacing: CGFloat = 10
     var verticalSpacing: CGFloat = 8
 

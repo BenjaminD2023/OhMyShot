@@ -28,3 +28,7 @@ xcuserdata/
 
 # Real screenshots for the OCR benchmark (--real): personal, never committed.
 Tools/ocr-bench/real/
+
+# Python bytecode
+__pycache__/
+*.pyc

@@ -157,52 +157,38 @@ final class ScreenshotFiles {
         }
     }
 
-    /// Asks where to save a screenshot, and saves it there: in the format of the name typed, else the one Settings
-    /// choose. The panel opens in the export folder. Returns where it went; nil when cancelled or failed.
+    /// Asks where to save a screenshot and how, and saves it there. The panel opens in the export folder with the
+    /// format and picture options Settings choose, which the person may change for this file; a name typed with
+    /// another format's extension saves in that format. Returns where it went; nil when cancelled or failed.
     func saveScreenshotAs(fileAt url: URL, entry: HistoryItem? = nil, scale: Double? = nil) async -> URL? {
         let entry = entry ?? history.item(forFileAt: url)
-        let scale = scale ?? entry?.pixelsPerPoint
-        let output = output
         let sourceFormat = ImageExporter.Format(fileExtension: url.pathExtension)
-        let offered = offeredName(for: entry, fileURL: url)
-        // A capture left as it is is saved as the kind of file it is.
-        let preferred = output.isUnchanged ? sourceFormat ?? .png : output.format
-        guard let chosen = await SavePanel.ask(name: offered.text, types: SavePanel.pictureTypes(preferring: preferred), directory: settings.exportDirectory) else {
-            gaveUp(offered)
-            return nil
-        }
-        didName(chosen.deletingPathExtension().lastPathComponent, offered: offered)
-        let format = ImageExporter.Format(fileExtension: chosen.pathExtension) ?? preferred
-        do {
-            // Written atomically over a file the person agreed to replace: if reading or encoding fails, it stays as it was.
-            if output.isUnchanged, format == sourceFormat {
-                try ImageExporter.write(try Data(contentsOf: url), to: chosen)
-            } else {
-                let encoded = try await PictureExport.encoded(fileAt: url, pixelsPerPoint: scale, output: output.with(format: format))
-                try ImageExporter.write(encoded.data, to: chosen)
-            }
-            Log.capture.notice("Saved \(chosen.lastPathComponent, privacy: .public) with Save As")
-            return chosen
-        } catch {
-            Log.capture.error("Save As failed: \(error.localizedDescription, privacy: .public)")
-            NSSound.beep()
-            return nil
-        }
+        var offeredOutput = output
+        // A capture left as it is is offered as the kind of file it is.
+        if offeredOutput.isUnchanged { offeredOutput.format = sourceFormat ?? .png }
+        return await saveAs(.file(url, nil), entry: entry, scale: scale ?? entry?.pixelsPerPoint, offering: offeredOutput, sourceFormat: sourceFormat)
     }
 
     /// Save As for a picture that has no file of its own (a pin from the clipboard).
     func saveScreenshotAs(_ picture: Picture, scale: Double?) async -> URL? {
-        let output = output
-        let offered = offeredName(for: nil, fileURL: nil)
-        guard let chosen = await SavePanel.ask(name: offered.text, types: SavePanel.pictureTypes(preferring: output.format), directory: settings.exportDirectory) else {
+        await saveAs(.picture(picture), entry: nil, scale: scale, offering: output, sourceFormat: nil)
+    }
+
+    private func saveAs(_ source: Source, entry: HistoryItem?, scale: Double?, offering: ScreenshotOutput, sourceFormat: ImageExporter.Format?) async -> URL? {
+        let offered = offeredName(for: entry, fileURL: source.fileURL)
+        guard let (chosen, output) = await SavePanel.askForPicture(name: offered.text, output: offering, directory: settings.exportDirectory) else {
             gaveUp(offered)
             return nil
         }
         didName(chosen.deletingPathExtension().lastPathComponent, offered: offered)
         do {
-            let format = ImageExporter.Format(fileExtension: chosen.pathExtension) ?? output.format
-            let encoded = try await PictureExport.encoded(picture.image, pixelsPerPoint: scale, hdr: picture.hdr, output: output.with(format: format))
-            try ImageExporter.write(encoded.data, to: chosen)
+            // Written atomically over a file the person agreed to replace: if reading or encoding fails, it stays as it was.
+            if case .file(let url, _) = source, output.isUnchanged, output.format == sourceFormat {
+                try ImageExporter.write(try Data(contentsOf: url), to: chosen)
+            } else {
+                try ImageExporter.write(try await Self.encoded(source, scale: scale, output: output).data, to: chosen)
+            }
+            Log.capture.notice("Saved \(chosen.lastPathComponent, privacy: .public) with Save As")
             return chosen
         } catch {
             Log.capture.error("Save As failed: \(error.localizedDescription, privacy: .public)")

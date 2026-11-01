@@ -24,12 +24,17 @@ final class StyleCapsule: NSView {
     var onBackdropPresets: ((NSView) -> Void)?
     /// A shape was chosen for the crop frame.
     var onCropRatio: ((CropRatio) -> Void)?
+    /// Toggles sampling a color directly from the canvas picture (shortcut I).
+    var onPickCanvasColor: (() -> Void)?
+    /// Whether the canvas color eyedropper is currently active.
+    var isPickingCanvasColor = false
     /// The colors a person has kept; the chips beside the inks, and the one that keeps another.
     var savedColors = SavedColors.shared
 
     static let height: CGFloat = 38
     private static let inset: CGFloat = 4
-    private static let chip: CGFloat = 30
+    /// The room at each end, the same at both: a chip's fill 4 pt from the end crowded it.
+    private static let endInset: CGFloat = 8
 
     private let stack = NSStackView()
     private var displayOptions: NSObjectProtocol?
@@ -78,7 +83,7 @@ final class StyleCapsule: NSView {
         stack.orientation = .horizontal
         stack.spacing = 2
         stack.alignment = .centerY
-        stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset + 4, bottom: Self.inset, right: Self.inset)
+        stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.endInset, bottom: Self.inset, right: Self.endInset)
         addSubview(stack)
         setAccessibilityElement(true)
         setAccessibilityRole(.toolbar)
@@ -187,15 +192,18 @@ final class StyleCapsule: NSView {
         chips.removeAll()
         setAccessibilityLabel(String(localized: "\(ToolRail.name(of: kind)) Style", bundle: .module))
 
+        // The crop's text chips are capsules concentric with this one, 4 pt in at both ends.
         if kind == .crop {
             stack.edgeInsets.left = Self.inset
+            stack.edgeInsets.right = Self.inset
             add(ratioChip())
             addDivider()
             add(textChip(String(localized: "Reset", bundle: .module)) { [weak self] in self?.onCropReset?() })
             add(textChip(String(localized: "Done", bundle: .module), prominent: true) { [weak self] in self?.onCropDone?() })
             return
         }
-        stack.edgeInsets.left = Self.inset + 4
+        stack.edgeInsets.left = Self.endInset
+        stack.edgeInsets.right = Self.endInset
         if kind == .background, let background {
             buildBackground(background)
             return
@@ -203,7 +211,15 @@ final class StyleCapsule: NSView {
 
         var sections: [[NSView]] = []
         if usesColor {
-            sections.append(inks.map(colorChip) + savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip())
+            var colorChips = inks.map(colorChip) + savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip()
+            if onPickCanvasColor != nil {
+                let label = String(localized: "Pick Color from Canvas (I)", bundle: .module)
+                let eyedropper = symbolChip("eyedropper", name: label, selected: isPickingCanvasColor) { [weak self] in
+                    self?.onPickCanvasColor?()
+                }
+                colorChips.append(eyedropper)
+            }
+            sections.append(colorChips)
         }
         let sizes = sizeChips()
         if !sizes.isEmpty { sections.append(sizes) }
@@ -211,7 +227,7 @@ final class StyleCapsule: NSView {
         if !variants.isEmpty { sections.append(variants) }
         if castsShadow {
             let name = String(localized: "Shadow", bundle: .module)
-            let chip = CapsuleChip(image: Self.shadowIcon(), width: 30) { [weak self] in
+            let chip = CapsuleChip(image: Self.shadowIcon()) { [weak self] in
                 self?.change(name) { $0.shadow.toggle() }
             }
             chip.isSelected = settings.shadow
@@ -257,6 +273,16 @@ final class StyleCapsule: NSView {
         }
     }
 
+    /// The room from each end of the capsule to what its first and last controls show, for checking that
+    /// the two ends match: a status's own padding at an end counts as room.
+    var endRoom: (leading: CGFloat, trailing: CGFloat) {
+        layoutSubtreeIfNeeded()
+        guard let first = stack.arrangedSubviews.first, let last = stack.arrangedSubviews.last else { return (0, 0) }
+        let leading = first.frame.minX + ((first as? NSStackView)?.edgeInsets.left ?? 0)
+        let trailing = stack.bounds.maxX - last.frame.maxX + ((last as? NSStackView)?.edgeInsets.right ?? 0)
+        return (leading, trailing)
+    }
+
     private func add(_ view: NSView) {
         stack.addArrangedSubview(view)
         if let chip = view as? CapsuleChip { chips.append(chip) }
@@ -280,10 +306,9 @@ final class StyleCapsule: NSView {
 
     private func colorChip(_ color: RGBA) -> NSView {
         let selected = settings.color.withAlpha(1) == color
-        let chip = CapsuleChip(image: Self.dot(color, selected: selected), width: 24) { [weak self] in
+        let chip = CapsuleChip(swatch: Self.dot(color, selected: selected)) { [weak self] in
             self?.change(String(localized: "Color", bundle: .module)) { $0.color = color }
         }
-        chip.highlightsSelection = false
         chip.isSelected = selected
         chip.setAccessibilityLabel(Self.colorName(color))
         chip.toolTip = Self.colorName(color)
@@ -294,10 +319,9 @@ final class StyleCapsule: NSView {
     private func savedColorChip(_ color: RGBA) -> NSView {
         let selected = SavedColors.stored(settings.color) == color
         let name = String(localized: "Saved Color", bundle: .module)
-        let chip = CapsuleChip(image: Self.dot(color, selected: selected), width: 24) { [weak self] in
+        let chip = CapsuleChip(swatch: Self.dot(color, selected: selected)) { [weak self] in
             self?.change(String(localized: "Color", bundle: .module)) { $0.color = color }
         }
-        chip.highlightsSelection = false
         chip.isSelected = selected
         chip.setAccessibilityLabel(name)
         chip.toolTip = name
@@ -338,8 +362,7 @@ final class StyleCapsule: NSView {
         guard usesUnsavedColor, settings.color.withAlpha(1) != .marker else { return [] }
         let name = String(localized: "Save Color", bundle: .module)
         let color = settings.color
-        let image = NSImage(systemSymbolName: "plus", accessibilityDescription: name)?.withSymbolConfiguration(.init(pointSize: 11, weight: .semibold)) ?? NSImage()
-        let chip = CapsuleChip(image: image, width: 24) { [weak self] in
+        let chip = CapsuleChip(swatch: Self.saveDot()) { [weak self] in
             self?.savedColors.add(color)
         }
         chip.setAccessibilityLabel(name)
@@ -353,9 +376,8 @@ final class StyleCapsule: NSView {
 
     private func customColorChip() -> NSView {
         let isCustom = usesUnsavedColor
-        let image = isCustom ? Self.dot(settings.color, selected: true) : Self.wheel(size: Self.inkChip, inset: Self.inkInset)
-        let chip = CapsuleChip(image: image, width: 24) { [weak self] in self?.pickColor() }
-        chip.highlightsSelection = false
+        let image = isCustom ? Self.dot(settings.color, selected: true) : Self.wheel()
+        let chip = CapsuleChip(swatch: image) { [weak self] in self?.pickColor() }
         // Showing the color in use, it is the selected one, and says so.
         chip.isSelected = isCustom
         chip.setAccessibilityLabel(String(localized: "Other Color…", bundle: .module))
@@ -389,7 +411,7 @@ final class StyleCapsule: NSView {
             let nearest = Self.nearest(settings.fontSize, in: sizes)
             return sizes.enumerated().map { index, size in
                 let selected = size == nearest
-                let chip = CapsuleChip(image: Self.letter(size: 9 + CGFloat(index) * 3), width: 28) { [weak self] in
+                let chip = CapsuleChip(image: Self.letter(size: 9 + CGFloat(index) * 3)) { [weak self] in
                     self?.change(String(localized: "Text Size", bundle: .module)) { $0.fontSize = size }
                 }
                 chip.isSelected = selected
@@ -407,7 +429,7 @@ final class StyleCapsule: NSView {
             let nearest = Self.nearest(settings.lineWidth, in: widths)
             return widths.enumerated().map { index, width in
                 let selected = width == nearest
-                let chip = CapsuleChip(image: Self.sizeDot(diameter: 4 + CGFloat(index) * 3), width: 26) { [weak self] in
+                let chip = CapsuleChip(image: Self.sizeDot(diameter: 4 + CGFloat(index) * 3)) { [weak self] in
                     self?.change(String(localized: "Size", bundle: .module)) { $0.lineWidth = width }
                 }
                 chip.isSelected = selected
@@ -426,7 +448,7 @@ final class StyleCapsule: NSView {
         switch kind {
         case .arrow:
             return Arrow.Head.allCases.map { head in
-                let chip = CapsuleChip(image: Self.arrowIcon(head), width: 30) { [weak self] in
+                let chip = CapsuleChip(image: Self.arrowIcon(head)) { [weak self] in
                     self?.change(String(localized: "Arrow Style", bundle: .module)) { $0.arrowHead = head }
                 }
                 chip.isSelected = settings.arrowHead == head
@@ -436,7 +458,7 @@ final class StyleCapsule: NSView {
             }
         case .line:
             return [false, true].map { dashed in
-                let chip = CapsuleChip(image: Self.lineIcon(dashed: dashed), width: 30) { [weak self] in
+                let chip = CapsuleChip(image: Self.lineIcon(dashed: dashed)) { [weak self] in
                     self?.change(String(localized: "Line Style", bundle: .module)) { $0.dashed = dashed }
                 }
                 chip.isSelected = settings.dashed == dashed
@@ -454,7 +476,7 @@ final class StyleCapsule: NSView {
             }
         case .text:
             return TextBlock.Look.allCases.map { look in
-                let chip = CapsuleChip(image: Self.lookIcon(look), width: 30) { [weak self] in
+                let chip = CapsuleChip(image: Self.lookIcon(look)) { [weak self] in
                     self?.change(String(localized: "Text Style", bundle: .module)) { $0.textLook = look }
                 }
                 chip.isSelected = settings.textLook == look
@@ -465,7 +487,7 @@ final class StyleCapsule: NSView {
         case .counter:
             return Counter.Numbering.allCases.map { numbering in
                 let label = Counter(center: .zero, value: 1, numbering: numbering).label
-                let chip = CapsuleChip(image: Self.glyph(label), width: 28) { [weak self] in
+                let chip = CapsuleChip(image: Self.glyph(label)) { [weak self] in
                     self?.change(String(localized: "Numbering", bundle: .module)) { $0.numbering = numbering }
                 }
                 chip.isSelected = settings.numbering == numbering
@@ -601,8 +623,7 @@ final class StyleCapsule: NSView {
     }
 
     private func fillChip(_ image: NSImage, name: String, selected: Bool, action: @escaping () -> Void) -> CapsuleChip {
-        let chip = CapsuleChip(image: Self.ringed(image, selected: selected), width: 24, action: action)
-        chip.highlightsSelection = false
+        let chip = CapsuleChip(swatch: Self.ringed(image, selected: selected), action: action)
         chip.isSelected = selected
         chip.setAccessibilityLabel(name)
         chip.toolTip = name
@@ -629,18 +650,19 @@ final class StyleCapsule: NSView {
         gradient.title
     }
 
-    /// The disc a fill chip shows, 14 pt across, with the edge every swatch has.
-    private static let swatch = CGRect(x: 4, y: 4, width: 14, height: 14)
-
-    private static func swatchImage(_ draw: @escaping (CGContext, CGRect) -> Void) -> NSImage {
-        let image = NSImage(size: CGSize(width: 22, height: 22), flipped: true) { _ in
+    /// A fill chip's swatch, drawn as an ink's dot: a 16 pt disc in a 24 pt image, room left for the ring.
+    /// `blends` says, for the capsule in dark or light, whether the swatch would vanish into it without an edge.
+    private static func swatchImage(blends: @escaping (_ dark: Bool) -> Bool = { _ in false }, _ draw: @escaping (CGContext, CGRect) -> Void) -> NSImage {
+        let image = NSImage(size: CGSize(width: inkChip, height: inkChip), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            let disc = rect.insetBy(dx: inkInset, dy: inkInset)
             context.saveGState()
-            context.addEllipse(in: swatch)
+            context.addEllipse(in: disc)
             context.clip()
-            draw(context, swatch)
+            draw(context, disc)
             context.restoreGState()
-            strokeSwatchEdge(context, around: swatch)
+            let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            if blends(dark) { strokeInkEdge(context, around: disc, dark: dark) }
             return true
         }
         // Drawn each time, so the edge follows the appearance and Increase Contrast.
@@ -648,25 +670,22 @@ final class StyleCapsule: NSView {
         return image
     }
 
-    /// The edge every swatch and color dot has, so light ones hold on the light capsule and dark ones
-    /// on the dark: black 0.18 in light, white 0.38 in dark, 1 pt and stronger under Increase Contrast.
-    /// Read from the appearance the chip draws in.
-    private static func strokeSwatchEdge(_ context: CGContext, around disc: CGRect) {
-        let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    /// The edge of an ink or swatch the capsule would swallow: 1 pt, black 0.22 in light, white 0.45 in dark,
+    /// stronger under Increase Contrast.
+    private static func strokeInkEdge(_ context: CGContext, around disc: CGRect, dark: Bool) {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        let width: CGFloat = contrast ? 1 : 0.5
-        context.setStrokeColor(dark ? CGColor(gray: 1, alpha: contrast ? 0.6 : 0.38) : CGColor(gray: 0, alpha: contrast ? 0.4 : 0.18))
-        context.setLineWidth(width)
-        context.strokeEllipse(in: disc.insetBy(dx: width / 2, dy: width / 2))
+        context.setStrokeColor(dark ? CGColor(gray: 1, alpha: contrast ? 0.6 : 0.45) : CGColor(gray: 0, alpha: contrast ? 0.4 : 0.22))
+        context.setLineWidth(1)
+        context.strokeEllipse(in: disc.insetBy(dx: 0.5, dy: 0.5))
     }
 
-    /// `image` with the accent ring of a chosen swatch around it.
+    /// `image` with the ring of a chosen swatch around it: an ink's ring, in the label ink.
     private static func ringed(_ image: NSImage, selected: Bool) -> NSImage {
         guard selected else { return image }
-        let ringed = NSImage(size: CGSize(width: 22, height: 22), flipped: true) { rect in
+        let ringed = NSImage(size: CGSize(width: inkChip, height: inkChip), flipped: true) { rect in
             image.draw(in: rect)
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            context.setStrokeColor(NSColor.controlAccentColor.cgColor)
+            context.setStrokeColor(NSColor.labelColor.cgColor)
             context.setLineWidth(2)
             context.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
             return true
@@ -677,7 +696,7 @@ final class StyleCapsule: NSView {
 
     /// White with a red stroke across: no background, as "None" swatches read in design apps.
     private static func noneDot() -> NSImage {
-        swatchImage { context, rect in
+        swatchImage(blends: { !$0 }) { context, rect in
             context.setFillColor(CGColor(gray: 1, alpha: 1))
             context.fill(rect)
             context.setStrokeColor(RGBA.red.cgColor)
@@ -688,11 +707,11 @@ final class StyleCapsule: NSView {
 
     /// A checkerboard: transparent room.
     private static func clearDot() -> NSImage {
-        swatchImage { context, rect in
+        swatchImage(blends: { !$0 }) { context, rect in
             context.setFillColor(CGColor(gray: 1, alpha: 1))
             context.fill(rect)
             context.setFillColor(CGColor(gray: 0.78, alpha: 1))
-            let cell: CGFloat = 3.5
+            let cell = rect.width / 4
             for row in 0..<4 {
                 for column in 0..<4 where (row + column).isMultiple(of: 2) {
                     context.fill(CGRect(x: rect.minX + CGFloat(column) * cell, y: rect.minY + CGFloat(row) * cell, width: cell, height: cell))
@@ -701,12 +720,16 @@ final class StyleCapsule: NSView {
         }
     }
 
+    /// Edged as an ink would be, by the blend's two ends: Paper on the light capsule, Graphite on the dark.
     private static func gradientDot(_ gradient: BackdropGradient) -> NSImage {
-        swatchImage { context, rect in gradient.recipe.draw(in: rect, context: context) }
+        let recipe = gradient.recipe
+        return swatchImage(blends: { dark in blendsIntoCapsule(recipe.from, dark: dark) || blendsIntoCapsule(recipe.to, dark: dark) }) { context, rect in
+            recipe.draw(in: rect, context: context)
+        }
     }
 
     private static func dotImage(_ color: RGBA) -> NSImage {
-        swatchImage { context, rect in
+        swatchImage(blends: { blendsIntoCapsule(color, dark: $0) }) { context, rect in
             context.setFillColor(color.withAlpha(1).cgColor)
             context.fill(rect)
         }
@@ -728,7 +751,7 @@ final class StyleCapsule: NSView {
 
     private func symbolChip(_ symbol: String, name: String, selected: Bool, action: @escaping () -> Void) -> CapsuleChip {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: name)?.withSymbolConfiguration(.init(pointSize: 13, weight: .medium)) ?? NSImage()
-        let chip = CapsuleChip(image: image, width: 30, action: action)
+        let chip = CapsuleChip(image: image, action: action)
         chip.isSelected = selected
         chip.setAccessibilityLabel(name)
         chip.toolTip = name
@@ -760,12 +783,7 @@ final class StyleCapsule: NSView {
             // An edge only on an ink the capsule would swallow (white on the light capsule, black on the dark):
             // a hairline around every ink read as a thin gray outline.
             let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            if blendsIntoCapsule(color, dark: dark) {
-                let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-                context.setStrokeColor(dark ? CGColor(gray: 1, alpha: contrast ? 0.6 : 0.45) : CGColor(gray: 0, alpha: contrast ? 0.4 : 0.22))
-                context.setLineWidth(1)
-                context.strokeEllipse(in: disc.insetBy(dx: 0.5, dy: 0.5))
-            }
+            if blendsIntoCapsule(color, dark: dark) { strokeInkEdge(context, around: disc, dark: dark) }
             // The chosen ink's ring is in the label ink, not the accent, which can be a hue beside the ink it rings
             // (a pink accent around red); 2 pt of the capsule show between the ring and the disc.
             if selected {
@@ -779,6 +797,28 @@ final class StyleCapsule: NSView {
         return image
     }
 
+    /// Keep this color: a plus in an empty disc the size of an ink's, a swatch among the swatches.
+    private static func saveDot() -> NSImage {
+        let image = NSImage(size: CGSize(width: inkChip, height: inkChip), flipped: true) { rect in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            let disc = rect.insetBy(dx: inkInset, dy: inkInset)
+            context.setStrokeColor(CGColor(gray: 0, alpha: 1))
+            context.setLineWidth(1)
+            context.setLineDash(phase: 0, lengths: [2, 1.6])
+            context.strokeEllipse(in: disc.insetBy(dx: 0.5, dy: 0.5))
+            context.setLineDash(phase: 0, lengths: [])
+            context.setLineWidth(1.5)
+            let arm: CGFloat = 3.5
+            context.strokeLineSegments(between: [
+                CGPoint(x: disc.midX - arm, y: disc.midY), CGPoint(x: disc.midX + arm, y: disc.midY),
+                CGPoint(x: disc.midX, y: disc.midY - arm), CGPoint(x: disc.midX, y: disc.midY + arm),
+            ])
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
     /// Whether an ink is too close to the capsule behind it to hold without an edge: nearly its luminance (a pale
     /// yellow on white), or a gray not far from it (black on the dark capsule). Yellow on white, saturated, holds.
     private static func blendsIntoCapsule(_ color: RGBA, dark: Bool) -> Bool {
@@ -789,8 +829,8 @@ final class StyleCapsule: NSView {
         return ratio < 1.25 || (chroma < 0.15 && ratio < 2)
     }
 
-    /// The hue wheel that opens the color panel: 12 pt in a background swatch's 22 pt image, or an ink's size.
-    private static func wheel(size: CGFloat = 22, inset: CGFloat = 5) -> NSImage {
+    /// The hue wheel that opens the color panel, an ink's size.
+    private static func wheel(size: CGFloat = inkChip, inset: CGFloat = inkInset) -> NSImage {
         NSImage(size: CGSize(width: size, height: size), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             let disc = rect.insetBy(dx: inset, dy: inset)
@@ -974,7 +1014,8 @@ final class CapsuleStatus: NSStackView {
         label.textColor = .secondaryLabelColor
         orientation = .horizontal
         spacing = 6
-        edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: busy ? 12 : 4)
+        // Busy, it ends the capsule, whose own end room is all there is past its words; done, Try Again follows it.
+        edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: busy ? 0 : 4)
         if busy {
             let spinner = NSProgressIndicator()
             spinner.style = .spinning
@@ -997,35 +1038,53 @@ final class CapsuleStatus: NSStackView {
     }
 }
 
-/// A chip in the style capsule: a borderless button with the capsule's own selected and hover fills.
-final class CapsuleChip: NSButton {
+/// A chip in the style capsule: a borderless button with the capsule's own selected and hover fills; a symbol or
+/// swatch names itself in a hover tag.
+final class CapsuleChip: HoverTagButton {
     var isSelected = false {
         didSet { applyAppearance() }
     }
-    /// Color dots draw their own ring instead of a fill.
-    var highlightsSelection = true
     /// Replaces the action given at creation, for chips that hand themselves to it.
     var handlerOverride: (() -> Void)?
     private let handler: () -> Void
     private var isHovered = false
     private let prominent: Bool
+    /// A color swatch draws its own ring, and never a fill.
+    private let isSwatch: Bool
+
+    /// Every chip with a fill is this size, so its selected and hover fills match its neighbors'.
+    static let side: CGFloat = 30
+    /// A color swatch's chip, narrower: it has no fill to match.
+    static let swatchWidth: CGFloat = 24
 
     /// No padding around the frame, as a button otherwise keeps for its bezel: the layer's fill covers the frame,
     /// and it must be the size the constraints give, or a symbol's chip fills the capsule's height as an oval.
     override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
-    init(image: NSImage, width: CGFloat, action: @escaping () -> Void) {
+    init(image: NSImage, action: @escaping () -> Void) {
         handler = action
         prominent = false
+        isSwatch = false
         super.init(frame: .zero)
         self.image = image
         imagePosition = .imageOnly
-        configure(width: width)
+        configure(width: Self.side)
+    }
+
+    init(swatch: NSImage, action: @escaping () -> Void) {
+        handler = action
+        prominent = false
+        isSwatch = true
+        super.init(frame: .zero)
+        image = swatch
+        imagePosition = .imageOnly
+        configure(width: Self.swatchWidth)
     }
 
     init(title: String, prominent: Bool, action: @escaping () -> Void) {
         handler = action
         self.prominent = prominent
+        isSwatch = false
         super.init(frame: .zero)
         self.title = title
         imagePosition = .noImage
@@ -1044,8 +1103,8 @@ final class CapsuleChip: NSButton {
         setButtonType(.momentaryChange)
         target = self
         action = #selector(clicked)
-        // A chip narrower than the capsule's 30 is as tall as it is wide, so its fill is a circle, not an oval.
-        let height = min(width, 30)
+        // A swatch is as tall as it is wide; every other chip is the capsule's 30 tall.
+        let height = min(width, Self.side)
         wantsLayer = true
         layer?.cornerRadius = height / 2
         contentTintColor = .labelColor
@@ -1066,11 +1125,13 @@ final class CapsuleChip: NSButton {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
         isHovered = true
         applyAppearance()
     }
 
     override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
         isHovered = false
         applyAppearance()
     }
@@ -1087,9 +1148,10 @@ final class CapsuleChip: NSButton {
                 attributedTitle = NSAttributedString(string: title, attributes: [.font: font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor])
             }
             // A prominent chip (Done) carries the selected fill: the accent is never a fill behind text.
-            let selected = (isSelected || prominent) && highlightsSelection
+            let selected = (isSelected || prominent) && !isSwatch
             let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-            let fill: CGColor = selected ? ChipFill.selected(dark: dark, contrast: contrast)
+            let fill: CGColor = isSwatch ? .clear
+                : selected ? ChipFill.selected(dark: dark, contrast: contrast)
                 : isHovered ? ChipFill.hover(dark: dark, contrast: contrast)
                 : .clear
             layer?.backgroundColor = fill

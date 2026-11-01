@@ -1,6 +1,8 @@
 import AppKit
+import ImageIO
 import OMSCore
 import QuartzCore
+import UniformTypeIdentifiers
 import VisionKit
 
 /// How pins look, from Settings; every pin takes it again when it changes.
@@ -20,8 +22,10 @@ final class PinWindow: NSPanel {
     /// The pin's size in points at 100 percent.
     let baseSize: CGSize
     private(set) var zoom: CGFloat
+    private var previousZoom: CGFloat?
     private(set) var opacity: CGFloat = 1
     private(set) var isLocked = false
+    private(set) var lockBadgePanel: NSPanel?
     private let pinView: PinView
     private let actions: PinController.Actions
 
@@ -124,9 +128,40 @@ final class PinWindow: NSPanel {
         let next = PinGeometry.zoomed(frame, to: CGSize(width: baseSize.width * clamped, height: baseSize.height * clamped), around: point)
         zoom = clamped
         setFrame(next, display: true)
+        updateLockBadgePanelFrame()
         invalidateShadow()
         pinView.showReading(String(localized: "\(Int((zoom * 100).rounded()))%", bundle: .module))
         updateAccessibilityValue()
+    }
+
+    /// Toggles between 100% actual size and the previous zoom (or 200% when already at 100%), anchored at `anchor`.
+    func toggleZoom(around anchor: CGPoint? = nil) {
+        if abs(zoom - 1.0) > 0.01 {
+            previousZoom = zoom
+            setZoom(1.0, around: anchor)
+        } else {
+            let target = previousZoom ?? 2.0
+            previousZoom = nil
+            setZoom(target, around: anchor)
+        }
+    }
+
+    /// Returns a file URL suitable for dragging this picture pin into another app.
+    func fileForDrag() -> URL? {
+        if let url = actions.fileForDrag?(pin) { return url }
+        guard case .image(let image, _) = pin.content else { return nil }
+        if case .file(let url) = pin.origin, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+            return url
+        }
+        let tempURL = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Pin \(pin.id.uuidString).png")
+        if FileManager.default.fileExists(atPath: tempURL.path(percentEncoded: false)) {
+            return tempURL
+        }
+        guard let destination = CGImageDestinationCreateWithURL(tempURL as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? tempURL : nil
     }
 
     /// Fades the picture only: its readings, buttons, and ring stay solid, so the reading that says how
@@ -141,18 +176,65 @@ final class PinWindow: NSPanel {
 
     func move(by delta: CGVector) {
         setFrameOrigin(CGPoint(x: frame.minX + delta.dx, y: frame.minY + delta.dy))
+        updateLockBadgePanelFrame()
     }
 
-    /// Lets every click through to what is under the pin, or takes them again. A locked pin cannot be
-    /// reached by the pointer, so it is unlocked from the menu bar; it wears a badge meanwhile.
+    /// Lets every click through to what is under the pin, except on its lock badge, which unlocks this pin alone.
     func setLocked(_ locked: Bool) {
         guard locked != isLocked else { return }
         isLocked = locked
         ignoresMouseEvents = locked
         if locked, isKeyWindow { resignKey() }
         pinView.isLocked = locked
-        if locked { pinView.showReading(String(localized: "Locked", bundle: .module)) }
+        if locked {
+            pinView.showReading(String(localized: "Locked", bundle: .module))
+            installLockBadgePanel()
+        } else {
+            removeLockBadgePanel()
+        }
         onChange?()
+    }
+
+    @objc private func unlockFromBadge() {
+        setLocked(false)
+    }
+
+    private func installLockBadgePanel() {
+        removeLockBadgePanel()
+        pinView.layoutSubtreeIfNeeded()
+        let button = CardButton(style: .round, title: String(localized: "Unlock", bundle: .module), symbolName: "lock.fill")
+        button.target = self
+        button.action = #selector(unlockFromBadge)
+        button.frame = CGRect(x: 0, y: 0, width: 24, height: 24)
+        let badgeRect = convertToScreen(pinView.lockMarkFrame)
+        let panel = NSPanel(contentRect: badgeRect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = level
+        panel.collectionBehavior = collectionBehavior
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .none
+        panel.ignoresMouseEvents = false
+        panel.contentView = button
+        if isVisible {
+            addChildWindow(panel, ordered: .above)
+        }
+        lockBadgePanel = panel
+    }
+
+    private func updateLockBadgePanelFrame() {
+        guard let panel = lockBadgePanel else { return }
+        pinView.layoutSubtreeIfNeeded()
+        panel.setFrame(convertToScreen(pinView.lockMarkFrame), display: true)
+    }
+
+    private func removeLockBadgePanel() {
+        guard let panel = lockBadgePanel else { return }
+        lockBadgePanel = nil
+        if panel.parent != nil { removeChildWindow(panel) }
+        panel.orderOut(nil)
     }
 
     private func updateAccessibilityValue() {
@@ -239,6 +321,7 @@ final class PinWindow: NSPanel {
     }
 
     func closePin() {
+        removeLockBadgePanel()
         onClose?(self)
     }
 
@@ -251,7 +334,7 @@ final class PinWindow: NSPanel {
 /// edge, an accent ring while it has the keys, the Close and More buttons on hover, and a reading capsule
 /// for its zoom and opacity as they change (a color's value rests there). A picture's text can be selected
 /// in place with Live Text once VisionKit has read it.
-final class PinView: NSView {
+final class PinView: NSView, NSDraggingSource {
     weak var pinWindow: PinWindow?
 
     private let content: PinController.Content
@@ -266,14 +349,18 @@ final class PinView: NSView {
     private let ring = CALayer()
     private let reading = ReadingCapsule()
     /// A locked pin's lasting mark: a small dark disc in the card corner button's style, the one kind of
-    /// dark control that sits over a picture; the reading says "Locked" once as it locks.
-    private let lockMark = CardButton(style: .round, title: String(localized: "Locked", bundle: .module), symbolName: "lock.fill")
+    /// dark control that sits over a picture; the reading says "Locked" once as it locks. Clicking it unlocks the pin.
+    let lockMark = CardButton(style: .round, title: String(localized: "Unlock", bundle: .module), symbolName: "lock.fill")
     private let closeButton = CardButton(style: .round, title: String(localized: "Close", bundle: .module), symbolName: "xmark")
     private let moreButton = CardButton(style: .round, title: String(localized: "More", bundle: .module), symbolName: "ellipsis")
     private var look: PinAppearance
     private var tracking: NSTrackingArea?
     /// Close and More show while the pointer is over an unlocked pin, and take clicks only then.
     private var controlsShown = false
+    private var resizingCorner: PinGeometry.Corner?
+    private var optionDragStart: CGPoint?
+
+    var lockMarkFrame: CGRect { lockMark.frame }
     private let textReader: PinTextReader?
     private var textReading: Task<Void, Never>?
     /// Live Text over the picture, once VisionKit has found text or a code in it.
@@ -347,7 +434,9 @@ final class PinView: NSView {
         reading.layer.opacity = 0
         reading.layer.isHidden = false
         lockMark.isHidden = true
-        lockMark.setAccessibilityLabel(String(localized: "Locked", bundle: .module))
+        lockMark.target = self
+        lockMark.action = #selector(unlockClicked)
+        lockMark.setAccessibilityLabel(String(localized: "Unlock", bundle: .module))
         addSubview(lockMark)
 
         for (button, action) in [(closeButton, #selector(closeClicked)), (moreButton, #selector(moreClicked(_:)))] {
@@ -556,9 +645,7 @@ final class PinView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
-        var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways, .inVisibleRect]
-        // The cursor follows where a picture's or a card's text takes a press.
-        if textReader != nil || textView != nil { options.formUnion([.mouseMoved, .cursorUpdate]) }
+        var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeAlways, .inVisibleRect]
         if window?.frame.contains(NSEvent.mouseLocation) == true {
             options.insert(.assumeInside)
             // A pin that opens under the pointer gets no mouseEntered.
@@ -586,10 +673,38 @@ final class PinView: NSView {
         }
     }
 
-    /// The I-beam where a press would go to the picture's or the card's text, the arrow everywhere else: by
-    /// the border, with ⌘ held, over the corner buttons.
+    /// Which corner of an unlocked pin `point` (in the pin's coordinates) grabs to resize it, leaving Close and More
+    /// to take their clicks while they show.
+    func resizeCorner(at point: CGPoint) -> PinGeometry.Corner? {
+        guard !isLocked else { return nil }
+        if controlsShown {
+            if !closeButton.isHidden, closeButton.frame.contains(point) { return nil }
+            if !moreButton.isHidden, moreButton.frame.contains(point) { return nil }
+        }
+        return PinGeometry.resizeCorner(at: point, in: bounds.size)
+    }
+
+    private static func cursor(for corner: PinGeometry.Corner) -> NSCursor {
+        switch corner {
+        case .topLeft: NSCursor.frameResize(position: .topLeft, directions: .all)
+        case .topRight: NSCursor.frameResize(position: .topRight, directions: .all)
+        case .bottomLeft: NSCursor.frameResize(position: .bottomLeft, directions: .all)
+        case .bottomRight: NSCursor.frameResize(position: .bottomRight, directions: .all)
+        }
+    }
+
+    /// The resize cursor at the corners, the I-beam where a press would go to the picture's or the card's text,
+    /// the arrow everywhere else: by the border, with ⌘ held, over the corner buttons.
     private func updateCursor(at windowPoint: CGPoint) {
-        guard let text: NSView = liveText ?? textView else { return }
+        let local = convert(windowPoint, from: nil)
+        if let corner = resizeCorner(at: local) {
+            Self.cursor(for: corner).set()
+            return
+        }
+        guard let text: NSView = liveText ?? textView else {
+            NSCursor.arrow.set()
+            return
+        }
         let target = hitTest(superview?.convert(windowPoint, from: nil) ?? windowPoint)
         let onText = target.map { $0 === text || $0.isDescendant(of: text) } ?? false
         (onText ? NSCursor.iBeam : NSCursor.arrow).set()
@@ -633,10 +748,12 @@ final class PinView: NSView {
     /// the whole picture, and a card's text its card inside the padding, but they take only the presses
     /// `takesTextPress(at:)` gives them.
     override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        if isLocked, !lockMark.isHidden, lockMark.frame.contains(local) { return lockMark }
         let hit = super.hitTest(point)
         if !controlsShown, let hit, hit === closeButton || hit === moreButton { return self }
         if let text: NSView = liveText ?? textView, let hit, hit === text || hit.isDescendant(of: text) {
-            return takesTextPress(at: convert(point, from: superview)) ? hit : self
+            return takesTextPress(at: local) ? hit : self
         }
         return hit
     }
@@ -705,16 +822,69 @@ final class PinView: NSView {
     // MARK: Pointer
 
     override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let corner = resizeCorner(at: point) {
+            resizingCorner = corner
+            optionDragStart = nil
+            window?.makeKey()
+            return
+        }
+        resizingCorner = nil
+        if event.clickCount == 2, !isLocked, !takesTextPress(at: point) {
+            optionDragStart = nil
+            window?.makeKey()
+            let screenPoint = window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
+            pinWindow?.toggleZoom(around: screenPoint)
+            return
+        }
+        if event.modifierFlags.contains(.option), !isLocked, case .image = content {
+            optionDragStart = point
+            window?.makeKey()
+            return
+        }
+        optionDragStart = nil
         // A press on the picture away from its text clears a selection, as a click elsewhere does in Preview;
         // one by the border or with ⌘ held only moves the pin. (The drag returns at once, so whether the pin
         // moved is not known here.)
-        let point = convert(event.locationInWindow, from: nil)
         if !event.modifierFlags.contains(.command), bounds.insetBy(dx: Self.grabBorder, dy: Self.grabBorder).contains(point) {
             liveText?.resetSelection()
             textView?.clearSelection()
         }
         window?.makeKey()
         window?.performDrag(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if let start = optionDragStart, case .image(let image, _) = content {
+            let point = convert(event.locationInWindow, from: nil)
+            guard hypot(point.x - start.x, point.y - start.y) > 3 else { return }
+            optionDragStart = nil
+            guard let fileURL = pinWindow?.fileForDrag() else { return }
+            let draggingItem = NSDraggingItem(pasteboardWriter: fileURL as NSURL)
+            draggingItem.setDraggingFrame(bounds, contents: NSImage(cgImage: image, size: bounds.size))
+            beginDraggingSession(with: [draggingItem], event: event, source: self)
+            return
+        }
+        guard let corner = resizingCorner, let pin = pinWindow else {
+            super.mouseDragged(with: event)
+            return
+        }
+        let screenPoint = window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
+        let (newZoom, anchor) = PinGeometry.resizedZoom(dragging: corner, of: pin.frame, baseSize: pin.baseSize, to: screenPoint)
+        pin.setZoom(newZoom, around: anchor)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        optionDragStart = nil
+        if resizingCorner != nil {
+            resizingCorner = nil
+            return
+        }
+        super.mouseUp(with: event)
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? [.copy] : []
     }
 
     /// A middle click closes the pin.
@@ -814,6 +984,10 @@ final class PinView: NSView {
 
     @objc private func closeClicked() {
         pinWindow?.closePin()
+    }
+
+    @objc private func unlockClicked() {
+        pinWindow?.setLocked(false)
     }
 
     /// `afterLiveText`: the pin's items follow Live Text's own, or the card text's own, over the text, which

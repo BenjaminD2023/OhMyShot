@@ -267,6 +267,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }
+        window?.layoutIfNeeded()
         showWindow(nil)
         AppActivation.bringForward(window)
         Self.leaveNothingFocused(in: window)
@@ -301,6 +302,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     #endif
 
     public func windowWillClose(_ notification: Notification) {
+        AppActivation.windowWillClose(window)
         windowLease?.end()
         windowLease = nil
         onClose?()

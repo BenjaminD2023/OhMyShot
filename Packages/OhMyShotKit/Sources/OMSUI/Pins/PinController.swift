@@ -37,19 +37,22 @@ public final class PinController {
         public var saveAs: (Pin) -> Void
         public var annotate: (Pin) -> Void
         public var recognizeText: (Pin) -> Void
+        public var fileForDrag: ((Pin) -> URL?)?
 
         public init(
             copy: @escaping (Pin) -> Void,
             save: @escaping (Pin) -> Void,
             saveAs: @escaping (Pin) -> Void,
             annotate: @escaping (Pin) -> Void,
-            recognizeText: @escaping (Pin) -> Void
+            recognizeText: @escaping (Pin) -> Void,
+            fileForDrag: ((Pin) -> URL?)? = nil
         ) {
             self.copy = copy
             self.save = save
             self.saveAs = saveAs
             self.annotate = annotate
             self.recognizeText = recognizeText
+            self.fileForDrag = fileForDrag
         }
     }
 

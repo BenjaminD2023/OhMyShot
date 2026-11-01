@@ -21,7 +21,7 @@ final class CardButton: NSControl {
     var title: String {
         didSet {
             setAccessibilityLabel(title)
-            if style == .chipIcon || style == .round || style == .barIcon { toolTip = title }
+            if HoverTag.shared.isShowing(for: self) { HoverTag.shared.withdraw(from: self) }
             invalidateIntrinsicContentSize()
             needsDisplay = true
         }
@@ -59,6 +59,15 @@ final class CardButton: NSControl {
         }
     }
 
+    /// A pill's height: slightly shorter on a compact short card so the picture around it stays reachable.
+    var pillHeight: CGFloat = 30 {
+        didSet {
+            guard pillHeight != oldValue else { return }
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
+
     private let style: Style
     private var pressed = false {
         didSet { needsDisplay = true }
@@ -76,7 +85,6 @@ final class CardButton: NSControl {
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel(title)
-        if style == .round || style == .chipIcon || style == .barIcon { toolTip = title }
         if style == .pill {
             // A soft lift, so the capsule holds its edge on bright pictures.
             wantsLayer = true
@@ -102,7 +110,7 @@ final class CardButton: NSControl {
     override var intrinsicContentSize: NSSize {
         switch style {
         case .pill:
-            NSSize(width: pillWidth, height: 30)
+            NSSize(width: pillWidth, height: pillHeight)
         case .round, .chipIcon:
             NSSize(width: 24, height: 24)
         case .barIcon:
@@ -224,16 +232,36 @@ final class CardButton: NSControl {
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
 
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
+    /// A symbol alone names itself in a hover tag a moment after the pointer rests on it: the system's tooltip
+    /// comes late, and not at all over a panel of an app that is not active, as these panels' app rarely is.
+    private var showsHoverTag: Bool {
+        style == .round || style == .chipIcon || style == .barIcon
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        if showsHoverTag { HoverTag.shared.schedule(title, for: self, gap: 8) }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        HoverTag.shared.withdraw(from: self)
+    }
 
     override func viewDidHide() {
         super.viewDidHide()
         hovering = false
         pressed = false
+        HoverTag.shared.withdraw(from: self)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        HoverTag.shared.withdraw(from: self)
     }
 
     override func mouseDown(with event: NSEvent) {
+        HoverTag.shared.withdraw(from: self)
         NSApp.preventWindowOrdering()
         pressed = true
         // Tracks the press like a standard button: it fires only if released inside.

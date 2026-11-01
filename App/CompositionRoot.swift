@@ -215,6 +215,9 @@ final class CompositionRoot {
     private var automation: AutomationController?
     private var settingsWindow: SettingsWindowController?
     private var onboardingWindow: OnboardingWindowController?
+    /// The invitation to MMFoundation's Discord: counted as captures are kept, shown once, at a later launch.
+    private let communityInvite = CommunityInvite()
+    private var communityInviteWindow: CommunityInviteWindowController?
     private var historyWindow: HistoryWindowController?
     private var observations: [Task<Void, Never>] = []
     private var pictureSweep: Task<Void, Never>?
@@ -292,14 +295,19 @@ final class CompositionRoot {
                 .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
                 .init(title: String(localized: "Annotate Area"), shortcut: .annotateArea) { [weak self] in self?.handle(.annotateArea) },
                 .init(title: String(localized: "Capture Area and Pin"), shortcut: .pinArea) { [weak self] in self?.handle(.pinArea) },
-                .init(title: String(localized: "Capture Area and Copy"), shortcut: .captureAreaAndCopy) { [weak self] in self?.handle(.captureAreaAndCopy) },
-                .init(title: String(localized: "Capture Area and Save"), shortcut: .captureAreaAndSave) { [weak self] in self?.handle(.captureAreaAndSave) },
-                .init(title: String(localized: "Capture Area and Annotate"), shortcut: .captureAreaAndAnnotate) { [weak self] in self?.handle(.captureAreaAndAnnotate) },
-                .init(
-                    title: String(localized: "Capture Area and Upload"),
-                    shortcut: .captureAreaAndUpload,
-                    isHidden: { [weak self] in self?.uploads.destinations.menu.isHidden != false }
-                ) { [weak self] in self?.handle(.captureAreaAndUpload) },
+                // The rest of what an area can go straight to, out of the way of the ones used most.
+                .init(title: String(localized: "More Area Captures")) { [weak self] in
+                    [
+                        .init(title: String(localized: "Capture Area and Copy"), shortcut: .captureAreaAndCopy) { [weak self] in self?.handle(.captureAreaAndCopy) },
+                        .init(title: String(localized: "Capture Area and Save"), shortcut: .captureAreaAndSave) { [weak self] in self?.handle(.captureAreaAndSave) },
+                        .init(title: String(localized: "Capture Area and Annotate"), shortcut: .captureAreaAndAnnotate) { [weak self] in self?.handle(.captureAreaAndAnnotate) },
+                        .init(
+                            title: String(localized: "Capture Area and Upload"),
+                            shortcut: .captureAreaAndUpload,
+                            isHidden: { [weak self] in self?.uploads.destinations.menu.isHidden != false }
+                        ) { [weak self] in self?.handle(.captureAreaAndUpload) },
+                    ]
+                },
                 .init(title: String(localized: "Capture Window"), shortcut: .captureWindow) { [weak self] in self?.handle(.captureWindow) },
                 .init(title: String(localized: "Capture Fullscreen"), shortcut: .captureFullscreen) { [weak self] in self?.handle(.captureFullscreen) },
                 .init(
@@ -352,66 +360,77 @@ final class CompositionRoot {
                     self?.handle(.captureFormula)
                 },
                 .init(title: String(localized: "Translate Area"), shortcut: .translateArea) { [weak self] in self?.handle(.translateArea) },
-                .init(title: String(localized: "Pick Color"), shortcut: .pickColor) { [weak self] in self?.handle(.pickColor) },
-                .init(title: String(localized: "Measure"), shortcut: .measure) { [weak self] in self?.handle(.measure) },
+                .init(title: String(localized: "Tools")) { [weak self] in
+                    [
+                        .init(title: String(localized: "Pick Color"), shortcut: .pickColor) { [weak self] in self?.handle(.pickColor) },
+                        .init(title: String(localized: "Measure"), shortcut: .measure) { [weak self] in self?.handle(.measure) },
+                        .separator,
+                        .init(
+                            title: String(localized: "Hide Desktop Icons"),
+                            currentTitle: { [weak self] in
+                                self?.settings.hidesDesktopIcons == true ? String(localized: "Show Desktop Icons") : String(localized: "Hide Desktop Icons")
+                            }
+                        ) { [weak self] in
+                            guard let self else { return }
+                            setDesktopIconsHidden(!settings.hidesDesktopIcons)
+                        },
+                    ]
+                },
             ],
             textEntries: [
-                .init(
-                    title: String(localized: "Recognize Text in Clipboard Image"),
-                    isEnabled: { PasteboardImage.mayHoldImage(.general) }
-                ) { [weak self] in
-                    self?.textCapture.openClipboardImage()
+                // A picture already on disk or on the clipboard, to annotate, pin, or read.
+                .init(title: String(localized: "Open Image")) { [weak self] in
+                    [
+                        .init(title: String(localized: "Annotate…")) { [weak self] in self?.chooseFilesToAnnotate() },
+                        .init(title: String(localized: "Pin…")) { [weak self] in self?.choosePicturesToPin() },
+                        .init(title: String(localized: "Recognize Text…")) { [weak self] in self?.textCapture.openImageFile() },
+                    ]
                 },
-                .init(title: String(localized: "Recognize Text in Image…")) { [weak self] in self?.textCapture.openImageFile() },
-            ],
-            pinEntries: [
-                .init(
-                    title: String(localized: "Pin from Clipboard"),
-                    isEnabled: { Self.clipboardMayHoldPin() }
-                ) { [weak self] in
-                    self?.pinClipboard()
+                .init(title: String(localized: "From Clipboard")) { [weak self] in
+                    [
+                        .init(
+                            title: String(localized: "Annotate"),
+                            shortcut: .openFromClipboard,
+                            isEnabled: { PasteboardImage.mayHoldImage(.general) }
+                        ) { [weak self] in
+                            self?.handle(.openFromClipboard)
+                        },
+                        .init(title: String(localized: "Pin"), isEnabled: { Self.clipboardMayHoldPin() }) { [weak self] in self?.pinClipboard() },
+                        .init(
+                            title: String(localized: "Recognize Text"),
+                            isEnabled: { PasteboardImage.mayHoldImage(.general) }
+                        ) { [weak self] in
+                            self?.textCapture.openClipboardImage()
+                        },
+                    ]
                 },
-                .init(title: String(localized: "Pin Image…")) { [weak self] in self?.choosePicturesToPin() },
-                .init(
-                    title: String(localized: "Hide Pins"),
-                    isEnabled: { [weak self] in !(self?.pins.isEmpty ?? true) },
-                    currentTitle: { [weak self] in self?.pins.areHidden == true ? String(localized: "Show Pins") : String(localized: "Hide Pins") }
-                ) { [weak self] in
-                    guard let self else { return }
-                    pins.setHidden(!pins.areHidden)
-                },
-                .init(
-                    title: String(localized: "Unlock Pins"),
-                    isEnabled: { [weak self] in self?.pins.hasLockedPins ?? false }
-                ) { [weak self] in
-                    self?.pins.unlockAll()
-                },
-                .init(
-                    title: String(localized: "Close All Pins"),
-                    isEnabled: { [weak self] in !(self?.pins.isEmpty ?? true) }
-                ) { [weak self] in
-                    self?.pins.closeAll()
-                },
-                .init(
-                    title: String(localized: "Hide Desktop Icons"),
-                    currentTitle: { [weak self] in
-                        self?.settings.hidesDesktopIcons == true ? String(localized: "Show Desktop Icons") : String(localized: "Hide Desktop Icons")
-                    }
-                ) { [weak self] in
-                    guard let self else { return }
-                    setDesktopIconsHidden(!settings.hidesDesktopIcons)
+                .init(title: String(localized: "Pins")) { [weak self] in
+                    [
+                        .init(
+                            title: String(localized: "Hide Pins"),
+                            isEnabled: { [weak self] in !(self?.pins.isEmpty ?? true) },
+                            currentTitle: { [weak self] in self?.pins.areHidden == true ? String(localized: "Show Pins") : String(localized: "Hide Pins") }
+                        ) { [weak self] in
+                            guard let self else { return }
+                            pins.setHidden(!pins.areHidden)
+                        },
+                        .init(
+                            title: String(localized: "Unlock Pins"),
+                            isEnabled: { [weak self] in self?.pins.hasLockedPins ?? false }
+                        ) { [weak self] in
+                            self?.pins.unlockAll()
+                        },
+                        .init(
+                            title: String(localized: "Close All Pins"),
+                            isEnabled: { [weak self] in !(self?.pins.isEmpty ?? true) }
+                        ) { [weak self] in
+                            self?.pins.closeAll()
+                        },
+                    ]
                 },
             ],
             historyEntries: [
-                .init(title: String(localized: "Annotate Image…")) { [weak self] in self?.chooseFilesToAnnotate() },
                 .init(title: String(localized: "Annotate Latest Capture"), shortcut: .annotateLatestCapture) { [weak self] in self?.handle(.annotateLatestCapture) },
-                .init(
-                    title: String(localized: "Open from Clipboard"),
-                    shortcut: .openFromClipboard,
-                    isEnabled: { PasteboardImage.mayHoldImage(.general) }
-                ) { [weak self] in
-                    self?.handle(.openFromClipboard)
-                },
                 .init(title: String(localized: "Capture History…"), shortcut: .openHistory) { [weak self] in self?.showHistory() },
                 .init(
                     title: String(localized: "Restore Recently Closed"),
@@ -419,6 +438,9 @@ final class CompositionRoot {
                 ) { [weak self] in
                     self?.quickAccess.restoreRecentlyClosed()
                 },
+            ],
+            appEntries: [
+                .init(title: String(localized: "Join Discord")) { NSWorkspace.shared.open(CommunityInvite.discord) },
             ],
             openSettings: { [weak self] in self?.showSettings() },
             quit: { NSApp.terminate(nil) },
@@ -512,6 +534,9 @@ final class CompositionRoot {
         recordings.onRecorded = { [weak self] item in
             self?.didCapture(item)
         }
+        // Card or not, a screenshot or a recording kept counts toward the invitation to the Discord.
+        captures.onKept = { [weak self] _ in self?.communityInvite.captureKept() }
+        recordings.onKept = { [weak self] _ in self?.communityInvite.captureKept() }
         recordings.copiedToClipboard = { [weak self] id in self?.recordingCopied(id) }
         // A recording copied from its card, History, or its window goes to the clipboard as a reference to its file too.
         captures.files.recordingCopied = { [weak self] id in self?.recordingCopied(id) }
@@ -606,6 +631,11 @@ final class CompositionRoot {
             quickAccess.markSaved(entry.id, at: saved)
             return saved
         }
+        annotations.saveAs = { [weak self] file, entry, scale in
+            guard let self, let saved = await captures.files.saveScreenshotAs(fileAt: file, entry: entry, scale: scale) else { return nil }
+            if let entry { quickAccess.markSaved(entry.id, at: saved) }
+            return saved
+        }
         annotations.saveFile = { [weak self] file, scale in
             await self?.captures.files.saveScreenshot(fileAt: file, scale: scale, asks: true)
         }
@@ -627,6 +657,7 @@ final class CompositionRoot {
         }
 
         logStartup()
+        communityInvite.launched()
         // What a crash or a forced quit left of a recording is finished and kept.
         recordings.recoverLeftovers()
         permissions.refresh([.screenRecording])
@@ -648,6 +679,8 @@ final class CompositionRoot {
         } else {
             showOnboarding()
         }
+        // On the next turn, once what launched the app (a URL, a file to annotate) has begun.
+        Task { @MainActor [weak self] in self?.offerCommunityInvite() }
     }
 
     /// Keeps edits still open in the editor before the app quits.
@@ -690,21 +723,24 @@ final class CompositionRoot {
         guard #available(macOS 27, *), replay != nil else { return [] }
         return [
             .init(title: String(localized: "Keep Last 15 Seconds")) { [weak self] in self?.replayMenu() ?? [] },
-            .init(
-                title: String(localized: "Save Last 15 Seconds"), shortcut: .saveReplay,
-                isEnabled: { [weak self] in self?.replay?.canSave == true }
-            ) { [weak self] in
-                self?.handle(.saveReplay)
-            },
         ]
     }
 
-    /// The replay's submenu, made each time it opens: a checkmark for each display kept, then the sound
-    /// saved clips keep.
+    /// The replay's submenu, made each time it opens: saving what was kept, a checkmark for each display
+    /// kept, then the sound saved clips keep.
     @available(macOS 27, *)
     private func replayMenu() -> [StatusItemController.Entry] {
         guard let replay else { return [] }
-        var entries: [StatusItemController.Entry] = [.header(String(localized: "Displays"))]
+        var entries: [StatusItemController.Entry] = [
+            .init(
+                title: String(localized: "Save Last 15 Seconds"), shortcut: .saveReplay,
+                isEnabled: { [weak replay] in replay?.canSave == true }
+            ) { [weak self] in
+                self?.handle(.saveReplay)
+            },
+            .separator,
+            .header(String(localized: "Displays")),
+        ]
         for display in displays.layout.displays {
             entries.append(.init(title: display.name, isChecked: { [weak replay] in replay?.isKeeping(display.id) == true }) { [weak self, weak replay] in
                 guard self?.permissions.status(of: .screenRecording) == .granted else {
@@ -782,6 +818,36 @@ final class CompositionRoot {
         }
         onboardingWindow = controller
         controller.show()
+    }
+
+    /// At launch, the invitation to MMFoundation's Discord, once, when `CommunityInvite` says it may appear. Never as a
+    /// capture is kept, though that is when it becomes due: the capture is on the clipboard on its way somewhere, and a
+    /// window coming forward would take the keys it is pasted with.
+    private func offerCommunityInvite() {
+        guard communityInvite.mayAppear(busy: isBusyForCommunityInvite) else { return }
+        communityInvite.shown()
+        Log.app.notice("Showing the invitation to the Discord")
+        let controller = CommunityInviteWindowController()
+        controller.onClose = { [weak self, weak controller] in
+            // Released on the next turn so the window is not deallocated inside its own delegate call.
+            Task { @MainActor in
+                if self?.communityInviteWindow === controller { self?.communityInviteWindow = nil }
+                MemoryRelief.returnFreedPages()
+            }
+        }
+        communityInviteWindow = controller
+        controller.show()
+    }
+
+    /// Whatever the invitation must not come in front of: a capture's overlay or countdown, a recording, a scrolling
+    /// capture, an editor (a recording's or Studio's too), onboarding, a window asking for an answer, or a window of the
+    /// app's in use.
+    private var isBusyForCommunityInvite: Bool {
+        overlay.isActive || captures.isSelfTimerRunning || recordings.isRecording || recordings.isCountingDown
+            || scrolling.isCapturing || annotations.isEditing || !recordings.openRecordingIDs.isEmpty
+            || onboardingWindow != nil || communityInviteWindow != nil
+            || NSApp.modalWindow != nil || NSApp.windows.contains { $0.isVisible && $0.attachedSheet != nil }
+            || NSApp.keyWindow != nil
     }
 
     // MARK: - Commands
@@ -1462,6 +1528,22 @@ final class CompositionRoot {
             recognizeText: { [weak self] pin in
                 guard case .image(let image, let scale) = pin.content else { return }
                 self?.textCapture.openPanel(image: image, scale: scale, source: String(localized: "Pin"))
+            },
+            fileForDrag: { [weak self] pin in
+                guard let self, case .image = pin.content else { return nil }
+                switch pin.origin {
+                case .capture(let id):
+                    if let entry = history.item(id: id) {
+                        return captures.files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
+                    }
+                case .file(let url):
+                    if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+                        return url
+                    }
+                case .clipboard:
+                    break
+                }
+                return nil
             }
         )
     }
@@ -1911,10 +1993,10 @@ final class CompositionRoot {
         #if DEBUG
         let hooks = makeDebugHooks()
         return [
-            .init(title: "Log Displays") { hooks.logDisplays() },
-            .init(title: "Log Active Resources") { hooks.logResources() },
-            .init(title: "Show Onboarding") { [weak self] in self?.showOnboarding() },
-            .init(title: "Relaunch") { Relauncher.relaunch() },
+            .init(title: String(localized: "Log Displays")) { hooks.logDisplays() },
+            .init(title: String(localized: "Log Active Resources")) { hooks.logResources() },
+            .init(title: String(localized: "Show Onboarding")) { [weak self] in self?.showOnboarding() },
+            .init(title: String(localized: "Relaunch")) { Relauncher.relaunch() },
         ]
         #else
         return []

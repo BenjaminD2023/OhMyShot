@@ -44,6 +44,13 @@ public final class InPlaceAnnotationView: NSView {
     private let actions: Actions
     private var adjustment: Adjustment?
     private var finished = false
+    enum PlacementZone: Equatable {
+        case below
+        case above
+        case inside
+    }
+
+    private(set) var placementZone: PlacementZone?
     /// What the capsule was last shown for, so a new tool or selection fades it in.
     private var capsuleAnchor: String?
     private var savedColorsObserver: NSObjectProtocol?
@@ -89,6 +96,8 @@ public final class InPlaceAnnotationView: NSView {
         capsule.onDelete = { [weak self] in self?.session.deleteSelection() }
         capsule.onRedactAll = { [weak self] in self?.session.acceptAllRedactionSuggestions() }
         capsule.onRetry = { [weak self] in self?.session.retryReadingForTool() }
+        capsule.onPickCanvasColor = { [weak self] in self?.canvas.toggleColorPicker() }
+        canvas.onColorPickerChange = { [weak self] in self?.refreshCapsule() }
         canvas.onCopy = { [weak self] in self?.perform(.copy) }
         canvas.onSave = { [weak self] in self?.perform(.save) }
         canvas.onViewportChange = { [weak self] in self?.placeAccessories() }
@@ -185,13 +194,17 @@ public final class InPlaceAnnotationView: NSView {
         var barX = min(max(selection.maxX - bar.width, margin), bounds.maxX - margin - bar.width)
         var barY: CGFloat
         var capsuleY: CGFloat
+        let newZone: PlacementZone
         if fitsBelow {
+            newZone = .below
             barY = selection.maxY + gap
             capsuleY = barY + bar.height + between
         } else if fitsAbove {
+            newZone = .above
             barY = selection.minY - gap - bar.height
             capsuleY = barY - between - pill.height
         } else {
+            newZone = .inside
             // Inside the selection: 10 pt clear of the frame as drawn, which steps in at the display's edge.
             let drawn = SelectionChromeView.drawnFrame(for: selection, in: bounds)
             barY = drawn.maxY - gap - bar.height
@@ -199,13 +212,26 @@ public final class InPlaceAnnotationView: NSView {
             barX = min(max(drawn.maxX - gap - bar.width, margin), bounds.maxX - margin - bar.width)
         }
         barY = min(max(barY, margin), bounds.maxY - margin - bar.height)
-        toolbar.frame = CGRect(x: barX, y: barY, width: bar.width, height: bar.height).integral
+        let targetToolbarFrame = CGRect(x: barX, y: barY, width: bar.width, height: bar.height).integral
         // Against the toolbar's right edge, wherever the toolbar went.
-        let capsuleX = min(max(toolbar.frame.maxX - pill.width, margin), bounds.maxX - margin - pill.width)
-        capsule.frame = CGRect(x: capsuleX, y: capsuleY, width: pill.width, height: pill.height).integral
+        let capsuleX = min(max(targetToolbarFrame.maxX - pill.width, margin), bounds.maxX - margin - pill.width)
+        let targetCapsuleFrame = CGRect(x: capsuleX, y: capsuleY, width: pill.width, height: pill.height).integral
+        let zoneFlipped = placementZone != nil && placementZone != newZone
+        placementZone = newZone
+        if zoneFlipped, adjustment == nil, !toolbar.isHidden, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                toolbar.animator().frame = targetToolbarFrame
+                capsule.animator().frame = targetCapsuleFrame
+            }
+        } else {
+            toolbar.frame = targetToolbarFrame
+            capsule.frame = targetCapsuleFrame
+        }
         // The size reading steps aside for the toolbar and capsule when they stand above the selection.
-        chrome.avoiding = showsCapsule ? toolbar.frame.union(capsule.frame) : toolbar.frame
-        chrome.toolbarFrame = toolbar.frame
+        chrome.avoiding = showsCapsule ? targetToolbarFrame.union(targetCapsuleFrame) : targetToolbarFrame
+        chrome.toolbarFrame = targetToolbarFrame
         toolbar.isHidden = adjustment != nil
         let visible = showsCapsule && adjustment == nil && !canvas.isDragging
         let anchor = "\(session.currentKind.rawValue)|\(session.selection.map(\.uuidString).joined())"
@@ -256,6 +282,7 @@ public final class InPlaceAnnotationView: NSView {
 
     private func refreshCapsule() {
         shownSuggestions = session.tool == .redact ? session.openRedactionSuggestions.count : 0
+        capsule.isPickingCanvasColor = canvas.isPickingColor
         capsule.show(
             kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
             suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
@@ -264,9 +291,13 @@ public final class InPlaceAnnotationView: NSView {
         placeAccessories()
     }
 
-    /// The chip of the tool in hand puts it down again: the selection itself is adjusted then.
+    /// The chip of the tool in hand puts it down again: the selection itself or its marks are adjusted then.
     private func choose(_ tool: AnnotationTool) {
-        session.tool = session.tool == tool ? .select : tool
+        if tool == .select {
+            session.tool = .select
+        } else {
+            session.tool = session.tool == tool ? .select : tool
+        }
         window?.makeFirstResponder(canvas)
     }
 
@@ -325,8 +356,9 @@ public final class InPlaceAnnotationView: NSView {
 
     // MARK: Input
 
-    /// Presses on the selection's frame, and with no tool in hand on its empty inside, adjust the
-    /// selection here; everything else goes to the canvas, the toolbar, and the capsule.
+    /// Presses on the selection's frame, with Space held inside it, or with no tool in hand on its empty
+    /// inside before any marks are drawn, adjust the selection here; everything else goes to the canvas,
+    /// the toolbar, and the capsule.
     public override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
         if hit === toolbar || hit.isDescendant(of: toolbar) || hit === capsule || hit.isDescendant(of: capsule) { return hit }
@@ -334,7 +366,8 @@ public final class InPlaceAnnotationView: NSView {
         if canvas.isEditingText, hit !== self, hit.isDescendant(of: canvas) { return hit }
         if handle(at: local, toolInHand: session.tool != .select) != nil { return self }
         if hit === canvas || hit.isDescendant(of: canvas) {
-            if session.tool == .select, canvas.mark(at: convert(local, to: canvas)) == nil { return self }
+            if canvas.isSpaceHeld { return self }
+            if session.tool == .select, session.document.items.isEmpty, canvas.mark(at: convert(local, to: canvas)) == nil { return self }
             return hit
         }
         return self
@@ -380,8 +413,14 @@ public final class InPlaceAnnotationView: NSView {
             case .start, .end, .bend: .crosshair
             }
         }
+        if canvas.isSpaceHeld, selectionRect.contains(point) {
+            return .openHand
+        }
         if session.tool == .select, selectionRect.contains(point) {
-            return overCanvas && canvas.mark(at: convert(point, to: canvas)) != nil ? nil : .openHand
+            if session.document.items.isEmpty {
+                return overCanvas && canvas.mark(at: convert(point, to: canvas)) != nil ? nil : .openHand
+            }
+            return nil
         }
         return overCanvas ? nil : (session.document.items.isEmpty ? .crosshair : .arrow)
     }

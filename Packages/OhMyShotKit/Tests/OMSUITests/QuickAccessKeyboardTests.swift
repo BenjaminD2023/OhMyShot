@@ -136,4 +136,29 @@ struct QuickAccessKeyboardTests {
         card.isTrashing = false
         #expect(card.menu(for: event) != nil)
     }
+
+    @Test func activePointerEntryNotifiesHoverFocusWhileStationaryHoverDoesNot() throws {
+        let card = CaptureCardView(item: try item(width: 1200, height: 800), size: .medium)
+        card.frame = CGRect(x: 0, y: 0, width: 220, height: 147)
+        var hoverEvents: [Bool] = []
+        card.onPointerHover = { hoverEvents.append($0) }
+
+        // Stationary pointer when card appears (`setHovering(true)`) does not fire `onPointerHover`.
+        card.setHovering(true)
+        #expect(hoverEvents.isEmpty)
+        card.setHovering(false)
+
+        // Active pointer entry (`mouseEntered`) and exit (`mouseExited`) fire `onPointerHover`.
+        let entered = try #require(NSEvent.enterExitEvent(
+            with: .mouseEntered, location: CGPoint(x: 50, y: 50), modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil
+        ))
+        let exited = try #require(NSEvent.enterExitEvent(
+            with: .mouseExited, location: CGPoint(x: -10, y: -10), modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil
+        ))
+        card.mouseEntered(with: entered)
+        card.mouseExited(with: exited)
+        #expect(hoverEvents == [true, false])
+    }
 }

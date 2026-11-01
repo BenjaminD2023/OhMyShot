@@ -49,6 +49,8 @@ final class RecordingCoordinator {
 
     /// Receives every finished recording, already in the history; the composition root shows its card.
     var onRecorded: ((QuickAccessItem) -> Void)?
+    /// Every recording kept in the history, a Studio recording too, which has no card yet.
+    var onKept: ((HistoryItem) -> Void)?
     /// A recording was kept and Settings says to upload it.
     var uploadKept: ((HistoryItem) -> Void)?
     /// A recording's file was just put on the clipboard, which refers to the file in the history and holds nothing else.
@@ -600,6 +602,7 @@ final class RecordingCoordinator {
                 saveStudioProject(telemetry, project: project, camera: draft.cameraURL, for: entry)
                 drafts.remove(draft)
                 studioDisplays[entry.id] = displayID
+                onKept?(entry)
                 probe.end()
                 announce(String(localized: "Recording stopped. Opening Studio."))
                 await openStudio(entry)
@@ -672,6 +675,7 @@ final class RecordingCoordinator {
             appName: appName, duration: file.duration, pixelsPerPoint: pixelsPerPoint
         )
         await present(entry, displayID: displayID)
+        onKept?(entry)
         return entry
     }
 

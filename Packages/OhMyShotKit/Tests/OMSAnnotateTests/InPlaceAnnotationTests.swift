@@ -99,4 +99,45 @@ struct InPlaceAnnotationTests {
         annotator.session.tool = .counter
         #expect(UserDefaults.standard.string(forKey: key) == before)
     }
+
+    @Test func toolbarIncludesSelectAndProtectsMarksFromAccidentalSelectionMove() throws {
+        let annotator = view()
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = annotator
+        defer { window.close() }
+        annotator.layoutSubtreeIfNeeded()
+        annotator.begin()
+        #expect(annotator.toolbar.hasSelectChip)
+        #expect(annotator.toolbar.selectedTool == .select)
+
+        // With no marks yet, dragging inside moves the capture selection.
+        annotator.simulateDrag(from: CGPoint(x: 120, y: 60), to: CGPoint(x: 140, y: 70))
+        #expect(annotator.selectionRect == CGRect(x: 100, y: 50, width: 100, height: 60))
+
+        // Add a mark inside the selection (in document pixels, scale = 2 -> selection is 200..400 x 100..220).
+        let mark = Annotation(shape: .rectangle(Box(rect: CGRect(x: 250, y: 140, width: 30, height: 30))), style: Style())
+        var document = annotator.session.document
+        document.items = [mark]
+        annotator.session.commit(document, actionName: "Add")
+        annotator.session.tool = .select
+
+        // Now dragging on empty space inside the selection (clear of the 12 pt corner handles) marquee-selects the mark
+        // instead of shifting the selection rect!
+        let beforeRect = annotator.selectionRect
+        annotator.simulateDrag(from: CGPoint(x: 118, y: 65), to: CGPoint(x: 155, y: 95))
+        #expect(annotator.selectionRect == beforeRect)
+        #expect(annotator.session.selection == [mark.id])
+
+        // Holding Space while dragging inside moves the selection rect even when marks exist.
+        annotator.simulateKey(" ", keyCode: 49)
+        annotator.simulateDrag(from: CGPoint(x: 150, y: 80), to: CGPoint(x: 170, y: 90))
+        #expect(annotator.selectionRect == beforeRect.offsetBy(dx: 20, dy: 10))
+        #expect(annotator.placementZone == .below)
+
+        // Moving the selection near the bottom of the display transitions `placementZone` to `.above`.
+        annotator.simulateKey(" ", keyCode: 49)
+        annotator.simulateDrag(from: CGPoint(x: 170, y: 90), to: CGPoint(x: 170, y: 260))
+        #expect(annotator.placementZone == .above)
+    }
 }

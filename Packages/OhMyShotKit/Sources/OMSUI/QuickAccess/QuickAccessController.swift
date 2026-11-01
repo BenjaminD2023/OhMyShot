@@ -147,7 +147,8 @@ public final class QuickAccessController {
     private var selectedID: UUID?
     /// A card's hold by the keyboard, to be given back when the keys go to another card.
     private var keyboardHolder: UUID?
-    private var hoveredID: UUID?
+    /// The card the pointer is actively hovering over (`mouseEntered`).
+    private(set) var hoveredID: UUID?
     private let hoverPreviewShortcut = HoverPreviewShortcut()
 
     public init(actions: Actions) {
@@ -478,6 +479,7 @@ public final class QuickAccessController {
         stack.cardCount = { [weak self] in self?.liveItems.count ?? 0 }
         stack.onHold = { [weak self] id, hold, on in self?.hold(hold, for: id, if: on) }
         stack.onFocus = { [weak self] id in self?.focus(on: id) }
+        stack.onPointerHover = { [weak self] id, hovering in self?.pointerHovered(id, hovering: hovering) }
         stack.onKey = { [weak self] command in self?.performKeyed(command) ?? false }
         stack.quickLook.onMove = { [weak self] offset in self?.move(by: offset)?.fileURL }
         stack.quickLook.onClose = { [weak self] in self?.previewClosed() }
@@ -619,7 +621,11 @@ public final class QuickAccessController {
     private func scheduleCloser() {
         closer?.cancel()
         closer = nil
-        guard let soonest = schedule.timeUntilNextClose(at: Self.now) else { return }
+        let now = Self.now
+        for item in liveItems {
+            stack?.setCountdown(schedule.countdownState(for: item.id, at: now), for: item.id)
+        }
+        guard let soonest = schedule.timeUntilNextClose(at: now) else { return }
         closer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(soonest + 0.02))
             guard !Task.isCancelled else { return }
@@ -657,6 +663,20 @@ public final class QuickAccessController {
         panel.allowsKey = true
         panel.makeKey()
         panel.makeFirstResponder(stack)
+    }
+
+    /// Tracks which card the pointer actively entered, and when the panel already holds the keyboard,
+    /// moves the selection ring to the hovered card without ordering or re-keying the panel.
+    private func pointerHovered(_ id: UUID, hovering: Bool) {
+        if hovering {
+            guard items.contains(where: { $0.id == id }), !isTrashing(id) else { return }
+            hoveredID = id
+            if panel?.isKeyWindow == true, selectedID != id {
+                select(id)
+            }
+        } else if hoveredID == id {
+            hoveredID = nil
+        }
     }
 
     /// Rings a card, holds it from closing, and lets the one before go; nil takes the ring away.

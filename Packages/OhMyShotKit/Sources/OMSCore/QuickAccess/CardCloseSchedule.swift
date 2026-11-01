@@ -64,6 +64,12 @@ public struct CardCloseSchedule: Sendable {
         countdowns.values.compactMap { $0.timeLeft(at: now) }.min()
     }
 
+    /// The active countdown state (remaining time and total interval) for card `id`, or nil when it is held or not counting.
+    public func countdownState(for id: UUID, at now: TimeInterval) -> (remaining: TimeInterval, interval: TimeInterval)? {
+        guard let countdown = countdowns[id], let left = countdown.timeLeft(at: now), left > 0 else { return nil }
+        return (left, countdown.interval)
+    }
+
     /// The cards whose time is up. Their countdowns end: a card that stays (`keepOpen`) is not counted again.
     public mutating func takeDue(at now: TimeInterval) -> [UUID] {
         let due = countdowns.filter { $0.value.isDue(at: now) }.map(\.key)

@@ -35,8 +35,11 @@ final class InPlaceToolbar: NSView {
     private let stack = NSStackView()
     private var toolChips: [AnnotationTool: RailChip] = [:]
     private var actionChips: [Action: RailChip] = [:]
-    private var selected: AnnotationTool?
+    private var selected: AnnotationTool? = .select
     private var displayOptions: NSObjectProtocol?
+
+    var hasSelectChip: Bool { toolChips[.select] != nil }
+    var selectedTool: AnnotationTool? { selected }
 
     var canUndo = false {
         didSet { if canUndo != oldValue { applyAppearance() } }
@@ -59,6 +62,7 @@ final class InPlaceToolbar: NSView {
         stack.spacing = 2
         stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
+        stack.addArrangedSubview(makeToolChip(.select))
         for group in Self.toolGroups {
             if !stack.arrangedSubviews.isEmpty { addDivider() }
             for tool in group { stack.addArrangedSubview(makeToolChip(tool)) }
@@ -143,9 +147,9 @@ final class InPlaceToolbar: NSView {
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
 
-    /// Marks the tool in hand; nil while none is (the selection itself is adjusted then).
+    /// Marks the tool in hand; nil defaults to `.select` (the selection itself or its marks are adjusted then).
     func select(_ tool: AnnotationTool?) {
-        selected = tool
+        selected = tool ?? .select
         applyAppearance()
     }
 

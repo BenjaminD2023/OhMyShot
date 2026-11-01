@@ -34,6 +34,9 @@ struct OverlayKeyTests {
         func overlayViewDidReleaseSpace(_ view: OverlayView) { heard.append("space up") }
         func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) { heard.append("select") }
         func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) { heard.append("window") }
+        func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
+            heard.append("windows \(targets.map(\.id))")
+        }
         func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) { heard.append("switch") }
         func overlayViewDidCancel(_ view: OverlayView) { heard.append("cancel") }
         func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) {
@@ -52,6 +55,8 @@ struct OverlayKeyTests {
             nudge = pixels
         }
         func overlayViewDidRequestSizing(_ view: OverlayView) { heard.append("size") }
+        func overlayViewDidRequestLastArea(_ view: OverlayView) { heard.append("lastArea") }
+        func overlayViewDidResetDrag(_ view: OverlayView) { heard.append("resetDrag") }
         func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) { heard.append("copy") }
         func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) { heard.append("unit") }
         func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance) { heard.append("tolerance \(tolerance.rawValue)") }
@@ -364,4 +369,74 @@ struct OverlayKeyTests {
         }
     }
 
+    @Test func windowModeCyclesOverlappingWindowsAndCombinesWithShiftClick() throws {
+        let front = WindowTarget(id: 10, frame: CGRect(x: 100, y: 100, width: 400, height: 300), ownerName: "AppA", title: "Front")
+        let back = WindowTarget(id: 20, frame: CGRect(x: 150, y: 120, width: 400, height: 300), ownerName: "AppB", title: "Back")
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .window, windows: [front, back], showsToolbar: false, purpose: .screenshot)
+        #expect(view.hoveredWindow == front)
+
+        // Tab cycles to the overlapping window behind.
+        let tab = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48
+        ))
+        view.keyDown(with: tab)
+        #expect(view.hoveredWindow == back)
+
+        // Shift-click adds `back` to `selectedWindows` without ending the session.
+        let shiftUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: .shift, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseUp(with: shiftUp)
+        #expect(view.selectedWindows == [back] && recorder.heard.isEmpty)
+
+        // Tab cycles back to `front`, and an unshifted click (or Return) finishes with both windows.
+        view.keyDown(with: tab)
+        #expect(view.hoveredWindow == front)
+        let clickUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseUp(with: clickUp)
+        #expect(recorder.heard == ["windows [20, 10]"])
+    }
+
+    @Test func recallLastAreaAndMidDragReset() throws {
+        // L in area mode for screenshot/annotate requests recalling the last captured area.
+        #expect(try press(37, characters: "l", in: .screenshot).heard == ["lastArea"])
+        #expect(try press(37, characters: "l", in: .annotate).heard == ["lastArea"])
+
+        // During a selection drag, Backspace or right-click resets the drag instead of cancelling the overlay.
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot)
+        var selection = SelectionModel(bounds: Self.display.frame, pixelsPerPoint: 2)
+        selection.begin(at: CGPoint(x: 100, y: 200))
+        selection.drag(to: CGPoint(x: 200, y: 100))
+        view.show(selection: selection, showsReading: true, isDragging: true)
+
+        let backspace = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\u{8}", charactersIgnoringModifiers: "\u{8}", isARepeat: false, keyCode: 51
+        ))
+        view.keyDown(with: backspace)
+        #expect(recorder.heard == ["resetDrag"])
+
+        let rightClick = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: CGPoint(x: 150, y: 150), modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.rightMouseDown(with: rightClick)
+        #expect(recorder.heard == ["resetDrag", "resetDrag"])
+
+        // Once not dragging, right-click cancels the overlay session.
+        view.show(selection: SelectionModel(bounds: Self.display.frame, pixelsPerPoint: 2), showsReading: false, isDragging: false)
+        view.rightMouseDown(with: rightClick)
+        #expect(recorder.heard.last == "cancel")
+    }
 }

@@ -63,4 +63,43 @@ enum PinGeometry {
     static func clamp(_ value: CGFloat, to range: ClosedRange<CGFloat>) -> CGFloat {
         min(max(value, range.lowerBound), range.upperBound)
     }
+
+    enum Corner: CaseIterable, Equatable, Sendable {
+        case bottomLeft, bottomRight, topLeft, topRight
+    }
+
+    /// Which corner of a pin of `size` points `point` (origin at the bottom left) falls within `reach` of.
+    static func resizeCorner(at point: CGPoint, in size: CGSize, reach: CGFloat = 10) -> Corner? {
+        guard size.width >= reach * 2, size.height >= reach * 2,
+              CGRect(origin: .zero, size: size).contains(point) else { return nil }
+        let left = point.x <= reach
+        let right = point.x >= size.width - reach
+        let bottom = point.y <= reach
+        let top = point.y >= size.height - reach
+        if left && bottom { return .bottomLeft }
+        if right && bottom { return .bottomRight }
+        if left && top { return .topLeft }
+        if right && top { return .topRight }
+        return nil
+    }
+
+    /// The corner opposite `corner` in `frame` (origin at the bottom left), which stays fixed while `corner` drags.
+    static func oppositeCorner(of corner: Corner, in frame: CGRect) -> CGPoint {
+        switch corner {
+        case .bottomLeft: CGPoint(x: frame.maxX, y: frame.maxY)
+        case .bottomRight: CGPoint(x: frame.minX, y: frame.maxY)
+        case .topLeft: CGPoint(x: frame.maxX, y: frame.minY)
+        case .topRight: CGPoint(x: frame.minX, y: frame.minY)
+        }
+    }
+
+    /// The new zoom and fixed anchor when `corner` of `frame` is dragged to `point` (in the same space),
+    /// keeping the pin's proportions (`baseSize`).
+    static func resizedZoom(dragging corner: Corner, of frame: CGRect, baseSize: CGSize, to point: CGPoint) -> (zoom: CGFloat, anchor: CGPoint) {
+        let anchor = oppositeCorner(of: corner, in: frame)
+        let dx = abs(point.x - anchor.x)
+        let dy = abs(point.y - anchor.y)
+        let scale = max(dx / max(baseSize.width, 1), dy / max(baseSize.height, 1))
+        return (clamp(scale, to: zoomRange), anchor)
+    }
 }

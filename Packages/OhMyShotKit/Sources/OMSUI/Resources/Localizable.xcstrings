@@ -1662,6 +1662,7 @@
       }
     },
     "A name is made from this pattern for each capture and each file saved. {date} and {time} are when it was taken; {app} is the app in front; {window} is the window’s title, or the front window’s for an area; {counter} is a number that goes up by one with each file saved." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -3734,6 +3735,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "儲存時詢問名稱"
+          }
+        }
+      }
+    },
+    "Ask questions, share ideas, and hear what’s coming from MMFoundation, the people who make OhMyShot." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz preguntas, comparte ideas y entérate de lo que prepara MMFoundation, la gente que hace OhMyShot."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posez vos questions, partagez vos idées et découvrez ce que prépare MMFoundation, l’équipe qui crée OhMyShot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "質問したりアイデアを共有したり、OhMyShotを作っているMMFoundationからこれからの予定を聞いたりできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这里提问、分享想法，并了解 OhMyShot 的开发者 MMFoundation 接下来的计划。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這裡提問、分享想法，並了解 OhMyShot 的開發者 MMFoundation 接下來的計畫。"
           }
         }
       }
@@ -8260,6 +8295,41 @@
         }
       }
     },
+    "Debug" : {
+      "comment" : "Status bar menu: submenu of developer tools, shown only in debug builds.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depuración"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Débogage"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバッグ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调试"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "除錯"
+          }
+        }
+      }
+    },
     "Default" : {
       "localizations" : {
         "es" : {
@@ -9280,6 +9350,40 @@
         }
       }
     },
+    "Every choice in Settings goes back to how it was when OhMyShot was installed. Your shortcuts, upload destinations, cloud reading, language, approved apps, and capture history stay as they are." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada opción de Ajustes vuelve a como estaba al instalar OhMyShot. Tus atajos, destinos de subida, lectura en la nube, idioma, apps aprobadas e historial de capturas se mantienen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque choix des Réglages revient à son état lors de l’installation d’OhMyShot. Vos raccourcis, destinations d’envoi, la lecture dans le cloud, la langue, les apps approuvées et l’historique des captures restent inchangés."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定のすべての項目が OhMyShot をインストールしたときの状態に戻ります。ショートカット、アップロード先、クラウド読み取り、言語、承認済みのアプリ、キャプチャ履歴はそのまま残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置中的每一项都会回到 OhMyShot 刚安装时的样子。你的快捷键、上传目标、云端读取、语言、已批准的 App 和截图历史保持不变。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定中的每一項都會回到 OhMyShot 剛安裝時的樣子。你的快速鍵、上傳目的地、雲端讀取、語言、已核准的 App 和擷取記錄保持不變。"
+          }
+        }
+      }
+    },
     "Every picture in the Recognized Text window" : {
       "localizations" : {
         "es" : {
@@ -10058,6 +10162,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "格式"
+          }
+        }
+      }
+    },
+    "Format:" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Formato:"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Format :"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォーマット:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "格式："
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "格式："
           }
         }
       }
@@ -11655,6 +11793,7 @@
       }
     },
     "Insert %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -12081,6 +12220,40 @@
         }
       }
     },
+    "Join Discord" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unirse a Discord"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rejoindre Discord"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discordに参加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入 Discord"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入 Discord"
+          }
+        }
+      }
+    },
     "Join Lines" : {
       "localizations" : {
         "es" : {
@@ -12111,6 +12284,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "合併行"
+          }
+        }
+      }
+    },
+    "Join Us on Discord" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Únete a nosotros en Discord"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rejoignez-nous sur Discord"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discordに参加しませんか"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入我们的 Discord"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入我們的 Discord"
           }
         }
       }
@@ -12723,6 +12930,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不保留聲音"
+          }
+        }
+      }
+    },
+    "Lets Auto-scroll scroll the page for you during a scrolling capture, and lets Capture Text read the text an app shows instead of recognizing it in the picture. Without it, you scroll yourself and text is recognized from the picture." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permite que el desplazamiento automático desplace la página por ti durante una captura con desplazamiento, y que Capturar texto lea el texto que muestra una app en lugar de reconocerlo en la imagen. Sin él, desplazas tú mismo y el texto se reconoce en la imagen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permet au défilement automatique de faire défiler la page pour vous pendant une Capture défilante, et à Capturer du texte de lire le texte qu’affiche une app au lieu de le reconnaître dans l’image. Sans elle, vous faites défiler vous-même et le texte est reconnu dans l’image."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクロールキャプチャ中に自動スクロールでページをスクロールし、「テキストをキャプチャ」では画像から認識する代わりにアプリが表示しているテキストを直接読み取ります。許可しない場合、スクロールは手動で行い、テキストは画像から認識されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让“自动滚动”在滚动截图时替你滚动页面，并让“截取文字”直接读取 App 显示的文字，而不是从图片中识别。没有此权限，你需要自己滚动，文字从图片中识别。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讓「自動捲動」在捲動擷取時替你捲動頁面，並讓「擷取文字」直接讀取 App 顯示的文字，而不是從圖片中辨識。沒有此權限，你需要自己捲動，文字從圖片中辨識。"
           }
         }
       }
@@ -14459,6 +14700,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "為檔案命名"
+          }
+        }
+      }
+    },
+    "Needed for everything OhMyShot captures: screenshots, scrolling captures, and screen recordings. macOS applies it after a relaunch." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Necesario para todo lo que captura OhMyShot: capturas de pantalla, capturas con desplazamiento y grabaciones de pantalla. macOS lo aplica tras volver a abrir la app."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nécessaire à tout ce que capture OhMyShot : captures d’écran, captures défilantes et enregistrements d’écran. macOS l’applique après une relance."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot のすべてのキャプチャ（スクリーンショット、スクロールキャプチャ、画面収録）に必要です。macOS では再起動後に反映されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 的所有捕获都需要它：截图、滚动截图和屏幕录制。macOS 会在重新启动后应用此权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 的所有擷取都需要它：截圖、捲動截圖及螢幕錄製。macOS 會在重新啟動後套用此權限。"
           }
         }
       }
@@ -16752,6 +17027,40 @@
         }
       }
     },
+    "Picture:" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imagen:"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image :"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片："
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圖片："
+          }
+        }
+      }
+    },
     "Pictures" : {
       "localizations" : {
         "es" : {
@@ -18577,40 +18886,6 @@
         }
       }
     },
-    "Record your voice with screen recordings." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Graba tu voz con las grabaciones de pantalla."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enregistrer votre voix avec les enregistrements de l’écran."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画面収録と一緒に声を録音します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在录屏时录制你的声音。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在螢幕錄影中錄下你的聲音。"
-          }
-        }
-      }
-    },
     "Recorded area" : {
       "localizations" : {
         "es" : {
@@ -19003,6 +19278,40 @@
         }
       }
     },
+    "Records your voice with screen recordings. Without it, recordings keep only the Mac’s sound." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Graba tu voz con las grabaciones de pantalla. Sin él, las grabaciones solo conservan el sonido del Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistre votre voix avec les enregistrements d’écran. Sans lui, les enregistrements ne gardent que le son du Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面収録であなたの声を録音します。許可しない場合、収録には Mac の音声のみが残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在屏幕录制时录下你的声音。没有此权限，录制只保留 Mac 的声音。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在螢幕錄製時錄下你的聲音。沒有此權限，錄製只保留 Mac 的聲音。"
+          }
+        }
+      }
+    },
     "Red frame" : {
       "localizations" : {
         "es" : {
@@ -19373,6 +19682,108 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "必填"
+          }
+        }
+      }
+    },
+    "Reset" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restablecer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réinitialiser"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リセット"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置"
+          }
+        }
+      }
+    },
+    "Reset all settings to their defaults?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Restablecer todos los ajustes a sus valores predeterminados?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rétablir tous les réglages par défaut ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべての設定をデフォルトに戻しますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要将所有设置重置为默认值吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要將所有設定重置為預設值嗎？"
+          }
+        }
+      }
+    },
+    "Reset to Default Settings…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restablecer los ajustes predeterminados…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rétablir les réglages par défaut…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルト設定に戻す…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置为默认设置…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置為預設設定…"
           }
         }
       }
@@ -20723,40 +21134,6 @@
         }
       }
     },
-    "Scroll for you during scrolling capture, and read text straight from apps." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desplazarse por ti durante la captura con desplazamiento y leer el texto directamente de las apps."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Faire défiler à votre place pendant une capture défilante, et lire le texte directement depuis les apps."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スクロールキャプチャ中に自動でスクロールし、アプリから直接テキストを読み取ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在滚动截图时为你自动滚动，并直接从 App 中读取文字。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在捲動擷取時為你自動捲動，並直接從 App 讀取文字。"
-          }
-        }
-      }
-    },
     "Scrolling Capture" : {
       "localizations" : {
         "es" : {
@@ -22086,40 +22463,6 @@
         }
       }
     },
-    "Show the keys you press in screen recordings." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mostrar las teclas que pulsas en las grabaciones de pantalla."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Afficher les touches sur lesquelles vous appuyez dans les enregistrements de l’écran."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "画面収録で押したキーを表示します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在录屏中显示你按下的按键。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在螢幕錄影中顯示你按下的按鍵。"
-          }
-        }
-      }
-    },
     "Show the next pane" : {
       "localizations" : {
         "es" : {
@@ -22428,36 +22771,36 @@
         }
       }
     },
-    "Show your camera in screen recordings." : {
+    "Shows the keys you press in screen recordings with Show Keystrokes, and keeps them so Studio can show them afterwards. Without it, no keys are shown or kept." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar tu cámara en las grabaciones de pantalla."
+            "value" : "Muestra las teclas que pulsas en las grabaciones de pantalla con Mostrar pulsaciones de teclas, y las guarda para que Studio pueda mostrarlas después. Sin él, no se muestra ni se guarda ninguna tecla."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Afficher votre caméra dans les enregistrements de l’écran."
+            "value" : "Affiche les touches que vous pressez dans les enregistrements d’écran avec Afficher les touches, et les garde pour que Studio puisse les montrer ensuite. Sans elle, aucune touche n’est affichée ni gardée."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "画面収録にカメラ映像を表示します。"
+            "value" : "「キー操作を表示」で画面収録中に押したキーを表示し、あとで Studio が表示できるよう保存します。許可しない場合、キーは表示も保存もされません。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在录屏中显示你的摄像头画面。"
+            "value" : "通过“显示按键”在屏幕录制中显示你按下的键，并保存下来供 Studio 之后显示。没有此权限，按键既不会显示也不会保存。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在螢幕錄影中顯示你的相機畫面。"
+            "value" : "透過「顯示按鍵」在螢幕錄製中顯示你按下的鍵，並儲存下來供 Studio 之後顯示。沒有此權限，按鍵既不會顯示也不會儲存。"
           }
         }
       }
@@ -22492,6 +22835,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在選取文字或公式的顯示器上顯示結果。"
+          }
+        }
+      }
+    },
+    "Shows your camera in a bubble while you record, and keeps it as a movie of its own for Studio. Without it, recordings have no camera." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muestra tu cámara en una burbuja mientras grabas y la guarda como un vídeo aparte para Studio. Sin él, las grabaciones no tienen cámara."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affiche votre caméra dans une bulle pendant l’enregistrement et la garde dans une vidéo à part pour Studio. Sans elle, les enregistrements n’ont pas de caméra."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収録中にカメラをバブルに表示し、Studio 用に別のムービーとして保存します。許可しない場合、収録にカメラは入りません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录制时在气泡中显示你的摄像头画面，并为 Studio 单独保存为一段影片。没有此权限，录制中不会有摄像头画面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錄製時在泡泡中顯示你的相機畫面，並為 Studio 單獨儲存為一段影片。沒有此權限，錄製中不會有相機畫面。"
           }
         }
       }
@@ -22730,6 +23107,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已移除聲音"
+          }
+        }
+      }
+    },
+    "Source Code" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código fuente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code source"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ソースコード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "源代码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原始碼"
           }
         }
       }
@@ -23437,40 +23848,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已讀取表格"
-          }
-        }
-      }
-    },
-    "Take screenshots and record the screen." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hacer capturas de pantalla y grabar la pantalla."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prendre des captures d’écran et enregistrer l’écran."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スクリーンショットを撮り、画面を収録します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "截图和录制屏幕。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "截圖及錄製螢幕。"
           }
         }
       }

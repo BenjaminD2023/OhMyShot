@@ -8,6 +8,23 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Save As offers PNG, JPEG and HEIC format, quality and picture options. (upstream [22b7027](https://github.com/fzlzjerry/OhMyShot/commit/22b7027))
+- Reset settings explicitly from General after confirmation, retaining capture records and external updater preferences. Fork loupe magnification and color-copy choices reset consistently. (upstream [3e00641](https://github.com/fzlzjerry/OhMyShot/commit/3e00641))
+- Cycle overlapping windows with Tab, select several with Shift-click, recall the last area with L, and reset an active selection drag with Backspace or right-click. Mixed-display window composition preserves source scales and output metadata. (upstream [26a3deb](https://github.com/fzlzjerry/OhMyShot/commit/26a3deb))
+- Open the captured image from the text-result card in the recognition panel; drag image pins to other apps. (upstream [26a3deb](https://github.com/fzlzjerry/OhMyShot/commit/26a3deb))
+
+### Changed
+
+- Standard windows participate in Command-Tab; Settings loads login-item state lazily. Group menu actions into submenus and name symbol controls with hover tags. (upstream [6981fa7](https://github.com/fzlzjerry/OhMyShot/commit/6981fa7), [e72e500](https://github.com/fzlzjerry/OhMyShot/commit/e72e500), [1ba5e94](https://github.com/fzlzjerry/OhMyShot/commit/1ba5e94))
+- Add source, community and organization links, a one-time community invitation after sufficient use, permission help, and a Chinese README. (upstream [4757b46](https://github.com/fzlzjerry/OhMyShot/commit/4757b46), [be25671](https://github.com/fzlzjerry/OhMyShot/commit/be25671), [84a4fa5](https://github.com/fzlzjerry/OhMyShot/commit/84a4fa5))
+
+### Fixed
+
+- Widen the compact editable preview enough to fit the updated style controls with saved colors.
+- Prevent Quick Access hover flicker and outline colored annotation text for contrast, including while editing. (upstream [75e384d](https://github.com/fzlzjerry/OhMyShot/commit/75e384d), [6647d69](https://github.com/fzlzjerry/OhMyShot/commit/6647d69))
+
 ## [0.4.0-fork.6] - 2026-10-31
 
 ### Added

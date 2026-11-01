@@ -260,4 +260,24 @@ struct TextResultHUDTests {
         #expect(TextResultHUD.displayIndex(for: CGRect(x: -100, y: 400, width: 400, height: 100), frames: frames) == 0)
         #expect(TextResultHUD.displayIndex(for: CGRect(x: 4000, y: 2000, width: 0, height: 0), frames: frames) == nil)
     }
+
+    @Test func openInPanelChipShowsOnCopiedStatesAndInvokesCallback() {
+        let card = TextResultCard()
+        var opened = 0
+        card.onOpenInPanel = { opened += 1 }
+        card.show(.copied(text: "Hello\nWorld", joined: false, canJoin: true))
+        card.frame.size = card.fittingSize(width: 340)
+        card.layout()
+        #expect(!card.openInPanelButton.isHidden)
+        #expect(card.openInPanelButton.frame.minX > card.joinButton.frame.maxX)
+        card.openInPanelButton.sendAction(card.openInPanelButton.action, to: card.openInPanelButton.target)
+        #expect(opened == 1)
+
+        card.show(.empty)
+        #expect(card.openInPanelButton.isHidden)
+        card.show(.noFormula)
+        #expect(card.openInPanelButton.isHidden)
+        card.show(.copiedFormula(latex: "x^2"))
+        #expect(!card.openInPanelButton.isHidden)
+    }
 }

@@ -29,6 +29,9 @@ enum MainMenu {
         file.addItem(withTitle: String(localized: "Save"), action: #selector(NSDocument.save(_:)), keyEquivalent: "s")
         let project = file.addItem(withTitle: String(localized: "Save a Copy as Project…"), action: Selector(("saveProject:")), keyEquivalent: "s")
         project.keyEquivalentModifierMask = [.command, .shift]
+        // Answered by the editor: a copy of its picture where and how the person chooses.
+        let saveAs = file.addItem(withTitle: String(localized: "Save As…"), action: Selector(("saveScreenshotAs:")), keyEquivalent: "s")
+        saveAs.keyEquivalentModifierMask = [.command, .option, .shift]
         file.addItem(.separator())
         // Answered by the editor and Capture History, which print the capture in front of them.
         file.addItem(withTitle: String(localized: "Print…"), action: Selector(("printCapture:")), keyEquivalent: "p")

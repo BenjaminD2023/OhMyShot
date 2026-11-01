@@ -352,6 +352,10 @@ nonisolated public struct RGBA: Codable, Sendable, Hashable {
     /// Whether white or black reads better on this color: white unless the color is light.
     public var prefersDarkInk: Bool { luminance > 0.45 }
 
+    /// Whether a black or white outline reads better around text filled with this color: black for white and
+    /// chromatic colors, white for black and very dark colors.
+    public var prefersDarkOutline: Bool { luminance > 0.08 }
+
     public func withAlpha(_ alpha: Double) -> RGBA {
         RGBA(red: red, green: green, blue: blue, alpha: alpha)
     }

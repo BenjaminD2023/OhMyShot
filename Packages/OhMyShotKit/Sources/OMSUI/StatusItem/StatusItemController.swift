@@ -276,7 +276,7 @@ public final class StatusItemController {
         if !debugEntries.isEmpty {
             let submenu = NSMenu()
             debugEntries.forEach { submenu.addItem(menuTarget.item(for: $0)) }
-            let debugItem = NSMenuItem(title: "Debug", action: nil, keyEquivalent: "")
+            let debugItem = NSMenuItem(title: String(localized: "Debug", bundle: .module), action: nil, keyEquivalent: "")
             debugItem.submenu = submenu
             menu.addItem(.separator())
             menu.addItem(debugItem)
@@ -388,6 +388,9 @@ private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
             let item = NSMenuItem(title: entry.title, action: #selector(runHeld(_:)), keyEquivalent: entry.keyEquivalent)
             item.target = self
             item.representedObject = Held(entry)
+            if let shortcut = entry.shortcut {
+                item.setShortcut(for: shortcut.name)
+            }
             menu.addItem(item)
         }
     }

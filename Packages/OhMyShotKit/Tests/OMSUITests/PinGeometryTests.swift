@@ -82,4 +82,18 @@ struct PinGeometryTests {
         #expect(PinGeometry.opacity(0.3, scrolledBy: -10, precise: false) == 0.2)
         #expect(PinGeometry.opacity(0.95, scrolledBy: 3, precise: false) == 1)
     }
+
+    @Test func cornerResizeAnchorsOppositeCornerAndScalesProportionally() {
+        let size = CGSize(width: 200, height: 100)
+        let frame = CGRect(origin: CGPoint(x: 100, y: 100), size: size)
+        #expect(PinGeometry.resizeCorner(at: CGPoint(x: 4, y: 4), in: size) == .bottomLeft)
+        #expect(PinGeometry.resizeCorner(at: CGPoint(x: 196, y: 96), in: size) == .topRight)
+        #expect(PinGeometry.resizeCorner(at: CGPoint(x: 100, y: 50), in: size) == nil)
+
+        let (zoom, anchor) = PinGeometry.resizedZoom(
+            dragging: .bottomRight, of: frame, baseSize: size, to: CGPoint(x: 500, y: 0)
+        )
+        #expect(anchor == CGPoint(x: 100, y: 200))
+        #expect(zoom == 2)
+    }
 }

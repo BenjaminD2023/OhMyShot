@@ -23,6 +23,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// Saves a copy of the capture's file to the export location; returns where it went, or nil when it was not saved
         /// (cancelled, or failed, which it has beeped for).
         public var save: (_ file: URL) async -> URL?
+        /// Asks where and how to save a copy of the capture's file, in the Save panel; returns where it went, or nil when
+        /// it was not saved. Nil when the editor offers no Save As.
+        public var saveAs: ((_ file: URL) async -> URL?)?
         /// The file to hand to another app when the capture is dragged out of the window: the capture's file itself, or a
         /// copy of it in the format Settings choose.
         public var fileToHandOver: (_ file: URL) -> URL = { $0 }
@@ -87,6 +90,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.onReturn = { [weak self] in self?.copyCapture(thenClose: true) }
         content.canvas.onSave = { [weak self] in self?.save() }
         content.canvas.onSaveProject = { [weak self] in self?.saveProject() }
+        if actions.saveAs != nil {
+            content.canvas.onSaveAs = { [weak self] in self?.saveAs() }
+        }
         content.canvas.onPrint = { [weak self] in self?.printCapture() }
         content.canvas.onImageSize = { [weak self] in self?.presentImageSize() }
         content.onViewportChange = { [weak self] in self?.updateZoomLabel() }
@@ -115,9 +121,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// The smallest the window goes: room for the rail above the capsule's resting band (under the toolbar's
     /// 52 pt), and for the widest the style capsule is (the redaction's with a reading that failed and a
     /// full row of kept colors, 838 pt, beside the rail with 8 pt to spare). A test measures them.
-    static let minimumSize = CGSize(width: 910, height: 640)
+    static let minimumSize = CGSize(width: 938, height: 640)
     /// The shorter preview rail and its bottom style band need less vertical space than the editor.
-    static let previewMinimumSize = CGSize(width: 860, height: 480)
+    static let previewMinimumSize = CGSize(width: 880, height: 480)
 
     /// The window shows the picture at the size it had on screen, with room for the rail and the capsule,
     /// within most of the screen.
@@ -398,6 +404,23 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
             // A save that failed has beeped already, and one that was cancelled (Escape in the name alert) did not mean to
             // save: neither is said again here.
             guard await actions.save(file) != nil else { return }
+            model.flashSaved()
+        }
+    }
+
+    var offersSaveAs: Bool { actions.saveAs != nil }
+
+    /// Asks where to save a copy of the picture as it looks now, and in what format and how, then saves it there. The
+    /// marks are kept first, as Save keeps them.
+    func saveAs() {
+        guard let saveAs = actions.saveAs else { return }
+        content.canvas.endEditing()
+        Task {
+            guard let file = await exportAndKeep() else {
+                NSSound.beep()
+                return
+            }
+            guard await saveAs(file) != nil else { return }
             model.flashSaved()
         }
     }
@@ -686,6 +709,9 @@ struct EditorView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
+                    if model.controller?.offersSaveAs == true {
+                        Button { model.controller?.saveAs() } label: { Text("Save As…", bundle: .module) }
+                    }
                     Button {
                         model.controller?.saveProject()
                     } label: {
@@ -793,6 +819,12 @@ final class DragOutView: NSView, NSDraggingSource {
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .openHand)
     }
+
+    // The handle sits in the title bar, where a press on a see-through view drags the window instead of reaching it.
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    // A press here starts a drag, even when the window is not yet key.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         mouseDownPoint = convert(event.locationInWindow, from: nil)

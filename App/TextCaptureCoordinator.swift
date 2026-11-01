@@ -83,6 +83,8 @@ final class TextCaptureCoordinator {
     private var waitingForCloud: Task<CloudReading, any Error>?
     /// Text read but left off the clipboard, which changed while the cloud model read it; the card's Copy puts it there.
     private var uncopied: (text: String, note: String?, selection: CGRect)?
+    /// The latest image read by Capture Text or Capture Formula, so the result card's Open in Panel can show it.
+    private var lastCapturedImage: (image: CGImage, scale: CGFloat, source: String, place: AppTextPlace?)?
 
     private struct Recognition {
         let lines: [OCRLine]
@@ -100,6 +102,10 @@ final class TextCaptureCoordinator {
         self.overlay = overlay
         hud.onToggleJoin = { [weak self] in self?.toggleJoin() }
         hud.onCopy = { [weak self] in self?.copyUncopied() }
+        hud.onOpenInPanel = { [weak self] in
+            guard let self, let captured = self.lastCapturedImage else { return }
+            self.openPanel(image: captured.image, scale: captured.scale, source: captured.source, place: captured.place)
+        }
     }
 
     /// Test model readiness before a shortcut selection. A failed startup request is killed with its
@@ -209,12 +215,26 @@ final class TextCaptureCoordinator {
             case .window(let target, let modifiers) where modifiers.contains(.option):
                 done?(nil)
                 Task { await self.openPanel(window: target) }
+            case .windows(let targets, let modifiers) where modifiers.contains(.option):
+                done?(nil)
+                if let first = targets.first {
+                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                    Task { await self.openPanel(region: union) }
+                }
             case .region(let rect, _, _, let frozen):
                 highlight.show(rect)
                 captureReading = Task { await self.recognize(region: rect, frozen: frozen, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
             case .window(let target, _):
                 highlight.show(target.frame)
                 captureReading = Task { await self.recognize(window: target, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
+            case .windows(let targets, _):
+                if let first = targets.first {
+                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                    highlight.show(union)
+                    captureReading = Task { await self.recognize(region: union, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
+                } else {
+                    done?(nil)
+                }
             case .annotated, .color, .record, .scroll, .allInOne, .cancelled:
                 done?(nil)
             }
@@ -335,6 +355,8 @@ final class TextCaptureCoordinator {
         done: ((String?) -> Void)? = nil
     ) async {
         guard !Task.isCancelled else { done?(nil); return }
+        let capturedScale = selection.width > 0 ? CGFloat(image.width) / selection.width : 1
+        lastCapturedImage = (image, capturedScale, String(localized: "Screen Area"), place)
         let showsCard = settings.showTextResult
         let probe = LatencyProbe("ocr.recognize")
         defer { probe.end() }
@@ -708,6 +730,19 @@ final class TextCaptureCoordinator {
             case .window(let target, _):
                 highlight.show(target.frame)
                 Task { await self.readFormula(window: target, done: done) }
+            case .windows(let targets, let modifiers):
+                if let first = targets.first {
+                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                    if modifiers.contains(.option) {
+                        done?(nil)
+                        Task { await self.openPanel(region: union) }
+                    } else {
+                        highlight.show(union)
+                        Task { await self.readFormula(region: union, copiesToClipboard: copiesToClipboard, done: done) }
+                    }
+                } else {
+                    done?(nil)
+                }
             case .annotated, .color, .record, .scroll, .allInOne, .cancelled:
                 done?(nil)
             }
@@ -754,6 +789,8 @@ final class TextCaptureCoordinator {
     }
 
     private func readFormula(_ image: CGImage, selection: CGRect, copiesToClipboard: Bool, done: ((String?) -> Void)?) async {
+        let capturedScale = selection.width > 0 ? CGFloat(image.width) / selection.width : 1
+        lastCapturedImage = (image, capturedScale, String(localized: "Screen Area"), nil)
         let showsCard = settings.showTextResult
         guard let reader = formulaReader?() else {
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
@@ -876,6 +913,12 @@ final class TextCaptureCoordinator {
             case .window(let target, let modifiers):
                 self?.highlight.show(target.frame)
                 Task { await self?.translate(window: target, inPanel: modifiers.contains(.option)) }
+            case .windows(let targets, let modifiers):
+                if let first = targets.first {
+                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                    self?.highlight.show(union)
+                    Task { await self?.translate(region: union, frozen: nil, inPanel: modifiers.contains(.option)) }
+                }
             case .annotated, .color, .record, .scroll, .allInOne, .cancelled:
                 break
             }

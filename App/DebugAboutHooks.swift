@@ -6,7 +6,8 @@ import OMSUI
 import OSLog
 
 /// `debug/about-render`: Settings › About behind the wallpaper, and its Acknowledgments sheet, captured into the debug
-/// snapshots; `debug/settings-render`, any pane the same way. Nothing is shown.
+/// snapshots; `debug/settings-render`, any pane the same way. Nothing is shown. `debug/community-invite`: the invitation
+/// to the Discord, shown, or captured the same way.
 @MainActor
 struct DebugAboutHooks {
     /// A Settings window of the hooks' own, not the one the user may have open.
@@ -14,12 +15,17 @@ struct DebugAboutHooks {
     let capture: (NSWindow, String) async -> Void
 
     private static var settings: SettingsWindowController?
+    private static var invite: CommunityInviteWindowController?
 
     /// Returns true when `url` was one of these.
     func handle(_ url: URL) -> Bool {
         let hook = url.pathComponents.dropFirst().first ?? ""
-        guard hook == "about-render" || hook == "settings-render" else { return false }
+        guard hook == "about-render" || hook == "settings-render" || hook == "community-invite" else { return false }
         func value(_ name: String) -> String? { DebugHooks.parameter(name, in: url) }
+        if hook == "community-invite" {
+            showInvite(render: value("render") == "1", dark: value("mode") == "dark", name: value("name"))
+            return true
+        }
         if hook == "settings-render" {
             if value("close") == "1" {
                 Self.settings?.close()
@@ -105,6 +111,31 @@ struct DebugAboutHooks {
             try? await Task.sleep(for: .milliseconds(800))
             guard let window = controller.window else { return }
             await capture(window, name ?? "settings-\(tab.rawValue)-\(dark ? "dark" : "light")")
+        }
+    }
+
+    /// The invitation to the Discord, whatever `CommunityInvite` says and without spending it: shown as it comes at a
+    /// launch, or with render=1 behind the wallpaper in the appearance asked for, captured as <name>.png
+    /// (community-invite-<light|dark>), and closed.
+    private func showInvite(render: Bool, dark: Bool, name: String?) {
+        Self.invite?.close()
+        let controller = CommunityInviteWindowController()
+        Self.invite = controller
+        if render || dark {
+            controller.window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        }
+        guard render else { return controller.show() }
+        controller.showBehindWallpaper()
+        Task {
+            defer {
+                if Self.invite === controller {
+                    controller.close()
+                    Self.invite = nil
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(600))
+            guard let window = controller.window else { return }
+            await capture(window, name ?? "community-invite-\(dark ? "dark" : "light")")
         }
     }
 

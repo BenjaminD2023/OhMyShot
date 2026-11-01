@@ -37,6 +37,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public var onReturn: (() -> Void)?
     public var onSave: (() -> Void)?
     public var onSaveProject: (() -> Void)?
+    public var onSaveAs: (() -> Void)?
     public var onPrint: (() -> Void)?
     /// Asks for the size to scale the picture to, which the host shows its own way.
     public var onImageSize: (() -> Void)?
@@ -49,6 +50,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case moving(start: CGPoint, originals: [Annotation])
         case reshaping(handle: Handle, original: Annotation)
         case cropping(handle: Handle?, start: CGPoint, original: CGRect)
+        case panning(start: CGPoint, originalFocus: CGPoint)
+        case marquee(start: CGPoint, initialSelection: [Annotation.ID], additive: Bool)
     }
 
     private final class TextEditing {
@@ -104,6 +107,21 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var editing: TextEditing?
     /// The crop being chosen while the crop tool is in hand, in capture pixels.
     private var cropRect: CGRect?
+    /// Whether Space is held down: pans a zoomed-in canvas, or in place moves the capture selection.
+    public private(set) var isSpaceHeld = false
+    /// Whether the canvas color eyedropper (shortcut I) is currently active.
+    public private(set) var isPickingColor = false
+    /// Called when `isPickingColor` toggles so the style capsule can update its Eyedropper chip.
+    var onColorPickerChange: (() -> Void)?
+
+    /// The marquee selection rectangle currently drawn on the canvas, in view points.
+    var marqueeRect: CGRect? { selectionLayer.marqueeRect }
+
+    /// Active smart alignment guides drawn on the canvas, in view points.
+    var alignmentGuides: [SelectionLayer.Guide] { selectionLayer.alignmentGuides }
+
+    /// The document point centered in the viewport while zoomed in.
+    var viewportFocus: CGPoint? { focus }
 
     public init(session: AnnotationSession) {
         self.session = session
@@ -853,6 +871,55 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    /// Toggles the canvas color eyedropper (shortcut I).
+    public func toggleColorPicker() {
+        if isPickingColor {
+            cancelColorPicker()
+        } else {
+            endEditing()
+            isPickingColor = true
+            if let window {
+                let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+                if bounds.contains(location) {
+                    updateEyedropperPreview(at: location)
+                    updateCursor(at: location)
+                }
+            }
+            onColorPickerChange?()
+        }
+    }
+
+    public func cancelColorPicker() {
+        guard isPickingColor else { return }
+        isPickingColor = false
+        selectionLayer.eyedropperPreview = nil
+        if let window {
+            let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            if bounds.contains(location) { updateCursor(at: location) }
+        }
+        onColorPickerChange?()
+    }
+
+    /// Samples the capture's pixel color at `documentPoint` (in document pixels).
+    public func sampleColor(at documentPoint: CGPoint) -> RGBA? {
+        let pic = session.picture
+        let x = Int(documentPoint.x.rounded(.down))
+        let y = Int(documentPoint.y.rounded(.down))
+        guard x >= 0, y >= 0, x < pic.width, y < pic.height,
+              let bitmap = Bitmap(pic, crop: CGRect(x: x, y: y, width: 1, height: 1))
+        else { return nil }
+        let pixel = bitmap.pixel(0, 0)
+        return RGBA(red: Double(pixel.red) / 255, green: Double(pixel.green) / 255, blue: Double(pixel.blue) / 255, alpha: 1)
+    }
+
+    private func updateEyedropperPreview(at viewLocation: CGPoint) {
+        guard isPickingColor, let color = sampleColor(at: documentPoint(viewLocation)) else {
+            selectionLayer.eyedropperPreview = nil
+            return
+        }
+        selectionLayer.eyedropperPreview = SelectionLayer.EyedropperPreview(point: viewLocation, color: color)
+    }
+
     // MARK: Hit testing
 
     private var tolerance: CGFloat { 5 / zoom }
@@ -860,10 +927,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// The mark a press at `point` (pixels) takes hold of. With `pressing`, a press that would highlight
     /// text with the highlighter is left to highlight: the edges of highlights already there, which hug
     /// the lines above and below, do not catch it unless they are selected.
-    private func hitItem(at point: CGPoint, pressing: Bool = false) -> Annotation? {
+    private func hitItem(at point: CGPoint, pressing: Bool = false, includingInterior: Bool = false) -> Annotation? {
         let scale = session.document.scale
-        let interiorForAll = session.tool == .select
-        let highlighting = pressing && session.tool == .highlighter && TextSnapping.line(at: point, in: session.textLines) != nil
+        let interiorForAll = session.tool == .select || includingInterior
+        let highlighting = pressing && !includingInterior && session.tool == .highlighter && TextSnapping.line(at: point, in: session.textLines) != nil
         for item in session.document.items.reversed() {
             let selected = session.selection.contains(item.id)
             if highlighting, item.multiplies, !selected { continue }
@@ -871,6 +938,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             if item.contains(point, tolerance: tolerance, scale: scale, interior: interior) { return item }
         }
         return nil
+    }
+
+    /// Any text mark at `point` (pixels), even when covered by an area mark.
+    private func hitTextItem(at point: CGPoint) -> Annotation? {
+        let scale = session.document.scale
+        return session.document.items.reversed().first { item in
+            guard case .text = item.shape else { return false }
+            return item.contains(point, tolerance: tolerance, scale: scale, interior: true)
+        }
     }
 
     private func handle(at viewPoint: CGPoint, of item: Annotation) -> Handle? {
@@ -909,11 +985,26 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             endEditing()
         }
         window?.makeFirstResponder(self)
+        let location = convert(event.locationInWindow, from: nil)
+        if isPickingColor {
+            if let sampled = sampleColor(at: documentPoint(location)) {
+                session.changeSettings(String(localized: "Color", bundle: .module)) { $0.color = sampled }
+                refreshEditingStyle()
+            }
+            cancelColorPicker()
+            return
+        }
+        if isSpaceHeld, !isInPlace {
+            let currentFocus = focus ?? documentPoint(CGPoint(x: freeArea.midX, y: freeArea.midY))
+            drag = .panning(start: location, originalFocus: currentFocus)
+            NSCursor.closedHand.set()
+            return
+        }
         // The background's controls set it; the picture itself takes no clicks meanwhile.
         if session.tool == .background { return }
-        let location = convert(event.locationInWindow, from: nil)
         let point = documentPoint(location)
         let shift = event.modifierFlags.contains(.shift)
+        let command = event.modifierFlags.contains(.command)
         let scale = session.document.scale
 
         if session.tool == .crop, let cropRect {
@@ -928,13 +1019,19 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return
         }
 
+        // Double-clicking any existing text mark from any tool enters inline editing immediately.
+        if event.clickCount == 2, let textItem = hitTextItem(at: point) {
+            beginEditing(textItem.id, isNew: false)
+            return
+        }
+
         if session.selection.count == 1, let item = session.selectedItems.first, let handle = handle(at: location, of: item) {
             session.beginLiveChange()
             drag = .reshaping(handle: handle, original: item)
             return
         }
 
-        if let item = hitItem(at: point, pressing: true) {
+        if let item = hitItem(at: point, pressing: true, includingInterior: command) {
             if event.clickCount == 2, case .text = item.shape {
                 beginEditing(item.id, isNew: false)
                 return
@@ -964,8 +1061,18 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return
         }
 
-        session.select([])
         let tool = session.tool
+        if tool == .select {
+            if isInPlace, event.clickCount == 2 {
+                onCopy?()
+                return
+            }
+            if !shift { session.select([]) }
+            drag = .marquee(start: point, initialSelection: shift ? session.selection : [], additive: shift)
+            selectionLayer.marqueeRect = nil
+            return
+        }
+        session.select([])
         let settings = session.settings(for: tool)
         switch tool {
         case .select, .crop, .background:
@@ -1045,6 +1152,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             if shift {
                 if abs(delta.width) > abs(delta.height) { delta.height = 0 } else { delta.width = 0 }
             }
+            if !event.modifierFlags.contains(.command), originals.count == 1 {
+                let snapped = snapMoving(originals[0], translatedBy: delta, axisLockedX: shift && delta.width == 0, axisLockedY: shift && delta.height == 0)
+                delta = snapped.delta
+                selectionLayer.alignmentGuides = snapped.guides
+            } else {
+                selectionLayer.alignmentGuides = []
+            }
             for original in originals {
                 guard let index = document.index(of: original.id) else { continue }
                 document.items[index] = original.translated(by: delta)
@@ -1064,6 +1178,34 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             rect = rect.standardized
             cropRect = rect
             cropLayer.frameRect = viewRect(rect)
+        case .panning(let start, let originalFocus):
+            guard userZoom != nil else { return }
+            let dx = location.x - start.x
+            let dy = location.y - start.y
+            focus = CGPoint(x: originalFocus.x - dx / zoom, y: originalFocus.y - dy / zoom)
+            updateViewport()
+            focus = documentPoint(CGPoint(x: freeArea.midX, y: freeArea.midY))
+        case .marquee(let start, let initialSelection, let additive):
+            let docRect = CGRect(
+                x: min(start.x, point.x),
+                y: min(start.y, point.y),
+                width: abs(point.x - start.x),
+                height: abs(point.y - start.y)
+            )
+            selectionLayer.marqueeRect = viewRect(docRect)
+            let scale = session.document.scale
+            let enclosed = session.document.items.compactMap { item -> Annotation.ID? in
+                item.bounds(scale: scale).intersects(docRect) ? item.id : nil
+            }
+            if additive {
+                var combined = initialSelection
+                for id in enclosed where !combined.contains(id) {
+                    combined.append(id)
+                }
+                session.select(combined)
+            } else {
+                session.select(enclosed)
+            }
         }
     }
 
@@ -1099,6 +1241,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.updateLive(Self.joiningHighlights(of: session.document, to: id, highlight))
             session.endLiveChange(actionName: String(localized: "Highlight", bundle: .module))
         case .moving(_, let originals):
+            selectionLayer.alignmentGuides = []
             // An image moved past the canvas's edge takes the canvas with it.
             if originals.contains(where: { if case .image = $0.shape { true } else { false } }) { session.growCanvasToHoldImages() }
             session.endLiveChange(actionName: String(localized: "Move", bundle: .module))
@@ -1112,6 +1255,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 self.cropRect = session.document.canvas
                 cropLayer.frameRect = viewRect(session.document.canvas)
             }
+        case .panning:
+            break
+        case .marquee:
+            selectionLayer.marqueeRect = nil
         }
     }
 
@@ -1340,6 +1487,84 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         return menu
     }
 
+    /// Snaps a single moving mark against other marks' edges/centers and the canvas center within `4 / zoom` pixels.
+    private func snapMoving(
+        _ original: Annotation, translatedBy rawDelta: CGSize, axisLockedX: Bool, axisLockedY: Bool
+    ) -> (delta: CGSize, guides: [SelectionLayer.Guide]) {
+        let document = session.document
+        let scale = document.scale
+        let movedBounds = original.translated(by: rawDelta).bounds(scale: scale)
+        guard !movedBounds.isNull, movedBounds.width > 0 || movedBounds.height > 0 else {
+            return (rawDelta, [])
+        }
+        let threshold = 4 / max(zoom, 0.05)
+        let canvas = document.canvas.standardized
+
+        var xTargets: [(x: CGFloat, minY: CGFloat, maxY: CGFloat)] = [
+            (canvas.midX, canvas.minY, canvas.maxY),
+        ]
+        var yTargets: [(y: CGFloat, minX: CGFloat, maxX: CGFloat)] = [
+            (canvas.midY, canvas.minX, canvas.maxX),
+        ]
+        for item in document.items where item.id != original.id {
+            let b = item.bounds(scale: scale)
+            guard !b.isNull else { continue }
+            xTargets.append((b.minX, b.minY, b.maxY))
+            xTargets.append((b.midX, b.minY, b.maxY))
+            xTargets.append((b.maxX, b.minY, b.maxY))
+            yTargets.append((b.minY, b.minX, b.maxX))
+            yTargets.append((b.midY, b.minX, b.maxX))
+            yTargets.append((b.maxY, b.minX, b.maxX))
+        }
+
+        var delta = rawDelta
+        var guides: [SelectionLayer.Guide] = []
+
+        if !axisLockedX {
+            let xEdges = [movedBounds.minX, movedBounds.midX, movedBounds.maxX]
+            var bestX: (offset: CGFloat, targetX: CGFloat, minY: CGFloat, maxY: CGFloat)?
+            for edge in xEdges {
+                for target in xTargets {
+                    let diff = target.x - edge
+                    guard abs(diff) <= threshold else { continue }
+                    if bestX == nil || abs(diff) < abs(bestX!.offset) {
+                        bestX = (diff, target.x, target.minY, target.maxY)
+                    }
+                }
+            }
+            if let bestX {
+                delta.width += bestX.offset
+                let snappedRect = movedBounds.offsetBy(dx: bestX.offset, dy: 0)
+                let start = viewPoint(CGPoint(x: bestX.targetX, y: min(snappedRect.minY, bestX.minY)))
+                let end = viewPoint(CGPoint(x: bestX.targetX, y: max(snappedRect.maxY, bestX.maxY)))
+                guides.append(SelectionLayer.Guide(start: start, end: end))
+            }
+        }
+
+        if !axisLockedY {
+            let yEdges = [movedBounds.minY, movedBounds.midY, movedBounds.maxY]
+            var bestY: (offset: CGFloat, targetY: CGFloat, minX: CGFloat, maxX: CGFloat)?
+            for edge in yEdges {
+                for target in yTargets {
+                    let diff = target.y - edge
+                    guard abs(diff) <= threshold else { continue }
+                    if bestY == nil || abs(diff) < abs(bestY!.offset) {
+                        bestY = (diff, target.y, target.minX, target.maxX)
+                    }
+                }
+            }
+            if let bestY {
+                delta.height += bestY.offset
+                let snappedRect = movedBounds.offsetBy(dx: delta.width - rawDelta.width, dy: bestY.offset)
+                let start = viewPoint(CGPoint(x: min(snappedRect.minX, bestY.minX), y: bestY.targetY))
+                let end = viewPoint(CGPoint(x: max(snappedRect.maxX, bestY.maxX), y: bestY.targetY))
+                guides.append(SelectionLayer.Guide(start: start, end: end))
+            }
+        }
+
+        return (delta, guides)
+    }
+
     public override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
         // The editor's own capture, dragged out from its toolbar, is not combined into itself.
         guard !(sender.draggingSource is DragOutView), Self.offersPictures(sender.draggingPasteboard) else { return [] }
@@ -1389,7 +1614,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     public override func mouseMoved(with event: NSEvent) {
-        updateCursor(at: convert(event.locationInWindow, from: nil))
+        let location = convert(event.locationInWindow, from: nil)
+        if isPickingColor { updateEyedropperPreview(at: location) }
+        updateCursor(at: location)
     }
 
     public override func cursorUpdate(with event: NSEvent) {
@@ -1399,8 +1626,16 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func updateCursor(at location: CGPoint) {
         guard drag == nil else { return }
         if editing?.view.frame.contains(location) == true { return }
+        if isPickingColor {
+            NSCursor.crosshair.set()
+            return
+        }
         if let override = cursorOverride?(location) {
             override.set()
+            return
+        }
+        if isSpaceHeld, !isInPlace {
+            NSCursor.openHand.set()
             return
         }
         let cursor: NSCursor
@@ -1455,10 +1690,31 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    public override func keyUp(with event: NSEvent) {
+        if event.keyCode == 49 {
+            isSpaceHeld = false
+            if let window {
+                let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+                if bounds.contains(location) { updateCursor(at: location) }
+            }
+            if isInPlace { super.keyUp(with: event) }
+            return
+        }
+        super.keyUp(with: event)
+    }
+
     private func handleKey(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let step: CGFloat = flags.contains(.shift) ? 10 : 1
         switch event.keyCode {
+        case 49 where editing == nil:
+            isSpaceHeld = true
+            if let window {
+                let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+                if bounds.contains(location) { updateCursor(at: location) }
+            }
+            if isInPlace { return false }
+            return true
         case 51, 117:
             session.deleteSelection()
             return true
@@ -1475,8 +1731,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.nudgeSelection(by: CGSize(width: 0, height: -step))
             return true
         case 53:
-            if session.isInLiveChange {
+            if isPickingColor {
+                cancelColorPicker()
+            } else if case .marquee(_, let initialSelection, _) = drag {
                 drag = nil
+                selectionLayer.marqueeRect = nil
+                session.select(initialSelection)
+            } else if session.isInLiveChange {
+                drag = nil
+                selectionLayer.alignmentGuides = []
                 session.cancelLiveChange()
             } else if session.tool == .crop {
                 session.setCropRatio(.free)
@@ -1493,6 +1756,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case 36, 76:
             if session.tool == .crop {
                 commitCrop()
+                session.leavePictureMode()
                 return true
             }
             if session.tool == .background {
@@ -1512,10 +1776,17 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         default:
             guard
                 flags.subtracting([.shift, .capsLock]).isEmpty,
-                let character = event.charactersIgnoringModifiers?.lowercased().first,
+                let character = event.charactersIgnoringModifiers?.lowercased().first
+            else { return false }
+            if character == "i", editing == nil {
+                toggleColorPicker()
+                return true
+            }
+            guard
                 let tool = AnnotationTool.allCases.first(where: { $0.key == character }),
                 !isInPlace || !tool.isPictureMode
             else { return false }
+            cancelColorPicker()
             session.tool = tool
             return true
         }
@@ -1578,6 +1849,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     @objc public func save(_ sender: Any?) {
         onSave?()
+    }
+
+    /// ⌥⇧⌘S: a copy of the picture where and how the person chooses, in the Save panel.
+    @objc public func saveScreenshotAs(_ sender: Any?) {
+        onSaveAs?()
     }
 
     /// ⇧⌘S: a copy of the capture and its marks as a project, to open again with every mark editable.
@@ -1712,6 +1988,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return !isInPlace && Self.offersPictures(.general)
         case #selector(printCapture(_:)):
             return onPrint != nil
+        case #selector(saveScreenshotAs(_:)):
+            return onSaveAs != nil
         case #selector(rotateLeft(_:)), #selector(rotateRight(_:)), #selector(flipHorizontal(_:)), #selector(flipVertical(_:)):
             return canTransformPicture
         case #selector(showImageSize(_:)):
@@ -1757,17 +2035,27 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let ink: NSColor
         let fill = NSColor(cgColor: item.style.color.cgColor) ?? .systemRed
         switch block.look {
-        case .plain, .outlined:
+        case .plain:
             ink = fill
+            view.outlineColor = nil
+            view.drawsBackground = false
+            view.layer?.backgroundColor = nil
+        case .outlined:
+            ink = fill
+            view.outlineColor = item.style.color.prefersDarkOutline ? CGColor(gray: 0, alpha: 1) : CGColor(gray: 1, alpha: 1)
+            view.outlineFontSize = block.fontSize * scale * zoom
+            view.outlineWrapWidth = block.width.map { $0 * zoom }
             view.drawsBackground = false
             view.layer?.backgroundColor = nil
         case .label:
             ink = item.style.color.prefersDarkInk ? NSColor(white: 0, alpha: 0.88) : .white
+            view.outlineColor = nil
             view.drawsBackground = false
             view.wantsLayer = true
             view.layer?.backgroundColor = fill.cgColor
             view.layer?.cornerRadius = layout.cornerRadius * zoom
         }
+        view.needsDisplay = true
         // The baseline sits where the renderer puts it: TextKit centers the font's box in a line taller
         // than the font, as the layout does.
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: ink, .paragraphStyle: paragraph]
@@ -1814,6 +2102,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         document.items[index].shape = .text(block)
         session.updateLive(document)
         positionTextView()
+        editing.view.needsDisplay = true
     }
 
     public func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -1955,6 +2244,10 @@ final class FlippedHostView: NSView {
 
 /// The field a text mark is edited in: plain text, no automatic substitutions, transparent.
 final class MarkTextView: NSTextView {
+    var outlineColor: CGColor?
+    var outlineFontSize: CGFloat = 20
+    var outlineWrapWidth: CGFloat?
+
     override init(frame frameRect: NSRect) {
         let storage = NSTextStorage()
         let layoutManager = NSLayoutManager()
@@ -1981,5 +2274,20 @@ final class MarkTextView: NSTextView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if let outlineColor, !string.isEmpty, let context = NSGraphicsContext.current?.cgContext {
+            let block = TextBlock(origin: .zero, string: string, fontSize: outlineFontSize, look: .outlined, width: outlineWrapWidth)
+            let layout = TextLayout(block, scale: 1)
+            context.saveGState()
+            context.setStrokeColor(outlineColor)
+            context.setLineWidth(layout.outlineWidth)
+            context.setLineJoin(.round)
+            context.addPath(layout.glyphPath(at: .zero))
+            context.strokePath()
+            context.restoreGState()
+        }
+        super.draw(dirtyRect)
     }
 }

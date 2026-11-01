@@ -50,6 +50,28 @@ struct EditorLayoutTests {
         #expect(62 + widest.width + 8 <= minimum.width, "\(widest.state) capsule \(widest.width), window \(minimum.width)")
     }
 
+    @Test func everyCapsuleHasTheSameRoomAtBothEnds() {
+        let capsule = makeCapsule()
+        let statuses: [(name: String, finding: Bool, failed: Bool, suggestions: Int)] = [
+            ("resting", false, false, 0), ("finding", true, false, 0), ("failed", false, true, 0), ("suggestions", false, false, 3),
+        ]
+        func check(_ state: String) {
+            capsule.frame.size = capsule.fittingSize
+            let room = capsule.endRoom
+            #expect(abs(room.leading - room.trailing) < 0.5, "\(state): \(room.leading) pt at the start, \(room.trailing) pt at the end")
+        }
+        for tool in AnnotationTool.allCases where tool != .background {
+            for status in statuses {
+                for selected in [false, true] {
+                    capsule.show(kind: tool, settings: ToolSettings.defaults(for: tool), hasSelection: selected, suggestions: status.suggestions, finding: status.finding, failed: status.failed)
+                    check("\(tool), \(status.name), selected \(selected)")
+                }
+            }
+        }
+        capsule.showBackground(.init(backdrop: nil))
+        check("background")
+    }
+
     @Test func keptColorsWidenTheCapsuleByTheirChipsAndAnUnsavedColorShowsASaveChip() {
         let none = StyleCapsule()
         none.savedColors = SavedColors(defaults: scratch.make())

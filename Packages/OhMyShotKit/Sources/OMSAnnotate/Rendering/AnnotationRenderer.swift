@@ -53,7 +53,7 @@ nonisolated public enum AnnotationRenderer {
             case .plain:
                 context.setFillColor(color)
             case .outlined:
-                context.setStrokeColor(item.style.color.prefersDarkInk ? CGColor(gray: 0, alpha: 1) : CGColor(gray: 1, alpha: 1))
+                context.setStrokeColor(item.style.color.prefersDarkOutline ? CGColor(gray: 0, alpha: 1) : CGColor(gray: 1, alpha: 1))
                 context.setLineWidth(layout.outlineWidth)
                 context.setLineJoin(.round)
                 context.addPath(layout.glyphPath(at: block.origin))
