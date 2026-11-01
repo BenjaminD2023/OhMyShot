@@ -8,10 +8,12 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.5.0-fork.7] - 2026-11-01
+
 ### Added
 
 - Save As offers PNG, JPEG and HEIC format, quality and picture options. (upstream [22b7027](https://github.com/fzlzjerry/OhMyShot/commit/22b7027))
-- Reset settings explicitly from General after confirmation, retaining capture records and external updater preferences. Fork loupe magnification and color-copy choices reset consistently. (upstream [3e00641](https://github.com/fzlzjerry/OhMyShot/commit/3e00641))
+- Reset settings explicitly from General after confirmation, retaining capture records, the history retention period and external updater preferences. Fork loupe magnification and color-copy choices reset consistently. (upstream [3e00641](https://github.com/fzlzjerry/OhMyShot/commit/3e00641))
 - Cycle overlapping windows with Tab, select several with Shift-click, recall the last area with L, and reset an active selection drag with Backspace or right-click. Mixed-display window composition preserves source scales and output metadata. (upstream [26a3deb](https://github.com/fzlzjerry/OhMyShot/commit/26a3deb))
 - Open the captured image from the text-result card in the recognition panel; drag image pins to other apps. (upstream [26a3deb](https://github.com/fzlzjerry/OhMyShot/commit/26a3deb))
 
@@ -175,7 +177,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - Recording warns when a microphone stops delivering audio instead of leaving a disconnected microphone silently recording. ([450f4a6]; by [@fzlzjerry])
 - Closing History and editors releases more memory, clipboard TIFFs use compression, and GIF frame buffers return their memory when freed. ([cff3ddb], [0182817], [6d3b0af]; by [@fzlzjerry])
 
-[Unreleased]: https://github.com/BenjaminD2023/OhMyShot/compare/v0.4.0-fork.6...main
+[Unreleased]: https://github.com/BenjaminD2023/OhMyShot/compare/v0.5.0-fork.7...main
+[0.5.0-fork.7]: https://github.com/BenjaminD2023/OhMyShot/compare/v0.4.0-fork.6...v0.5.0-fork.7
 [0.4.0-fork.6]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.4.0-fork.6
 [0.3.1-fork.5]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.3.1-fork.5
 [0.3.0-fork.4]: https://github.com/BenjaminD2023/OhMyShot/releases/tag/v0.3.0-fork.4
