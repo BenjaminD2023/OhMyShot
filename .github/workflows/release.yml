@@ -1,0 +1,188 @@
+# Makes a release with Scripts/release.sh, as on the maintainer's Mac, and publishes it: the notarized zip and the
+# signed appcast go to a GitHub release for the tag. Docs/release.md ("Releasing from CI") lists the secrets it needs
+# and how to choose its runner.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the GitHub release (otherwise only the build artifact)
+        type: boolean
+        default: true
+      runner:
+        description: Runner label (empty for the RELEASE_RUNNER variable, or else GitHub's xcode-27 image)
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: Check the version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      skip: ${{ steps.version.outputs.skip }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+        run: |
+          version=$(sed -n 's/^MARKETING_VERSION = //p' Config/Base.xcconfig)
+          [ -n "$version" ] || { echo "::error::No MARKETING_VERSION in Config/Base.xcconfig"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME, but MARKETING_VERSION in Config/Base.xcconfig is $version"
+            exit 1
+          fi
+          # A release made by hand (gh release create) pushes its tag too, which lands here.
+          if [ "$PUBLISH" = true ] && gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::v$version is released already, so there's nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    name: Release ${{ needs.check.outputs.version }}
+    needs: check
+    if: needs.check.outputs.skip != 'true'
+    # GitHub's xcode-27 image (a preview), or a runner of the maintainer's own: the app needs the macOS 27 SDK.
+    runs-on: ${{ inputs.runner || vars.RELEASE_RUNNER || 'xcode-27' }}
+    # A new team's first notarization took over an hour.
+    timeout-minutes: 180
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+      # An Xcode version, as /Applications/Xcode_<version>.app on GitHub's images, or the path of an Xcode.
+      XCODE: ${{ vars.RELEASE_XCODE || '27.2' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the tags, which the script checks
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          case $XCODE in
+            /*) app=$XCODE ;;
+            *) app=/Applications/Xcode_$XCODE.app ;;
+          esac
+          if [ ! -d "$app" ]; then
+            [ "${XCODE#/}" = "$XCODE" ] || { echo "::error::No Xcode at $XCODE"; exit 1; }
+            # A runner of our own, with Xcode wherever it is: the one it has selected.
+            app=$(xcode-select -p)
+            app=${app%/Contents/Developer}
+          fi
+          echo "DEVELOPER_DIR=$app/Contents/Developer" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$app/Contents/Developer"
+          xcodebuild -version
+          sdk=$(xcrun --sdk macosx --show-sdk-version)
+          if [ "${sdk%%.*}" -lt 27 ]; then
+            echo "::error::$app has the macOS $sdk SDK; the app needs 27 or later (the RELEASE_XCODE variable)"
+            exit 1
+          fi
+
+      - name: Install the Metal Toolchain and XcodeGen
+        run: |
+          if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q "Status: installed"; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen --version
+
+      - name: Set up signing
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          missing=
+          for name in DEVELOPER_ID_P12_BASE64 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY_P8_BASE64 NOTARY_KEY_ID \
+            SPARKLE_PRIVATE_KEY; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secrets:$missing (Docs/release.md, Releasing from CI)"
+            exit 1
+          fi
+
+          umask 077
+          SECRETS=$RUNNER_TEMP/release-secrets
+          mkdir -p "$SECRETS"
+          # The Developer ID identity in a keychain of its own, unlocked for the job's length, with codesign allowed
+          # to use its key without asking.
+          keychain=$SECRETS/release.keychain-db
+          password=${KEYCHAIN_PASSWORD:-$(openssl rand -base64 32)}
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$DEVELOPER_ID_P12_BASE64" | base64 --decode > "$SECRETS/developer-id.p12"
+          security import "$SECRETS/developer-id.p12" -k "$keychain" -f pkcs12 -P "$DEVELOPER_ID_P12_PASSWORD" \
+            -T /usr/bin/codesign
+          rm "$SECRETS/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          # Added to the end of the user's search list (never in place of it: on a Mac of our own that would drop
+          # the login keychain), so codesign takes the identity's key from it. Deleting the keychain removes it.
+          searched=()
+          while IFS= read -r line; do
+            line=${line#*\"}
+            searched+=("${line%\"}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${searched[@]}" "$keychain"
+          security find-identity -v -p codesigning "$keychain"
+
+          printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$SECRETS/notary-key.p8"
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" > "$SECRETS/sparkle-private-key"
+          {
+            echo "SIGNING_KEYCHAIN=$keychain"
+            echo "NOTARY_KEY=$SECRETS/notary-key.p8"
+            echo "SPARKLE_KEY_FILE=$SECRETS/sparkle-private-key"
+          } >> "$GITHUB_ENV"
+
+      - name: Build, sign, notarize, and publish
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$PUBLISH" = true ]; then
+            Scripts/release.sh --publish
+          else
+            Scripts/release.sh
+          fi
+
+      # The zip already holds the app: an artifact would lose its symbolic links and permissions, and so its signature.
+      - name: Keep the output
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: OhMyShot-${{ needs.check.outputs.version }}
+          path: |
+            build/release/${{ needs.check.outputs.version }}/
+            !build/release/${{ needs.check.outputs.version }}/OhMyShot.app/
+          if-no-files-found: ignore
+
+      - name: Remove the keychain and keys
+        if: always()
+        run: |
+          SECRETS=$RUNNER_TEMP/release-secrets
+          if [ -e "$SECRETS/release.keychain-db" ]; then security delete-keychain "$SECRETS/release.keychain-db"; fi
+          rm -rf "$SECRETS"

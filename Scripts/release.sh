@@ -180,10 +180,10 @@ sign() {
   done
   if [ -s "$plist" ] && /usr/libexec/PlistBuddy -c "Print" "$plist" 2>/dev/null | grep -q " = "; then
     codesign --force --sign "$IDENTITY" ${SIGNING_KEYCHAIN:+--keychain "$SIGNING_KEYCHAIN"} --options runtime \
-      $TIMESTAMP --entitlements "$plist" "$piece"
+      "$TIMESTAMP" --entitlements "$plist" "$piece"
   else
     codesign --force --sign "$IDENTITY" ${SIGNING_KEYCHAIN:+--keychain "$SIGNING_KEYCHAIN"} --options runtime \
-      $TIMESTAMP "$piece"
+      "$TIMESTAMP" "$piece"
   fi
 }
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
