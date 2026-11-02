@@ -127,8 +127,8 @@ only have Xcode 26.
 
 - **GitHub's `xcode-27` image** (the default). A preview on 2026-11-02: macOS 27.0.1 with Xcode 27.0, 27.1 (its
   default), and the 27.2 release candidate (27B48), as the runner-images repository lists them. The job uses
-  `/Applications/Xcode_27.2.app`; the repository variable `RELEASE_XCODE` picks another version, or the path of an
-  Xcode. (The maintainer's Mac builds with Xcode 27.2 beta 27B5019j.) Standard runners cost nothing for a public
+  `/Applications/Xcode_27.2.app`, and stops when the image has none; the repository variable `RELEASE_XCODE` picks
+  another version, or the path of an Xcode. (The maintainer's Mac builds with Xcode 27.2 beta 27B5019j.) Standard runners cost nothing for a public
   repository.
 - **A Mac of our own.** Register a self-hosted runner for macOS ARM64 (the MMFoundation organization's or the
   repository's Settings › Actions › Runners › New self-hosted runner) with a label nothing else uses, such as

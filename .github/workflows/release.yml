@@ -77,13 +77,18 @@ jobs:
           persist-credentials: false
 
       - name: Select Xcode
+        env:
+          RUNNER_KIND: ${{ runner.environment }}
         run: |
           case $XCODE in
             /*) app=$XCODE ;;
             *) app=/Applications/Xcode_$XCODE.app ;;
           esac
           if [ ! -d "$app" ]; then
-            [ "${XCODE#/}" = "$XCODE" ] || { echo "::error::No Xcode at $XCODE"; exit 1; }
+            if [ "${XCODE#/}" != "$XCODE" ] || [ "$RUNNER_KIND" != self-hosted ]; then
+              echo "::error::No Xcode at $app (the RELEASE_XCODE variable)"
+              exit 1
+            fi
             # A runner of our own, with Xcode wherever it is: the one it has selected.
             app=$(xcode-select -p)
             app=${app%/Contents/Developer}
@@ -179,6 +184,7 @@ jobs:
             build/release/${{ needs.check.outputs.version }}/
             !build/release/${{ needs.check.outputs.version }}/OhMyShot.app/
           if-no-files-found: ignore
+          overwrite: true # a re-run of a failed job uploads under the same name
 
       - name: Remove the keychain and keys
         if: always()

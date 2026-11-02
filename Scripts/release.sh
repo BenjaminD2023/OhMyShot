@@ -107,7 +107,7 @@ if [ $DRY_RUN = 1 ]; then
   TIMESTAMP=--timestamp=none
 fi
 if [ $PUBLISH = 1 ]; then
-  gh auth status >/dev/null 2>&1 || fail "--publish needs gh, signed in (or GH_TOKEN)"
+  gh api "repos/$REPO" --silent || fail "--publish needs gh to reach $REPO (signed in, or GH_TOKEN)"
   if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then fail "$TAG is released already"; fi
 fi
 [ -z "$SPARKLE_KEY_FILE" ] || [ -s "$SPARKLE_KEY_FILE" ] || fail "no Sparkle key in $SPARKLE_KEY_FILE"
