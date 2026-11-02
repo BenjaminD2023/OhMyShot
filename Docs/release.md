@@ -4,7 +4,8 @@ OhMyShot is released on GitHub: each release carries a zip of the app and the Sp
 app looks for updates in the latest release's appcast. Nothing has been released yet. Releases are signed with the
 maintainer's Developer ID (team DT6YQU64FF, since 2026-11-02) and notarized; `Scripts/release.sh` stops before it builds
 anything on a Mac without the certificate or notarytool's credentials, and `Scripts/release.sh --dry-run` runs the rest
-of it with the Mac's own development identity.
+of it with the Mac's own development identity. The release workflow runs the same script on GitHub Actions for a pushed
+tag (Releasing from CI, below).
 
 ## How the app updates
 
@@ -83,6 +84,112 @@ doesn't notarize, into `build/release/<version>-dry-run/`; without a `## [<versi
 Don't publish what it makes. (An archive and an export for Developer ID were tried first and dropped: `xcodebuild
 archive` puts the MLX bundle where the script that copies its Metal library may not read, and a generic destination
 builds the packages for Intel as well.)
+
+## Releasing from CI
+
+`.github/workflows/release.yml` does steps 4 and 6 on GitHub Actions, with credentials from the repository's secrets in
+place of the login keychain. Steps 1–3 stay the same: commit them, push, then push the tag:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+A tag that isn't `v` + `MARKETING_VERSION` stops the run, and a version that's already released (`gh release create` by
+hand pushes its tag too) is left alone. Actions › Release › Run workflow runs it by hand: on a branch, the release makes
+the tag at that commit; with "Publish" off, it builds, signs, and notarizes, and keeps only the artifact, which is the
+way to do step 5 before the feed moves (pushing the tag afterwards builds it again).
+
+The job selects Xcode, installs the Metal Toolchain and XcodeGen where they're missing, imports the Developer ID
+identity into a keychain of its own, and runs `Scripts/release.sh --publish` with these, which the script takes in place
+of the login keychain whenever they're set (its header lists them):
+
+| Variable | Instead of |
+| --- | --- |
+| `SIGNING_KEYCHAIN` | the keychain search list: the identity is taken from that keychain alone (`codesign --keychain`) |
+| `NOTARY_KEY`, `NOTARY_KEY_ID`, `NOTARY_ISSUER` | the keychain profile: notarytool's `--key`, `--key-id`, `--issuer` |
+| `SPARKLE_KEY_FILE` | the keychain account `ohmyshot`: `generate_appcast --ed-key-file` |
+
+The app comes out of a CI build signed ad hoc (it has no `Signing.local.xcconfig`), and the script signs every piece
+again as on the Mac. This was checked on 2026-11-02 with a dry run in a checkout without that file: each piece's
+entitlements came out as in 0.1.0 (the app: microphone and camera; the Share extension: the sandbox and its Share Inbox
+exception, with the bundle identifier filled in; the rest: none), and nothing could be debugged. The script also stops
+when the appcast leaves the zip unsigned, as `generate_appcast` does (with only a warning) when the Sparkle key isn't
+the one `SUPublicEDKey` names.
+
+The run keeps `build/release/<version>/` as the artifact `OhMyShot-<version>`, without the unzipped app (an artifact
+loses its links and permissions; the zip has it): the zip, the appcast, the notes, `build.log`, `notarization.txt`, and
+`notarization-log.json` when Apple refused it. Its keychain and key files are deleted when it ends, however it ends.
+
+### The runner
+
+The app needs the macOS 27 SDK, so the job stops on an Xcode without it. GitHub's `macos-26` and `macos-latest` images
+only have Xcode 26.
+
+- **GitHub's `xcode-27` image** (the default). A preview on 2026-11-02: macOS 27.0.1 with Xcode 27.0, 27.1 (its
+  default), and the 27.2 release candidate (27B48), as the runner-images repository lists them. The job uses
+  `/Applications/Xcode_27.2.app`; the repository variable `RELEASE_XCODE` picks another version, or the path of an
+  Xcode. (The maintainer's Mac builds with Xcode 27.2 beta 27B5019j.) Standard runners cost nothing for a public
+  repository.
+- **A Mac of our own.** Register a self-hosted runner for macOS ARM64 (the MMFoundation organization's or the
+  repository's Settings › Actions › Runners › New self-hosted runner) with a label nothing else uses, such as
+  `ohmyshot-release`, and set the repository variable `RELEASE_RUNNER` to it, or type it in Run workflow's runner field.
+  Without `/Applications/Xcode_<RELEASE_XCODE>.app` the job uses the Xcode that `xcode-select -p` names (set
+  `RELEASE_XCODE` to `/Applications/Xcode-beta.app` to say so). It never uses the login keychain's identity: its own
+  keychain goes at the end of the keychain search list while it runs, and is deleted afterwards. The runner's `PATH`
+  needs Homebrew's `bin` for XcodeGen. GitHub advises self-hosted runners only for private repositories: this one is
+  public, and a pull request from a fork runs the workflows in that pull request, which can name the runner's label.
+  So give the runner to this repository alone (an organization runner group lets only private repositories use it
+  unless told otherwise), choose Settings › Actions › General › "Require approval for all external contributors" for
+  fork pull requests, and keep the hosted image the default.
+
+### The secrets
+
+Repository secrets (Settings › Secrets and variables › Actions), by name:
+
+| Secret | What it holds |
+| --- | --- |
+| `DEVELOPER_ID_P12_BASE64` | the Developer ID Application certificate with its private key, as a .p12, in base64 |
+| `DEVELOPER_ID_P12_PASSWORD` | the .p12's password |
+| `KEYCHAIN_PASSWORD` | a random password for the job's keychain (without it, each run makes one) |
+| `NOTARY_KEY_P8_BASE64` | the App Store Connect API key, the `AuthKey_<key ID>.p8` file, in base64 |
+| `NOTARY_KEY_ID` | that key's ID |
+| `NOTARY_ISSUER_ID` | the issuer ID shown above the team keys (an individual key has none: leave it unset) |
+| `SPARKLE_PRIVATE_KEY` | the Sparkle EdDSA private key, as `generate_keys -x` exports it |
+
+To add them with `gh` from the repository's folder (`gh secret set NAME` with nothing on its input asks for the value):
+
+1. The Developer ID identity. In Keychain Access › login › My Certificates, select only "Developer ID Application: …
+   (DT6YQU64FF)", File › Export Items…, as Personal Information Exchange (.p12), with a new password. (`security export
+   -t identities` would export every identity in the keychain.) Then:
+
+   ```sh
+   base64 -i DeveloperID.p12 | gh secret set DEVELOPER_ID_P12_BASE64 --repo MMFoundation/OhMyShot
+   gh secret set DEVELOPER_ID_P12_PASSWORD --repo MMFoundation/OhMyShot
+   openssl rand -base64 32 | gh secret set KEYCHAIN_PASSWORD --repo MMFoundation/OhMyShot
+   rm DeveloperID.p12
+   ```
+
+2. The App Store Connect API key: App Store Connect › Users and Access › Integrations › App Store Connect API › Team
+   Keys (the Developer role is enough to notarize). Its .p8 can be downloaded only once; keep it somewhere safe,
+   outside the repository. It can be tried first: `xcrun notarytool history --key <file> --key-id <key ID> --issuer
+   <issuer ID>`. Then:
+
+   ```sh
+   base64 -i AuthKey_<key ID>.p8 | gh secret set NOTARY_KEY_P8_BASE64 --repo MMFoundation/OhMyShot
+   gh secret set NOTARY_KEY_ID --repo MMFoundation/OhMyShot --body <key ID>
+   gh secret set NOTARY_ISSUER_ID --repo MMFoundation/OhMyShot --body <issuer ID>
+   ```
+
+3. The Sparkle key (it signs every update from then on, so it's the secret to guard most):
+
+   ```sh
+   build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys --account ohmyshot -x sparkle-private-key
+   gh secret set SPARKLE_PRIVATE_KEY --repo MMFoundation/OhMyShot < sparkle-private-key
+   rm sparkle-private-key
+   ```
+
+Repository variables, both optional: `RELEASE_RUNNER` (the runner's label; GitHub's `xcode-27` without it) and
+`RELEASE_XCODE` (`27.2` without it).
 
 ## Trying the updater without a release
 
