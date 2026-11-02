@@ -1,9 +1,10 @@
 # Releases and updates
 
 OhMyShot is released on GitHub: each release carries a zip of the app and the Sparkle appcast that lists it, and the
-app looks for updates in the latest release's appcast. Nothing has been released yet. A release needs a Developer ID
-certificate, which this project doesn't have yet, so `Scripts/release.sh` stops before it builds anything without one;
-`Scripts/release.sh --dry-run` runs the rest of it.
+app looks for updates in the latest release's appcast. Nothing has been released yet. Releases are signed with the
+maintainer's Developer ID (team DT6YQU64FF, since 2026-11-02) and notarized; `Scripts/release.sh` stops before it builds
+anything on a Mac without the certificate or notarytool's credentials, and `Scripts/release.sh --dry-run` runs the rest
+of it with the Mac's own development identity.
 
 ## How the app updates
 
@@ -38,9 +39,13 @@ The tools are Sparkle's, in the package's artifacts once the project has resolve
 ## One-time setup for releases
 
 1. A Developer ID Application certificate in the login keychain (Apple Developer Program, Certificates, Developer ID
-   Application). `security find-identity -v -p codesigning` lists it.
-2. notarytool's credentials in the keychain, with an app-specific password for the Apple Account:
-   `xcrun notarytool store-credentials OhMyShot --apple-id <apple id> --team-id <team id>`
+   Application). `security find-identity -v -p codesigning` lists it. The app is built with the development team in
+   `Config/Signing.local.xcconfig` and signed again with Developer ID, so that file stays as it is (changing its team
+   would cost the Dev app its Screen Recording permission).
+2. notarytool's credentials in the keychain, under the profile name the script uses:
+   `xcrun notarytool store-credentials OhMyShot --apple-id <apple id> --team-id DT6YQU64FF`. It asks for an
+   app-specific password (account.apple.com › Sign-In and Security › App-Specific Passwords, in the form
+   `abcd-efgh-ijkl-mnop`); the account's own password gets "HTTP status code: 401. Invalid credentials".
 3. The Sparkle key (above).
 4. `gh` signed in to an account that can make releases on fzlzjerry/OhMyShot.
 
