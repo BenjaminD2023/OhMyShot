@@ -231,8 +231,9 @@ def fenced(text):
 
 def document(source_packages):
     packages, versions = resolved(), checked_out(source_packages)
-    for key in versions:
-        if key not in packages:
+    # Packages checked out from their addresses; a local one (OhMyShotKit) has no checkout to pin.
+    for key, (version, _) in versions.items():
+        if version is not None and key not in packages:
             fail(f"{key} is checked out for the app, but no committed Package.resolved pins it: copy the project's to {APP_PINS.relative_to(ROOT)}")
     copyright_line = next(
         (line.strip() for line in (ROOT / "README.md").read_text(encoding="utf-8").splitlines() if line.startswith("Copyright")),
