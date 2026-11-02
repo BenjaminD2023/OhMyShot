@@ -9,7 +9,8 @@ Acknowledgments…; model packs show their own licenses when they're downloaded,
 The licenses come from the checkouts Xcode resolved for the app (build/SourcePackages, made by any build of the app;
 --source-packages <dir> names another). Run it after a build whenever a dependency changes, and before every release
 (Docs/release.md). AcknowledgmentsTests (OMSCoreTests) fails while a resolved package has no entry here, or one of
-another version.
+another version, and Scripts/release.sh runs --check after its build, which also stops at a checkout that isn't at the
+version committed for it (Config/Package.resolved and the packages' own Package.resolved).
 
 What each package brings into the app is listed in PACKAGES below, by hand: a package's own license, and for MLX the
 code it vendors, whose notices are in license files or in the comments at the top of a source file. A package that
@@ -26,8 +27,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = ROOT / "App/Acknowledgments.md"
-# What the app is built with: the packages' own resolved versions, and the packages project.yml adds for the app.
-RESOLVED = [ROOT / "Packages/OhMyShotKit/Package.resolved", ROOT / "Packages/OhMyShotVLM/Package.resolved"]
+# What the app is built with: the versions committed for its project (Scripts/release.sh builds with those alone), which
+# have to agree with the packages' own resolved versions and with the packages project.yml adds for the app.
+APP_PINS = ROOT / "Config/Package.resolved"
+RESOLVED = [APP_PINS, ROOT / "Packages/OhMyShotKit/Package.resolved", ROOT / "Packages/OhMyShotVLM/Package.resolved"]
 PROJECT = ROOT / "project.yml"
 
 
@@ -136,6 +139,11 @@ def resolved():
             add(pin["location"], pin["state"].get("version") or pin["state"]["revision"], path.relative_to(ROOT))
     for location, version in project_packages():
         add(location, version, PROJECT.relative_to(ROOT))
+    # Xcode resolves a package the app's versions leave out as it likes, even when told to keep to them.
+    pinned = {identity(pin["location"]) for pin in json.loads(APP_PINS.read_text(encoding="utf-8"))["pins"]}
+    for key in packages:
+        if key not in pinned:
+            fail(f"{key} isn't in {APP_PINS.relative_to(ROOT)}: build, then copy the project's Package.resolved there")
     return packages
 
 
@@ -223,6 +231,9 @@ def fenced(text):
 
 def document(source_packages):
     packages, versions = resolved(), checked_out(source_packages)
+    for key in versions:
+        if key not in packages:
+            fail(f"{key} is checked out for the app, but no committed Package.resolved pins it: copy the project's to {APP_PINS.relative_to(ROOT)}")
     copyright_line = next(
         (line.strip() for line in (ROOT / "README.md").read_text(encoding="utf-8").splitlines() if line.startswith("Copyright")),
         None,

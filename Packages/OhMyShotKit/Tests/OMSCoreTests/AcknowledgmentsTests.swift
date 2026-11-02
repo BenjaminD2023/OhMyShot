@@ -35,11 +35,14 @@ struct AcknowledgmentsTests {
         return location
     }
 
-    /// Every package the app is built with: what the packages' Package.resolved files pin, and the remote packages
-    /// project.yml adds for the app (Sparkle), which the generated Xcode project resolves but nothing committed records.
+    /// The versions committed for the app's generated Xcode project, the only ones Scripts/release.sh builds with.
+    private static let appPins = "Config/Package.resolved"
+
+    /// Every package the app is built with: what the app's and the packages' Package.resolved files pin, and the remote
+    /// packages project.yml adds for the app (Sparkle).
     private func resolvedPackages() throws -> [Resolved] {
         var found: [Resolved] = []
-        for path in ["Packages/OhMyShotKit/Package.resolved", "Packages/OhMyShotVLM/Package.resolved"] {
+        for path in [Self.appPins, "Packages/OhMyShotKit/Package.resolved", "Packages/OhMyShotVLM/Package.resolved"] {
             let resolved = try #require(try JSONSerialization.jsonObject(with: Data(Self.read(path).utf8)) as? [String: Any])
             for pin in try #require(resolved["pins"] as? [[String: Any]]) {
                 let location = try #require(pin["location"] as? String)
@@ -109,6 +112,19 @@ struct AcknowledgmentsTests {
             if let entry {
                 #expect(entry.heading.hasSuffix(" \(package.version)"), "\(package.location) is \(package.version) in \(package.source), but its notice is “\(entry.heading)”: build, then run Scripts/acknowledgments.py")
             }
+        }
+    }
+
+    /// Xcode keeps to the app's committed versions when told to, but resolves a package they leave out as it likes.
+    @Test func theAppsVersionsPinEveryPackage() throws {
+        let packages = try resolvedPackages()
+        let pinned = Set(packages.filter { $0.source == Self.appPins }.map { Self.normalized($0.location) })
+        for package in packages where !pinned.contains(Self.normalized(package.location)) {
+            Issue.record("\(package.location) (\(package.source)) isn't in \(Self.appPins): build, then copy the project's Package.resolved there (Docs/release.md)")
+        }
+        for location in Set(packages.map { Self.normalized($0.location) }) {
+            let versions = Set(packages.filter { Self.normalized($0.location) == location }.map(\.version))
+            #expect(versions.count == 1, "\(location) is pinned at \(versions.sorted().joined(separator: " and ")): the app's and the packages' Package.resolved files have to agree")
         }
     }
 

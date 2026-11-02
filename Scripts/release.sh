@@ -127,6 +127,18 @@ fi
 rm -rf "$OUT"
 mkdir -p "$OUT/archives"
 
+# The package versions committed in Config/Package.resolved, and no others (the build below resolves none of its own):
+# a new checkout, as in CI, has no versions yet, and this Mac's may have moved on since. Their originHash depends on
+# where the checkout is, and Xcode doesn't hold it against them.
+PINS=OhMyShot.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+grep -v '"originHash"' Config/Package.resolved > "$OUT/pins"
+if [ -f "$PINS" ] && ! grep -v '"originHash"' "$PINS" | cmp -s - "$OUT/pins"; then
+  echo "OhMyShot.xcodeproj has other package versions than Config/Package.resolved: building with the committed ones."
+fi
+rm "$OUT/pins"
+mkdir -p "$(dirname "$PINS")"
+cp Config/Package.resolved "$PINS"
+
 # The feed so far, so the new appcast keeps the versions before it; the first release has none. Its build number has
 # to be below this one, or Sparkle would offer nothing.
 if curl -fsSL "$FEED" -o "$OUT/archives/appcast.xml" 2>/dev/null; then
@@ -152,6 +164,7 @@ xcodebuild \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath build \
+  -onlyUsePackageVersionsFromResolvedFile \
   DEPLOYMENT_POSTPROCESSING=YES \
   STRIP_INSTALLED_PRODUCT=YES \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
@@ -162,6 +175,11 @@ xcodebuild \
 if grep "^error:" "$OUT/build.log" | grep -qv "failed with exit code 0 but produced no further output"; then
   grep "^error:" "$OUT/build.log" >&2
   fail "the build reported errors: $OUT/build.log"
+fi
+# The notices name every package the app was just built with, at the version it was built with.
+if ! python3 -I Scripts/acknowledgments.py --check; then
+  [ $DRY_RUN = 1 ] || fail "App/Acknowledgments.md doesn't match the packages the app was built with"
+  echo "A release would stop here."
 fi
 APP="$OUT/OhMyShot.app"
 ditto build/Build/Products/Release/OhMyShot.app "$APP"

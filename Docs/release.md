@@ -50,6 +50,30 @@ The tools are Sparkle's, in the package's artifacts once the project has resolve
 3. The Sparkle key (above).
 4. `gh` signed in to an account that can make releases on MMFoundation/OhMyShot.
 
+## The package versions
+
+The generated project isn't committed, so the package versions it resolves are kept in `Config/Package.resolved`, a copy
+of the project's own `OhMyShot.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
+`Scripts/bootstrap.sh` puts it into a project that has none (a new checkout), and `Scripts/release.sh` builds with it
+and nothing else (`-onlyUsePackageVersionsFromResolvedFile`), on a Mac and in CI alike. It has to agree with the
+packages' own `Package.resolved` files and with `project.yml`. `Scripts/acknowledgments.py` and AcknowledgmentsTests
+stop at a package it leaves out (Xcode resolves that one as it likes, even when told to keep to the file) or pins at
+another version. A release also stops after its build when a checkout isn't at its committed version or the notices
+don't match (`acknowledgments.py --check`).
+
+To change a package's version, change it (in a package's `Package.swift`, in `project.yml`, or with Xcode's File ›
+Packages › Update to Latest Package Versions). Bring the packages' own files along with `swift package resolve` (or
+`update`) with `--package-path Packages/OhMyShotKit` and `Packages/OhMyShotVLM` (which pins OhMyShotKit's packages too),
+build, copy the project's file back, and make the notices again (step 3 below):
+
+```sh
+cp OhMyShot.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved Config/Package.resolved
+```
+
+Its `originHash` differs from one checkout to another, and Xcode doesn't hold that against it. On 2026-11-02 a fresh
+resolve with another checkout's hash checked out exactly the versions in the file, an older one than the newest
+allowed included, and a version outside a package's requirements stopped the build.
+
 ## Making a release
 
 1. Raise `MARKETING_VERSION` (what people see, such as 0.2.0) and `CURRENT_PROJECT_VERSION` (a whole number that Sparkle
@@ -64,7 +88,8 @@ The tools are Sparkle's, in the package's artifacts once the project has resolve
 4. Commit, then run `Scripts/release.sh`. With nothing uncommitted, it:
    - fetches the current appcast and stops if its build number isn't higher than the feed's,
    - builds the Release app for Apple silicon, stripped and without the debugging entitlement (`get-task-allow`) that a
-     development identity adds,
+     development identity adds, with the package versions in `Config/Package.resolved` alone, and stops if the
+     notices don't match them,
    - signs every piece again with Developer ID from the inside out, as Sparkle's documentation does: Sparkle's XPC
      services, Autoupdate, Updater.app, and framework (they come signed ad hoc), the text reader, the Share extension,
      then the app, each with the hardened runtime, a secure timestamp, and its own entitlements,
@@ -109,8 +134,9 @@ of the login keychain whenever they're set (its header lists them):
 | `NOTARY_KEY`, `NOTARY_KEY_ID`, `NOTARY_ISSUER` | the keychain profile: notarytool's `--key`, `--key-id`, `--issuer` |
 | `SPARKLE_KEY_FILE` | the keychain account `ohmyshot`: `generate_appcast --ed-key-file` |
 
-The app comes out of a CI build signed ad hoc (it has no `Signing.local.xcconfig`), and the script signs every piece
-again as on the Mac. This was checked on 2026-11-02 with a dry run in a checkout without that file: each piece's
+A checkout in CI has no project of its own, so its package versions are the committed ones (The package versions,
+above). The app comes out of a CI build signed ad hoc (it has no `Signing.local.xcconfig`), and the script signs every
+piece again as on the Mac. This was checked on 2026-11-02 with a dry run in a checkout without that file: each piece's
 entitlements came out as in 0.1.0 (the app: microphone and camera; the Share extension: the sandbox and its Share Inbox
 exception, with the bundle identifier filled in; the rest: none), and nothing could be debugged. The script also stops
 when the appcast leaves the zip unsigned, as `generate_appcast` does (with only a warning) when the Sparkle key isn't
@@ -128,8 +154,8 @@ only have Xcode 26.
 - **GitHub's `xcode-27` image** (the default). A preview on 2026-11-02: macOS 27.0.1 with Xcode 27.0, 27.1 (its
   default), and the 27.2 release candidate (27B48), as the runner-images repository lists them. The job uses
   `/Applications/Xcode_27.2.app`, and stops when the image has none; the repository variable `RELEASE_XCODE` picks
-  another version, or the path of an Xcode. (The maintainer's Mac builds with Xcode 27.2 beta 27B5019j.) Standard runners cost nothing for a public
-  repository.
+  another version, or the path of an Xcode. (The maintainer's Mac builds with Xcode 27.2 beta 27B5019j.) Standard
+  runners cost nothing for a public repository.
 - **A Mac of our own.** Register a self-hosted runner for macOS ARM64 (the MMFoundation organization's or the
   repository's Settings › Actions › Runners › New self-hosted runner) with a label nothing else uses, such as
   `ohmyshot-release`, and set the repository variable `RELEASE_RUNNER` to it, or type it in Run workflow's runner field.
