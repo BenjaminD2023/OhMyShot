@@ -3,11 +3,13 @@
 All notable changes to OhMyShot will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-No releases or version tags have been published, so changes remain under Unreleased.
+Each version is published as a GitHub release with a matching tag; its section here is the release's notes.
 This initial backfill groups notable app changes from the first commit through [42c6bfa]; documentation-only work, internal refactors, and unmerged proposals are omitted.
 Each entry links its implementation commits or merged pull request and credits verified contributors. Named coauthors follow explicit commit trailers.
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-11-02
 
 ### Added
 
@@ -46,6 +48,17 @@ Each entry links its implementation commits or merged pull request and credits v
 - Settings › About › Acknowledgments…, with the licenses of OhMyShot and of the software it is built with. ([42c6bfa]; by [@fzlzjerry])
 - Capture History selects several captures as Finder does (⌘-click, ⇧-click, ⌘A) to copy, save, restore, or move them to the Trash together, and ⌘O (File › Open in Editor) opens the selection in the editor. ([6523646]; by [@fzlzjerry])
 - A right-click on the editor's tool rail lists every tool with its key. ([656bbcb]; by [@fzlzjerry])
+- Studio's timeline zooms and scrolls along a long recording, with Fit, Fit Selection, zoom buttons, a scroller, and trackpad or wheel scrolling; Option-← and Option-→ choose the previous or next edit, and a chosen zoom or layout has Start and End fields and its duration in the inspector. ([49e3114]; by [@fzlzjerry])
+- The Save panel for a screenshot chooses PNG, JPEG, or HEIC, the quality, and 1×, sRGB, and border for that file, starting from Settings; picking a format renames the file. The annotation editor's Save is a button of its own beside a Save Options menu, which holds Save As… (⌥⇧⌘S). ([#16], [#17]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
+- Settings › About links to OhMyShot's source code on GitHub and to MMFoundation's website. ([49aef5a], [497086d]; by [@bobbyhuang-dev], [@fzlzjerry]; coauthored by Claude Opus 5.5)
+- Settings › General › Reset to Default Settings… puts every choice in Settings back as a new install has it, after a confirmation; shortcuts, upload destinations, cloud reading, language, approved apps, and capture history stay as they are. ([3e00641]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
+- Symbol-only controls in the capture bars, the editor's rail and style capsule, and on cards show their name in a small tag after a short rest, where the system tooltip came late or not at all; VoiceOver reads the same words. ([1ba5e94]; by [@bobbyhuang-dev])
+- Window capture takes several windows at once: Shift-click each, then click or press Return, for screenshots, annotation, and Capture Text; Tab, Shift-Tab, [, and ] step through the windows under the pointer. For a screenshot or annotation, L brings back the last captured area to adjust or take again; Delete or a right-click during a drag starts the drag over, and a right-click otherwise closes the overlay. ([26a3deb], [6981fa7]; by [@fzlzjerry])
+- The annotation editor selects the marks a box dragged with the Select tool touches (Shift adds them), pans a zoomed-in picture while Space is held, picks a color off the picture with I or the style capsule's eyedropper, snaps a moved mark to other marks' edges and centers and to the picture's center with guides (⌘ holds it back), takes hold of a mark by its inside with ⌘ whatever the tool, and opens a text mark on a double-click with any tool. ([26a3deb], [6981fa7]; by [@fzlzjerry])
+- Pins resize from a corner, keeping their proportions; a double-click switches between actual size and the zoom before it (200% from actual size); Option-dragging a picture pin drops its image file into another app; and a click on a locked pin's lock badge unlocks it. ([26a3deb], [6981fa7]; by [@fzlzjerry])
+- The Capture Text result card has Open in Panel, which shows the capture in the Recognized Text window. ([26a3deb]; by [@fzlzjerry])
+- Studio's timeline marks where a click will land as the pointer passes over it, snaps the playhead, a range, and zoom and layout edges to cuts, zooms, layouts, the playhead, and the ends with a guide line (⌘ holds it back), and adds a zoom where the zoom lane is double-clicked. ([26a3deb], [6981fa7]; by [@fzlzjerry])
+- A one-time invitation to MMFoundation's Discord, at a launch after 10 captures have been kept on at least 3 different days, never the first launch and never over a capture, recording, editor, or other window in use; Settings › About and the menu bar menu have Join Discord. ([#20]; by [@fzlzjerry])
 
 ### Changed
 
@@ -69,6 +82,18 @@ Each entry links its implementation commits or merged pull request and credits v
 - The recording bar's microphone and camera chips name the device they record in their tooltip and to VoiceOver. ([1d31f21]; by [@fzlzjerry])
 - A paused recording shows a pause symbol for the red dot, pulses its time, and lights Resume. ([55956a4]; by [@fzlzjerry])
 - The recording bar no longer opens in Studio after a Studio take; it opens with the last of Video and GIF. ([22e8288]; by [@fzlzjerry])
+- Studio says under the transport whether the project is saving, saved, or not saved (offering Retry Saving), and keeps showing the last preview frame while the preview updates (offering Retry Preview if it can't); Add Layout is dimmed, with the reason, when the playhead has no room for a layout. ([49e3114]; by [@fzlzjerry])
+- Capture History reads its folder and matches searches in the background, so the window keeps responding with many captures; it shows Loading captures… and Updating search results… while it works, and Return moves to the first result once the search is done. ([49e3114]; by [@fzlzjerry])
+- Recognized text is read column by column: side-by-side columns follow one another, full-width headings and paragraphs divide them, side notes stay out of the main paragraph, and right-to-left text orders its columns from the right; code, tables, and chats keep row order. ([49e3114]; by [@fzlzjerry])
+- Settings › Screenshots › File name builds the name from bricks in a tray: click or drag in Date, Time, App, Window, Counter, text, and separators, drag bricks to reorder them, drag one back out or click its × to remove it, and click a word to change it; the tray's menu has Edit as Text and Restore Default. With PNG chosen, Lossless stands in place of the Quality slider. ([3c09290]; by [@bobbyhuang-dev])
+- Studio frames a zoom after the fact from the whole cursor path: the camera holds on each run of clicks and keys and moves between them a little ahead of time, keeping the cursor inside the view, so an automatic zoom's first click is in the shot and a zoom no longer slides sideways as it scales. ([8f329e8]; by [@fzlzjerry])
+- Recording notes each pointer event at its own time, so with Input Monitoring on, Studio's cursor no longer pauses and jumps when the app is busy; clicks keep their releases, automatic zooms count drags, and presses on OhMyShot's own windows, such as the recording bar's Stop and Pause, no longer leave click rings in the movie. ([468526b]; by [@fzlzjerry])
+- Studio composes export frames faster and leaves out frames that repeat the one before, so a movie with still stretches exports in less time and, like a recording, has a variable frame rate. ([84ecfd2], [7294035]; by [@fzlzjerry])
+- Settings › Permissions explains in each row's help popover what the permission is used for and what goes missing without it, in place of a short tooltip. ([be25671]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
+- The menu bar menu gathers less-used actions into submenus: More Area Captures, Open Image, From Clipboard, Pins, and Tools (Pick Color, Measure, Hide Desktop Icons); Save Last 15 Seconds leads the replay submenu, and submenu items show their shortcuts. ([#18]; by [@bobbyhuang-dev])
+- Annotation on the frozen selection has a Select chip in its toolbar; once marks are drawn, Select works on them (a dragged box selects several, a double-click inside the selection away from the marks copies the picture), and Space held moves the selection. ([26a3deb]; by [@fzlzjerry])
+- A Quick Access card counting down to close shows a ring running out around its Close button, a swiped card follows the swipe and springs back when let go short of closing, and while the cards have the keyboard the card under the pointer takes its ring. ([26a3deb], [6981fa7], [75e384d]; by [@fzlzjerry])
+- OhMyShot appears in Command-Tab and the Dock while one of its windows, such as Settings, Capture History, an editor, or Studio, is open, and leaves them once the last one closes; Settings opens faster. ([6981fa7]; by [@fzlzjerry])
 
 ### Fixed
 
@@ -84,7 +109,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Onboarding avoids duplicate Screen Recording permission prompts and actually reopens the app after Quit & Reopen. ([6ec2f1d]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
 - Launch at login toggles the login item on and off again. ([3c49e89]; by [@fzlzjerry])
 - Quick Access repositions cards when displays are disconnected; cards and pins place their More menus beside them where they fit. ([bb75542], [460c047], [3750631]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
-- Scrolling captures reduce repeated fixed buttons, sticky-sidebar seams, and gaps around rounded window corners. ([e3e5215], [c7ea72a], [e895346], [2ebd715]; by [@fzlzjerry])
+- Scrolling captures reduce repeated fixed buttons, sticky-sidebar seams, and gaps around rounded window corners; a fixed button holding page-colored marks or sitting over text at the foot no longer leaves traces, and a carousel that changes slide while in view comes out as its newer slide. ([e3e5215], [c7ea72a], [e895346], [2ebd715], [49e3114]; by [@fzlzjerry])
 - Scrolling captures incorporate images that load after scrolling starts and keep continuously changing content together as a frame instead of a patchwork. ([6c56a00], [c319bdb], [309c84b]; by [@fzlzjerry])
 - Scrolling and Auto-scroll continue through long blank stretches, and repeated table cells retain the correct row numbers. ([0d32c35], [b65fad1], [35c03e9]; by [@fzlzjerry])
 - Recording warns when a microphone stops delivering audio instead of leaving a disconnected microphone silently recording. ([450f4a6]; by [@fzlzjerry])
@@ -96,8 +121,14 @@ Each entry links its implementation commits or merged pull request and credits v
 - VoiceOver names the app a History card was taken in and the action of each shortcut recorder in Settings. ([e45b631]; by [@fzlzjerry])
 - The Settings window opened on General is titled General, not "Untitled". ([8ea9c06]; by [@fzlzjerry])
 - The capture overlay shows one pointer at a time: the system's pointer no longer stays beside the drawn crosshair (two crosshairs after Capture Text), and Capture Text's crosshair shows from the start. ([43a1529], [7fc5a39], [1134e64]; by [@fzlzjerry])
+- Save As in the recording window and in Studio replaces an existing file only once the new copy is complete; closing or quitting waits for a Studio project to be saved, and a failed save keeps the window and its edits open; cancelling a Studio export, even while the file is being finished, stops it and leaves no partial movie; and a GIF shows a still screen held longer than 655 seconds for its whole time instead of cutting it short. ([49e3114]; by [@fzlzjerry])
+- Capture-bar and editor chips center their symbols in round fills, a titled chip such as Record centers its dot and title, and All-In-One's size fields fit their numbers. ([#16], [fb22898]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
+- Filled chips in the editor's style capsule are all 30 pt, so none looks smaller than its neighbor, and its color swatches are matching 16 pt discs. ([a99c1cd]; by [@bobbyhuang-dev])
+- The editor's drag-out thumbnail drags the capture into another app instead of moving the window. ([c021411]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
+- Outlined Text in the annotation editor has a black outline around white and colored text (white only around black and very dark text) and shows the outline while the text is typed. ([6647d69]; by [@fzlzjerry])
 
-[Unreleased]: https://github.com/fzlzjerry/OhMyShot/commits/main/
+[Unreleased]: https://github.com/fzlzjerry/OhMyShot/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/fzlzjerry/OhMyShot/releases/tag/v0.1.0
 [c999cc0]: https://github.com/fzlzjerry/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/fzlzjerry/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/fzlzjerry/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287
@@ -208,6 +239,28 @@ Each entry links its implementation commits or merged pull request and credits v
 [43a1529]: https://github.com/fzlzjerry/OhMyShot/commit/43a15294271a0090ffb0da5f84a4cedf97301019
 [7fc5a39]: https://github.com/fzlzjerry/OhMyShot/commit/7fc5a392938eb0df2f07ee4e2c238fd569a4070d
 [1134e64]: https://github.com/fzlzjerry/OhMyShot/commit/1134e6464c53f5dae261be1fa041c64098684c69
+[49e3114]: https://github.com/fzlzjerry/OhMyShot/commit/49e3114ea72c4c61169fbef674d614de7084dae3
+[#16]: https://github.com/fzlzjerry/OhMyShot/pull/16
+[3c09290]: https://github.com/fzlzjerry/OhMyShot/commit/3c0929043350efed6ae093bd3adad5b5e766b52b
+[8f329e8]: https://github.com/fzlzjerry/OhMyShot/commit/8f329e86357870199f9a2728c6a110ed987dafd2
+[468526b]: https://github.com/fzlzjerry/OhMyShot/commit/468526b0eb3b619704976f436ae632fa53b79294
+[84ecfd2]: https://github.com/fzlzjerry/OhMyShot/commit/84ecfd2a7157df02b5558b1928b7ddd6e5a516c6
+[7294035]: https://github.com/fzlzjerry/OhMyShot/commit/729403523ac656e3d3242e10e07254c4607a3869
+[a99c1cd]: https://github.com/fzlzjerry/OhMyShot/commit/a99c1cdd0ab5d1b8fde6e12b85ea5b0146fc90b9
+[49aef5a]: https://github.com/fzlzjerry/OhMyShot/commit/49aef5a6ae17b0bb7ed6f8b92a747a12bd7ed599
+[be25671]: https://github.com/fzlzjerry/OhMyShot/commit/be25671439829b15c7a509d38e7abf5b2a7c5ddc
+[#17]: https://github.com/fzlzjerry/OhMyShot/pull/17
+[c021411]: https://github.com/fzlzjerry/OhMyShot/commit/c021411ea6d5fdaecf4783b6af6ab1bea49e2eed
+[#18]: https://github.com/fzlzjerry/OhMyShot/pull/18
+[fb22898]: https://github.com/fzlzjerry/OhMyShot/commit/fb22898cf4eb25f2a53ee31455dc348efb335ad5
+[3e00641]: https://github.com/fzlzjerry/OhMyShot/commit/3e00641d32cec093843f2aec694a236e1f09b6c9
+[497086d]: https://github.com/fzlzjerry/OhMyShot/commit/497086d06d49faba91739c4dd3691cb76c0894e2
+[1ba5e94]: https://github.com/fzlzjerry/OhMyShot/commit/1ba5e947392fdb40bda150e231cba02d4809c483
+[26a3deb]: https://github.com/fzlzjerry/OhMyShot/commit/26a3deb80e544e2ef5bfb0e6e724568638ad23a7
+[6981fa7]: https://github.com/fzlzjerry/OhMyShot/commit/6981fa7362be29e22f6c779aad94c17cce5d659f
+[#20]: https://github.com/fzlzjerry/OhMyShot/pull/20
+[75e384d]: https://github.com/fzlzjerry/OhMyShot/commit/75e384d18c9b8090e9674a2c5f5d51bf04fa8ebf
+[6647d69]: https://github.com/fzlzjerry/OhMyShot/commit/6647d69da7f67c9f16a20a38834068a6faabb3dc
 [@BenjaminD2023]: https://github.com/BenjaminD2023
 [@bobbyhuang-dev]: https://github.com/bobbyhuang-dev
 [@fzlzjerry]: https://github.com/fzlzjerry
