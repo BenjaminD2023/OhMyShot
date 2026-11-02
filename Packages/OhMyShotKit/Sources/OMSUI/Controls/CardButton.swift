@@ -50,6 +50,9 @@ final class CardButton: NSControl {
         didSet { needsDisplay = true }
     }
 
+    /// Which side of the button its hover tag stands on: below it, unless it stands in a column of buttons.
+    var hoverTagEdge: NSRectEdge = .minY
+
     /// A pill's width: a little narrower on a small card, which has less room around it.
     var pillWidth: CGFloat = 112 {
         didSet {
@@ -240,7 +243,7 @@ final class CardButton: NSControl {
 
     override func mouseEntered(with event: NSEvent) {
         hovering = true
-        if showsHoverTag { HoverTag.shared.schedule(title, for: self, gap: 8) }
+        if showsHoverTag { HoverTag.shared.schedule(title, for: self, edge: hoverTagEdge, gap: 8) }
     }
 
     override func mouseExited(with event: NSEvent) {

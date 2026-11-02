@@ -31,9 +31,11 @@ public enum QuickAccessPlacement {
 /// Where the small buttons of a card's hover state stand. Columns run down the card's two sides under the
 /// Close and More buttons, and each button has a place of its own there, so none moves while the pointer is over
 /// the card (an upload that starts or ends leaves its place empty rather than moving the others up). A card too
-/// short for a button's place leaves it to its menu, which has every action anyway.
+/// short for a button's place leaves it to its menu, which has every action anyway. On a taller card each column
+/// spreads out, from the card's top to its bottom.
 public enum CardControlLayout {
     public static let buttonSize: CGFloat = 24
+    /// The least room between a column's buttons, on a card too short to spread them.
     public static let gap: CGFloat = 6
     /// From the card's edges to its corner buttons.
     public static let inset: CGFloat = 8
@@ -89,6 +91,17 @@ public enum CardControlLayout {
         }
     }
 
+    /// The room between the buttons of a column that holds its corner button and the places of `extras` on `side`: as
+    /// much as runs them from the card's top inset to its bottom one (above `reserve`), so a column of three stands
+    /// at the top, the middle, and the bottom; never less than `gap`.
+    public static func spacing(on side: Side, for extras: [Extra], onRecording: Bool, height: CGFloat, reserve: CGFloat = 0) -> CGFloat {
+        let rows = extras.compactMap { place(of: $0, onRecording: onRecording) }.filter { $0.side == side }.map(\.row)
+        guard let last = rows.max() else { return gap }
+        let places = CGFloat(last + 2)
+        let room = height - inset * 2 - reserve - places * buttonSize
+        return max(gap, (room / (places - 1)).rounded(.down))
+    }
+
     /// The place of each of `extras` on a card `height` tall, or nil for one it has no room for. `leadingReserve` is
     /// the height the leading column keeps free at the bottom (a recording's length badge stands there).
     public static func slots(for extras: [Extra], onRecording: Bool, height: CGFloat, leadingReserve: CGFloat = 0) -> [Slot?] {
@@ -99,9 +112,9 @@ public enum CardControlLayout {
         }
     }
 
-    /// The top of a slot's button, measured down from the card's top.
-    public static func top(of slot: Slot) -> CGFloat {
-        inset + CGFloat(slot.row + 1) * (buttonSize + gap)
+    /// The top of a slot's button, measured down from the card's top, with `spacing` between a column's buttons.
+    public static func top(of slot: Slot, spacing: CGFloat = gap) -> CGFloat {
+        inset + CGFloat(slot.row + 1) * (buttonSize + spacing)
     }
 
     /// The left of a slot's button in a card `width` wide.

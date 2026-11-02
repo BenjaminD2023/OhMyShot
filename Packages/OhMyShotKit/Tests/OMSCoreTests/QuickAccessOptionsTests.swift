@@ -109,6 +109,26 @@ struct CardControlLayoutTests {
         // The last row ends 8 pt above the bottom of the shortest card.
         #expect(CardControlLayout.top(of: second) + CardControlLayout.buttonSize <= QuickAccessSize.shortest - CardControlLayout.inset)
     }
+
+    /// A short card packs its columns; a taller one runs each from its top to its bottom: three buttons a side stand at
+    /// the top, the middle, and the bottom.
+    @Test func aTallerCardSpreadsEachColumnFromTopToBottom() {
+        let extras: [CardControlLayout.Extra] = [.annotate, .pin, .recognizeText, .trash]
+        #expect(CardControlLayout.spacing(on: .leading, for: extras, onRecording: false, height: 100) == CardControlLayout.gap)
+        for side in [CardControlLayout.Side.leading, .trailing] {
+            let spacing = CardControlLayout.spacing(on: side, for: extras, onRecording: false, height: 172)
+            #expect(spacing == 42)
+            let middle = CardControlLayout.top(of: .init(side: side, row: 0), spacing: spacing) + CardControlLayout.buttonSize / 2
+            #expect(middle == 86)
+            #expect(CardControlLayout.top(of: .init(side: side, row: 1), spacing: spacing) + CardControlLayout.buttonSize == 172 - CardControlLayout.inset)
+        }
+        // With Upload the leading column has four, still from top to bottom.
+        let spacing = CardControlLayout.spacing(on: .leading, for: extras + [.upload], onRecording: false, height: 172)
+        #expect(CardControlLayout.top(of: .init(side: .leading, row: 2), spacing: spacing) + CardControlLayout.buttonSize == 172 - CardControlLayout.inset)
+        // A recording's leading column stops above its length badge.
+        let recording = CardControlLayout.spacing(on: .leading, for: [.annotate, .upload, .trash], onRecording: true, height: 172, reserve: 24)
+        #expect(CardControlLayout.top(of: .init(side: .leading, row: 1), spacing: recording) + CardControlLayout.buttonSize <= 172 - CardControlLayout.inset - 24)
+    }
 }
 
 @MainActor
