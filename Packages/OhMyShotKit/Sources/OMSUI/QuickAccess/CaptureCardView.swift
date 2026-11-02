@@ -430,6 +430,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     private var noticeReset: Task<Void, Never>?
     /// The side buttons this capture has now, each with what it is.
     private var wantedExtras: [(CardButton, CardControlLayout.Extra)] = []
+    /// Side buttons that are away for now but keep their places, so the columns spread the same.
+    private var heldExtras: [CardControlLayout.Extra] = []
     private var isHovering = false
     private let savedBadge = NSImageView()
     /// A recording's length and a play mark, in a small capsule in the corner.
@@ -508,6 +510,10 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
             button.target = self
             button.action = action
         }
+        // The buttons stand in columns down the card's sides: each names itself beside it, into the card, never over
+        // the button below.
+        for button in [closeButton, annotateButton, pinButton, uploadButton] { button.hoverTagEdge = .maxX }
+        for button in [moreButton, recognizeButton, trashButton] { button.hoverTagEdge = .minX }
         for view in allHoverControls {
             view.isHidden = true
             view.alphaValue = 0
@@ -583,6 +589,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         if item.kind == .screenshot { wanted.append((recognizeButton, .recognizeText)) }
         wanted.append((trashButton, .trash))
         wantedExtras = wanted
+        // Upload keeps its place while an upload goes on or waits on Retry, so the column doesn't close up under the pointer.
+        heldExtras = !uploads && !uploadMenu().isHidden ? [.upload] : []
         needsLayout = true
     }
 
@@ -621,12 +629,18 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         countdownRing.path = CGPath(ellipseIn: CGRect(x: 1, y: 1, width: 24, height: 24), transform: nil)
         moreButton.frame = CGRect(x: bounds.width - 32, y: 8, width: 24, height: 24)
         let placed = extraPlacements()
+        let recording = item.kind == .recording
+        let extras = wantedExtras.map(\.1) + heldExtras
+        let spacing = { (side: CardControlLayout.Side) in
+            CardControlLayout.spacing(on: side, for: extras, onRecording: recording, height: self.bounds.height, reserve: side == .leading && recording ? 24 : 0)
+        }
+        let spacings = [CardControlLayout.Side.leading: spacing(.leading), .trailing: spacing(.trailing)]
         for button in [annotateButton, pinButton, uploadButton, recognizeButton, trashButton] where !placed.contains(where: { $0.button === button }) {
             button.isHidden = true
         }
         for (button, slot) in placed {
             button.frame = CGRect(
-                x: CardControlLayout.left(of: slot, width: bounds.width), y: CardControlLayout.top(of: slot),
+                x: CardControlLayout.left(of: slot, width: bounds.width), y: CardControlLayout.top(of: slot, spacing: spacings[slot.side] ?? CardControlLayout.gap),
                 width: CardControlLayout.buttonSize, height: CardControlLayout.buttonSize
             )
             // One that has come while the pointer is over the card (an upload ended) shows at once.
@@ -832,7 +846,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         saveButton.title = String(localized: "Saved", bundle: .module)
         saveButton.symbolName = "checkmark"
         saveButton.toolTip = String(localized: "Show in Finder", bundle: .module)
-        savedBadge.isHidden = false
+        savedBadge.isHidden = isHovering
         updateAccessibility()
     }
 

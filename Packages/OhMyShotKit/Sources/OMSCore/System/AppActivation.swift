@@ -34,7 +34,7 @@ public enum AppActivation {
                 _ = NSApp?.setActivationPolicy(.regular)
             }
         }
-        NSApp?.activate()
+        activateNow()
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         // When opened from the status bar menu or immediately after promoting from `.accessory` to `.regular`,
@@ -43,10 +43,17 @@ public enum AppActivation {
         DispatchQueue.main.async { [weak window] in
             guard let window, window.isVisible else { return }
             if !window.isKeyWindow || NSApp?.isActive == false {
-                NSApp?.activate()
+                activateNow()
                 window.makeKeyAndOrderFront(nil)
             }
         }
+    }
+
+    /// Takes activation from whichever app is in front. The plain `NSApp.activate()` only asks: chosen from the
+    /// menu bar icon's menu while another app is active, it is declined, and the window opens behind that app's.
+    /// The window is asked for by the user, so the app takes the front as the deprecated call still does.
+    private static func activateNow() {
+        NSApp?.activate(ignoringOtherApps: true)
     }
 
     /// Reconciles the app's activation policy when `window` is closing.

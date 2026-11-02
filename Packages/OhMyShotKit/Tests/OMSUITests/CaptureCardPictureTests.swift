@@ -7,6 +7,28 @@ import Testing
 
 /// What a Quick Access card shows of a capture whose shape the card can't hold.
 struct CaptureCardPictureTests {
+    @MainActor
+    @Test func savingWhileHoveredKeepsTheBottomTrashButtonClear() throws {
+        let item = QuickAccessItem(
+            id: UUID(), kind: .screenshot, fileURL: URL(filePath: "/tmp/test.png"),
+            thumbnail: picture(width: 600, height: 800, splitsAcross: true), pixelWidth: 600, pixelHeight: 800, displayID: 1
+        )
+        let card = CaptureCardView(item: item, size: .medium)
+        card.frame = CGRect(x: 0, y: 0, width: 220, height: 172)
+        card.setHovering(true)
+        card.layout()
+        let badge = try #require(card.subviews.compactMap { $0 as? NSImageView }.first)
+        let trash = try #require(card.subviews.compactMap { $0 as? CardButton }.first { $0.symbolName == "trash" })
+        #expect(trash.frame.intersects(badge.frame))
+        card.showSaved()
+        #expect(badge.isHidden)
+        #expect(!trash.isHidden)
+
+        card.setHovering(false)
+        card.showSaved()
+        #expect(!badge.isHidden)
+    }
+
     /// A picture whose top half is red and bottom half blue, or left half red and right half blue.
     private func picture(width: Int, height: Int, splitsAcross: Bool) -> CGImage {
         let context = CGContext(
