@@ -1351,7 +1351,7 @@ struct AboutSettingsView: View {
                     .accessibilityHidden(true)
                 Link(destination: CommunityInvite.discord) {
                     HStack(spacing: 4) {
-                        Self.symbol("bubble.left.and.bubble.right")
+                        Self.logo("DiscordMark")
                         Text("Join Discord", bundle: .module)
                     }
                 }
@@ -1376,15 +1376,6 @@ struct AboutSettingsView: View {
     /// A template image from OMSUI's asset catalog, drawn in the link's color beside its text.
     private static func logo(_ name: String) -> some View {
         Image(name, bundle: .module)
-            .resizable()
-            .scaledToFit()
-            .frame(width: 13, height: 13)
-            .accessibilityHidden(true)
-    }
-
-    /// A symbol in the logos' place, at their size.
-    private static func symbol(_ name: String) -> some View {
-        Image(systemName: name)
             .resizable()
             .scaledToFit()
             .frame(width: 13, height: 13)
