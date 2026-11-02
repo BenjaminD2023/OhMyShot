@@ -9,7 +9,7 @@ of it with the Mac's own development identity.
 ## How the app updates
 
 - **Only release builds look.** `SUFeedURL` is set in `Config/Release.xcconfig`:
-  `https://github.com/fzlzjerry/OhMyShot/releases/latest/download/appcast.xml`. Debug builds ("OhMyShot Dev") have no
+  `https://github.com/MMFoundation/OhMyShot/releases/latest/download/appcast.xml`. Debug builds ("OhMyShot Dev") have no
   feed, so they never look and show neither Settings › General › Updates nor Check for Updates… in the menu.
 - **Everything is signed.** The appcast and every archive are signed with the project's EdDSA key; the public half is
   `SUPublicEDKey` in `Config/Info.plist`. The app refuses an appcast or an archive that doesn't match it
@@ -47,7 +47,7 @@ The tools are Sparkle's, in the package's artifacts once the project has resolve
    app-specific password (account.apple.com › Sign-In and Security › App-Specific Passwords, in the form
    `abcd-efgh-ijkl-mnop`); the account's own password gets "HTTP status code: 401. Invalid credentials".
 3. The Sparkle key (above).
-4. `gh` signed in to an account that can make releases on fzlzjerry/OhMyShot.
+4. `gh` signed in to an account that can make releases on MMFoundation/OhMyShot.
 
 ## Making a release
 
@@ -130,13 +130,13 @@ cask "ohmyshot" do
   version "0.1.0"
   sha256 "…" # shasum -a 256 OhMyShot-0.1.0.zip
 
-  url "https://github.com/fzlzjerry/OhMyShot/releases/download/v#{version}/OhMyShot-#{version}.zip"
+  url "https://github.com/MMFoundation/OhMyShot/releases/download/v#{version}/OhMyShot-#{version}.zip"
   name "OhMyShot"
   desc "Screenshots, recordings, annotation, and on-device OCR"
-  homepage "https://github.com/fzlzjerry/OhMyShot"
+  homepage "https://github.com/MMFoundation/OhMyShot"
 
   livecheck do
-    url "https://github.com/fzlzjerry/OhMyShot/releases/latest/download/appcast.xml"
+    url "https://github.com/MMFoundation/OhMyShot/releases/latest/download/appcast.xml"
     strategy :sparkle, &:short_version
   end
 

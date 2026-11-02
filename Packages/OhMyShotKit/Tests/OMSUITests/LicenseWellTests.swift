@@ -11,7 +11,7 @@ struct LicenseWellTests {
             https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_safetensors/tree/e4f489d
 
         were converted to MLX, by the script in
-        https://github.com/fzlzjerry/OhMyShot).
+        https://github.com/MMFoundation/OhMyShot).
         Nothing was trained or tuned.
 
               "License" shall mean the terms and conditions for use, reproduction,
@@ -24,7 +24,7 @@ struct LicenseWellTests {
         https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_safetensors/tree/e4f489d
 
         were converted to MLX, by the script in
-        https://github.com/fzlzjerry/OhMyShot).
+        https://github.com/MMFoundation/OhMyShot).
         Nothing was trained or tuned.
 
         "License" shall mean the terms and conditions for use, reproduction, and distribution as defined by Sections 1 through 9 of this document.

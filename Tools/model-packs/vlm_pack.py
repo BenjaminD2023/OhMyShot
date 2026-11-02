@@ -116,7 +116,7 @@ renamed them and joined the vision attention's query, key, and value projections
 ML program with 8-bit weights, as in the OhMyShot formula pack (Tools/model-packs/formula_pack.py). The weights were not
 trained or tuned. vocabulary.json is the tokenizer's tokens by id; prompts.json each task's prompt, tokenized;
 layout.json the layout model's input, classes, and threshold (Tools/model-packs/vlm_pack.py in
-https://github.com/fzlzjerry/OhMyShot).
+https://github.com/MMFoundation/OhMyShot).
 
 The license text below is PaddleOCR-VL-1.6's own (its repository's LICENSE).
 
@@ -148,7 +148,7 @@ base_model:
 PaddlePaddle's [PaddleOCR-VL-1.6](https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6), a 0.9B vision-language model
 that reads text, tables, formulas, and charts in a picture, on MLX with {BITS}-bit weights, and
 [PP-DocLayoutV3](https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_safetensors), which finds the tables and charts, as
-Core ML, for [OhMyShot](https://github.com/fzlzjerry/OhMyShot), a screenshot app for macOS, which downloads them as a
+Core ML, for [OhMyShot](https://github.com/MMFoundation/OhMyShot), a screenshot app for macOS, which downloads them as a
 model pack: the text it recognizes then holds the tables and charts in a picture a row a line, cells apart by tabs, and
 its Recognized Text window shows them as tables. The weights are PaddlePaddle's, quantized; see LICENSE.txt for the
 license and what was changed. While it reads, the reading process peaks near 2.6 GB of memory.

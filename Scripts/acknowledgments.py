@@ -232,7 +232,7 @@ def document(source_packages):
         "# Acknowledgments",
         "OhMyShot is built with the software below. Their licenses ask that these notices go with every copy.",
         "## OhMyShot",
-        "https://github.com/fzlzjerry/OhMyShot",
+        "https://github.com/MMFoundation/OhMyShot",
         f"{copyright_line}\n\n"
         "OhMyShot is free software: you can redistribute it and modify it under the terms of the GNU General Public "
         "License, version 3, as published by the Free Software Foundation. It comes with no warranty. Its source code "

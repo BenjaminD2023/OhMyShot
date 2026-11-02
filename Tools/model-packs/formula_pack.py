@@ -658,7 +658,7 @@ What was changed (Apache License 2.0, section 4(b)): the PyTorch (safetensors) w
 {source}
 
 were converted to Core ML ML programs with 8-bit weights (linear, symmetric, one scale for each output channel) and
-16-bit floating point computation (Tools/model-packs/formula_pack.py in https://github.com/fzlzjerry/OhMyShot, with
+16-bit floating point computation (Tools/model-packs/formula_pack.py in https://github.com/MMFoundation/OhMyShot, with
 coremltools {tools["coremltools"]}, torch {tools["torch"]}, transformers {tools["transformers"]}), after checking that
 they give the tokens, and the formulas found, that transformers' models give. PP-FormulaNet_plus-L was split in two:
 encoder.mlpackage holds the image encoder and, from each decoder layer, the projections of its cross-attention keys
@@ -700,7 +700,7 @@ base_model:
 PaddlePaddle's [PP-FormulaNet_plus-L](https://huggingface.co/PaddlePaddle/PP-FormulaNet_plus-L_safetensors), which
 reads a picture of a formula as LaTeX, and [PP-DocLayoutV3](https://huggingface.co/PaddlePaddle/PP-DocLayoutV3_safetensors),
 which finds the formulas among text, converted to Core ML ML programs with 8-bit weights for
-[OhMyShot](https://github.com/fzlzjerry/OhMyShot), a screenshot app for macOS, which downloads them as a model pack: the
+[OhMyShot](https://github.com/MMFoundation/OhMyShot), a screenshot app for macOS, which downloads them as a model pack: the
 text it recognizes then holds each formula as LaTeX, and Capture Formula copies the formula in a selection. The weights
 are PaddlePaddle's, quantized; see LICENSE.txt for the license and what was changed.
 

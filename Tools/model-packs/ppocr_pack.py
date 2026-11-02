@@ -410,7 +410,7 @@ What was changed (Apache License 2.0, section 4(b)): the PyTorch (safetensors) w
 {sources}
 
 were converted to Core ML ML programs with 16-bit floating point weights and a fixed set of input sizes
-(Tools/model-packs/ppocr_pack.py in https://github.com/fzlzjerry/OhMyShot, with coremltools {tools["coremltools"]},
+(Tools/model-packs/ppocr_pack.py in https://github.com/MMFoundation/OhMyShot, with coremltools {tools["coremltools"]},
 torch {tools["torch"]}, transformers {tools["transformers"]}), after checking that they give what PaddlePaddle's own
 ONNX exports give:
 
@@ -446,7 +446,7 @@ base_model:
 
 PaddlePaddle's [PP-OCRv6 small](https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_safetensors) text detection
 and recognition models, converted to Core ML ML programs (16-bit floating point) for
-[OhMyShot](https://github.com/fzlzjerry/OhMyShot), a screenshot app for macOS, which downloads them as a model pack to
+[OhMyShot](https://github.com/MMFoundation/OhMyShot), a screenshot app for macOS, which downloads them as a model pack to
 read text that macOS's own text recognition reads poorly (Chinese-heavy interfaces, low-confidence regions). The
 weights are PaddlePaddle's, unchanged; see LICENSE.txt for the license and what was changed.
 
