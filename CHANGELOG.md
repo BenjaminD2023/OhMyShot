@@ -9,7 +9,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-02
+## [0.1.0] - 2026-11-03
 
 ### Added
 
@@ -58,7 +58,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Pins resize from a corner, keeping their proportions; a double-click switches between actual size and the zoom before it (200% from actual size); Option-dragging a picture pin drops its image file into another app; and a click on a locked pin's lock badge unlocks it. ([26a3deb], [6981fa7]; by [@fzlzjerry])
 - The Capture Text result card has Open in Panel, which shows the capture in the Recognized Text window. ([26a3deb]; by [@fzlzjerry])
 - Studio's timeline marks where a click will land as the pointer passes over it, snaps the playhead, a range, and zoom and layout edges to cuts, zooms, layouts, the playhead, and the ends with a guide line (⌘ holds it back), and adds a zoom where the zoom lane is double-clicked. ([26a3deb], [6981fa7]; by [@fzlzjerry])
-- A one-time invitation to MMFoundation's Discord, at a launch after 10 captures have been kept on at least 3 different days, never the first launch and never over a capture, recording, editor, or other window in use; Settings › About and the menu bar menu have Join Discord. ([#20]; by [@fzlzjerry])
+- A one-time invitation to MMFoundation's Discord, at a launch after 10 captures have been kept on at least 3 different days, never the first launch and never over a capture, recording, editor, or other window in use; Settings › About (with Discord's logo) and the menu bar menu have Join Discord. ([#20], [542fbb2]; by [@fzlzjerry], [@bobbyhuang-dev])
 
 ### Changed
 
@@ -71,6 +71,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Large and tall OCR images are read in bands, then assembled in image order to limit memory use. ([a8b2131], [14fdf15]; by [@fzlzjerry])
 - Model-pack updates download only changed files instead of fetching the whole pack again. ([5a1dcd2]; by [@fzlzjerry])
 - Quick Access: Delete alone no longer moves a card to the Trash (⌘Delete does); a card moved to the Trash waits five seconds under Undo (also ⌘Z and Restore Recently Closed) before its capture goes; side buttons keep fixed places; and a copy made from the keyboard says Copied on the card. ([4000b7c]; by [@fzlzjerry])
+- On a taller Quick Access card each column of side buttons runs from the card's top to its bottom, three a side at the top, middle, and bottom; Upload keeps its place while an upload goes on or waits on Retry, and a button's hover tag stands beside it instead of over the button below. ([896502f]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
 - Recording's Delete and Restart, and Scrolling Capture's Cancel once something is stitched, ask for a second click before throwing the recording or picture away. ([b67e465]; by [@fzlzjerry])
 - Return in the annotation editor copies the picture and closes the window; Background has a rail symbol of its own; Marker Yellow leads the highlighter's colors in place of Yellow; size chips name their sizes. ([656bbcb], [733fd08]; by [@fzlzjerry])
 - All-In-One leaves out its Copy chip while every capture is copied anyway, and Annotate has one symbol everywhere. ([e43c395]; by [@fzlzjerry])
@@ -126,6 +127,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Filled chips in the editor's style capsule are all 30 pt, so none looks smaller than its neighbor, and its color swatches are matching 16 pt discs. ([a99c1cd]; by [@bobbyhuang-dev])
 - The editor's drag-out thumbnail drags the capture into another app instead of moving the window. ([c021411]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
 - Outlined Text in the annotation editor has a black outline around white and colored text (white only around black and very dark text) and shows the outline while the text is typed. ([6647d69]; by [@fzlzjerry])
+- Windows opened from the menu bar icon come to the front instead of opening behind the active app. ([ec080f7]; by [@bobbyhuang-dev])
 
 [Unreleased]: https://github.com/MMFoundation/OhMyShot/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/MMFoundation/OhMyShot/releases/tag/v0.1.0
@@ -261,6 +263,9 @@ Each entry links its implementation commits or merged pull request and credits v
 [#20]: https://github.com/MMFoundation/OhMyShot/pull/20
 [75e384d]: https://github.com/MMFoundation/OhMyShot/commit/75e384d18c9b8090e9674a2c5f5d51bf04fa8ebf
 [6647d69]: https://github.com/MMFoundation/OhMyShot/commit/6647d69da7f67c9f16a20a38834068a6faabb3dc
+[542fbb2]: https://github.com/MMFoundation/OhMyShot/commit/542fbb2b1dad55fe4ecb1ac1c9353c0f9940f386
+[896502f]: https://github.com/MMFoundation/OhMyShot/commit/896502fecc4335d59b6405283bffc500e67c0585
+[ec080f7]: https://github.com/MMFoundation/OhMyShot/commit/ec080f7ab7fac2a0833a0b7abc6b782e0f9ad333
 [@BenjaminD2023]: https://github.com/BenjaminD2023
 [@bobbyhuang-dev]: https://github.com/bobbyhuang-dev
 [@fzlzjerry]: https://github.com/fzlzjerry
