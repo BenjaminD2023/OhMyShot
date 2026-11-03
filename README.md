@@ -37,9 +37,9 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
-This is [BenjaminD2023's maintained fork](https://github.com/BenjaminD2023/OhMyShot) of [fzlzjerry/OhMyShot](https://github.com/fzlzjerry/OhMyShot). It preserves the local capture, pixel-picker, shortcut, OCR, preview and toolbar improvements, including proposals that were not merged upstream. Updates and packaged builds come from this fork.
+This is [BenjaminD2023's maintained fork](https://github.com/BenjaminD2023/OhMyShot) of [MMFoundation/OhMyShot](https://github.com/MMFoundation/OhMyShot) (formerly fzlzjerry/OhMyShot). It preserves the local capture, pixel-picker, shortcut, OCR, preview and toolbar improvements, including proposals that were not merged upstream. Updates and packaged builds come from this fork.
 
-Download the Apple silicon build from [Releases](https://github.com/BenjaminD2023/OhMyShot/releases). The DMG contains the app and an Applications shortcut. The first fork release is not Apple-notarized; its update feed and update archives are signed independently with Sparkle's Ed25519 key. See [release and signing instructions](Docs/releasing.md).
+Download the Apple silicon build from [Releases](https://github.com/BenjaminD2023/OhMyShot/releases). The DMG contains the app and an Applications shortcut. Fork releases are not Apple-notarized; the fork’s update feed and update archives are signed independently with Sparkle's Ed25519 key. See [release and signing instructions](Docs/releasing.md).
 
 这是独立维护的 fork，保留本地增强功能；安装包和自动更新均来自本 fork。
 
@@ -112,10 +112,16 @@ log, with methods, dates, and caveats, is in [Docs/perf.md](Docs/perf.md); measu
 
 ## Getting started
 
+### Install
+
+Download the DMG from this fork’s [latest release](https://github.com/BenjaminD2023/OhMyShot/releases/latest),
+open it, and drag OhMyShot to Applications. Fork releases use Apple Development signing and are not Apple-notarized.
+Updates use this fork’s signed feed (Settings › General › Updates); see [the fork release instructions](Docs/releasing.md).
+
 ### Requirements
 
 - macOS 26 or later on Apple silicon
-- Xcode 27 or later, with its Metal Toolchain (used by the optional VLM pack):
+- Xcode 27 or later (the app uses the macOS 27 SDK), with its Metal Toolchain (used by the optional VLM pack):
   `xcodebuild -downloadComponent MetalToolchain`
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 

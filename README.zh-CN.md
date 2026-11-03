@@ -120,10 +120,16 @@ OhMyShot 还会出现在其他 App 的分享菜单中（用来标注或贴图；
 
 ## 快速开始
 
+### 安装
+
+从本 fork 的[最新版本](https://github.com/BenjaminD2023/OhMyShot/releases/latest)下载 DMG，打开后将 OhMyShot 拖到「应用程序」。
+Fork 版本使用 Apple Development 签名，未通过 Apple 公证；自动更新使用本 fork 的签名更新源（「设置 › 通用 › 更新」）。
+签名与发布详情见 [Docs/releasing.md](Docs/releasing.md)。
+
 ### 环境要求
 
 - macOS 26 或更高版本，Apple 芯片
-- Xcode 26 或更高版本，并安装 Metal Toolchain（VLM 模型包使用的 MLX 需要编译 Metal 内核）：
+- Xcode 27 或更高版本（应用用 macOS 27 SDK 构建），并安装 Metal Toolchain（VLM 模型包使用的 MLX 需要编译 Metal 内核）：
   `xcodebuild -downloadComponent MetalToolchain`
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)：`brew install xcodegen`
 

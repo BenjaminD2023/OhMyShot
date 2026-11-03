@@ -6,7 +6,7 @@ OhMyShot is built with the software below. Their licenses ask that these notices
 
 ## OhMyShot
 
-https://github.com/fzlzjerry/OhMyShot
+https://github.com/MMFoundation/OhMyShot
 
 Copyright © 2026 OhMyShot contributors.
 

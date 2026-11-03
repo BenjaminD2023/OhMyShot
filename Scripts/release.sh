@@ -24,7 +24,7 @@ cd "$(dirname "$0")/.."
 DRY_RUN=0
 if [ "${1:-}" = "--dry-run" ]; then DRY_RUN=1; fi
 
-REPO=fzlzjerry/OhMyShot
+REPO=MMFoundation/OhMyShot
 FEED="https://github.com/$REPO/releases/latest/download/appcast.xml"
 SPARKLE_ACCOUNT=ohmyshot
 NOTARY_PROFILE=${NOTARY_PROFILE:-OhMyShot}

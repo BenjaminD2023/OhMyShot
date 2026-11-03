@@ -3,17 +3,18 @@
 > This fork retains Sparkle scheduling and saved automatic-download preferences; those debug hooks are not included.
 > Use the fork instructions above for its signing account and publishing; fork builds are not Apple-notarized.
 
-# Releases and updates
+# Upstream releases and updates
 
-OhMyShot is released on GitHub: each release carries a zip of the app and the Sparkle appcast that lists it, and the
-app looks for updates in the latest release's appcast. Nothing has been released yet. A release needs a Developer ID
-certificate, which this project doesn't have yet, so `Scripts/release.sh` stops before it builds anything without one;
-`Scripts/release.sh --dry-run` runs the rest of it.
+Upstream OhMyShot is released on [MMFoundation/OhMyShot](https://github.com/MMFoundation/OhMyShot/releases): each
+release carries a zip of the app and the Sparkle appcast that lists it. Upstream documents Developer ID signing
+(team DT6YQU64FF, since 2026-11-02) and notarization; these are not claims about this fork.
+Upstream’s `Scripts/release.sh` stops before it builds anything on a Mac without the certificate or notarytool’s
+credentials, and `Scripts/release.sh --dry-run` runs the rest of it with the Mac’s own development identity.
 
 ## How the app updates
 
 - **Only release builds look.** `SUFeedURL` is set in `Config/Release.xcconfig`:
-  `https://github.com/fzlzjerry/OhMyShot/releases/latest/download/appcast.xml`. Debug builds ("OhMyShot Dev") have no
+  `https://github.com/MMFoundation/OhMyShot/releases/latest/download/appcast.xml`. Debug builds ("OhMyShot Dev") have no
   feed, so they never look and show neither Settings › General › Updates nor Check for Updates… in the menu.
 - **Everything is signed.** The appcast and every archive are signed with the project's EdDSA key; the public half is
   `SUPublicEDKey` in `Config/Info.plist`. The app refuses an appcast or an archive that doesn't match it
@@ -43,11 +44,15 @@ The tools are Sparkle's, in the package's artifacts once the project has resolve
 ## One-time setup for releases
 
 1. A Developer ID Application certificate in the login keychain (Apple Developer Program, Certificates, Developer ID
-   Application). `security find-identity -v -p codesigning` lists it.
-2. notarytool's credentials in the keychain, with an app-specific password for the Apple Account:
-   `xcrun notarytool store-credentials OhMyShot --apple-id <apple id> --team-id <team id>`
+   Application). `security find-identity -v -p codesigning` lists it. The app is built with the development team in
+   `Config/Signing.local.xcconfig` and signed again with Developer ID, so that file stays as it is (changing its team
+   would cost the Dev app its Screen Recording permission).
+2. notarytool's credentials in the keychain, under the profile name the script uses:
+   `xcrun notarytool store-credentials OhMyShot --apple-id <apple id> --team-id DT6YQU64FF`. It asks for an
+   app-specific password (account.apple.com › Sign-In and Security › App-Specific Passwords, in the form
+   `abcd-efgh-ijkl-mnop`); the account's own password gets "HTTP status code: 401. Invalid credentials".
 3. The Sparkle key (above).
-4. `gh` signed in to an account that can make releases on fzlzjerry/OhMyShot.
+4. `gh` signed in to an account that can make releases on MMFoundation/OhMyShot.
 
 ## Making a release
 
@@ -130,13 +135,13 @@ cask "ohmyshot" do
   version "0.1.0"
   sha256 "…" # shasum -a 256 OhMyShot-0.1.0.zip
 
-  url "https://github.com/fzlzjerry/OhMyShot/releases/download/v#{version}/OhMyShot-#{version}.zip"
+  url "https://github.com/MMFoundation/OhMyShot/releases/download/v#{version}/OhMyShot-#{version}.zip"
   name "OhMyShot"
   desc "Screenshots, recordings, annotation, and on-device OCR"
-  homepage "https://github.com/fzlzjerry/OhMyShot"
+  homepage "https://github.com/MMFoundation/OhMyShot"
 
   livecheck do
-    url "https://github.com/fzlzjerry/OhMyShot/releases/latest/download/appcast.xml"
+    url "https://github.com/MMFoundation/OhMyShot/releases/latest/download/appcast.xml"
     strategy :sparkle, &:short_version
   end
 
