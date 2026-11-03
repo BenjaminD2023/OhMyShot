@@ -1,7 +1,8 @@
 # Releases and updates
 
 OhMyShot is released on GitHub: each release carries a zip of the app and the Sparkle appcast that lists it, and the
-app looks for updates in the latest release's appcast. Nothing has been released yet. Releases are signed with the
+app looks for updates in the latest release's appcast. The first, 0.1.0, was released on 2026-11-03 from the
+maintainer's Mac (its notarization waited 16 hours in Apple's queue). Releases are signed with the
 maintainer's Developer ID (team DT6YQU64FF, since 2026-11-02) and notarized; `Scripts/release.sh` stops before it builds
 anything on a Mac without the certificate or notarytool's credentials, and `Scripts/release.sh --dry-run` runs the rest
 of it with the Mac's own development identity. The release workflow runs the same script on GitHub Actions for a pushed
@@ -98,7 +99,7 @@ allowed included, and a version outside a package's requirements stopped the bui
    - notarizes it, staples the ticket, and checks that Gatekeeper takes it as notarized. It uploads again (up to three
      times) when an upload is cut off, and waits out Apple's queue however long it is, asking once a minute and again
      after a failed asking: notarytool's own `--wait` stops at the first network error. A new team's first
-     notarization took 18 hours; later ones are minutes as a rule, but have taken hours,
+     notarization took 18 hours, and 0.1.0's, the day after, 16; later ones are minutes as a rule,
    - zips it to `build/release/<version>/archives/OhMyShot-<version>.zip`, and writes the release notes and the signed
      appcast beside it, keeping the versions the feed had.
 5. Try the zip on a Mac (or a user account) that has an older release: Check for Updates… should offer it, install it,
