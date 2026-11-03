@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-not_released_yet-f5a623" alt="Status: not released yet">
+  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/github/v/release/MMFoundation/OhMyShot?label=release&color=f5a623" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/macOS_26%2B-Apple_silicon-111111?logo=apple&logoColor=white" alt="macOS 26 or later on Apple silicon">
   <img src="https://img.shields.io/badge/Swift_6-SwiftUI_%2B_AppKit-F05138?logo=swift&logoColor=white" alt="Swift 6, SwiftUI and AppKit">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/MMFoundation/OhMyShot?color=blue" alt="License: GPL-3.0"></a>
@@ -46,9 +46,8 @@
 -->
 
 > [!NOTE]
-> **Not released yet.** There are no builds or version tags; [build it from source](#build-and-run) for now, and
-> ⭐ star or watch the repository to hear about the first release. It is developed and tested on macOS 27 beta on
-> Apple silicon (a 6K ultrawide beside a built-in XDR display). It builds for macOS 26 but has not been run there.
+> **Early days.** 0.1.0 is the first release. OhMyShot is developed and tested on macOS 27 beta on Apple silicon (a
+> 6K ultrawide beside a built-in XDR display). It builds for macOS 26 but has not been run there.
 
 ## Why OhMyShot
 
@@ -119,11 +118,17 @@ log, with methods, dates, and caveats, is in [Docs/perf.md](Docs/perf.md); measu
 
 ## Getting started
 
+### Install
+
+Download `OhMyShot-<version>.zip` from the [latest release](https://github.com/MMFoundation/OhMyShot/releases/latest),
+unzip it, and move OhMyShot to Applications. Releases are signed with a Developer ID and notarized by Apple, and the
+app keeps itself up to date from then on (Settings › General › Updates).
+
 ### Requirements
 
 - macOS 26 or later on Apple silicon
-- Xcode 26 or later, with its Metal Toolchain (the VLM pack's MLX kernels need it):
-  `xcodebuild -downloadComponent MetalToolchain`
+- Xcode 27 or later (the app is built with the macOS 27 SDK), with its Metal Toolchain (the VLM pack's MLX kernels
+  need it): `xcodebuild -downloadComponent MetalToolchain`
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 
 ### Build and run

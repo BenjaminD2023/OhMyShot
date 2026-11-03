@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/%E7%8A%B6%E6%80%81-%E5%B0%9A%E6%9C%AA%E5%8F%91%E5%B8%83-f5a623" alt="状态：尚未发布">
+  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/github/v/release/MMFoundation/OhMyShot?label=%E7%89%88%E6%9C%AC&color=f5a623" alt="最新版本"></a>
   <img src="https://img.shields.io/badge/macOS_26%2B-Apple_%E8%8A%AF%E7%89%87-111111?logo=apple&logoColor=white" alt="macOS 26 或更高版本，Apple 芯片">
   <img src="https://img.shields.io/badge/Swift_6-SwiftUI_%2B_AppKit-F05138?logo=swift&logoColor=white" alt="Swift 6、SwiftUI 与 AppKit">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/MMFoundation/OhMyShot?color=blue" alt="许可证：GPL-3.0"></a>
@@ -40,8 +40,7 @@
 -->
 
 > [!NOTE]
-> **尚未发布。** 目前还没有发布任何安装包或版本标签，请先[从源码构建](#build-and-run)；⭐ Star 或 Watch
-> 本仓库，第一时间获知首个版本。OhMyShot 在 macOS 27 beta、Apple 芯片的 Mac 上开发和测试（一台 6K 带鱼屏外接显示器加内建 XDR 屏幕）。
+> **刚刚起步。** 0.1.0 是第一个版本。OhMyShot 在 macOS 27 beta、Apple 芯片的 Mac 上开发和测试（一台 6K 带鱼屏外接显示器加内建 XDR 屏幕）。
 > 它可以为 macOS 26 构建，但尚未在 macOS 26 上实际运行过。
 >
 > 本文是 [README.md](README.md) 的中文翻译，两者不一致时以英文版为准。
@@ -122,10 +121,15 @@ OhMyShot 还会出现在其他 App 的分享菜单中（用来标注或贴图；
 
 ## 快速开始
 
+### 安装
+
+从[最新版本](https://github.com/MMFoundation/OhMyShot/releases/latest)下载 `OhMyShot-<版本号>.zip`，解压后把 OhMyShot
+移到「应用程序」文件夹。发布的版本都用 Developer ID 签名并经过 Apple 公证，之后会自动更新（「设置 › 通用 › 更新」）。
+
 ### 环境要求
 
 - macOS 26 或更高版本，Apple 芯片
-- Xcode 26 或更高版本，并安装 Metal Toolchain（VLM 模型包使用的 MLX 需要编译 Metal 内核）：
+- Xcode 27 或更高版本（应用用 macOS 27 SDK 构建），并安装 Metal Toolchain（VLM 模型包使用的 MLX 需要编译 Metal 内核）：
   `xcodebuild -downloadComponent MetalToolchain`
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)：`brew install xcodegen`
 
