@@ -249,14 +249,37 @@ ZIP="$OUT/archives/OhMyShot-$VERSION.zip"
 if [ $DRY_RUN = 0 ]; then
   echo "Notarizing..."
   ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/notarize.zip"
-  notarytool submit "$OUT/notarize.zip" --wait | tee "$OUT/notarization.txt"
-  if ! grep -q "status: Accepted" "$OUT/notarization.txt"; then
+  # The upload, again when it's cut off midway (it has timed out), which leaves Apple a submission that never ends.
+  SUBMISSION=
+  for try in 1 2 3; do
+    if notarytool submit "$OUT/notarize.zip" > "$OUT/submission.txt" 2>&1; then
+      SUBMISSION=$(sed -n 's/^ *id: //p' "$OUT/submission.txt" | head -1)
+      break
+    fi
+    cat "$OUT/submission.txt" >&2
+    echo "The upload failed (try $try of 3)." >&2
+    [ $try = 3 ] || sleep 60
+  done
+  [ -n "$SUBMISSION" ] || fail "couldn't upload the app to the notary service: $OUT/submission.txt"
+  echo "Submitted as $SUBMISSION. Waiting for Apple (minutes as a rule, hours at times)..."
+  # Asked once a minute, and again when an asking fails: notarytool's own --wait gives up at the first network error
+  # (a TLS one has ended it), though the submission goes on.
+  STATUS=
+  WAITED=0
+  while :; do
+    STATUS=$(notarytool info "$SUBMISSION" 2>/dev/null | sed -n 's/^ *status: //p')
+    case $STATUS in Accepted | Invalid | Rejected) break ;; esac
+    sleep 60
+    WAITED=$((WAITED + 1))
+    [ $((WAITED % 15)) != 0 ] || echo "  ${STATUS:-no answer} after $WAITED minutes"
+  done
+  notarytool info "$SUBMISSION" | tee "$OUT/notarization.txt"
+  if [ "$STATUS" != Accepted ]; then
     # Apple's reasons, fetched while the credentials are at hand (in CI they aren't, afterwards).
-    SUBMISSION=$(sed -n 's/^ *id: //p' "$OUT/notarization.txt" | head -1)
-    [ -z "$SUBMISSION" ] || notarytool log "$SUBMISSION" "$OUT/notarization-log.json" || true
-    fail "notarization didn't accept it: $OUT/notarization-log.json says why"
+    notarytool log "$SUBMISSION" "$OUT/notarization-log.json" || true
+    fail "notarization didn't accept it ($STATUS): $OUT/notarization-log.json says why"
   fi
-  rm "$OUT/notarize.zip"
+  rm "$OUT/notarize.zip" "$OUT/submission.txt"
   xcrun stapler staple "$APP"
   xcrun stapler validate "$APP"
   # Asks for the notarization itself rather than Gatekeeper's verdict, which says nothing on a Mac where Gatekeeper

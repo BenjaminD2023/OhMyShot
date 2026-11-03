@@ -63,8 +63,9 @@ jobs:
     if: needs.check.outputs.skip != 'true'
     # GitHub's xcode-27 image (a preview), or a runner of the maintainer's own: the app needs the macOS 27 SDK.
     runs-on: ${{ inputs.runner || vars.RELEASE_RUNNER || 'xcode-27' }}
-    # A new team's first notarization took over an hour.
-    timeout-minutes: 180
+    # Notarization is minutes as a rule, but Apple's queue has taken hours (the team's first, 18): the most a hosted
+    # runner allows. The submission goes on at Apple when the job stops; a re-run builds and submits again.
+    timeout-minutes: 360
     env:
       VERSION: ${{ needs.check.outputs.version }}
       PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}

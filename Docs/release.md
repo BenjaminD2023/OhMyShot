@@ -95,7 +95,10 @@ allowed included, and a version outside a package's requirements stopped the bui
      then the app, each with the hardened runtime, a secure timestamp, and its own entitlements,
    - stops if any piece of code in the app isn't signed with Developer ID and the hardened runtime, or can still be
      debugged,
-   - notarizes it, staples the ticket, and checks that Gatekeeper takes it as notarized,
+   - notarizes it, staples the ticket, and checks that Gatekeeper takes it as notarized. It uploads again (up to three
+     times) when an upload is cut off, and waits out Apple's queue however long it is, asking once a minute and again
+     after a failed asking: notarytool's own `--wait` stops at the first network error. A new team's first
+     notarization took 18 hours; later ones are minutes as a rule, but have taken hours,
    - zips it to `build/release/<version>/archives/OhMyShot-<version>.zip`, and writes the release notes and the signed
      appcast beside it, keeping the versions the feed had.
 5. Try the zip on a Mac (or a user account) that has an older release: Check for Updates… should offer it, install it,
@@ -145,6 +148,8 @@ the one `SUPublicEDKey` names.
 The run keeps `build/release/<version>/` as the artifact `OhMyShot-<version>`, without the unzipped app (an artifact
 loses its links and permissions; the zip has it): the zip, the appcast, the notes, `build.log`, `notarization.txt`, and
 `notarization-log.json` when Apple refused it. Its keychain and key files are deleted when it ends, however it ends.
+A hosted job stops after six hours (`timeout-minutes: 360`, the most GitHub allows). When Apple's queue is longer, the
+submission still ends at Apple, but the app it was made of goes with the job: re-run it, which builds and submits again.
 
 ### The runner
 
