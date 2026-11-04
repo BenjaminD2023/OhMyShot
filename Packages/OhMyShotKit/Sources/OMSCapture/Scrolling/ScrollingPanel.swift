@@ -409,6 +409,10 @@ private final class CardView: NSView {
     }
 
     private static let inset: CGFloat = 6
+    /// The hint's frame from the reading's and from the card's bottom (or the speed slider). Text frames carry more
+    /// room above the glyphs than below, so these differ for the hint to look evenly spaced, about 12 pt each side.
+    private static let hintTop: CGFloat = 3
+    private static let hintBottom: CGFloat = 9
     private let image = CALayer()
     private let readingField = NSTextField(labelWithString: "")
     private let hintField = NSTextField(wrappingLabelWithString: "")
@@ -458,9 +462,11 @@ private final class CardView: NSView {
     func fittingSize(for picture: CGSize) -> CGSize {
         let width = max(picture.width, 120) + 2 * Self.inset
         hintField.preferredMaxLayoutWidth = width - 2 * Self.inset
-        let hintHeight = hint == nil ? 0 : hintField.fittingSize.height + 2
+        // Under the reading: the hint with its room, or 10 pt.
+        let belowReading = hint == nil ? 10 : Self.hintTop + hintField.fittingSize.height + Self.hintBottom
         pictureSize = picture
-        return CGSize(width: width, height: picture.height + 2 * Self.inset + 18 + hintHeight + 6 + controlsHeight)
+        // The picture's inset, the picture, then 20 pt down to the reading's bottom.
+        return CGSize(width: width, height: Self.inset + picture.height + 20 + belowReading + controlsHeight)
     }
 
     private var pictureSize: CGSize = .zero
@@ -483,7 +489,7 @@ private final class CardView: NSView {
         image.frame = CGRect(x: (bounds.width - pictureSize.width) / 2, y: bounds.height - Self.inset - pictureSize.height, width: pictureSize.width, height: pictureSize.height)
         let hintHeight = hintField.isHidden ? 0 : hintField.fittingSize.height
         readingField.frame = CGRect(x: Self.inset, y: image.frame.minY - 20, width: bounds.width - 2 * Self.inset, height: 16)
-        hintField.frame = CGRect(x: Self.inset, y: 6 + controlsHeight, width: bounds.width - 2 * Self.inset, height: hintHeight)
+        hintField.frame = CGRect(x: Self.inset, y: Self.hintBottom + controlsHeight, width: bounds.width - 2 * Self.inset, height: hintHeight)
         CATransaction.commit()
     }
 }
