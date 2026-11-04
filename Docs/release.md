@@ -126,7 +126,10 @@ git tag v0.2.0 && git push origin v0.2.0
 A tag that isn't `v` + `MARKETING_VERSION` stops the run, and a version that's already released (`gh release create` by
 hand pushes its tag too) is left alone. Actions › Release › Run workflow runs it by hand: on a branch, the release makes
 the tag at that commit; with "Publish" off, it builds, signs, and notarizes, and keeps only the artifact, which is the
-way to do step 5 before the feed moves (pushing the tag afterwards builds it again).
+way to do step 5 before the feed moves (pushing the tag afterwards builds it again). Only a version not yet released can
+be built: the script stops when the version's tag is on another commit. So the workflow was first tried on 2026-11-04,
+after 0.1.0, on a throwaway branch that raised the version to 0.1.1 (build 2) with a section in CHANGELOG.md: the hosted
+`xcode-27` runner built, signed, and notarized it (accepted within minutes) in 17 minutes, and its appcast kept 0.1.0.
 
 The job selects Xcode, installs the Metal Toolchain and XcodeGen where they're missing, imports the Developer ID
 identity into a keychain of its own, and runs `Scripts/release.sh --publish` with these, which the script takes in place
