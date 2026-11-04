@@ -32,7 +32,7 @@ public final class ScrollingPanel {
             if case .autoScrollStopped = self { true } else { false }
         }
 
-        /// A hint about something that went wrong or will be lost, shown after an orange warning rather than in
+        /// A hint about something that went wrong or will be lost, shown in the label's ink rather than in
         /// secondary ink like the progress.
         var isWarning: Bool {
             switch self {
@@ -387,7 +387,7 @@ private final class CardView: NSView {
             showHint()
         }
     }
-    /// The hint is a warning: after an orange `exclamationmark.triangle.fill`, in the label's ink.
+    /// The hint is a warning: in the label's ink rather than secondary.
     var hintIsWarning = false {
         didSet {
             guard hintIsWarning != oldValue else { return }
@@ -399,21 +399,10 @@ private final class CardView: NSView {
         let font = Theme.Typeface.label(size: 11, weight: .medium)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
-        let text = NSMutableAttributedString()
-        if hintIsWarning, let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold).applying(.init(paletteColors: [.systemOrange]))) {
-            let mark = NSTextAttachment()
-            mark.image = symbol
-            mark.bounds = CGRect(x: 0, y: -1, width: symbol.size.width, height: symbol.size.height)
-            text.append(NSAttributedString(attachment: mark))
-            text.append(NSAttributedString(string: " "))
-        }
-        text.append(NSAttributedString(string: hint ?? ""))
-        text.addAttributes([
+        hintField.attributedStringValue = NSAttributedString(string: hint ?? "", attributes: [
             .font: font, .paragraphStyle: paragraph,
             .foregroundColor: hintIsWarning ? NSColor.labelColor : NSColor.secondaryLabelColor,
-        ], range: NSRange(location: 0, length: text.length))
-        hintField.attributedStringValue = text
+        ])
         hintField.isHidden = hint == nil
         setAccessibilityHelp(hint)
         needsLayout = true
