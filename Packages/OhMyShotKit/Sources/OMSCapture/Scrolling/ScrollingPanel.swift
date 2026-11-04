@@ -264,12 +264,34 @@ public final class ScrollingPanel {
         let barSize = bar.fittingSize
         let width = max(cardSize.width, barSize.width)
         let height = cardSize.height + 10 + barSize.height
-        card.frame = CGRect(x: (width - cardSize.width) / 2, y: barSize.height + 10, width: cardSize.width, height: cardSize.height)
+        let frame = Self.place(CGSize(width: width, height: height), beside: area, sideways: sideways, on: displayFrame)
+        let outer = Self.withShadowRoom(frame, clear: area)
+        // Where the card and bar's box sits in the window, past the shadow's room.
+        let x = frame.minX - outer.minX, y = frame.minY - outer.minY
+        card.frame = CGRect(x: x + (width - cardSize.width) / 2, y: y + barSize.height + 10, width: cardSize.width, height: cardSize.height)
         speedControl.isHidden = !hasAutoControls
         speedControl.frame = CGRect(x: card.frame.minX + 12, y: card.frame.minY + 8, width: cardSize.width - 24, height: 40)
-        bar.frame = CGRect(x: (width - barSize.width) / 2, y: 0, width: barSize.width, height: barSize.height).integral
-        let frame = Self.place(CGSize(width: width, height: height), beside: area, sideways: sideways, on: displayFrame)
-        window.setFrame(frame, display: false)
+        bar.frame = CGRect(x: x + (width - barSize.width) / 2, y: y, width: barSize.width, height: barSize.height).integral
+        window.setFrame(outer, display: false)
+    }
+
+    /// Room around the card and bar for their shadows, which the window would otherwise cut off square at its edges.
+    static let shadowRoom: CGFloat = 24
+
+    /// `frame` with the shadows' room around it, except over `area`: on the side that faces it the room ends at its
+    /// edge, so the panel never takes the clicks and scrolls meant for what is being captured.
+    static func withShadowRoom(_ frame: CGRect, clear area: CGRect) -> CGRect {
+        var outer = frame.insetBy(dx: -shadowRoom, dy: -shadowRoom)
+        // Placed inside the area's edge (no room beside it): it covers the area anyway.
+        guard !frame.intersects(area), outer.intersects(area) else { return outer }
+        // Whole points, rounded away from the panel, so the window's edge doesn't fall a fraction inside the area.
+        let (minX, maxX) = (area.minX.rounded(.down), area.maxX.rounded(.up))
+        let (minY, maxY) = (area.minY.rounded(.down), area.maxY.rounded(.up))
+        if frame.minX >= maxX, outer.minX < maxX { outer = CGRect(x: maxX, y: outer.minY, width: outer.maxX - maxX, height: outer.height) }
+        if frame.maxX <= minX, outer.maxX > minX { outer.size.width = minX - outer.minX }
+        if frame.minY >= maxY, outer.minY < maxY { outer = CGRect(x: outer.minX, y: maxY, width: outer.width, height: outer.maxY - maxY) }
+        if frame.maxY <= minY, outer.maxY > minY { outer.size.height = minY - outer.minY }
+        return outer
     }
 
     /// Where the panel goes: beside the area along the scroll's cross side, on the display, as near as it fits.
@@ -541,13 +563,21 @@ private final class ScrollingControls: CapsuleBar {
         let autoScroll = addChip(
             symbol: Self.symbol(for: .down), title: String(localized: "Auto", bundle: .module), help: Self.help(for: .down, on: false), target: self, action: #selector(autoScrollClicked)
         )
-        // One width for all its titles, so it doesn't jump as they change: the widest's, in whatever language.
-        let titles = [String(localized: "Pause", bundle: .module), String(localized: "Resume", bundle: .module), String(localized: "Auto", bundle: .module)]
-        let widest = titles.map { title -> CGFloat in
+        // Done and Auto-scroll share one width, so the pair reads as a set and Auto-scroll doesn't jump as its title
+        // changes: the widest of Done and each of Auto-scroll's titles with its symbol, in whatever language.
+        let start = autoScroll.image
+        let pause = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        let looks: [(String, NSImage?)] = [
+            (String(localized: "Pause", bundle: .module), pause), (String(localized: "Resume", bundle: .module), start), (String(localized: "Auto", bundle: .module), start),
+        ]
+        let widest = looks.map { title, image -> CGFloat in
+            autoScroll.image = image
             setTitle(title, of: autoScroll)
             return autoScroll.fittingSize.width
         }.max() ?? 0
-        autoScroll.widthAnchor.constraint(equalToConstant: max(80, ceil(widest) + 16)).isActive = true
+        let width = ceil(max(widest, done.fittingSize.width))
+        autoScroll.widthAnchor.constraint(equalToConstant: width).isActive = true
+        done.widthAnchor.constraint(equalToConstant: width).isActive = true
         autoScroll.setButtonType(.momentaryPushIn)
         autoScroll.setAccessibilityLabel(String(localized: "Auto-scroll", bundle: .module))
         autoScroll.setAccessibilityRole(.button)
