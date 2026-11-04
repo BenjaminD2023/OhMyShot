@@ -1,10 +1,11 @@
 #!/bin/sh
-# Makes a release of the version in Config/Base.xcconfig, and publishes nothing: build/release/<version>/ ends up with
-# OhMyShot-<version>.zip (signed with Developer ID, notarized, stapled) and the appcast.xml that lists it, signed with
-# the Sparkle key in the login keychain. The last lines print the `gh release create` that would publish them.
-# Docs/release.md has the whole procedure.
+# Makes a release of the version in Config/Base.xcconfig, and publishes nothing unless asked: build/release/<version>/
+# ends up with OhMyShot-<version>.zip (signed with Developer ID, notarized, stapled) and the appcast.xml that lists it,
+# signed with the Sparkle key in the login keychain. The last lines print the `gh release create` that would publish
+# them. Docs/release.md has the whole procedure.
 #
 # Usage: Scripts/release.sh            a release
+#        Scripts/release.sh --publish  a release, then that `gh release create` itself (as the release workflow does)
 #        Scripts/release.sh --dry-run  everything that needs no Developer ID: the archive, the zip, the notes and an
 #                                      appcast, signed with this Mac's own identity and not notarized, into
 #                                      build/release/<version>-dry-run/. Never publish what it makes.
@@ -16,23 +17,61 @@
 #   - the Sparkle key in the login keychain, account "ohmyshot" (generate_keys -f <backup> --account ohmyshot)
 #   - a "## [<version>]" section in CHANGELOG.md, which becomes the release notes
 #   - a working tree with nothing uncommitted
+#
+# In CI (.github/workflows/release.yml) these take the login keychain's place, each only when it's set:
+#   SIGNING_KEYCHAIN   a keychain file to take the Developer ID identity from, instead of the keychain search list
+#   NOTARY_KEY         an App Store Connect API key (the .p8 file) for notarytool, instead of the keychain profile,
+#   NOTARY_KEY_ID      with its key ID,
+#   NOTARY_ISSUER      and its issuer ID (none for an individual key)
+#   SPARKLE_KEY_FILE   the Sparkle private key as generate_keys -x exports it, instead of the keychain account
 set -eu
 echo "This fork uses Scripts/package-release.sh; see Docs/releasing.md." >&2
 exit 1
 cd "$(dirname "$0")/.."
 
+fail() {
+  echo "release: $*" >&2
+  exit 1
+}
+
 DRY_RUN=0
-if [ "${1:-}" = "--dry-run" ]; then DRY_RUN=1; fi
+PUBLISH=0
+for arg in "$@"; do
+  case $arg in
+    --dry-run) DRY_RUN=1 ;;
+    --publish) PUBLISH=1 ;;
+    *) fail "unknown option $arg" ;;
+  esac
+done
+[ $DRY_RUN = 0 ] || [ $PUBLISH = 0 ] || fail "a dry run is never published"
 
 REPO=MMFoundation/OhMyShot
 FEED="https://github.com/$REPO/releases/latest/download/appcast.xml"
 SPARKLE_ACCOUNT=ohmyshot
 NOTARY_PROFILE=${NOTARY_PROFILE:-OhMyShot}
 SPARKLE_BIN=build/SourcePackages/artifacts/sparkle/Sparkle/bin
+SIGNING_KEYCHAIN=${SIGNING_KEYCHAIN:-}
+NOTARY_KEY=${NOTARY_KEY:-}
+NOTARY_KEY_ID=${NOTARY_KEY_ID:-}
+NOTARY_ISSUER=${NOTARY_ISSUER:-}
+SPARKLE_KEY_FILE=${SPARKLE_KEY_FILE:-}
 
-fail() {
-  echo "release: $*" >&2
-  exit 1
+# The signing identities, from SIGNING_KEYCHAIN alone when it's set: on a Mac that also has the certificate in the
+# login keychain, codesign would otherwise find it twice.
+identity() {
+  security find-identity -v -p codesigning ${SIGNING_KEYCHAIN:+"$SIGNING_KEYCHAIN"} \
+    | awk -v kind="\"$1: " 'index($0, kind) { print $2; exit }'
+}
+
+# notarytool with the App Store Connect API key when there is one, and with the keychain profile otherwise.
+notarytool() {
+  if [ -n "$NOTARY_KEY" ]; then
+    set -- "$@" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID"
+    if [ -n "$NOTARY_ISSUER" ]; then set -- "$@" --issuer "$NOTARY_ISSUER"; fi
+  else
+    set -- "$@" --keychain-profile "$NOTARY_PROFILE"
+  fi
+  xcrun notarytool "$@"
 }
 
 VERSION=$(sed -n 's/^MARKETING_VERSION = //p' Config/Base.xcconfig)
@@ -49,20 +88,31 @@ fi
 # What has to be in place before anything is built.
 if [ $DRY_RUN = 0 ]; then
   [ -z "$(git status --porcelain --untracked-files=no)" ] || fail "commit or stash the changes first"
-  IDENTITY=$(security find-identity -v -p codesigning | awk '/"Developer ID Application: /{print $2; exit}')
-  [ -n "$IDENTITY" ] || fail "no Developer ID Application certificate in the keychain"
+  IDENTITY=$(identity "Developer ID Application")
+  [ -n "$IDENTITY" ] || fail "no Developer ID Application certificate in ${SIGNING_KEYCHAIN:-the keychain}"
   TIMESTAMP=--timestamp
-  xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 \
-    || fail "no notarytool credentials under the keychain profile \"$NOTARY_PROFILE\" (xcrun notarytool store-credentials)"
+  if [ -n "$NOTARY_KEY" ]; then
+    [ -f "$NOTARY_KEY" ] && [ -n "$NOTARY_KEY_ID" ] || fail "NOTARY_KEY needs the .p8 file and NOTARY_KEY_ID"
+    notarytool history >/dev/null 2>&1 || fail "notarytool doesn't take the App Store Connect API key $NOTARY_KEY_ID"
+  else
+    [ -z "$NOTARY_KEY_ID$NOTARY_ISSUER" ] || fail "NOTARY_KEY_ID and NOTARY_ISSUER need NOTARY_KEY, the .p8 file"
+    notarytool history >/dev/null 2>&1 \
+      || fail "no notarytool credentials under the keychain profile \"$NOTARY_PROFILE\" (xcrun notarytool store-credentials)"
+  fi
   if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && [ "$(git rev-parse "$TAG^{commit}")" != "$(git rev-parse HEAD)" ]; then
     fail "the tag $TAG is on another commit: raise MARKETING_VERSION"
   fi
 fi
 if [ $DRY_RUN = 1 ]; then
-  IDENTITY=$(security find-identity -v -p codesigning | awk '/"Apple Development: /{print $2; exit}')
+  IDENTITY=$(identity "Apple Development")
   [ -n "$IDENTITY" ] || fail "no Apple Development identity for the dry run"
   TIMESTAMP=--timestamp=none
 fi
+if [ $PUBLISH = 1 ]; then
+  gh api "repos/$REPO" --silent || fail "--publish needs gh to reach $REPO (signed in, or GH_TOKEN)"
+  if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then fail "$TAG is released already"; fi
+fi
+[ -z "$SPARKLE_KEY_FILE" ] || [ -s "$SPARKLE_KEY_FILE" ] || fail "no Sparkle key in $SPARKLE_KEY_FILE"
 SECTION=$VERSION
 if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
   [ $DRY_RUN = 1 ] || fail "CHANGELOG.md has no \"## [$VERSION]\" section for the release notes"
@@ -78,6 +128,18 @@ fi
 
 rm -rf "$OUT"
 mkdir -p "$OUT/archives"
+
+# The package versions committed in Config/Package.resolved, and no others (the build below resolves none of its own):
+# a new checkout, as in CI, has no versions yet, and this Mac's may have moved on since. Their originHash depends on
+# where the checkout is, and Xcode doesn't hold it against them.
+PINS=OhMyShot.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+grep -v '"originHash"' Config/Package.resolved > "$OUT/pins"
+if [ -f "$PINS" ] && ! grep -v '"originHash"' "$PINS" | cmp -s - "$OUT/pins"; then
+  echo "OhMyShot.xcodeproj has other package versions than Config/Package.resolved: building with the committed ones."
+fi
+rm "$OUT/pins"
+mkdir -p "$(dirname "$PINS")"
+cp Config/Package.resolved "$PINS"
 
 # The feed so far, so the new appcast keeps the versions before it; the first release has none. Its build number has
 # to be below this one, or Sparkle would offer nothing.
@@ -104,6 +166,7 @@ xcodebuild \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath build \
+  -onlyUsePackageVersionsFromResolvedFile \
   DEPLOYMENT_POSTPROCESSING=YES \
   STRIP_INSTALLED_PRODUCT=YES \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
@@ -114,6 +177,11 @@ xcodebuild \
 if grep "^error:" "$OUT/build.log" | grep -qv "failed with exit code 0 but produced no further output"; then
   grep "^error:" "$OUT/build.log" >&2
   fail "the build reported errors: $OUT/build.log"
+fi
+# The notices name every package the app was just built with, at the version it was built with.
+if ! python3 -I Scripts/acknowledgments.py --check; then
+  [ $DRY_RUN = 1 ] || fail "App/Acknowledgments.md doesn't match the packages the app was built with"
+  echo "A release would stop here."
 fi
 APP="$OUT/OhMyShot.app"
 ditto build/Build/Products/Release/OhMyShot.app "$APP"
@@ -131,9 +199,11 @@ sign() {
     /usr/libexec/PlistBuddy -c "Delete :$key" "$plist" >/dev/null 2>&1 || true
   done
   if [ -s "$plist" ] && /usr/libexec/PlistBuddy -c "Print" "$plist" 2>/dev/null | grep -q " = "; then
-    codesign --force --sign "$IDENTITY" --options runtime $TIMESTAMP --entitlements "$plist" "$piece"
+    codesign --force --sign "$IDENTITY" ${SIGNING_KEYCHAIN:+--keychain "$SIGNING_KEYCHAIN"} --options runtime \
+      "$TIMESTAMP" --entitlements "$plist" "$piece"
   else
-    codesign --force --sign "$IDENTITY" --options runtime $TIMESTAMP "$piece"
+    codesign --force --sign "$IDENTITY" ${SIGNING_KEYCHAIN:+--keychain "$SIGNING_KEYCHAIN"} --options runtime \
+      "$TIMESTAMP" "$piece"
   fi
 }
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
@@ -181,10 +251,37 @@ ZIP="$OUT/archives/OhMyShot-$VERSION.zip"
 if [ $DRY_RUN = 0 ]; then
   echo "Notarizing..."
   ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/notarize.zip"
-  xcrun notarytool submit "$OUT/notarize.zip" --keychain-profile "$NOTARY_PROFILE" --wait | tee "$OUT/notarization.txt"
-  grep -q "status: Accepted" "$OUT/notarization.txt" \
-    || fail "notarization didn't accept it: xcrun notarytool log <id> --keychain-profile $NOTARY_PROFILE"
-  rm "$OUT/notarize.zip"
+  # The upload, again when it's cut off midway (it has timed out), which leaves Apple a submission that never ends.
+  SUBMISSION=
+  for try in 1 2 3; do
+    if notarytool submit "$OUT/notarize.zip" > "$OUT/submission.txt" 2>&1; then
+      SUBMISSION=$(sed -n 's/^ *id: //p' "$OUT/submission.txt" | head -1)
+      break
+    fi
+    cat "$OUT/submission.txt" >&2
+    echo "The upload failed (try $try of 3)." >&2
+    [ $try = 3 ] || sleep 60
+  done
+  [ -n "$SUBMISSION" ] || fail "couldn't upload the app to the notary service: $OUT/submission.txt"
+  echo "Submitted as $SUBMISSION. Waiting for Apple (minutes as a rule, hours at times)..."
+  # Asked once a minute, and again when an asking fails: notarytool's own --wait gives up at the first network error
+  # (a TLS one has ended it), though the submission goes on.
+  STATUS=
+  WAITED=0
+  while :; do
+    STATUS=$(notarytool info "$SUBMISSION" 2>/dev/null | sed -n 's/^ *status: //p')
+    case $STATUS in Accepted | Invalid | Rejected) break ;; esac
+    sleep 60
+    WAITED=$((WAITED + 1))
+    [ $((WAITED % 15)) != 0 ] || echo "  ${STATUS:-no answer} after $WAITED minutes"
+  done
+  notarytool info "$SUBMISSION" | tee "$OUT/notarization.txt"
+  if [ "$STATUS" != Accepted ]; then
+    # Apple's reasons, fetched while the credentials are at hand (in CI they aren't, afterwards).
+    notarytool log "$SUBMISSION" "$OUT/notarization-log.json" || true
+    fail "notarization didn't accept it ($STATUS): $OUT/notarization-log.json says why"
+  fi
+  rm "$OUT/notarize.zip" "$OUT/submission.txt"
   xcrun stapler staple "$APP"
   xcrun stapler validate "$APP"
   # Asks for the notarization itself rather than Gatekeeper's verdict, which says nothing on a Mac where Gatekeeper
@@ -204,8 +301,13 @@ grep '^\[[^]]*\]: http' CHANGELOG.md >> "$NOTES" || true
 cp "$NOTES" "$OUT/release-notes.md"
 
 echo "Writing the appcast..."
+if [ -n "$SPARKLE_KEY_FILE" ]; then
+  set -- --ed-key-file "$SPARKLE_KEY_FILE"
+else
+  set -- --account "$SPARKLE_ACCOUNT"
+fi
 "$SPARKLE_BIN/generate_appcast" \
-  --account "$SPARKLE_ACCOUNT" \
+  "$@" \
   --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" \
   --link "https://github.com/$REPO" \
   --embed-release-notes \
@@ -213,11 +315,19 @@ echo "Writing the appcast..."
   "$OUT/archives"
 grep -q "<sparkle:version>$BUILD</sparkle:version>" "$OUT/archives/appcast.xml" || fail "the appcast doesn't list build $BUILD"
 grep -q "sparkle-signatures:" "$OUT/archives/appcast.xml" || fail "the appcast isn't signed"
+# generate_appcast signs the feed with any key, but leaves the zip unsigned (with only a warning) when the key isn't
+# the one SUPublicEDKey names, and the app would refuse both.
+grep -q "OhMyShot-$VERSION\.zip\"[^>]*sparkle:edSignature=" "$OUT/archives/appcast.xml" \
+  || fail "the appcast doesn't sign the zip: the Sparkle key isn't the one SUPublicEDKey in Config/Info.plist names"
 
 echo
 echo "Made $(du -h "$ZIP" | cut -f1 | tr -d ' ') $ZIP ($(du -sh "$APP" | cut -f1 | tr -d ' ') unzipped) and $OUT/archives/appcast.xml."
 if [ $DRY_RUN = 1 ]; then
   echo "A dry run: signed with this Mac's identity and not notarized. Don't publish it."
+elif [ $PUBLISH = 1 ]; then
+  echo "Publishing $TAG..."
+  gh release create "$TAG" "$ZIP" "$OUT/archives/appcast.xml" --repo "$REPO" --target "$(git rev-parse HEAD)" \
+    --title "OhMyShot $VERSION" --notes-file "$OUT/release-notes.md"
 else
   echo "To publish it (the zip and the appcast go to the release; the feed is the latest release's appcast.xml):"
   echo "  gh release create $TAG '$ZIP' '$OUT/archives/appcast.xml' --repo $REPO --target $(git rev-parse HEAD) --title 'OhMyShot $VERSION' --notes-file '$OUT/release-notes.md'"

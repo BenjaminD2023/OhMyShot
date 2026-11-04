@@ -32,7 +32,7 @@ public final class ScrollingPanel {
             if case .autoScrollStopped = self { true } else { false }
         }
 
-        /// A hint about something that went wrong or will be lost, shown after an orange warning rather than in
+        /// A hint about something that went wrong or will be lost, shown in the label's ink rather than in
         /// secondary ink like the progress.
         var isWarning: Bool {
             switch self {
@@ -264,12 +264,34 @@ public final class ScrollingPanel {
         let barSize = bar.fittingSize
         let width = max(cardSize.width, barSize.width)
         let height = cardSize.height + 10 + barSize.height
-        card.frame = CGRect(x: (width - cardSize.width) / 2, y: barSize.height + 10, width: cardSize.width, height: cardSize.height)
+        let frame = Self.place(CGSize(width: width, height: height), beside: area, sideways: sideways, on: displayFrame)
+        let outer = Self.withShadowRoom(frame, clear: area)
+        // Where the card and bar's box sits in the window, past the shadow's room.
+        let x = frame.minX - outer.minX, y = frame.minY - outer.minY
+        card.frame = CGRect(x: x + (width - cardSize.width) / 2, y: y + barSize.height + 10, width: cardSize.width, height: cardSize.height)
         speedControl.isHidden = !hasAutoControls
         speedControl.frame = CGRect(x: card.frame.minX + 12, y: card.frame.minY + 8, width: cardSize.width - 24, height: 40)
-        bar.frame = CGRect(x: (width - barSize.width) / 2, y: 0, width: barSize.width, height: barSize.height).integral
-        let frame = Self.place(CGSize(width: width, height: height), beside: area, sideways: sideways, on: displayFrame)
-        window.setFrame(frame, display: false)
+        bar.frame = CGRect(x: x + (width - barSize.width) / 2, y: y, width: barSize.width, height: barSize.height).integral
+        window.setFrame(outer, display: false)
+    }
+
+    /// Room around the card and bar for their shadows, which the window would otherwise cut off square at its edges.
+    static let shadowRoom: CGFloat = 24
+
+    /// `frame` with the shadows' room around it, except over `area`: on the side that faces it the room ends at its
+    /// edge, so the panel never takes the clicks and scrolls meant for what is being captured.
+    static func withShadowRoom(_ frame: CGRect, clear area: CGRect) -> CGRect {
+        var outer = frame.insetBy(dx: -shadowRoom, dy: -shadowRoom)
+        // Placed inside the area's edge (no room beside it): it covers the area anyway.
+        guard !frame.intersects(area), outer.intersects(area) else { return outer }
+        // Whole points, rounded away from the panel, so the window's edge doesn't fall a fraction inside the area.
+        let (minX, maxX) = (area.minX.rounded(.down), area.maxX.rounded(.up))
+        let (minY, maxY) = (area.minY.rounded(.down), area.maxY.rounded(.up))
+        if frame.minX >= maxX, outer.minX < maxX { outer = CGRect(x: maxX, y: outer.minY, width: outer.maxX - maxX, height: outer.height) }
+        if frame.maxX <= minX, outer.maxX > minX { outer.size.width = minX - outer.minX }
+        if frame.minY >= maxY, outer.minY < maxY { outer = CGRect(x: outer.minX, y: maxY, width: outer.width, height: outer.maxY - maxY) }
+        if frame.maxY <= minY, outer.maxY > minY { outer.size.height = minY - outer.minY }
+        return outer
     }
 
     /// Where the panel goes: beside the area along the scroll's cross side, on the display, as near as it fits.
@@ -365,7 +387,7 @@ private final class CardView: NSView {
             showHint()
         }
     }
-    /// The hint is a warning: after an orange `exclamationmark.triangle.fill`, in the label's ink.
+    /// The hint is a warning: in the label's ink rather than secondary.
     var hintIsWarning = false {
         didSet {
             guard hintIsWarning != oldValue else { return }
@@ -377,27 +399,20 @@ private final class CardView: NSView {
         let font = Theme.Typeface.label(size: 11, weight: .medium)
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
-        let text = NSMutableAttributedString()
-        if hintIsWarning, let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 10, weight: .semibold).applying(.init(paletteColors: [.systemOrange]))) {
-            let mark = NSTextAttachment()
-            mark.image = symbol
-            mark.bounds = CGRect(x: 0, y: -1, width: symbol.size.width, height: symbol.size.height)
-            text.append(NSAttributedString(attachment: mark))
-            text.append(NSAttributedString(string: " "))
-        }
-        text.append(NSAttributedString(string: hint ?? ""))
-        text.addAttributes([
+        hintField.attributedStringValue = NSAttributedString(string: hint ?? "", attributes: [
             .font: font, .paragraphStyle: paragraph,
             .foregroundColor: hintIsWarning ? NSColor.labelColor : NSColor.secondaryLabelColor,
-        ], range: NSRange(location: 0, length: text.length))
-        hintField.attributedStringValue = text
+        ])
         hintField.isHidden = hint == nil
         setAccessibilityHelp(hint)
         needsLayout = true
     }
 
     private static let inset: CGFloat = 6
+    /// The hint's frame from the reading's and from the card's bottom (or the speed slider). Text frames carry more
+    /// room above the glyphs than below, so these differ for the hint to look evenly spaced, about 12 pt each side.
+    private static let hintTop: CGFloat = 3
+    private static let hintBottom: CGFloat = 9
     private let image = CALayer()
     private let readingField = NSTextField(labelWithString: "")
     private let hintField = NSTextField(wrappingLabelWithString: "")
@@ -447,9 +462,11 @@ private final class CardView: NSView {
     func fittingSize(for picture: CGSize) -> CGSize {
         let width = max(picture.width, 120) + 2 * Self.inset
         hintField.preferredMaxLayoutWidth = width - 2 * Self.inset
-        let hintHeight = hint == nil ? 0 : hintField.fittingSize.height + 2
+        // Under the reading: the hint with its room, or 10 pt.
+        let belowReading = hint == nil ? 10 : Self.hintTop + hintField.fittingSize.height + Self.hintBottom
         pictureSize = picture
-        return CGSize(width: width, height: picture.height + 2 * Self.inset + 18 + hintHeight + 6 + controlsHeight)
+        // The picture's inset, the picture, then 20 pt down to the reading's bottom.
+        return CGSize(width: width, height: Self.inset + picture.height + 20 + belowReading + controlsHeight)
     }
 
     private var pictureSize: CGSize = .zero
@@ -472,7 +489,7 @@ private final class CardView: NSView {
         image.frame = CGRect(x: (bounds.width - pictureSize.width) / 2, y: bounds.height - Self.inset - pictureSize.height, width: pictureSize.width, height: pictureSize.height)
         let hintHeight = hintField.isHidden ? 0 : hintField.fittingSize.height
         readingField.frame = CGRect(x: Self.inset, y: image.frame.minY - 20, width: bounds.width - 2 * Self.inset, height: 16)
-        hintField.frame = CGRect(x: Self.inset, y: 6 + controlsHeight, width: bounds.width - 2 * Self.inset, height: hintHeight)
+        hintField.frame = CGRect(x: Self.inset, y: Self.hintBottom + controlsHeight, width: bounds.width - 2 * Self.inset, height: hintHeight)
         CATransaction.commit()
     }
 }
@@ -541,13 +558,21 @@ private final class ScrollingControls: CapsuleBar {
         let autoScroll = addChip(
             symbol: Self.symbol(for: .down), title: String(localized: "Auto", bundle: .module), help: Self.help(for: .down, on: false), target: self, action: #selector(autoScrollClicked)
         )
-        // One width for all its titles, so it doesn't jump as they change: the widest's, in whatever language.
-        let titles = [String(localized: "Pause", bundle: .module), String(localized: "Resume", bundle: .module), String(localized: "Auto", bundle: .module)]
-        let widest = titles.map { title -> CGFloat in
+        // Done and Auto-scroll share one width, so the pair reads as a set and Auto-scroll doesn't jump as its title
+        // changes: the widest of Done and each of Auto-scroll's titles with its symbol, in whatever language.
+        let start = autoScroll.image
+        let pause = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        let looks: [(String, NSImage?)] = [
+            (String(localized: "Pause", bundle: .module), pause), (String(localized: "Resume", bundle: .module), start), (String(localized: "Auto", bundle: .module), start),
+        ]
+        let widest = looks.map { title, image -> CGFloat in
+            autoScroll.image = image
             setTitle(title, of: autoScroll)
             return autoScroll.fittingSize.width
         }.max() ?? 0
-        autoScroll.widthAnchor.constraint(equalToConstant: max(80, ceil(widest) + 16)).isActive = true
+        let width = ceil(max(widest, done.fittingSize.width))
+        autoScroll.widthAnchor.constraint(equalToConstant: width).isActive = true
+        done.widthAnchor.constraint(equalToConstant: width).isActive = true
         autoScroll.setButtonType(.momentaryPushIn)
         autoScroll.setAccessibilityLabel(String(localized: "Auto-scroll", bundle: .module))
         autoScroll.setAccessibilityRole(.button)
