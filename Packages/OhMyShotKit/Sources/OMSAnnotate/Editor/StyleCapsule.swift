@@ -446,6 +446,10 @@ final class StyleCapsule: NSView {
         guard sized else { return [] }
         switch kind {
         case .text:
+        // Setting the panel's color sends its action: aimed at nothing first, so this color never reaches the
+        // Studio or the other editor that used the panel last.
+        panel.setTarget(nil)
+        panel.setAction(nil)
             let sizes: [CGFloat] = [14, 20, 28, 40]
             // A size set some other way shows as the nearest step.
             let nearest = Self.nearest(settings.fontSize, in: sizes)
