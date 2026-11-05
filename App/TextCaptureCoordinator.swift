@@ -36,16 +36,17 @@ final class TextCaptureCoordinator {
     private var panel: TextRecognitionWindowController?
     /// The last recognition, so the card can switch between kept and joined line breaks.
     private var last: Recognition?
-    /// The model pack the OCR panel reads with beside Vision, and the text reader that reads with it (L2 beside L1,
-    /// Docs/ocr.md › L2 beside L1); nil while none is installed. Asked as each panel opens.
-    var secondReader: (() -> (pack: TextReaderPack, helper: URL)?)?
-    /// The formula pack's folder and the text reader that reads with it (Capture Formula, and the formulas among text;
-    /// Docs/ocr.md › The formula pack); nil while the pack isn't installed.
-    var formulaReader: (() -> (pack: URL, helper: URL)?)?
-    /// The formula pack's and the VLM pack's folders, whichever are installed, and the text reader that reads with them
-    /// (the formulas, tables, and charts among text; Docs/ocr.md › Formulas among text, › The VLM pack); nil while neither
-    /// is installed.
-    var elementReader: (() -> (formulas: URL?, vlm: URL?, helper: URL)?)?
+    /// The text reader and the model packs installed for it, asked as each reading starts (as each panel opens): the
+    /// pack the OCR panel reads with beside Vision (L2 beside L1, Docs/ocr.md › L2 beside L1), the formula pack (Capture
+    /// Formula, and the formulas among text; Docs/ocr.md › The formula pack), and the VLM pack (the tables and charts
+    /// among text; Docs/ocr.md › Formulas among text, › The VLM pack). Nil while the reader isn't in the app.
+    var readers: (() -> TextReaderPacks.Installed?)?
+    /// The text reader with the packs that read the formulas, tables, and charts among text, the formula pack and the
+    /// VLM pack, whichever are installed; nil while neither is.
+    private var elementReader: TextReaderPacks.Installed? {
+        guard let reader = readers?(), reader.formula != nil || reader.vlm != nil else { return nil }
+        return reader
+    }
     /// How long Capture Text lets the VLM read tables and charts before it copies Vision's reading of what is left: a
     /// table takes 0.2–1.2 s once the model's files are in memory, the first after a restart about 7 s
     /// (Docs/ocr.md › The VLM pack).
@@ -136,8 +137,7 @@ final class TextCaptureCoordinator {
                 Task { await self.openPanel(window: target) }
             case .windows(let targets, let modifiers) where modifiers.contains(.option):
                 done?(nil)
-                if let first = targets.first {
-                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                if let union = targets.combinedFrame {
                     Task { await self.openPanel(region: union) }
                 }
             case .region(let rect, _, _, let frozen):
@@ -147,8 +147,7 @@ final class TextCaptureCoordinator {
                 highlight.show(target.frame)
                 captureReading = Task { await self.recognize(window: target, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
             case .windows(let targets, _):
-                if let first = targets.first {
-                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                if let union = targets.combinedFrame {
                     highlight.show(union)
                     captureReading = Task { await self.recognize(region: union, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
                 } else {
@@ -286,11 +285,11 @@ final class TextCaptureCoordinator {
         let cloud = allowsCloud ? captureTextCloud?() : nil
         let cloudReading = cloud.map { cloud in Task { try await cloud.read(image, joinLines) } }
         waitingForCloud = cloudReading
-        let reader = elementReader?()
+        let reader = elementReader
         let vlm = reader?.vlm.flatMap { isTerminal(place) ? nil : $0 }
         if reader?.vlm != nil, vlm == nil { Log.capture.notice("Capture Text leaves the tables to Vision: the picture is of a terminal") }
         let formulas = reader.map { reader in
-            Task { await Self.elements(in: image, formulas: reader.formulas, vlm: vlm, seconds: Self.tableWait, helper: reader.helper) }
+            Task { await Self.elements(in: image, formulas: reader.formula, vlm: vlm, seconds: Self.tableWait, helper: reader.helper) }
         }
         defer {
             cloudReading?.cancel()
@@ -446,14 +445,10 @@ final class TextCaptureCoordinator {
     }
 
     /// The task's outcome, or nil when it takes longer than `limit` (the task goes on; the caller may cancel it).
-    nonisolated static func first<Value: Sendable>(_ task: Task<Value, any Error>, within limit: Duration) async -> Result<Value, any Error>? {
-        let (outcomes, outcome) = AsyncStream.makeStream(of: Result<Value, any Error>?.self)
+    nonisolated static func first<Value: Sendable, Failure: Error>(_ task: Task<Value, Failure>, within limit: Duration) async -> Result<Value, Failure>? {
+        let (outcomes, outcome) = AsyncStream.makeStream(of: Result<Value, Failure>?.self)
         let waiting = Task {
-            do {
-                outcome.yield(.success(try await task.value))
-            } catch {
-                outcome.yield(.failure(error))
-            }
+            outcome.yield(await task.result)
             outcome.finish()
         }
         let timer = Task {
@@ -523,7 +518,7 @@ final class TextCaptureCoordinator {
     /// (`copiesToClipboard`) and choose whether the screen freezes (`freezes`, else Settings').
     func captureFormula(copiesToClipboard: Bool = true, freezes: Bool? = nil, done: ((String?) -> Void)? = nil) {
         guard !overlay.isActive else { done?(nil); return }
-        guard formulaReader?() != nil else {
+        guard readers?()?.formula != nil else {
             Log.capture.error("Capture Formula needs the formula pack, which isn't installed")
             NSSound.beep()
             done?(nil)
@@ -546,8 +541,7 @@ final class TextCaptureCoordinator {
                 highlight.show(target.frame)
                 Task { await self.readFormula(window: target, done: done) }
             case .windows(let targets, let modifiers):
-                if let first = targets.first {
-                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                if let union = targets.combinedFrame {
                     if modifiers.contains(.option) {
                         done?(nil)
                         Task { await self.openPanel(region: union) }
@@ -607,7 +601,7 @@ final class TextCaptureCoordinator {
         let capturedScale = selection.width > 0 ? CGFloat(image.width) / selection.width : 1
         lastCapturedImage = (image, capturedScale, String(localized: "Screen Area"), nil)
         let showsCard = settings.showTextResult
-        guard let reader = formulaReader?() else {
+        guard let reader = readers?(), let pack = reader.formula else {
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
             if showsCard { presentCard(.noFormula, near: selection) }
             done?(nil)
@@ -615,10 +609,10 @@ final class TextCaptureCoordinator {
         }
         let probe = LatencyProbe("ocr.formula")
         let started = ContinuousClock.now
-        let formula = await Self.formula(in: image, pack: reader.pack, helper: reader.helper)
+        let formula = await Self.formula(in: image, pack: pack, helper: reader.helper)
         probe.end()
         guard let formula, formula.isFormula else {
-            Log.capture.notice("Capture Formula found no formula (\(formula?.ending ?? "failed", privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+            Log.capture.notice("Capture Formula found no formula (\(formula?.ended.rawValue ?? "failed", privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
             if showsCard { presentCard(.noFormula, near: selection) }
             done?(nil)
@@ -629,80 +623,6 @@ final class TextCaptureCoordinator {
         Log.capture.notice("Capture Formula \(copiesToClipboard ? "copied" : "read", privacy: .public) \(formula.latex.count, privacy: .public) characters of LaTeX in \(String(describing: ContinuousClock.now - started), privacy: .public)")
         if showsCard { presentCard(.copiedFormula(latex: formula.latex), near: selection) }
         done?(formula.latex)
-    }
-
-    /// The formula the pack reads in `image`, in a run of the text reader, or nil when the reader couldn't read it.
-    @concurrent
-    private nonisolated static func formula(in image: CGImage, pack: URL, helper: URL) async -> TextReaderTool.Formula? {
-        guard let file = formulaPicture(image) else { return nil }
-        defer { try? FileManager.default.removeItem(at: file) }
-        do {
-            return try await TextReaderTool.formula(ofPictureAt: file, pack: pack, helper: helper)
-        } catch {
-            Log.capture.error("Reading a formula failed: \(String(describing: error), privacy: .public)")
-            return nil
-        }
-    }
-
-    /// The formulas the formula pack reads and the tables and charts the VLM pack reads in `image`, in a run of the text
-    /// reader (Docs/ocr.md › Formulas among text, › The VLM pack), the VLM reading for `seconds` at most; none when it
-    /// can't, or in a picture too large to look in. `found` is told how many there are to read.
-    @concurrent
-    nonisolated static func elements(
-        in image: CGImage, formulas: URL?, vlm: URL?, seconds: Double, helper: URL,
-        found: (@Sendable (TextRecognitionWindowController.Elements.Counts) -> Void)? = nil
-    ) async -> TextRecognitionWindowController.Elements.Found {
-        guard formulas != nil || vlm != nil, LayoutFinder.finds(width: image.width, height: image.height), let file = formulaPicture(image) else { return .init() }
-        defer { try? FileManager.default.removeItem(at: file) }
-        let counted: (@Sendable (TextReaderTool.Found) -> Void)? = found.map { found in
-            { @Sendable counts in found(.init(formulas: counts.formulas, tables: counts.tables)) }
-        }
-        var pressure: MemoryPressure?
-        #if DEBUG
-        // debug/memory-pressure: what the reader takes the system's memory pressure to be.
-        pressure = UserDefaults.standard.string(forKey: "debugMemoryPressure").flatMap(MemoryPressure.init(name:))
-        #endif
-        do {
-            let read = try await TextReaderTool.elements(
-                ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, helper: helper, found: counted
-            )
-            if read.tablesLeft > 0 {
-                Log.capture.notice("Left \(read.tablesLeft, privacy: .public) tables and charts as Vision read them: the system is short of memory for the VLM pack")
-            }
-            return .init(
-                formulas: read.formulas.map { formula in
-                    FormulaMerge.Formula(kind: formula.kind == "display" ? .display : .inline, box: formula.box, latex: formula.latex)
-                },
-                tables: read.tables.map { table in
-                    TableMerge.Table(kind: table.kind == "chart" ? .chart : .table, box: table.box, rows: table.rows, isWhole: table.whole)
-                }
-            )
-        } catch {
-            if !Task.isCancelled { Log.capture.error("Finding formulas and tables failed: \(String(describing: error), privacy: .public)") }
-            return .init()
-        }
-    }
-
-    /// What a merge of tables did, in numbers: how many were taken, and why each other was left.
-    nonisolated static func log(_ merge: TableMerge.Merged, of tables: [TableMerge.Table], in surface: String, after elapsed: Duration) {
-        let refusals = merge.refused.map { "\(tables[$0.index].kind.rawValue) \($0.refusal.rawValue)" }.joined(separator: ", ")
-        let cut = merge.cutRows > 0 ? ", \(merge.cutRows) rows the picture's edge cut left as Vision read them" : ""
-        Log.capture.notice("\(surface, privacy: .public) took \(merge.taken.count, privacy: .public) of \(tables.count, privacy: .public) tables and charts read with the VLM pack\(refusals.isEmpty ? "" : " (left: \(refusals))", privacy: .public)\(cut, privacy: .public), \(String(describing: elapsed), privacy: .public) after Vision's reading")
-    }
-
-    /// `image` as an uncompressed TIFF for the text reader, written and read in a few milliseconds; the caller removes it.
-    private nonisolated static func formulaPicture(_ image: CGImage) -> URL? {
-        let folder = FileManager.default.temporaryDirectory.appending(path: "Formula Readings", directoryHint: .isDirectory)
-        let file = folder.appending(path: "\(UUID().uuidString).tiff")
-        guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil,
-              let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.tiff.identifier as CFString, 1, nil)
-        else { return nil }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else {
-            try? FileManager.default.removeItem(at: file)
-            return nil
-        }
-        return file
     }
 
     // MARK: Translate Area
@@ -727,8 +647,7 @@ final class TextCaptureCoordinator {
                 self?.highlight.show(target.frame)
                 Task { await self?.translate(window: target, inPanel: modifiers.contains(.option)) }
             case .windows(let targets, let modifiers):
-                if let first = targets.first {
-                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                if let union = targets.combinedFrame {
                     self?.highlight.show(union)
                     Task { await self?.translate(region: union, frozen: nil, inPanel: modifiers.contains(.option)) }
                 }
@@ -770,11 +689,11 @@ final class TextCaptureCoordinator {
             return
         }
         let probe = LatencyProbe("ocr.translate-area")
-        let choice = settings.translationTarget
+        let target = settings.translationLanguage
         do {
             let lines = try await pipeline.recognize(image).lines
             let units = TranslationUnits.group(lines)
-            let outcome = try await translator.translate(units, to: choice.isEmpty ? nil : Locale.Language(identifier: choice))
+            let outcome = try await translator.translate(units, to: target)
             guard !outcome.translations.isEmpty else {
                 let skipped = Dictionary(grouping: units.compactMap(\.skip), by: { "\($0)" }).map { "\($1.count) \($0)" }.sorted().joined(separator: ", ")
                 Log.capture.notice("Translate Area translated nothing into \(outcome.target.minimalIdentifier, privacy: .public): \(units.count, privacy: .public) units, skipped \(skipped, privacy: .public), \(outcome.inTarget.count, privacy: .public) already in it, to download \(outcome.needsDownload.map(\.minimalIdentifier), privacy: .public); opening the panel")
@@ -810,13 +729,6 @@ final class TextCaptureCoordinator {
 
     func closeLens() { lens.close(animated: false) }
     #endif
-
-    private func announce(_ message: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message,
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
-    }
 
     // MARK: OCR panel
 
@@ -873,7 +785,7 @@ final class TextCaptureCoordinator {
     /// screen (`place`), the apps' characters while Settings says so.
     func analyzer(for place: AppTextPlace?) -> @Sendable (CGImage) async throws -> TextAnalysis {
         let pipeline = pipeline
-        let second = secondReader?()
+        let second = readers?().flatMap { reader in reader.second.map { (pack: $0, helper: reader.helper) } }
         let place = settings.readsAppText ? place : nil
         let layout = displays.layout
         return { image in
@@ -908,8 +820,8 @@ final class TextCaptureCoordinator {
     /// pack is installed. Asked as each panel
     /// opens.
     private func panelElements(readsTables: Bool = true) -> TextRecognitionWindowController.Elements? {
-        guard let found = elementReader?() else { return nil }
-        let reader = (formulas: found.formulas, vlm: readsTables ? found.vlm : nil, helper: found.helper)
+        guard let found = elementReader else { return nil }
+        let reader = (formulas: found.formula, vlm: readsTables ? found.vlm : nil, helper: found.helper)
         guard reader.formulas != nil || reader.vlm != nil else { return nil }
         let pipeline = pipeline
         return .init(
@@ -920,68 +832,12 @@ final class TextCaptureCoordinator {
         )
     }
 
-    /// How long the panel waits for the second reading once Vision's is done. A pack whose models are compiled answers
-    /// in about half a second (Docs/ocr.md › L2 beside L1); compiling them takes 11 s.
-    nonisolated static let secondReadingWait: Duration = .seconds(3)
-
-    /// The lines the pack reads in `image`, in a run of the text reader, or nil when it can't read them or hasn't
-    /// answered within `secondReadingWait`. The run is not stopped when the wait ends: by then it is most likely
-    /// compiling the pack's models for the Neural Engine (the first read after an install or a system update), and
-    /// stopped, it would start over on every panel.
-    @concurrent
-    private nonisolated static func secondReading(of image: CGImage, with pack: TextReaderPack, helper: URL) async -> [OCRLine]? {
-        let folder = FileManager.default.temporaryDirectory.appending(path: "Second Readings", directoryHint: .isDirectory)
-        let file = folder.appending(path: "\(UUID().uuidString).tiff")
-        // Uncompressed: written and read in a few milliseconds, where PNG takes a tenth of a second for a large picture.
-        guard (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil,
-              let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.tiff.identifier as CFString, 1, nil)
-        else { return nil }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else { return nil }
-
-        let reading = Task.detached(priority: .userInitiated) { () -> [TextReaderTool.Line]? in
-            defer { try? FileManager.default.removeItem(at: file) }
-            do {
-                return try await TextReaderTool.lines(ofPictureAt: file, pack: pack.folder, helper: helper)
-            } catch {
-                Log.capture.error("The second reading failed: \(String(describing: error), privacy: .public)")
-                return nil
-            }
-        }
-        // Whichever comes first: the reader's answer (nil when it failed), or the end of the wait (nil twice).
-        let (answers, answer) = AsyncStream.makeStream(of: [TextReaderTool.Line]??.self)
-        Task {
-            answer.yield(.some(await reading.value))
-            answer.finish()
-        }
-        Task {
-            try? await Task.sleep(for: secondReadingWait)
-            answer.yield(.none)
-            answer.finish()
-        }
-        var first: [TextReaderTool.Line]??
-        for await answered in answers {
-            first = answered
-            break
-        }
-        guard let answered = first else {
-            // Also when the panel stopped waiting (closed, or read again).
-            if !Task.isCancelled { Log.capture.notice("The second reading didn't answer in time; Vision's reading is shown alone") }
-            return nil
-        }
-        return answered?.map { OCRLine(text: $0.text, box: $0.box, confidence: $0.confidence) }
-    }
-
     private func makePanel() -> TextRecognitionWindowController {
         let controller = TextRecognitionWindowController(settings: settings, translator: translator, cloud: cloud?())
-        controller.onClose = { [weak self] in
-            // Released on the next turn so the window is not deallocated inside its own delegate call.
-            Task { @MainActor in
-                self?.panel = nil
-                // Nothing translates until the next panel: the system's models need not stay loaded.
-                await self?.translator.releaseSessions()
-                MemoryRelief.returnFreedPages()
-            }
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
+            self?.panel = nil
+            // Nothing translates until the next panel: the system's models need not stay loaded.
+            await self?.translator.releaseSessions()
         }
         return controller
     }
@@ -1044,7 +900,7 @@ final class TextCaptureCoordinator {
     func openPanel(from pasteboard: NSPasteboard, source: String) -> Bool {
         guard let content = PasteboardImage.read(pasteboard) else { return false }
         Task {
-            let fallbackScale = displays.layout.displays.map(\.pixelsPerPoint).max() ?? 1
+            let fallbackScale = displays.layout.sharpestPixelsPerPoint ?? 1
             guard let loaded = await Self.load(content, fallbackScale: fallbackScale) else {
                 Log.capture.error("Could not read the image on the pasteboard to recognize its text")
                 if case .file(let url) = content {

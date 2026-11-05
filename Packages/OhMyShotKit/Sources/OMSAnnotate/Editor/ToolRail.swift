@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The tool rail: a slim glass capsule of tool chips standing at the canvas's left edge. The tool in
 /// hand is marked as the All-In-One bar marks its mode: a light highlight and the symbol in the accent.
@@ -158,11 +159,11 @@ final class ToolRail: NSView {
             } else {
                 container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             }
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             layer?.borderWidth = contrast ? 1 : 0.5
             layer?.borderColor = contrast ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35)) : NSColor.separatorColor.cgColor
-            let highlight = ChipFill.selected(dark: dark, contrast: contrast)
-            let hover = ChipFill.hover(dark: dark, contrast: contrast)
+            let highlight = Theme.ChipFill.selectedColor(dark: dark, contrast: contrast)
+            let hover = Theme.ChipFill.hoverColor(dark: dark, contrast: contrast)
             for (tool, chip) in chips {
                 chip.layer?.backgroundColor = tool == selected ? highlight : chip.isHovered ? hover : .clear
             }
@@ -170,8 +171,8 @@ final class ToolRail: NSView {
     }
 
     private func makeChip(_ tool: AnnotationTool) -> NSButton {
-        let name = Self.name(of: tool)
-        let image = NSImage(systemSymbolName: Self.symbol(for: tool), accessibilityDescription: name)?
+        let name = tool.name
+        let image = NSImage(systemSymbolName: tool.symbol, accessibilityDescription: name)?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
         let chip = RailChip(image: image ?? NSImage(), target: self, action: #selector(clicked(_:)))
         chip.onHover = { [weak self] _ in self?.applyAppearance() }
@@ -181,7 +182,7 @@ final class ToolRail: NSView {
         chip.wantsLayer = true
         chip.layer?.cornerRadius = Self.chip / 2
         chip.setButtonType(.onOff)
-        chip.toolTip = Self.help(for: tool)
+        chip.toolTip = tool.help
         // The rail stands at the canvas's left edge: each tag stands to its right, over the canvas.
         chip.hoverTagEdge = .maxX
         chip.setAccessibilityLabel(name)
@@ -198,9 +199,9 @@ final class ToolRail: NSView {
         for (index, group) in Self.groups.enumerated() {
             if index > 0 { menu.addItem(.separator()) }
             for tool in group {
-                let item = NSMenuItem(title: Self.name(of: tool), action: #selector(chosenFromMenu(_:)), keyEquivalent: String(tool.key))
+                let item = NSMenuItem(title: tool.name, action: #selector(chosenFromMenu(_:)), keyEquivalent: String(tool.key))
                 item.keyEquivalentModifierMask = []
-                item.image = NSImage(systemSymbolName: Self.symbol(for: tool), accessibilityDescription: nil)
+                item.image = NSImage(systemSymbolName: tool.symbol, accessibilityDescription: nil)
                 item.state = tool == selected ? .on : .off
                 item.representedObject = tool.rawValue
                 item.target = self
@@ -221,63 +222,6 @@ final class ToolRail: NSView {
         // The chip toggles itself; the session decides what is selected.
         select(selected)
         onSelect?(tool)
-    }
-
-    static func symbol(for tool: AnnotationTool) -> String {
-        switch tool {
-        case .select: "cursorarrow"
-        case .arrow: "arrow.up.right"
-        case .line: "line.diagonal"
-        case .rectangle: "rectangle"
-        case .ellipse: "circle"
-        case .pen: "scribble.variable"
-        case .highlighter: "highlighter"
-        case .highlightBox: "rectangle.inset.filled"
-        case .text: "textformat"
-        case .counter: "1.circle"
-        case .redact: "checkerboard.rectangle"
-        case .spotlight: "circle.dashed.inset.filled"
-        case .crop: "crop"
-        case .background: "photo.artframe"
-        }
-    }
-
-    /// A tool's help tag: its name and key, and for the highlighter how it meets text.
-    static func help(for tool: AnnotationTool) -> String {
-        let title = "\(name(of: tool)) (\(String(tool.key).uppercased()))"
-        guard tool == .highlighter else { return title }
-        return title + "\n" + String(localized: "Snaps to text. Hold ⌘ to draw freely.", bundle: .module)
-    }
-
-    static func name(of tool: AnnotationTool) -> String {
-        switch tool {
-        case .select: String(localized: "Select", bundle: .module)
-        case .arrow: String(localized: "Arrow", bundle: .module)
-        case .line: String(localized: "Line", bundle: .module)
-        case .rectangle: String(localized: "Rectangle", bundle: .module)
-        case .ellipse: String(localized: "Ellipse", bundle: .module)
-        case .pen: String(localized: "Pen", bundle: .module)
-        case .highlighter: String(localized: "Highlighter", bundle: .module)
-        case .highlightBox: String(localized: "Highlight Box", bundle: .module)
-        case .text: String(localized: "Text", bundle: .module)
-        case .counter: String(localized: "Counter", bundle: .module)
-        case .redact: String(localized: "Redact", bundle: .module)
-        case .spotlight: String(localized: "Spotlight", bundle: .module)
-        case .crop: String(localized: "Crop", bundle: .module)
-        case .background: String(localized: "Background", bundle: .module)
-        }
-    }
-}
-
-/// The fills of chips in the rail and the capsule: a light highlight for the selected chip and half of it
-/// on hover, as in the All-In-One bar; about twice as strong with Increase Contrast.
-enum ChipFill {
-    static func selected(dark: Bool, contrast: Bool) -> CGColor {
-        dark ? CGColor(gray: 1, alpha: contrast ? 0.28 : 0.16) : CGColor(gray: 0, alpha: contrast ? 0.16 : 0.08)
-    }
-
-    static func hover(dark: Bool, contrast: Bool) -> CGColor {
-        dark ? CGColor(gray: 1, alpha: contrast ? 0.16 : 0.09) : CGColor(gray: 0, alpha: contrast ? 0.09 : 0.045)
     }
 }
 

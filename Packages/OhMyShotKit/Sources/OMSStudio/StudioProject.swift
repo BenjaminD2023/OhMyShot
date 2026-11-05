@@ -311,7 +311,8 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
     public var aspect: Aspect
     public var cursor: Cursor
     public var zooms: [Zoom]
-    /// Stretches of the recording left out of the movie, in its seconds.
+    /// Stretches of the recording left out of the movie, in its seconds: in order and apart once the project is
+    /// opened (`normalizedCuts`).
     public var cuts: [ClosedRange<Double>]
     /// The keys pressed, shown at the foot of the movie, when they were written down.
     public var showsKeys: Bool
@@ -393,14 +394,41 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         cameraSegments.sort { $0.start < $1.start }
     }
 
-    /// The project as Studio opens it: the times the camera filled what was recorded are stretches by then.
-    /// Projects are compared in this form, so one kept before being opened equals the same one opened and kept.
+    /// The project as Studio opens it: the times the camera filled what was recorded are stretches by then,
+    /// and the cuts are as Cut leaves them (`normalizedCuts`). Projects are compared in this form, so one kept
+    /// before being opened equals the same one opened and kept.
     public func opened(for telemetry: StudioTelemetry, duration: Double) -> StudioProject {
         var project = self
+        project.cuts = Self.normalizedCuts(cuts, duration: duration)
         if let camera = telemetry.camera { project.adoptRecordedFills(camera.fills, duration: duration) }
         return project
     }
 
+    /// `cuts` as Studio keeps them: inside the recording's `duration`, none empty, in order, and those that overlap
+    /// or touch joined into one. Cut leaves them so, and everything that reads a project's cuts takes them so: the
+    /// movie's time against the recording's, the cuts drawn on the timeline and chosen by where they start, Restore
+    /// Cut taking back the one that starts at a time. A project.json written by hand or by another version is held
+    /// to none of that: read as it was, two cuts over one stretch took it out of the playhead's time twice and out
+    /// of the movie once, so the playhead stood away from the frame it showed, and a cut wholly past the
+    /// recording's end stopped the app as the movie was put together. Made so where a project is opened, and again
+    /// where a movie is put together from the cuts it is given.
+    static func normalizedCuts(_ cuts: [ClosedRange<Double>], duration: Double) -> [ClosedRange<Double>] {
+        var kept: [ClosedRange<Double>] = []
+        for cut in cuts.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            let lower = max(0, cut.lowerBound), upper = min(duration, cut.upperBound)
+            guard upper > lower else { continue }
+            if let last = kept.last, lower <= last.upperBound {
+                kept[kept.count - 1] = last.lowerBound...max(last.upperBound, upper)
+            } else {
+                kept.append(lower...upper)
+            }
+        }
+        return kept
+    }
+
     /// The shortest stretch of the timeline for the camera's layout, in seconds.
     public static let shortestSegment = 0.5
+    /// The shortest zoom, in seconds: one dragged or typed shorter keeps this long, and an automatic one shorter is
+    /// not placed.
+    public static let shortestZoom = 0.3
 }

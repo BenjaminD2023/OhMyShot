@@ -13,6 +13,8 @@ extension RecordingFinisher {
         public var keepsAudio: Bool
         /// The size against the recording's own, from a twentieth up to 1.
         public var scale: Double
+        /// `scale`, held from a twentieth up to 1.
+        var clampedScale: Double { min(max(scale, 0.05), 1) }
         /// How loud the sound that stays is against the recording's own, from 0 to 1.
         public var volume: Double
         /// How closely the picture is encoded when it is encoded again.
@@ -34,7 +36,7 @@ extension RecordingFinisher {
         /// `range` of it. A trim falls between key frames and a smaller size has fewer pixels, so both are; a
         /// quality other than Medium asks for it. The sound alone is changed with the picture copied.
         func encodesVideo(keeping range: CMTimeRange, of whole: CMTimeRange) -> Bool {
-            range != whole || min(max(scale, 0.05), 1) < 1 || quality != .medium
+            range != whole || clampedScale < 1 || quality != .medium
         }
     }
 
@@ -53,7 +55,7 @@ extension RecordingFinisher {
         let whole = CMTimeRange(start: .zero, duration: try await asset.load(.duration))
         let range = (edits.timeRange ?? whole).intersection(whole)
         guard range.duration.seconds > 0 else { throw FinishError.noVideo }
-        let scale = min(max(edits.scale, 0.05), 1)
+        let scale = edits.clampedScale
         let natural = try await videoTrack.load(.naturalSize)
         guard edits.encodesVideo(keeping: range, of: whole) else {
             return try await finish(source, to: destination, audio: edits.keepsAudio ? .all : .none, volume: edits.volume)
@@ -75,16 +77,7 @@ extension RecordingFinisher {
         reader.add(videoOutput)
         var audioOutput: AVAssetReaderOutput?
         if !audioTracks.isEmpty {
-            let output = AVAssetReaderAudioMixOutput(audioTracks: audioTracks, audioSettings: [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVSampleRateKey: RecordingAudio.sampleRate,
-                AVNumberOfChannelsKey: 2,
-                AVLinearPCMBitDepthKey: 32,
-                AVLinearPCMIsFloatKey: true,
-                AVLinearPCMIsNonInterleaved: false,
-                AVLinearPCMIsBigEndianKey: false,
-            ])
-            output.audioMix = audioMix(for: audioTracks, volume: edits.volume)
+            let output = mixedOutput(of: audioTracks, mix: audioMix(for: audioTracks, volume: edits.volume))
             reader.add(output)
             audioOutput = output
         }
@@ -134,23 +127,9 @@ extension RecordingFinisher {
                 })
             }
         }
-        async let video: Void = videoPump.run()
-        async let audio: Void = audioPump?.run() ?? ()
-        _ = await (video, audio)
-
-        guard reader.status != .failed else {
-            writer.cancelWriting()
-            throw FinishError.readingFailed(String(describing: reader.error))
-        }
-        writer.endSession(atSourceTime: length)
-        await writer.finishWriting()
-        guard writer.status == .completed else {
-            throw FinishError.writingFailed(String(describing: writer.error))
-        }
-        let bytes = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        return Movie(
-            url: destination, duration: length.seconds, pixelWidth: format.width, pixelHeight: format.height,
-            byteCount: bytes, hasAudio: audioInput != nil
+        return try await write(
+            video: videoPump, audio: audioPump, from: reader, with: writer, endingAt: length, to: destination,
+            pixelWidth: format.width, pixelHeight: format.height
         )
     }
 }

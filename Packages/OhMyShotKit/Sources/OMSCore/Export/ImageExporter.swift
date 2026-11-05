@@ -38,6 +38,12 @@ public enum ImageExporter {
     /// Encodes an image. Large captures take tens of milliseconds, so this runs off the main actor.
     @concurrent
     public static func encode(_ image: CGImage, as format: Format, quality: Double = 0.9) async throws -> Data {
+        try encoded(image, as: format, quality: quality)
+    }
+
+    /// Encodes an image where the caller is: for code already off the main actor, and pictures small enough not
+    /// to hold up the main actor. `quality` applies to the lossy formats only.
+    public static func encoded(_ image: CGImage, as format: Format, quality: Double = 0.9) throws -> Data {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, format.type.identifier as CFString, 1, nil) else {
             throw ExportError.cannotEncode

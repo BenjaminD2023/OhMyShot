@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// The camera's picture in a bubble over the screen, recorded with it: a circle or a rounded square in a
@@ -192,10 +193,7 @@ public final class CameraBubble {
             bubble = Self.corner(of: area, side: side)
             wasMoved = false
         }
-        NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
-            .announcement: fills ? String(localized: "Camera fills the recording", bundle: .module) : String(localized: "Camera in a bubble", bundle: .module),
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(fills ? String(localized: "Camera fills the recording", bundle: .module) : String(localized: "Camera in a bubble", bundle: .module), from: view)
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return layout() }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Theme.Motion.fade
@@ -370,10 +368,11 @@ private final class BubbleView: NSView {
         self.style = style
         self.fills = fills
         // Before the camera's first frame, the capsule surface: never a dark disc in a recording.
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = NSApp.effectiveAppearance.isDark
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        clip.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
-        edge.strokeColor = dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35)
+        clip.backgroundColor = Theme.Material.cardFill(dark: dark)
+        // The contrast hairline: the edge shows only under Increase Contrast.
+        edge.strokeColor = Theme.Material.edge(dark: dark, contrast: true)
         edge.isHidden = !contrast
         if let connection = preview.connection, connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false

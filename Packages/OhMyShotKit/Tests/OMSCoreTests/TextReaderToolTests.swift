@@ -83,7 +83,7 @@ struct TextReaderToolTests {
         """)
         let resources = ActiveResources()
         let formula = try await TextReaderTool.formula(ofPictureAt: URL(filePath: "/tmp/f.tiff"), pack: URL(filePath: "/packs/formula"), helper: reader, resources: resources)
-        #expect(formula == .init(latex: "x^{2}+y^{2}", ending: "end"))
+        #expect(formula == .init(latex: "x^{2}+y^{2}", ended: .end))
         #expect(formula.isFormula)
         #expect(resources.isIdle)
     }
@@ -91,8 +91,8 @@ struct TextReaderToolTests {
     @Test func aStoppedReadingIsNoFormula() async throws {
         let reader = try helper(answering + "\nprintf '{\"id\":\"%s\",\"latex\":\"0000000000\",\"ending\":\"repeats\"}\\n' \"$id\"")
         let formula = try await TextReaderTool.formula(ofPictureAt: URL(filePath: "/tmp/f.tiff"), pack: URL(filePath: "/packs/formula"), helper: reader, resources: ActiveResources())
-        #expect(formula.ending == "repeats" && !formula.isFormula)
-        #expect(!TextReaderTool.Formula(latex: " ", ending: "end").isFormula)
+        #expect(formula.ended == .repeats && !formula.isFormula)
+        #expect(!TextReaderTool.Formula(latex: " ", ended: .end).isFormula)
     }
 
     @Test func warmingTheFormulaPackReadsNoPicture() async throws {
@@ -138,6 +138,42 @@ struct TextReaderToolTests {
         let resources = ActiveResources()
         #expect(try await TextReaderTool.tidy(helper: reader, resources: resources) == 2)
         #expect(resources.isIdle)
+    }
+
+    @Test func theWireLeavesOutWhatIsNotSaid() throws {
+        // The lines the app and the reader passed each other when each declared the messages for itself. The encoder
+        // puts the keys in no particular order; sorted, they can be compared.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let job = TextReaderWire.Job(id: "a", path: "/p.png", pack: "/packs/l2", pressure: .warning)
+        #expect(String(decoding: try encoder.encode(job), as: UTF8.self) == #"{"id":"a","pack":"\/packs\/l2","path":"\/p.png","pressure":"warning"}"#)
+        let found = TextReaderWire.Answer.found(id: "a", formulas: 2, tables: 1)
+        #expect(String(decoding: try encoder.encode(found), as: UTF8.self) == #"{"found":3,"foundTables":1,"id":"a"}"#)
+        #expect(found.progress == TextReaderTool.Found(formulas: 2, tables: 1))
+
+        let answer = try JSONDecoder().decode(TextReaderWire.Answer.self, from: Data(#"""
+        {"id":"a","formulas":[{"kind":"display","box":[[1,2],[3,4]],"latex":"x"}],"tables":[{"kind":"chart","box":[[0,0],[5,5]],"rows":[["1"]],"whole":false}]}
+        """#.utf8))
+        #expect(answer.progress == nil)
+        #expect(answer.formulas == [.init(kind: .display, box: CGRect(x: 1, y: 2, width: 3, height: 4), latex: "x")])
+        #expect(answer.tables?.map(\.kind) == [.chart])
+        #expect(try JSONDecoder().decode(TextReaderWire.Job.self, from: Data(#"{"id":"a","pressure":"critical"}"#.utf8)).pressure == .critical)
+        // A pressure the reader has no name for is none, and the job is still read and answered.
+        let unnamed = try JSONDecoder().decode(TextReaderWire.Job.self, from: Data(#"{"id":"a","path":"/p.png","pressure":"dire"}"#.utf8))
+        #expect(unnamed.pressure == nil && unnamed.path == "/p.png")
+    }
+
+    @Test func aJobIsTheFirstModeItsFieldsName() {
+        #expect(TextReaderWire.Job(id: "a", pack: "/l2", tidy: true).mode == .tidy)
+        #expect(TextReaderWire.Job(id: "a", warm: true, formula: "/f", vlm: "/v").mode == .warmVLM(pack: "/v"))
+        #expect(TextReaderWire.Job(id: "a", path: "/p", vlm: "/v", task: "table").mode == .vlm(pack: "/v", task: "table"))
+        #expect(TextReaderWire.Job(id: "a", warm: true, formula: "/f").mode == .warmFormula(pack: "/f"))
+        #expect(TextReaderWire.Job(id: "a", path: "/p", pack: "/l2", formula: "/f").mode == .formula(pack: "/f"))
+        #expect(TextReaderWire.Job(id: "a", pack: "/l2", warm: true).mode == .warmPack(pack: "/l2"))
+        #expect(TextReaderWire.Job(id: "a", path: "/p", pack: "/l2", lines: true).mode == .lines(pack: "/l2"))
+        #expect(TextReaderWire.Job(id: "a", path: "/p", formulas: "/f", vlm: "/v").mode == .elements)
+        #expect(TextReaderWire.Job(id: "a", path: "/p", joinsWrappedLines: true, formulas: "/f").mode == .text)
+        #expect(TextReaderWire.Job(id: "a", path: "/p", pack: "/l2").mode == .text)
     }
 
     @Test func noReaderIsUnavailable() async throws {

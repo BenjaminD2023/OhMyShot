@@ -81,14 +81,13 @@ public final class UploadRecordStore {
     /// - Parameter fileURL: nil keeps records in memory only, for tests.
     public init(fileURL: URL?) {
         self.fileURL = fileURL
-        records = fileURL.flatMap { try? Data(contentsOf: $0) }.flatMap { try? Self.decoder.decode([UploadRecord].self, from: $0) } ?? []
+        records = fileURL.flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder.records.decode([UploadRecord].self, from: $0) } ?? []
         records.sort { $0.date > $1.date }
     }
 
     /// The standard location: Application Support, under this build's bundle identifier, beside the history.
     public static func standard() -> UploadRecordStore {
-        let base = URL.applicationSupportDirectory.appending(path: Log.subsystem, directoryHint: .isDirectory)
-        return UploadRecordStore(fileURL: base.appending(path: "Uploads.json"))
+        UploadRecordStore(fileURL: AppFolders.support.appending(path: "Uploads.json"))
     }
 
     public func add(_ record: UploadRecord) {
@@ -131,20 +130,11 @@ public final class UploadRecordStore {
         save()
     }
 
-    private static var decoder: JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }
-
     private func save() {
         guard let fileURL else { return }
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try encoder.encode(records).write(to: fileURL, options: .atomic)
+            try JSONEncoder.records.encode(records).write(to: fileURL, options: .atomic)
         } catch {
             Log.upload.error("Saving the upload records failed: \(error.localizedDescription, privacy: .public)")
         }

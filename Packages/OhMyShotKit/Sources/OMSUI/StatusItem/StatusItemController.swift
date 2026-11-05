@@ -192,10 +192,39 @@ public final class StatusItemController {
             : String(localized: "Stop Recording, \(elapsed)", bundle: .module))
     }
 
-    /// While a recording is made into a GIF: its mark and how far along it is, `fraction` from 0 to 1, with
+    /// What the menu bar shows the progress of after a recording, each with how far along it is, from 0 to 1.
+    public enum Progress: Equatable, Sendable {
+        /// The recording is being made into a GIF.
+        case makingGIF(Double)
+        /// A Studio movie is being exported after its window closed.
+        case exportingStudio(Double)
+
+        var fraction: Double {
+            switch self {
+            case .makingGIF(let fraction), .exportingStudio(let fraction): fraction
+            }
+        }
+
+        /// Its mark beside the percentage, the one the recording bar's chip for it has.
+        var symbolName: String {
+            switch self {
+            case .makingGIF: "photo.stack"
+            case .exportingStudio: "wand.and.sparkles"
+            }
+        }
+
+        func accessibilityLabel(percent: Int) -> String {
+            switch self {
+            case .makingGIF: String(localized: "Making the GIF, \(percent) percent", bundle: .module)
+            case .exportingStudio: String(localized: "Exporting the Studio movie, \(percent) percent", bundle: .module)
+            }
+        }
+    }
+
+    /// While a recording is made into a GIF, or a Studio movie exported: its mark and how far along it is, with
     /// the menu still there; the card comes when it is done. Shown even when Settings hides the icon, as while
     /// recording, since it says the recording isn't kept yet.
-    public func showProgress(_ fraction: Double, symbolName: String = "photo.stack") {
+    public func showProgress(_ progress: Progress) {
         stopRecording = nil
         menuTarget.stop = nil
         showsActivity = true
@@ -204,24 +233,22 @@ public final class StatusItemController {
         if item.menu == nil { item.menu = makeMenu() }
         item.length = NSStatusItem.variableLength
         guard let button = item.button else { return }
-        if button.action != nil || button.title.isEmpty || shownSymbol != symbolName {
-            shownSymbol = symbolName
+        if button.action != nil || button.title.isEmpty || shownSymbol != progress.symbolName {
+            shownSymbol = progress.symbolName
             button.target = nil
             button.action = nil
-            button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+            button.image = NSImage(systemSymbolName: progress.symbolName, accessibilityDescription: nil)
             button.image?.isTemplate = true
             button.imagePosition = .imageLeading
         }
-        let percent = Int((min(max(fraction, 0), 1) * 100).rounded(.down))
+        let percent = Int((min(max(progress.fraction, 0), 1) * 100).rounded(.down))
         let title = "\(percent)%"
         if button.title != title {
             button.attributedTitle = NSAttributedString(string: title, attributes: [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
             ])
         }
-        button.setAccessibilityLabel(symbolName == "photo.stack"
-            ? String(localized: "Making the GIF, \(percent) percent", bundle: .module)
-            : String(localized: "Exporting the Studio movie, \(percent) percent", bundle: .module))
+        button.setAccessibilityLabel(progress.accessibilityLabel(percent: percent))
     }
 
     /// The recording ended, or its GIF is made: the icon and its menu come back, or the item goes if
@@ -288,7 +315,7 @@ public final class StatusItemController {
     }
 
     private var appName: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OhMyShot"
+        AppIdentity.displayName
     }
 }
 

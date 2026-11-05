@@ -151,6 +151,16 @@ struct StudioTimelineInteractionTests {
         #expect(StudioTimeline.laneHit(
             at: CGPoint(x: 16 + 700, y: 120), width: width, viewport: viewport, zooms: [zoom], cuts: cuts, cameraSegments: [layout]
         ) == .layoutMove(layout.id))
+        // The other ends; between the lanes, the ruler's scrub.
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 403, y: 40), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .zoomResize(zoom.id, start: false))
+        #expect(StudioTimeline.laneHit(
+            at: CGPoint(x: 16 + 598, y: 120), width: width, viewport: viewport, zooms: [zoom], cuts: cuts, cameraSegments: [layout]
+        ) == .layoutResize(layout.id, start: true))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 300, y: 60), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .ruler)
+        // The zooms' lane off every zoom, where a double click adds one, and the layouts' lane where the layout can't
+        // change along the timeline (the timeline gives it no layouts then): nothing there.
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 700, y: 40), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .ruler)
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 700, y: 120), width: width, viewport: viewport, zooms: [zoom], cuts: cuts) == .ruler)
     }
 
     @Test func magneticSnappingAlignsWithinFivePointsAndRespectsCommandBypass() {

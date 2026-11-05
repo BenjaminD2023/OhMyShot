@@ -1,12 +1,13 @@
 import AppKit
 import Foundation
+import OMSCore
 
 /// The app's main menu. As a menu bar app OhMyShot never shows a menu bar, but key equivalents still go
 /// through this menu: without it, ⌘C, ⌘V, ⌘W and the rest would do nothing in its windows.
 enum MainMenu {
     /// - Parameter settingsTarget: receives `showSettings(_:)` for ⌘,.
     static func make(settingsTarget: AppDelegate) -> NSMenu {
-        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OhMyShot"
+        let appName = AppIdentity.displayName
         let menu = NSMenu()
 
         let app = submenu(appName, in: menu)

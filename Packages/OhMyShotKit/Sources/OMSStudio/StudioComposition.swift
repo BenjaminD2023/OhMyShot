@@ -151,22 +151,54 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         }
     }
 
-    /// The recording's parts between the cuts, laid end to end.
+    /// The recording's parts between the cuts, laid end to end. The cuts are taken as a project opened keeps them
+    /// (`StudioProject.normalizedCuts`), whatever they are given as.
     static func keptSegments(duration: Double, cuts: [ClosedRange<Double>]) -> [Segment] {
         var segments: [Segment] = []
         var cursor = 0.0
         var movie = 0.0
-        for cut in cuts.map({ max(0, $0.lowerBound)...min(duration, $0.upperBound) }).sorted(by: { $0.lowerBound < $1.lowerBound }) {
+        for cut in StudioProject.normalizedCuts(cuts, duration: duration) {
             if cut.lowerBound > cursor {
                 segments.append(Segment(movieStart: movie, sourceStart: cursor, duration: cut.lowerBound - cursor))
                 movie += cut.lowerBound - cursor
             }
-            cursor = max(cursor, cut.upperBound)
+            cursor = cut.upperBound
         }
         if duration > cursor {
             segments.append(Segment(movieStart: movie, sourceStart: cursor, duration: duration - cursor))
         }
         return segments
+    }
+
+    /// The recording's time at the movie's `time`, through `segments` (`keptSegments`): where one part ends and
+    /// the next begins, the next one's start, so a cut's end; before the movie or past it, the first part's start
+    /// or the last one's end. What each frame of the movie is drawn from, and so where the playhead goes as the
+    /// movie plays.
+    static func sourceTime(_ time: Double, in segments: [Segment]) -> Double {
+        guard !segments.isEmpty else { return time }
+        var low = 0, high = segments.count
+        while low < high {
+            let middle = (low + high) / 2
+            if segments[middle].movieStart <= time { low = middle + 1 } else { high = middle }
+        }
+        let segment = segments[max(0, low - 1)]
+        return segment.sourceStart + min(max(time - segment.movieStart, 0), segment.duration)
+    }
+
+    /// The movie's time at the recording's `time`, the other way: a time inside a cut is where the cut was left
+    /// out, which `sourceTime` takes to the cut's end; before the first part kept or past the last, the movie's
+    /// start or its end. Where the player goes for the playhead's place.
+    static func movieTime(forSource time: Double, in segments: [Segment]) -> Double {
+        guard let first = segments.first else { return 0 }
+        // The last part that starts at or before `time`.
+        var low = 0, high = segments.count
+        while low < high {
+            let middle = (low + high) / 2
+            if segments[middle].sourceStart <= time { low = middle + 1 } else { high = middle }
+        }
+        guard low > 0 else { return first.movieStart }
+        let segment = segments[low - 1]
+        return segment.movieStart + min(time - segment.sourceStart, segment.duration)
     }
 
     /// The camera's parts beside each kept part of the recording: where each starts in the camera's movie
@@ -266,14 +298,7 @@ nonisolated final class StudioInstruction: NSObject, AVVideoCompositionInstructi
 
     /// The recording's time at the movie's `time`.
     func sourceTime(_ time: Double) -> Double {
-        guard !segments.isEmpty else { return time }
-        var low = 0, high = segments.count
-        while low < high {
-            let middle = (low + high) / 2
-            if segments[middle].movieStart <= time { low = middle + 1 } else { high = middle }
-        }
-        let segment = segments[max(0, low - 1)]
-        return segment.sourceStart + min(max(time - segment.movieStart, 0), segment.duration)
+        StudioComposition.sourceTime(time, in: segments)
     }
 }
 

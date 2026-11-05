@@ -22,7 +22,7 @@ public final class CommunityInviteWindowController: NSWindowController, NSWindow
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         // Hidden on screen, read by VoiceOver, which would otherwise say the window has no title.
-        window.title = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OhMyShot"
+        window.title = AppIdentity.displayName
         window.isReleasedWhenClosed = false
         super.init(window: window)
         let controller = NSHostingController(rootView: CommunityInviteView(

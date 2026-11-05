@@ -155,7 +155,7 @@ public enum PictureExport {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
         else { throw ImageExporter.ExportError.cannotRead }
-        return try encode(image, pixelsPerPoint: pixelsPerPoint ?? resolution(of: source), output: output)
+        return try encode(image, pixelsPerPoint: pixelsPerPoint ?? ImageLoader.pixelsPerPoint(of: source), output: output)
     }
 
     /// Encoding takes tens of milliseconds to seconds for a large capture, so these run off the main actor.
@@ -176,15 +176,6 @@ public enum PictureExport {
         let prepared = prepare(image, pixelsPerPoint: pixelsPerPoint, output: output.with(format: .png))
         guard let png = try? await ImageExporter.encode(prepared.image, as: .png) else { return nil }
         return (prepared.image, png)
-    }
-
-    /// The scale a picture file states: 144 dpi is 2 pixels per point. Nil when it states none (72 dpi is every
-    /// file's way of saying so).
-    static func resolution(of source: CGImageSource) -> Double? {
-        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let dpi = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue, dpi > 72.5 else { return nil }
-        // PNG stores resolution per meter, so 144 dpi reads back as 143.99: snapped to quarter steps.
-        return (dpi / 72 * 4).rounded() / 4
     }
 
     private static func properties(for prepared: Prepared, output: ScreenshotOutput, gainMap: Bool) -> [CFString: Any] {

@@ -141,9 +141,9 @@ nonisolated public enum AutoZoom {
                     let boundary = (last.lastEvent + group.first!.time) / 2
                     candidates[candidates.count - 1].zoom.end = boundary
                     start = max(start, boundary)
-                    if boundary - last.zoom.start < 0.3 { candidates.removeLast() }
+                    if boundary - last.zoom.start < StudioProject.shortestZoom { candidates.removeLast() }
                 }
-                guard end - start >= 0.3 else { continue }
+                guard end - start >= StudioProject.shortestZoom else { continue }
                 candidates.append(Candidate(
                     zoom: .init(start: start, end: end, scale: rounded, isAutomatic: true), bounds: area, lastEvent: group.last!.time
                 ))

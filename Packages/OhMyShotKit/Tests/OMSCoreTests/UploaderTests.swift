@@ -155,6 +155,21 @@ struct UploaderTests {
         #expect(result.expiresAt != nil)
     }
 
+    /// A link's life is held within what SigV4 allows wherever it is read: signed for, and shown in whole days.
+    @Test func aPresignedLinksLifeIsHeldWithinSevenDays() {
+        var settings = S3Settings(endpoint: URL(string: "https://s3.test")!, bucket: "bk", presignedExpiry: 30 * 86_400)
+        #expect(settings.presignedLifetime == 7 * 86_400 && settings.presignedDays == 7)
+        settings.presignedExpiry = 3600
+        #expect(settings.presignedLifetime == 3600 && settings.presignedDays == 1)
+        settings.presignedExpiry = 0
+        #expect(settings.presignedLifetime == 1 && settings.presignedDays == 1)
+        settings.presignedDays = 9
+        #expect(settings.presignedExpiry == 7 * 86_400)
+        settings.presignedDays = 0
+        #expect(settings.presignedExpiry == 86_400)
+        #expect(S3Settings.presignedDayRange == 1...7)
+    }
+
     @Test func s3ErrorsBecomeTheRightSentences() async throws {
         let rig = try rig()
         let host = "s3-d.test"

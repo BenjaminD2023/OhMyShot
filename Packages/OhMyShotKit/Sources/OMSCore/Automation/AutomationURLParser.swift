@@ -93,7 +93,7 @@ public enum AutomationURLParser {
         case "restore-recently-closed":
             return .restoreRecentlyClosed
         case "open-settings":
-            return .openSettings(tab: p.values["tab"])
+            return .openSettings(tab: SettingsTab(urlTab: p.values["tab"]))
         default:
             throw AutomationURLError.unknownCommand(name)
         }

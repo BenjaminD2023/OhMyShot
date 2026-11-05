@@ -29,14 +29,12 @@ public enum WindowCatalog {
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }
         return list.compactMap { info in
             guard
-                (info[kCGWindowLayer as String] as? Int) == 0,
+                isStandard(info),
                 let pid = info[kCGWindowOwnerPID as String] as? pid_t, excludingPID.map({ pid != $0 }) ?? true,
                 let id = info[kCGWindowNumber as String] as? CGWindowID,
-                let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
-                (info[kCGWindowAlpha as String] as? CGFloat ?? 1) > 0.01
+                let bounds = info[kCGWindowBounds as String] as? [String: CGFloat]
             else { return nil }
             let cgFrame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
-            guard cgFrame.width >= 20, cgFrame.height >= 20 else { return nil }
             return WindowTarget(
                 id: id,
                 frame: layout.flipped(cgFrame),
@@ -53,20 +51,28 @@ public enum WindowCatalog {
         return frontWindowTitle(ofProcess: pid, in: CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? [])
     }
 
-    /// The same from a window list, front to back: the first standard window (layer 0) of the process that has a
-    /// title and is more than a sliver.
+    /// The same from a window list, front to back: the first standard window of the process that has a title.
     static func frontWindowTitle(ofProcess pid: pid_t, in list: [[String: Any]]) -> String? {
         for info in list {
             guard
-                (info[kCGWindowLayer as String] as? Int) == 0, (info[kCGWindowOwnerPID as String] as? pid_t) == pid,
-                (info[kCGWindowAlpha as String] as? CGFloat ?? 1) > 0.01,
-                let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
-                (bounds["Width"] ?? 0) >= 20, (bounds["Height"] ?? 0) >= 20,
+                isStandard(info), (info[kCGWindowOwnerPID as String] as? pid_t) == pid,
                 let title = info[kCGWindowName as String] as? String, !title.isEmpty
             else { continue }
             return title
         }
         return nil
+    }
+
+    /// Whether a window list's entry is a standard window: on layer 0 (panels over the screen, the menu bar, and the
+    /// Dock sit higher), not see-through, and more than a sliver. The windows to choose from and the window an area is
+    /// named after are both these, so a window that can be chosen names what is taken in it.
+    static func isStandard(_ info: [String: Any]) -> Bool {
+        guard
+            (info[kCGWindowLayer as String] as? Int) == 0,
+            (info[kCGWindowAlpha as String] as? CGFloat ?? 1) > 0.01,
+            let bounds = info[kCGWindowBounds as String] as? [String: CGFloat]
+        else { return false }
+        return (bounds["Width"] ?? 0) >= 20 && (bounds["Height"] ?? 0) >= 20
     }
 
     /// The process a window belongs to, read from the window list now; nil once the window is gone.

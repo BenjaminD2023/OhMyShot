@@ -48,6 +48,10 @@ public struct DisplayLayout: Sendable, Equatable {
 
     public var primary: DisplayInfo? { displays.first }
 
+    /// The sharpest display's pixels per point: what a picture with no scale or display of its own most likely came
+    /// from. Nil with no display.
+    public var sharpestPixelsPerPoint: CGFloat? { displays.map(\.pixelsPerPoint).max() }
+
     /// Converts a rect between AppKit's global space (y up) and Core Graphics' global space (y down).
     ///
     /// Both spaces share the primary display's left edge; only the y axis flips around the primary

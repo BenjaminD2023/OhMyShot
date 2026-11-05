@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import AVKit
+import OMSDesign
 import Observation
 import OMSCore
 import SwiftUI
@@ -93,7 +94,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     public init(fileURL: URL, title: String, pixelWidth: Int, pixelHeight: Int, pixelsPerPoint: Double?, hasOriginal: Bool, actions: Actions) {
         self.fileURL = fileURL
         self.actions = actions
-        let isGIF = fileURL.pathExtension.lowercased() == "gif"
+        let isGIF = CaptureMedia(recordingAt: fileURL) == .gif
         // A GIF is made as large as things were on screen already.
         let scale = isGIF ? 1 : max(pixelsPerPoint ?? 2, 1)
         let minimumWidth = Self.minimumWidth(isGIF: isGIF)
@@ -436,9 +437,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     }
 
     private func announce(_ message: String) {
-        NSAccessibility.post(element: window as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(message, from: window)
     }
 
     #if DEBUG

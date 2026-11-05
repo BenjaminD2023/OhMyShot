@@ -19,6 +19,9 @@ public struct QuickAccessItem: Identifiable, Sendable {
     /// Where the user saved a copy, once they have.
     public var savedURL: URL?
 
+    /// The longest side of a card's thumbnail, in pixels.
+    public static let thumbnailPixels = 560
+
     public init(
         id: UUID,
         kind: HistoryItem.Kind = .screenshot,
@@ -41,5 +44,14 @@ public struct QuickAccessItem: Identifiable, Sendable {
         self.createdAt = createdAt
         self.duration = duration
         self.savedURL = savedURL
+    }
+
+    /// The card of a capture kept in the history, as its record has it: its file there, its thumbnail, and the display
+    /// it shows on.
+    public init(_ entry: HistoryItem, fileURL: URL, thumbnail: CGImage, displayID: CGDirectDisplayID, savedURL: URL? = nil) {
+        self.init(
+            id: entry.id, kind: entry.kind, fileURL: fileURL, thumbnail: thumbnail, pixelWidth: entry.pixelWidth, pixelHeight: entry.pixelHeight,
+            displayID: displayID, createdAt: entry.createdAt, duration: entry.duration, savedURL: savedURL
+        )
     }
 }

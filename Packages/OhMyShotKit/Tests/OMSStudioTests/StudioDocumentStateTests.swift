@@ -19,8 +19,8 @@ struct StudioDocumentStateTests {
     @Test func aNewRangeReplacesTheOldCutAndDeleteCutsThatRange() async throws {
         let document = document(project: StudioProject(cuts: [0.2...0.5]))
         defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
-        document.selectedCut = 0.2
-        document.selectedRange = 2...3
+        document.selection = .cut(0.2)
+        document.selection = .range(2...3)
         #expect(document.selectedCut == nil)
         document.deleteSelection()
         #expect(document.project.cuts == [0.2...0.5, 2...3])
@@ -33,12 +33,67 @@ struct StudioDocumentStateTests {
         defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
         document.addZoom()
         let id = try #require(document.project.zooms.first?.id)
-        document.selectedRange = 2...3
-        document.selectedZoom = id
+        document.selection = .range(2...3)
+        document.selection = .zoom(id)
         #expect(document.selectedRange == nil && document.selection == .zoom(id))
         document.project.zooms = []
         #expect(document.selection == .none)
         try await document.flushSave()
+    }
+
+    @Test func cutsOverEachOtherOrPastTheEndAreOpenedAsCutLeavesThem() {
+        // As a project.json written by hand might hold them: out of order, over each other, touching, and past the
+        // recording's 4 s or wholly beyond them.
+        let document = document(project: StudioProject(cuts: [3.5...6, 1.5...2.5, 1...2, 2.5...2.75, 7...9, -1...0.25]))
+        defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
+        #expect(document.project.cuts == [0...0.25, 1...2.75, 3.5...4])
+        #expect(document.saveState == .pending)
+        // Kept: 0.25–1 at the movie's 0–0.75, and 2.75–3.5 at 0.75–1.5. The stretch two cuts share is left out of
+        // the playhead's time once, as the movie leaves it out.
+        #expect(document.movieTime(3) == 1)
+        #expect(document.recordingTime(1) == 3)
+        #expect(document.movieTime(document.duration) == 1.5)
+        // A time inside a cut is where it was left out, which plays from the cut's end.
+        #expect(document.movieTime(2) == 0.75 && document.recordingTime(0.75) == 2.75)
+        // Opened again, it is the same.
+        #expect(document.project.opened(for: document.telemetry, duration: document.duration) == document.project)
+    }
+
+    @Test func aRecordingCutWhollyLeavesThePlayheadAtItsEnd() {
+        let document = document(project: StudioProject(cuts: [0...4]))
+        defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
+        #expect(document.movieTime(2) == 0)
+        #expect(document.recordingTime(0) == document.duration)
+    }
+
+    @Test func aCutJoinsTheCutsItMeetsAndIsChosen() {
+        let document = document(project: StudioProject(cuts: [0.5...1, 2...2.5, 3...3.5]))
+        defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
+        document.cut(1...2.2)
+        #expect(document.project.cuts == [0.5...2.5, 3...3.5])
+        #expect(document.selection == .cut(0.5))
+        document.cut(3.5...9)
+        #expect(document.project.cuts == [0.5...2.5, 3...4])
+        #expect(document.selection == .cut(3))
+    }
+
+    @Test func anEndMovedPastTheOtherStopsShortOfIt() throws {
+        let zoom = StudioProject.Zoom(start: 1, end: 3, scale: 2, isAutomatic: true)
+        let segment = StudioProject.CameraSegment(start: 1, end: 3, layout: .cameraOnly)
+        let document = document(project: StudioProject(zooms: [zoom], cameraSegments: [segment]))
+        defer { document.releasePreview(); try? FileManager.default.removeItem(at: document.folder) }
+        // A start taken past the end stops the shortest zoom before it, the end staying; an end taken before the
+        // start stops as far after it, the start staying.
+        let started = try #require(document.setZoomEdge(zoom.id, start: true, to: 3.5))
+        #expect(abs(started.lowerBound - (3 - StudioProject.shortestZoom)) < 1e-9 && started.upperBound == 3)
+        let ended = try #require(document.setZoomEdge(zoom.id, start: false, to: 0))
+        #expect(ended.lowerBound == started.lowerBound && abs(ended.upperBound - (ended.lowerBound + StudioProject.shortestZoom)) < 1e-9)
+        #expect(document.project.zooms[0].isAutomatic == false)
+        #expect(document.setZoomEdge(UUID(), start: true, to: 1) == nil)
+        // A stretch of the camera's layout alike, by its own shortest.
+        #expect(document.setCameraSegmentEdge(segment.id, start: true, to: 3.9) == 2.5...3)
+        #expect(document.setCameraSegmentEdge(segment.id, start: false, to: 0) == 2.5...3)
+        #expect(document.setCameraSegmentEdge(segment.id, start: false, to: 9) == 2.5...4)
     }
 
     @Test func burstEditsWriteOnlyTheLatestSnapshotAndFlushIsIdempotent() async throws {

@@ -3,6 +3,7 @@ import Foundation
 import OMSAnnotate
 import OMSCapture
 import OMSCore
+import OMSDesign
 import OSLog
 import UniformTypeIdentifiers
 
@@ -15,8 +16,8 @@ final class CaptureCoordinator {
     private let capturer: ScreenCapturer
     private let overlay: OverlayController
     private let history: HistoryStore
-    /// Saves, copies, and hands over screenshots in the format Settings choose.
-    let files: ScreenshotFiles
+    /// Saves and copies screenshots in the format Settings choose.
+    private let files: ScreenshotFiles
     /// Receives every finished capture, already in the history; the composition root decides whether
     /// it gets a Quick Access card.
     var onCaptured: ((QuickAccessItem) -> Void)?
@@ -52,13 +53,16 @@ final class CaptureCoordinator {
         byReference: true
     )
 
-    init(settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, history: HistoryStore) {
+    init(
+        settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, history: HistoryStore,
+        files: ScreenshotFiles
+    ) {
         self.settings = settings
         self.displays = displays
         self.capturer = capturer
         self.overlay = overlay
         self.history = history
-        files = ScreenshotFiles(settings: settings, history: history)
+        self.files = files
     }
 
     /// - Parameters:
@@ -125,12 +129,10 @@ final class CaptureCoordinator {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         overlay.freezesScreen = freezes ?? settings.freezeScreen
-        overlay.isAllInOne = true
-        overlay.allInOneOffersUpload = canUpload?() ?? false
-        overlay.allInOneShowsCopy = !settings.copyAfterCapture
+        let options = OverlayController.SessionOptions(allInOne: .init(offersUpload: canUpload?() ?? false, showsCopy: !settings.copyAfterCapture))
         let start = area ?? (settings.allInOneRemembersArea ? settings.allInOneArea?.area(in: displays.layout) : nil)
         configureCaptureOverlay()
-        overlay.begin(mode: .area, choosing: start) { [weak self] outcome in
+        overlay.begin(mode: .area, options: options, choosing: start) { [weak self] outcome in
             guard let self else { return }
             switch outcome {
             case .allInOne(let choice, let rect, let display, let frozen):
@@ -244,12 +246,6 @@ final class CaptureCoordinator {
         begin(mode: .area, freezes: freezes, followUp: CaptureFollowUp(action: .pin, asksForName: followUp.asksForName, done: followUp.done))
     }
 
-    /// Saves a picture with no file of its own (a pin from the clipboard) to the export location, named
-    /// as captures are.
-    func save(image: CGImage, scale: Double?) async -> URL? {
-        await files.saveScreenshot(.init(image), scale: scale, asks: true)
-    }
-
     // MARK: Self-Timer
 
     /// What Self-Timer captures at zero.
@@ -278,10 +274,9 @@ final class CaptureCoordinator {
         }
         guard !overlay.isActive else { return followUp.finish(nil) }
         overlay.freezesScreen = freezes ?? settings.freezeScreen
-        // What is captured is the screen once the time is up: the frozen one, pointer or not, is only for choosing on.
-        overlay.recapturesLive = true
         configureCaptureOverlay()
-        overlay.begin(mode: .area) { [weak self] outcome in
+        // What is captured is the screen once the time is up: the frozen one, pointer or not, is only for choosing on.
+        overlay.begin(mode: .area, options: .init(recapturesLive: true)) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
             let seconds = delay ?? settings.selfTimerDelay
             switch outcome {
@@ -291,8 +286,7 @@ final class CaptureCoordinator {
             case .window(let target, let modifiers):
                 countDown(to: .window(target, modifiers), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
             case .windows(let targets, _):
-                if let first = targets.first {
-                    let union = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+                if let union = targets.combinedFrame {
                     countDown(to: .area(union), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
                 } else {
                     followUp.finish(nil)
@@ -313,7 +307,7 @@ final class CaptureCoordinator {
         timerFollowUp?.finish(nil)
         timerFollowUp = nil
         Log.capture.notice("Self-Timer cancelled")
-        announce(String(localized: "Self-Timer cancelled."))
+        VoiceOver.announce(String(localized: "Self-Timer cancelled."))
     }
 
     private func countDown(to target: TimerTarget, seconds: Int, copiesToClipboard: Bool, followUp: CaptureFollowUp) {
@@ -322,7 +316,7 @@ final class CaptureCoordinator {
         case .window(let window, _): window.frame
         }
         let keys = selfTimerKeys?()
-        announce(keys.map { String(localized: "Capturing in \(seconds) seconds. Press \($0) again to cancel.") }
+        VoiceOver.announce(keys.map { String(localized: "Capturing in \(seconds) seconds. Press \($0) again to cancel.") }
             ?? String(localized: "Capturing in \(seconds) seconds. Choose Cancel Self-Timer in the menu bar to cancel."))
         timerFollowUp = followUp
         countdown.start(seconds: seconds, area: area, layout: displays.layout) { [weak self] in
@@ -352,12 +346,6 @@ final class CaptureCoordinator {
         }
     }
 
-    private func announce(_ message: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
-    }
-
     /// The area last chosen for a capture, in global points: what Capture Previous Area takes again.
     private(set) var previousArea: CGRect?
 
@@ -380,8 +368,7 @@ final class CaptureCoordinator {
 
     /// Captures the whole display under the pointer.
     func captureFullscreen(followUp: CaptureFollowUp = .none) {
-        let layout = displays.layout
-        guard let display = layout.display(at: NSEvent.mouseLocation) ?? layout.primary else { return followUp.finish(nil) }
+        guard let display = displays.layout.pointerDisplay else { return followUp.finish(nil) }
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         Task {
@@ -445,40 +432,6 @@ final class CaptureCoordinator {
         await deliver(frame, appName: "Demo", copiesToClipboard: false)
     }
     #endif
-
-    // MARK: Saving
-
-    /// Saves a copy of a capture to the export location, in the format Settings choose and named from the file name
-    /// pattern; asks for the name first when Settings say so and `asks` is true (a save nobody waits at, as a card's
-    /// closing by itself or Save All is, passes false). Nil when it was cancelled or failed.
-    func save(_ item: QuickAccessItem, asks: Bool = true) async -> URL? {
-        guard ExportedFiles.isPicture(item.fileURL) else { return save(fileAt: item.fileURL) }
-        return await files.saveScreenshot(fileAt: item.fileURL, asks: asks)
-    }
-
-    /// Saves a copy of a recording's file, or any file that is no screenshot, to the export location, under the file's
-    /// name and kind.
-    func save(fileAt url: URL) -> URL? {
-        do {
-            let directory = settings.exportDirectory
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let name = url.deletingPathExtension().lastPathComponent
-            let destination = ImageExporter.availableURL(in: directory, name: name, fileExtension: url.pathExtension)
-            try FileManager.default.copyItem(at: url, to: destination)
-            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
-            return destination
-        } catch {
-            Log.capture.error("Saving failed: \(error.localizedDescription, privacy: .public)")
-            NSSound.beep()
-            return nil
-        }
-    }
-
-    /// Asks where to save a copy. A screenshot is saved in the format of the name typed, else the one Settings choose.
-    func saveAs(_ item: QuickAccessItem) async -> URL? {
-        guard ExportedFiles.isPicture(item.fileURL) else { return await files.saveRecordingAs(item.fileURL) }
-        return await files.saveScreenshotAs(fileAt: item.fileURL)
-    }
 
     // MARK: Private
 
@@ -716,13 +669,9 @@ final class CaptureCoordinator {
                 await files.copy(pending.picture, png: pending.png, name: (entry.fileName as NSString).deletingPathExtension, scale: pending.scale, historyFile: history.fileURL(for: entry))
             }
             var item = QuickAccessItem(
-                id: entry.id,
-                fileURL: history.fileURL(for: entry),
-                thumbnail: await HistoryStore.cardThumbnail(of: shown.image, maxPixels: 560) ?? shown.image,
-                pixelWidth: shown.image.width,
-                pixelHeight: shown.image.height,
-                displayID: frame.displayID,
-                createdAt: entry.createdAt
+                entry, fileURL: history.fileURL(for: entry),
+                thumbnail: await HistoryStore.cardThumbnail(of: shown.image, maxPixels: QuickAccessItem.thumbnailPixels) ?? shown.image,
+                displayID: frame.displayID
             )
             if settings.saveAfterCapture || saving {
                 // Asking for the name is for someone at the keyboard: All-In-One's Save is asked, a save the URL API or a
@@ -753,9 +702,7 @@ final class CaptureCoordinator {
             }
             // Said out loud too: the overlay is gone, and nothing else would show that the capture was not kept.
             NSSound.beep()
-            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-                .announcement: String(localized: "The capture couldn’t be kept."), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(String(localized: "The capture couldn’t be kept."))
             followUp.finish(nil)
             return nil
         }

@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import SwiftUI
 
 /// The timeline: a ruler of seconds, the clip with its pictures and its cuts, the zooms above it, the camera's
@@ -475,15 +476,19 @@ struct StudioTimeline: View {
         return (time, false)
     }
 
-    /// Classifies what a point on the timeline hits, for lane cursor and interaction testing.
+    /// What a press at `point` is on: a zoom's end or its middle, a layout's end or its middle, a cut, the rest of
+    /// the clip, or else the ruler, which scrubs. The drags, the clicks, and the tests all ask this one question, so
+    /// what the tests find is what the timeline does. `cameraSegments` are the layouts the timeline shows: none
+    /// where the layout can't change along the timeline (`hit(at:width:)` leaves them out), so their lane hits
+    /// nothing then.
     static func laneHit(
         at point: CGPoint, width: CGFloat, viewport: StudioTimelineViewport,
         zooms: [StudioProject.Zoom], cuts: [ClosedRange<Double>],
         cameraSegments: [StudioProject.CameraSegment] = []
     ) -> LaneHit {
-        let span = max(width - Self.inset * 2, 1)
-        func x(_ t: Double) -> CGFloat { Self.inset + viewport.position(of: t, width: span) }
-        let at = viewport.time(at: point.x - Self.inset, width: span)
+        // Where the timeline draws a time, and the time it reads at a place, as `x(_:width:)` and `time(_:width:)` do.
+        func x(_ t: Double) -> CGFloat { Self.inset + viewport.position(of: t, width: width - Self.inset * 2) }
+        let at = viewport.time(at: point.x - Self.inset, width: max(width - Self.inset * 2, 1))
         if point.y < Self.rulerHeight { return .ruler }
         if point.y >= Self.zoomTop, point.y <= Self.zoomTop + Self.zoomHeight,
            let zoom = zooms.first(where: { point.x >= x($0.start) - Self.handleReach && point.x <= x($0.end) + Self.handleReach }) {
@@ -491,7 +496,7 @@ struct StudioTimeline: View {
             if abs(point.x - x(zoom.end)) <= Self.handleReach { return .zoomResize(zoom.id, start: false) }
             return .zoomMove(zoom.id)
         }
-        if !cameraSegments.isEmpty, point.y >= Self.layoutTop, point.y <= Self.layoutTop + Self.layoutHeight,
+        if point.y >= Self.layoutTop, point.y <= Self.layoutTop + Self.layoutHeight,
            let seg = cameraSegments.first(where: { point.x >= x($0.start) - Self.handleReach && point.x <= x($0.end) + Self.handleReach }) {
             if abs(point.x - x(seg.start)) <= Self.handleReach { return .layoutResize(seg.id, start: true) }
             if abs(point.x - x(seg.end)) <= Self.handleReach { return .layoutResize(seg.id, start: false) }
@@ -560,9 +565,8 @@ struct StudioTimeline: View {
     }
 
     private func nudge(_ id: UUID, start: Bool, by shift: Double) {
-        document.updateZoom(id) { zoom in
-            if start { zoom.start = min(zoom.start + shift, zoom.end - 0.3) } else { zoom.end = max(zoom.end + shift, zoom.start + 0.3) }
-        }
+        guard let zoom = document.project.zooms.first(where: { $0.id == id }) else { return }
+        document.setZoomEdge(id, start: start, to: (start ? zoom.start : zoom.end) + shift)
     }
 
     private func nudge(layout id: UUID, start: Bool, by shift: Double) {
@@ -645,9 +649,7 @@ struct StudioTimeline: View {
                 duration: document.duration, width: width, viewport: viewport, enabled: snapEnabled
             )
             snappedX = snapped.snapped ? x(snapped.time, width: width) : nil
-            document.updateZoom(id) { zoom in
-                if start { zoom.start = min(snapped.time, zoom.end - 0.3) } else { zoom.end = max(snapped.time, zoom.start + 0.3) }
-            }
+            document.setZoomEdge(id, start: start, to: snapped.time)
         case .moveLayout(let id, let grabbedAt, let start, let end):
             // Kept to the room between its neighbors, whole.
             let limits = document.limits(ofCameraSegment: id)
@@ -663,9 +665,7 @@ struct StudioTimeline: View {
                 duration: document.duration, width: width, viewport: viewport, enabled: snapEnabled
             )
             snappedX = snapped.snapped ? x(snapped.time, width: width) : nil
-            document.updateCameraSegment(id) { segment in
-                if start { segment.start = min(snapped.time, segment.end - StudioProject.shortestSegment) } else { segment.end = max(snapped.time, segment.start + StudioProject.shortestSegment) }
-            }
+            document.setCameraSegmentEdge(id, start: start, to: snapped.time)
         case nil:
             break
         }
@@ -687,20 +687,22 @@ struct StudioTimeline: View {
                 false
             }
             lastClick = isDoubleClick ? nil : (nowUptime, point)
-            if let zoom = zoom(at: point, width: width) {
-                choose(zoom: zoom.id)
-            } else if isDoubleClick, point.y >= Self.zoomTop, point.y <= Self.zoomTop + Self.zoomHeight {
+            switch hit(at: point, width: width) {
+            case .zoomResize(let id, _), .zoomMove(let id):
+                choose(zoom: id)
+            case _ where isDoubleClick && point.y >= Self.zoomTop && point.y <= Self.zoomTop + Self.zoomHeight:
+                // A double click on the zooms' lane, off every zoom, adds one there.
                 model.controller?.seek(toRecordingTime: at)
                 document.time = at
                 if document.canAddZoom { document.addZoom() }
                 document.endContinuousChange()
                 drag = nil
                 return
-            } else if let layout = layout(at: point, width: width) {
-                choose(layout: layout.id)
-            } else if point.y >= Self.clipTop, point.y <= Self.clipTop + Self.clipHeight, let cut = document.project.cuts.first(where: { $0.contains(at) }) {
-                choose(cut: cut.lowerBound)
-            } else {
+            case .layoutResize(let id, _), .layoutMove(let id):
+                choose(layout: id)
+            case .cut(let start):
+                choose(cut: start)
+            case .clipRange, .ruler:
                 document.selection = .none
             }
             model.controller?.seek(toRecordingTime: at)
@@ -710,59 +712,57 @@ struct StudioTimeline: View {
         drag = nil
     }
 
-    /// What a drag starting at `point` does: on the ruler, scrub; on a zoom, move or resize it; on the clip,
-    /// choose a stretch.
+    /// What a drag starting at `point` does: on the ruler, scrub; on a zoom or a layout, move or resize it; on the
+    /// clip, a cut included, choose a stretch.
     private func beginDrag(at point: CGPoint, width: CGFloat) -> Drag {
         let at = time(point.x, width: width)
-        if point.y < Self.rulerHeight { return .scrub }
-        if let zoom = zoom(at: point, width: width) {
-            choose(zoom: zoom.id)
+        switch hit(at: point, width: width) {
+        case .ruler:
+            return .scrub
+        case .zoomResize(let id, let start):
+            choose(zoom: id)
             document.beginContinuousChange()
-            let left = x(zoom.start, width: width), right = x(zoom.end, width: width)
-            if abs(point.x - left) <= Self.handleReach { return .resizeZoom(zoom.id, start: true) }
-            if abs(point.x - right) <= Self.handleReach { return .resizeZoom(zoom.id, start: false) }
-            return .moveZoom(zoom.id, grabbedAt: at, start: zoom.start, end: zoom.end)
-        }
-        if let layout = layout(at: point, width: width) {
-            choose(layout: layout.id)
+            return .resizeZoom(id, start: start)
+        case .zoomMove(let id):
+            guard let zoom = document.project.zooms.first(where: { $0.id == id }) else { return .scrub }
+            choose(zoom: id)
             document.beginContinuousChange()
-            let left = x(layout.start, width: width), right = x(layout.end, width: width)
-            if abs(point.x - left) <= Self.handleReach { return .resizeLayout(layout.id, start: true) }
-            if abs(point.x - right) <= Self.handleReach { return .resizeLayout(layout.id, start: false) }
-            return .moveLayout(layout.id, grabbedAt: at, start: layout.start, end: layout.end)
-        }
-        if point.y >= Self.clipTop, point.y <= Self.clipTop + Self.clipHeight {
+            return .moveZoom(id, grabbedAt: at, start: zoom.start, end: zoom.end)
+        case .layoutResize(let id, let start):
+            choose(layout: id)
+            document.beginContinuousChange()
+            return .resizeLayout(id, start: start)
+        case .layoutMove(let id):
+            guard let layout = document.project.cameraSegments.first(where: { $0.id == id }) else { return .scrub }
+            choose(layout: id)
+            document.beginContinuousChange()
+            return .moveLayout(id, grabbedAt: at, start: layout.start, end: layout.end)
+        case .cut, .clipRange:
             document.selection = .none
             return .select(from: at)
         }
-        return .scrub
     }
 
-    private func zoom(at point: CGPoint, width: CGFloat) -> StudioProject.Zoom? {
-        guard point.y >= Self.zoomTop, point.y <= Self.zoomTop + Self.zoomHeight else { return nil }
-        return document.project.zooms.first { zoom in
-            point.x >= x(zoom.start, width: width) - Self.handleReach && point.x <= x(zoom.end, width: width) + Self.handleReach
-        }
-    }
-
-    private func layout(at point: CGPoint, width: CGFloat) -> StudioProject.CameraSegment? {
-        guard document.canChangeLayoutAlongTheTimeline, point.y >= Self.layoutTop, point.y <= Self.layoutTop + Self.layoutHeight else { return nil }
-        return document.project.cameraSegments.first { segment in
-            point.x >= x(segment.start, width: width) - Self.handleReach && point.x <= x(segment.end, width: width) + Self.handleReach
-        }
+    /// What `point` is on, as the timeline draws it now: the layouts only where the layout can change along the
+    /// timeline, which is when their lane is drawn.
+    private func hit(at point: CGPoint, width: CGFloat) -> LaneHit {
+        Self.laneHit(
+            at: point, width: width, viewport: viewport, zooms: document.project.zooms, cuts: document.project.cuts,
+            cameraSegments: document.canChangeLayoutAlongTheTimeline ? document.project.cameraSegments : []
+        )
     }
 
     // MARK: Colors
 
     /// The chip fill (black 0.08, white 0.16 in Dark), doubled under Increase Contrast.
     private static let chipFill = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.16) : NSColor(white: 0, alpha: 0.08)
+        NSColor(cgColor: Theme.ChipFill.selectedColor(dark: appearance.isDark, contrast: false)) ?? .clear
     })
     private static let chipFillStrong = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.28) : NSColor(white: 0, alpha: 0.16)
+        NSColor(cgColor: Theme.ChipFill.selectedColor(dark: appearance.isDark, contrast: true)) ?? .clear
     })
     /// The 1 pt contrast hairline's ink (black 0.35, white 0.5 in Dark).
     private static let contrastHairline = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.5) : NSColor(white: 0, alpha: 0.35)
+        appearance.isDark ? NSColor(white: 1, alpha: 0.5) : NSColor(white: 0, alpha: 0.35)
     })
 }

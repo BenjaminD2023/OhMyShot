@@ -504,6 +504,28 @@ struct StudioExportTests {
         ])
     }
 
+    @Test func cutsPastTheEndOrEmptyLeaveNothingOut() {
+        // Wholly past the recording's end, before its start, or empty once inside it: the whole recording is kept.
+        let segments = StudioComposition.keptSegments(duration: 10, cuts: [12...15, 10...11, -3 ... -1, 5...5])
+        #expect(segments == [.init(movieStart: 0, sourceStart: 0, duration: 10)])
+    }
+
+    @Test func theMoviesTimeAndTheRecordingsGoThroughTheSameParts() {
+        // Kept: 0–2 at the movie's 0–2, 4–6 at 2–4, and 8–10 at 4–6.
+        let segments = StudioComposition.keptSegments(duration: 10, cuts: [6...8, 2...4])
+        for (movie, recording) in [(0.0, 0.0), (1, 1), (2, 4), (3, 5), (4, 8), (5, 9), (6, 10)] {
+            #expect(StudioComposition.sourceTime(movie, in: segments) == recording, "movie \(movie)")
+            #expect(StudioComposition.movieTime(forSource: recording, in: segments) == movie, "recording \(recording)")
+        }
+        // Inside a cut, where it was left out, which shows the cut's end; before the movie or past it, its ends.
+        #expect(StudioComposition.movieTime(forSource: 3, in: segments) == 2 && StudioComposition.sourceTime(2, in: segments) == 4)
+        #expect(StudioComposition.movieTime(forSource: -1, in: segments) == 0 && StudioComposition.movieTime(forSource: 12, in: segments) == 6)
+        #expect(StudioComposition.sourceTime(-1, in: segments) == 0 && StudioComposition.sourceTime(7, in: segments) == 10)
+        // A leading cut: the movie begins at its end.
+        let late = StudioComposition.keptSegments(duration: 10, cuts: [0...1])
+        #expect(StudioComposition.movieTime(forSource: 0.5, in: late) == 0 && StudioComposition.sourceTime(0, in: late) == 1)
+    }
+
     @Test func cancellingAfterPackagingRemovesTheMovieAndAllowsRetry() async throws {
         let source = try await Self.movie(seconds: 1)
         let output = FileManager.default.temporaryDirectory.appending(path: "OMSStudioCancel-\(UUID()).mp4")

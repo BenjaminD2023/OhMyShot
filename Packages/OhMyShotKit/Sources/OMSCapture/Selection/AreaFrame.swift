@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The frame around an area chosen on the overlay while it is set up for what comes next (a recording, a
 /// scrolling capture): its handles, how a drag on one resizes it, the cursors over them, where the bar under
@@ -7,6 +8,14 @@ import OMSCore
 enum AreaFrame {
     enum Handle {
         case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
+    }
+
+    /// What a drag on the frame does, from where it began (flipped points): moves the frame as it was, resizes it by a
+    /// handle, or, begun outside it, chooses a new area.
+    enum Adjustment {
+        case moving(start: CGPoint, original: CGRect)
+        case resizing(Handle, original: CGRect)
+        case selecting(start: CGPoint)
     }
 
     /// Corners reach this far for a press, edges this far, shrinking on small frames.
@@ -79,6 +88,36 @@ enum AreaFrame {
         }
     }
 
+    /// The area `adjustment` makes with the pointer at `point` (flipped points) in `bounds`, keeping `ratio` (width over
+    /// height) when one is kept: moved, kept inside the bounds whole; resized, or a new area, with the pointer held to
+    /// the bounds. Cut to the bounds it may still have to be (`fitted`).
+    static func adjusted(_ adjustment: Adjustment, to point: CGPoint, in bounds: CGRect, keeping ratio: CGFloat? = nil) -> CGRect {
+        let clamped = CGPoint(x: min(max(point.x, bounds.minX), bounds.maxX), y: min(max(point.y, bounds.minY), bounds.maxY))
+        switch adjustment {
+        case .moving(let start, let original):
+            return placed(original.offsetBy(dx: point.x - start.x, dy: point.y - start.y), in: bounds)
+        case .resizing(let handle, let original):
+            return if let ratio {
+                resized(original, dragging: handle, to: clamped, keeping: ratio)
+            } else {
+                resized(original, dragging: handle, to: clamped)
+            }
+        case .selecting(let start):
+            return if let ratio {
+                resized(CGRect(origin: start, size: .zero), dragging: .bottomRight, to: clamped, keeping: ratio)
+            } else {
+                CGRect(x: min(start.x, clamped.x), y: min(start.y, clamped.y), width: abs(clamped.x - start.x), height: abs(clamped.y - start.y))
+            }
+        }
+    }
+
+    /// `rect` cut to `bounds`, in whatever space both are; nil when what is left is smaller than the smallest area.
+    static func fitted(_ rect: CGRect, in bounds: CGRect) -> CGRect? {
+        let kept = rect.intersection(bounds)
+        guard !kept.isNull, kept.width >= smallest, kept.height >= smallest else { return nil }
+        return kept
+    }
+
     /// `rect` reshaped to `ratio` around its center, as large as it was across its longer side would allow while
     /// staying inside `bounds`.
     static func shaped(_ rect: CGRect, to ratio: CGFloat, in bounds: CGRect) -> CGRect {
@@ -120,7 +159,7 @@ enum AreaFrame {
     }
 
     /// `rect` moved inside `bounds`, its size kept (it must fit).
-    private static func placed(_ rect: CGRect, in bounds: CGRect) -> CGRect {
+    static func placed(_ rect: CGRect, in bounds: CGRect) -> CGRect {
         var rect = rect
         rect.origin.x = min(max(rect.minX, bounds.minX), bounds.maxX - rect.width)
         rect.origin.y = min(max(rect.minY, bounds.minY), bounds.maxY - rect.height)
@@ -138,6 +177,11 @@ enum AreaFrame {
         case .bottomLeft: NSCursor.frameResize(position: .bottomLeft, directions: .all)
         case .left: NSCursor.frameResize(position: .left, directions: .all)
         }
+    }
+
+    /// An area's size in pixels, as it will be captured: "1280 × 720".
+    static func pixelReading(_ size: CGSize, pixelsPerPoint scale: CGFloat) -> String {
+        "\(Int((size.width * scale).rounded())) × \(Int((size.height * scale).rounded()))"
     }
 
     /// Edges on the display's pixels, as the overlay's selection keeps them.
@@ -162,7 +206,8 @@ enum AreaFrame {
         return placed.integral
     }
 
-    /// Global points (y up) to the overlay's points from `display`'s top-left corner (y down), and back.
+    /// Global points (y up) to the overlay's points from `display`'s top-left corner (y down), and back. ScreenCaptureKit
+    /// measures a part of a display the same way, so what it is asked to capture is this too.
     static func local(_ rect: CGRect, on display: DisplayInfo) -> CGRect {
         CGRect(x: rect.minX - display.frame.minX, y: display.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
     }

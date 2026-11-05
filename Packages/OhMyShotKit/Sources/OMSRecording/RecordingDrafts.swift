@@ -45,8 +45,7 @@ public struct RecordingDrafts: Sendable {
 
     /// The standard location: Application Support, under this build's bundle identifier.
     public static func standard() -> RecordingDrafts {
-        let base = URL.applicationSupportDirectory.appending(path: Log.subsystem, directoryHint: .isDirectory)
-        return RecordingDrafts(directory: base.appending(path: "Recordings in Progress", directoryHint: .isDirectory))
+        RecordingDrafts(directory: AppFolders.support.appending(path: "Recordings in Progress", directoryHint: .isDirectory))
     }
 
     /// Makes room for a new recording and notes when it began. The movie is written at the draft's URL.
@@ -73,7 +72,7 @@ public struct RecordingDrafts: Sendable {
             guard let id = UUID(uuidString: String(name.dropLast(5))), !excluding.contains(id) else { continue }
             let movie = directory.appending(path: "\(id.uuidString).mov")
             let info = FileManager.default.contents(atPath: infoURL(for: id).path(percentEncoded: false))
-                .flatMap { try? JSONDecoder.drafts.decode(Info.self, from: $0) }
+                .flatMap { try? JSONDecoder.records.decode(Info.self, from: $0) }
             guard FileManager.default.fileExists(atPath: movie.path(percentEncoded: false)) else {
                 try? FileManager.default.removeItem(at: infoURL(for: id))
                 continue
@@ -93,18 +92,12 @@ public struct RecordingDrafts: Sendable {
     }
 }
 
+/// A draft's notes are written compact, without the pretty printing of the records `JSONEncoder.records` writes; they
+/// are read back as those are (`JSONDecoder.records`).
 private extension JSONEncoder {
     static var drafts: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         return encoder
-    }
-}
-
-private extension JSONDecoder {
-    static var drafts: JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
     }
 }

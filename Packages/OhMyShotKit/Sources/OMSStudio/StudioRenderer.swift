@@ -121,16 +121,31 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     ///     draws the project's plain color, or white.
     ///   - largestSide: the longest side the movie may have; the preview films it smaller than the export.
     ///   - ringColor: the clicks' rings, in sRGB: the user's accent, as the rings shown while recording.
-    ///   - preparedTrack: a track already built for these motion settings; shared by preview and export.
-    public init(
+    ///   - preparedTrack: a track already built from this telemetry for these motion settings; shared by preview and
+    ///     export. Its clicks are the ones whose effects are drawn.
+    public convenience init(
         telemetry: StudioTelemetry, project: StudioProject, duration: Double, recordingSize: CGSize, background: CGImage?,
         largestSide: Double = StudioRenderer.largestSide, ringColor: RingColor = .systemBlue, preparedTrack: StudioTrack? = nil
+    ) {
+        self.init(
+            telemetry: telemetry, project: project, duration: duration, recordingSize: recordingSize, background: background,
+            layout: StudioRenderer.layout(recordingSize: recordingSize, project: project, hasCamera: telemetry.camera != nil, largestSide: largestSide),
+            ringColor: ringColor, preparedTrack: preparedTrack
+        )
+    }
+
+    /// The same, where everything goes already worked out: the document works it out once, for the background it
+    /// paints at the movie's size and for the renderer. `layout` has to be this project's with a camera exactly
+    /// where `telemetry` has one, as the public initializer makes it: the camera's picture beside the recording is
+    /// drawn from the telemetry's camera into the layout's room for it.
+    init(
+        telemetry: StudioTelemetry, project: StudioProject, duration: Double, recordingSize: CGSize, background: CGImage?,
+        layout: Layout, ringColor: RingColor, preparedTrack: StudioTrack?
     ) {
         self.project = project
         self.recordingSize = recordingSize
         pixelsPerPoint = telemetry.width > 0 ? Double(recordingSize.width) / telemetry.width : telemetry.pixelsPerPoint
         track = preparedTrack ?? StudioTrack(telemetry: telemetry, project: project, duration: duration)
-        let layout = Self.layout(recordingSize: recordingSize, project: project, hasCamera: telemetry.camera != nil, largestSide: largestSide)
         self.layout = layout
         let canvas = CGRect(origin: .zero, size: layout.canvas)
 
@@ -158,7 +173,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         }
         arrow = project.cursor.style == .arrow ? Self.arrowLook() : nil
         halo = Self.haloImage()
-        clicks = telemetry.clicks.sorted { $0.time < $1.time }
+        // The track's, sorted by time once for both.
+        clicks = track.clickAnchors
         captions = project.showsKeys ? Self.captions(for: telemetry.keys, mode: project.keystrokeMode) : []
         captionRuns = Self.captionRuns(for: captions)
         let effectColor = project.cursor.clickColor.rgb.map { RingColor(red: $0.red, green: $0.green, blue: $0.blue) } ?? ringColor

@@ -6,7 +6,7 @@ import OSLog
 /// Lifecycle events and debug-hook results log at `notice`, which macOS persists, so scripts can read
 /// them back with `log show --predicate 'subsystem == "<bundle id>"'`.
 public enum Log {
-    public static let subsystem = Bundle.main.bundleIdentifier ?? "io.github.fzlzjerry.ohmyshot"
+    public static let subsystem = AppIdentity.bundleIdentifier
 
     public static let app = Logger(subsystem: subsystem, category: "app")
     public static let automation = Logger(subsystem: subsystem, category: "automation")

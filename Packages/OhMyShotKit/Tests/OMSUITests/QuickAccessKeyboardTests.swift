@@ -120,7 +120,7 @@ struct QuickAccessKeyboardTests {
         let card = CaptureCardView(item: try item(width: 1200, height: 800), size: .medium)
         card.frame = CGRect(x: 0, y: 0, width: 220, height: 147)
         var undone = 0
-        card.onUndoTrash = { undone += 1 }
+        card.onCommand = { if $0 == .undoTrash { undone += 1 } }
         card.isTrashing = true
         let event = try #require(NSEvent.mouseEvent(
             with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,

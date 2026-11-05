@@ -11,7 +11,7 @@ struct CloudReadingRow: View {
     @State private var draft: CloudModel?
     @State private var key = ""
     @State private var problem: String?
-    @State private var test = TestState.idle
+    @State private var test = SettingsTestState.idle
     @State private var testTask: Task<Void, Never>?
     /// A service chosen in place of one whose key is saved, until the person says to delete the key.
     @State private var pending: Pending?
@@ -20,13 +20,6 @@ struct CloudReadingRow: View {
     struct Pending: Identifiable {
         let id = UUID()
         let preset: CloudModel.Preset?
-    }
-
-    enum TestState: Equatable {
-        case idle
-        case running
-        case succeeded(String)
-        case failed(String)
     }
 
     /// Its part of its group's help: what cloud reading is, and, with a model set up, what its switches and Test do.
@@ -162,10 +155,8 @@ struct CloudReadingRow: View {
             }
         }
 
-        if let issue = problem ?? model.issue(hasKey: store.hasKey || !key.trimmingCharacters(in: .whitespaces).isEmpty) {
-            Label { Text(issue) } icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        if let issue = problem ?? model.issue(hasKey: store.hasKey || keyTyped) {
+            SettingsWarning(Text(issue))
                 .frame(maxWidth: 340, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -187,8 +178,13 @@ struct CloudReadingRow: View {
         Binding(get: { draft?[keyPath: path] ?? "" }, set: { draft?[keyPath: path] = $0 })
     }
 
+    /// Whether a key is typed in the field, not yet saved: spaces alone are none.
+    private var keyTyped: Bool {
+        !key.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     private func saveKey() {
-        guard !key.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard keyTyped else { return }
         do {
             try store.setKey(key)
             key = ""
@@ -199,41 +195,11 @@ struct CloudReadingRow: View {
     }
 
     private func testRow(_ model: CloudModel) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Button { runTest(model) } label: { Text("Test", bundle: .module) }
-                    .disabled(test == .running)
-                if test == .running {
-                    ProgressView().controlSize(.small)
-                }
-            }
-            switch test {
-            case .idle, .running:
-                EmptyView()
-            case .succeeded(let message):
-                Label {
-                    Text(message).lineLimit(3)
-                } icon: {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                }
-                .font(.callout)
-            case .failed(let message):
-                Label {
-                    Text(message)
-                        .textSelection(.enabled)
-                        .lineLimit(4)
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                }
-                .font(.callout)
-            }
-        }
-        .frame(maxWidth: 340, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
+        SettingsTestRow(state: test, title: Text("Test", bundle: .module)) { runTest(model) }
     }
 
     private func runTest(_ model: CloudModel) {
-        if let issue = model.issue(hasKey: store.hasKey || !key.trimmingCharacters(in: .whitespaces).isEmpty) {
+        if let issue = model.issue(hasKey: store.hasKey || keyTyped) {
             test = .failed(issue)
             return
         }

@@ -45,7 +45,7 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
     public var acl = ""
     public var publicBaseURL = ""
     public var linkStyle = S3Settings.LinkStyle.publicURL
-    public var presignedDays = 7
+    public var presignedDays = Int(S3Settings.defaultPresignedExpiry / 86_400)
     public var accessKeyID = ""
     public var secretAccessKey = ""
 
@@ -109,7 +109,7 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
             acl = settings.acl ?? ""
             publicBaseURL = settings.publicBaseURL?.absoluteString ?? ""
             linkStyle = settings.linkStyle
-            presignedDays = max(1, min(7, Int((settings.presignedExpiry / 86_400).rounded())))
+            presignedDays = settings.presignedDays
         case .webDAV(let settings):
             kind = .webDAV
             davURL = settings.baseURL.absoluteString
@@ -242,7 +242,7 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
                 publicBaseURL: publicBaseURL.trimmed.isEmpty ? nil : Self.httpURL(publicBaseURL),
                 linkStyle: linkStyle
             )
-            settings.presignedExpiry = TimeInterval(max(1, min(7, presignedDays))) * 86_400
+            settings.presignedDays = presignedDays
             var secrets: [String: String] = [:]
             if !accessKeyID.trimmed.isEmpty { secrets[SecretField.s3AccessKeyID] = accessKeyID.trimmed }
             if !secretAccessKey.isEmpty { secrets[SecretField.s3SecretAccessKey] = secretAccessKey }

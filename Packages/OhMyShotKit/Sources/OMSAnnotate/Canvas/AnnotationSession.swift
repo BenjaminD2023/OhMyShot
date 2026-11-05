@@ -83,27 +83,23 @@ public final class AnnotationSession {
     public private(set) var selection: [Annotation.ID] = []
     /// Whether the document changed since it was last kept.
     public private(set) var hasUnkeptChanges = false
+    /// What the redaction tool suggests covering, once it has been in hand: under way, in, or failed.
+    private var redactionReading = ToolReading<[RedactionSuggestion]>()
+    /// The lines of text the highlighter snaps to, once it has been in hand, the same way.
+    private var textLineReading = ToolReading<[TextLine]>()
     /// What reading found better covered, once the redaction tool has been in hand.
-    public private(set) var redactionSuggestions: [RedactionSuggestion] = []
+    public var redactionSuggestions: [RedactionSuggestion] { redactionReading.value ?? [] }
     /// Whether the capture is being read for them.
-    public private(set) var isFindingRedactions = false
+    public var isFindingRedactions: Bool { redactionReading.status == .finding }
     /// Whether the last reading for them failed, so the capture could not be read: it is read again on
     /// request, or the next time the tool is in hand.
-    public private(set) var couldNotFindRedactions = false
-    @ObservationIgnored private var hasLookedForRedactions = false
-    @ObservationIgnored private var findTask: Task<Void, Never>?
+    public var couldNotFindRedactions: Bool { redactionReading.status == .failed }
     /// The capture's lines of text, once the highlighter has been in hand.
-    public private(set) var textLines: [TextLine] = []
+    public var textLines: [TextLine] { textLineReading.value ?? [] }
     /// Whether the capture is being read for them.
-    public private(set) var isFindingTextLines = false
+    public var isFindingTextLines: Bool { textLineReading.status == .finding }
     /// Whether the last reading for them failed, as for the suggestions.
-    public private(set) var couldNotFindTextLines = false
-    @ObservationIgnored private var hasLookedForTextLines = false
-    @ObservationIgnored private var textLinesTask: Task<Void, Never>?
-    /// The combined images each reading saw: one made before an image was combined, moved, or removed
-    /// describes a picture that is gone.
-    @ObservationIgnored private var redactionsReadOver: [Annotation]?
-    @ObservationIgnored private var textLinesReadOver: [Annotation]?
+    public var couldNotFindTextLines: Bool { textLineReading.status == .failed }
     /// The capture's text as the tools read it, one reading for both: the part of the picture it looks at,
     /// in the document, and the combined images it saw.
     @ObservationIgnored private var reading: (text: CaptureReading, region: CGRect, images: [Annotation])?
@@ -413,55 +409,37 @@ public final class AnnotationSession {
     /// in hand, so nothing is read for an editor that never covers anything. The reading is the one the
     /// highlighter's lines come from, so what both need is read once.
     public func findRedactionsIfNeeded() {
-        guard !hasLookedForRedactions, let reading = sharedReading() else { return }
-        hasLookedForRedactions = true
+        beginReading(\.redactionReading, telling: .suggestions) { text, origin in
+            try await text.redactionSuggestions().map { RedactionSuggestion(rect: $0.rect.offsetBy(dx: origin.x, dy: origin.y), label: $0.label) }
+        }
+    }
+
+    /// Begins one tool's reading, unless it is under way or in already, from the reading both tools share.
+    /// `find` asks that reading for what the tool wants and moves it from the part read into the document
+    /// (`origin` is the part's corner there). `event` tells the canvas and the capsule when it begins and
+    /// when it ends, found or failed.
+    private func beginReading<Value>(
+        _ path: ReferenceWritableKeyPath<AnnotationSession, ToolReading<Value>>, telling event: Event,
+        _ find: @escaping (CaptureReading, CGPoint) async throws -> Value
+    ) {
+        guard !self[keyPath: path].hasBegun, let reading = sharedReading() else { return }
         readingsTransform = document.transform
-        redactionsReadOver = images
-        isFindingRedactions = true
-        couldNotFindRedactions = false
-        notify(.suggestions)
-        findTask = Task { [weak self] in
-            let found = try? await reading.text.redactionSuggestions()
+        let task = Task { [weak self] in
+            let found = try? await find(reading.text, reading.origin)
             // A reading dropped midway is no failure.
             guard let self, !Task.isCancelled else { return }
-            isFindingRedactions = false
-            findTask = nil
-            if let found {
-                redactionSuggestions = found.map { RedactionSuggestion(rect: $0.rect.offsetBy(dx: reading.origin.x, dy: reading.origin.y), label: $0.label) }
-            } else {
-                hasLookedForRedactions = false
-                redactionsReadOver = nil
-                couldNotFindRedactions = true
-            }
-            notify(.suggestions)
+            self[keyPath: path].finish(with: found)
+            notify(event)
         }
+        self[keyPath: path].begin(task, over: images)
+        notify(event)
     }
 
     /// Drops readings still under way, for a canvas that is closing; the next time their tool is in hand
     /// reads again.
     public func cancelReading() {
-        if findTask != nil { forgetRedactions() }
-        if textLinesTask != nil { forgetTextLines() }
-    }
-
-    private func forgetRedactions() {
-        findTask?.cancel()
-        findTask = nil
-        redactionSuggestions = []
-        hasLookedForRedactions = false
-        isFindingRedactions = false
-        couldNotFindRedactions = false
-        redactionsReadOver = nil
-    }
-
-    private func forgetTextLines() {
-        textLinesTask?.cancel()
-        textLinesTask = nil
-        textLines = []
-        hasLookedForTextLines = false
-        isFindingTextLines = false
-        couldNotFindTextLines = false
-        textLinesReadOver = nil
+        if redactionReading.status == .finding { redactionReading.forget() }
+        if textLineReading.status == .finding { textLineReading.forget() }
     }
 
     /// The combined images, which reading sees as part of the capture.
@@ -476,12 +454,12 @@ public final class AnnotationSession {
         let images = self.images
         let turned = document.transform != readingsTransform
         if let reading, reading.images != images || turned { self.reading = nil }
-        if let read = redactionsReadOver, read != images || turned {
-            forgetRedactions()
+        if let read = redactionReading.readOver, read != images || turned {
+            redactionReading.forget()
             if tool == .redact { findRedactionsIfNeeded() } else { notify(.suggestions) }
         }
-        if let read = textLinesReadOver, read != images || turned {
-            forgetTextLines()
+        if let read = textLineReading.readOver, read != images || turned {
+            textLineReading.forget()
             if tool == .highlighter { findTextLinesIfNeeded() } else { notify(.textLines) }
         }
     }
@@ -555,55 +533,33 @@ public final class AnnotationSession {
     /// suggestions come from, so what both need is read once. A stroke drawn before they come in is drawn
     /// freely.
     public func findTextLinesIfNeeded() {
-        guard !hasLookedForTextLines, let reading = sharedReading() else { return }
-        hasLookedForTextLines = true
-        readingsTransform = document.transform
-        textLinesReadOver = images
-        isFindingTextLines = true
-        couldNotFindTextLines = false
-        notify(.textLines)
-        textLinesTask = Task { [weak self] in
-            let found = try? await reading.text.textLines()
-            // A reading dropped midway is no failure.
-            guard let self, !Task.isCancelled else { return }
-            isFindingTextLines = false
-            textLinesTask = nil
-            if let found {
-                textLines = found.filter { !$0.words.isEmpty }.map { $0.offsetBy(dx: reading.origin.x, dy: reading.origin.y) }
-            } else {
-                hasLookedForTextLines = false
-                textLinesReadOver = nil
-                couldNotFindTextLines = true
-            }
-            notify(.textLines)
+        beginReading(\.textLineReading, telling: .textLines) { text, origin in
+            try await text.textLines().filter { !$0.words.isEmpty }.map { $0.offsetBy(dx: origin.x, dy: origin.y) }
         }
     }
 
-    /// Whether the capture is being read for the tool in hand: for the redaction tool's suggestions, or the
-    /// lines of text the highlighter snaps to.
-    public var isReadingForTool: Bool {
+    /// Where the reading for the tool in hand stands: for the redaction tool's suggestions, or the lines of
+    /// text the highlighter snaps to. Tools that read nothing have nothing to tell.
+    var readingStatusForTool: ReadingStatus {
         switch tool {
-        case .redact: isFindingRedactions
-        case .highlighter: isFindingTextLines
-        default: false
+        case .redact: redactionReading.status
+        case .highlighter: textLineReading.status
+        case .select, .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .text, .counter, .spotlight, .crop, .background: .resting
         }
     }
+
+    /// Whether the capture is being read for the tool in hand.
+    public var isReadingForTool: Bool { readingStatusForTool == .finding }
 
     /// Whether the last reading for the tool in hand failed.
-    public var readingFailedForTool: Bool {
-        switch tool {
-        case .redact: couldNotFindRedactions
-        case .highlighter: couldNotFindTextLines
-        default: false
-        }
-    }
+    public var readingFailedForTool: Bool { readingStatusForTool == .failed }
 
     /// Reads the capture again for the tool in hand, after a reading that failed.
     public func retryReadingForTool() {
         switch tool {
         case .redact: findRedactionsIfNeeded()
         case .highlighter: findTextLinesIfNeeded()
-        default: break
+        case .select, .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .text, .counter, .spotlight, .crop, .background: break
         }
     }
 
@@ -813,5 +769,80 @@ public final class AnnotationSession {
     /// The finished picture, rendered off the main actor.
     public func render() async -> CGImage? {
         await AnnotationRenderer.render(document, base: base)
+    }
+}
+
+/// Where the capture's reading for one tool stands, as the style capsule tells it.
+enum ReadingStatus {
+    /// Nothing to tell: not begun, or what it found is in.
+    case resting
+    /// Under way.
+    case finding
+    /// The capture could not be read: it is read again on request, or the next time the tool is in hand.
+    case failed
+}
+
+/// One tool's reading of the capture's text, from the first time the tool is in hand: the redaction
+/// tool's suggestions, or the lines the highlighter snaps to. One phase at a time, so a reading is never
+/// under way and failed at once, never holds a task it is not waiting on, and never keeps what it found
+/// once it is forgotten.
+private struct ToolReading<Value> {
+    enum Phase {
+        /// Not begun, or forgotten: begun the next time its tool is in hand.
+        case idle
+        /// Under way, over the combined images it saw.
+        case finding(Task<Void, Never>, over: [Annotation])
+        /// What it found, over the combined images it saw.
+        case found(Value, over: [Annotation])
+        /// The capture could not be read.
+        case failed
+    }
+
+    private(set) var phase = Phase.idle
+
+    /// What it found, once it is in.
+    var value: Value? {
+        if case .found(let value, _) = phase { value } else { nil }
+    }
+
+    var status: ReadingStatus {
+        switch phase {
+        case .idle, .found: .resting
+        case .finding: .finding
+        case .failed: .failed
+        }
+    }
+
+    /// Whether it is under way or in, so it is not begun again; one that failed, or was forgotten, is.
+    var hasBegun: Bool {
+        switch phase {
+        case .finding, .found: true
+        case .idle, .failed: false
+        }
+    }
+
+    /// The combined images it saw, while it is under way or in: one made before an image was combined,
+    /// moved, or removed describes a picture that is gone.
+    var readOver: [Annotation]? {
+        switch phase {
+        case .finding(_, let images), .found(_, let images): images
+        case .idle, .failed: nil
+        }
+    }
+
+    mutating func begin(_ task: Task<Void, Never>, over images: [Annotation]) {
+        phase = .finding(task, over: images)
+    }
+
+    /// Lands what the reading under way found, or nil when it failed.
+    mutating func finish(with found: Value?) {
+        guard case .finding(_, let images) = phase else { return }
+        phase = found.map { .found($0, over: images) } ?? .failed
+    }
+
+    /// Lets go of it, stopping it first when it is under way.
+    mutating func forget() {
+        if case .finding(let task, _) = phase { task.cancel() }
+        phase = .idle
     }
 }

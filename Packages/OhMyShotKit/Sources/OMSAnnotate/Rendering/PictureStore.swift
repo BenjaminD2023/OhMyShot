@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import OMSCore
 import UniformTypeIdentifiers
 
 /// Pictures a document uses besides the capture: a background's picture and images combined into the
@@ -85,13 +86,7 @@ nonisolated public final class PictureStore: @unchecked Sendable {
 
     /// Keeps an image, as PNG; returns the name it is kept under.
     public func add(_ image: CGImage) throws -> String {
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.png.identifier as CFString, 1, nil) else {
-            throw CocoaError(.fileWriteUnknown)
-        }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
-        return try add(data as Data, fileExtension: "png")
+        try add(ImageExporter.encoded(image, as: .png), fileExtension: "png")
     }
 
     public func url(named name: String) -> URL {

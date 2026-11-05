@@ -20,37 +20,24 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
     /// Sets the capture on a background for sharing.
     case background
 
-    /// The key that picks the tool, as in CleanShot where they agree.
-    public var key: Character {
-        switch self {
-        case .select: "v"
-        case .arrow: "a"
-        case .line: "l"
-        case .rectangle: "r"
-        case .ellipse: "o"
-        case .pen: "p"
-        case .highlighter: "h"
-        case .highlightBox: "m"
-        case .text: "t"
-        case .counter: "n"
-        case .redact: "b"
-        case .spotlight: "s"
-        case .crop: "c"
-        case .background: "g"
-        }
-    }
-
     /// Tools that change the picture as a whole rather than draw marks on it: passing modes the canvas
     /// returns from, never the tool a new capture opens with.
     public var isPictureMode: Bool {
         self == .crop || self == .background
     }
 
+    /// Whether in-place annotation offers the tool, on its toolbar and by its key: every drawing tool and
+    /// Select, never the picture modes (cropping is the selection itself there, and a background would
+    /// grow past it).
+    public var isOfferedInPlace: Bool {
+        !isPictureMode
+    }
+
     /// Tools that draw a mark by dragging from one corner or end to the other.
     public var dragsShape: Bool {
         switch self {
         case .arrow, .line, .rectangle, .ellipse, .highlightBox, .redact, .spotlight: true
-        default: false
+        case .select, .pen, .highlighter, .text, .counter, .crop, .background: false
         }
     }
 }
@@ -101,7 +88,7 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         case .redact: ToolSettings(color: .black, shadow: false)
         case .spotlight: ToolSettings(shadow: false)
         case .pen: ToolSettings(lineWidth: 3)
-        default: ToolSettings()
+        case .select, .arrow, .line, .rectangle, .ellipse, .text, .counter, .crop, .background: ToolSettings()
         }
     }
 
@@ -194,7 +181,7 @@ nonisolated extension AnnotationTool {
             shape = .redaction(Redaction(rect: Geometry.rect(from: start, to: end, square: constrained), method: settings.redaction))
         case .spotlight:
             shape = .spotlight(Spot(rect: Geometry.rect(from: start, to: end, square: constrained), oval: settings.oval))
-        default:
+        case .select, .pen, .highlighter, .text, .counter, .crop, .background:
             return nil
         }
         return Annotation(id: id, shape: shape, style: style)

@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// The small bar beside what is being recorded: the time so far, Pause or Resume, Restart, Delete, and
@@ -36,14 +37,23 @@ public final class RecordingControlBar {
 
     public var isShowing: Bool { panel != nil }
 
+    /// What the bar shows of the microphone, after the time.
+    public enum Microphone: Equatable, Sendable {
+        /// Not recorded: nothing.
+        case none
+        /// Recorded: a meter of how loud it is.
+        case metered
+        /// Asked for and left out, since access to it is off: a warning in the meter's place, which stays.
+        case denied
+    }
+
     /// Shows the bar by `area` (global points): centered under it, above it without room there, inside its
     /// bottom edge when neither has room (a whole display), above `clearing` points at its foot. Always on a
-    /// display. With `microphone`, a meter after the time shows how loud the microphone is; with
-    /// `microphoneDenied`, a microphone that was asked for and left out, since access to it is off, says so there.
-    public func show(by area: CGRect, displays: [CGRect], clearing: CGFloat = 0, microphone: Bool = false, microphoneDenied: Bool = false) {
+    /// display. After the time, what `microphone` says.
+    public func show(by area: CGRect, displays: [CGRect], clearing: CGFloat = 0, microphone: Microphone = .none) {
         hide()
-        let view = ControlBarView(actions: actions, showsMicrophone: microphone || microphoneDenied)
-        if microphoneDenied, !microphone { view.showMicrophoneDenied() }
+        let view = ControlBarView(actions: actions, showsMicrophone: microphone != .none)
+        if microphone == .denied { view.showMicrophoneDenied() }
         let size = view.fittingSize
         let frame = Self.frame(for: size, by: area, inset: max(32, clearing + 12), displays: displays)
         let panel = ControlBarPanel(frame: frame.insetBy(dx: -Self.shadowRoom, dy: -Self.shadowRoom))
@@ -114,13 +124,14 @@ public final class RecordingControlBar {
     }
 
     #if DEBUG
-    /// The bar alone in a window behind the desktop picture, for scripted renders that show nothing.
+    /// The bar alone in a window behind the desktop picture, for scripted renders that show nothing. A metered
+    /// microphone shows `microphoneLevel`, or stopped sending sound with `microphoneStalled`.
     public static func debugHiddenWindow(
-        elapsed: Duration, paused: Bool, dark: Bool, microphoneLevel: Double? = nil, microphoneStalled: Bool = false,
-        microphoneDenied: Bool = false, asksDelete: Bool = false
+        elapsed: Duration, paused: Bool, dark: Bool, microphone: Microphone = .none, microphoneLevel: Double? = nil,
+        microphoneStalled: Bool = false, asksDelete: Bool = false
     ) -> NSWindow {
-        let view = ControlBarView(actions: Actions(pause: {}, resume: {}, restart: {}, delete: {}, stop: {}), showsMicrophone: microphoneLevel != nil || microphoneStalled || microphoneDenied)
-        if microphoneDenied { view.showMicrophoneDenied() }
+        let view = ControlBarView(actions: Actions(pause: {}, resume: {}, restart: {}, delete: {}, stop: {}), showsMicrophone: microphone != .none)
+        if microphone == .denied { view.showMicrophoneDenied() }
         if asksDelete { view.debugPressDelete() }
         view.update(elapsed: elapsed, paused: paused)
         if let microphoneLevel { view.updateMicrophone(level: microphoneLevel) }
@@ -422,7 +433,7 @@ final class ControlBarView: NSView {
     private func applyAppearance() {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             backing.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             rim.lineWidth = contrast ? 1 : 0.5
             rim.strokeColor = contrast
@@ -496,9 +507,7 @@ final class ControlBarView: NSView {
         button.title = help
         time.stringValue = question
         applyAppearance()
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: help, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(help, from: self)
         disarming = Task { [weak self] in
             try? await Task.sleep(for: Self.confirmTime)
             guard !Task.isCancelled else { return }

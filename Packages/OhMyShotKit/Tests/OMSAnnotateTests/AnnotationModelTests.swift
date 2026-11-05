@@ -122,6 +122,23 @@ struct AnnotationModelTests {
         guard case .text(let block) = restyled.shape else { Issue.record("not text"); return }
         #expect(block.look == .outlined && block.string == "x" && restyled.style.color == .green)
     }
+
+    @Test func aMovedMarkSnapsToAnotherMarksEdgeWithAGuideAcrossBoth() {
+        let still = Annotation(shape: .rectangle(Box(rect: CGRect(x: 200, y: 40, width: 100, height: 60))), style: Style(lineWidth: 0, shadow: false))
+        let moving = Annotation(shape: .rectangle(Box(rect: CGRect(x: 20, y: 150, width: 50, height: 20))), style: Style(lineWidth: 0, shadow: false))
+        let document = AnnotationDocument(pixelSize: CGSize(width: 800, height: 600), scale: 1, items: [still, moving])
+        // Moved so its top lands 3 pixels under the other's top, and nowhere near any other line.
+        let raw = CGSize(width: 30, height: -107)
+        let moved = moving.translated(by: raw).bounds(scale: 1)
+        let snapped = AlignmentSnapping.snap(moving, translatedBy: raw, in: document, threshold: 4, axisLockedX: false, axisLockedY: false)
+        #expect(snapped.delta.width == raw.width)
+        #expect(moving.translated(by: snapped.delta).bounds(scale: 1).minY == still.bounds(scale: 1).minY)
+        let top = still.bounds(scale: 1).minY
+        #expect(snapped.guides == [AlignmentSnapping.Guide(start: CGPoint(x: moved.minX, y: top), end: CGPoint(x: still.bounds(scale: 1).maxX, y: top))])
+        // Held to its axis by Shift, it moves as dragged.
+        let held = AlignmentSnapping.snap(moving, translatedBy: raw, in: document, threshold: 4, axisLockedX: false, axisLockedY: true)
+        #expect(held.delta == raw && held.guides.isEmpty)
+    }
 }
 
 extension Annotation {

@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// What a scrolling capture shows beside its area while it runs: a card with the picture as it grows (where the
 /// view is, what just came into view always in it) and its size, a hint when one helps, and a bar with Done,
@@ -112,9 +113,7 @@ public final class ScrollingPanel {
         let announcement = doneKeys.map {
             String(localized: "Scroll what is under the area to capture it. Click Done, or press \($0) again, when you have all of it.", bundle: .module)
         } ?? String(localized: "Scroll what is under the area to capture it. Click Done when you have all of it.", bundle: .module)
-        NSAccessibility.post(element: card, notification: .announcementRequested, userInfo: [
-            .announcement: announcement, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(announcement, from: card)
     }
 
     /// Shows how the capture is going.
@@ -219,9 +218,7 @@ public final class ScrollingPanel {
     }
 
     private func announce(_ hint: Hint) {
-        NSAccessibility.post(element: card, notification: .announcementRequested, userInfo: [
-            .announcement: Self.text(for: hint), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(Self.text(for: hint), from: card)
     }
 
     private static func text(for hint: Hint) -> String {
@@ -477,7 +474,7 @@ private final class CardView: NSView {
         CATransaction.setDisableActions(true)
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             layer?.backgroundColor = dark ? NSColor.windowBackgroundColor.cgColor : CGColor(gray: 1, alpha: 1)
             layer?.borderWidth = contrast ? 1 : 0.5
             layer?.borderColor = contrast ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35)) : NSColor.separatorColor.cgColor

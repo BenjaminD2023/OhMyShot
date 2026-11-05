@@ -103,11 +103,29 @@ public struct S3Settings: Codable, Equatable, Sendable {
     /// Where the objects are served from for people with the link: a custom domain or `https://pub-xxx.r2.dev`.
     public var publicBaseURL: URL?
     public var linkStyle: LinkStyle
-    /// How long a presigned link works, in seconds. SigV4 allows at most 7 days.
+    /// How long a presigned link works, in seconds, as it was set. SigV4 allows at most 7 days: a link is signed for
+    /// `presignedLifetime`, this held within that.
     public var presignedExpiry: TimeInterval
 
     public static let maximumPresignedExpiry: TimeInterval = 7 * 86_400
     public static let defaultPresignedExpiry: TimeInterval = 7 * 86_400
+    /// The whole days Settings offers for a presigned link: from one up to the most SigV4 allows.
+    public static let presignedDayRange = 1...Int(maximumPresignedExpiry / 86_400)
+
+    /// How long a link signed now works: `presignedExpiry`, held from a second up to `maximumPresignedExpiry`.
+    public var presignedLifetime: TimeInterval {
+        min(max(presignedExpiry, 1), Self.maximumPresignedExpiry)
+    }
+
+    /// `presignedLifetime` in the whole days Settings offers (`presignedDayRange`); set, a link works that many.
+    public var presignedDays: Int {
+        get { Self.withinDayRange(Int((presignedLifetime / 86_400).rounded())) }
+        set { presignedExpiry = TimeInterval(Self.withinDayRange(newValue)) * 86_400 }
+    }
+
+    private static func withinDayRange(_ days: Int) -> Int {
+        min(max(days, presignedDayRange.lowerBound), presignedDayRange.upperBound)
+    }
 
     public init(
         endpoint: URL,

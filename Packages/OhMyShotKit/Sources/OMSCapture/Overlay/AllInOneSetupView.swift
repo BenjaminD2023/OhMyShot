@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// What All-In-One does with an area: capture it (with a follow-up such as copying or pinning, or as Settings say),
 /// read its text, capture it scrolling, or record it.
@@ -24,7 +25,7 @@ public enum AllInOneChoice: Equatable, Sendable {
 /// type it), and Escape. The keys stay with the frame until Tab or a click gives them to a field, so Return captures.
 ///
 /// Flipped: points from the display's top-left corner, as the frame's drawing expects.
-final class AllInOneSetupView: NSView {
+final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
     /// What the frame is for: every way to take the area, or Capture Area's size and shape alone.
     enum Kind {
         case allInOne
@@ -33,24 +34,13 @@ final class AllInOneSetupView: NSView {
 
     /// A way to take the area was chosen: the choice and the area in global points.
     var onChoose: ((AllInOneChoice, CGRect) -> Void)?
-    var onCancel: (() -> Void)?
     /// A shape was chosen on the ratio chip of Capture Area's size control: the shape Shift keeps from now on.
     var onShapeKept: ((AspectRatio) -> Void)?
 
-    private enum Adjustment {
-        case moving(start: CGPoint, original: CGRect)
-        case resizing(AreaFrame.Handle, original: CGRect)
-        case selecting(start: CGPoint)
-    }
-
-    private let display: DisplayInfo
     private let offersUpload: Bool
     private let kind: Kind
     /// The area in global points.
     private(set) var area: CGRect
-    private let chrome = SelectionChromeView()
-    private let bar: AllInOneActionBar
-    private var adjustment: Adjustment?
     /// The shape kept while the area is resized or a size typed; nil for any shape.
     private(set) var ratio: AspectRatio?
 
@@ -58,17 +48,11 @@ final class AllInOneSetupView: NSView {
     /// `showsCopy`: whether the bar has a Copy chip, which only while Settings don't copy every capture says more than
     /// Capture does; Command-C copies either way.
     init(display: DisplayInfo, area: CGRect, offersUpload: Bool, showsCopy: Bool = true, kind: Kind = .allInOne, ratio: AspectRatio? = nil) {
-        self.display = display
         self.offersUpload = offersUpload
         self.kind = kind
         self.area = area
         self.ratio = ratio
-        bar = AllInOneActionBar(offersUpload: offersUpload, showsCopy: showsCopy, sizingOnly: kind == .sizing)
-        super.init(frame: CGRect(origin: .zero, size: display.frame.size))
-        chrome.frame = bounds
-        chrome.autoresizingMask = [.width, .height]
-        addSubview(chrome)
-        addSubview(bar)
+        super.init(display: display, bar: AllInOneActionBar(offersUpload: offersUpload, showsCopy: showsCopy, sizingOnly: kind == .sizing))
         bar.onChoose = { [weak self] choice in self?.choose(choice) }
         bar.onCancel = { [weak self] in self?.onCancel?() }
         bar.onSize = { [weak self] width, height in self?.type(width: width, height: height) }
@@ -77,8 +61,6 @@ final class AllInOneSetupView: NSView {
             guard let self else { return }
             window?.makeFirstResponder(self)
         }
-        setAccessibilityElement(true)
-        setAccessibilityRole(.layoutArea)
         setAccessibilityLabel(String(localized: "Capture area", bundle: .module))
         setAccessibilityHelp(instructions)
         update()
@@ -99,26 +81,32 @@ final class AllInOneSetupView: NSView {
             : String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.", bundle: .module)
     }
 
-    override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
     /// Says what to do next.
-    func begin() {
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: instructions, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+    override func begin() {
+        VoiceOver.announce(instructions, from: self)
     }
 
-    /// The area in this view's points from the top-left corner.
-    private var frameRect: CGRect {
-        AreaFrame.local(area, on: display).intersection(bounds)
+    override var adjustableArea: CGRect? { area }
+
+    override var keptRatio: CGFloat? { ratio?.value }
+
+    override func areaAdjusted(_ area: CGRect) {
+        self.area = area
+        update()
+    }
+
+    override func primaryAction() {
+        choose(.screenshot(nil))
+    }
+
+    /// The size fields take an I-beam: they can be typed in.
+    override func cursor(overBarAt point: CGPoint) -> NSCursor {
+        bar.sizeFieldFrames.contains { convert($0, from: bar).insetBy(dx: -6, dy: -4).contains(point) } ? .iBeam : .arrow
     }
 
     /// The area's size in pixels, as it will be captured.
     private var pixelReading: String {
-        let scale = display.pixelsPerPoint
-        return "\(Int((area.width * scale).rounded())) × \(Int((area.height * scale).rounded()))"
+        AreaFrame.pixelReading(area.size, pixelsPerPoint: display.pixelsPerPoint)
     }
 
     /// What the bar shows of the size and the shape, for tests.
@@ -143,12 +131,9 @@ final class AllInOneSetupView: NSView {
 
     /// The size shows in the bar's fields; while the area is adjusted the bar steps aside and the size reading takes
     /// its place above the area's corner.
-    private func placeBar() {
-        bar.frame = AreaFrame.barFrame(size: bar.fittingSize, for: frameRect, in: bounds)
-        bar.isHidden = adjustment != nil
+    override func placeBar() {
+        super.placeBar()
         chrome.reading = bar.isHidden ? pixelReading : ""
-        chrome.avoiding = bar.isHidden ? .null : bar.frame
-        chrome.toolbarFrame = bar.isHidden ? .null : bar.frame
     }
 
     /// Keeps `ratio` (nil: any shape), reshaping the area to it at once around its middle.
@@ -200,123 +185,20 @@ final class AllInOneSetupView: NSView {
     /// Sets the area to `rect` (this view's points), on the display's pixels and at least the smallest size; false
     /// when it does not fit on the display.
     @discardableResult
-    private func setArea(_ rect: CGRect) -> Bool {
+    override func setArea(_ rect: CGRect) -> Bool {
         // With a shape kept, cutting the area to the display would change its shape: it stops at the edge instead.
         if ratio != nil, !bounds.insetBy(dx: -0.5, dy: -0.5).contains(rect) { return false }
-        let kept = rect.intersection(bounds)
-        guard !kept.isNull, kept.width >= AreaFrame.smallest, kept.height >= AreaFrame.smallest else { return false }
-        area = AreaFrame.global(AreaFrame.snapped(kept, pixelsPerPoint: display.pixelsPerPoint), on: display)
-        update()
-        return true
+        return super.setArea(rect)
     }
 
     // MARK: Input
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let hit = super.hitTest(point) else { return nil }
-        if hit === bar || hit.isDescendant(of: bar) { return hit }
-        return self
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .cursorUpdate, .activeAlways, .inVisibleRect], owner: self))
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        updateCursor(event)
-    }
-
-    override func cursorUpdate(with event: NSEvent) {
-        updateCursor(event)
-    }
-
-    private func updateCursor(_ event: NSEvent) {
-        guard adjustment == nil else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        if bar.frame.contains(point) {
-            // The size fields take an I-beam: they can be typed in.
-            let overField = bar.sizeFieldFrames.contains { convert($0, from: bar).insetBy(dx: -6, dy: -4).contains(point) }
-            return (overField ? NSCursor.iBeam : NSCursor.arrow).set()
-        }
-        if let handle = AreaFrame.handle(at: point, of: frameRect, in: bounds) { return AreaFrame.cursor(for: handle).set() }
-        (frameRect.contains(point) ? NSCursor.openHand : NSCursor.crosshair).set()
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
-        let point = convert(event.locationInWindow, from: nil)
-        let local = AreaFrame.local(area, on: display)
-        if let handle = AreaFrame.handle(at: point, of: frameRect, in: bounds) {
-            begin(.resizing(handle, original: local))
-            return
-        }
-        if local.contains(point) {
-            if event.clickCount == 2 { return choose(.screenshot(nil)) }
-            begin(.moving(start: point, original: local))
-            NSCursor.closedHand.set()
-            return
-        }
-        // Outside the frame: a new area.
-        begin(.selecting(start: point))
-    }
-
-    private func begin(_ adjustment: Adjustment) {
-        self.adjustment = adjustment
-        chrome.showsThirds = true
-        placeBar()
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let adjustment else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        let limits = bounds
-        let clamped = CGPoint(x: min(max(point.x, limits.minX), limits.maxX), y: min(max(point.y, limits.minY), limits.maxY))
-        var rect: CGRect
-        switch adjustment {
-        case .moving(let start, let original):
-            rect = original.offsetBy(dx: point.x - start.x, dy: point.y - start.y)
-            rect.origin.x = min(max(rect.minX, limits.minX), limits.maxX - rect.width)
-            rect.origin.y = min(max(rect.minY, limits.minY), limits.maxY - rect.height)
-        case .resizing(let handle, let original):
-            rect = if let ratio {
-                AreaFrame.resized(original, dragging: handle, to: clamped, keeping: ratio.value)
-            } else {
-                AreaFrame.resized(original, dragging: handle, to: clamped)
-            }
-        case .selecting(let start):
-            rect = if let ratio {
-                AreaFrame.resized(CGRect(origin: start, size: .zero), dragging: .bottomRight, to: clamped, keeping: ratio.value)
-            } else {
-                CGRect(x: min(start.x, clamped.x), y: min(start.y, clamped.y), width: abs(clamped.x - start.x), height: abs(clamped.y - start.y))
-            }
-        }
-        setArea(rect)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        guard adjustment != nil else { return }
-        adjustment = nil
-        chrome.showsThirds = false
-        placeBar()
-        updateCursor(event)
-        NSAccessibility.post(element: self, notification: .valueChanged)
-    }
-
+    /// Escape, Return, and Enter as every setup has them; the arrows, Tab, and the letters All-In-One's own.
     override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         switch event.keyCode {
-        case 53: // Escape: an adjustment first, then the whole capture.
-            if adjustment != nil {
-                adjustment = nil
-                chrome.showsThirds = false
-                placeBar()
-            } else {
-                onCancel?()
-            }
-        case 36, 76: // Return, Enter
-            choose(.screenshot(nil))
+        case 53, 36, 76: // Escape, Return, Enter
+            super.keyDown(with: event)
         case 123, 124, 125, 126:
             nudge(event.keyCode, by: flags.contains(.shift) ? 10 : 1, resizing: flags.contains(.option))
         case 48: // Tab: to the width, to type it.
@@ -349,16 +231,14 @@ final class AllInOneSetupView: NSView {
         return true
     }
 
-    /// The letter keys' choices for the area (F, the whole display, aside).
+    /// The letter keys' choices for the area (F, the whole display, aside): E, P, and U capture it to annotate, pin, or
+    /// upload; text, scrolling, and recording keep the letters the bar before the area gives them.
     static func choice(for character: String?) -> AllInOneChoice? {
         switch character {
         case "e": .screenshot(.annotate)
         case "p": .screenshot(.pin)
         case "u": .screenshot(.upload)
-        case "o": .text
-        case "s": .scroll
-        case "r": .record
-        default: nil
+        default: character.flatMap(AllInOneBar.Choice.init(key:))?.purpose
         }
     }
 
@@ -379,8 +259,7 @@ final class AllInOneSetupView: NSView {
             rect.size.width += dx
             rect.size.height += dy
         } else {
-            rect.origin.x = min(max(rect.minX + dx, bounds.minX), bounds.maxX - rect.width)
-            rect.origin.y = min(max(rect.minY + dy, bounds.minY), bounds.maxY - rect.height)
+            rect = AreaFrame.placed(rect.offsetBy(dx: dx, dy: dy), in: bounds)
         }
         if setArea(rect) { NSAccessibility.post(element: self, notification: .valueChanged) }
     }
@@ -511,7 +390,7 @@ final class AllInOneActionBar: CapsuleBar {
             item.state = ratio == preset ? .on : .off
             menu.addItem(item)
         }
-        popUp(menu, under: ratioChip)
+        menu.popUp(under: ratioChip)
     }
 
     @objc private func ratioChosen(_ sender: NSMenuItem) {
@@ -520,17 +399,6 @@ final class AllInOneActionBar: CapsuleBar {
             return
         }
         onRatio?(AspectRatio(width: sides[0], height: sides[1]))
-    }
-
-    /// The menu over the overlay: the panel sits just above pop-up menus, so it steps below them while the menu is open.
-    private func popUp(_ menu: NSMenu, under button: NSButton) {
-        let window = button.window
-        let level = window?.level
-        if let window, window.level >= .popUpMenu {
-            window.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
-        }
-        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: button.isFlipped ? button.bounds.maxY + 6 : -6), in: button)
-        if let window, let level { window.level = level }
     }
 
     /// `sizingOnly` is Capture Area's size control: Capture, the size, the shape, and Cancel, without the other ways to
@@ -719,10 +587,8 @@ final class AreaSizeFields: NSView, NSTextFieldDelegate {
     private func applyAppearance() {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            let boost: CGFloat = contrast ? 2 : 1
-            let selected = dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost)
-            let hover = dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
+            let dark = effectiveAppearance.isDark
+            let (selected, hover) = CapsuleBar.chipFills(dark: dark, increasedContrast: contrast)
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             var fillsAll = false

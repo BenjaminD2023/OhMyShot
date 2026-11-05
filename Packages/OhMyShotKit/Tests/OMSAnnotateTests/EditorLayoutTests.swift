@@ -31,8 +31,8 @@ struct EditorLayoutTests {
         let capsule = makeCapsule()
         // What the capsules can carry besides their controls: a reading under way, one that failed, and the
         // most redaction suggestions a two-digit count makes.
-        let statuses: [(name: String, finding: Bool, failed: Bool, suggestions: Int)] = [
-            ("resting", false, false, 0), ("finding", true, false, 0), ("failed", false, true, 0), ("suggestions", false, false, 99),
+        let statuses: [(name: String, reading: ReadingStatus, suggestions: Int)] = [
+            ("resting", .resting, 0), ("finding", .finding, 0), ("failed", .failed, 0), ("suggestions", .resting, 99),
         ]
         var widest: (state: String, width: CGFloat) = ("", 0)
         for tool in AnnotationTool.allCases where tool != .select && tool != .background {
@@ -40,7 +40,7 @@ struct EditorLayoutTests {
                 var settings = ToolSettings.defaults(for: tool)
                 // A color of one's own, unsaved, with the kept colors full: the dot and the dimmed plus.
                 settings.color = RGBA(red: 0.31, green: 0.42, blue: 0.53)
-                capsule.show(kind: tool, settings: settings, hasSelection: true, suggestions: status.suggestions, finding: status.finding, failed: status.failed)
+                capsule.show(kind: tool, settings: settings, hasSelection: true, suggestions: status.suggestions, reading: status.reading)
                 let width = capsule.fittingSize.width
                 if width > widest.width { widest = ("\(tool), \(status.name)", width) }
             }
@@ -52,8 +52,8 @@ struct EditorLayoutTests {
 
     @Test func everyCapsuleHasTheSameRoomAtBothEnds() {
         let capsule = makeCapsule()
-        let statuses: [(name: String, finding: Bool, failed: Bool, suggestions: Int)] = [
-            ("resting", false, false, 0), ("finding", true, false, 0), ("failed", false, true, 0), ("suggestions", false, false, 3),
+        let statuses: [(name: String, reading: ReadingStatus, suggestions: Int)] = [
+            ("resting", .resting, 0), ("finding", .finding, 0), ("failed", .failed, 0), ("suggestions", .resting, 3),
         ]
         func check(_ state: String) {
             capsule.frame.size = capsule.fittingSize
@@ -63,7 +63,7 @@ struct EditorLayoutTests {
         for tool in AnnotationTool.allCases where tool != .background {
             for status in statuses {
                 for selected in [false, true] {
-                    capsule.show(kind: tool, settings: ToolSettings.defaults(for: tool), hasSelection: selected, suggestions: status.suggestions, finding: status.finding, failed: status.failed)
+                    capsule.show(kind: tool, settings: ToolSettings.defaults(for: tool), hasSelection: selected, suggestions: status.suggestions, reading: status.reading)
                     check("\(tool), \(status.name), selected \(selected)")
                 }
             }

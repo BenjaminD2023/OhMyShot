@@ -39,7 +39,7 @@ public struct SecretStoreError: Error, LocalizedError, Equatable {
 public struct KeychainSecretStore: SecretStore {
     private let service: String
 
-    public init(service: String = "OhMyShot Uploads (\(Log.subsystem))") {
+    public init(service: String = "OhMyShot Uploads (\(AppIdentity.bundleIdentifier))") {
         self.service = service
     }
 

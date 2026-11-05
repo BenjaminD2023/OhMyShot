@@ -69,14 +69,7 @@ struct QuickAccessSettingsView: View {
                         .disabled(settings.quickAccessCloseAfter == 0)
                     }
                     if settings.quickAccessPreferences.closingDiscardsUnsavedCaptures(history: settings.historyRetention) {
-                        Label {
-                            Text("History is off: a card that closes unsaved takes its capture with it.", bundle: .module)
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                        }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        SettingsWarning(Text("History is off: a card that closes unsaved takes its capture with it.", bundle: .module))
                     }
                 }
             }
