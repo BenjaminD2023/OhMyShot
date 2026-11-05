@@ -21,7 +21,7 @@ struct GeneralSettingsView: View {
             SettingsRow(String(localized: "Language", bundle: .module), help: help) {
                 VStack(alignment: .leading, spacing: 4) {
                     Picker(selection: $language) {
-                        Text("System Default", bundle: .module).tag("")
+                        Text("System default", bundle: .module).tag("")
                         Divider()
                         ForEach(AppLanguage.available, id: \.self) { code in
                             Text(verbatim: AppLanguage.displayName(code)).tag(code)

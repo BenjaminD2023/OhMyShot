@@ -60,8 +60,8 @@ struct TextSettingsView: View {
                 HelpTopic(String(localized: "Translate into", bundle: .module), Text("Automatic picks the first of your preferred languages that the text isn’t already in. Translation runs on this Mac; a language is downloaded the first time it’s needed.", bundle: .module)),
             ]) {
                 Picker(selection: $settings.textRecognitionKeepsLineBreaks) {
-                    Text("Keep Line Breaks", bundle: .module).tag(true)
-                    Text("Join Lines", bundle: .module).tag(false)
+                    Text("Keep line breaks", bundle: .module).tag(true)
+                    Text("Join lines", bundle: .module).tag(false)
                 } label: {
                     Text("Image line breaks", bundle: .module)
                 }

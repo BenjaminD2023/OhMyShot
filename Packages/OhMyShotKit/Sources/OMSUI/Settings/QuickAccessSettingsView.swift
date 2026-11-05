@@ -60,7 +60,7 @@ struct QuickAccessSettingsView: View {
                         .fixedSize()
                         Picker(selection: $settings.quickAccessCloseAction) {
                             Text("Close", bundle: .module).tag(QuickAccessCloseAction.close)
-                            Text("Save and Close", bundle: .module).tag(QuickAccessCloseAction.saveAndClose)
+                            Text("Save and close", bundle: .module).tag(QuickAccessCloseAction.saveAndClose)
                         } label: {
                             Text("When the time is up", bundle: .module)
                         }

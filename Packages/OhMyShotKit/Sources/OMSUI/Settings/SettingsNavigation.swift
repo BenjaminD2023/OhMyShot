@@ -28,7 +28,7 @@ extension SettingsTab {
         case .general:
             [
                 SettingsSearchRow(String(localized: "Language", bundle: .module), terms: [
-                    String(localized: "System Default", bundle: .module),
+                    String(localized: "System default", bundle: .module),
                 ]),
                 SettingsSearchRow(String(localized: "Startup", bundle: .module), terms: [
                     String(localized: "Launch at login", bundle: .module),
@@ -117,7 +117,7 @@ extension SettingsTab {
                     String(localized: "Show on the display with the pointer", bundle: .module),
                 ]),
                 SettingsSearchRow(String(localized: "Close cards", bundle: .module), terms: [
-                    String(localized: "Save and Close", bundle: .module),
+                    String(localized: "Save and close", bundle: .module),
                 ]),
             ]
         case .recording:
@@ -163,8 +163,8 @@ extension SettingsTab {
                 ]),
                 SettingsSearchRow(String(localized: "Close text card", bundle: .module)),
                 SettingsSearchRow(String(localized: "Image line breaks", bundle: .module), terms: [
-                    String(localized: "Keep Line Breaks", bundle: .module),
-                    String(localized: "Join Lines", bundle: .module),
+                    String(localized: "Keep line breaks", bundle: .module),
+                    String(localized: "Join lines", bundle: .module),
                 ]),
                 SettingsSearchRow(String(localized: "Recognized Text", bundle: .module), terms: [
                     String(localized: "Wrap text to window", bundle: .module),
