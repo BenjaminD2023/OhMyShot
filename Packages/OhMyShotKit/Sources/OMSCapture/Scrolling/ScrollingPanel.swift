@@ -625,13 +625,14 @@ private final class ScrollingControls: CapsuleBar {
         autoScroll.setAccessibilityHelp(autoScroll.toolTip)
     }
 
-    /// A play triangle pointing the way the app will scroll.
+    /// The arrow Auto-scroll wears on the bar before the capture, turned the way the app will scroll: the same
+    /// command in both places, and no triangle that reads as a pop-up menu's.
     private static func symbol(for direction: AutoScroller.Direction) -> String {
         switch direction {
-        case .down: "arrowtriangle.down.fill"
-        case .up: "arrowtriangle.up.fill"
-        case .left: "arrowtriangle.left.fill"
-        case .right: "arrowtriangle.right.fill"
+        case .down: "arrow.down.circle"
+        case .up: "arrow.up.circle"
+        case .left: "arrow.left.circle"
+        case .right: "arrow.right.circle"
         }
     }
 
