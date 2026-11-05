@@ -1,3 +1,4 @@
+import OMSDesign
 import AppKit
 import OMSCore
 import Testing
@@ -187,6 +188,8 @@ struct CaptureToolbarSetupTests {
         _ = view.debugAct("right")
         #expect(view.area == Self.area.offsetBy(dx: 1, dy: 0))
         #expect(view.debugBarState.frame == moved)
+        #expect(view.chrome.avoiding == moved)
+        #expect(view.chrome.toolbarFrame == moved)
         view.debugMoveBar(by: CGVector(dx: 10000, dy: -10000))
         #expect(view.bounds.insetBy(dx: 8, dy: 8).contains(view.debugBarState.frame))
         #expect(view.debugBarState.frame.maxX == view.bounds.maxX - 8)
@@ -208,6 +211,8 @@ struct CaptureToolbarSetupTests {
         view.debugHideBar()
         #expect(view.hitTest(start) === view)
         #expect(view.debugBarState.isHidden)
+        #expect(view.chrome.avoiding.isNull)
+        #expect(view.chrome.toolbarFrame.isNull)
         func mouse(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
             try #require(NSEvent.mouseEvent(
                 with: type, location: view.convert(point, to: nil), modifierFlags: [], timestamp: 0,

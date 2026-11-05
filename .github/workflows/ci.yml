@@ -1,0 +1,71 @@
+# For every push to main that touches the app: builds it as a release does (Scripts/release.sh --build-only, which
+# signs nothing), so a push that a release couldn't build, or whose notices don't match its packages, shows at once.
+# The build keeps Xcode's compilation cache for the next one, and the release workflow starts from it, so a release
+# compiles only what changed since main's last build. Docs/release.md, Releasing from CI, has the rest.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["*.md", "Docs/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A push while a build runs waits for it rather than stopping it, so every build leaves its cache.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    # Upstream CI uses its private runner; fork validation runs locally.
+    if: github.repository == 'MMFoundation/OhMyShot'
+    name: Build
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/xcode
+        id: xcode
+        with:
+          xcode: ${{ vars.RELEASE_XCODE || '27.2' }}
+
+      # The packages' checkouts, at the versions in Config/Package.resolved.
+      - name: Cache the packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/SourcePackages
+          key: source-packages-${{ hashFiles('Config/Package.resolved') }}
+
+      # The latest build's, of this commit's parent as a rule. Saved below under this commit, as a cache can't change.
+      - name: Restore the compilation cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/CompilationCache.noindex
+          key: compilation-cache-${{ runner.environment }}-xcode-${{ steps.xcode.outputs.build }}-${{ github.sha }}
+          restore-keys: compilation-cache-${{ runner.environment }}-xcode-${{ steps.xcode.outputs.build }}-
+
+      - name: Build as a release does
+        id: build
+        run: Scripts/release.sh --build-only
+
+      - name: Summarize the build
+        if: always() && steps.build.outcome != 'skipped'
+        run: Scripts/build-summary.sh build/release/build-only/build.log | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Even after a failed build: what it compiled is as good as ever.
+      - name: Save the compilation cache
+        if: always() && steps.build.outcome != 'skipped'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/CompilationCache.noindex
+          key: compilation-cache-${{ runner.environment }}-xcode-${{ steps.xcode.outputs.build }}-${{ github.sha }}

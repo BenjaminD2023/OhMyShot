@@ -5,6 +5,7 @@ import Foundation
 import OMSAnnotate
 import OMSCapture
 import OMSCore
+import OMSDesign
 import OMSRecording
 import OMSStudio
 import OMSUI
@@ -25,6 +26,8 @@ final class RecordingCoordinator {
     private let overlay: OverlayController
     private let history: HistoryStore
     private let permissions: PermissionCenter
+    /// Saves and copies kept recordings, as their cards do.
+    private let files: ScreenshotFiles
     private let drafts = RecordingDrafts.standard()
     private let countdown = SelfTimerCountdown()
     private let outline = AreaOutline()
@@ -57,8 +60,6 @@ final class RecordingCoordinator {
     var copiedToClipboard: ((UUID) -> Void)?
     /// The composition root shows it in the menu bar.
     var onStatus: ((Status) -> Void)?
-    /// Saves a copy of a kept recording to the export folder, as Save on its card does.
-    var save: ((URL) -> URL?)?
     /// The keys of Record Screen, told to VoiceOver as the way to stop; nil when it has none.
     var shortcutKeys: (() -> String?)?
 
@@ -96,9 +97,22 @@ final class RecordingCoordinator {
     private var cameraFills: [(time: Double, fills: Bool)] = []
     private var cameraBubble = StudioProject.Camera()
 
-    private var session: Session?
-    /// Counting down to a recording.
-    private var pending: Plan?
+    /// Where Record Screen is: nothing under way, a countdown, a recording starting, or one recording.
+    private enum Phase {
+        case idle
+        /// Asking for the microphone, then counting down: Record Screen again cancels it.
+        case countingDown(Plan)
+        /// The countdown is over and the recorder starting. `stops` once Stop came meanwhile (Record Screen again, or the
+        /// app quitting): it stops as soon as it has started.
+        case starting(Plan, stops: Bool)
+        case recording(Session)
+    }
+
+    private var phase = Phase.idle
+    /// The recording under way, once it has started.
+    private var session: Session? {
+        if case .recording(let session) = phase { session } else { nil }
+    }
     /// The microphone was asked for and left out, access to it being off: the control bar says so.
     private var microphoneDenied = false
     /// What could not be done, by the pointer: the recording that couldn't start.
@@ -112,7 +126,7 @@ final class RecordingCoordinator {
     /// Which of them the meter found stopped when it last looked.
     private var microphoneStalled = false
     private var systemAudioStalled = false
-    /// Recordings being finished; the app waits for them before quitting.
+    /// Recordings starting or being finished; the app waits for them before quitting.
     private var finishing = 0
     private var finishingDone: [(Bool) -> Void] = []
     private var finishingMayQuit = true
@@ -120,26 +134,39 @@ final class RecordingCoordinator {
     private var makingGIFs = 0
     private var gifProgress = 0.0
 
-    init(settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, history: HistoryStore, permissions: PermissionCenter) {
+    init(
+        settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, history: HistoryStore,
+        permissions: PermissionCenter, files: ScreenshotFiles
+    ) {
         self.settings = settings
         self.displays = displays
         self.capturer = capturer
         self.overlay = overlay
         self.history = history
         self.permissions = permissions
+        self.files = files
         // All-In-One sets up a recording in its own session: the bar starts with the choices it has here.
         overlay.onWillSetUpRecording = { [weak self] in self?.configureOverlayForRecording() }
     }
 
-    var isRecording: Bool { session != nil }
-    var isCountingDown: Bool { pending != nil }
+    /// Whether a recording is under way or starting: Record Screen stops it.
+    var isRecording: Bool {
+        switch phase {
+        case .starting, .recording: true
+        case .idle, .countingDown: false
+        }
+    }
+
+    var isCountingDown: Bool {
+        if case .countingDown = phase { true } else { false }
+    }
 
     #if DEBUG
     /// The recorder running now, for scripted checks.
     var debugRecorder: ScreenRecorder? { session?.recorder }
     /// Keeps recordings off the clipboard, for scripted checks.
     var debugLeavesClipboard = false
-    /// Whether a recording is still being finished, made into a GIF, or kept.
+    /// Whether a recording is still starting, being finished, made into a GIF, or kept.
     var debugIsKeeping: Bool { finishing > 0 || makingGIFs > 0 }
     private var debugStatusKind: String?
     #endif
@@ -150,8 +177,11 @@ final class RecordingCoordinator {
     /// - Parameter area: chosen already, in global points (the URL API's `record-screen` with an area): framed with
     ///   the recording bar at once.
     func recordScreen(area: CGRect? = nil) {
-        if session != nil { return stop() }
-        if pending != nil { return cancelCountdown() }
+        switch phase {
+        case .starting, .recording: return stop()
+        case .countingDown: return cancelCountdown()
+        case .idle: break
+        }
         guard !overlay.isActive else { return }
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         overlay.freezesScreen = false
@@ -196,21 +226,22 @@ final class RecordingCoordinator {
 
     /// Records `target` on `display` without the overlay: for scripted checks, and for Restart.
     func record(_ target: RecordingTarget, on display: DisplayInfo, choices: RecordingChoices, appName: String?) {
-        guard session == nil, pending == nil else { return }
+        guard case .idle = phase else { return }
         prepare(Plan(target: target, display: display, choices: choices, appName: appName))
     }
 
     /// Asks for the microphone if it is wanted, then counts down (or not) and starts.
     private func prepare(_ plan: Plan) {
-        pending = plan
+        phase = .countingDown(plan)
         microphoneDenied = false
         Task { [weak self] in
             guard let self else { return }
             var plan = plan
-            if plan.choices.recordsMicrophone, !(await microphoneAllowed()) {
+            // Reading the microphone's access starts the system's capture machinery: only when the recording wants it.
+            if plan.choices.recordsMicrophone, !(await permissions.requestIfNeeded(.microphone)) {
                 Log.recording.notice("Recording without the microphone: access is off")
                 microphoneDenied = true
-                announce(String(localized: "Microphone access is off in System Settings. Recording without it."))
+                VoiceOver.announce(String(localized: "Microphone access is off in System Settings. Recording without it."))
                 var choices = plan.choices
                 choices.microphone = false
                 plan = Plan(target: plan.target, display: plan.display, choices: choices, appName: plan.appName)
@@ -223,8 +254,8 @@ final class RecordingCoordinator {
                 choices.showsKeystrokes = false
                 plan = Plan(target: plan.target, display: plan.display, choices: choices, appName: plan.appName)
             }
-            guard pending != nil else { return }
-            pending = plan
+            guard case .countingDown = phase else { return }
+            phase = .countingDown(plan)
             // Restarting brings the camera back; choosing on the bar showed it already.
             showCamera(for: plan)
             let seconds = settings.recordingCountdown
@@ -232,7 +263,7 @@ final class RecordingCoordinator {
             if case .area = plan.target { outline.show(area, layout: displays.layout, style: settings.recordingHighlight) }
             guard seconds > 0 else { return await start(plan) }
             let keys = shortcutKeys?()
-            announce(keys.map { String(localized: "Recording in \(seconds) seconds. Press \($0) to cancel.") }
+            VoiceOver.announce(keys.map { String(localized: "Recording in \(seconds) seconds. Press \($0) to cancel.") }
                 ?? String(localized: "Recording in \(seconds) seconds."))
             countdown.start(seconds: seconds, area: area, layout: displays.layout, outlinesArea: false) { [weak self] in
                 Task { await self?.start(plan) }
@@ -241,32 +272,20 @@ final class RecordingCoordinator {
     }
 
     private func cancelCountdown() {
-        pending = nil
+        phase = .idle
         countdown.cancel()
         outline.hide()
         camera.hide()
         showStatusAfterRecording()
-        announce(String(localized: "Recording cancelled."))
-    }
-
-    /// Whether the microphone may be recorded, asking the first time. Reading its status starts the
-    /// system's capture machinery, so it is read only when a recording wants the microphone.
-    private func microphoneAllowed() async -> Bool {
-        permissions.refresh([.microphone])
-        switch permissions.status(of: .microphone) {
-        case .granted:
-            return true
-        case .denied:
-            return false
-        case .notGranted:
-            await permissions.request(.microphone)
-            return permissions.status(of: .microphone) == .granted
-        }
+        VoiceOver.announce(String(localized: "Recording cancelled."))
     }
 
     private func start(_ plan: Plan) async {
-        guard pending != nil else { return }
-        pending = nil
+        guard case .countingDown = phase else { return }
+        phase = .starting(plan, stops: false)
+        // Quitting meanwhile waits for it to start, and then for it to be kept.
+        finishing += 1
+        defer { finished() }
         let probe = LatencyProbe("recording.start")
         var draft: RecordingDrafts.Draft?
         do {
@@ -282,10 +301,9 @@ final class RecordingCoordinator {
             let studio = plan.choices.output == .studio
             let shown = Set([keys?.windowID, rings?.windowID, studio ? nil : camera.windowID].compactMap(\.self))
             let source = try await capturer.recordingSource(for: plan.target, on: plan.display, including: shown)
-            let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
             let format = RecordingFormat.choose(
                 width: source.pixelWidth, height: source.pixelHeight,
-                framesPerSecond: lowPower ? 30 : settings.recordingFrameRate, prefersHEVC: settings.recordingPrefersHEVC
+                framesPerSecond: settings.recordingFramesPerSecond, prefersHEVC: settings.recordingPrefersHEVC
             )
             let created = try drafts.create(.init(
                 startedAt: .now, appName: plan.appName, output: plan.choices.output,
@@ -328,10 +346,13 @@ final class RecordingCoordinator {
                 throw error
             }
             probe.end()
-            session = Session(
+            let stops = if case .starting(_, stops: true) = phase { true } else { false }
+            phase = .recording(Session(
                 plan: plan, draft: created, recorder: recorder, source: source, startedAt: .now, telemetry: telemetry, camera: cameraRecorder,
                 cameraWanted: cameraWanted
-            )
+            ))
+            // Stop came while it started: kept as a recording stopped now is.
+            if stops { return stop() }
             showChrome(for: plan, source: source)
             camera.setRecording(true)
             if let keys {
@@ -341,10 +362,11 @@ final class RecordingCoordinator {
                 keyMonitor = monitor
             }
             let stopKeys = shortcutKeys?()
-            announce(stopKeys.map { String(localized: "Recording. Press \($0) again to stop.") }
+            VoiceOver.announce(stopKeys.map { String(localized: "Recording. Press \($0) again to stop.") }
                 ?? String(localized: "Recording. Click the time in the menu bar to stop."))
         } catch {
             Log.recording.error("Recording could not start: \(String(describing: error), privacy: .public)")
+            phase = .idle
             if let draft { drafts.remove(draft) }
             outline.hide()
             keystrokes?.hide()
@@ -354,7 +376,7 @@ final class RecordingCoordinator {
             camera.hide()
             showStatusAfterRecording()
             NSSound.beep()
-            announce(String(localized: "The recording couldn’t start."))
+            VoiceOver.announce(String(localized: "The recording couldn’t start."))
             // Said where the person is looking too: a beep alone says nothing of what went wrong.
             notice.show(String(localized: "The recording couldn’t start."), near: NSEvent.mouseLocation)
         }
@@ -462,13 +484,7 @@ final class RecordingCoordinator {
 
     /// The microphone a recording takes: the one chosen while it is attached, else the system's default.
     private func microphone(for choices: RecordingChoices) -> RecordingAudio.Microphone? {
-        guard choices.recordsMicrophone else { return nil }
-        guard !choices.microphoneID.isEmpty else { return .systemDefault }
-        guard Microphones.available().devices.contains(where: { $0.id == choices.microphoneID }) else {
-            Log.recording.notice("The chosen microphone is not attached; recording the default one")
-            return .systemDefault
-        }
-        return .device(choices.microphoneID)
+        choices.recordsMicrophone ? .chosen(choices.microphoneID) : nil
     }
 
     // MARK: While recording
@@ -478,7 +494,7 @@ final class RecordingCoordinator {
         session.recorder.pause()
         session.camera?.pause(at: CMClockGetTime(CMClockGetHostTimeClock()))
         tick()
-        announce(String(localized: "Recording paused."))
+        VoiceOver.announce(String(localized: "Recording paused."))
     }
 
     func resume() {
@@ -486,13 +502,13 @@ final class RecordingCoordinator {
         session.recorder.resume()
         session.camera?.resume(at: CMClockGetTime(CMClockGetHostTimeClock()))
         tick()
-        announce(String(localized: "Recording resumed."))
+        VoiceOver.announce(String(localized: "Recording resumed."))
     }
 
     /// Throws the recording so far away and records the same thing again, after the countdown.
     func restart() {
         guard let session else { return }
-        self.session = nil
+        phase = .idle
         endChrome()
         discard(session)
         prepare(session.plan)
@@ -501,10 +517,10 @@ final class RecordingCoordinator {
     /// Stops and throws the recording away.
     func delete() {
         guard let session else { return }
-        self.session = nil
+        phase = .idle
         endChrome()
         discard(session)
-        announce(String(localized: "Recording deleted."))
+        VoiceOver.announce(String(localized: "Recording deleted."))
     }
 
     private func discard(_ session: Session) {
@@ -516,10 +532,11 @@ final class RecordingCoordinator {
         }
     }
 
-    /// Stops, then finishes and keeps the recording.
+    /// Stops, then finishes and keeps the recording; one still starting, as soon as it has started.
     func stop() {
+        if case .starting(let plan, _) = phase { phase = .starting(plan, stops: true) }
         guard let session else { return }
-        self.session = nil
+        phase = .idle
         let makesGIF = session.plan.choices.output == .gif
         if makesGIF { makingGIFs += 1 }
         endChrome()
@@ -604,7 +621,7 @@ final class RecordingCoordinator {
                 studioDisplays[entry.id] = displayID
                 onKept?(entry)
                 probe.end()
-                announce(String(localized: "Recording stopped. Opening Studio."))
+                VoiceOver.announce(String(localized: "Recording stopped. Opening Studio."))
                 await openStudio(entry)
                 return
             }
@@ -615,12 +632,12 @@ final class RecordingCoordinator {
             drafts.remove(draft)
             probe.end()
             Log.recording.notice("Kept a recording of \(file.duration, format: .fixed(precision: 2), privacy: .public) s, \(file.pixelWidth, privacy: .public)x\(file.pixelHeight, privacy: .public), \(file.byteCount, privacy: .public) bytes as \(entry.fileName, privacy: .public)\(writer.map { ", \($0.framesWritten) frames written, \($0.framesDropped) dropped" } ?? "", privacy: .public)")
-            announce(output == .gif ? String(localized: "GIF made.") : String(localized: "Recording stopped."))
+            VoiceOver.announce(output == .gif ? String(localized: "GIF made.") : String(localized: "Recording stopped."))
         } catch {
             try? FileManager.default.removeItem(at: destination)
             Log.recording.error("Keeping the recording failed: \(String(describing: error), privacy: .public)")
             NSSound.beep()
-            announce(String(localized: "The recording couldn’t be kept. OhMyShot will try again next time it starts."))
+            VoiceOver.announce(String(localized: "The recording couldn’t be kept. OhMyShot will try again next time it starts."))
         }
     }
 
@@ -688,12 +705,9 @@ final class RecordingCoordinator {
             PasteboardWriter.write(fileURL: url)
             copiedToClipboard?(entry.id)
         }
-        let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: 560) ?? Self.blankThumbnail
-        var item = QuickAccessItem(
-            id: entry.id, kind: .recording, fileURL: url, thumbnail: thumbnail, pixelWidth: entry.pixelWidth,
-            pixelHeight: entry.pixelHeight, displayID: displayID, createdAt: entry.createdAt, duration: entry.duration
-        )
-        if after.saves { item.savedURL = save?(url) }
+        let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels) ?? Self.blankThumbnail
+        var item = QuickAccessItem(entry, fileURL: url, thumbnail: thumbnail, displayID: displayID)
+        if after.saves { item.savedURL = files.saveRecording(fileAt: url) }
         if after.uploads { uploadKept?(entry) }
         onRecorded?(item)
     }
@@ -704,7 +718,7 @@ final class RecordingCoordinator {
             let movie = try await RecordingFinisher.finish(draft.movieURL, to: destination)
             return KeptFile(url: movie.url, pixelWidth: movie.pixelWidth, pixelHeight: movie.pixelHeight, duration: movie.duration, byteCount: movie.byteCount)
         case .gif:
-            announce(String(localized: "Making the GIF."))
+            VoiceOver.announce(String(localized: "Making the GIF."))
             // As large as things were on screen: half the pixels of a Retina recording.
             let options = GIFMaker.Options(framesPerSecond: settings.recordingGIFFrameRate, scale: 1 / max(draft.info?.pixelsPerPoint ?? 1, 1))
             let probe = LatencyProbe("recording.gif")
@@ -744,8 +758,11 @@ final class RecordingCoordinator {
     /// Stops a recording before the app quits, and keeps the edits in open recording windows; `done` runs
     /// once every recording is kept. Returns false when there was nothing to wait for.
     func finishBeforeQuitting(_ done: @escaping (Bool) -> Void) -> Bool {
-        if pending != nil { cancelCountdown() }
-        if session != nil { stop() }
+        switch phase {
+        case .countingDown: cancelCountdown()
+        case .starting, .recording: stop()
+        case .idle: break
+        }
         // Edits in an open recording window are kept as its closing keeps them.
         for window in windows.values where window.hasUnkeptEdits {
             finishing += 1
@@ -783,8 +800,6 @@ final class RecordingCoordinator {
     /// A kept recording changed (edited, or put back as it was made): the composition root refreshes its
     /// card and Capture History.
     var onChanged: ((HistoryItem) -> Void)?
-    /// Copies a recording's file, as Copy on its card does.
-    var copyFile: ((URL) -> Void)?
 
     /// Opens a kept recording in the recording window: to play, trim, leave the sound out, make smaller, or
     /// make a GIF of; a GIF only plays.
@@ -860,8 +875,8 @@ final class RecordingCoordinator {
                     guard let self else { throw CocoaError(.userCancelled) }
                     return try keepStudioMovie(movie, madeWith: project, of: id)
                 },
-                copy: { [weak self] url in self?.copyFile?(url) },
-                save: { [weak self] url in self?.save?(url) },
+                copy: { [weak self] url in self?.files.copy(fileAt: url) },
+                save: { [weak self] url in self?.files.saveRecording(fileAt: url) },
                 progress: { [weak self] fraction in self?.showStudioExport(fraction) }
             )
         )
@@ -889,8 +904,7 @@ final class RecordingCoordinator {
         )
         Log.recording.notice("Kept a Studio movie: \(movie.duration, format: .fixed(precision: 2), privacy: .public) s, \(movie.pixelWidth, privacy: .public)x\(movie.pixelHeight, privacy: .public), \(movie.byteCount, privacy: .public) bytes")
         if first {
-            let layout = displays.layout
-            let displayID = studioDisplays[id] ?? layout.display(at: NSEvent.mouseLocation)?.id ?? layout.primary?.id ?? 0
+            let displayID = studioDisplays[id] ?? displays.layout.pointerDisplay?.id ?? 0
             Task { await present(updated, displayID: displayID) }
         } else {
             onChanged?(updated)
@@ -908,12 +922,12 @@ final class RecordingCoordinator {
         for window in studioWindows.values where window.isExportingAfterClosing {
             window.cancelExport()
         }
-        announce(String(localized: "Studio export cancelled."))
+        VoiceOver.announce(String(localized: "Studio export cancelled."))
     }
 
     /// How far along a Studio export is while its window is gone, in the menu bar; nil when it is done.
     private func showStudioExport(_ fraction: Double?) {
-        guard session == nil, pending == nil else { return }
+        guard case .idle = phase else { return }
         guard let fraction else { return showStatusAfterRecording() }
         report(.exportingStudio(progress: fraction))
     }
@@ -939,16 +953,13 @@ final class RecordingCoordinator {
                     guard let self else { throw CocoaError(.userCancelled) }
                     try await makeGIF(of: id, edit: edit)
                 },
-                save: { [weak self] url in self?.save?(url) },
-                copy: { [weak self] url in self?.copyFile?(url) }
+                save: { [weak self] url in self?.files.saveRecording(fileAt: url) },
+                copy: { [weak self] url in self?.files.copy(fileAt: url) }
             )
         )
-        controller.onClose = { [weak self] in
-            Task { @MainActor in
-                self?.windows[id] = nil
-                self?.windowClosed?(id)
-                MemoryRelief.returnFreedPages()
-            }
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
+            self?.windows[id] = nil
+            self?.windowClosed?(id)
         }
         windows[id] = controller
         return controller
@@ -986,8 +997,7 @@ final class RecordingCoordinator {
         )
         do {
             let gif = try await GIFMaker.make(from: history.fileURL(for: entry), to: destination, options: options)
-            let layout = displays.layout
-            let displayID = layout.display(at: NSEvent.mouseLocation)?.id ?? layout.primary?.id ?? 0
+            let displayID = displays.layout.pointerDisplay?.id ?? 0
             let file = KeptFile(url: gif.url, pixelWidth: gif.pixelWidth, pixelHeight: gif.pixelHeight, duration: gif.duration, byteCount: gif.byteCount)
             let made = try await deliver(file, startedAt: entry.createdAt, appName: entry.appName, pixelsPerPoint: entry.pixelsPerPoint, displayID: displayID)
             Log.recording.notice("Made a GIF of a recording: \(gif.frameCount, privacy: .public) frames, \(gif.pixelWidth, privacy: .public)x\(gif.pixelHeight, privacy: .public), \(gif.byteCount, privacy: .public) bytes as \(made.fileName, privacy: .public)")
@@ -1136,7 +1146,7 @@ final class RecordingCoordinator {
             // Inside a whole display, the bar keeps clear of the keys shown at its foot.
             controls.show(
                 by: area, displays: displays.layout.displays.map(\.frame), clearing: keystrokes == nil ? 0 : KeystrokeDisplay.reservedHeight,
-                microphone: plan.choices.recordsMicrophone, microphoneDenied: microphoneDenied
+                microphone: plan.choices.recordsMicrophone ? .metered : microphoneDenied ? .denied : .none
             )
         }
         if plan.choices.recordsMicrophone || plan.choices.recordsSystemAudio { startMeter() }
@@ -1165,7 +1175,7 @@ final class RecordingCoordinator {
     /// The menu bar once nothing is recording: how far along a GIF is, or the icon. A recording counting
     /// down or running has the menu bar to itself.
     private func showStatusAfterRecording() {
-        guard session == nil, pending == nil else { return }
+        guard case .idle = phase else { return }
         report(makingGIFs > 0 ? .makingGIF(progress: gifProgress) : .idle)
     }
 
@@ -1249,7 +1259,7 @@ final class RecordingCoordinator {
             controls.update(microphoneStalled: microphone)
             if microphone {
                 Log.recording.error("The microphone stopped sending sound")
-                announce(String(localized: "The microphone stopped sending sound. It may have been disconnected."))
+                VoiceOver.announce(String(localized: "The microphone stopped sending sound. It may have been disconnected."))
             } else if recorder.state == .recording {
                 Log.recording.notice("The microphone is sending sound again")
             }
@@ -1296,10 +1306,11 @@ final class RecordingCoordinator {
         false
         #endif
     }
+}
 
-    private func announce(_ message: String) {
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: message, .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+extension SettingsStore {
+    /// The frames a second a recording and the replay take: Settings' choice, but 30 in Low Power Mode.
+    var recordingFramesPerSecond: Int {
+        ProcessInfo.processInfo.isLowPowerModeEnabled ? 30 : recordingFrameRate
     }
 }

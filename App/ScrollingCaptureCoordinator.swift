@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import OMSCapture
 import OMSCore
+import OMSDesign
 import OMSUI
 import OSLog
 
@@ -104,11 +105,10 @@ final class ScrollingCaptureCoordinator {
             Task { await start(area, on: display, autoScrolls: autoScrolls, appName: app, copiesToClipboard: copies) }
             return
         }
-        overlay.startsScrollingAtOnce = starts
         // An area left framed when Auto-scroll asked for Accessibility is framed again.
         let choosing = area ?? keptArea
         keptArea = nil
-        overlay.begin(mode: .area, purpose: .scroll, choosing: choosing) { [weak self] outcome in
+        overlay.begin(mode: .area, purpose: .scroll, options: .init(startsScrollingAtOnce: starts), choosing: choosing) { [weak self] outcome in
             guard let self, case .scroll(let area, let display, let auto) = outcome else { return }
             if auto || autoScrolls, !AutoScroller.isAllowed {
                 // Asked now, before anything is captured: macOS's question would be in the picture. The area is kept
@@ -401,9 +401,7 @@ final class ScrollingCaptureCoordinator {
     private func failed(_ error: any Error) {
         Log.capture.error("Scrolling capture couldn't start: \(String(describing: error), privacy: .public)")
         NSSound.beep()
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "The scrolling capture couldn’t start."), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "The scrolling capture couldn’t start."))
     }
 
     private func makePanel() -> ScrollingPanel {
@@ -429,10 +427,7 @@ final class ScrollingCaptureCoordinator {
         } else {
             Task { await permissions.request(.accessibility) }
         }
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "Auto-scroll needs Accessibility. Turn it on in System Settings › Privacy & Security, then start the scrolling capture again."),
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "Auto-scroll needs Accessibility. Turn it on in System Settings › Privacy & Security, then start the scrolling capture again."))
     }
 
     private func setAutoScroll(_ on: Bool) {

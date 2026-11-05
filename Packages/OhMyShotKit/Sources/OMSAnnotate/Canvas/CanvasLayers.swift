@@ -1,4 +1,6 @@
 import AppKit
+import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// Where the document sits in a layer: the document point at the layer's top left, and view points per
@@ -108,12 +110,9 @@ nonisolated final class BackdropLayer: StillLayer {
         didSet { if mapping != oldValue { setNeedsDisplay() } }
     }
     /// The two squares of the checkerboard a clear background shows on screen, never in an export.
-    var checker: (light: CGColor, dark: CGColor) = (CGColor(gray: 1, alpha: 1), CGColor(gray: 0.91, alpha: 1)) {
+    var checker = Theme.Checkerboard.colors(dark: false, increasedContrast: false) {
         didSet { setNeedsDisplay() }
     }
-    /// A checker square, in view points.
-    static let checkerSize: CGFloat = 8
-
     override init() {
         super.init()
         needsDisplayOnBoundsChange = true
@@ -144,7 +143,7 @@ nonisolated final class BackdropLayer: StillLayer {
     /// The quiet checkerboard that shows where a clear background's room is, as image editors show
     /// transparency: squares a fixed size on screen, anchored at the picture's corner.
     private func drawChecker(over output: CGRect, in context: CGContext) {
-        let side = Self.checkerSize / max(mapping.zoom, 0.0001)
+        let side = Theme.Checkerboard.square / max(mapping.zoom, 0.0001)
         // Only the part of the picture this layer shows.
         let shown = CGRect(x: mapping.origin.x, y: mapping.origin.y, width: bounds.width / mapping.zoom, height: bounds.height / mapping.zoom).intersection(output)
         guard !shown.isNull else { return }

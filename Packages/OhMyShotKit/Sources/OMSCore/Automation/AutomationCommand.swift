@@ -46,7 +46,7 @@ public enum AutomationCommand: Equatable, Sendable {
     case addQuickAccessOverlay(file: URL)
     case openHistory
     case restoreRecentlyClosed
-    case openSettings(tab: String?)
+    case openSettings(tab: SettingsTab)
 
     /// Whether the command captures the screen, which needs Screen Recording.
     public var readsScreen: Bool {

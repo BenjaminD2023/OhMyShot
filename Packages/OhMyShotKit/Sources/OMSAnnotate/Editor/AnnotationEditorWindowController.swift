@@ -1,5 +1,5 @@
 import AppKit
-import ImageIO
+import OMSDesign
 import Observation
 import OMSCore
 import SwiftUI
@@ -285,7 +285,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     /// Combines picture files into the capture at `point` (pixels), as a drop does.
     public func simulateDrop(_ urls: [URL], at point: CGPoint) {
-        content.canvas.place(AnnotationCanvasView.incomingPictures(from: urls), at: point)
+        content.canvas.place(IncomingPicture.keep(urls), at: point)
     }
 
     /// Shows the canvas as pictures dragged over it see it.
@@ -356,7 +356,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     public func keepNow() {
         content.canvas.endEditing()
         let document = session.document
-        guard session.hasUnkeptChanges, let image = AnnotationRenderer.flatten(document, base: session.base), let png = Self.png(image),
+        guard session.hasUnkeptChanges, let image = AnnotationRenderer.flatten(document, base: session.base), let png = try? ImageExporter.encoded(image, as: .png),
               let url = actions.keep(document, png, image) else { return }
         fileURL = url
         if session.document == document { session.markKept() }
@@ -374,9 +374,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         Task {
             guard let rendered = await render() else {
                 NSSound.beep()
-                NSAccessibility.post(element: content.canvas, notification: .announcementRequested, userInfo: [
-                    .announcement: String(localized: "The picture couldn’t be copied.", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-                ])
+                VoiceOver.announce(String(localized: "The picture couldn’t be copied.", bundle: .module), from: content.canvas)
                 return
             }
             if let copy = actions.copy {
@@ -385,9 +383,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                 PasteboardWriter.write(png: rendered.png, image: rendered.image)
             }
             model.flashCopied()
-            NSAccessibility.post(element: content.canvas, notification: .announcementRequested, userInfo: [
-                .announcement: String(localized: "Copied", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(String(localized: "Copied", bundle: .module), from: content.canvas)
             _ = keep(rendered)
             if closesAfterCopy { window?.performClose(nil) }
         }
@@ -442,9 +438,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                     try await Self.write(project, to: url)
                     self?.model.flashSaved()
                     if let canvas = self?.content.canvas {
-                        NSAccessibility.post(element: canvas, notification: .announcementRequested, userInfo: [
-                            .announcement: String(localized: "Saved", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-                        ])
+                        VoiceOver.announce(String(localized: "Saved", bundle: .module), from: canvas)
                     }
                 } catch {
                     NSSound.beep()
@@ -484,13 +478,6 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     // MARK: Picture
 
-    func rotateLeft() { content.canvas.rotateLeft(nil) }
-    func rotateRight() { content.canvas.rotateRight(nil) }
-    func flipHorizontal() { content.canvas.flipHorizontal(nil) }
-    func flipVertical() { content.canvas.flipVertical(nil) }
-    func showImageSize() { content.canvas.showImageSize(nil) }
-    func toggleCanvasLock() { content.canvas.toggleCanvasLock(nil) }
-
     /// Asks for the size to scale the picture to, on a sheet on the window; scaling it, with its marks, is
     /// one undo step.
     private func presentImageSize() {
@@ -516,11 +503,6 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         window?.endSheet(sheet)
         if resizing, model.canResize { content.canvas.resizePicture(to: model.sizing.size) }
     }
-
-    func zoomToFit() { content.canvas.zoomToFit() }
-    func zoomToActualSize() { content.canvas.zoomToActualSize() }
-    func zoomIn() { content.canvas.zoomIn() }
-    func zoomOut() { content.canvas.zoomOut() }
 
     /// The file to drag out, with the edits kept in it first.
     func fileForDragging() -> URL? {
@@ -573,13 +555,6 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         if session.document == rendered.document { session.markKept() }
         return url
     }
-
-    private static func png(_ image: CGImage) -> Data? {
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, UTType.png.identifier as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(destination, image, nil)
-        return CGImageDestinationFinalize(destination) ? data as Data : nil
-    }
 }
 
 @MainActor
@@ -630,6 +605,9 @@ struct EditorView: View {
             .toolbar { toolbar }
     }
 
+    /// What the Picture and zoom menus act on, as the canvas's own keys and menu items do.
+    private var canvas: AnnotationCanvasView { content.canvas }
+
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
             Button {
@@ -650,29 +628,29 @@ struct EditorView: View {
         if model.presentation == .editor {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Button { model.controller?.showImageSize() } label: { Text("Image Size… (⌥⌘I)", bundle: .module) }
+                    Button { canvas.showImageSize(nil) } label: { Text("Image Size… (⌥⌘I)", bundle: .module) }
                     Divider()
-                    Button { model.controller?.rotateLeft() } label: { Text("Rotate Left (⌘L)", bundle: .module) }
-                    Button { model.controller?.rotateRight() } label: { Text("Rotate Right (⌘R)", bundle: .module) }
-                    Button { model.controller?.flipHorizontal() } label: { Text("Flip Horizontal", bundle: .module) }
-                    Button { model.controller?.flipVertical() } label: { Text("Flip Vertical", bundle: .module) }
+                    Button { canvas.rotateLeft(nil) } label: { Text("Rotate Left (⌘L)", bundle: .module) }
+                    Button { canvas.rotateRight(nil) } label: { Text("Rotate Right (⌘R)", bundle: .module) }
+                    Button { canvas.flipHorizontal(nil) } label: { Text("Flip Horizontal", bundle: .module) }
+                    Button { canvas.flipVertical(nil) } label: { Text("Flip Vertical", bundle: .module) }
                     Divider()
-                    Toggle(isOn: Binding(get: { model.locksCanvas }, set: { _ in model.controller?.toggleCanvasLock() })) {
+                    Toggle(isOn: Binding(get: { model.locksCanvas }, set: { _ in canvas.toggleCanvasLock(nil) })) {
                         Text("Lock Canvas", bundle: .module)
                     }
                 } label: {
-                    Label { Text("Picture", bundle: .module) } icon: { Image(systemName: "crop.rotate") }
+                    Label { Text("Picture", bundle: .module) } icon: { Image(systemName: "rotate.right") }
                 }
                 .help(Text("Resize, turn, or flip the picture", bundle: .module))
             }
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
-                Button { model.controller?.zoomToFit() } label: { Text("Zoom to Fit (⌘0)", bundle: .module) }
-                Button { model.controller?.zoomToActualSize() } label: { Text("Actual Size", bundle: .module) }
+                Button { canvas.zoomToFit() } label: { Text("Zoom to Fit (⌘0)", bundle: .module) }
+                Button { canvas.zoomToActualSize() } label: { Text("Actual Size", bundle: .module) }
                 Divider()
-                Button { model.controller?.zoomIn() } label: { Text("Zoom In (⌘+)", bundle: .module) }
-                Button { model.controller?.zoomOut() } label: { Text("Zoom Out (⌘−)", bundle: .module) }
+                Button { canvas.zoomIn() } label: { Text("Zoom In (⌘+)", bundle: .module) }
+                Button { canvas.zoomOut() } label: { Text("Zoom Out (⌘−)", bundle: .module) }
             } label: {
                 Text(verbatim: model.zoomLabel).monospacedDigit()
             }
@@ -793,7 +771,7 @@ struct DragOutHandle: NSViewRepresentable {
     }
 }
 
-final class DragOutView: NSView, NSDraggingSource {
+final class DragOutView: NSView, NSDraggingSource, CaptureDragSource {
     var thumbnail: CGImage? {
         didSet { layer?.contents = thumbnail }
     }

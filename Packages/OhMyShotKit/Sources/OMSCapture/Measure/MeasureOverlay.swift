@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// The ruler on one display, over its frozen frame: lines from the pointer out to the nearest change of

@@ -31,9 +31,7 @@ public struct ModelPackStore: Sendable {
 
     /// `Model Packs` in the app's own folder in Application Support.
     public static func standard() -> ModelPackStore {
-        let support = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false))
-            ?? URL(filePath: NSHomeDirectory()).appending(path: "Library/Application Support")
-        return ModelPackStore(root: support.appending(path: Log.subsystem).appending(path: "Model Packs"))
+        ModelPackStore(root: AppFolders.support.appending(path: "Model Packs"))
     }
 
     public func folder(of pack: ModelPack) -> URL {
@@ -49,9 +47,7 @@ public struct ModelPackStore: Sendable {
     /// The receipt of the pack's version, when that version is installed.
     public func receipt(of pack: ModelPack) -> Receipt? {
         let url = folder(of: pack).appending(path: Self.receiptName)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let data = try? Data(contentsOf: url), let receipt = try? decoder.decode(Receipt.self, from: data),
+        guard let data = try? Data(contentsOf: url), let receipt = try? JSONDecoder.records.decode(Receipt.self, from: data),
               receipt.id == pack.id, receipt.version == pack.version
         else { return nil }
         return receipt
@@ -100,10 +96,7 @@ public struct ModelPackStore: Sendable {
         // To the second, as the receipt keeps it.
         let installed = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
         let receipt = Receipt(id: pack.id, version: pack.version, size: pack.size, installed: installed)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(receipt).write(to: staging.appending(path: Self.receiptName), options: .atomic)
+        try JSONEncoder.records.encode(receipt).write(to: staging.appending(path: Self.receiptName), options: .atomic)
         let manager = FileManager.default
         if manager.fileExists(atPath: target.path(percentEncoded: false)) {
             try manager.removeItem(at: target)

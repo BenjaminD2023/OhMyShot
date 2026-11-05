@@ -138,7 +138,7 @@ public final class ScreenCapturer {
         let totalWindow = placed.dropFirst().reduce(first.windowFrame) { $0.union($1.windowFrame) }
         let width = max(Int((totalPicture.width * scale).rounded()), 1)
         let height = max(Int((totalPicture.height * scale).rounded()), 1)
-        let space = first.image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let space = CapturedFrame.bitmapSpace(of: first.image)
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: space, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
@@ -232,7 +232,7 @@ public final class ScreenCapturer {
             if height % 2 == 1 { height -= 1; area.origin.y += 1 / scale; area.size.height = CGFloat(height) / scale }
             let isWhole = area.size == display.frame.size
             return RecordingSource(
-                filter: filter, sourceRect: isWhole ? nil : Self.displayLocalRect(area, on: display),
+                filter: filter, sourceRect: isWhole ? nil : AreaFrame.local(area, on: display),
                 pixelWidth: max(2, width), pixelHeight: max(2, height), frame: area, displayID: display.id
             )
         }
@@ -249,7 +249,7 @@ public final class ScreenCapturer {
         let width = Int((rect.width * scale).rounded()), height = Int((rect.height * scale).rounded())
         guard !rect.isNull, width >= 8, height >= 8 else { throw CaptureError.emptyResult }
         return ScrollingCapture.Source(
-            filter: filter, sourceRect: Self.displayLocalRect(rect, on: display), pixelWidth: width, pixelHeight: height,
+            filter: filter, sourceRect: AreaFrame.local(rect, on: display), pixelWidth: width, pixelHeight: height,
             pixelsPerPoint: scale, frame: rect, displayID: display.id
         )
     }
@@ -305,7 +305,7 @@ public final class ScreenCapturer {
         configuration.showsCursor = showsCursor
         configuration.dynamicRange = dynamicRange == .sdr ? .sdr : .bothSDRAndHDR
         if region != nil {
-            configuration.sourceRect = Self.displayLocalRect(captured, on: display)
+            configuration.sourceRect = AreaFrame.local(captured, on: display)
         }
         // Ask for framebuffer pixels explicitly so scaled display modes come out 1:1.
         configuration.width = Int((captured.width * display.pixelsPerPoint).rounded())
@@ -314,16 +314,5 @@ public final class ScreenCapturer {
         let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
         guard let image = output.sdrImage else { throw CaptureError.emptyResult }
         return CapturedFrame(image: image, hdrImage: output.hdrImage, displayID: display.id, frame: captured)
-    }
-
-    /// Converts a rect in AppKit's global space to the display's own logical space, which
-    /// ScreenCaptureKit measures in points from the display's top-left corner.
-    static func displayLocalRect(_ rect: CGRect, on display: DisplayInfo) -> CGRect {
-        CGRect(
-            x: rect.minX - display.frame.minX,
-            y: display.frame.maxY - rect.maxY,
-            width: rect.width,
-            height: rect.height
-        )
     }
 }

@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// Buttons for the app's floating panels, drawn by hand. AppKit draws its own controls dimmed in windows
 /// that are not key, and the floating panels (Quick Access, the text result) never become key, so
@@ -146,7 +147,7 @@ final class CardButton: NSControl {
 
     override func draw(_ dirtyRect: NSRect) {
         let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         let radius = bounds.height / 2
         if let backdrop {
             backdrop.setFill()
@@ -168,8 +169,8 @@ final class CardButton: NSControl {
         case .barIcon:
             // The bar's own hover and pressed fills, or its selected fill (a press adds the hover fill to it), doubled
             // under Increase Contrast.
-            let hoverFill: CGFloat = dark ? 0.09 : 0.045
-            let fill = isSelected ? (dark ? 0.16 : 0.08) + (pressed ? hoverFill : 0) : hoverFill * (pressed ? 2 : hovering ? 1 : 0)
+            let hoverFill = Theme.ChipFill.hover(dark: dark)
+            let fill = isSelected ? Theme.ChipFill.selected(dark: dark) + (pressed ? hoverFill : 0) : hoverFill * (pressed ? 2 : hovering ? 1 : 0)
             NSColor(white: dark ? 1 : 0, alpha: fill * (increaseContrast ? 2 : 1)).setFill()
             ink = isSelected ? .controlAccentColor : .labelColor
         }

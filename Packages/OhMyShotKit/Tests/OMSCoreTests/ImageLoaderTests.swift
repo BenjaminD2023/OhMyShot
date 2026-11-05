@@ -67,4 +67,12 @@ struct ImageLoaderTests {
         #expect(!ImageLoader.canLoad(URL(filePath: "/tmp/c.pdf")))
         #expect(!ImageLoader.canLoad(URL(string: "https://example.com/d.png")!))
     }
+
+    /// One rule for the scale a resolution states, wherever a picture is read: quarter steps, and 72 dpi states none.
+    @Test func aResolutionStatesPixelsPerPointInQuarterSteps() {
+        #expect(ImageLoader.pixelsPerPoint(in: [kCGImagePropertyDPIWidth: 143.99]) == 2)
+        #expect(ImageLoader.pixelsPerPoint(in: [kCGImagePropertyDPIWidth: 108]) == 1.5)
+        #expect(ImageLoader.pixelsPerPoint(in: [kCGImagePropertyDPIWidth: 72]) == nil)
+        #expect(ImageLoader.pixelsPerPoint(in: [:]) == nil)
+    }
 }

@@ -4,11 +4,20 @@
 # signed with the Sparkle key in the login keychain. The last lines print the `gh release create` that would publish
 # them. Docs/release.md has the whole procedure.
 #
-# Usage: Scripts/release.sh            a release
-#        Scripts/release.sh --publish  a release, then that `gh release create` itself (as the release workflow does)
-#        Scripts/release.sh --dry-run  everything that needs no Developer ID: the archive, the zip, the notes and an
-#                                      appcast, signed with this Mac's own identity and not notarized, into
-#                                      build/release/<version>-dry-run/. Never publish what it makes.
+# Usage: Scripts/release.sh               a release
+#        Scripts/release.sh --publish     a release, then that `gh release create` itself
+#        Scripts/release.sh --dry-run     everything that needs no Developer ID: the archive, the zip, the notes and an
+#                                         appcast, signed with this Mac's own identity and not notarized, into
+#                                         build/release/<version>-dry-run/. Never publish what it makes.
+#        Scripts/release.sh --check       only the checks a release makes first that need no Mac (the version, its
+#                                         tag, the notes, the feed; with --publish, gh too), as the release
+#                                         workflow's preflight runs them on Linux. Builds nothing.
+#        Scripts/release.sh --build-only  only the build a release makes, and the notices' check, as CI builds main:
+#                                         no version checks, nothing signed, nothing in build/release/<version>/.
+#
+# The build is a Release build for Apple silicon that compiles through Xcode's compilation cache in
+# build/CompilationCache.noindex, which CI keeps from one build of main to the next and hands to the release workflow:
+# what comes from the cache is the same as compiling it afresh, and only what changed is compiled again.
 #
 # A release needs, on this Mac:
 #   - a "Developer ID Application" certificate in the login keychain
@@ -36,14 +45,20 @@ fail() {
 
 DRY_RUN=0
 PUBLISH=0
+CHECK=0
+BUILD_ONLY=0
 for arg in "$@"; do
   case $arg in
     --dry-run) DRY_RUN=1 ;;
     --publish) PUBLISH=1 ;;
+    --check) CHECK=1 ;;
+    --build-only) BUILD_ONLY=1 ;;
     *) fail "unknown option $arg" ;;
   esac
 done
 [ $DRY_RUN = 0 ] || [ $PUBLISH = 0 ] || fail "a dry run is never published"
+[ $BUILD_ONLY = 0 ] || [ $# = 1 ] || fail "--build-only goes alone"
+[ $CHECK = 0 ] || [ $DRY_RUN = 0 ] || fail "--check checks a release, not a dry run"
 
 REPO=MMFoundation/OhMyShot
 FEED="https://github.com/$REPO/releases/latest/download/appcast.xml"
@@ -79,15 +94,54 @@ BUILD=$(sed -n 's/^CURRENT_PROJECT_VERSION = //p' Config/Base.xcconfig)
 TAG="v$VERSION"
 [ -n "$VERSION" ] && [ -n "$BUILD" ] || fail "no MARKETING_VERSION or CURRENT_PROJECT_VERSION in Config/Base.xcconfig"
 
-if [ $DRY_RUN = 1 ]; then
+if [ $BUILD_ONLY = 1 ]; then
+  OUT=build/release/build-only
+elif [ $DRY_RUN = 1 ]; then
   OUT="build/release/$VERSION-dry-run"
 else
   OUT="build/release/$VERSION"
 fi
 
-# What has to be in place before anything is built.
-if [ $DRY_RUN = 0 ]; then
-  [ -z "$(git status --porcelain --untracked-files=no)" ] || fail "commit or stash the changes first"
+# What has to be in place before anything is built. First what any machine can check, which is all --check does (the
+# release workflow's preflight, on Linux), so that a release that can't be made stops before a Mac is involved.
+FEED_COPY=$(mktemp)
+trap 'rm -f "$FEED_COPY"' EXIT
+SECTION=$VERSION
+if [ $BUILD_ONLY = 0 ]; then
+  if [ $DRY_RUN = 0 ]; then
+    [ -z "$(git status --porcelain --untracked-files=no)" ] || fail "commit or stash the changes first"
+    if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && [ "$(git rev-parse "$TAG^{commit}")" != "$(git rev-parse HEAD)" ]; then
+      fail "the tag $TAG is on another commit: raise MARKETING_VERSION"
+    fi
+  fi
+  if [ $PUBLISH = 1 ]; then
+    gh api "repos/$REPO" --silent || fail "--publish needs gh to reach $REPO (signed in, or GH_TOKEN)"
+    if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then fail "$TAG is released already"; fi
+  fi
+  if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
+    [ $DRY_RUN = 1 ] || fail "CHANGELOG.md has no \"## [$VERSION]\" section for the release notes"
+    SECTION=Unreleased
+    echo "CHANGELOG.md has no \"## [$VERSION]\" section yet: the dry run's notes are Unreleased's."
+  fi
+  # The feed so far, so the new appcast keeps the versions before it; the first release has none. Its build number
+  # has to be below this one, or Sparkle would offer nothing.
+  if curl -fsSL "$FEED" -o "$FEED_COPY" 2>/dev/null; then
+    LAST_BUILD=$(sed -n 's:.*<sparkle\:version>\([0-9]*\)</sparkle\:version>.*:\1:p' "$FEED_COPY" | sort -n | tail -1)
+    if [ -n "$LAST_BUILD" ] && [ "$BUILD" -le "$LAST_BUILD" ]; then
+      fail "CURRENT_PROJECT_VERSION is $BUILD, but the feed already has build $LAST_BUILD: raise it"
+    fi
+  else
+    : > "$FEED_COPY"
+    echo "No feed at $FEED yet: the appcast starts with this version."
+  fi
+fi
+if [ $CHECK = 1 ]; then
+  echo "$TAG (build $BUILD) at $(git rev-parse --short HEAD) passes the checks that need no Mac."
+  exit 0
+fi
+
+# Then what needs this Mac: the identities, notarytool, the Sparkle key, the Metal Toolchain, the project.
+if [ $BUILD_ONLY = 0 ] && [ $DRY_RUN = 0 ]; then
   IDENTITY=$(identity "Developer ID Application")
   [ -n "$IDENTITY" ] || fail "no Developer ID Application certificate in ${SIGNING_KEYCHAIN:-the keychain}"
   TIMESTAMP=--timestamp
@@ -99,26 +153,13 @@ if [ $DRY_RUN = 0 ]; then
     notarytool history >/dev/null 2>&1 \
       || fail "no notarytool credentials under the keychain profile \"$NOTARY_PROFILE\" (xcrun notarytool store-credentials)"
   fi
-  if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && [ "$(git rev-parse "$TAG^{commit}")" != "$(git rev-parse HEAD)" ]; then
-    fail "the tag $TAG is on another commit: raise MARKETING_VERSION"
-  fi
 fi
 if [ $DRY_RUN = 1 ]; then
   IDENTITY=$(identity "Apple Development")
   [ -n "$IDENTITY" ] || fail "no Apple Development identity for the dry run"
   TIMESTAMP=--timestamp=none
 fi
-if [ $PUBLISH = 1 ]; then
-  gh api "repos/$REPO" --silent || fail "--publish needs gh to reach $REPO (signed in, or GH_TOKEN)"
-  if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then fail "$TAG is released already"; fi
-fi
 [ -z "$SPARKLE_KEY_FILE" ] || [ -s "$SPARKLE_KEY_FILE" ] || fail "no Sparkle key in $SPARKLE_KEY_FILE"
-SECTION=$VERSION
-if ! grep -q "^## \[$VERSION\]" CHANGELOG.md; then
-  [ $DRY_RUN = 1 ] || fail "CHANGELOG.md has no \"## [$VERSION]\" section for the release notes"
-  SECTION=Unreleased
-  echo "CHANGELOG.md has no \"## [$VERSION]\" section yet: the dry run's notes are Unreleased's."
-fi
 if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q "Status: installed"; then
   fail "Xcode's Metal Toolchain isn't installed: xcodebuild -downloadComponent MetalToolchain"
 fi
@@ -128,6 +169,7 @@ fi
 
 rm -rf "$OUT"
 mkdir -p "$OUT/archives"
+if [ -s "$FEED_COPY" ]; then cp "$FEED_COPY" "$OUT/archives/appcast.xml"; fi
 
 # The package versions committed in Config/Package.resolved, and no others (the build below resolves none of its own):
 # a new checkout, as in CI, has no versions yet, and this Mac's may have moved on since. Their originHash depends on
@@ -141,25 +183,18 @@ rm "$OUT/pins"
 mkdir -p "$(dirname "$PINS")"
 cp Config/Package.resolved "$PINS"
 
-# The feed so far, so the new appcast keeps the versions before it; the first release has none. Its build number has
-# to be below this one, or Sparkle would offer nothing.
-if curl -fsSL "$FEED" -o "$OUT/archives/appcast.xml" 2>/dev/null; then
-  LAST_BUILD=$(sed -n 's:.*<sparkle\:version>\([0-9]*\)</sparkle\:version>.*:\1:p' "$OUT/archives/appcast.xml" | sort -n | tail -1)
-  if [ -n "$LAST_BUILD" ] && [ "$BUILD" -le "$LAST_BUILD" ]; then
-    fail "CURRENT_PROJECT_VERSION is $BUILD, but the feed already has build $LAST_BUILD: raise it"
-  fi
-else
-  rm -f "$OUT/archives/appcast.xml"
-  echo "No feed at $FEED yet: the appcast starts with this version."
-fi
-
 echo "Building OhMyShot $VERSION ($BUILD)..."
 for app in build/Build/Products/Release/*.app build/Build/Products/Release/*.appex; do
   if [ -d "$app" ]; then xattr -cr "$app"; fi
 done
 # Stripped, as an archive would be, and without the debugging entitlement a development identity adds, which
-# notarization refuses. Not an archive: the MLX library's copy script can't read an archive's intermediate paths, and
-# a generic destination builds the packages for Intel too.
+# notarization refuses. Not an archive: the MLX library's copy script can't read an archive's intermediate paths.
+# ARCHS for every target, the packages' too: they don't take Config/Base.xcconfig's, and a Release build compiled each
+# of them for Intel as well (half of all its compiling, until 2026-11-05) for an app that links none of it.
+# The compilation cache keeps to 2 GB (about two builds' worth), dropping what the last builds didn't use. The log
+# lists every task (with "Cache hit" or "Cache miss" after each compile) and ends with their times by kind, which
+# Scripts/build-summary.sh sums up for CI.
+STARTED=$(date +%s)
 xcodebuild \
   -project OhMyShot.xcodeproj \
   -scheme OhMyShot \
@@ -167,11 +202,16 @@ xcodebuild \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath build \
   -onlyUsePackageVersionsFromResolvedFile \
+  ARCHS=arm64 \
   DEPLOYMENT_POSTPROCESSING=YES \
   STRIP_INSTALLED_PRODUCT=YES \
   CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
-  -quiet \
+  COMPILATION_CACHE_ENABLE_CACHING=YES \
+  COMPILATION_CACHE_CAS_PATH="$PWD/build/CompilationCache.noindex" \
+  COMPILATION_CACHE_LIMIT_SIZE=2G \
+  -showBuildTimingSummary \
   build > "$OUT/build.log" 2>&1 || { tail -40 "$OUT/build.log"; fail "the build failed: $OUT/build.log"; }
+echo "Built in $(($(date +%s) - STARTED)) seconds."
 # Xcode 27 beta prints "error: the following command failed with exit code 0" for some compiles that only warned, in
 # plain Release builds too, and the build still succeeds; anything else that says error is worth a look.
 if grep "^error:" "$OUT/build.log" | grep -qv "failed with exit code 0 but produced no further output"; then
@@ -182,6 +222,10 @@ fi
 if ! python3 -I Scripts/acknowledgments.py --check; then
   [ $DRY_RUN = 1 ] || fail "App/Acknowledgments.md doesn't match the packages the app was built with"
   echo "A release would stop here."
+fi
+if [ $BUILD_ONLY = 1 ]; then
+  echo "Built build/Build/Products/Release/OhMyShot.app as a release builds it, before signing: $OUT/build.log"
+  exit 0
 fi
 APP="$OUT/OhMyShot.app"
 ditto build/Build/Products/Release/OhMyShot.app "$APP"

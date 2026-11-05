@@ -1,0 +1,56 @@
+# Selects the Xcode the app needs (the macOS 27 SDK or later) for the rest of the job, and installs what building the
+# app takes besides: the Metal Toolchain (MLX's kernels) and XcodeGen. The CI and Release workflows share it.
+name: Set up Xcode
+description: Select Xcode, and install the Metal Toolchain and XcodeGen
+
+inputs:
+  xcode:
+    description: An Xcode version, as /Applications/Xcode_<version>.app on GitHub's images, or the path of an Xcode
+    required: true
+
+outputs:
+  build:
+    description: Xcode's build version (27B48, say), which keys the cache of what it compiled
+    value: ${{ steps.select.outputs.build }}
+
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode
+      id: select
+      shell: bash
+      env:
+        XCODE: ${{ inputs.xcode }}
+        RUNNER_KIND: ${{ runner.environment }}
+      run: |
+        case $XCODE in
+          /*) app=$XCODE ;;
+          *) app=/Applications/Xcode_$XCODE.app ;;
+        esac
+        if [ ! -d "$app" ]; then
+          if [ "${XCODE#/}" != "$XCODE" ] || [ "$RUNNER_KIND" != self-hosted ]; then
+            echo "::error::No Xcode at $app (the RELEASE_XCODE variable)"
+            exit 1
+          fi
+          # A runner of our own, with Xcode wherever it is: the one it has selected.
+          app=$(xcode-select -p)
+          app=${app%/Contents/Developer}
+        fi
+        echo "DEVELOPER_DIR=$app/Contents/Developer" >> "$GITHUB_ENV"
+        export DEVELOPER_DIR="$app/Contents/Developer"
+        xcodebuild -version
+        sdk=$(xcrun --sdk macosx --show-sdk-version)
+        if [ "${sdk%%.*}" -lt 27 ]; then
+          echo "::error::$app has the macOS $sdk SDK; the app needs 27 or later (the RELEASE_XCODE variable)"
+          exit 1
+        fi
+        echo "build=$(xcodebuild -version | sed -n 's/^Build version //p')" >> "$GITHUB_OUTPUT"
+
+    - name: Install the Metal Toolchain and XcodeGen
+      shell: bash
+      run: |
+        if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q "Status: installed"; then
+          xcodebuild -downloadComponent MetalToolchain
+        fi
+        command -v xcodegen >/dev/null || brew install xcodegen
+        xcodegen --version

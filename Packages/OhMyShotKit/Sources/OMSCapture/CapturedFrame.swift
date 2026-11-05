@@ -28,7 +28,7 @@ public struct CapturedFrame: Sendable {
     public func color(atPixel x: Int, _ y: Int) -> ScreenColor? {
         guard x >= 0, y >= 0, x < image.width, y < image.height,
               let single = image.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)) else { return nil }
-        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let space = Self.bitmapSpace(of: image)
         var bytes: [UInt8] = [0, 0, 0, 0]
         let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
             guard let context = CGContext(
@@ -41,6 +41,13 @@ public struct CapturedFrame: Sendable {
         }
         guard drawn, let color = CGColor(colorSpace: space, components: bytes.prefix(3).map { CGFloat($0) / 255 } + [1]) else { return nil }
         return ScreenColor(color)
+    }
+
+    /// The space a bitmap of `image`'s pixels is drawn in: the image's own when it is an RGB one, so the pixels keep
+    /// the display's colors (a Display P3 capture keeps what sRGB cannot hold); sRGB when it is not, since a bitmap
+    /// context of 8-bit BGRA takes no other model.
+    static func bitmapSpace(of image: CGImage) -> CGColorSpace {
+        image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
     }
 
     /// The part of this capture under `rect` (AppKit's global space), in whole pixels: what a capture of
@@ -59,7 +66,7 @@ public struct CapturedFrame: Sendable {
             .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
         guard !pixels.isNull, pixels.width >= 1, pixels.height >= 1, let part = image.cropping(to: pixels) else { return nil }
         // Drawn into a bitmap of its own in the capture's color space, so the pixels stay as they were.
-        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let space = Self.bitmapSpace(of: image)
         guard let context = CGContext(
             data: nil, width: Int(pixels.width), height: Int(pixels.height), bitsPerComponent: 8, bytesPerRow: 0, space: space,
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue

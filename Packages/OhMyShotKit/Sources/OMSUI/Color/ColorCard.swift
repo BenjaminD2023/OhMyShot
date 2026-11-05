@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The card an Option-click with the color picker opens: the color in every notation, each a click from
 /// the clipboard; its contrast against a second color picked from the screen (WCAG 2 and APCA); and Pin.
@@ -177,10 +178,7 @@ public final class ColorCardHUD {
 
     private func announce(_ message: String) {
         guard let card, !message.isEmpty else { return }
-        NSAccessibility.post(element: card, notification: .announcementRequested, userInfo: [
-            .announcement: message,
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(message, from: card)
     }
 }
 
@@ -557,18 +555,13 @@ final class ColorCard: NSView {
 
     /// The text result card's materials, resolved for this view's appearance.
     private func applyAppearance() {
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        background.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
-        background.borderWidth = increaseContrast ? 1 : 0.5
-        background.borderColor = switch (dark, increaseContrast) {
-        case (true, true): CGColor(gray: 1, alpha: 0.5)
-        case (true, false): CGColor(gray: 1, alpha: 0.12)
-        case (false, true): CGColor(gray: 0, alpha: 0.35)
-        case (false, false): CGColor(gray: 0, alpha: 0.08)
-        }
+        background.backgroundColor = Theme.Material.cardFill(dark: dark)
+        background.borderWidth = Theme.Material.edgeWidth(contrast: increaseContrast)
+        background.borderColor = Theme.Material.edge(dark: dark, contrast: increaseContrast)
         // The capsule swatch edge, so a white or a near-black color still reads as a swatch.
         let edge = dark ? CGColor(gray: 1, alpha: increaseContrast ? 0.6 : 0.38) : CGColor(gray: 0, alpha: increaseContrast ? 0.4 : 0.18)
         for well in [swatch, otherSwatch] {
@@ -613,10 +606,7 @@ final class ColorCard: NSView {
             guard !Task.isCancelled, let self else { return }
             self.rows.first { $0.format == row.format }?.copy.symbolName = "doc.on.doc"
         }
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "Copied \(color.string(in: row.format))", bundle: .module),
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "Copied \(color.string(in: row.format))", bundle: .module), from: self)
     }
 
     @objc private func close() { onClose?() }
@@ -631,10 +621,7 @@ final class ColorCard: NSView {
         refreshContrast()
         needsLayout = true
         if let summary = contrastSummary {
-            NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-                .announcement: summary,
-                .priority: NSAccessibilityPriorityLevel.medium.rawValue,
-            ])
+            VoiceOver.announce(summary, from: self, priority: .medium)
         }
     }
 }

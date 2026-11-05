@@ -8,7 +8,7 @@ import Foundation
 public enum ExportedFiles {
     /// Where converted copies are kept.
     public static var standardFolder: URL {
-        URL.cachesDirectory.appending(path: Log.subsystem, directoryHint: .isDirectory).appending(path: "Exports", directoryHint: .isDirectory)
+        AppFolders.caches.appending(path: "Exports", directoryHint: .isDirectory)
     }
 
     /// How long a converted copy stays: an upload can be retried, and a drag's target may take the file later.

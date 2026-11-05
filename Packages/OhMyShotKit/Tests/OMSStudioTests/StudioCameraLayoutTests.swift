@@ -439,17 +439,18 @@ struct StudioCameraSegmentEditingTests {
         document.deleteSelection()
         #expect(document.project.cuts.isEmpty && document.project.cameraSegments.map(\.id) == [layout])
         // A zoom chosen lets go of a layout chosen, and the layout of the zoom.
-        document.selectedSegment = layout
+        document.selection = .cameraSegment(layout)
         document.addZoom()
         let zoom = try #require(document.selectedZoom)
         #expect(document.selectedSegment == nil && document.selectedCut == nil)
-        document.selectedSegment = layout
+        document.selection = .cameraSegment(layout)
         #expect(document.selectedZoom == nil)
         document.deleteSelection()
         #expect(document.project.cameraSegments.isEmpty && document.project.zooms.map(\.id) == [zoom])
-        // Choosing nothing leaves what else is chosen.
-        document.selectedZoom = zoom
-        document.selectedCut = nil
+        // Taking back what isn't chosen leaves what is.
+        document.selection = .zoom(zoom)
+        document.restoreCut(at: 4)
+        document.removeCameraSegment(layout)
         #expect(document.selectedZoom == zoom)
     }
 

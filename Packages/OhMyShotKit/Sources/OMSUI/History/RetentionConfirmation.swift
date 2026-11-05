@@ -1,3 +1,4 @@
+import Foundation
 import OMSCore
 import SwiftUI
 
@@ -58,6 +59,18 @@ func retentionSelection(
             request.wrappedValue = RetentionChangeRequest(retention: retention, count: count)
         } else {
             settings.historyRetention = retention
+        }
+    }
+}
+
+extension HistoryRetention {
+    var title: String {
+        switch self {
+        case .never: String(localized: "Never", bundle: .module)
+        case .oneDay: String(localized: "1 Day", bundle: .module)
+        case .threeDays: String(localized: "3 Days", bundle: .module)
+        case .oneWeek: String(localized: "1 Week", bundle: .module)
+        case .oneMonth: String(localized: "1 Month", bundle: .module)
         }
     }
 }

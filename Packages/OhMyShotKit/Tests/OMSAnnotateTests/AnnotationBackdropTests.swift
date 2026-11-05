@@ -167,4 +167,17 @@ struct AnnotationBackdropTests {
         session.undo()
         #expect(session.document.backdrop == nil)
     }
+
+    @Test func theLastBackgroundPictureIsKeptAmongThePresetsPictures() {
+        let scratch = ScratchDefaults()
+        let defaults = scratch.make()
+        let presets = BackdropPresets(defaults: defaults)
+        #expect(presets.lastPicture == nil && presets.pictureNames.isEmpty)
+        presets.add(name: "Wall", backdrop: Backdrop(fill: .picture("wall.png")))
+        presets.lastPicture = "beach.jpg"
+        #expect(presets.pictureNames == ["wall.png", "beach.jpg"])
+        // Under the key earlier versions kept it by, so a picture chosen before is still offered.
+        #expect(defaults.string(forKey: "annotation.backdropPicture") == "beach.jpg")
+        #expect(BackdropPresets(defaults: defaults).lastPicture == "beach.jpg")
+    }
 }

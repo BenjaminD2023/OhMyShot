@@ -1,7 +1,5 @@
 import CoreGraphics
 import Foundation
-import ImageIO
-import UniformTypeIdentifiers
 
 /// How a picture goes to a cloud model: at its own pixels wherever the service takes them, never enlarged, and a
 /// tall one cut into pieces top to bottom that overlap a little, all sent in one request. Small text is what the
@@ -132,11 +130,11 @@ public enum CloudPicture {
         let width = max(1, Int((Double(image.width) * scale).rounded()))
         let height = max(1, Int((Double(rows.count) * scale).rounded()))
         let drawn = scale >= 1 ? cropped : try scaled(cropped, width: width, height: height)
-        if !allJPEG, let png = encode(drawn, as: .png, quality: nil), png.count <= limits.bytes {
+        if !allJPEG, let png = try? ImageExporter.encoded(drawn, as: .png), png.count <= limits.bytes {
             return Piece(data: png, mediaType: "image/png", width: drawn.width, height: drawn.height)
         }
         for quality in [0.92, 0.85, 0.75] {
-            if let jpeg = encode(drawn, as: .jpeg, quality: quality), jpeg.count <= limits.bytes {
+            if let jpeg = try? ImageExporter.encoded(drawn, as: .jpeg, quality: quality), jpeg.count <= limits.bytes {
                 return Piece(data: jpeg, mediaType: "image/jpeg", width: drawn.width, height: drawn.height)
             }
         }
@@ -154,14 +152,5 @@ public enum CloudPicture {
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         guard let scaled = context.makeImage() else { throw PictureError.unencodable }
         return scaled
-    }
-
-    private static func encode(_ image: CGImage, as type: UTType, quality: Double?) -> Data? {
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, type.identifier as CFString, 1, nil) else { return nil }
-        let options: [CFString: Any] = quality.map { [kCGImageDestinationLossyCompressionQuality: $0] } ?? [:]
-        CGImageDestinationAddImage(destination, image, options as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { return nil }
-        return data as Data
     }
 }

@@ -64,7 +64,7 @@ extension Uploader {
         switch settings.linkStyle {
         case .presigned:
             let now = Date()
-            let seconds = Int(min(max(settings.presignedExpiry, 1), S3Settings.maximumPresignedExpiry))
+            let seconds = Int(settings.presignedLifetime)
             let presigned = signer.presignedQuery(canonicalPath: address.path, host: address.host, expires: seconds, date: now)
             guard let link = URL(string: "\(address.scheme)://\(address.host)\(address.path)?\(presigned.query)") else { throw UploadError.linkMissing }
             return UploadResult(link: link, fileName: name, expiresAt: now.addingTimeInterval(TimeInterval(seconds)), remoteKey: address.key)

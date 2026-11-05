@@ -31,8 +31,8 @@ struct EditorLayoutTests {
         let capsule = makeCapsule()
         // What the capsules can carry besides their controls: a reading under way, one that failed, and the
         // most redaction suggestions a two-digit count makes.
-        let statuses: [(name: String, finding: Bool, failed: Bool, suggestions: Int)] = [
-            ("resting", false, false, 0), ("finding", true, false, 0), ("failed", false, true, 0), ("suggestions", false, false, 99),
+        let statuses: [(name: String, reading: ReadingStatus, suggestions: Int)] = [
+            ("resting", .resting, 0), ("finding", .finding, 0), ("failed", .failed, 0), ("suggestions", .resting, 99),
         ]
         var widest: (state: String, width: CGFloat) = ("", 0)
         for tool in AnnotationTool.allCases where tool != .select && tool != .background {
@@ -40,7 +40,7 @@ struct EditorLayoutTests {
                 var settings = ToolSettings.defaults(for: tool)
                 // A color of one's own, unsaved, with the kept colors full: the dot and the dimmed plus.
                 settings.color = RGBA(red: 0.31, green: 0.42, blue: 0.53)
-                capsule.show(kind: tool, settings: settings, hasSelection: true, suggestions: status.suggestions, finding: status.finding, failed: status.failed)
+                capsule.show(kind: tool, settings: settings, hasSelection: true, suggestions: status.suggestions, reading: status.reading)
                 let width = capsule.fittingSize.width
                 if width > widest.width { widest = ("\(tool), \(status.name)", width) }
             }
@@ -52,8 +52,8 @@ struct EditorLayoutTests {
 
     @Test func everyCapsuleHasTheSameRoomAtBothEnds() {
         let capsule = makeCapsule()
-        let statuses: [(name: String, finding: Bool, failed: Bool, suggestions: Int)] = [
-            ("resting", false, false, 0), ("finding", true, false, 0), ("failed", false, true, 0), ("suggestions", false, false, 3),
+        let statuses: [(name: String, reading: ReadingStatus, suggestions: Int)] = [
+            ("resting", .resting, 0), ("finding", .finding, 0), ("failed", .failed, 0), ("suggestions", .resting, 3),
         ]
         func check(_ state: String) {
             capsule.frame.size = capsule.fittingSize
@@ -63,7 +63,7 @@ struct EditorLayoutTests {
         for tool in AnnotationTool.allCases where tool != .background {
             for status in statuses {
                 for selected in [false, true] {
-                    capsule.show(kind: tool, settings: ToolSettings.defaults(for: tool), hasSelection: selected, suggestions: status.suggestions, finding: status.finding, failed: status.failed)
+                    capsule.show(kind: tool, settings: ToolSettings.defaults(for: tool), hasSelection: selected, suggestions: status.suggestions, reading: status.reading)
                     check("\(tool), \(status.name), selected \(selected)")
                 }
             }
@@ -80,16 +80,18 @@ struct EditorLayoutTests {
         settings.color = .red
         none.show(kind: .arrow, settings: settings, hasSelection: false)
         full.show(kind: .arrow, settings: settings, hasSelection: false)
-        // Eight chips of 24 pt, 2 pt apart.
-        #expect(abs(full.fittingSize.width - none.fittingSize.width - 8 * 26) < 1)
+        // Eight chips of 24 pt, 2 pt apart, behind the divider that sets them apart from the inks: 6 pt either
+        // side of it in place of the 2 between chips.
+        let divider: CGFloat = 10
+        #expect(abs(full.fittingSize.width - none.fittingSize.width - 8 * 26 - divider) < 1)
         // A color that is none of the inks and not kept gets a chip to keep it.
         settings.color = RGBA(red: 0.31, green: 0.42, blue: 0.53)
         none.show(kind: .arrow, settings: settings, hasSelection: false)
         let withSave = none.fittingSize.width
         none.savedColors.add(settings.color)
         none.show(kind: .arrow, settings: settings, hasSelection: false)
-        // Kept, it is a dot among the others in place of the save chip: one chip either way.
-        #expect(abs(none.fittingSize.width - withSave) < 1)
+        // Kept, it is a dot in place of the save chip (one chip either way), and the first kept brings the divider.
+        #expect(abs(none.fittingSize.width - withSave - divider) < 1)
     }
 
     @Test func theMarkerYellowTheHighlightersStartInIsNotOfferedToBeKept() {

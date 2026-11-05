@@ -114,6 +114,22 @@ public final class PermissionCenter {
         refresh([permission])
     }
 
+    /// Whether a permission is granted, read again now and asked for when macOS has not been told yet; one turned off
+    /// stays off. Reading the microphone's or the camera's starts the system's capture machinery, so ask only when a
+    /// feature wants it.
+    public func requestIfNeeded(_ permission: Permission) async -> Bool {
+        refresh([permission])
+        switch status(of: permission) {
+        case .granted:
+            return true
+        case .denied:
+            return false
+        case .notGranted:
+            await request(permission)
+            return status(of: permission) == .granted
+        }
+    }
+
     public func openSystemSettings(for permission: Permission) {
         NSWorkspace.shared.open(permission.settingsURL)
     }

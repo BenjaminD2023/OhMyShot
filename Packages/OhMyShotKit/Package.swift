@@ -14,6 +14,7 @@ let package = Package(
     platforms: [.macOS(.v26)],
     products: [
         .library(name: "OMSCore", targets: ["OMSCore"]),
+        .library(name: "OMSDesign", targets: ["OMSDesign"]),
         .library(name: "OMSCapture", targets: ["OMSCapture"]),
         .library(name: "OMSUI", targets: ["OMSUI"]),
         .library(name: "OMSOCR", targets: ["OMSOCR"]),
@@ -41,17 +42,24 @@ let package = Package(
             resources: [.process("Resources")],
             swiftSettings: swiftSettings
         ),
+        // The look every window and panel shares: the Theme tokens, the reading capsule, hover tags, the selection's
+        // chrome, VoiceOver announcements. AppKit, and nothing else of ours, so Core stays free of UI state. Not tied
+        // to the main actor: layers drawn off it read the tokens too; what touches views opts in explicitly.
+        .target(
+            name: "OMSDesign",
+            swiftSettings: swiftSettings
+        ),
         // ScreenCaptureKit, the selection overlay, window catalog, selection model. Main-actor by default.
         .target(
             name: "OMSCapture",
-            dependencies: ["OMSCore", "OMSPixels"],
+            dependencies: ["OMSCore", "OMSDesign", "OMSPixels"],
             resources: [.process("Resources")],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
         // Menu bar, settings, onboarding, shortcuts, the OCR panel. Main-actor by default.
         .target(
             name: "OMSUI",
-            dependencies: ["OMSCore", "OMSOCR", "KeyboardShortcuts"],
+            dependencies: ["OMSCore", "OMSDesign", "OMSOCR", "KeyboardShortcuts"],
             resources: [.process("Resources")],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
@@ -66,7 +74,7 @@ let package = Package(
         // document and its renderer are nonisolated, so exports render off the main actor.
         .target(
             name: "OMSAnnotate",
-            dependencies: ["OMSCore"],
+            dependencies: ["OMSCore", "OMSDesign"],
             resources: [.process("Resources")],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
@@ -82,13 +90,18 @@ let package = Package(
         // project and the compositor are nonisolated, so exports render off the main actor.
         .target(
             name: "OMSStudio",
-            dependencies: ["OMSCore"],
+            dependencies: ["OMSCore", "OMSDesign"],
             resources: [.process("Resources")],
             swiftSettings: swiftSettings + [.defaultIsolation(MainActor.self)]
         ),
         .testTarget(
             name: "OMSCoreTests",
             dependencies: ["OMSCore", "OMSPixels"],
+            swiftSettings: swiftSettings
+        ),
+        .testTarget(
+            name: "OMSDesignTests",
+            dependencies: ["OMSDesign"],
             swiftSettings: swiftSettings
         ),
         .testTarget(

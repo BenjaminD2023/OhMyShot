@@ -69,23 +69,16 @@ public enum FormulaMerge {
         let formulaIndices = formulas.indices.filter { !isPlain(formulas[$0].latex) }
         let lineIndices = lines.indices.filter { lines[$0].direction != .topToBottom && lines[$0].box.height > 0 }
         // Lines and formulas joined when on one row and near; each group of them is a row.
-        var parent = Array(0..<(lines.count + formulas.count))
-        func root(_ node: Int) -> Int {
-            var node = node
-            while parent[node] != node {
-                parent[node] = parent[parent[node]]
-                node = parent[node]
-            }
-            return node
-        }
+        var sets = DisjointSets(count: lines.count + formulas.count)
         for f in formulaIndices {
             for l in lineIndices where reaches(lines[l].box, formulas[f].box) {
-                parent[root(lines.count + f)] = root(l)
+                sets.join(l, lines.count + f)
             }
         }
+        // By the index that stands for each, as before: the rows come in that order.
         var groups: [Int: (lines: [Int], formulas: [Int])] = [:]
-        for f in formulaIndices { groups[root(lines.count + f), default: ([], [])].formulas.append(f) }
-        for l in lineIndices where groups[root(l)] != nil { groups[root(l)]!.lines.append(l) }
+        for f in formulaIndices { groups[sets.root(lines.count + f), default: ([], [])].formulas.append(f) }
+        for l in lineIndices where groups[sets.root(l)] != nil { groups[sets.root(l)]!.lines.append(l) }
 
         var pieces: [Piece] = []
         var rows: [Row] = []

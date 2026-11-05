@@ -78,4 +78,34 @@ struct KeptColorChipTests {
         #expect(action.handler?() == true)
         #expect(capsule.savedColors.colors.isEmpty)
     }
+
+    @Test func aColorAlmostAnInkIsNotOfferedToKeep() {
+        let capsule = makeCapsule()
+        var settings = ToolSettings.defaults(for: .arrow)
+        // An off-white the eyedropper might take, 5/255 from White.
+        settings.color = RGBA(red: 250.0 / 255, green: 251.0 / 255, blue: 251.0 / 255)
+        capsule.show(kind: .arrow, settings: settings, hasSelection: false)
+        #expect(chips(in: capsule, labeled: "Save Color").isEmpty)
+        // 9/255 away is a color of its own.
+        settings.color = RGBA(red: 246.0 / 255, green: 1, blue: 1)
+        capsule.show(kind: .arrow, settings: settings, hasSelection: false)
+        #expect(chips(in: capsule, labeled: "Save Color").count == 1)
+    }
+
+    @Test func theKeptColorsStandBehindADivider() throws {
+        func order(_ view: NSView) -> [NSView] {
+            view is CapsuleChip || view is NSBox ? [view] : view.subviews.flatMap(order)
+        }
+        let without = makeCapsule()
+        without.show(kind: .arrow, settings: ToolSettings.defaults(for: .arrow), hasSelection: false)
+        let plain = order(without)
+        let wheel = try #require(plain.firstIndex { $0.accessibilityLabel() == "Other Color…" })
+        #expect(!(plain[wheel - 1] is NSBox))
+
+        let with = makeCapsule(keeping: [kept])
+        with.show(kind: .arrow, settings: ToolSettings.defaults(for: .arrow), hasSelection: false)
+        let views = order(with)
+        let first = try #require(views.firstIndex { $0.accessibilityLabel() == "Saved Color" })
+        #expect(views[first - 1] is NSBox)
+    }
 }

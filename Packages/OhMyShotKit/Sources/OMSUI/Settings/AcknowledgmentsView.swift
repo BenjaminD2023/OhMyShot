@@ -30,9 +30,7 @@ struct AcknowledgmentsSheet: View {
                 }
             }
             .frame(height: 400)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+            .settingsWell(clipped: true)
             HStack {
                 Spacer()
                 Button(action: done) { Text("Done", bundle: .module) }

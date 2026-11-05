@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -15,18 +16,11 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     var availableTools: [AnnotationTool] { rail.tools }
     private let rail = ToolRail()
     private let capsule = StyleCapsule()
-    /// The open suggestions Redact All counted when the capsule was last shown.
-    private var shownSuggestions = 0
     /// What the capsule was last placed for, so a new selection fades it in while a zoom just moves it.
     private var capsuleAnchor: [Annotation.ID]?
     /// The background's adjustments, while their popover is open.
     private var adjustments: BackdropAdjustments?
     private weak var adjustPopover: NSPopover?
-    private var savedColorsObserver: NSObjectProtocol?
-
-    /// The picture last chosen for a background, offered again.
-    /// The last picture chosen for a background, offered again beside the colors.
-    static let lastPictureKey = "annotation.backdropPicture"
 
     private static let railInset: CGFloat = 12
     /// The band along the bottom where the capsule rests when nothing is selected.
@@ -46,18 +40,9 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         rail.showPreviewTools(presentation == .preview)
         rail.select(session.tool)
         rail.onSelect = { [weak self] tool in self?.choose(tool) }
-        capsule.onChange = { [weak self] name, change in
-            guard let self else { return }
-            session.changeSettings(name, change)
-            canvas.refreshEditingStyle()
-        }
-        capsule.onDelete = { [weak self] in self?.session.deleteSelection() }
-        capsule.onRedactAll = { [weak self] in self?.session.acceptAllRedactionSuggestions() }
-        capsule.onRetry = { [weak self] in self?.session.retryReadingForTool() }
+        capsule.bind(to: session, canvas: canvas) { [weak self] in self?.refreshCapsule() }
         capsule.onCropReset = { [weak self] in self?.canvas.resetCrop() }
         capsule.onCropRatio = { [weak self] ratio in self?.canvas.chooseCropRatio(ratio) }
-        capsule.onPickCanvasColor = { [weak self] in self?.canvas.toggleColorPicker() }
-        canvas.onColorPickerChange = { [weak self] in self?.refreshCapsule() }
         capsule.onCropDone = { [weak self] in
             guard let self else { return }
             canvas.commitCrop()
@@ -72,10 +57,6 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             self?.onViewportChange?()
         }
         session.observe { [weak self] event in self?.sessionChanged(event) }
-        // Colors kept in one editor show in every other.
-        savedColorsObserver = NotificationCenter.default.addObserver(forName: SavedColors.didChange, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshCapsule() }
-        }
         refreshCapsule()
     }
 
@@ -91,10 +72,6 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
-    }
-
-    isolated deinit {
-        if let savedColorsObserver { NotificationCenter.default.removeObserver(savedColorsObserver) }
     }
 
     override var isFlipped: Bool { true }
@@ -142,7 +119,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         case .document:
             // The selected mark may have changed kind of settings (undo, a restyle elsewhere), or the
             // background its fill.
-            if !session.selection.isEmpty || session.tool == .background || suggestionCountChanged { refreshCapsule() }
+            if !session.selection.isEmpty || session.tool == .background || capsule.countsStaleSuggestions(of: session) { refreshCapsule() }
             adjustments?.refresh()
         case .history:
             break
@@ -157,26 +134,15 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         }
     }
 
-    /// Whether Redact All's count is out of date: the capsule is rebuilt for it, not for every drag frame.
-    private var suggestionCountChanged: Bool {
-        session.tool == .redact && session.openRedactionSuggestions.count != shownSuggestions
-    }
-
     private func refreshCapsule() {
-        shownSuggestions = session.tool == .redact ? session.openRedactionSuggestions.count : 0
         if session.tool == .background {
             capsule.showBackground(StyleCapsule.BackgroundState(
                 backdrop: session.document.backdrop,
-                lastPicture: UserDefaults.standard.string(forKey: Self.lastPictureKey),
+                lastPicture: BackdropPresets.shared.lastPicture,
                 blur: session.blurredCapture
             ))
         } else {
-            capsule.isPickingCanvasColor = canvas.isPickingColor
-            capsule.show(
-                kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
-                suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
-                finding: session.isReadingForTool, failed: session.readingFailedForTool, sized: session.sizeApplies, cropRatio: session.cropRatio
-            )
+            capsule.refresh(from: session, canvas: canvas)
         }
         placeCapsule()
     }
@@ -207,7 +173,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         panel.canChooseDirectories = false
         panel.prompt = String(localized: "Use Picture", bundle: .module)
         panel.message = String(localized: "Choose a picture to set the capture on.", bundle: .module)
-        if UserDefaults.standard.string(forKey: Self.lastPictureKey) == nil {
+        if BackdropPresets.shared.lastPicture == nil {
             let pictures = URL(filePath: "/System/Library/Desktop Pictures", directoryHint: .isDirectory)
             if FileManager.default.fileExists(atPath: pictures.path(percentEncoded: false)) { panel.directoryURL = pictures }
         }
@@ -215,7 +181,7 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             guard let self, response == .OK, let url = panel.url else { return }
             do {
                 let name = try PictureStore.shared.add(url)
-                UserDefaults.standard.set(name, forKey: Self.lastPictureKey)
+                BackdropPresets.shared.lastPicture = name
                 setFill(.picture(name))
                 // The chip offers the new picture even when the fill was a picture already.
                 refreshCapsule()

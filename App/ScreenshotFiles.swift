@@ -7,7 +7,8 @@ import OSLog
 import UniformTypeIdentifiers
 
 /// Every way a screenshot leaves the app as a file or as a picture on the clipboard, written as Settings say
-/// (`ScreenshotOutput`) and named from the file name pattern.
+/// (`ScreenshotOutput`) and named from the file name pattern; and a recording, which leaves as its own file. One for the
+/// whole app, made by the composition root.
 ///
 /// The history keeps each capture as a lossless PNG as it was taken, and this converts a copy when one is wanted:
 /// saved to the export folder, saved with Save As, dragged out, uploaded, handed to a shortcut, copied.
@@ -96,6 +97,39 @@ final class ScreenshotFiles {
     }
 
     // MARK: Saving
+
+    /// Saves a copy of a capture to the export folder: a screenshot as `saveScreenshot` saves it, asking for the name
+    /// first when Settings say so and `asks` is true (a save nobody waits at, as a card's closing by itself or Save All
+    /// is, passes false); a recording as `saveRecording` does. Nil when it was cancelled or failed.
+    func saveCapture(fileAt url: URL, asks: Bool = true) async -> URL? {
+        guard ExportedFiles.isPicture(url) else { return saveRecording(fileAt: url) }
+        return await saveScreenshot(fileAt: url, asks: asks)
+    }
+
+    /// Saves a copy of a recording's file, or any file that is no screenshot, to the export folder, under the file's
+    /// name and kind.
+    func saveRecording(fileAt url: URL) -> URL? {
+        do {
+            let directory = settings.exportDirectory
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let name = url.deletingPathExtension().lastPathComponent
+            let destination = ImageExporter.availableURL(in: directory, name: name, fileExtension: url.pathExtension)
+            try FileManager.default.copyItem(at: url, to: destination)
+            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
+            return destination
+        } catch {
+            Log.capture.error("Saving failed: \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
+            return nil
+        }
+    }
+
+    /// Asks where to save a copy of a capture. A screenshot is saved in the format of the name typed, else the one
+    /// Settings choose; a recording as the kind of file it is.
+    func saveCaptureAs(fileAt url: URL) async -> URL? {
+        guard ExportedFiles.isPicture(url) else { return await saveRecordingAs(url) }
+        return await saveScreenshotAs(fileAt: url)
+    }
 
     /// Saves a screenshot to the export folder, in the format Settings choose and named from the pattern.
     /// - Parameters:

@@ -28,6 +28,7 @@ public final class BackdropPresets {
     private let defaults: UserDefaults
     private static let presetsKey = "annotation.backdropPresets"
     private static let automaticKey = "annotation.backdropAutomatic"
+    private static let lastPictureKey = "annotation.backdropPicture"
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -40,13 +41,20 @@ public final class BackdropPresets {
         return all.first { $0.id == id }
     }
 
+    /// The last picture chosen for a background, by its name in the picture store, offered again beside the
+    /// colors. Kept with the presets, whose pictures it is kept among.
+    var lastPicture: String? {
+        get { defaults.string(forKey: Self.lastPictureKey) }
+        set { defaults.set(newValue, forKey: Self.lastPictureKey) }
+    }
+
     /// The pictures the saved backgrounds use, and the last one chosen for a background.
     public var pictureNames: Set<String> {
         var names = Set(all.compactMap { preset -> String? in
             guard case .picture(let name) = preset.backdrop.fill else { return nil }
             return name
         })
-        if let last = defaults.string(forKey: EditorContentView.lastPictureKey) { names.insert(last) }
+        if let last = lastPicture { names.insert(last) }
         return names
     }
 

@@ -62,7 +62,7 @@ public final class ReplayBuffer {
     /// How much is kept: ScreenCaptureKit's most.
     nonisolated public static let length: TimeInterval = 15
     /// The longest side the buffer's encoder takes: H.264's, with no choosing HEVC.
-    nonisolated public static let largestSide = 4096
+    nonisolated public static let largestSide = RecordingFormat.largestH264Side
 
     public let request: Request
     public private(set) var isRunning = false

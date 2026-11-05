@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import OMSCore
+import OMSDesign
 import Testing
 @testable import OMSCapture
 

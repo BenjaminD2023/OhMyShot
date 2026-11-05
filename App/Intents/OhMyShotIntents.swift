@@ -7,20 +7,20 @@ import UniformTypeIdentifiers
 // and need no caller's approval: the user made the shortcut. A capture hands its picture on to the next action, and
 // Capture Text its text, which the URL API cannot.
 
-/// Hands the actions the composition root, once the app has started: a shortcut can launch the app, and its action
-/// then waits for the start, which can itself wait for a quitting copy of the app.
+/// Hands the actions what they run, once the app has started: a shortcut can launch the app, and its action then
+/// waits for the start, which can itself wait for a quitting copy of the app.
 enum ShortcutsBridge {
-    private static var root: CompositionRoot?
-    private static var waiting: [CheckedContinuation<CompositionRoot, Never>] = []
+    private static var actions: ShortcutActions?
+    private static var waiting: [CheckedContinuation<ShortcutActions, Never>] = []
 
-    static func started(_ root: CompositionRoot) {
-        self.root = root
-        for continuation in waiting { continuation.resume(returning: root) }
+    static func started(_ actions: ShortcutActions) {
+        self.actions = actions
+        for continuation in waiting { continuation.resume(returning: actions) }
         waiting = []
     }
 
-    static func current() async -> CompositionRoot {
-        if let root { return root }
+    static func current() async -> ShortcutActions {
+        if let actions { return actions }
         return await withCheckedContinuation { waiting.append($0) }
     }
 }
@@ -75,15 +75,6 @@ nonisolated enum ShortcutFailure: Error, CustomLocalizedStringResourceConvertibl
     case unreadableImage
     case needsFormulaPack
 
-    init(_ error: any Error) {
-        switch error as? CompositionRoot.ShortcutError {
-        case .needsScreenRecording: self = .needsScreenRecording
-        case .noUploadDestination: self = .noUploadDestination
-        case .needsFormulaPack: self = .needsFormulaPack
-        case .unreadableImage, nil: self = .unreadableImage
-        }
-    }
-
     var localizedStringResource: LocalizedStringResource {
         switch self {
         case .needsScreenRecording: "OhMyShot needs Screen Recording permission. Turn it on in System Settings › Privacy & Security, then try again."
@@ -96,19 +87,13 @@ nonisolated enum ShortcutFailure: Error, CustomLocalizedStringResourceConvertibl
 
 // MARK: - Capturing
 
-/// Runs a capture action and hands its picture on; nothing when it was cancelled.
+/// Runs a capture command and hands its picture on; nothing when it was cancelled.
 @MainActor
-private func capture(_ kind: CompositionRoot.ShortcutCapture, then after: AfterCaptureOption?) async throws -> some IntentResult & ReturnsValue<IntentFile?> {
-    let root = await ShortcutsBridge.current()
-    let entry: HistoryItem?
-    do {
-        entry = try await root.captureForShortcut(kind, action: after?.action)
-    } catch {
-        throw ShortcutFailure(error)
-    }
-    guard let entry else { return .result(value: nil) }
+private func capture(_ command: AutomationCommand) async throws -> some IntentResult & ReturnsValue<IntentFile?> {
+    let actions = await ShortcutsBridge.current()
+    guard let entry = try await actions.capture(command) else { return .result(value: nil) }
     // Read now: with Keep Captures at Never, the file goes once its card does.
-    let file = try await root.fileForShortcut(entry)
+    let file = try await actions.file(for: entry)
     return .result(value: IntentFile(data: file.data, filename: file.name, type: file.type))
 }
 
@@ -125,7 +110,7 @@ struct CaptureAreaIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<IntentFile?> {
-        try await capture(.area, then: after)
+        try await capture(.captureArea(AutomationRegion(), action: after?.action))
     }
 }
 
@@ -142,7 +127,7 @@ struct CaptureWindowIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<IntentFile?> {
-        try await capture(.window, then: after)
+        try await capture(.captureWindow(action: after?.action))
     }
 }
 
@@ -159,7 +144,7 @@ struct CaptureFullscreenIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<IntentFile?> {
-        try await capture(.fullscreen, then: after)
+        try await capture(.captureFullscreen(action: after?.action))
     }
 }
 
@@ -176,7 +161,7 @@ struct CapturePreviousAreaIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<IntentFile?> {
-        try await capture(.previousArea, then: after)
+        try await capture(.capturePreviousArea(action: after?.action))
     }
 }
 
@@ -193,7 +178,7 @@ struct SelfTimerIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<IntentFile?> {
-        try await capture(.selfTimer, then: after)
+        try await capture(.selfTimer(action: after?.action))
     }
 }
 
@@ -214,12 +199,8 @@ struct CaptureTextIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String?> {
-        let root = await ShortcutsBridge.current()
-        do {
-            return .result(value: try await root.captureTextForShortcut(keepsLineBreaks: keepsLineBreaks))
-        } catch {
-            throw ShortcutFailure(error)
-        }
+        let actions = await ShortcutsBridge.current()
+        return .result(value: try await actions.captureText(keepsLineBreaks: keepsLineBreaks))
     }
 }
 
@@ -241,12 +222,8 @@ struct RecognizeTextIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String?> {
-        let root = await ShortcutsBridge.current()
-        do {
-            return .result(value: try await root.textForShortcut(inImage: image.data, keepsLineBreaks: keepsLineBreaks))
-        } catch {
-            throw ShortcutFailure(error)
-        }
+        let actions = await ShortcutsBridge.current()
+        return .result(value: try await actions.text(inImage: image.data, keepsLineBreaks: keepsLineBreaks))
     }
 }
 
@@ -258,12 +235,8 @@ struct CaptureFormulaIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String?> {
-        let root = await ShortcutsBridge.current()
-        do {
-            return .result(value: try await root.captureFormulaForShortcut())
-        } catch {
-            throw ShortcutFailure(error)
-        }
+        let actions = await ShortcutsBridge.current()
+        return .result(value: try await actions.captureFormula())
     }
 }
 
@@ -280,12 +253,8 @@ struct RecognizeFormulaIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String?> {
-        let root = await ShortcutsBridge.current()
-        do {
-            return .result(value: try await root.formulaForShortcut(inImage: image.data))
-        } catch {
-            throw ShortcutFailure(error)
-        }
+        let actions = await ShortcutsBridge.current()
+        return .result(value: try await actions.formula(inImage: image.data))
     }
 }
 
@@ -304,12 +273,8 @@ struct PinImageIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        let root = await ShortcutsBridge.current()
-        do {
-            try root.pinForShortcut(image.data)
-        } catch {
-            throw ShortcutFailure(error)
-        }
+        let actions = await ShortcutsBridge.current()
+        try actions.pin(image.data)
         return .result()
     }
 }
@@ -327,13 +292,9 @@ struct AnnotateImageIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        let root = await ShortcutsBridge.current()
+        let actions = await ShortcutsBridge.current()
         let name = image.filename.isEmpty ? "Shortcut" : (image.filename as NSString).deletingPathExtension
-        do {
-            try await root.annotateForShortcut(image.data, name: name)
-        } catch {
-            throw ShortcutFailure(error)
-        }
+        try await actions.annotate(image.data, name: name)
         return .result()
     }
 }
@@ -406,12 +367,7 @@ struct DesktopIconsIntent: AppIntent {
 
 @MainActor
 private func run(_ command: AutomationCommand) async throws {
-    let root = await ShortcutsBridge.current()
-    do {
-        try root.performForShortcut(command)
-    } catch {
-        throw ShortcutFailure(error)
-    }
+    try await ShortcutsBridge.current().perform(command)
 }
 
 // MARK: - Spotlight and Siri

@@ -1,18 +1,32 @@
 import Foundation
 
-/// What a Quick Access card can be told to do, from its menu, its buttons, or the keyboard.
+/// What a Quick Access card can be told to do, from its menu, its buttons, VoiceOver, or the keyboard. Every way
+/// in names one of these, so what a command does is written once, where the stack's owner does it; only the keys
+/// have a table (`CardKeys`), and a command without a key is still one of these.
 public enum CardCommand: Equatable, Sendable {
     case copy
+    /// Saves a copy, or shows the copy in Finder once there is one.
     case save
     case saveAs
     case annotate
     case open
+    /// Shows the saved copy, or the capture, in Finder.
+    case reveal
     case quickLook
     case recognizeText
     case pin
     case print
     /// To the default destination.
     case upload
+    /// To a destination chosen from the menu's Upload To.
+    case uploadTo(UUID)
+    case cancelUpload
+    /// Uploads again after an upload failed.
+    case retryUpload
+    /// Copies the link an upload left.
+    case copyLink
+    /// Asks, then removes the capture's upload from its storage.
+    case deleteFromStorage
     /// Turns, flips, or scales the capture's picture.
     case picture(PictureChange)
     case moveToTrash

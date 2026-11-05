@@ -41,6 +41,8 @@ targets:
       - package: OhMyShotKit
         product: OMSCore
       - package: OhMyShotKit
+        product: OMSDesign
+      - package: OhMyShotKit
         product: OMSCapture
       - package: OhMyShotKit
         product: OMSUI

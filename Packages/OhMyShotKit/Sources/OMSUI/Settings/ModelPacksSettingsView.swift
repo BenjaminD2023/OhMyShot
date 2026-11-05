@@ -34,8 +34,7 @@ struct ModelPacksRow: View {
                     }
                 }
                 .frame(minWidth: 280, maxWidth: 360)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+                .settingsWell()
             }
         }
         .task { await center.refresh() }
@@ -97,9 +96,19 @@ private struct ModelPackRow: View {
     let readLicense: () -> Void
     let remove: () -> Void
 
+    /// What the pack reads, told apart at a glance: text, formulas, or tables and charts.
+    private var symbol: String {
+        switch pack.id {
+        case ModelPackCatalog.ppocrV6Small.id: "character.textbox"
+        case ModelPackCatalog.ppFormulaNetPlusL.id: "function"
+        case ModelPackCatalog.paddleOCRVL.id: "tablecells"
+        default: "text.viewfinder"
+        }
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "text.viewfinder")
+            Image(systemName: symbol)
                 .font(.system(size: 15))
                 .foregroundStyle(.secondary)
                 .frame(width: 22)
@@ -144,33 +153,22 @@ private struct ModelPackRow: View {
         case .downloading:
             Button(action: pause) { Text("Pause", bundle: .module) }
                 .controlSize(.small)
-            more {
+            SettingsMoreMenu {
                 Button(action: cancel) { Text("Cancel Download", bundle: .module) }
             }
         case .paused, .failed:
             Button(action: download) { Text("Resume", bundle: .module) }
                 .controlSize(.small)
-            more {
+            SettingsMoreMenu {
                 Button(action: cancel) { Text("Cancel Download", bundle: .module) }
             }
         case .installed:
-            more {
+            SettingsMoreMenu {
                 Button(action: readLicense) { Text("License…", bundle: .module) }
                 Divider()
                 Button(role: .destructive, action: remove) { Text("Remove…", bundle: .module) }
             }
         }
-    }
-
-    private func more(@ViewBuilder _ items: () -> some View) -> some View {
-        Menu(content: items) {
-            Image(systemName: "ellipsis")
-        }
-        .menuStyle(.button)
-        .menuIndicator(.hidden)
-        .controlSize(.small)
-        .fixedSize()
-        .accessibilityLabel(Text("More", bundle: .module))
     }
 
     private var subtitle: String {
@@ -345,8 +343,7 @@ struct LicenseWell: View {
             }
         }
         .frame(height: height)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+        .settingsWell()
     }
 
     /// Paragraphs as blank lines divide them, each one line: licenses such as Apache-2.0 come wrapped at about 78

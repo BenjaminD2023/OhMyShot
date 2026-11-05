@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// The style capsule: a white capsule holding the controls for one kind of mark (color, size, and the
 /// kind's own variants). It sits beside the selected mark, or at the foot of the tool rail for the next
@@ -27,9 +28,11 @@ final class StyleCapsule: NSView {
     /// Toggles sampling a color directly from the canvas picture (shortcut I).
     var onPickCanvasColor: (() -> Void)?
     /// Whether the canvas color eyedropper is currently active.
-    var isPickingCanvasColor = false
+    private var isPickingCanvasColor = false
     /// The colors a person has kept; the chips beside the inks, and the one that keeps another.
     var savedColors = SavedColors.shared
+    /// Colors kept or let go of in any capsule, once this one is bound to a canvas.
+    private var savedColorsObserver: NSObjectProtocol?
 
     static let height: CGFloat = 38
     private static let inset: CGFloat = 4
@@ -43,9 +46,8 @@ final class StyleCapsule: NSView {
     private var hasSelection = false
     /// The redaction tool's open suggestions.
     private var suggestions = 0
-    private var finding = false
-    /// The last reading for the tool failed.
-    private var failed = false
+    /// Where the capture's reading for the tool stands: under way, or failed.
+    private var reading = ReadingStatus.resting
     /// Whether the size chips mean anything: not for highlights snapped to text.
     private var sized = true
     /// The shape the crop frame keeps, while the crop is in hand.
@@ -114,6 +116,7 @@ final class StyleCapsule: NSView {
 
     isolated deinit {
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        if let savedColorsObserver { NotificationCenter.default.removeObserver(savedColorsObserver) }
         releaseColorPanel()
     }
 
@@ -144,7 +147,7 @@ final class StyleCapsule: NSView {
 
     /// The reading capsule's materials, at control size.
     private func applyAppearance() {
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = effectiveAppearance.isDark
         layer?.backgroundColor = dark ? CGColor(gray: 0.17, alpha: 0.96) : CGColor(gray: 1, alpha: 0.97)
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         layer?.borderWidth = contrast ? 1 : 0.5
@@ -159,22 +162,59 @@ final class StyleCapsule: NSView {
     /// Shows the controls for `kind` with `settings`; `hasSelection` adds Delete.
     /// - Parameters:
     ///   - suggestions: redaction suggestions not yet covered, for Redact All.
-    ///   - finding: the capture is being read for the tool: for redaction suggestions, or the lines of text
-    ///     the highlighter snaps to.
-    ///   - failed: the last reading for the tool failed, offered again with Try Again.
+    ///   - reading: where the capture's reading for the tool stands (for redaction suggestions, or the lines
+    ///     of text the highlighter snaps to): under way, or failed and offered again with Try Again.
     ///   - sized: false leaves out the sizes, for highlights snapped to text.
     ///   - cropRatio: the shape the crop frame keeps, shown while the crop is in hand.
-    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, finding: Bool = false, failed: Bool = false, sized: Bool = true, cropRatio: CropRatio = .free) {
+    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, reading: ReadingStatus = .resting, sized: Bool = true, cropRatio: CropRatio = .free) {
         self.cropRatio = cropRatio
         self.kind = kind
         self.settings = settings
         self.hasSelection = hasSelection
         self.suggestions = suggestions
-        self.finding = finding
-        self.failed = failed
+        self.reading = reading
         self.sized = sized
         background = nil
         rebuild()
+    }
+
+    /// Wires the controls both hosts share to `session` and `canvas`: a style change restyles the selected
+    /// marks, or the tool's next mark, and the text being typed; Delete, Redact All, Try Again, and the
+    /// eyedropper act on them. `refresh` is the host's own way of showing the capsule again where it goes,
+    /// called when the eyedropper is picked up or put down, and when a color is kept or let go of in any
+    /// capsule, so colors kept in one editor show in every other.
+    func bind(to session: AnnotationSession, canvas: AnnotationCanvasView, refresh: @escaping @MainActor () -> Void) {
+        onChange = { [weak session, weak canvas] name, change in
+            session?.changeSettings(name, change)
+            canvas?.refreshEditingStyle()
+        }
+        onDelete = { [weak session] in session?.deleteSelection() }
+        onRedactAll = { [weak session] in session?.acceptAllRedactionSuggestions() }
+        onRetry = { [weak session] in session?.retryReadingForTool() }
+        onPickCanvasColor = { [weak canvas] in canvas?.toggleColorPicker() }
+        canvas.onColorPickerChange = { refresh() }
+        if let savedColorsObserver { NotificationCenter.default.removeObserver(savedColorsObserver) }
+        savedColorsObserver = NotificationCenter.default.addObserver(forName: SavedColors.didChange, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { refresh() }
+        }
+    }
+
+    /// Shows the controls for what `session` has in hand now: the selected marks' kind and style, or the
+    /// tool's; the open suggestions Redact All counts; where the reading for the tool stands; and whether
+    /// `canvas`'s eyedropper is in hand, which its chip is built showing.
+    func refresh(from session: AnnotationSession, canvas: AnnotationCanvasView) {
+        isPickingCanvasColor = canvas.isPickingColor
+        show(
+            kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
+            suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
+            reading: session.readingStatusForTool, sized: session.sizeApplies, cropRatio: session.cropRatio
+        )
+    }
+
+    /// Whether Redact All's count is out of date for `session`: the capsule is shown again for it, not for
+    /// every frame of a drag.
+    func countsStaleSuggestions(of session: AnnotationSession) -> Bool {
+        session.tool == .redact && session.openRedactionSuggestions.count != suggestions
     }
 
     /// Shows the background's fills, its adjustments, and its presets. Rebuilt only when what the chips
@@ -190,7 +230,7 @@ final class StyleCapsule: NSView {
     private func rebuild() {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         chips.removeAll()
-        setAccessibilityLabel(String(localized: "\(ToolRail.name(of: kind)) Style", bundle: .module))
+        setAccessibilityLabel(String(localized: "\(kind.name) Style", bundle: .module))
 
         // The crop's text chips are capsules concentric with this one, 4 pt in at both ends.
         if kind == .crop {
@@ -211,15 +251,22 @@ final class StyleCapsule: NSView {
 
         var sections: [[NSView]] = []
         if usesColor {
-            var colorChips = inks.map(colorChip) + savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip()
+            var ownChips = savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip()
             if onPickCanvasColor != nil {
                 let label = String(localized: "Pick Color from Canvas (I)", bundle: .module)
                 let eyedropper = symbolChip("eyedropper", name: label, selected: isPickingCanvasColor) { [weak self] in
                     self?.onPickCanvasColor?()
                 }
-                colorChips.append(eyedropper)
+                ownChips.append(eyedropper)
             }
-            sections.append(colorChips)
+            // The kept colors stand apart from the inks, behind a divider, so one kept near an ink (an off-white
+            // beside White) never reads as the same ink twice.
+            if savedColors.colors.isEmpty {
+                sections.append(inks.map(colorChip) + ownChips)
+            } else {
+                sections.append(inks.map(colorChip))
+                sections.append(ownChips)
+            }
         }
         let sizes = sizeChips()
         if !sizes.isEmpty { sections.append(sizes) }
@@ -240,9 +287,9 @@ final class StyleCapsule: NSView {
             sections.append([symbolChip("trash", name: String(localized: "Delete", bundle: .module), selected: false) { [weak self] in self?.onDelete?() }])
         }
         // Kept beside Delete too: a redaction drawn by hand is selected, and the rest still wait.
-        if kind == .redact || kind == .highlighter, finding {
+        if kind == .redact || kind == .highlighter, reading == .finding {
             sections.append([CapsuleStatus(String(localized: "Finding text…", bundle: .module))])
-        } else if kind == .redact || kind == .highlighter, failed {
+        } else if kind == .redact || kind == .highlighter, reading == .failed {
             sections.append([
                 CapsuleStatus(String(localized: "Couldn’t read text", bundle: .module), busy: false),
                 textChip(String(localized: "Try Again", bundle: .module)) { [weak self] in self?.onRetry?() },
@@ -260,7 +307,7 @@ final class StyleCapsule: NSView {
         switch kind {
         case .spotlight, .crop, .select, .background: false
         case .redact: settings.redaction == .solid
-        default: true
+        case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox, .text, .counter: true
         }
     }
 
@@ -269,7 +316,7 @@ final class StyleCapsule: NSView {
         case .arrow, .line, .rectangle, .ellipse, .pen, .text, .counter: true
         // Selected marks show the select kind only when they belong to no tool: combined images.
         case .select: hasSelection
-        default: false
+        case .highlighter, .highlightBox, .redact, .spotlight, .crop, .background: false
         }
     }
 
@@ -358,8 +405,9 @@ final class StyleCapsule: NSView {
     /// Keeps the color in use, when it is one of the person's own that is not kept yet. With the colors full,
     /// the chip is there but dimmed, and says why.
     private func saveColorChip() -> [NSView] {
-        // The marker yellow the highlighter and the highlight box start in is theirs, not a color chosen.
-        guard usesUnsavedColor, settings.color.withAlpha(1) != .marker else { return [] }
+        // The marker yellow the highlighter and the highlight box start in is theirs, not a color chosen; and a
+        // color all but one of the inks is that ink already, not one to keep beside it.
+        guard usesUnsavedColor, settings.color.withAlpha(1) != .marker, !Self.isAlmostAnInk(settings.color, inks: inks) else { return [] }
         let name = String(localized: "Save Color", bundle: .module)
         let color = settings.color
         let chip = CapsuleChip(swatch: Self.saveDot()) { [weak self] in
@@ -372,6 +420,14 @@ final class StyleCapsule: NSView {
             chip.toolTip = String(localized: "Remove a saved color to make room.", bundle: .module)
         }
         return [chip]
+    }
+
+    /// Whether `color` is within 8/255 of one of `inks` in each of red, green, and blue: the eye takes it for that ink.
+    static func isAlmostAnInk(_ color: RGBA, inks: [RGBA]) -> Bool {
+        let near = 8.0 / 255
+        return inks.contains { ink in
+            abs(ink.red - color.red) <= near && abs(ink.green - color.green) <= near && abs(ink.blue - color.blue) <= near
+        }
     }
 
     private func customColorChip() -> NSView {
@@ -390,6 +446,10 @@ final class StyleCapsule: NSView {
         let panel = NSColorPanel.shared
         panel.showsAlpha = false
         panel.isContinuous = false
+        // Setting the panel's color sends its action: aimed at nothing first, so this color never reaches the
+        // Studio or the other editor that used the panel last.
+        panel.setTarget(nil)
+        panel.setAction(nil)
         panel.color = NSColor(cgColor: settings.color.cgColor) ?? .systemRed
         panel.setTarget(self)
         panel.setAction(#selector(colorPicked(_:)))
@@ -420,7 +480,7 @@ final class StyleCapsule: NSView {
             }
         case .redact, .spotlight, .highlightBox, .crop, .select, .background:
             return []
-        default:
+        case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .counter:
             let widths: [CGFloat] = switch kind {
             case .highlighter: [10, 18, 28]
             case .counter: [2, 4, 7]
@@ -512,7 +572,7 @@ final class StyleCapsule: NSView {
                     self?.change(String(localized: "Spotlight Shape", bundle: .module)) { $0.oval = oval }
                 }
             }
-        default:
+        case .select, .pen, .highlighter, .highlightBox, .crop, .background:
             return []
         }
     }
@@ -661,7 +721,7 @@ final class StyleCapsule: NSView {
             context.clip()
             draw(context, disc)
             context.restoreGState()
-            let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = NSAppearance.currentDrawing().isDark
             if blends(dark) { strokeInkEdge(context, around: disc, dark: dark) }
             return true
         }
@@ -782,7 +842,7 @@ final class StyleCapsule: NSView {
             context.fillEllipse(in: disc)
             // An edge only on an ink the capsule would swallow (white on the light capsule, black on the dark):
             // a hairline around every ink read as a thin gray outline.
-            let dark = NSAppearance.currentDrawing().bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = NSAppearance.currentDrawing().isDark
             if blendsIntoCapsule(color, dark: dark) { strokeInkEdge(context, around: disc, dark: dark) }
             // The chosen ink's ring is in the label ink, not the accent, which can be a hue beside the ink it rings
             // (a pink accent around red); 2 pt of the capsule show between the ring and the disc.
@@ -1143,7 +1203,7 @@ final class CapsuleChip: HoverTagButton {
 
     func applyAppearance() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             if imagePosition == .noImage {
                 attributedTitle = NSAttributedString(string: title, attributes: [.font: font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor])
             }
@@ -1151,8 +1211,8 @@ final class CapsuleChip: HoverTagButton {
             let selected = (isSelected || prominent) && !isSwatch
             let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
             let fill: CGColor = isSwatch ? .clear
-                : selected ? ChipFill.selected(dark: dark, contrast: contrast)
-                : isHovered ? ChipFill.hover(dark: dark, contrast: contrast)
+                : selected ? Theme.ChipFill.selectedColor(dark: dark, contrast: contrast)
+                : isHovered ? Theme.ChipFill.hoverColor(dark: dark, contrast: contrast)
                 : .clear
             layer?.backgroundColor = fill
             contentTintColor = selected && !prominent ? .controlAccentColor : .labelColor

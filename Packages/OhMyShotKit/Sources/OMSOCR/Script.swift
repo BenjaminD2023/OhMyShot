@@ -27,6 +27,34 @@ enum Script {
         character.unicodeScalars.contains { (0x1100...0x11FF).contains($0.value) || (0x3130...0x318F).contains($0.value) || (0xAC00...0xD7AF).contains($0.value) }
     }
 
+    // Han and kana alone, with the full-width marks, and with Hangul as well: three sets close enough to be taken
+    // one for another, as they were when four places each called their own `isSquare`. Each is named for what it
+    // holds.
+
+    /// Han or kana, not Hangul: the scripts written without spaces, and what the second reading (L2) reads better
+    /// than the first. Korean separates its words with spaces, and L1 reads it.
+    static func isHanOrKana(_ character: Character) -> Bool {
+        isCJK(character) && !isHangul(character)
+    }
+
+    /// A mark set as wide as a Han character: from CJK Symbols and Punctuation (the ideographic space, 、。「」) or
+    /// Halfwidth and Fullwidth Forms (，（）！, and the half-width kana and Hangul there too).
+    static func isFullWidthMark(_ character: Character) -> Bool {
+        character.unicodeScalars.contains { (0x3000...0x303F).contains($0.value) || (0xFF00...0xFFEF).contains($0.value) }
+    }
+
+    /// Characters set one to a square cell: Chinese, Japanese, and Korean, and the full-width marks among them, each
+    /// a word of its own when a line is cut into words.
+    static func isCJKOrFullWidthMark(_ character: Character) -> Bool {
+        isCJK(character) || isFullWidthMark(character)
+    }
+
+    /// Han, kana, or a full-width mark: what Chinese and Japanese set without a space between, so a space between two
+    /// of them is one too many. Not Hangul, which keeps its spaces.
+    static func isHanKanaOrFullWidthMark(_ character: Character) -> Bool {
+        isHanOrKana(character) || isFullWidthMark(character)
+    }
+
     /// A Latin letter or an ASCII digit.
     static func isLatinOrDigit(_ character: Character) -> Bool {
         guard character.isASCII else { return false }

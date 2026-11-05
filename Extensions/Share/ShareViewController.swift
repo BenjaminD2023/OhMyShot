@@ -27,7 +27,7 @@ final class ShareViewController: NSViewController {
     }
 
     private var appName: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OhMyShot"
+        AppIdentity.displayName
     }
 
     override func loadView() {

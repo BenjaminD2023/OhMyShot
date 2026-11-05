@@ -60,7 +60,7 @@ struct QuickAccessSettingsView: View {
                         .fixedSize()
                         Picker(selection: $settings.quickAccessCloseAction) {
                             Text("Close", bundle: .module).tag(QuickAccessCloseAction.close)
-                            Text("Save and Close", bundle: .module).tag(QuickAccessCloseAction.saveAndClose)
+                            Text("Save and close", bundle: .module).tag(QuickAccessCloseAction.saveAndClose)
                         } label: {
                             Text("When the time is up", bundle: .module)
                         }
@@ -69,14 +69,7 @@ struct QuickAccessSettingsView: View {
                         .disabled(settings.quickAccessCloseAfter == 0)
                     }
                     if settings.quickAccessPreferences.closingDiscardsUnsavedCaptures(history: settings.historyRetention) {
-                        Label {
-                            Text("History is off: a card that closes unsaved takes its capture with it.", bundle: .module)
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                        }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        SettingsWarning(Text("History is off: a card that closes unsaved takes its capture with it.", bundle: .module))
                     }
                 }
             }

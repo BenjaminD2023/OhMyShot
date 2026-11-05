@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// A short word on a card in the upload badge's materials, with a symbol before it: "Copied" over a card copied from
 /// the keyboard, whose Copy capsule shows only under the pointer, and "Moved to Trash" over a card waiting to go.

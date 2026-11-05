@@ -36,7 +36,9 @@ nonisolated public struct StudioTrack: Sendable {
     public let height: Double
     /// Exact event positions between the regular samples. Seeking to a click must land on its hotspot,
     /// even when the event falls between two 120 Hz frames or several clicks share a frame interval.
-    private let clickAnchors: [StudioTelemetry.Click]
+    /// The telemetry's clicks in the order of their times, which the telemetry doesn't promise: sorted here
+    /// once, for the renderer's click effects too.
+    let clickAnchors: [StudioTelemetry.Click]
 
     /// How long a zoom takes to ease in or out, at most.
     public static let transition = 0.5

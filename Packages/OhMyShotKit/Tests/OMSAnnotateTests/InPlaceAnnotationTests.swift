@@ -78,6 +78,11 @@ struct InPlaceAnnotationTests {
     @Test func picturesModesAreNotOfferedInPlace() throws {
         let annotator = view()
         #expect(!AnnotationCanvasView.inPlaceTools.contains(.crop) && !AnnotationCanvasView.inPlaceTools.contains(.background))
+        // The toolbar offers the same tools, grouped as the rail groups them.
+        #expect(InPlaceToolbar.toolGroups == [
+            [.select], [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox], [.text, .counter], [.redact, .spotlight],
+        ])
+        #expect(Array(InPlaceToolbar.toolGroups.joined()) == AnnotationCanvasView.inPlaceTools)
         let event = try #require(NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
             characters: "c", charactersIgnoringModifiers: "c", isARepeat: false, keyCode: 8

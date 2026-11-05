@@ -49,20 +49,7 @@ public final class ClickHighlights {
     }
 
     func makePanel() -> NSPanel {
-        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.isReleasedWhenClosed = false
-        panel.animationBehavior = .none
-        // With the keystrokes: above what is recorded and the Dock, under menus.
-        panel.level = RecordingWindowLevel.chrome
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
-        let view = NSView()
-        view.wantsLayer = true
-        panel.contentView = view
-        return panel
+        RecordedOverlayPanel.make()
     }
 
     /// A ring at `point` (global points) when it is inside what is recorded: the accent, a dimmer one for

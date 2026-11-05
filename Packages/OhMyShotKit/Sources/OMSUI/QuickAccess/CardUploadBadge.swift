@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// What a card shows of its capture's upload.
@@ -13,11 +14,11 @@ public nonisolated enum CardUpload: Equatable, Sendable {
 /// The materials of the small capsules on a card: white (a dark gray in Dark Mode), the hairline, dark ink.
 enum BadgeMaterial {
     static func apply(to layer: CALayer?, in view: NSView) -> NSColor {
-        let dark = view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = view.effectiveAppearance.isDark
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        layer?.backgroundColor = dark ? CGColor(srgbRed: 0.17, green: 0.17, blue: 0.18, alpha: 0.94) : CGColor(gray: 1, alpha: 0.96)
-        layer?.borderWidth = contrast ? 1 : 0.5
-        layer?.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.12) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.08)
+        layer?.backgroundColor = Theme.Material.capsuleFill(dark: dark)
+        layer?.borderWidth = Theme.Material.edgeWidth(contrast: contrast)
+        layer?.borderColor = Theme.Material.edge(dark: dark, contrast: contrast)
         return dark ? NSColor(white: 1, alpha: 0.92) : NSColor(white: 0, alpha: 0.85)
     }
 }

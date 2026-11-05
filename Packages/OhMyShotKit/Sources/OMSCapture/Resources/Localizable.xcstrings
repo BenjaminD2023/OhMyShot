@@ -109,6 +109,46 @@
         }
       }
     },
+    "%lld windows  ·  %lld × %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld windows  ·  %2$lld × %3$lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld ventanas  ·  %2$lld × %3$lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld fenêtres  ·  %2$lld × %3$lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 個のウインドウ  ·  %2$lld × %3$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 个窗口  ·  %2$lld × %3$lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 個視窗  ·  %2$lld × %3$lld"
+          }
+        }
+      }
+    },
     "A window is recorded on its own, without keys shown over it" : {
       "localizations" : {
         "es" : {

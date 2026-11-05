@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// What was just copied, in a reading capsule by the point it came from, for a moment: a picked color with
 /// its swatch, or a measurement. It takes no clicks and no focus and goes by itself, as a pin's reading
@@ -19,7 +20,7 @@ public final class CopiedHUD {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         let screen = NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = NSApp.effectiveAppearance.isDark
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         reading.setScale(screen?.backingScaleFactor ?? 2)
@@ -42,10 +43,7 @@ public final class CopiedHUD {
         panel.orderFrontRegardless()
         windowLease = windowLease ?? ActiveResources.shared.acquire(.window)
         if let view = panel.contentView {
-            NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
-                .announcement: text,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(text, from: view)
         }
         fade = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(900))

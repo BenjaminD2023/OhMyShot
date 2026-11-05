@@ -98,7 +98,7 @@ struct CaptureCardPictureTests {
 
         // Swipe translation follows gesture, springs back under threshold, and closes past threshold.
         var closed = 0
-        card.onClose = { closed += 1 }
+        card.onCommand = { if $0 == .close { closed += 1 } }
         card.applySwipePhase(.began, deltaX: 0)
         card.applySwipePhase(.changed, deltaX: -30)
         #expect(card.swipeTranslation == -30)

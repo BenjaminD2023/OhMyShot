@@ -18,6 +18,12 @@ public struct AfterCapture: Equatable, Sendable {
         self.saves = saves
         self.uploads = uploads
     }
+
+    /// Whether none of the choices keeps the capture outside History: nothing copied, no card, no copy saved, and no
+    /// upload, which counts only while there is a destination to upload to (without one, Settings hides the choice).
+    public func keepsNothing(hasDestination: Bool) -> Bool {
+        !copies && !showsQuickAccess && !saves && !(hasDestination && uploads)
+    }
 }
 
 extension SettingsStore {

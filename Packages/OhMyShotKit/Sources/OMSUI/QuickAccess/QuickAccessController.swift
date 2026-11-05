@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import OMSCore
+import OMSDesign
 
 /// Quick Access: after each capture a card appears in the corner of the screen, ready to be copied,
 /// saved, dragged into another app, or dismissed. Nothing is saved anywhere until the user asks.
@@ -143,10 +144,9 @@ public final class QuickAccessController {
     /// cards do.
     private var schedule = CardCloseSchedule()
     private var closer: Task<Void, Never>?
-    /// The card that has the keyboard, once the panel was clicked or asked for.
+    /// The card that has the keyboard, once the panel was clicked or asked for; it is held from closing by the
+    /// keyboard, and let go when the keys go to another card.
     private var selectedID: UUID?
-    /// A card's hold by the keyboard, to be given back when the keys go to another card.
-    private var keyboardHolder: UUID?
     /// The card the pointer is actively hovering over (`mouseEntered`).
     private(set) var hoveredID: UUID?
     private let hoverPreviewShortcut = HoverPreviewShortcut()
@@ -430,7 +430,6 @@ public final class QuickAccessController {
         closer = nil
         schedule.removeAll()
         selectedID = nil
-        keyboardHolder = nil
         hoveredID = nil
         hoverPreviewShortcut.stop()
         stack?.quickLook.close()
@@ -451,30 +450,13 @@ public final class QuickAccessController {
 
     private func makeStack() -> CardStackView {
         let stack = CardStackView()
-        stack.onCopy = { [weak self] item in self?.actions.copy(item) }
-        stack.onSave = { [weak self] item in Task { await self?.save(item, .save) } }
-        stack.onSaveAs = { [weak self] item in Task { await self?.save(item, .saveAs) } }
-        stack.onOpen = { [weak self] item in self?.actions.open(item) }
-        stack.onAnnotate = { [weak self] item in self?.actions.annotate(item) }
-        stack.onReveal = { [weak self] item in self?.actions.reveal(item) }
-        stack.onRecognizeText = { [weak self] item in self?.actions.recognizeText(item) }
-        stack.onPin = { [weak self] item in self?.actions.pin(item) }
-        stack.onPrint = { [weak self] item in self?.actions.print(item) }
-        stack.onMoveToTrash = { [weak self] item in self?.trash(item) }
-        stack.onUndoTrash = { [weak self] item in self?.undoTrash(item.id) }
-        stack.onClose = { [weak self] item in self?.dismiss(item.id) }
+        stack.onCommand = { [weak self] command, item in self?.perform(command, on: item, keyed: false) }
         stack.fileToHandOver = { [weak self] item in self?.actions.fileToHandOver(item) ?? item.fileURL }
         let sharing = actions.sharing
         stack.uploadMenu = sharing.menu
-        stack.onUpload = sharing.upload
-        stack.onCancelUpload = sharing.cancel
-        stack.onRetryUpload = sharing.retry
-        stack.onCopyLink = sharing.copyLink
         stack.hasLink = sharing.hasLink
         stack.canDeleteFromStorage = sharing.canDeleteFromStorage
-        stack.onDeleteFromStorage = sharing.deleteFromStorage
         stack.currentUpload = sharing.current
-        stack.onCommand = { [weak self] command, item in self?.perform(command, on: item) }
         stack.pictureOffer = actions.pictureChangeOffer
         stack.cardCount = { [weak self] in self?.liveItems.count ?? 0 }
         stack.onHold = { [weak self] id, hold, on in self?.hold(hold, for: id, if: on) }
@@ -543,9 +525,7 @@ public final class QuickAccessController {
         updateCountdowns()
         if hadKeyboard, next != nil, panel?.isKeyWindow == true { select(next) }
         if let panel {
-            NSAccessibility.post(element: panel, notification: .announcementRequested, userInfo: [
-                .announcement: String(localized: "Moved to Trash", bundle: .module), .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(String(localized: "Moved to Trash", bundle: .module), from: panel)
         }
     }
 
@@ -559,7 +539,6 @@ public final class QuickAccessController {
     /// Moves the capture of a card that waited under Undo, and is out of the stack, to the Trash.
     private func sendToTrash(_ item: QuickAccessItem) {
         if let index = trashing.firstIndex(where: { $0.id == item.id }) { trashing.remove(at: index).sender.cancel() }
-        if keyboardHolder == item.id { keyboardHolder = nil }
         actions.moveToTrash(item)
     }
 
@@ -665,25 +644,19 @@ public final class QuickAccessController {
         panel.makeFirstResponder(stack)
     }
 
-    /// Tracks which card the pointer actively entered, and when the panel already holds the keyboard,
-    /// moves the selection ring to the hovered card without ordering or re-keying the panel.
+    /// The pointer actively entered a card (or left it, which changes nothing): when the panel already holds the
+    /// keyboard, the selection ring moves to the card under it, without ordering or re-keying the panel.
     private func pointerHovered(_ id: UUID, hovering: Bool) {
-        if hovering {
-            guard items.contains(where: { $0.id == id }), !isTrashing(id) else { return }
-            hoveredID = id
-            if panel?.isKeyWindow == true, selectedID != id {
-                select(id)
-            }
-        } else if hoveredID == id {
-            hoveredID = nil
+        guard hovering, items.contains(where: { $0.id == id }), !isTrashing(id) else { return }
+        if panel?.isKeyWindow == true, selectedID != id {
+            select(id)
         }
     }
 
     /// Rings a card, holds it from closing, and lets the one before go; nil takes the ring away.
     private func select(_ id: UUID?) {
-        if let previous = keyboardHolder { hold(.keyboard, for: previous, if: false) }
+        if let previous = selectedID { hold(.keyboard, for: previous, if: false) }
         selectedID = id
-        keyboardHolder = id
         if let id { hold(.keyboard, for: id, if: true) }
         stack?.select(id)
     }
@@ -745,14 +718,17 @@ public final class QuickAccessController {
         // ⌘Z brings back the card moved to the Trash last, whichever card has the ring.
         if command == .undoTrash { return undoTrash() }
         guard let selectedID, let item = item(selectedID) else { return false }
-        perform(command, on: item)
+        perform(command, on: item, keyed: true)
         return true
     }
 
     // MARK: Commands
 
-    /// What a card is told to do by its menu, its buttons, or the keyboard.
-    private func perform(_ command: CardCommand, on item: QuickAccessItem) {
+    /// What a card is told to do by its buttons, its menu, VoiceOver, or the keyboard: every way in comes here, so
+    /// each command is done one way. `keyed`: it came from a key, and one that takes the person to a window or a
+    /// panel, or closes the card, gives the keyboard back to the app in front first, as the click that would have
+    /// done it with the pointer never came. Close All gives it back however it was asked for: no card is left to hold it.
+    private func perform(_ command: CardCommand, on item: QuickAccessItem, keyed: Bool) {
         // A card waiting to go to the Trash only comes back.
         guard !isTrashing(item.id) else {
             if command == .undoTrash { undoTrash(item.id) }
@@ -763,27 +739,40 @@ public final class QuickAccessController {
             actions.copy(item)
             stack?.showCopied(item.id)
         case .save:
-            // As the card's Save button: a saved card shows the copy in Finder.
+            // A saved card's Save shows the copy in Finder.
             if item.savedURL != nil { actions.reveal(item) } else { Task { await save(item, .save) } }
         case .saveAs:
-            endKeyboard()
+            if keyed { endKeyboard() }
             Task { await save(item, .saveAs) }
         case .annotate:
-            endKeyboard()
+            if keyed { endKeyboard() }
             actions.annotate(item)
         case .open:
-            endKeyboard()
+            if keyed { endKeyboard() }
             actions.open(item)
+        case .reveal:
+            actions.reveal(item)
         case .recognizeText:
-            endKeyboard()
+            if keyed { endKeyboard() }
             actions.recognizeText(item)
         case .print:
-            endKeyboard()
+            if keyed { endKeyboard() }
             actions.print(item)
         case .pin:
             actions.pin(item)
         case .upload:
+            // Asked again: a key arrives without a menu having been read.
             if !actions.sharing.menu().isHidden { actions.sharing.upload(item, nil) }
+        case .uploadTo(let destination):
+            actions.sharing.upload(item, destination)
+        case .cancelUpload:
+            actions.sharing.cancel(item)
+        case .retryUpload:
+            actions.sharing.retry(item)
+        case .copyLink:
+            actions.sharing.copyLink(item)
+        case .deleteFromStorage:
+            actions.sharing.deleteFromStorage(item)
         case .quickLook:
             toggleQuickLook(of: item)
         case .picture(let change):
@@ -793,10 +782,11 @@ public final class QuickAccessController {
         case .moveToTrash:
             trash(item)
         case .undoTrash:
-            undoTrash()
+            // Only a card waiting to go comes back (above); ⌘Z, which brings back the last one, never reaches here.
+            break
         case .close:
             dismiss(item.id)
-            endKeyboard()
+            if keyed { endKeyboard() }
         case .saveAll:
             saveAll()
         case .closeAll:

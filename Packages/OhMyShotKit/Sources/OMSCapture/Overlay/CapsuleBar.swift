@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// A small capsule of chips over the screen, built as the All-In-One and recording bars are: glass because it
 /// is small, an opaque window-colored backing inside so the screen never shows through its symbols, a solid
@@ -169,14 +170,12 @@ class CapsuleBar: NSView {
             } else {
                 container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             }
-            let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            let dark = effectiveAppearance.isDark
             layer?.borderWidth = contrast ? 1 : 0.5
             layer?.borderColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))
                 : NSColor.separatorColor.cgColor
-            let boost: CGFloat = contrast ? 2 : 1
-            let selected = dark ? CGColor(gray: 1, alpha: 0.16 * boost) : CGColor(gray: 0, alpha: 0.08 * boost)
-            let hover = dark ? CGColor(gray: 1, alpha: 0.09 * boost) : CGColor(gray: 0, alpha: 0.045 * boost)
+            let (selected, hover) = CapsuleBar.chipFills(dark: dark, increasedContrast: contrast)
             var fillsAll = false
             #if DEBUG
             fillsAll = debugFillsAll
@@ -186,6 +185,12 @@ class CapsuleBar: NSView {
                     : (chip === hovered || fillsAll) && chip.isEnabled ? hover : .clear
             }
         }
+    }
+
+    /// The fill of a chip that is on, and of one under the pointer: the design's chip fills, which every capsule bar's
+    /// chips take, and All-In-One's size fields as its chips do.
+    static func chipFills(dark: Bool, increasedContrast: Bool) -> (selected: CGColor, hover: CGColor) {
+        (Theme.ChipFill.selectedColor(dark: dark, contrast: increasedContrast), Theme.ChipFill.hoverColor(dark: dark, contrast: increasedContrast))
     }
 
     #if DEBUG

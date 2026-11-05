@@ -91,17 +91,7 @@ public enum RecordingFinisher {
             audioHint = try await audioTracks[0].load(.formatDescriptions).first
             audioOutput = output
         } else if !audioTracks.isEmpty {
-            let output = AVAssetReaderAudioMixOutput(audioTracks: audioTracks, audioSettings: [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVSampleRateKey: RecordingAudio.sampleRate,
-                AVNumberOfChannelsKey: 2,
-                AVLinearPCMBitDepthKey: 32,
-                AVLinearPCMIsFloatKey: true,
-                AVLinearPCMIsNonInterleaved: false,
-                AVLinearPCMIsBigEndianKey: false,
-            ])
-            output.audioMix = mix
-            audioOutput = output
+            audioOutput = mixedOutput(of: audioTracks, mix: mix)
             audioSettings = RecordingAudio.settings(channels: 2)
         }
         if let audioOutput { reader.add(audioOutput) }
@@ -122,36 +112,53 @@ public enum RecordingFinisher {
         guard reader.startReading() else { throw FinishError.readingFailed(String(describing: reader.error)) }
         guard writer.startWriting() else { throw FinishError.writingFailed(String(describing: writer.error)) }
         writer.startSession(atSourceTime: .zero)
-        // Both at once: the writer interleaves the tracks and waits for whichever is behind.
         let videoPump = Pump(output: videoOutput, input: videoInput, label: "video")
         let audioPump = audioOutput.flatMap { output in audioInput.map { Pump(output: output, input: $0, label: "audio") } }
-        async let video: Void = videoPump.run()
-        async let audio: Void = audioPump?.run() ?? ()
-        _ = await (video, audio)
+        return try await write(
+            video: videoPump, audio: audioPump, from: reader, with: writer, endingAt: duration, to: destination,
+            pixelWidth: Int(size.width.rounded()), pixelHeight: Int(size.height.rounded())
+        )
+    }
+
+    /// A reader output mixing `tracks` into one, played with `mix`: stereo 32-bit float PCM at the recorder's sample
+    /// rate, to be encoded again.
+    static func mixedOutput(of tracks: [AVAssetTrack], mix: AVAudioMix?) -> AVAssetReaderAudioMixOutput {
+        let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: RecordingAudio.sampleRate,
+            AVNumberOfChannelsKey: 2,
+            AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsNonInterleaved: false,
+            AVLinearPCMIsBigEndianKey: false,
+        ])
+        output.audioMix = mix
+        return output
+    }
+
+    /// Runs the pumps, ends the movie `end` into it, and says what was written at `destination`, the writer's file.
+    static func write(
+        video: Pump, audio: Pump?, from reader: AVAssetReader, with writer: AVAssetWriter, endingAt end: CMTime, to destination: URL,
+        pixelWidth: Int, pixelHeight: Int
+    ) async throws -> Movie {
+        // Both at once: the writer interleaves the tracks and waits for whichever is behind.
+        async let videoPumped: Void = video.run()
+        async let audioPumped: Void = audio?.run() ?? ()
+        _ = await (videoPumped, audioPumped)
 
         guard reader.status != .failed else {
             writer.cancelWriting()
             throw FinishError.readingFailed(String(describing: reader.error))
         }
-        writer.endSession(atSourceTime: duration)
+        writer.endSession(atSourceTime: end)
         await writer.finishWriting()
         guard writer.status == .completed else {
             throw FinishError.writingFailed(String(describing: writer.error))
         }
         let bytes = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         return Movie(
-            url: destination, duration: duration.seconds, pixelWidth: Int(size.width.rounded()), pixelHeight: Int(size.height.rounded()),
-            byteCount: bytes, hasAudio: audioInput != nil
+            url: destination, duration: end.seconds, pixelWidth: pixelWidth, pixelHeight: pixelHeight, byteCount: bytes, hasAudio: audio != nil
         )
-    }
-
-    /// A still of the recording's first frame, at most `maxPixels` on its long side.
-    @concurrent
-    public static func poster(of url: URL, maxPixels: Int) async -> CGImage? {
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: maxPixels, height: maxPixels)
-        return try? await generator.image(at: .zero).image
     }
 }
 

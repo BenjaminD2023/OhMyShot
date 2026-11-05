@@ -233,18 +233,20 @@ struct HistoryTextReaderTests {
         let helper = directory.appending(path: "fake-reader.sh"), starts = directory.appending(path: "starts")
         let stop = limit.map { "[ \"$n\" -ge \($0) ] && exit 0" } ?? ""
         // Keep the first process alive until the production reader terminates it. A wall-clock sleep
-        // cannot establish this precondition when other tests temporarily occupy the main actor.
-        // Publish readiness only after claiming the first run, so its replacement cannot claim it.
+        // cannot establish this precondition when other tests temporarily occupy the main actor. The first run says
+        // it started only once it holds: said before, a test stopping it at once could end it before it took the
+        // hold, and the run after it would take the hold instead and never answer.
+        let started = "echo started >> '\(starts.path(percentEncoded: false))'"
         let hold = holdFirstRun ? """
         if mkdir '\(directory.appending(path: "first-run").path(percentEncoded: false))' 2>/dev/null; then
-          echo started >> '\(starts.path(percentEncoded: false))'
+          \(started)
           while :; do sleep 0.02; done
         fi
         """ : ""
         let script = """
         #!/bin/sh
         \(hold)
-        echo started >> '\(starts.path(percentEncoded: false))'
+        \(started)
         n=0
         while IFS= read -r line; do
           \(stop)

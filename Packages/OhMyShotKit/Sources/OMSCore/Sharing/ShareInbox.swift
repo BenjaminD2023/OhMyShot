@@ -36,7 +36,7 @@ public struct ShareInbox: Sendable {
 
     /// The app's inbox: Application Support, under this build's bundle identifier, beside the history.
     public static func standard() -> ShareInbox {
-        inbox(in: URL.applicationSupportDirectory, hostBundleIdentifier: Log.subsystem)
+        inbox(in: URL.applicationSupportDirectory, hostBundleIdentifier: AppIdentity.bundleIdentifier)
     }
 
     /// The inbox of the app with `hostBundleIdentifier`, as the extension finds it. A sandboxed process has a

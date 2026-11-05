@@ -73,7 +73,21 @@ struct AutomationURLParserTests {
     }
 
     @Test func openSettingsKeepsTheTab() {
-        #expect(parse("ohmyshot://open-settings?tab=shortcuts") == .success(.openSettings(tab: "shortcuts")))
+        #expect(parse("ohmyshot://open-settings?tab=shortcuts") == .success(.openSettings(tab: .shortcuts)))
+        #expect(parse("ohmyshot://open-settings?tab=quickAccess") == .success(.openSettings(tab: .quickAccess)))
+        #expect(parse("ohmyshot://open-settings?tab=QuickAccess") == .success(.openSettings(tab: .quickAccess)))
+    }
+
+    @Test func openSettingsTakesCleanShotsTabNames() {
+        #expect(parse("ohmyshot://open-settings?tab=wallpaper") == .success(.openSettings(tab: .screenshots)))
+        #expect(parse("ohmyshot://open-settings?tab=annotate") == .success(.openSettings(tab: .tools)))
+        #expect(parse("ohmyshot://open-settings?tab=cloud") == .success(.openSettings(tab: .sharing)))
+        #expect(parse("ohmyshot://open-settings?tab=advanced") == .success(.openSettings(tab: .automation)))
+    }
+
+    @Test func openSettingsFallsBackToGeneral() {
+        #expect(parse("ohmyshot://open-settings") == .success(.openSettings(tab: .general)))
+        #expect(parse("ohmyshot://open-settings?tab=nonsense") == .success(.openSettings(tab: .general)))
     }
 
     @Test func unknownParametersAreIgnored() {

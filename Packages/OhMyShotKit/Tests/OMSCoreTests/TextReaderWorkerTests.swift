@@ -132,7 +132,7 @@ struct TextReaderWorkerTests {
         """)
         let resources = ActiveResources()
         let worker = TextReaderWorker(helper: reader, resources: resources)
-        let formulas = [TextReaderTool.FoundFormula(kind: "inline", box: CGRect(x: 1, y: 2, width: 3, height: 4), latex: "x")]
+        let formulas = [TextReaderTool.FoundFormula(kind: .inline, box: CGRect(x: 1, y: 2, width: 3, height: 4), latex: "x")]
         let payload = Data(#"[{"text":"exact","isExact":true}]"#.utf8)
         _ = try await worker.visionLines(ofPictureAt: picture, formulas: formulas, inputLines: payload)
         struct Posted: Decodable {

@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 protocol OverlayViewDelegate: AnyObject {
@@ -172,7 +173,8 @@ final class OverlayView: NSView {
     /// `showsPointer` is false for a frozen screen until the overlay takes input: the system arrow is
     /// still showing then, and a crosshair under it would double it.
     /// `allInOne` adds All-In-One's modes to the bar and its letter keys: A, W, and F for an area, a window, or the
-    /// screen; O, S, and R for text, a scrolling capture, or a recording.
+    /// screen; O, S, and R for text, a scrolling capture, or a recording. Only a screenshot is All-In-One, which
+    /// `OverlayController.begin` sees to once for every display.
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
         purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex, colorCopyGesture: ColorCopyGesture = .option,
@@ -199,7 +201,8 @@ final class OverlayView: NSView {
         self.colorFormat = colorFormat
         self.colorCopyGesture = colorCopyGesture
         isCopyingColor = false
-        isAllInOne = allInOne && purpose == .screenshot
+        assert(!allInOne || purpose.mayBeAllInOne, "All-In-One is a screenshot’s alone")
+        isAllInOne = allInOne
         if purpose == .measure {
             let measure = self.measure ?? MeasureOverlay(display: display)
             measure.onRedraw = nil
@@ -616,7 +619,7 @@ final class OverlayView: NSView {
         }
         guard !isAnnotating else { return }
         if mode == .window {
-            let allowsMultiple = purpose == .screenshot || purpose == .annotate || purpose == .text
+            let allowsMultiple = purpose.choosesSeveralWindows
             if allowsMultiple, event.modifierFlags.contains(.shift), let hoveredWindow {
                 if let index = selectedWindows.firstIndex(of: hoveredWindow) {
                     selectedWindows.remove(at: index)
@@ -753,7 +756,7 @@ final class OverlayView: NSView {
             if let measure { delegate?.overlayView(self, didChangeUnit: measure.unit.toggled) }
         case 48 where mode == .window && !windows.isEmpty:
             cycleWindow(backward: event.modifierFlags.contains(.shift))
-        case 48 where mode == .area && !isAllInOne && (purpose == .screenshot || purpose == .annotate):
+        case 48 where mode == .area && purpose.opensSizeControl(allInOne: isAllInOne):
             // Tab frames the area for a size typed and a shape kept; the drag itself needs none of this.
             delegate?.overlayViewDidRequestSizing(self)
         default:
@@ -762,12 +765,13 @@ final class OverlayView: NSView {
                 cycleWindow(backward: character == "[")
             } else if character == "u", purpose == .measure, let measure {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
-            } else if isAllInOne, !event.modifierFlags.contains(.command), let choice = Self.allInOneKeys[character ?? ""] {
+            } else if isAllInOne, !event.modifierFlags.contains(.command), let choice = character.flatMap(AllInOneBar.Choice.init(key:)) {
+                // All-In-One's letters, before an area is chosen: A, W, and F, O, S, and R, as the bar has them.
                 toolbarChose(choice)
             } else if character == "l", !event.modifierFlags.contains(.command), mode == .area, !isDraggingSelection,
-                      purpose == .screenshot || purpose == .annotate {
+                      purpose.takesPicture {
                 delegate?.overlayViewDidRequestLastArea(self)
-            } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose != .text, purpose != .record, purpose != .scroll, let pointer, capturedFrame != nil {
+            } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose.picksColorWithC, let pointer, capturedFrame != nil {
                 // C takes the color under the crosshair, as in Snipaste: from the magnifier while capturing. With
                 // Option it opens the color card, as Option-Return does.
                 delegate?.overlayView(self, didPickColorAt: global(pointer), modifiers: event.modifierFlags.intersection(.option), keyboard: true)
@@ -790,20 +794,12 @@ final class OverlayView: NSView {
     /// or change the reading; the pointer's own moves only update the value.
     func announceValue() {
         guard let value = accessibilityValue() as? String, !value.isEmpty else { return }
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: value,
-            .priority: NSAccessibilityPriorityLevel.medium.rawValue,
-        ])
+        VoiceOver.announce(value, from: self, priority: .medium)
     }
 
     override func keyUp(with event: NSEvent) {
         if event.keyCode == 49 { delegate?.overlayViewDidReleaseSpace(self) }
     }
-
-    /// All-In-One's letter keys, before an area is chosen.
-    static let allInOneKeys: [String: AllInOneBar.Choice] = [
-        "a": .area, "w": .window, "f": .fullscreen, "o": .text, "s": .scroll, "r": .record,
-    ]
 
     /// Marks what All-In-One's next area is for on the bar; nil for a plain capture.
     func markPurpose(_ choice: AllInOneBar.Choice?) {
@@ -816,17 +812,16 @@ final class OverlayView: NSView {
     }
 
     private func toolbarChose(_ choice: AllInOneBar.Choice) {
+        // Text, scrolling, or recording: what the next area is for.
+        if let next = choice.purpose {
+            delegate?.overlayView(self, didChooseMode: next)
+            return
+        }
         switch choice {
         case .area where isAllInOne:
             // All-In-One's Area is a plain capture of an area: whatever the next area was for is let go.
             if mode != .area { delegate?.overlayView(self, didSwitchTo: .area) }
             delegate?.overlayView(self, didChooseMode: .screenshot(nil))
-        case .text:
-            delegate?.overlayView(self, didChooseMode: .text)
-        case .scroll:
-            delegate?.overlayView(self, didChooseMode: .scroll)
-        case .record:
-            delegate?.overlayView(self, didChooseMode: .record)
         case .area where mode != .area:
             delegate?.overlayView(self, didSwitchTo: .area)
         case .window where mode != .window:
@@ -980,14 +975,14 @@ final class OverlayView: NSView {
         loupeShadow.fillColor = translucentPicker ? .clear : .white
         loupeShadow.shadowOpacity = translucentPicker ? 0 : 0.28
         updateLoupeCenter(for: pointer.flatMap { color(at: global($0)) })
-        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let isDark = effectiveAppearance.isDark
         sizePill.applyAppearance(dark: isDark, contrast: increasedContrast)
         loupePill.applyAppearance(dark: isDark, contrast: increasedContrast)
         // Text: the selection reads as selected text (the system's selection color, lightly filled,
         // edged in the accent), over an undimmed screen. Screenshot: a white edge over a soft outline.
         let text = purpose == .text
         // Picking a color and measuring show the screen as it is: they choose no area.
-        let undimmed = text || purpose == .color || purpose == .measure
+        let undimmed = !purpose.dimsScreen
         room.isHidden = undimmed
         outline.isHidden = undimmed
         measure?.applyAppearance(dark: isDark, contrast: increasedContrast, accent: Theme.cgColor(.controlAccentColor, for: effectiveAppearance))

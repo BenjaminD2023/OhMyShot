@@ -137,26 +137,16 @@ public enum TranslationOverlay {
     /// boxes start a few pixels apart on them).
     static func columnLefts(_ boxes: [CGRect], sizes: [CGFloat], edges: [CGFloat]? = nil) -> [CGFloat] {
         let edges = edges ?? boxes.map(\.minX)
-        var parent = Array(boxes.indices)
-        func root(_ index: Int) -> Int {
-            var index = index
-            while parent[index] != index {
-                parent[index] = parent[parent[index]]
-                index = parent[index]
-            }
-            return index
-        }
+        var columns = DisjointSets(count: boxes.count)
         for a in boxes.indices {
             for b in boxes.indices where b > a {
                 let size = min(sizes[a], sizes[b])
                 let gap = max(boxes[a].minY - boxes[b].maxY, boxes[b].minY - boxes[a].maxY)
-                if abs(boxes[a].minX - boxes[b].minX) <= size / 3, gap < size * 1.5 { parent[root(a)] = root(b) }
+                if abs(boxes[a].minX - boxes[b].minX) <= size / 3, gap < size * 1.5 { columns.join(a, b) }
             }
         }
-        var columns: [Int: [Int]] = [:]
-        for index in boxes.indices { columns[root(index), default: []].append(index) }
         var lefts = edges
-        for members in columns.values {
+        for members in columns.groups {
             guard let left = median(members.map { edges[$0] }) else { continue }
             for index in members { lefts[index] = left }
         }
@@ -219,15 +209,7 @@ public enum TranslationOverlay {
     /// percent from line to line, enough to make a sidebar's items look uneven. Only neighbors are
     /// joined, so sizes a little apart at each step never run together across the page.
     static func harmonized(_ sizes: [CGFloat], boxes: [CGRect]) -> [CGFloat] {
-        var parent = Array(sizes.indices)
-        func root(_ index: Int) -> Int {
-            var index = index
-            while parent[index] != index {
-                parent[index] = parent[parent[index]]
-                index = parent[index]
-            }
-            return index
-        }
+        var sets = DisjointSets(count: sizes.count)
         for a in sizes.indices {
             for b in sizes.indices where b > a {
                 let size = min(sizes[a], sizes[b])
@@ -237,13 +219,11 @@ public enum TranslationOverlay {
                 let horizontalGap = max(first.minX - second.maxX, second.minX - first.maxX)
                 let column = abs(first.minX - second.minX) <= size * 0.5 && verticalGap < size * 1.5
                 let row = abs(first.midY - second.midY) <= size * 0.3 && horizontalGap < size * 12
-                if column || row { parent[root(a)] = root(b) }
+                if column || row { sets.join(a, b) }
             }
         }
-        var groups: [Int: [Int]] = [:]
-        for index in sizes.indices { groups[root(index), default: []].append(index) }
         var result = sizes
-        for members in groups.values {
+        for members in sets.groups {
             guard let middle = median(members.map { sizes[$0] }) else { continue }
             for index in members { result[index] = middle }
         }

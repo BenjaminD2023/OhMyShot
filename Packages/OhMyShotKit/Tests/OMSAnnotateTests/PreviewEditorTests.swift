@@ -111,7 +111,7 @@ struct PreviewEditorTests {
             var settings = ToolSettings.defaults(for: tool)
             settings.color = RGBA(red: 0.31, green: 0.42, blue: 0.53)
             for state in [0, 1, 2] {
-                capsule.show(kind: tool, settings: settings, hasSelection: true, finding: state == 1, failed: state == 2)
+                capsule.show(kind: tool, settings: settings, hasSelection: true, reading: state == 1 ? .finding : state == 2 ? .failed : .resting)
                 #expect(capsule.fittingSize.width + 24 <= minimum.width, "\(tool), state \(state): \(capsule.fittingSize.width)")
             }
         }

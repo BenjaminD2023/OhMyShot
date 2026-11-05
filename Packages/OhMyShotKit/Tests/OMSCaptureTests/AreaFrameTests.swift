@@ -38,6 +38,26 @@ struct AreaFrameTests {
         #expect(bounds.contains(portrait))
     }
 
+    /// A drag moves the frame whole inside the bounds, resizes it with the pointer held to them, or chooses a new area.
+    @Test func aDragMovesResizesOrChoosesAnew() {
+        let moved = AreaFrame.adjusted(.moving(start: CGPoint(x: 200, y: 200), original: rect), to: CGPoint(x: 900, y: 250), in: bounds)
+        #expect(moved == CGRect(x: 600, y: 150, width: 400, height: 300))
+        let resized = AreaFrame.adjusted(.resizing(.bottomRight, original: rect), to: CGPoint(x: 1200, y: 500), in: bounds)
+        #expect(resized == CGRect(x: 100, y: 100, width: 900, height: 400))
+        let chosen = AreaFrame.adjusted(.selecting(start: CGPoint(x: 300, y: 300)), to: CGPoint(x: 100, y: -50), in: bounds)
+        #expect(chosen == CGRect(x: 100, y: 0, width: 200, height: 300))
+        // Kept to a shape, a new area grows from where it began.
+        let square = AreaFrame.adjusted(.selecting(start: CGPoint(x: 300, y: 300)), to: CGPoint(x: 500, y: 350), in: bounds, keeping: 1)
+        #expect(square == CGRect(x: 300, y: 300, width: 200, height: 200))
+    }
+
+    /// What is left of an area on the bounds, unless that is smaller than the smallest area.
+    @Test func anAreaIsFittedToTheBoundsOrNotAtAll() {
+        #expect(AreaFrame.fitted(CGRect(x: -50, y: 700, width: 200, height: 200), in: bounds) == CGRect(x: 0, y: 700, width: 150, height: 100))
+        #expect(AreaFrame.fitted(CGRect(x: 990, y: 100, width: 200, height: 200), in: bounds) == nil)
+        #expect(AreaFrame.fitted(CGRect(x: 2000, y: 100, width: 200, height: 200), in: bounds) == nil)
+    }
+
     @Test func aTypedSizeKeepsTheTopLeftAndStaysInside() {
         let sized = AreaFrame.sized(rect, to: CGSize(width: 640, height: 360), in: bounds)
         #expect(sized == CGRect(x: 100, y: 100, width: 640, height: 360))

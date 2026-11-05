@@ -25,7 +25,7 @@ public enum SecondReading {
         lines.contains { line in
             var run = 0
             for character in line.text where character != " " && character != "\u{3000}" {
-                run = isSquare(character) ? run + 1 : 0
+                run = Script.isHanOrKana(character) ? run + 1 : 0
                 if run >= 2 { return true }
             }
             return false
@@ -70,13 +70,13 @@ public enum SecondReading {
             lines[index].confidence = parts.map(\.confidence).min() ?? line.confidence
         }
 
-        let found = alone.filter { $0.confidence >= 0.9 && $0.text.count(where: isSquare) >= 2 }
+        let found = alone.filter { $0.confidence >= 0.9 && $0.text.count(where: Script.isHanOrKana) >= 2 }
         return found.isEmpty ? lines : ReadingOrder.sorted(lines + found)
     }
 
     /// Whether a line L1 read as `text` takes L2's reading: it holds Han or kana and no Hangul.
     static func takesSecond(_ text: String) -> Bool {
-        text.contains(where: isSquare) && !text.contains(where: Script.isHangul)
+        text.contains(where: Script.isHanOrKana) && !text.contains(where: Script.isHangul)
     }
 
     /// Whether L1 read Chinese or Japanese as Hangul: its line holds Hangul where L2 read two Han or kana characters or
@@ -85,12 +85,7 @@ public enum SecondReading {
     /// read Chinese in 22 of 28 such lines; on the benchmark's Korean it read nothing at all.
     static func isMisreadAsHangul(_ text: String, second: String, confidence: Float) -> Bool {
         text.contains(where: Script.isHangul) && !second.contains(where: Script.isHangul) && confidence >= 0.9
-            && second.count(where: isSquare) >= 2
-    }
-
-    /// Han or kana: what L2 reads better than L1.
-    private static func isSquare(_ character: Character) -> Bool {
-        Script.isCJK(character) && !Script.isHangul(character)
+            && second.count(where: Script.isHanOrKana) >= 2
     }
 
     /// The area two boxes share.
@@ -156,7 +151,7 @@ public enum SecondReading {
         // neither reading of it is text.
         var icon = 0
         while icon < b.count, b[icon].isSymbol, pair[icon].map({ fa[$0] != fb[icon] }) ?? true { icon += 1 }
-        if icon == 0 || icon == b.count || !isSquare(b[icon]) || !(pair[icon].map { $0 > 0 && a[..<$0].allSatisfy(\.isSymbol) } ?? false) {
+        if icon == 0 || icon == b.count || !Script.isHanOrKana(b[icon]) || !(pair[icon].map { $0 > 0 && a[..<$0].allSatisfy(\.isSymbol) } ?? false) {
             icon = 0
         }
 

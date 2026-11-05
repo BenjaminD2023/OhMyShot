@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 
 /// Capture Text's only feedback by default: the selection, drawn like selected text, stays where it was
 /// while the text is read, then fades. A click-through panel that never takes focus, drawn exactly like
@@ -59,10 +60,7 @@ public final class TextSelectionHighlight {
             } else {
                 text.map(TextResultCard.copiedCount) ?? String(localized: "No text found", bundle: .module)
             }
-            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-                .announcement: message,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+            VoiceOver.announce(message)
         }
         guard let panel else { return }
         self.panel = nil
@@ -125,7 +123,7 @@ public final class TextSelectionHighlight {
     /// applied, which would otherwise fix it to the light value.
     private func applyStyle() {
         guard let shape, let appearance = panel?.effectiveAppearance else { return }
-        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let dark = appearance.isDark
         let edge: CGFloat = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 2 : 1
         shape.lineWidth = edge
         shape.path = CGPath(rect: shape.bounds.insetBy(dx: edge / 2, dy: edge / 2), transform: nil)

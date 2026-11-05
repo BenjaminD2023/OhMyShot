@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import QuartzCore
 
 /// Annotation in place, over the capture overlay: the frozen screen stays where it is, the selection
@@ -39,8 +40,6 @@ public final class InPlaceAnnotationView: NSView {
     private let chrome = SelectionChromeView()
     let toolbar = InPlaceToolbar()
     private let capsule = StyleCapsule()
-    /// The open suggestions Redact All counted when the capsule was last shown.
-    private var shownSuggestions = 0
     private let actions: Actions
     private var adjustment: Adjustment?
     private var finished = false
@@ -53,7 +52,6 @@ public final class InPlaceAnnotationView: NSView {
     private(set) var placementZone: PlacementZone?
     /// What the capsule was last shown for, so a new tool or selection fades it in.
     private var capsuleAnchor: String?
-    private var savedColorsObserver: NSObjectProtocol?
 
     private enum Adjustment {
         case moving(start: CGPoint, original: CGRect)
@@ -88,16 +86,8 @@ public final class InPlaceAnnotationView: NSView {
 
         toolbar.onTool = { [weak self] tool in self?.choose(tool) }
         toolbar.onAction = { [weak self] action in self?.perform(action) }
-        capsule.onChange = { [weak self] name, change in
-            guard let self else { return }
-            session.changeSettings(name, change)
-            canvas.refreshEditingStyle()
-        }
-        capsule.onDelete = { [weak self] in self?.session.deleteSelection() }
-        capsule.onRedactAll = { [weak self] in self?.session.acceptAllRedactionSuggestions() }
-        capsule.onRetry = { [weak self] in self?.session.retryReadingForTool() }
-        capsule.onPickCanvasColor = { [weak self] in self?.canvas.toggleColorPicker() }
-        canvas.onColorPickerChange = { [weak self] in self?.refreshCapsule() }
+        // A color kept here shows in the capsule at once.
+        capsule.bind(to: session, canvas: canvas) { [weak self] in self?.refreshCapsule() }
         canvas.onCopy = { [weak self] in self?.perform(.copy) }
         canvas.onSave = { [weak self] in self?.perform(.save) }
         canvas.onViewportChange = { [weak self] in self?.placeAccessories() }
@@ -106,10 +96,6 @@ public final class InPlaceAnnotationView: NSView {
             return cursor(at: convert(point, from: canvas), overCanvas: true)
         }
         session.observe { [weak self] event in self?.sessionChanged(event) }
-        // A color kept here shows in the capsule at once.
-        savedColorsObserver = NotificationCenter.default.addObserver(forName: SavedColors.didChange, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshCapsule() }
-        }
         toolbar.select(nil)
         layoutSelection()
         setAccessibilityElement(true)
@@ -123,10 +109,6 @@ public final class InPlaceAnnotationView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
-    isolated deinit {
-        if let savedColorsObserver { NotificationCenter.default.removeObserver(savedColorsObserver) }
-    }
-
     public override var isFlipped: Bool { true }
     public override var acceptsFirstResponder: Bool { true }
     public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -135,10 +117,7 @@ public final class InPlaceAnnotationView: NSView {
     /// fall through to this view.
     public func begin() {
         window?.makeFirstResponder(canvas)
-        NSAccessibility.post(element: self, notification: .announcementRequested, userInfo: [
-            .announcement: String(localized: "Mark up the selection. Press Return to copy it, or Escape to cancel.", bundle: .module),
-            .priority: NSAccessibilityPriorityLevel.high.rawValue,
-        ])
+        VoiceOver.announce(String(localized: "Mark up the selection. Press Return to copy it, or Escape to cancel.", bundle: .module), from: self)
     }
 
     // MARK: Geometry
@@ -258,7 +237,7 @@ public final class InPlaceAnnotationView: NSView {
         switch event {
         case .document:
             layoutSelection()
-            if !session.selection.isEmpty || suggestionCountChanged { refreshCapsule() }
+            if !session.selection.isEmpty || capsule.countsStaleSuggestions(of: session) { refreshCapsule() }
         case .selection, .settings:
             refreshCapsule()
         case .tool:
@@ -275,19 +254,8 @@ public final class InPlaceAnnotationView: NSView {
         }
     }
 
-    /// Whether Redact All's count is out of date: the capsule is rebuilt for it, not for every drag frame.
-    private var suggestionCountChanged: Bool {
-        session.tool == .redact && session.openRedactionSuggestions.count != shownSuggestions
-    }
-
     private func refreshCapsule() {
-        shownSuggestions = session.tool == .redact ? session.openRedactionSuggestions.count : 0
-        capsule.isPickingCanvasColor = canvas.isPickingColor
-        capsule.show(
-            kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
-            suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
-            finding: session.isReadingForTool, failed: session.readingFailedForTool, sized: session.sizeApplies
-        )
+        capsule.refresh(from: session, canvas: canvas)
         placeAccessories()
     }
 

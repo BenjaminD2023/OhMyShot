@@ -180,3 +180,41 @@ nonisolated extension TextHighlight {
         return TextHighlight(rects: bands.sorted { ($0.minY, $0.minX) < ($1.minY, $1.minX) })
     }
 }
+
+nonisolated extension Shape {
+    /// What a highlighter drag along `points` draws: bands over the text it ran along when it started on
+    /// text, a free stroke when it started off text or while ⌘ is held.
+    static func highlight(along points: [CGPoint], snapping: TextSnapping?, freely: Bool) -> Shape {
+        if let snapping, !freely { return .textHighlight(TextHighlight(rects: snapping.rects)) }
+        return .highlighter(Stroke(points: points))
+    }
+}
+
+nonisolated extension AnnotationDocument {
+    /// The document with the new highlight `id` joined to the highlights of its color that it meets on a line:
+    /// highlighting over a highlight extends it, so a word highlighted twice (a double click) is no darker
+    /// and the overlap of two strokes along one line does not show. The joined highlight takes the place
+    /// of the uppermost of them, so nothing that lay over another mark drops under it; a highlight that
+    /// only covers what is highlighted already changes nothing.
+    func joiningHighlight(_ id: Annotation.ID, _ highlight: TextHighlight) -> AnnotationDocument {
+        guard let color = item(id)?.style.color else { return self }
+        var document = self
+        var joined = highlight
+        var absorbed: [Int] = []
+        var found = true
+        while found {
+            found = false
+            for (index, item) in document.items.enumerated() where item.id != id && item.style.color == color && !absorbed.contains(index) {
+                guard case .textHighlight(let other) = item.shape, other.meets(joined) else { continue }
+                joined = other.merged(with: joined)
+                absorbed.append(index)
+                found = true
+            }
+        }
+        guard let keeper = absorbed.max() else { return document }
+        document.items[keeper].shape = .textHighlight(joined)
+        let removed = Set(absorbed.filter { $0 != keeper }.map { document.items[$0].id } + [id])
+        document.items.removeAll { removed.contains($0.id) }
+        return document
+    }
+}

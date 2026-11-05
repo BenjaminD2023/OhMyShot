@@ -1,6 +1,7 @@
 import AppKit
 import AVKit
 import OMSCore
+import OMSDesign
 import SwiftUI
 
 /// The Studio window's content: the preview and its transport above the timeline, the inspector to the right.
@@ -19,7 +20,8 @@ struct StudioView: View {
                     .background(Color(nsColor: .underPageBackgroundColor))
                 Divider()
                 TransportBar(document: document, model: model)
-                saveStatus
+                // Saving is told under the window's title; only a save that failed takes a row, for Retry.
+                if case .failed = document.saveState { saveFailure }
                 StudioTimeline(document: document, model: model)
                     .frame(height: document.canChangeLayoutAlongTheTimeline ? StudioTimeline.heightWithLayouts : StudioTimeline.height)
             }
@@ -53,6 +55,9 @@ struct StudioView: View {
         }
         .toolbar { toolbar }
         .onDeleteCommand { document.deleteSelection() }
+        .onChange(of: document.saveState, initial: true) { _, state in
+            model.controller?.window?.subtitle = Self.subtitle(for: state)
+        }
     }
 
     /// Keep an existing frame visible while a new composition is prepared, but identify a stale preview.
@@ -103,7 +108,7 @@ struct StudioView: View {
         }
     }
 
-    private var saveStatus: some View {
+    private var saveFailure: some View {
         HStack(spacing: 8) {
             if case .failed(let reason) = document.saveState {
                 Label { Text("Project changes haven’t been saved", bundle: .module) } icon: { Image(systemName: "exclamationmark.triangle") }
@@ -116,19 +121,20 @@ struct StudioView: View {
                     Task { try? await document.flushSave() }
                 } label: { Text("Retry Saving", bundle: .module) }
                     .controlSize(.small)
-            } else {
-                Group {
-                    if document.saveState == .saved { Text("Project saved", bundle: .module) }
-                    else { Text("Saving project…", bundle: .module) }
-                }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
             }
         }
         .padding(.horizontal, 14)
         .frame(height: 24)
         .accessibilityElement(children: .contain)
+    }
+
+    /// The window's subtitle: where the project's saving stands, as a document window says it under its title.
+    static func subtitle(for state: StudioDocument.SaveState) -> String {
+        switch state {
+        case .saved: String(localized: "Project saved", bundle: .module)
+        case .failed: String(localized: "Project changes haven’t been saved", bundle: .module)
+        default: String(localized: "Saving project…", bundle: .module)
+        }
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
@@ -267,14 +273,9 @@ struct TransportBar: View {
         return Text("\(now) of \(length) seconds", bundle: .module)
     }
 
-    /// A time as the transport shows it: 0:12.3, 1:02:09.4.
+    /// A time as the transport shows it, in the inspector's clock but rounded down: 0:12.34, 1:02:09.40.
     static func format(_ seconds: Double) -> String {
-        let total = max(0, seconds)
-        let tenths = Int((total * 10).rounded(.down))
-        let hours = tenths / 36_000, minutes = tenths / 600 % 60, secs = tenths / 10 % 60
-        return hours > 0
-            ? String(format: "%d:%02d:%02d.%d", hours, minutes, secs, tenths % 10)
-            : String(format: "%d:%02d.%d", minutes, secs, tenths % 10)
+        StudioTimeInput.clock(max(0, seconds), rounding: .down)
     }
 }
 
@@ -308,10 +309,7 @@ struct StudioInspector: View {
             if let id = document.selectedZoom, let zoom = document.project.zooms.first(where: { $0.id == id }) {
                 Section {
                     StudioTimeRangeFields(start: zoom.start, end: zoom.end) { value, start in
-                        document.updateZoom(id) {
-                            if start { $0.start = min(value, $0.end - 0.3) } else { $0.end = max(value, $0.start + 0.3) }
-                        }
-                        return document.project.zooms.first { $0.id == id }.map { $0.start...$0.end } ?? zoom.start...zoom.end
+                        document.setZoomEdge(id, start: start, to: value) ?? zoom.start...zoom.end
                     }
                     .id(id)
                     LabeledSlider(
@@ -344,7 +342,7 @@ struct StudioInspector: View {
                                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                                         .strokeBorder(
                                             chosen ? Color.accentColor : contrast == .increased ? Self.swatchEdgeStrong : Self.swatchEdge,
-                                            lineWidth: chosen ? 2 : contrast == .increased ? 1 : 0.5
+                                            lineWidth: chosen ? 2 : 1
                                         )
                                 )
                         }
@@ -354,16 +352,27 @@ struct StudioInspector: View {
                         .accessibilityAddTraits(chosen ? .isSelected : [])
                     }
                 }
-                ColorPicker(selection: plainColor, supportsOpacity: false) {
-                    HStack(spacing: 6) {
-                        Text("Plain color", bundle: .module)
-                        if isPlainColor {
-                            Image(systemName: "checkmark")
-                                .font(.callout.weight(.semibold))
-                                .foregroundStyle(.tint)
-                                .accessibilityLabel(Text("Chosen", bundle: .module))
-                        }
+                // A tile like the gradients', filled with the color and ringed while it is the background, rather
+                // than a color well, whose empty capsule read as a switch turned off.
+                LabeledContent {
+                    Button(action: choosePlainColor) {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(plainColor)
+                            .frame(width: 44, height: 30)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(
+                                        isPlainColor ? Color.accentColor : contrast == .increased ? Self.swatchEdgeStrong : Self.swatchEdge,
+                                        lineWidth: isPlainColor ? 2 : 1
+                                    )
+                            )
                     }
+                    .buttonStyle(.plain)
+                    .help(Text("Choose a plain color", bundle: .module))
+                    .accessibilityLabel(Text("Plain color", bundle: .module))
+                    .accessibilityAddTraits(isPlainColor ? .isSelected : [])
+                } label: {
+                    Text("Plain color", bundle: .module)
                 }
             } header: {
                 Text("Background", bundle: .module)
@@ -488,11 +497,7 @@ struct StudioInspector: View {
                     if document.canChangeLayoutAlongTheTimeline {
                         if let id = document.selectedSegment, let segment = document.project.cameraSegments.first(where: { $0.id == id }) {
                             StudioTimeRangeFields(start: segment.start, end: segment.end) { value, start in
-                                document.updateCameraSegment(id) {
-                                    if start { $0.start = min(value, $0.end - StudioProject.shortestSegment) }
-                                    else { $0.end = max(value, $0.start + StudioProject.shortestSegment) }
-                                }
-                                return document.project.cameraSegments.first { $0.id == id }.map { $0.start...$0.end } ?? segment.start...segment.end
+                                document.setCameraSegmentEdge(id, start: start, to: value) ?? segment.start...segment.end
                             }
                             .id(id)
                             .id(Self.chosenLayoutID)
@@ -645,16 +650,40 @@ struct StudioInspector: View {
         }
     }
 
-    private var plainColor: Binding<Color> {
-        Binding {
-            if case .color(let red, let green, let blue) = document.project.background {
-                return Color(red: red, green: green, blue: blue)
-            }
-            return .white
-        } set: { color in
-            guard let srgb = NSColor(color).usingColorSpace(.sRGB) else { return }
+    /// The plain background's color, white until one is chosen.
+    private var plainNSColor: NSColor {
+        if case .color(let red, let green, let blue) = document.project.background {
+            return NSColor(srgbRed: red, green: green, blue: blue, alpha: 1)
+        }
+        return .white
+    }
+
+    private var plainColor: Color { Color(nsColor: plainNSColor) }
+
+    /// Makes the plain color the background and opens the Colors panel on it, whose changes follow as they are
+    /// made (the document takes changes within 0.4 s of each other back as one).
+    private func choosePlainColor() {
+        let color = plainNSColor
+        // Weakly: the panel outlives the window, and a project closed takes no more colors.
+        let use = { [weak document] (color: NSColor) in
+            guard let document, let srgb = color.usingColorSpace(.sRGB) else { return }
             document.project.background = .color(red: srgb.redComponent, green: srgb.greenComponent, blue: srgb.blueComponent)
         }
+        use(color)
+        let link = PlainColorLink(apply: use)
+        // The panel doesn't keep its target, so the link keeps itself until the next one takes its place.
+        PlainColorLink.current = link
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = false
+        panel.isContinuous = true
+        // Setting the panel's color sends its action: aimed at nothing first, so the color never reaches the
+        // editor (or the Studio) that used the panel last.
+        panel.setTarget(nil)
+        panel.setAction(nil)
+        panel.color = color
+        panel.setTarget(link)
+        panel.setAction(#selector(PlainColorLink.changed(_:)))
+        panel.orderFront(nil)
     }
 
     private var isPlainColor: Bool {
@@ -669,10 +698,10 @@ struct StudioInspector: View {
     /// The capsule swatch edge (black 0.18, white 0.38 in Dark; 0.40 and 0.60 under Increase Contrast),
     /// which holds around the palest and the darkest backgrounds alike.
     static let swatchEdge = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.38) : NSColor(white: 0, alpha: 0.18)
+        appearance.isDark ? NSColor(white: 1, alpha: 0.38) : NSColor(white: 0, alpha: 0.18)
     })
     static let swatchEdgeStrong = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.6) : NSColor(white: 0, alpha: 0.4)
+        appearance.isDark ? NSColor(white: 1, alpha: 0.6) : NSColor(white: 0, alpha: 0.4)
     })
 }
 
@@ -766,5 +795,22 @@ struct LabeledSlider: View {
             title
         }
         .accessibilityValue(Text(verbatim: reading(value)))
+    }
+}
+
+/// The Colors panel's target while it edits Studio's plain background: an object, since the panel keeps a
+/// target and an action rather than a closure.
+@MainActor
+final class PlainColorLink: NSObject {
+    /// The link the panel was last pointed at.
+    static var current: PlainColorLink?
+    private let apply: (NSColor) -> Void
+
+    init(apply: @escaping (NSColor) -> Void) {
+        self.apply = apply
+    }
+
+    @objc func changed(_ sender: NSColorPanel) {
+        apply(sender.color)
     }
 }

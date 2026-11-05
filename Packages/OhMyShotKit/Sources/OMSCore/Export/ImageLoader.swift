@@ -59,11 +59,22 @@ public enum ImageLoader {
             kCGImageSourceShouldCacheImmediately: true,
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        // PNG stores resolution per meter, so 144 dpi reads back as 143.99: snapped to quarter steps.
-        let dpi = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue ?? 72
-        let isKnown = dpi > 72.5
-        let scale = isKnown ? (dpi / 72 * 4).rounded() / 4 : Double(fallbackScale)
+        let stated = pixelsPerPoint(in: properties)
+        let scale = stated ?? Double(fallbackScale)
         let decoded = Double(max(image.width, image.height)) / Double(longest)
-        return Loaded(image: image, scale: max(1, scale * decoded), usesFallbackScale: !isKnown)
+        return Loaded(image: image, scale: max(1, scale * decoded), usesFallbackScale: stated == nil)
+    }
+
+    /// The scale a picture's properties state in its resolution: 144 dpi is 2 pixels per point. Nil when they state
+    /// none, or 72 dpi, which is every file's way of saying so.
+    public static func pixelsPerPoint(in properties: [CFString: Any]) -> Double? {
+        guard let dpi = (properties[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue, dpi > 72.5 else { return nil }
+        // PNG stores resolution per meter, so 144 dpi reads back as 143.99: snapped to quarter steps.
+        return (dpi / 72 * 4).rounded() / 4
+    }
+
+    /// The same, for the first picture in `source`.
+    public static func pixelsPerPoint(of source: CGImageSource) -> Double? {
+        (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]).flatMap(pixelsPerPoint(in:))
     }
 }

@@ -167,7 +167,7 @@ public actor Translator {
     static func isShort(_ text: String) -> Bool {
         guard text.count <= 40, !text.contains("|"), !text.contains("\n") else { return false }
         let words = text.split(whereSeparator: \.isWhitespace).count
-        let square = text.filter { Script.isCJK($0) && !Script.isHangul($0) }.count
+        let square = text.count(where: Script.isHanOrKana)
         let inside = text.trimmingCharacters(in: .whitespaces).dropLast()
         let endsSentenceInside = inside.contains { "。！？".contains($0) } || text.range(of: #"[.!?]\s+\S"#, options: .regularExpression) != nil
         return Double(words) + Double(square) / 2 <= 5 && !endsSentenceInside
@@ -234,18 +234,14 @@ public actor Translator {
     /// ("即可。 捕获"): between two square characters, Han, kana, or full-width punctuation.
     static func tidied(_ text: String, into target: Locale.Language) -> String {
         guard target.languageCode == .chinese || target.languageCode == .japanese else { return text }
-        func isSquare(_ character: Character) -> Bool {
-            (Script.isCJK(character) && !Script.isHangul(character))
-                || character.unicodeScalars.contains { (0x3000...0x303F).contains($0.value) || (0xFF00...0xFFEF).contains($0.value) }
-        }
         let characters = Array(text)
         var output = ""
         var index = 0
         while index < characters.count {
-            if characters[index] == " ", let previous = output.last, isSquare(previous) {
+            if characters[index] == " ", let previous = output.last, Script.isHanKanaOrFullWidthMark(previous) {
                 var end = index
                 while end < characters.count, characters[end] == " " { end += 1 }
-                if end < characters.count, isSquare(characters[end]) {
+                if end < characters.count, Script.isHanKanaOrFullWidthMark(characters[end]) {
                     index = end
                     continue
                 }

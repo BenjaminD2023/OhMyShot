@@ -207,6 +207,37 @@ extension RedactionSuggestionTests {
         #expect(session.openRedactionSuggestions == [Self.email])
         #expect((canvas.accessibilityChildren() ?? []).compactMap { $0 as? SuggestionElement }.count == 1)
     }
+
+    @Test func escapingARedactionDrawnByHandBringsTheSuggestionsBack() async throws {
+        let session = makeSession(reads: ReadCounter())
+        let (canvas, window) = makeCanvas(session)
+        defer { window.close() }
+        session.tool = .redact
+        await waitForSuggestions(session)
+        func shown() -> Int { (canvas.accessibilityChildren() ?? []).compactMap { $0 as? SuggestionElement }.count }
+        func mouse(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: canvas.windowPoint(forDocument: point), modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+        #expect(shown() == 2)
+        // Drawn by hand, clear of them: the suggestions step aside.
+        canvas.mouseDown(with: try mouse(.leftMouseDown, at: CGPoint(x: 20, y: 150)))
+        canvas.mouseDragged(with: try mouse(.leftMouseDragged, at: CGPoint(x: 80, y: 190)))
+        #expect(shown() == 0)
+        // Escape abandons the redaction mid-drag: they come back, and stay when the button is let go.
+        let escape = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53
+        ))
+        canvas.keyDown(with: escape)
+        #expect(session.document.items.isEmpty)
+        #expect(shown() == 2)
+        canvas.mouseUp(with: try mouse(.leftMouseUp, at: CGPoint(x: 80, y: 190)))
+        #expect(shown() == 2)
+    }
 }
 
 /// Counts calls from any task.

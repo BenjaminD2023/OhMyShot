@@ -188,13 +188,13 @@ public enum TextAssembler {
         for index in characters.indices.reversed() {
             nextIsSquare[index] = nearestIsSquare
             let character = characters[index]
-            if character.isLetter || character.isNumber { nearestIsSquare = isSquare(character) }
+            if character.isLetter || character.isNumber { nearestIsSquare = Script.isHanOrKana(character) }
         }
         var previousIsSquare = false
         for index in characters.indices {
             let character = characters[index]
             let betweenCJK = previousIsSquare && nextIsSquare[index]
-            if character.isLetter || character.isNumber { previousIsSquare = isSquare(character) }
+            if character.isLetter || character.isNumber { previousIsSquare = Script.isHanOrKana(character) }
             if mostlyLatin {
                 if let half = Punctuation.halfWidth[character], !betweenCJK, !(character == "。" && hasCJK) {
                     characters[index] = half
@@ -205,17 +205,12 @@ public enum TextAssembler {
         }
         var result: [Character] = []
         for (index, character) in characters.enumerated() {
-            if character == " ", let last = result.last, isSquare(last), index + 1 < characters.count, isSquare(characters[index + 1]) {
+            if character == " ", let last = result.last, Script.isHanOrKana(last), index + 1 < characters.count, Script.isHanOrKana(characters[index + 1]) {
                 continue
             }
             result.append(character)
         }
         return String(result)
-    }
-
-    /// Han or kana: the scripts written without spaces.
-    private static func isSquare(_ character: Character) -> Bool {
-        Script.isCJK(character) && !Script.isHangul(character)
     }
 
     // MARK: Paragraphs

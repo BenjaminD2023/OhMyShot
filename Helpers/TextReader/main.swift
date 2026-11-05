@@ -36,11 +36,9 @@
 // {"id": "…", "removed": 2}, {"id": "…", "text": "…", "ending": "end"} (or "length", "stopped") for the VLM pack, or
 // {"id": "…", "error": "…"}. The process exits once its input ends and every picture is
 // read.
-// With "visionCompatibility": true, the compatibility Vision pipeline reads the picture without any
-// model packs. "visionLines" is the base64 JSON encoding of complete OMSOCR lines, retaining geometry,
-// direction and wrapping metadata for the app's existing assembly and merge rules. "visionFormulas"
-// optionally supplies already recognized formulas, merged with the same compatibility pipeline;
-// "visionInputLines" may supply base64 JSON lines to preserve exact text already taken from apps.
+//
+// The messages are OMSCore's (`TextReaderWire`), which the app sends and reads with: the fields of a job and an answer
+// are declared once, there, for both sides.
 
 import CoreGraphics
 import Foundation
@@ -49,64 +47,44 @@ import OMSCore
 import OMSOCR
 import OMSVLM
 
-struct Job: Decodable {
-    let id: String
-    var path: String?
-    var joinsWrappedLines: Bool?
-    var pack: String?
-    var lines: Bool?
-    var warm: Bool?
-    var formula: String?
-    var formulas: String?
-    var tidy: Bool?
-    var vlm: String?
-    var task: String?
-    var seconds: Double?
-    /// What to take the system's memory pressure to be, by name (`MemoryPressure`), rather than ask the kernel: for checking
-    /// what happens when it is pressed.
-    var pressure: String?
-    var visionCompatibility: Bool?
-    var reusesProcess: Bool?
-    var visionFormulas: [TextReaderTool.FoundFormula]?
-    var visionInputLines: Data?
+typealias Job = TextReaderWire.Job
+typealias Answer = TextReaderWire.Answer
+
+extension TextReaderWire.Ending {
+    /// How the formula pack's reading ended, by the same name.
+    nonisolated init(_ ending: FormulaReading.Ending) {
+        switch ending {
+        case .end: self = .end
+        case .repeats: self = .repeats
+        case .cacheFull: self = .cacheFull
+        case .deadline: self = .deadline
+        }
+    }
+
+    /// How the VLM pack's reading ended, by the same name.
+    nonisolated init(_ ending: PaddleOCRVL.Ending) {
+        switch ending {
+        case .end: self = .end
+        case .length: self = .length
+        case .stopped: self = .stopped
+        }
+    }
 }
 
-nonisolated struct Line: Encodable {
-    let text: String
-    let box: CGRect
-    let confidence: Float
+extension TextReaderTool.FoundFormula.Kind {
+    /// A formula's region kind: only display and inline regions are read as formulas (`Kind.isFormula`).
+    nonisolated init(_ kind: LayoutFinder.Region.Kind) {
+        self = kind == .display ? .display : .inline
+    }
 }
 
-nonisolated struct Formula: Encodable {
-    let kind: String
-    let box: CGRect
-    let latex: String
-}
-
-nonisolated struct Table: Encodable {
-    let kind: String
-    let box: CGRect
-    let rows: [[String]]
-    let whole: Bool
-}
-
-nonisolated struct Result: Encodable {
-    let id: String
-    var text: String?
-    var lines: [Line]?
-    var visionLines: Data?
-    var retire: Bool?
-    var latex: String?
-    var ending: String?
-    var found: Int?
-    /// Of `found`, how many are tables and charts.
-    var foundTables: Int?
-    var formulas: [Formula]?
-    var tables: [Table]?
-    /// Tables and charts found but left to Vision, the system being short of memory for the VLM.
-    var tablesLeft: Int?
-    var removed: Int?
-    var error: String?
+extension TextReaderTool.FoundTable.Kind {
+    nonisolated init(_ kind: TableMerge.Table.Kind) {
+        switch kind {
+        case .table: self = .table
+        case .chart: self = .chart
+        }
+    }
 }
 
 let pipeline: VisionPipeline = {
@@ -227,7 +205,13 @@ func elements(
 
 /// The system's memory pressure, or what the job says to take it to be.
 func pressure(for job: Job) -> MemoryPressure {
-    job.pressure.flatMap(MemoryPressure.init(name:)) ?? MemoryPressure.current()
+    job.pressure ?? MemoryPressure.current()
+}
+
+/// The picture the job names, for a job that reads one.
+func picture(of job: Job) throws -> URL {
+    guard let path = job.path else { throw OCRError.unreadableImage }
+    return URL(filePath: path)
 }
 
 /// L1, with the pack beside it when it loads.
@@ -247,28 +231,30 @@ let output = FileHandle.standardOutput
 
 /// A line written at once, from whatever is running: how many formulas and tables there are to read goes out before
 /// they are read, while the VLM keeps this actor busy.
-nonisolated func sendNow(_ result: Result) {
+nonisolated func sendNow(_ answer: Answer) {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.withoutEscapingSlashes]
-    guard var line = try? encoder.encode(result) else { return }
+    guard var line = try? encoder.encode(answer) else { return }
     line.append(0x0A)
     FileHandle.standardOutput.write(line)
 }
 
-func send(_ result: Result) {
-    guard var line = try? encoder.encode(result) else { return }
+func send(_ value: Answer) {
+    var answer = value
+    if answer.progress == nil && currentJobReusesProcess && (!formulaReaders.isEmpty || !vlmReaders.isEmpty) { answer.retire = true }
+    guard var line = try? encoder.encode(answer) else { return }
     line.append(0x0A)
     output.write(line)
 }
 
+var currentJobReusesProcess = false
 for try await line in FileHandle.standardInput.bytes.lines {
     guard let job = try? JSONDecoder().decode(Job.self, from: Data(line.utf8)) else { continue }
-    // An interactive prediction must not be throttled as idle background work. End the activity
-    // after this job, so ready readers impose no ongoing App Nap assertion between selections.
     let activity = job.reusesProcess == true
         ? ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Recognize selected text") : nil
     defer { if let activity { ProcessInfo.processInfo.endActivity(activity) } }
     do {
+        currentJobReusesProcess = job.reusesProcess == true
         if let compatibility = job.visionCompatibility {
             guard let path = job.path else { throw OCRError.unreadableImage }
             var options = VisionPipeline.Options.preferred()
@@ -286,91 +272,74 @@ for try await line in FileHandle.standardInput.bytes.lines {
                     input = try await recovery.recognize(image).lines
                 }
                 lines = await recovery.lines(input, with: formulas.map { formula in
-                    FormulaMerge.Formula(kind: formula.kind == "display" ? .display : .inline, box: formula.box, latex: formula.latex)
+                    FormulaMerge.Formula(kind: formula.kind == .display ? .display : .inline, box: formula.box, latex: formula.latex)
                 }, in: image)
             } else {
                 lines = try await recovery.recognize(fileAt: URL(filePath: path)).lines
             }
-            send(Result(id: job.id, visionLines: try JSONEncoder().encode(lines)))
+            send(Answer(id: job.id, visionLines: try JSONEncoder().encode(lines)))
             continue
         }
-        if job.tidy == true {
+        switch job.mode {
+        case .tidy:
             // Core ML keeps its cache under the process's bundle identifier, which the Info.plist in this binary names.
             let removed = Bundle.main.bundleIdentifier.map { CompiledModelCache.removeStale(in: CompiledModelCache.folder(forBundleIdentifier: $0)) }
-            send(Result(id: job.id, removed: removed?.count ?? 0))
-            continue
-        }
-        if let pack = job.vlm, job.task != nil || job.warm == true {
+            send(Answer(id: job.id, removed: removed?.count ?? 0))
+        case .warmVLM(let pack):
+            _ = try vlmReader(for: pack)
+            send(Answer(id: job.id, text: ""))
+        case .vlm(let pack, let task):
             let reader = try vlmReader(for: pack)
-            if job.warm == true {
-                send(Result(id: job.id, text: ""))
-                continue
-            }
-            guard let path = job.path, let task = job.task.flatMap(PaddleOCRVLReader.Task.init(rawValue:)) else { throw OCRError.unreadableImage }
-            let reading = try reader.read(fileAt: URL(filePath: path), task: task)
-            send(Result(id: job.id, text: reading.text, ending: reading.ending.rawValue))
-            continue
-        }
-        if let pack = job.formula {
+            let file = try picture(of: job)
+            guard let task = PaddleOCRVLReader.Task(rawValue: task) else { throw OCRError.unreadableImage }
+            let reading = try reader.read(fileAt: file, task: task)
+            send(Answer(id: job.id, text: reading.text, ending: .init(reading.ending)))
+        case .warmFormula(let pack):
+            _ = try await formulaReader(for: pack)
+            _ = try await layoutFinder(formulas: pack, vlm: nil)
+            send(Answer(id: job.id, text: ""))
+        case .formula(let pack):
             let reader = try await formulaReader(for: pack)
-            if job.warm == true {
-                _ = try await layoutFinder(formulas: pack, vlm: nil)
-                send(Result(id: job.id, text: ""))
-                continue
-            }
-            guard let path = job.path else { throw OCRError.unreadableImage }
-            let reading = try await reader.read(fileAt: URL(filePath: path))
-            send(Result(id: job.id, latex: reading.latex, ending: reading.ending.rawValue))
-            continue
-        }
-        if job.warm == true, let pack = job.pack {
+            let reading = try await reader.read(fileAt: picture(of: job))
+            send(Answer(id: job.id, latex: reading.latex, ending: .init(reading.ending)))
+        case .warmPack(let pack):
             _ = try await reader(for: pack)
-            send(Result(id: job.id, text: ""))
-            continue
-        }
-        guard let path = job.path else { throw OCRError.unreadableImage }
-        let file = URL(filePath: path)
-        if job.lines == true, let pack = job.pack {
+            send(Answer(id: job.id, text: ""))
+        case .lines(let pack):
+            let file = try picture(of: job)
             let lines = try await reader(for: pack).recognize(fileAt: file).lines
-            send(Result(id: job.id, lines: lines.map { Line(text: $0.text, box: $0.box, confidence: $0.confidence) }))
-            continue
-        }
-        if job.formulas != nil || job.vlm != nil, job.joinsWrappedLines == nil {
+            send(Answer(id: job.id, lines: lines.map { TextReaderTool.Line(text: $0.text, box: $0.box, confidence: $0.confidence) }))
+        case .elements:
             let id = job.id
             let found = try await elements(
-                inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, pressure: pressure(for: job)
+                inPictureAt: picture(of: job), formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, pressure: pressure(for: job)
             ) { formulas, tables in
-                sendNow(Result(id: id, found: formulas + tables, foundTables: tables))
+                sendNow(.found(id: id, formulas: formulas, tables: tables))
             }
-            // Interactive workers retain the layout detector, but a real formula/table can load
-            // hundreds of megabytes or a multi-gigabyte VLM. Retire that worker after its answer.
-            let retire = job.reusesProcess == true && (!formulaReaders.isEmpty || !vlmReaders.isEmpty)
-            send(Result(
+            send(Answer(
                 id: job.id,
-                retire: retire ? true : nil,
-                formulas: (found?.formulas ?? []).map { Formula(kind: $0.kind.rawValue, box: $0.box, latex: $0.latex) },
-                tables: (found?.tables ?? []).map { Table(kind: $0.kind.rawValue, box: $0.box, rows: $0.rows, whole: $0.isWhole) },
+                formulas: (found?.formulas ?? []).map { TextReaderTool.FoundFormula(kind: .init($0.kind), box: $0.box, latex: $0.latex) },
+                tables: (found?.tables ?? []).map { TextReaderTool.FoundTable(kind: .init($0.kind), box: $0.box, rows: $0.rows, whole: $0.isWhole) },
                 tablesLeft: found.map { $0.left > 0 ? $0.left : nil } ?? nil
             ))
-            if retire { break }
-            continue
-        }
-        var result = try await reading(with: job.pack).recognize(fileAt: file)
-        if job.formulas != nil || job.vlm != nil,
-           let found = try await elements(
-               inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, pressure: pressure(for: job), found: { _, _ in }
-           ) {
-            if !found.formulas.isEmpty { result.lines = await pipeline.lines(result.lines, with: found.formulas, in: found.image) }
-            if !found.tables.isEmpty {
-                let picture = CGRect(x: 0, y: 0, width: found.image.width, height: found.image.height)
-                result.lines = TableMerge.merged(result.lines, with: found.tables, in: picture).lines
+        case .text:
+            let file = try picture(of: job)
+            var result = try await reading(with: job.pack).recognize(fileAt: file)
+            if job.formulas != nil || job.vlm != nil,
+               let found = try await elements(
+                   inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, pressure: pressure(for: job), found: { _, _ in }
+               ) {
+                if !found.formulas.isEmpty { result.lines = await pipeline.lines(result.lines, with: found.formulas, in: found.image) }
+                if !found.tables.isEmpty {
+                    let picture = CGRect(x: 0, y: 0, width: found.image.width, height: found.image.height)
+                    result.lines = TableMerge.merged(result.lines, with: found.tables, in: picture).lines
+                }
             }
+            let text = job.joinsWrappedLines.map { TextAssembler.assemble(result.lines, options: .init(joinsWrappedLines: $0)) } ?? result.text
+            send(Answer(id: job.id, text: text))
         }
-        let text = job.joinsWrappedLines.map { TextAssembler.assemble(result.lines, options: .init(joinsWrappedLines: $0)) } ?? result.text
-        send(Result(id: job.id, text: text))
     } catch {
-        let retire = job.reusesProcess == true && (!formulaReaders.isEmpty || !vlmReaders.isEmpty)
-        send(Result(id: job.id, retire: retire ? true : nil, error: String(describing: error)))
-        if retire { break }
+        send(Answer(id: job.id, error: String(describing: error)))
     }
+    if job.reusesProcess == true && (!formulaReaders.isEmpty || !vlmReaders.isEmpty) { break }
 }

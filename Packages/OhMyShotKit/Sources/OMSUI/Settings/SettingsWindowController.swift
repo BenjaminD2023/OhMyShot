@@ -3,20 +3,7 @@ import Foundation
 import OMSCore
 import SwiftUI
 
-public enum SettingsTab: String, CaseIterable, Sendable {
-    case general
-    case capture
-    case screenshots
-    case quickAccess
-    case recording
-    case text
-    case tools
-    case sharing
-    case shortcuts
-    case automation
-    case permissions
-    case about
-
+extension SettingsTab {
     /// The sidebar's groups, in order.
     static let groups: [[SettingsTab]] = [
         [.general, .capture, .screenshots, .quickAccess, .recording, .text, .tools],

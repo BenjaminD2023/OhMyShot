@@ -465,81 +465,82 @@ public final class SettingsStore {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        defaults.register(defaults: [
-            Key.showMenuBarIcon: true,
-            Key.playSounds: true,
-            Key.automationEnabled: true,
-            Key.copyAfterCapture: true,
-            Key.uploadAfterCapture: false,
-            Key.copyLinkAfterUpload: true,
-            Key.saveAfterCapture: false,
-            Key.screenshotFormat: ImageExporter.Format.png.rawValue,
-            Key.screenshotQuality: ScreenshotOutput.standardQuality,
-            Key.savesRetinaAtOneX: false,
-            Key.convertsToSRGB: false,
-            Key.addsBorder: false,
-            Key.fileNamePattern: FilenameTemplate.standard.pattern,
-            Key.nextFileNumber: 1,
-            Key.asksForFileName: false,
-            Key.clipboardFormat: ClipboardFormat.pictureOnly.rawValue,
-            Key.showQuickAccess: true,
-            Key.historyRetention: HistoryRetention.oneWeek.rawValue,
-            Key.showTextResult: false,
-            Key.textResultPosition: TextResultPosition.belowSelection.rawValue,
-            Key.textResultCloseAfter: Self.defaultTextResultCloseAfter,
-            Key.textRecognitionKeepsLineBreaks: true,
-            Key.textRecognitionWrapsText: true,
-            Key.readsAppText: false,
-            Key.translationTarget: "",
+        let registered: [Key: Any] = [
+            .showMenuBarIcon: true,
+            .playSounds: true,
+            .automationEnabled: true,
+            .copyAfterCapture: true,
+            .uploadAfterCapture: false,
+            .copyLinkAfterUpload: true,
+            .saveAfterCapture: false,
+            .screenshotFormat: Default.screenshotFormat.rawValue,
+            .screenshotQuality: ScreenshotOutput.standardQuality,
+            .savesRetinaAtOneX: false,
+            .convertsToSRGB: false,
+            .addsBorder: false,
+            .fileNamePattern: Default.fileNamePattern,
+            .nextFileNumber: Default.nextFileNumber,
+            .asksForFileName: false,
+            .clipboardFormat: Default.clipboardFormat.rawValue,
+            .showQuickAccess: true,
+            .historyRetention: Default.historyRetention.rawValue,
+            .showTextResult: false,
+            .textResultPosition: Default.textResultPosition.rawValue,
+            .textResultCloseAfter: Self.defaultTextResultCloseAfter,
+            .textRecognitionKeepsLineBreaks: true,
+            .textRecognitionWrapsText: true,
+            .readsAppText: false,
+            .translationTarget: Default.translationTarget,
             // Frozen by default: a hover card or menu that closes as the pointer leaves it can still be
             // captured, since the screen is taken the moment the shortcut is pressed.
-            Key.freezeScreen: true,
-            Key.screenshotShowsCursor: false,
-            Key.captureLoupeSize: CaptureLoupeSize.small.rawValue,
-            Key.captureLoupeMagnification: CaptureLoupeMagnification.four.rawValue,
-            Key.areaShape: "",
-            Key.snapSelectionToText: false,
-            Key.allInOneRemembersArea: true,
-            Key.windowShadow: true,
-            Key.selfTimerDelay: 5,
-            Key.pinCornerRadius: 12.0,
-            Key.pinShadow: true,
-            Key.pinBorder: true,
-            Key.pinsAppearInCaptures: true,
-            Key.colorFormat: ColorFormat.hex.rawValue,
-            Key.colorCopyGesture: ColorCopyGesture.option.rawValue,
-            Key.measureUnit: MeasureUnit.points.rawValue,
-            Key.measureTolerance: MeasureTolerance.medium.rawValue,
-            Key.measureSnapsToContent: true,
-            Key.recordingFrameRate: 60,
-            Key.recordingPrefersHEVC: false,
-            Key.recordingCountdown: 3,
-            Key.recordingHighlight: RecordingHighlight.outline.rawValue,
-            Key.recordingShowsCursor: true,
-            Key.recordingShowsClicks: false,
-            Key.recordingClickStyle: ClickStyle.system.rawValue,
-            Key.recordingSystemAudio: false,
-            Key.recordingMicrophone: false,
-            Key.recordingMicrophoneID: "",
-            Key.recordingShowsControls: true,
-            Key.recordingCamera: false,
-            Key.recordingCameraID: "",
-            Key.recordingCameraShape: CameraStyle.Shape.circle.rawValue,
-            Key.recordingCameraSize: CameraStyle.Size.medium.rawValue,
-            Key.recordingCameraMirrored: true,
-            Key.recordingShowsKeystrokes: false,
-            Key.recordingKeystrokeMode: KeystrokeMode.all.rawValue,
+            .freezeScreen: true,
+            .screenshotShowsCursor: false,
+            .captureLoupeMagnification: CaptureLoupeMagnification.four.rawValue,
+            .colorCopyGesture: ColorCopyGesture.option.rawValue,
+            .captureLoupeSize: Default.captureLoupeSize.rawValue,
+            .areaShape: Default.areaShape,
+            .snapSelectionToText: false,
+            .allInOneRemembersArea: true,
+            .windowShadow: true,
+            .selfTimerDelay: Default.selfTimerDelay,
+            .pinCornerRadius: 12.0,
+            .pinShadow: true,
+            .pinBorder: true,
+            .pinsAppearInCaptures: true,
+            .colorFormat: Default.colorFormat.rawValue,
+            .measureUnit: Default.measureUnit.rawValue,
+            .measureTolerance: Default.measureTolerance.rawValue,
+            .measureSnapsToContent: true,
+            .recordingFrameRate: Default.recordingFrameRate,
+            .recordingPrefersHEVC: false,
+            .recordingCountdown: Default.recordingCountdown,
+            .recordingHighlight: Default.recordingHighlight.rawValue,
+            .recordingShowsCursor: true,
+            .recordingShowsClicks: false,
+            .recordingClickStyle: Default.recordingClickStyle.rawValue,
+            .recordingSystemAudio: false,
+            .recordingMicrophone: false,
+            .recordingMicrophoneID: Default.recordingMicrophoneID,
+            .recordingShowsControls: true,
+            .recordingCamera: false,
+            .recordingCameraID: Default.recordingCameraID,
+            .recordingCameraShape: Default.recordingCameraStyle.shape.rawValue,
+            .recordingCameraSize: Default.recordingCameraStyle.size.rawValue,
+            .recordingCameraMirrored: Default.recordingCameraStyle.mirrored,
+            .recordingShowsKeystrokes: false,
+            .recordingKeystrokeMode: Default.recordingKeystrokeMode.rawValue,
             // Off: what is typed is kept only when asked for.
-            Key.recordingKeepsKeysForStudio: false,
-            Key.recordingOutput: RecordingOutput.video.rawValue,
-            Key.recordingGIFFrameRate: 15,
-            Key.replaySound: ReplaySound.all.rawValue,
-            Key.quickAccessCorner: QuickAccessCorner.bottomLeft.rawValue,
-            Key.quickAccessSize: QuickAccessSize.medium.rawValue,
-            Key.quickAccessOnPointerDisplay: false,
-            Key.quickAccessCloseAfter: 3,
-            Key.quickAccessCloseAction: QuickAccessCloseAction.close.rawValue,
-        ])
+            .recordingKeepsKeysForStudio: false,
+            .recordingOutput: Default.recordingOutput.rawValue,
+            .recordingGIFFrameRate: Default.recordingGIFFrameRate,
+            .replaySound: Default.replaySound.rawValue,
+            .quickAccessCorner: Default.quickAccessCorner.rawValue,
+            .quickAccessSize: Default.quickAccessSize.rawValue,
+            .quickAccessOnPointerDisplay: false,
+            .quickAccessCloseAfter: Default.quickAccessCloseAfter,
+            .quickAccessCloseAction: Default.quickAccessCloseAction.rawValue,
+        ]
+        defaults.register(defaults: Dictionary(uniqueKeysWithValues: registered.map { ($0.key.rawValue, $0.value) }))
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
         automationEnabled = defaults.bool(forKey: Key.automationEnabled)
@@ -551,11 +552,11 @@ public final class SettingsStore {
         captureLoupeSize = defaults.string(forKey: Key.captureLoupeSize).flatMap(CaptureLoupeSize.init(rawValue:)) ?? .small
         captureLoupeMagnification = defaults.string(forKey: Key.captureLoupeMagnification).flatMap(CaptureLoupeMagnification.init(rawValue:)) ?? .four
         // Only a shape the picker lists is kept; anything else, a square included, is a square.
-        let shape = defaults.string(forKey: Key.areaShape) ?? ""
-        areaShape = AspectRatio.presets.dropFirst().contains { $0.label == shape } ? shape : ""
+        let shape = defaults.string(forKey: Key.areaShape) ?? Default.areaShape
+        areaShape = AspectRatio.presets.dropFirst().contains { $0.label == shape } ? shape : Default.areaShape
         snapSelectionToText = defaults.bool(forKey: Key.snapSelectionToText)
         let delay = defaults.integer(forKey: Key.selfTimerDelay)
-        selfTimerDelay = Self.selfTimerDelays.contains(delay) ? delay : 5
+        selfTimerDelay = Self.selfTimerDelays.contains(delay) ? delay : Default.selfTimerDelay
         pinCornerRadius = min(max(defaults.double(forKey: Key.pinCornerRadius), Self.pinCornerRadii.lowerBound), Self.pinCornerRadii.upperBound)
         pinShadow = defaults.bool(forKey: Key.pinShadow)
         pinBorder = defaults.bool(forKey: Key.pinBorder)
@@ -566,66 +567,66 @@ public final class SettingsStore {
         measureTolerance = defaults.string(forKey: Key.measureTolerance).flatMap(MeasureTolerance.init(rawValue:)) ?? .medium
         measureSnapsToContent = defaults.bool(forKey: Key.measureSnapsToContent)
         let frameRate = defaults.integer(forKey: Key.recordingFrameRate)
-        recordingFrameRate = Self.recordingFrameRates.contains(frameRate) ? frameRate : 60
+        recordingFrameRate = Self.recordingFrameRates.contains(frameRate) ? frameRate : Default.recordingFrameRate
         recordingPrefersHEVC = defaults.bool(forKey: Key.recordingPrefersHEVC)
         let countdown = defaults.integer(forKey: Key.recordingCountdown)
-        recordingCountdown = Self.recordingCountdowns.contains(countdown) ? countdown : 3
-        recordingHighlight = defaults.string(forKey: Key.recordingHighlight).flatMap(RecordingHighlight.init(rawValue:)) ?? .outline
+        recordingCountdown = Self.recordingCountdowns.contains(countdown) ? countdown : Default.recordingCountdown
+        recordingHighlight = defaults.string(forKey: Key.recordingHighlight).flatMap(RecordingHighlight.init(rawValue:)) ?? Default.recordingHighlight
         recordingShowsCursor = defaults.bool(forKey: Key.recordingShowsCursor)
         recordingShowsClicks = defaults.bool(forKey: Key.recordingShowsClicks)
-        recordingClickStyle = defaults.string(forKey: Key.recordingClickStyle).flatMap(ClickStyle.init(rawValue:)) ?? .system
+        recordingClickStyle = defaults.string(forKey: Key.recordingClickStyle).flatMap(ClickStyle.init(rawValue:)) ?? Default.recordingClickStyle
         recordingSystemAudio = defaults.bool(forKey: Key.recordingSystemAudio)
         recordingMicrophone = defaults.bool(forKey: Key.recordingMicrophone)
-        recordingMicrophoneID = defaults.string(forKey: Key.recordingMicrophoneID) ?? ""
+        recordingMicrophoneID = defaults.string(forKey: Key.recordingMicrophoneID) ?? Default.recordingMicrophoneID
         recordingShowsControls = defaults.bool(forKey: Key.recordingShowsControls)
         recordingCamera = defaults.bool(forKey: Key.recordingCamera)
-        recordingCameraID = defaults.string(forKey: Key.recordingCameraID) ?? ""
+        recordingCameraID = defaults.string(forKey: Key.recordingCameraID) ?? Default.recordingCameraID
         recordingCameraStyle = CameraStyle(
-            shape: defaults.string(forKey: Key.recordingCameraShape).flatMap(CameraStyle.Shape.init(rawValue:)) ?? .circle,
-            size: defaults.string(forKey: Key.recordingCameraSize).flatMap(CameraStyle.Size.init(rawValue:)) ?? .medium,
+            shape: defaults.string(forKey: Key.recordingCameraShape).flatMap(CameraStyle.Shape.init(rawValue:)) ?? Default.recordingCameraStyle.shape,
+            size: defaults.string(forKey: Key.recordingCameraSize).flatMap(CameraStyle.Size.init(rawValue:)) ?? Default.recordingCameraStyle.size,
             mirrored: defaults.bool(forKey: Key.recordingCameraMirrored)
         )
         recordingShowsKeystrokes = defaults.bool(forKey: Key.recordingShowsKeystrokes)
-        recordingKeystrokeMode = defaults.string(forKey: Key.recordingKeystrokeMode).flatMap(KeystrokeMode.init(rawValue:)) ?? .all
+        recordingKeystrokeMode = defaults.string(forKey: Key.recordingKeystrokeMode).flatMap(KeystrokeMode.init(rawValue:)) ?? Default.recordingKeystrokeMode
         recordingKeepsKeysForStudio = defaults.bool(forKey: Key.recordingKeepsKeysForStudio)
         // Studio, kept before it was left out, opens as Video.
-        recordingOutput = defaults.string(forKey: Key.recordingOutput).flatMap(RecordingOutput.init(rawValue:)).flatMap { $0 == .studio ? nil : $0 } ?? .video
+        recordingOutput = defaults.string(forKey: Key.recordingOutput).flatMap(RecordingOutput.init(rawValue:)).flatMap { $0 == .studio ? nil : $0 } ?? Default.recordingOutput
         let gifFrameRate = defaults.integer(forKey: Key.recordingGIFFrameRate)
-        recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : 15
-        replaySound = defaults.string(forKey: Key.replaySound).flatMap(ReplaySound.init(rawValue:)) ?? .all
+        recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : Default.recordingGIFFrameRate
+        replaySound = defaults.string(forKey: Key.replaySound).flatMap(ReplaySound.init(rawValue:)) ?? Default.replaySound
         hidesDesktopIcons = defaults.bool(forKey: Key.hidesDesktopIcons)
         allInOneRemembersArea = defaults.bool(forKey: Key.allInOneRemembersArea)
         windowShadow = defaults.bool(forKey: Key.windowShadow)
         windowBackground = defaults.string(forKey: Key.windowBackground).flatMap(WindowBackground.init(rawValue:)) ?? .asScreenshots
         allInOneArea = defaults.data(forKey: Key.allInOneArea).flatMap { try? JSONDecoder().decode(RememberedArea.self, from: $0) }
-        quickAccessCorner = defaults.string(forKey: Key.quickAccessCorner).flatMap(QuickAccessCorner.init(rawValue:)) ?? .bottomLeft
-        quickAccessSize = defaults.string(forKey: Key.quickAccessSize).flatMap(QuickAccessSize.init(rawValue:)) ?? .medium
+        quickAccessCorner = defaults.string(forKey: Key.quickAccessCorner).flatMap(QuickAccessCorner.init(rawValue:)) ?? Default.quickAccessCorner
+        quickAccessSize = defaults.string(forKey: Key.quickAccessSize).flatMap(QuickAccessSize.init(rawValue:)) ?? Default.quickAccessSize
         quickAccessOnPointerDisplay = defaults.bool(forKey: Key.quickAccessOnPointerDisplay)
-        let closeAfter = defaults.object(forKey: Key.quickAccessCloseAfter) as? Int ?? 3
-        quickAccessCloseAfter = Self.quickAccessCloseDelays.contains(closeAfter) ? closeAfter : 3
-        quickAccessCloseAction = defaults.string(forKey: Key.quickAccessCloseAction).flatMap(QuickAccessCloseAction.init(rawValue:)) ?? .close
+        let closeAfter = defaults.object(forKey: Key.quickAccessCloseAfter) as? Int ?? Default.quickAccessCloseAfter
+        quickAccessCloseAfter = Self.quickAccessCloseDelays.contains(closeAfter) ? closeAfter : Default.quickAccessCloseAfter
+        quickAccessCloseAction = defaults.string(forKey: Key.quickAccessCloseAction).flatMap(QuickAccessCloseAction.init(rawValue:)) ?? Default.quickAccessCloseAction
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         uploadAfterCapture = defaults.bool(forKey: Key.uploadAfterCapture)
         copyLinkAfterUpload = defaults.bool(forKey: Key.copyLinkAfterUpload)
         saveAfterCapture = defaults.bool(forKey: Key.saveAfterCapture)
-        screenshotFormat = defaults.string(forKey: Key.screenshotFormat).flatMap(ImageExporter.Format.init(rawValue:)) ?? .png
+        screenshotFormat = defaults.string(forKey: Key.screenshotFormat).flatMap(ImageExporter.Format.init(rawValue:)) ?? Default.screenshotFormat
         let quality = defaults.double(forKey: Key.screenshotQuality)
         screenshotQuality = min(max(quality, ScreenshotOutput.qualities.lowerBound), ScreenshotOutput.qualities.upperBound)
         savesRetinaAtOneX = defaults.bool(forKey: Key.savesRetinaAtOneX)
         convertsToSRGB = defaults.bool(forKey: Key.convertsToSRGB)
         addsBorder = defaults.bool(forKey: Key.addsBorder)
-        fileNamePattern = defaults.string(forKey: Key.fileNamePattern) ?? FilenameTemplate.standard.pattern
-        nextFileNumber = max(defaults.integer(forKey: Key.nextFileNumber), 1)
+        fileNamePattern = defaults.string(forKey: Key.fileNamePattern) ?? Default.fileNamePattern
+        nextFileNumber = max(defaults.integer(forKey: Key.nextFileNumber), Default.nextFileNumber)
         asksForFileName = defaults.bool(forKey: Key.asksForFileName)
-        clipboardFormat = defaults.string(forKey: Key.clipboardFormat).flatMap(ClipboardFormat.init(rawValue:)) ?? .pictureOnly
+        clipboardFormat = defaults.string(forKey: Key.clipboardFormat).flatMap(ClipboardFormat.init(rawValue:)) ?? Default.clipboardFormat
         showQuickAccess = defaults.bool(forKey: Key.showQuickAccess)
         copyAfterRecording = Self.recordingChoice(Key.copyAfterRecording, startingAs: Key.copyAfterCapture, in: defaults)
         showRecordingQuickAccess = Self.recordingChoice(Key.showRecordingQuickAccess, startingAs: Key.showQuickAccess, in: defaults)
         saveAfterRecording = Self.recordingChoice(Key.saveAfterRecording, startingAs: Key.saveAfterCapture, in: defaults)
         uploadAfterRecording = Self.recordingChoice(Key.uploadAfterRecording, startingAs: Key.uploadAfterCapture, in: defaults)
-        historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? .oneWeek
+        historyRetention = defaults.string(forKey: Key.historyRetention).flatMap(HistoryRetention.init(rawValue:)) ?? Default.historyRetention
         showTextResult = defaults.bool(forKey: Key.showTextResult)
-        textResultPosition = defaults.string(forKey: Key.textResultPosition).flatMap(TextResultPosition.init(rawValue:)) ?? .belowSelection
+        textResultPosition = defaults.string(forKey: Key.textResultPosition).flatMap(TextResultPosition.init(rawValue:)) ?? Default.textResultPosition
         // Invalid types must not become 0 (Never), as integer(forKey:) would make an unreadable string.
         let storedTextResultCloseAfter = defaults.object(forKey: Key.textResultCloseAfter) as? NSNumber
         let textResultDelay = storedTextResultCloseAfter.flatMap { CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : $0 as? Int } ?? Self.defaultTextResultCloseAfter
@@ -633,7 +634,7 @@ public final class SettingsStore {
         textRecognitionKeepsLineBreaks = defaults.bool(forKey: Key.textRecognitionKeepsLineBreaks)
         textRecognitionWrapsText = defaults.bool(forKey: Key.textRecognitionWrapsText)
         readsAppText = defaults.bool(forKey: Key.readsAppText)
-        translationTarget = defaults.string(forKey: Key.translationTarget) ?? ""
+        translationTarget = defaults.string(forKey: Key.translationTarget) ?? Default.translationTarget
     }
 
     /// Puts every choice back as a new install has it, as Settings › General › Reset does. What the app keeps rather
@@ -643,8 +644,8 @@ public final class SettingsStore {
     /// Automation pane manages one by one. Shortcuts, destinations, the cloud model, and the language are kept
     /// elsewhere and stay too.
     public func resetToDefaults() {
-        let kept: Set<String> = [Key.nextFileNumber, Key.allInOneArea, Key.hidesDesktopIcons, Key.approvedAutomationCallers, Key.historyRetention]
-        for key in Key.all where !kept.contains(key) {
+        let kept: Set<Key> = [.nextFileNumber, .allInOneArea, .hidesDesktopIcons, .approvedAutomationCallers, .historyRetention]
+        for key in Key.allCases where !kept.contains(key) {
             defaults.removeObject(forKey: key)
         }
         // Read back as a launch reads them; each value is set here so whatever observes it hears the change.
@@ -725,115 +726,144 @@ public final class SettingsStore {
 
     /// A recording's choice: its own once it has one, else the choice for screenshots as it stands now, kept from then
     /// on. It is not registered as a default, since a default would stand in for the screenshots' value.
-    private static func recordingChoice(_ key: String, startingAs screenshotKey: String, in defaults: UserDefaults) -> Bool {
+    private static func recordingChoice(_ key: Key, startingAs screenshotKey: Key, in defaults: UserDefaults) -> Bool {
         if let own = defaults.object(forKey: key) as? Bool { return own }
         let value = defaults.bool(forKey: screenshotKey)
         defaults.set(value, forKey: key)
         return value
     }
 
-    private enum Key {
-        static let showMenuBarIcon = "showMenuBarIcon"
-        static let playSounds = "playSounds"
-        static let automationEnabled = "automationEnabled"
-        static let approvedAutomationCallers = "approvedAutomationCallers"
-        static let exportDirectory = "exportDirectory"
-        static let freezeScreen = "freezeScreen"
-        static let screenshotShowsCursor = "screenshotShowsCursor"
-        static let captureLoupeSize = "captureLoupeSize"
-        static let captureLoupeMagnification = "captureLoupeMagnification"
-        static let areaShape = "areaShape"
-        static let snapSelectionToText = "snapSelectionToText"
-        static let selfTimerDelay = "selfTimerDelay"
-        static let pinCornerRadius = "pinCornerRadius"
-        static let pinShadow = "pinShadow"
-        static let pinBorder = "pinBorder"
-        static let pinsAppearInCaptures = "pinsAppearInCaptures"
-        static let colorFormat = "colorFormat"
-        static let colorCopyGesture = "colorCopyGesture"
-        static let measureUnit = "measureUnit"
-        static let measureTolerance = "measureTolerance"
-        static let measureSnapsToContent = "measureSnapsToContent"
-        static let recordingFrameRate = "recordingFrameRate"
-        static let recordingPrefersHEVC = "recordingPrefersHEVC"
-        static let recordingCountdown = "recordingCountdown"
-        static let recordingHighlight = "recordingHighlight"
-        static let recordingShowsCursor = "recordingShowsCursor"
-        static let recordingShowsClicks = "recordingShowsClicks"
-        static let recordingClickStyle = "recordingClickStyle"
-        static let recordingSystemAudio = "recordingSystemAudio"
-        static let recordingMicrophone = "recordingMicrophone"
-        static let recordingMicrophoneID = "recordingMicrophoneID"
-        static let recordingShowsControls = "recordingShowsControls"
-        static let recordingCamera = "recordingCamera"
-        static let recordingCameraID = "recordingCameraID"
-        static let recordingCameraShape = "recordingCameraShape"
-        static let recordingCameraSize = "recordingCameraSize"
-        static let recordingCameraMirrored = "recordingCameraMirrored"
-        static let recordingShowsKeystrokes = "recordingShowsKeystrokes"
-        static let recordingKeystrokeMode = "recordingKeystrokeMode"
-        static let recordingKeepsKeysForStudio = "recordingKeepsKeysForStudio"
-        static let recordingOutput = "recordingOutput"
-        static let recordingGIFFrameRate = "recordingGIFFrameRate"
-        static let replaySound = "replaySound"
-        static let copyAfterCapture = "copyAfterCapture"
-        static let hidesDesktopIcons = "hidesDesktopIcons"
-        static let allInOneRemembersArea = "allInOneRemembersArea"
-        static let windowShadow = "windowShadow"
-        static let windowBackground = "windowBackground"
-        static let allInOneArea = "allInOneArea"
-        static let quickAccessCorner = "quickAccessCorner"
-        static let quickAccessSize = "quickAccessSize"
-        static let quickAccessOnPointerDisplay = "quickAccessOnPointerDisplay"
-        static let quickAccessCloseAfter = "quickAccessCloseAfter"
-        static let quickAccessCloseAction = "quickAccessCloseAction"
-        static let uploadAfterCapture = "uploadAfterCapture"
-        static let copyLinkAfterUpload = "copyLinkAfterUpload"
-        static let saveAfterCapture = "saveAfterCapture"
-        static let screenshotFormat = "screenshotFormat"
-        static let screenshotQuality = "screenshotQuality"
-        static let savesRetinaAtOneX = "savesRetinaAtOneX"
-        static let convertsToSRGB = "convertsToSRGB"
-        static let addsBorder = "addsBorder"
-        static let fileNamePattern = "fileNamePattern"
-        static let nextFileNumber = "nextFileNumber"
-        static let asksForFileName = "asksForFileName"
-        static let clipboardFormat = "clipboardFormat"
-        static let showQuickAccess = "showQuickAccess"
-        static let copyAfterRecording = "copyAfterRecording"
-        static let showRecordingQuickAccess = "showRecordingQuickAccess"
-        static let saveAfterRecording = "saveAfterRecording"
-        static let uploadAfterRecording = "uploadAfterRecording"
-        static let historyRetention = "historyRetention"
-        static let showTextResult = "showTextResult"
-        static let textResultPosition = "textResultPosition"
-        static let textResultCloseAfter = "textResultCloseAfter"
-        static let textRecognitionKeepsLineBreaks = "textRecognitionKeepsLineBreaks"
-        static let textRecognitionWrapsText = "textRecognitionWrapsText"
-        static let readsAppText = "readsAppText"
-        static let translationTarget = "translationTarget"
-        /// Every key the store keeps, for `resetToDefaults`.
-        static let all = [
-            showMenuBarIcon, playSounds, automationEnabled,
-            approvedAutomationCallers, exportDirectory, freezeScreen, screenshotShowsCursor,
-            captureLoupeMagnification, colorCopyGesture, captureLoupeSize, areaShape, snapSelectionToText,
-            selfTimerDelay, pinCornerRadius, pinShadow, pinBorder,
-            pinsAppearInCaptures, colorFormat, measureUnit, measureTolerance,
-            measureSnapsToContent, recordingFrameRate, recordingPrefersHEVC, recordingCountdown,
-            recordingHighlight, recordingShowsCursor, recordingShowsClicks, recordingClickStyle,
-            recordingSystemAudio, recordingMicrophone, recordingMicrophoneID, recordingShowsControls,
-            recordingCamera, recordingCameraID, recordingCameraShape, recordingCameraSize,
-            recordingCameraMirrored, recordingShowsKeystrokes, recordingKeystrokeMode, recordingKeepsKeysForStudio,
-            recordingOutput, recordingGIFFrameRate, replaySound, copyAfterCapture,
-            hidesDesktopIcons, allInOneRemembersArea, windowShadow, windowBackground,
-            allInOneArea, quickAccessCorner, quickAccessSize, quickAccessOnPointerDisplay,
-            quickAccessCloseAfter, quickAccessCloseAction, uploadAfterCapture, copyLinkAfterUpload,
-            saveAfterCapture, screenshotFormat, screenshotQuality, savesRetinaAtOneX,
-            convertsToSRGB, addsBorder, fileNamePattern, nextFileNumber,
-            asksForFileName, clipboardFormat, showQuickAccess, copyAfterRecording,
-            showRecordingQuickAccess, saveAfterRecording, uploadAfterRecording, historyRetention,
-            showTextResult, textResultPosition, textResultCloseAfter, textRecognitionKeepsLineBreaks,
-            textRecognitionWrapsText, readsAppText, translationTarget,
-        ]
+    /// What a new install has, for the settings whose default is read in two places: registered, as what the defaults
+    /// answer while nothing is stored, and stood in for a stored value the app doesn't offer (any longer). The rest are
+    /// registered alone, where they are read.
+    private enum Default {
+        static let screenshotFormat = ImageExporter.Format.png
+        static let fileNamePattern = FilenameTemplate.standard.pattern
+        static let nextFileNumber = 1
+        static let clipboardFormat = ClipboardFormat.pictureOnly
+        static let historyRetention = HistoryRetention.oneWeek
+        static let textResultPosition = TextResultPosition.belowSelection
+        /// Automatic.
+        static let translationTarget = ""
+        static let captureLoupeSize = CaptureLoupeSize.small
+        /// A square.
+        static let areaShape = ""
+        static let selfTimerDelay = 5
+        static let colorFormat = ColorFormat.hex
+        static let measureUnit = MeasureUnit.points
+        static let measureTolerance = MeasureTolerance.medium
+        static let recordingFrameRate = 60
+        static let recordingCountdown = 3
+        static let recordingHighlight = RecordingHighlight.outline
+        static let recordingClickStyle = ClickStyle.system
+        /// The system's default input.
+        static let recordingMicrophoneID = ""
+        /// The system's default camera.
+        static let recordingCameraID = ""
+        static let recordingCameraStyle = CameraStyle(shape: .circle, size: .medium, mirrored: true)
+        static let recordingKeystrokeMode = KeystrokeMode.all
+        static let recordingOutput = RecordingOutput.video
+        static let recordingGIFFrameRate = 15
+        static let replaySound = ReplaySound.all
+        static let quickAccessCorner = QuickAccessCorner.bottomLeft
+        static let quickAccessSize = QuickAccessSize.medium
+        static let quickAccessCloseAfter = 3
+        static let quickAccessCloseAction = QuickAccessCloseAction.close
     }
+
+    /// Every key the store keeps, each spelled as the setting it holds; `resetToDefaults` goes through them all.
+    fileprivate enum Key: String, CaseIterable {
+        case showMenuBarIcon
+        case playSounds
+        case automationEnabled
+        case approvedAutomationCallers
+        case exportDirectory
+        case freezeScreen
+        case screenshotShowsCursor
+        case captureLoupeMagnification
+        case colorCopyGesture
+        case captureLoupeSize
+        case areaShape
+        case snapSelectionToText
+        case selfTimerDelay
+        case pinCornerRadius
+        case pinShadow
+        case pinBorder
+        case pinsAppearInCaptures
+        case colorFormat
+        case measureUnit
+        case measureTolerance
+        case measureSnapsToContent
+        case recordingFrameRate
+        case recordingPrefersHEVC
+        case recordingCountdown
+        case recordingHighlight
+        case recordingShowsCursor
+        case recordingShowsClicks
+        case recordingClickStyle
+        case recordingSystemAudio
+        case recordingMicrophone
+        case recordingMicrophoneID
+        case recordingShowsControls
+        case recordingCamera
+        case recordingCameraID
+        case recordingCameraShape
+        case recordingCameraSize
+        case recordingCameraMirrored
+        case recordingShowsKeystrokes
+        case recordingKeystrokeMode
+        case recordingKeepsKeysForStudio
+        case recordingOutput
+        case recordingGIFFrameRate
+        case replaySound
+        case copyAfterCapture
+        case hidesDesktopIcons
+        case allInOneRemembersArea
+        case windowShadow
+        case windowBackground
+        case allInOneArea
+        case quickAccessCorner
+        case quickAccessSize
+        case quickAccessOnPointerDisplay
+        case quickAccessCloseAfter
+        case quickAccessCloseAction
+        case uploadAfterCapture
+        case copyLinkAfterUpload
+        case saveAfterCapture
+        case screenshotFormat
+        case screenshotQuality
+        case savesRetinaAtOneX
+        case convertsToSRGB
+        case addsBorder
+        case fileNamePattern
+        case nextFileNumber
+        case asksForFileName
+        case clipboardFormat
+        case showQuickAccess
+        case copyAfterRecording
+        case showRecordingQuickAccess
+        case saveAfterRecording
+        case uploadAfterRecording
+        case historyRetention
+        case showTextResult
+        case textResultPosition
+        case textResultCloseAfter
+        case textRecognitionKeepsLineBreaks
+        case textRecognitionWrapsText
+        case readsAppText
+        case translationTarget
+    }
+}
+
+/// The store's reads and writes, by its own keys: a setting is stored under the one spelling its `Key` gives it.
+fileprivate extension UserDefaults {
+    func set(_ value: Any?, forKey key: SettingsStore.Key) { set(value, forKey: key.rawValue) }
+    func removeObject(forKey key: SettingsStore.Key) { removeObject(forKey: key.rawValue) }
+    func object(forKey key: SettingsStore.Key) -> Any? { object(forKey: key.rawValue) }
+    func bool(forKey key: SettingsStore.Key) -> Bool { bool(forKey: key.rawValue) }
+    func integer(forKey key: SettingsStore.Key) -> Int { integer(forKey: key.rawValue) }
+    func double(forKey key: SettingsStore.Key) -> Double { double(forKey: key.rawValue) }
+    func string(forKey key: SettingsStore.Key) -> String? { string(forKey: key.rawValue) }
+    func stringArray(forKey key: SettingsStore.Key) -> [String]? { stringArray(forKey: key.rawValue) }
+    func data(forKey key: SettingsStore.Key) -> Data? { data(forKey: key.rawValue) }
 }

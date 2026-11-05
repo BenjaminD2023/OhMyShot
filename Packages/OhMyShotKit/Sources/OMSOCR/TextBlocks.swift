@@ -182,33 +182,3 @@ public enum TextBlocks {
         return shared >= fewestRows && CGFloat(shared) >= CGFloat(few.lines.count) * rowsInCommon
     }
 }
-
-/// Sets of indices that have been joined, by union-find.
-private struct DisjointSets {
-    private var parent: [Int]
-
-    init(count: Int) {
-        parent = Array(0..<count)
-    }
-
-    private mutating func root(_ index: Int) -> Int {
-        var index = index
-        while parent[index] != index {
-            parent[index] = parent[parent[index]]
-            index = parent[index]
-        }
-        return index
-    }
-
-    mutating func join(_ a: Int, _ b: Int) {
-        parent[root(b)] = root(a)
-    }
-
-    /// The sets, each its indices in order, the sets in the order of their first index.
-    var groups: [[Int]] {
-        var sets = self
-        var members: [Int: [Int]] = [:]
-        for index in parent.indices { members[sets.root(index), default: []].append(index) }
-        return members.values.sorted { $0[0] < $1[0] }
-    }
-}

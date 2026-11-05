@@ -90,11 +90,13 @@ struct RecordingFinisherTests {
         #expect(RecordingFinisher.AudioTracks.keeping(.system, of: [.systemAudio]) == .all)
     }
 
-    @Test func thePosterIsTheFirstFrame() async throws {
+    /// A recording's thumbnail in the history, on its card, and in a pin is its first frame. Checked here, where a
+    /// movie is recorded to look at.
+    @Test func aRecordingsThumbnailIsItsFirstFrame() async throws {
         let source = try await record(audio: .none)
         defer { try? FileManager.default.removeItem(at: source) }
-        let poster = try #require(await RecordingFinisher.poster(of: source, maxPixels: 160))
-        #expect(poster.width == 160)
-        #expect(poster.height == 120)
+        let thumbnail = try #require(await HistoryStore.thumbnail(of: source, maxPixels: 160))
+        #expect(thumbnail.width == 160)
+        #expect(thumbnail.height == 120)
     }
 }
