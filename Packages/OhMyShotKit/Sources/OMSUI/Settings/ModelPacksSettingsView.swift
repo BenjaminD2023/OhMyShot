@@ -96,9 +96,19 @@ private struct ModelPackRow: View {
     let readLicense: () -> Void
     let remove: () -> Void
 
+    /// What the pack reads, told apart at a glance: text, formulas, or tables and charts.
+    private var symbol: String {
+        switch pack.id {
+        case ModelPackCatalog.ppocrV6Small.id: "character.textbox"
+        case ModelPackCatalog.ppFormulaNetPlusL.id: "function"
+        case ModelPackCatalog.paddleOCRVL.id: "tablecells"
+        default: "text.viewfinder"
+        }
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "text.viewfinder")
+            Image(systemName: symbol)
                 .font(.system(size: 15))
                 .foregroundStyle(.secondary)
                 .frame(width: 22)
