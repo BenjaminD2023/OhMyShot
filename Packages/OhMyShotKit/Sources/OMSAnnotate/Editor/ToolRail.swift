@@ -59,6 +59,9 @@ final class ToolRail: NSView {
                 stack.addArrangedSubview(makeChip(tool))
             }
         }
+        // The rail's own size from the start: laid out at 0 × 0 before its first layout, the stack could not
+        // hold its 30 pt chips and AppKit logged a broken constraint for each.
+        stack.frame.size = CGSize(width: Self.width, height: stack.fittingSize.height)
         backing.wantsLayer = true
         installContainer()
         setAccessibilityElement(true)
