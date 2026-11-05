@@ -6,7 +6,7 @@ maintainer's Mac (its notarization waited 16 hours in Apple's queue). Releases a
 maintainer's Developer ID (team DT6YQU64FF, since 2026-11-02) and notarized; `Scripts/release.sh` stops before it builds
 anything on a Mac without the certificate or notarytool's credentials, and `Scripts/release.sh --dry-run` runs the rest
 of it with the Mac's own development identity. The release workflow runs the same script on GitHub Actions for a pushed
-tag (Releasing from CI, below).
+tag, and CI builds every push to main the way it does (Releasing from CI, below).
 
 ## How the app updates
 
@@ -88,9 +88,10 @@ allowed included, and a version outside a package's requirements stopped the bui
    package has no notice of its version.
 4. Commit, then run `Scripts/release.sh`. With nothing uncommitted, it:
    - fetches the current appcast and stops if its build number isn't higher than the feed's,
-   - builds the Release app for Apple silicon, stripped and without the debugging entitlement (`get-task-allow`) that a
-     development identity adds, with the package versions in `Config/Package.resolved` alone, and stops if the
-     notices don't match them,
+   - builds the Release app for Apple silicon (every target, the packages' too), stripped and without the debugging
+     entitlement (`get-task-allow`) that a development identity adds, with the package versions in
+     `Config/Package.resolved` alone and through Xcode's compilation cache in `build/CompilationCache.noindex`
+     (Releasing from CI › The caches), and stops if the notices don't match them,
    - signs every piece again with Developer ID from the inside out, as Sparkle's documentation does: Sparkle's XPC
      services, Autoupdate, Updater.app, and framework (they come signed ad hoc), the text reader, the Share extension,
      then the app, each with the hardened runtime, a secure timestamp, and its own entitlements,
@@ -112,7 +113,14 @@ allowed included, and a version outside a package's requirements stopped the bui
 doesn't notarize, into `build/release/<version>-dry-run/`; without a `## [<version>]` section its notes are Unreleased's.
 Don't publish what it makes. (An archive and an export for Developer ID were tried first and dropped: `xcodebuild
 archive` puts the MLX bundle where the script that copies its Metal library may not read, and a generic destination
-builds the packages for Intel as well.)
+builds the packages for Intel as well.) So did the build for `arch=arm64` until 2026-11-05: `ARCHS = arm64` in
+`Config/Base.xcconfig` is the app's targets' alone, and the packages' targets took Release's `arm64 x86_64`, so every
+release compiled MLX and the rest for Intel too, half of all its compiling, for an app that links none of it. The script
+now gives `ARCHS=arm64` to every target.
+
+`Scripts/release.sh --check` makes only the checks of step 4 that need no Mac (nothing uncommitted, the tag, the
+section in CHANGELOG.md, the feed's build number, and with `--publish` gh), and `Scripts/release.sh --build-only` only
+its build and the notices' check, signing nothing: the release workflow's preflight and CI run them.
 
 ## Releasing from CI
 
@@ -130,10 +138,25 @@ way to do step 5 before the feed moves (pushing the tag afterwards builds it aga
 be built: the script stops when the version's tag is on another commit. So the workflow was first tried on 2026-11-04,
 after 0.1.0, on a throwaway branch that raised the version to 0.1.1 (build 2) with a section in CHANGELOG.md: the hosted
 `xcode-27` runner built, signed, and notarized it (accepted within minutes) in 17 minutes, and its appcast kept 0.1.0.
+The workflow as it is now was tried the same way on 2026-11-05 (The times, below).
 
-The job selects Xcode, installs the Metal Toolchain and XcodeGen where they're missing, imports the Developer ID
-identity into a keychain of its own, and runs `Scripts/release.sh --publish` with these, which the script takes in place
-of the login keychain whenever they're set (its header lists them):
+It runs three jobs, each after the one before:
+
+| Job | Runs on | What it does |
+| --- | --- | --- |
+| Preflight | Linux, seconds | `Scripts/release.sh --check` (nothing uncommitted, the tag, the section in CHANGELOG.md, the feed's build number, and gh when publishing), and that the secrets are set |
+| Build, sign, and notarize | a Mac (The runner, below) | `Scripts/release.sh`, from CI's compilation cache, keeping `build/release/<version>/` as the run's artifact |
+| Publish | Linux | `gh release create` with the artifact's zip, appcast, and notes, then checks that the feed lists the build and serves that very zip |
+
+So a release that can't be made stops before a Mac is involved: the two runs that failed on 2026-11-04 (the secrets not
+yet set, then a tag on another commit) each took a minute on the Mac, and would stop in Preflight now. Only Publish can
+write to the repository (`contents: write`); the Mac's job, which runs the packages' build and holds the signing keys,
+can only read it.
+
+The Mac's job selects Xcode and installs the Metal Toolchain and XcodeGen where they're missing
+(`.github/actions/xcode`, which CI shares), restores the caches (below), imports the Developer ID identity into a
+keychain of its own, and runs `Scripts/release.sh` with these, which the script takes in place of the login keychain
+whenever they're set (its header lists them):
 
 | Variable | Instead of |
 | --- | --- |
@@ -155,6 +178,52 @@ loses its links and permissions; the zip has it): the zip, the appcast, the note
 A hosted job stops after six hours (`timeout-minutes: 360`, the most GitHub allows). When Apple's queue is longer, the
 submission still ends at Apple, but the app it was made of goes with the job: re-run it, which builds and submits again.
 
+### CI and the caches
+
+`.github/workflows/ci.yml` builds every push to main that changes more than Markdown and `Docs/` (and runs by hand from
+Actions › CI): `Scripts/release.sh --build-only`, a release's build without the signing, so a commit that a release
+couldn't build, or whose notices don't match its packages, shows at once. A push while a build runs waits for it. The
+build keeps two caches, which the release workflow restores:
+
+- `build/SourcePackages`, the packages' checkouts, under the hash of `Config/Package.resolved`.
+- `build/CompilationCache.noindex`, Xcode's compilation cache (`COMPILATION_CACHE_ENABLE_CACHING`), saved under each
+  commit, and restored from the latest one made with the same Xcode build. A compile whose inputs (its sources, the
+  modules it imports, its flags, the compiler) are those of one in the cache is replayed instead of run, and comes out
+  the same: on 2026-11-05 a build from scratch and one replayed from the cache made byte for byte the same executables,
+  once unsigned (only the Share extension's `Assets.car` differed, as it does between any two builds). A changed
+  comment in OMSCore compiles OMSCore again and nothing else; a change to what a module declares compiles the modules
+  that import it as well. `COMPILATION_CACHE_LIMIT_SIZE=2G` bounds it on disk; GitHub keeps about 290 MB of it a build.
+
+A tag's run can read main's caches (GitHub lets every branch and tag restore the default branch's) but not save to them,
+and only a push or a run by hand can save to main's (a pull request can't), so the release workflow only restores.
+GitHub drops a cache that nothing has read for 7 days: after a week without a build of main, the next build starts cold.
+The cache key names the runner's kind, so a Mac of our own (The runner, below) doesn't take what a hosted one compiled.
+
+### The times
+
+On the hosted `xcode-27` runner, for 0.1.1 on a throwaway branch, as on 2026-11-04:
+
+| | 2026-11-04 | 2026-11-05 |
+| --- | --- | --- |
+| The release, to the artifact | 17 min 55 s | 4 min 1 s, CI having built the same code; 4 min 38 s with OMSCore changed since |
+| Its build (`xcodebuild`) | 15 min 31 s | 89 s, every compile from the cache; 124 s, OMSCore compiled again; 5 min 33 s with no cache |
+| Notarization | 1 min | 1 min |
+| A release that can't be made | a minute, on the Mac | about 10 s, in Preflight |
+
+Half of the old build was the packages compiled for Intel too (Making a release, above). What's left of a build replayed
+from the cache is what no cache skips: planning the explicit modules, scanning the C++ for its headers, the asset
+catalogs, MLX's Metal kernels, and linking. Publish wasn't timed (the trials didn't publish); it's a download and an
+upload of 15 MB. A release with no cache at all would take about 8 minutes.
+
+### The tests
+
+Neither workflow runs the unit tests: run `Scripts/test.sh` on a Mac before a release. They were tried on GitHub's
+macOS runners, which are virtual machines, on 2026-11-05: the VLM package's passed (in 4½ minutes), but much of
+OhMyShotKit's needs a Mac. Vision's text recognition failed in 9 OCR tests (`e5rtError("e5rt_e5_compiler_compile call
+failed")`), as did Live Text in a pin (PinViewTests) and a studio export's colors (StudioExportTests), and the recording
+tests (GIFMakerTests first) and those of the next target hung until stopped. A runner on a Mac of our own (below)
+would run them all, and the release could wait for them there.
+
 ### The runner
 
 The app needs the macOS 27 SDK, so the job stops on an Xcode without it. GitHub's `macos-26` and `macos-latest` images
@@ -163,8 +232,9 @@ only have Xcode 26.
 - **GitHub's `xcode-27` image** (the default). A preview on 2026-11-02: macOS 27.0.1 with Xcode 27.0, 27.1 (its
   default), and the 27.2 release candidate (27B48), as the runner-images repository lists them. The job uses
   `/Applications/Xcode_27.2.app`, and stops when the image has none; the repository variable `RELEASE_XCODE` picks
-  another version, or the path of an Xcode. (The maintainer's Mac builds with Xcode 27.2 beta 27B5019j.) Standard
-  runners cost nothing for a public repository.
+  another version, or the path of an Xcode. CI builds with the same one, which its caches have to come from for a
+  release to use them. (The maintainer's Mac builds with Xcode 27.2 beta 27B5019j.) Standard runners cost nothing for
+  a public repository.
 - **A Mac of our own.** Register a self-hosted runner for macOS ARM64 (the MMFoundation organization's or the
   repository's Settings › Actions › Runners › New self-hosted runner) with a label nothing else uses, such as
   `ohmyshot-release`, and set the repository variable `RELEASE_RUNNER` to it, or type it in Run workflow's runner field.

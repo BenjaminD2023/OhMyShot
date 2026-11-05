@@ -1,6 +1,13 @@
-# Makes a release with Scripts/release.sh, as on the maintainer's Mac, and publishes it: the notarized zip and the
-# signed appcast go to a GitHub release for the tag. Docs/release.md ("Releasing from CI") lists the secrets it needs
-# and how to choose its runner.
+# Releases the version in Config/Base.xcconfig, for a pushed v* tag or by hand (Actions › Release › Run workflow):
+#
+#   Preflight ──── Build, sign, and notarize ──── Publish
+#   (Linux)        (a Mac)                        (Linux)
+#
+# Preflight makes the checks that need no Mac (Scripts/release.sh --check) and the secrets', so a release that can't be
+# made stops within seconds. The Mac builds from the compilation cache CI keeps for main (.github/workflows/ci.yml), so
+# it compiles only what changed since main's last build, and keeps the zip and appcast as the run's artifact. Publish,
+# the one job that can write to the repository, releases them and checks that the feed moved. Docs/release.md
+# ("Releasing from CI") lists the secrets, how to choose the runner, and the times.
 name: Release
 
 on:
@@ -18,7 +25,7 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
@@ -28,25 +35,34 @@ defaults:
   run:
     shell: bash
 
+env:
+  PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+
 jobs:
-  check:
-    name: Check the version
+  preflight:
+    name: Preflight
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
       skip: ${{ steps.version.outputs.skip }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0 # the tags, which the checks look at
           persist-credentials: false
-      - id: version
+
+      - name: Check the version
+        id: version
         env:
           GH_TOKEN: ${{ github.token }}
-          PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
         run: |
           version=$(sed -n 's/^MARKETING_VERSION = //p' Config/Base.xcconfig)
+          build=$(sed -n 's/^CURRENT_PROJECT_VERSION = //p' Config/Base.xcconfig)
           [ -n "$version" ] || { echo "::error::No MARKETING_VERSION in Config/Base.xcconfig"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
           if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
             echo "::error::The tag is $GITHUB_REF_NAME, but MARKETING_VERSION in Config/Base.xcconfig is $version"
             exit 1
@@ -55,61 +71,71 @@ jobs:
           if [ "$PUBLISH" = true ] && gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::notice::v$version is released already, so there's nothing to do"
             echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The tag, the notes, the feed's build number, and (to publish) gh: what the Mac would find in a minute.
+          if [ "$PUBLISH" = true ]; then
+            Scripts/release.sh --check --publish
+          else
+            Scripts/release.sh --check
           fi
 
-  release:
-    name: Release ${{ needs.check.outputs.version }}
-    needs: check
-    if: needs.check.outputs.skip != 'true'
+      - name: Check the secrets
+        if: steps.version.outputs.skip != 'true'
+        env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 != '' }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD != '' }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 != '' }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID != '' }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
+        run: |
+          missing=
+          for name in DEVELOPER_ID_P12_BASE64 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY_P8_BASE64 NOTARY_KEY_ID \
+            SPARKLE_PRIVATE_KEY; do
+            [ "${!name}" = true ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secrets:$missing (Docs/release.md, Releasing from CI)"
+            exit 1
+          fi
+
+  build:
+    name: Build, sign, and notarize
+    needs: preflight
+    if: needs.preflight.outputs.skip != 'true'
     # GitHub's xcode-27 image (a preview), or a runner of the maintainer's own: the app needs the macOS 27 SDK.
     runs-on: ${{ inputs.runner || vars.RELEASE_RUNNER || 'xcode-27' }}
     # Notarization is minutes as a rule, but Apple's queue has taken hours (the team's first, 18): the most a hosted
     # runner allows. The submission goes on at Apple when the job stops; a re-run builds and submits again.
     timeout-minutes: 360
     env:
-      VERSION: ${{ needs.check.outputs.version }}
-      PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
-      # An Xcode version, as /Applications/Xcode_<version>.app on GitHub's images, or the path of an Xcode.
-      XCODE: ${{ vars.RELEASE_XCODE || '27.2' }}
+      VERSION: ${{ needs.preflight.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the tags, which the script checks
           persist-credentials: false
 
-      - name: Select Xcode
-        env:
-          RUNNER_KIND: ${{ runner.environment }}
-        run: |
-          case $XCODE in
-            /*) app=$XCODE ;;
-            *) app=/Applications/Xcode_$XCODE.app ;;
-          esac
-          if [ ! -d "$app" ]; then
-            if [ "${XCODE#/}" != "$XCODE" ] || [ "$RUNNER_KIND" != self-hosted ]; then
-              echo "::error::No Xcode at $app (the RELEASE_XCODE variable)"
-              exit 1
-            fi
-            # A runner of our own, with Xcode wherever it is: the one it has selected.
-            app=$(xcode-select -p)
-            app=${app%/Contents/Developer}
-          fi
-          echo "DEVELOPER_DIR=$app/Contents/Developer" >> "$GITHUB_ENV"
-          export DEVELOPER_DIR="$app/Contents/Developer"
-          xcodebuild -version
-          sdk=$(xcrun --sdk macosx --show-sdk-version)
-          if [ "${sdk%%.*}" -lt 27 ]; then
-            echo "::error::$app has the macOS $sdk SDK; the app needs 27 or later (the RELEASE_XCODE variable)"
-            exit 1
-          fi
+      - uses: ./.github/actions/xcode
+        id: xcode
+        with:
+          # An Xcode version, as /Applications/Xcode_<version>.app on GitHub's images, or the path of an Xcode.
+          xcode: ${{ vars.RELEASE_XCODE || '27.2' }}
 
-      - name: Install the Metal Toolchain and XcodeGen
-        run: |
-          if ! xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q "Status: installed"; then
-            xcodebuild -downloadComponent MetalToolchain
-          fi
-          command -v xcodegen >/dev/null || brew install xcodegen
-          xcodegen --version
+      # Both from CI's builds of main (.github/workflows/ci.yml), which a tag's run can read: this commit's, when CI
+      # has built it already, and otherwise the latest.
+      - name: Restore the packages
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/SourcePackages
+          key: source-packages-${{ hashFiles('Config/Package.resolved') }}
+
+      - name: Restore the compilation cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/CompilationCache.noindex
+          key: compilation-cache-${{ runner.environment }}-xcode-${{ steps.xcode.outputs.build }}-${{ github.sha }}
+          restore-keys: compilation-cache-${{ runner.environment }}-xcode-${{ steps.xcode.outputs.build }}-
 
       - name: Set up signing
         env:
@@ -117,19 +143,8 @@ jobs:
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
           NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
-          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
-          missing=
-          for name in DEVELOPER_ID_P12_BASE64 DEVELOPER_ID_P12_PASSWORD NOTARY_KEY_P8_BASE64 NOTARY_KEY_ID \
-            SPARKLE_PRIVATE_KEY; do
-            [ -n "${!name}" ] || missing="$missing $name"
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::Missing secrets:$missing (Docs/release.md, Releasing from CI)"
-            exit 1
-          fi
-
           umask 077
           SECRETS=$RUNNER_TEMP/release-secrets
           mkdir -p "$SECRETS"
@@ -163,27 +178,26 @@ jobs:
             echo "SPARKLE_KEY_FILE=$SECRETS/sparkle-private-key"
           } >> "$GITHUB_ENV"
 
-      - name: Build, sign, notarize, and publish
+      - name: Build, sign, and notarize
+        id: release
         env:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ "$PUBLISH" = true ]; then
-            Scripts/release.sh --publish
-          else
-            Scripts/release.sh
-          fi
+        run: Scripts/release.sh
+
+      - name: Summarize the build
+        if: always() && steps.release.outcome != 'skipped'
+        run: Scripts/build-summary.sh "build/release/$VERSION/build.log" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # The zip already holds the app: an artifact would lose its symbolic links and permissions, and so its signature.
       - name: Keep the output
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: OhMyShot-${{ needs.check.outputs.version }}
+          name: OhMyShot-${{ needs.preflight.outputs.version }}
           path: |
-            build/release/${{ needs.check.outputs.version }}/
-            !build/release/${{ needs.check.outputs.version }}/OhMyShot.app/
+            build/release/${{ needs.preflight.outputs.version }}/
+            !build/release/${{ needs.preflight.outputs.version }}/OhMyShot.app/
           if-no-files-found: ignore
           overwrite: true # a re-run of a failed job uploads under the same name
 
@@ -193,3 +207,53 @@ jobs:
           SECRETS=$RUNNER_TEMP/release-secrets
           if [ -e "$SECRETS/release.keychain-db" ]; then security delete-keychain "$SECRETS/release.keychain-db"; fi
           rm -rf "$SECRETS"
+
+  publish:
+    name: Publish
+    needs: [preflight, build]
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.preflight.outputs.version }}
+      BUILD: ${{ needs.preflight.outputs.build }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: OhMyShot-${{ needs.preflight.outputs.version }}
+          path: dist
+
+      # The zip and the appcast go to the release; the feed is the latest release's appcast.xml.
+      - name: Publish the GitHub release
+        run: |
+          gh release create "v$VERSION" "dist/archives/OhMyShot-$VERSION.zip" dist/archives/appcast.xml \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "OhMyShot $VERSION" \
+            --notes-file dist/release-notes.md
+
+      # What the app will download: the feed lists this build, and the zip it names is the one made above.
+      - name: Check the feed
+        run: |
+          feed=https://github.com/$GITHUB_REPOSITORY/releases/latest/download/appcast.xml
+          for try in 1 2 3 4 5 6; do
+            if curl -fsSL "$feed" -o feed.xml && grep -q "<sparkle:version>$BUILD</sparkle:version>" feed.xml; then
+              break
+            fi
+            if [ $try = 6 ]; then echo "::error::$feed doesn't list build $BUILD"; exit 1; fi
+            sleep 10
+          done
+          zip=https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/OhMyShot-$VERSION.zip
+          made=$(shasum -a 256 < "dist/archives/OhMyShot-$VERSION.zip" | cut -d' ' -f1)
+          served=$(curl -fsSL "$zip" | shasum -a 256 | cut -d' ' -f1)
+          [ "$made" = "$served" ] || { echo "::error::$zip isn't the zip the build made"; exit 1; }
+          {
+            echo "### OhMyShot $VERSION ($BUILD)"
+            echo
+            echo "Released at https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION, and the feed lists it."
+            echo
+            echo "| File | Size | SHA-256 |"
+            echo "| --- | ---: | --- |"
+            echo "| OhMyShot-$VERSION.zip | $(du -h "dist/archives/OhMyShot-$VERSION.zip" | cut -f1) | \`$made\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
