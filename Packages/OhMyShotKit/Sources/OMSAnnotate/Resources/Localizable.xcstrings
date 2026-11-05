@@ -4609,6 +4609,40 @@
         }
       }
     },
+    "Pick Color from Canvas (I)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tomar color del lienzo (I)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prélever une couleur sur le canevas (I)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンバスから色を取得（I）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从画布取色（I）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從畫布拾取顏色（I）"
+          }
+        }
+      }
+    },
     "Picture" : {
       "localizations" : {
         "es" : {
