@@ -585,7 +585,7 @@ struct EditorView: View {
                     Text("Lock Canvas", bundle: .module)
                 }
             } label: {
-                Label { Text("Picture", bundle: .module) } icon: { Image(systemName: "crop.rotate") }
+                Label { Text("Picture", bundle: .module) } icon: { Image(systemName: "rotate.right") }
             }
             .help(Text("Resize, turn, or flip the picture", bundle: .module))
         }

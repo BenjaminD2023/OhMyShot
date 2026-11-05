@@ -784,7 +784,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
             submenu.addItem(entry)
         }
         let parent = NSMenuItem(title: String(localized: "Transform", bundle: .module), action: nil, keyEquivalent: "")
-        parent.image = NSImage(systemSymbolName: "crop.rotate", accessibilityDescription: nil)
+        parent.image = NSImage(systemSymbolName: "rotate.right", accessibilityDescription: nil)
         parent.submenu = submenu
         menu.addItem(parent)
     }
