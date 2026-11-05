@@ -251,15 +251,22 @@ final class StyleCapsule: NSView {
 
         var sections: [[NSView]] = []
         if usesColor {
-            var colorChips = inks.map(colorChip) + savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip()
+            var ownChips = savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip()
             if onPickCanvasColor != nil {
                 let label = String(localized: "Pick Color from Canvas (I)", bundle: .module)
                 let eyedropper = symbolChip("eyedropper", name: label, selected: isPickingCanvasColor) { [weak self] in
                     self?.onPickCanvasColor?()
                 }
-                colorChips.append(eyedropper)
+                ownChips.append(eyedropper)
             }
-            sections.append(colorChips)
+            // The kept colors stand apart from the inks, behind a divider, so one kept near an ink (an off-white
+            // beside White) never reads as the same ink twice.
+            if savedColors.colors.isEmpty {
+                sections.append(inks.map(colorChip) + ownChips)
+            } else {
+                sections.append(inks.map(colorChip))
+                sections.append(ownChips)
+            }
         }
         let sizes = sizeChips()
         if !sizes.isEmpty { sections.append(sizes) }
@@ -398,8 +405,9 @@ final class StyleCapsule: NSView {
     /// Keeps the color in use, when it is one of the person's own that is not kept yet. With the colors full,
     /// the chip is there but dimmed, and says why.
     private func saveColorChip() -> [NSView] {
-        // The marker yellow the highlighter and the highlight box start in is theirs, not a color chosen.
-        guard usesUnsavedColor, settings.color.withAlpha(1) != .marker else { return [] }
+        // The marker yellow the highlighter and the highlight box start in is theirs, not a color chosen; and a
+        // color all but one of the inks is that ink already, not one to keep beside it.
+        guard usesUnsavedColor, settings.color.withAlpha(1) != .marker, !Self.isAlmostAnInk(settings.color, inks: inks) else { return [] }
         let name = String(localized: "Save Color", bundle: .module)
         let color = settings.color
         let chip = CapsuleChip(swatch: Self.saveDot()) { [weak self] in
@@ -412,6 +420,14 @@ final class StyleCapsule: NSView {
             chip.toolTip = String(localized: "Remove a saved color to make room.", bundle: .module)
         }
         return [chip]
+    }
+
+    /// Whether `color` is within 8/255 of one of `inks` in each of red, green, and blue: the eye takes it for that ink.
+    static func isAlmostAnInk(_ color: RGBA, inks: [RGBA]) -> Bool {
+        let near = 8.0 / 255
+        return inks.contains { ink in
+            abs(ink.red - color.red) <= near && abs(ink.green - color.green) <= near && abs(ink.blue - color.blue) <= near
+        }
     }
 
     private func customColorChip() -> NSView {
@@ -430,6 +446,10 @@ final class StyleCapsule: NSView {
         let panel = NSColorPanel.shared
         panel.showsAlpha = false
         panel.isContinuous = false
+        // Setting the panel's color sends its action: aimed at nothing first, so this color never reaches the
+        // Studio or the other editor that used the panel last.
+        panel.setTarget(nil)
+        panel.setAction(nil)
         panel.color = NSColor(cgColor: settings.color.cgColor) ?? .systemRed
         panel.setTarget(self)
         panel.setAction(#selector(colorPicked(_:)))
@@ -446,10 +466,6 @@ final class StyleCapsule: NSView {
         guard sized else { return [] }
         switch kind {
         case .text:
-        // Setting the panel's color sends its action: aimed at nothing first, so this color never reaches the
-        // Studio or the other editor that used the panel last.
-        panel.setTarget(nil)
-        panel.setAction(nil)
             let sizes: [CGFloat] = [14, 20, 28, 40]
             // A size set some other way shows as the nearest step.
             let nearest = Self.nearest(settings.fontSize, in: sizes)

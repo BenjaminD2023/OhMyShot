@@ -80,16 +80,18 @@ struct EditorLayoutTests {
         settings.color = .red
         none.show(kind: .arrow, settings: settings, hasSelection: false)
         full.show(kind: .arrow, settings: settings, hasSelection: false)
-        // Eight chips of 24 pt, 2 pt apart.
-        #expect(abs(full.fittingSize.width - none.fittingSize.width - 8 * 26) < 1)
+        // Eight chips of 24 pt, 2 pt apart, behind the divider that sets them apart from the inks: 6 pt either
+        // side of it in place of the 2 between chips.
+        let divider: CGFloat = 10
+        #expect(abs(full.fittingSize.width - none.fittingSize.width - 8 * 26 - divider) < 1)
         // A color that is none of the inks and not kept gets a chip to keep it.
         settings.color = RGBA(red: 0.31, green: 0.42, blue: 0.53)
         none.show(kind: .arrow, settings: settings, hasSelection: false)
         let withSave = none.fittingSize.width
         none.savedColors.add(settings.color)
         none.show(kind: .arrow, settings: settings, hasSelection: false)
-        // Kept, it is a dot among the others in place of the save chip: one chip either way.
-        #expect(abs(none.fittingSize.width - withSave) < 1)
+        // Kept, it is a dot in place of the save chip (one chip either way), and the first kept brings the divider.
+        #expect(abs(none.fittingSize.width - withSave - divider) < 1)
     }
 
     @Test func theMarkerYellowTheHighlightersStartInIsNotOfferedToBeKept() {
