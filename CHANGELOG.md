@@ -9,6 +9,15 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- Studio's Plain color is a tile beside the gradients that opens the Colors panel, every time reads to the hundredth in one format, saving is reported under the window's title, and Fit and Fit Selection look like buttons. ([7502f44], [0b20def], [9514883]; by [@fzlzjerry])
+- The editor sets kept colors apart from the inks with a divider and no longer offers to keep a color that is indistinguishable from an ink; Other Color… no longer changes the window that last used the Colors panel, and opening an editor no longer logs broken layout constraints. ([4353a67], [bae605a], [5fb5917]; by [@fzlzjerry])
+- Scrolling capture's Auto button uses Auto-scroll's arrow instead of a triangle that looked like a pop-up menu. ([be0a7ed]; by [@fzlzjerry])
+- Settings' pop-up choices use sentence case throughout, and each model pack has its own symbol. ([2323913], [5203022]; by [@fzlzjerry])
+- The editor's Picture menu and a Quick Access card's Transform menu use a rotate symbol instead of a crop symbol. ([4601011]; by [@fzlzjerry])
+- The editor's eyedropper tooltip, a locked pin's Unlock button, and the overlay's window count are translated. ([4c48f7e]; by [@fzlzjerry])
+
 ## [0.1.0] - 2026-11-03
 
 ### Added
@@ -131,6 +140,17 @@ Each entry links its implementation commits or merged pull request and credits v
 
 [Unreleased]: https://github.com/MMFoundation/OhMyShot/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/MMFoundation/OhMyShot/releases/tag/v0.1.0
+[7502f44]: https://github.com/MMFoundation/OhMyShot/commit/7502f44fe7ed357d46b451e2b9d772e1727fa5d7
+[0b20def]: https://github.com/MMFoundation/OhMyShot/commit/0b20defc0f9585a62237ab9f6901a838127f1217
+[9514883]: https://github.com/MMFoundation/OhMyShot/commit/95148832a84d2d7ad60dce740149819dc5eac6fe
+[4353a67]: https://github.com/MMFoundation/OhMyShot/commit/4353a67ea68d2a46ab00078dc793ff0ce79cf4bb
+[bae605a]: https://github.com/MMFoundation/OhMyShot/commit/bae605a0af68f7c37070e0bff6dfee1ed8dc7de9
+[5fb5917]: https://github.com/MMFoundation/OhMyShot/commit/5fb5917f81d15f3cf269d2ab1ef26899ac05ddae
+[be0a7ed]: https://github.com/MMFoundation/OhMyShot/commit/be0a7ed26e5c4738bb8231f34f95d7a5e9107430
+[2323913]: https://github.com/MMFoundation/OhMyShot/commit/232391325a1f3b514299cfc6c8799e8e329ebd9c
+[5203022]: https://github.com/MMFoundation/OhMyShot/commit/5203022dd97c8ff760a76dc33455434e5b861c6e
+[4601011]: https://github.com/MMFoundation/OhMyShot/commit/4601011d5b85125b335a3ed0adf27af096a4ea97
+[4c48f7e]: https://github.com/MMFoundation/OhMyShot/commit/4c48f7e1851c1139fcc267161808ee636a623983
 [c999cc0]: https://github.com/MMFoundation/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/MMFoundation/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/MMFoundation/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287
