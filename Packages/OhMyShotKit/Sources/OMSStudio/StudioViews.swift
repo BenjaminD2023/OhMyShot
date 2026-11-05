@@ -20,7 +20,8 @@ struct StudioView: View {
                     .background(Color(nsColor: .underPageBackgroundColor))
                 Divider()
                 TransportBar(document: document, model: model)
-                saveStatus
+                // Saving is told under the window's title; only a save that failed takes a row, for Retry.
+                if case .failed = document.saveState { saveFailure }
                 StudioTimeline(document: document, model: model)
                     .frame(height: document.canChangeLayoutAlongTheTimeline ? StudioTimeline.heightWithLayouts : StudioTimeline.height)
             }
@@ -54,6 +55,9 @@ struct StudioView: View {
         }
         .toolbar { toolbar }
         .onDeleteCommand { document.deleteSelection() }
+        .onChange(of: document.saveState, initial: true) { _, state in
+            model.controller?.window?.subtitle = Self.subtitle(for: state)
+        }
     }
 
     /// Keep an existing frame visible while a new composition is prepared, but identify a stale preview.
@@ -104,7 +108,7 @@ struct StudioView: View {
         }
     }
 
-    private var saveStatus: some View {
+    private var saveFailure: some View {
         HStack(spacing: 8) {
             if case .failed(let reason) = document.saveState {
                 Label { Text("Project changes haven’t been saved", bundle: .module) } icon: { Image(systemName: "exclamationmark.triangle") }
@@ -117,19 +121,20 @@ struct StudioView: View {
                     Task { try? await document.flushSave() }
                 } label: { Text("Retry Saving", bundle: .module) }
                     .controlSize(.small)
-            } else {
-                Group {
-                    if document.saveState == .saved { Text("Project saved", bundle: .module) }
-                    else { Text("Saving project…", bundle: .module) }
-                }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
             }
         }
         .padding(.horizontal, 14)
         .frame(height: 24)
         .accessibilityElement(children: .contain)
+    }
+
+    /// The window's subtitle: where the project's saving stands, as a document window says it under its title.
+    static func subtitle(for state: StudioDocument.SaveState) -> String {
+        switch state {
+        case .saved: String(localized: "Project saved", bundle: .module)
+        case .failed: String(localized: "Project changes haven’t been saved", bundle: .module)
+        default: String(localized: "Saving project…", bundle: .module)
+        }
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {

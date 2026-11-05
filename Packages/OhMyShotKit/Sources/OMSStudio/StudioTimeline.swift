@@ -160,12 +160,15 @@ struct StudioTimeline: View {
 
     private var viewportControls: some View {
         HStack(spacing: 8) {
+            // Bordered: words alone in a borderless row read as labels, not as buttons.
             Button { viewport.fit() } label: { Text("Fit", bundle: .module) }
+                .buttonStyle(.bordered)
                 .help(Text("Show the whole recording", bundle: .module))
                 .disabled(viewport.isFit)
             Button {
                 if let range = selectionRange { viewport.fit(range) }
             } label: { Text("Fit Selection", bundle: .module) }
+                .buttonStyle(.bordered)
                 .disabled(selectionRange == nil)
                 .help(Text("Show the chosen edit or range in detail", bundle: .module))
             Spacer(minLength: 4)
