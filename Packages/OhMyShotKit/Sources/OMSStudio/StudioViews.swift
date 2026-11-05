@@ -342,7 +342,7 @@ struct StudioInspector: View {
                                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                                         .strokeBorder(
                                             chosen ? Color.accentColor : contrast == .increased ? Self.swatchEdgeStrong : Self.swatchEdge,
-                                            lineWidth: chosen ? 2 : contrast == .increased ? 1 : 0.5
+                                            lineWidth: chosen ? 2 : 1
                                         )
                                 )
                         }
@@ -352,16 +352,27 @@ struct StudioInspector: View {
                         .accessibilityAddTraits(chosen ? .isSelected : [])
                     }
                 }
-                ColorPicker(selection: plainColor, supportsOpacity: false) {
-                    HStack(spacing: 6) {
-                        Text("Plain color", bundle: .module)
-                        if isPlainColor {
-                            Image(systemName: "checkmark")
-                                .font(.callout.weight(.semibold))
-                                .foregroundStyle(.tint)
-                                .accessibilityLabel(Text("Chosen", bundle: .module))
-                        }
+                // A tile like the gradients', filled with the color and ringed while it is the background, rather
+                // than a color well, whose empty capsule read as a switch turned off.
+                LabeledContent {
+                    Button(action: choosePlainColor) {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(plainColor)
+                            .frame(width: 44, height: 30)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(
+                                        isPlainColor ? Color.accentColor : contrast == .increased ? Self.swatchEdgeStrong : Self.swatchEdge,
+                                        lineWidth: isPlainColor ? 2 : 1
+                                    )
+                            )
                     }
+                    .buttonStyle(.plain)
+                    .help(Text("Choose a plain color", bundle: .module))
+                    .accessibilityLabel(Text("Plain color", bundle: .module))
+                    .accessibilityAddTraits(isPlainColor ? .isSelected : [])
+                } label: {
+                    Text("Plain color", bundle: .module)
                 }
             } header: {
                 Text("Background", bundle: .module)
@@ -639,16 +650,40 @@ struct StudioInspector: View {
         }
     }
 
-    private var plainColor: Binding<Color> {
-        Binding {
-            if case .color(let red, let green, let blue) = document.project.background {
-                return Color(red: red, green: green, blue: blue)
-            }
-            return .white
-        } set: { color in
-            guard let srgb = NSColor(color).usingColorSpace(.sRGB) else { return }
+    /// The plain background's color, white until one is chosen.
+    private var plainNSColor: NSColor {
+        if case .color(let red, let green, let blue) = document.project.background {
+            return NSColor(srgbRed: red, green: green, blue: blue, alpha: 1)
+        }
+        return .white
+    }
+
+    private var plainColor: Color { Color(nsColor: plainNSColor) }
+
+    /// Makes the plain color the background and opens the Colors panel on it, whose changes follow as they are
+    /// made (the document takes changes within 0.4 s of each other back as one).
+    private func choosePlainColor() {
+        let color = plainNSColor
+        // Weakly: the panel outlives the window, and a project closed takes no more colors.
+        let use = { [weak document] (color: NSColor) in
+            guard let document, let srgb = color.usingColorSpace(.sRGB) else { return }
             document.project.background = .color(red: srgb.redComponent, green: srgb.greenComponent, blue: srgb.blueComponent)
         }
+        use(color)
+        let link = PlainColorLink(apply: use)
+        // The panel doesn't keep its target, so the link keeps itself until the next one takes its place.
+        PlainColorLink.current = link
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = false
+        panel.isContinuous = true
+        // Setting the panel's color sends its action: aimed at nothing first, so the color never reaches the
+        // editor (or the Studio) that used the panel last.
+        panel.setTarget(nil)
+        panel.setAction(nil)
+        panel.color = color
+        panel.setTarget(link)
+        panel.setAction(#selector(PlainColorLink.changed(_:)))
+        panel.orderFront(nil)
     }
 
     private var isPlainColor: Bool {
@@ -760,5 +795,22 @@ struct LabeledSlider: View {
             title
         }
         .accessibilityValue(Text(verbatim: reading(value)))
+    }
+}
+
+/// The Colors panel's target while it edits Studio's plain background: an object, since the panel keeps a
+/// target and an action rather than a closure.
+@MainActor
+final class PlainColorLink: NSObject {
+    /// The link the panel was last pointed at.
+    static var current: PlainColorLink?
+    private let apply: (NSColor) -> Void
+
+    init(apply: @escaping (NSColor) -> Void) {
+        self.apply = apply
+    }
+
+    @objc func changed(_ sender: NSColorPanel) {
+        apply(sender.color)
     }
 }
