@@ -231,7 +231,7 @@ struct StudioTimeline: View {
                     .offset(x: position, y: Self.rulerHeight - 6)
                 // A tick too near the end for its label keeps only the tick.
                 if position + 44 <= width {
-                    Text(verbatim: TransportBar.format(mark).replacingOccurrences(of: ".0", with: ""))
+                    Text(verbatim: StudioTimeInput.tick(mark))
                         .font(.system(size: 10).monospacedDigit())
                         .foregroundStyle(.secondary)
                         .fixedSize()

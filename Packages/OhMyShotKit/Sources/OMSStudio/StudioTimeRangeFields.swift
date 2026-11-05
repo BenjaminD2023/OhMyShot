@@ -37,7 +37,7 @@ struct StudioTimeRangeFields: View {
                     .foregroundStyle(.secondary)
             } label: { Text("Duration", bundle: .module) }
             if invalid {
-                Text("Enter a time such as 0:12.500.", bundle: .module)
+                Text("Enter a time such as 0:12.50.", bundle: .module)
                     .font(.caption)
                     .foregroundStyle(.red)
             }
@@ -59,7 +59,13 @@ struct StudioTimeRangeFields: View {
     }
 
     private func commit(_ field: Field) {
-        guard let time = StudioTimeInput.parse(field == .start ? startText : endText) else {
+        let text = field == .start ? startText : endText
+        // Text left as shown moves nothing, though it shows the time to the hundredth only.
+        if text == StudioTimeInput.format(field == .start ? start : end) {
+            invalid = false
+            return
+        }
+        guard let time = StudioTimeInput.parse(text) else {
             invalid = true
             return
         }
@@ -88,14 +94,29 @@ nonisolated enum StudioTimeInput {
         return result.isFinite ? result : nil
     }
 
+    /// A time as the inspector's fields show it, to the nearest hundredth: 0:12.35, 1:02:09.40.
     static func format(_ time: Double) -> String {
-        guard time.isFinite, time >= 0, time < Double(Int.max / 1_000) else { return "0:00.000" }
-        let milliseconds = Int((time * 1_000).rounded())
-        let hours = milliseconds / 3_600_000
-        let minutes = milliseconds / 60_000 % 60
-        let seconds = milliseconds / 1_000 % 60
+        clock(time, rounding: .toNearestOrAwayFromZero)
+    }
+
+    /// A time in Studio's one clock, to the hundredth of a second, `rounding` the way its place asks (the
+    /// transport never shows a time not yet reached): 0:12.35, 1:02:09.40.
+    static func clock(_ time: Double, rounding: FloatingPointRoundingRule) -> String {
+        guard time.isFinite, time >= 0, time < Double(Int.max / 100) else { return "0:00.00" }
+        let hundredths = Int((time * 100).rounded(rounding))
+        let hours = hundredths / 360_000
+        let minutes = hundredths / 6_000 % 60
+        let seconds = hundredths / 100 % 60
         return hours > 0
-            ? String(format: "%d:%02d:%02d.%03d", hours, minutes, seconds, milliseconds % 1_000)
-            : String(format: "%d:%02d.%03d", minutes, seconds, milliseconds % 1_000)
+            ? String(format: "%d:%02d:%02d.%02d", hours, minutes, seconds, hundredths % 100)
+            : String(format: "%d:%02d.%02d", minutes, seconds, hundredths % 100)
+    }
+
+    /// A tick's label on the ruler: the clock without the zeros a round step leaves at its end (0:01, 0:00.5).
+    static func tick(_ time: Double) -> String {
+        var text = clock(time, rounding: .toNearestOrAwayFromZero)
+        while text.hasSuffix("0"), text.contains(".") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return text
     }
 }

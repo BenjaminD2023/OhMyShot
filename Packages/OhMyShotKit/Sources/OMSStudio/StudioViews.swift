@@ -268,14 +268,9 @@ struct TransportBar: View {
         return Text("\(now) of \(length) seconds", bundle: .module)
     }
 
-    /// A time as the transport shows it: 0:12.3, 1:02:09.4.
+    /// A time as the transport shows it, in the inspector's clock but rounded down: 0:12.34, 1:02:09.40.
     static func format(_ seconds: Double) -> String {
-        let total = max(0, seconds)
-        let tenths = Int((total * 10).rounded(.down))
-        let hours = tenths / 36_000, minutes = tenths / 600 % 60, secs = tenths / 10 % 60
-        return hours > 0
-            ? String(format: "%d:%02d:%02d.%d", hours, minutes, secs, tenths % 10)
-            : String(format: "%d:%02d.%d", minutes, secs, tenths % 10)
+        StudioTimeInput.clock(max(0, seconds), rounding: .down)
     }
 }
 

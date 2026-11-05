@@ -94,10 +94,25 @@ struct StudioTimelineInteractionTests {
         #expect(StudioTimeInput.parse("12.125") == 12.125)
         #expect(StudioTimeInput.parse("1:02.500") == 62.5)
         #expect(StudioTimeInput.parse("1:02:03.125") == 3_723.125)
-        #expect(StudioTimeInput.parse(StudioTimeInput.format(3_723.125)) == 3_723.125)
+        #expect(StudioTimeInput.parse(StudioTimeInput.format(3_723.25)) == 3_723.25)
         for invalid in ["", "NaN", "inf", "-2", "1:60", "1::2", "0.5:12", "1:02:03:04"] {
             #expect(StudioTimeInput.parse(invalid) == nil)
         }
+    }
+
+    @Test func studioShowsEveryTimeInOneClockToTheHundredth() {
+        // The inspector rounds to the nearest hundredth, the transport down (never a time not yet reached).
+        #expect(StudioTimeInput.format(0.2) == "0:00.20")
+        #expect(StudioTimeInput.format(3.829) == "0:03.83")
+        #expect(StudioTimeInput.format(3_723.125) == "1:02:03.13")
+        #expect(StudioTimeInput.clock(4.039, rounding: .down) == "0:04.03")
+        #expect(StudioTimeInput.clock(-1, rounding: .down) == "0:00.00")
+        // The ruler's ticks drop the zeros a round step leaves, even from a step summed in binary.
+        #expect(StudioTimeInput.tick(1) == "0:01")
+        #expect(StudioTimeInput.tick(0.5) == "0:00.5")
+        #expect(StudioTimeInput.tick(0.1 * 3) == "0:00.3")
+        #expect(StudioTimeInput.tick(70) == "1:10")
+        #expect(StudioTimeInput.tick(3_600) == "1:00:00")
     }
 
     @Test func aLateThumbnailCannotReplaceTheNewViewport() async throws {
