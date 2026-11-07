@@ -19,11 +19,14 @@ final class TextCaptureCoordinator {
     private let displays: DisplayTopology
     private let capturer: ScreenCapturer
     private let overlay: OverlayController
-    /// A model's first use can take seconds; the highlight stays on meanwhile.
+    /// A process's first reading after its compiled models are gone (a cache cleaner, a macOS update, a fresh install)
+    /// compiles them on the Neural Engine first: about 18 s for each of the two passes, one after the other, so about
+    /// 37 s in all, and longer while other apps compile. The highlight stays on meanwhile, and Escape stops the reading
+    /// (Docs/ocr.md › Escape stops a reading); at 30 s nearly every such reading failed and copied nothing.
     private let pipeline: VisionPipeline = {
         var options = VisionPipeline.Options.preferred()
-        options.timeout = .seconds(30)
-        options.overallTimeout = .seconds(30)
+        options.timeout = .seconds(60)
+        options.overallTimeout = .seconds(60)
         return VisionPipeline(options: options)
     }()
     /// Shared by the panel and Translate Area: a language pair's first translation loads its model.

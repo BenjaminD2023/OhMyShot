@@ -2907,10 +2907,13 @@ Tried in an isolated copy of the Dev app (Debug, with a bundle ID of its own):
   and the text reader and `swift test`, which keep caches of their own.
 - **Idle power wasn't sampled.** The watch runs on kernel events, and the only timers are the retries after a
   failed warmup.
+- **A cold reading finishes.** Capture Text's 30 s limit failed nearly every cold reading that needs the Latin
+  pass; now that Esc cancels a reading, its pipeline allows 60 s per request and per reading
+  (`TextCaptureCoordinator`), as the text reader already did. With the Dev app's `com.apple.e5rt.e5bundlecache`
+  moved aside, `text-test?demo=1` compiled three networks (1.3 s, 14.5 s and 15.1 s) and read the demo page's 401
+  characters in about 36.5 s, where 30 s would have failed it.
 
 Not done; each of these is a choice to make:
-- **Let a cold reading finish.** Capture Text's 30 s overall timeout fails nearly every cold reading that needs the
-  Latin pass. The warmup starts with the selection, so only a selection that takes several seconds escapes. Now that Esc cancels a reading, the pipeline's own default of 60 s would be safe.
 - **History:** a capture that the text reader timed out on stays out until the app relaunches
   (`HistoryTextReader.failed`). Captures read during a cold start therefore can't be searched until then.
 - **For the user:** add `~/Library/Caches/io.github.fzlzjerry.ohmyshot*` to the cleaner's exclusions.
