@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Window opens a chooser that previews every app's windows on any display or Space, full-screen games included, without bringing the app forward or leaving its Space; Capture Window opens it directly. ([0946850]; by [@fzlzjerry])
+
 ### Fixed
 
 - Escape stops Capture Text, Capture Formula, and Translate Area while the selection is still highlighted, so a reading the system holds up (the first after a macOS update can take over 30 seconds) no longer has to be waited out. ([7cfd445]; by [@fzlzjerry])
@@ -157,6 +161,7 @@ Each entry links its implementation commits or merged pull request and credits v
 [7cfd445]: https://github.com/MMFoundation/OhMyShot/commit/7cfd445909e8298f04e098f4343f364ecab7c920
 [81a46de]: https://github.com/MMFoundation/OhMyShot/commit/81a46defc0b498eba30e6ebd086116ff06ffadb7
 [7304cae]: https://github.com/MMFoundation/OhMyShot/commit/7304cae0a7e7330c69022d49f463d610aedf63a2
+[0946850]: https://github.com/MMFoundation/OhMyShot/commit/0946850a6bc20896c0d6646526d7a3a08735e0be
 [c999cc0]: https://github.com/MMFoundation/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/MMFoundation/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/MMFoundation/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287
