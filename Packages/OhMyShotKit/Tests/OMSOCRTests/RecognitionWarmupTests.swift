@@ -43,6 +43,23 @@ struct RecognitionWarmupTests {
         #expect(starts.withLock { $0 } == 2)
     }
 
+    @Test func forgottenWarmupsRunAgain() async throws {
+        let warmup = RecognitionWarmup()
+        let starts = Mutex(0)
+        let operation: @Sendable () async throws -> Bool = {
+            starts.withLock { $0 += 1 }
+            return true
+        }
+        #expect(try await warmup.run(for: ["zh-Hans", "en"], operation))
+        #expect(try await warmup.run(for: ["en"], operation))
+        #expect(try await warmup.run(for: ["en"], operation))
+        #expect(starts.withLock { $0 } == 2)
+        await warmup.forget()
+        #expect(try await warmup.run(for: ["zh-Hans", "en"], operation))
+        #expect(try await warmup.run(for: ["en"], operation))
+        #expect(starts.withLock { $0 } == 4)
+    }
+
     @Test func concurrentWarmupsDoNotDuplicateWork() async throws {
         let warmup = RecognitionWarmup()
         let gate = Gate()

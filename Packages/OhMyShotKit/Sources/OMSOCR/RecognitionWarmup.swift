@@ -16,4 +16,9 @@ actor RecognitionWarmup {
         if succeeded { completed.insert(languages) }
         return succeeded
     }
+
+    /// Forgets the successful warmups, so each runs again: the models' compilation is gone.
+    func forget() {
+        completed.removeAll()
+    }
 }

@@ -687,6 +687,12 @@ final class TextCaptureCoordinator {
         done?(formula.latex)
     }
 
+    /// Warms both of Capture Text's models again, as its first reading would, for `TextModelWarmup`.
+    func warmModelsAgain() async -> Bool {
+        await VisionPipeline.forgetWarmups()
+        return await pipeline.prewarm()
+    }
+
     // MARK: Translate Area
 
     /// Translate Area: drag over text, or pick a window, and its translation covers it where it is.

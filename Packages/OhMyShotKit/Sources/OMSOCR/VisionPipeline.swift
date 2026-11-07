@@ -724,9 +724,10 @@ extension VisionPipeline {
     /// Loads both models a recognition uses, the primary and the Latin, before the first real request by
     /// reading a few rendered characters (a blank image might never reach the recognizer). Run it while
     /// the person is still selecting. Warmups never queue behind recognition or repeat successful work.
-    @concurrent
-    public func prewarm() async {
-        guard let image = Self.warmupImage() else { return }
+    /// - Returns: whether both models are warm, now or from before; false when a warmup couldn't run or finish.
+    @concurrent @discardableResult
+    public func prewarm() async -> Bool {
+        guard let image = Self.warmupImage() else { return false }
         for languages in [options.primaryLanguages, Self.english] {
             do {
                 let warmed = try await RecognitionWarmup.shared.run(for: languages.map(\.minimalIdentifier)) {
@@ -742,12 +743,19 @@ extension VisionPipeline {
                         } ?? false
                     }
                 }
-                guard warmed else { return }
+                guard warmed else { return false }
             } catch {
                 // A cancelled, busy, or failed primary warmup must not add a Latin warmup behind it.
-                return
+                return false
             }
         }
+        return true
+    }
+
+    /// Forgets the warmups done so far, so `prewarm` warms both models again: something removed their compilation
+    /// (Docs/perf.md › OCR — Vision's first reading after its cache is emptied).
+    public static func forgetWarmups() async {
+        await RecognitionWarmup.shared.forget()
     }
 
     private static func warmupImage() -> CGImage? {

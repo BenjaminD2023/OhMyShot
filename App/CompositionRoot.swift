@@ -133,6 +133,8 @@ final class CompositionRoot {
     private var communityInviteWindow: CommunityInviteWindowController?
     var historyWindow: HistoryWindowController?
     private var observations: [Task<Void, Never>] = []
+    /// Vision's text models, compiled again in the background once a cleaner or a macOS update takes them.
+    private var textModelWarmup: TextModelWarmup?
     /// How long captures stay: as Keep Captures says, and with history off, as long as something holds them.
     lazy var retention = CaptureRetention(
         settings: settings, history: history,
@@ -237,6 +239,11 @@ final class CompositionRoot {
         })
         // The converted copies made for dragging out and uploading, from days ago.
         Task.detached(priority: .background) { ExportedFiles.removeOld() }
+        if let models = CompiledTextModels.current() {
+            let warmup = TextModelWarmup(models: models) { [weak self] in await self?.textCapture.warmModelsAgain() ?? false }
+            warmup.start()
+            textModelWarmup = warmup
+        }
         observations.append(Task { [weak self] in
             for await _ in Observations({ "\(settings.pinCornerRadius) \(settings.pinShadow) \(settings.pinBorder)" }) {
                 self?.pins.appearanceChanged()

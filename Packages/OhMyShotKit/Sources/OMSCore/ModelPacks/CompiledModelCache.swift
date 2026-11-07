@@ -7,11 +7,14 @@ import OSLog
 /// goes away (Docs/perf.md › M6 — Formulas in the panel). Without this, every pack removed or replaced by a new version
 /// would leave its copy behind for good.
 public enum CompiledModelCache {
+    /// The cache's name in a process's Caches folder.
+    static let name = "com.apple.e5rt.e5bundlecache"
+
     /// Core ML's cache in the Caches folder of the process with `bundleIdentifier`.
     public static func folder(forBundleIdentifier bundleIdentifier: String) -> URL {
         URL.cachesDirectory
             .appending(path: bundleIdentifier, directoryHint: .isDirectory)
-            .appending(path: "com.apple.e5rt.e5bundlecache", directoryHint: .isDirectory)
+            .appending(path: name, directoryHint: .isDirectory)
     }
 
     /// Removes the entries made from model files that are all gone. An entry that names no model file outside the
