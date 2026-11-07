@@ -22,6 +22,7 @@ extension CompositionRoot {
         let controller = UpdateController(feedOverride: feed, alwaysGentle: true)
         guard controller.start() else { return nil }
         updates = controller
+        connectUpdates(controller)
         return controller
     }
 
@@ -48,6 +49,7 @@ extension CompositionRoot {
             start: { [unowned self] feed in startDebugUpdates(feed: feed) },
             current: { [unowned self] in debugUpdates },
             stop: { [unowned self] in stopDebugUpdates() },
+            showMenu: { [weak self] in self?.statusItem?.showMenuForDebugging() },
             makeSettings: makeSettings,
             capture: capture
         )

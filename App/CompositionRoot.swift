@@ -229,6 +229,8 @@ final class CompositionRoot {
         })
         if let updates = UpdateController.make(), updates.start() {
             self.updates = updates
+            connectUpdates(updates)
+            updates.showReleaseNotesAfterUpdate()
             observeUpdateSetting()
         }
         // Also runs once now, which is the launch-time cleanup.
@@ -263,7 +265,10 @@ final class CompositionRoot {
         // A recording copied from its card, History, or its window goes to the clipboard as a reference to its file too.
         files.recordingCopied = { [weak self] id in self?.retention.recordingCopied(id) }
         // A recording's window holds the recording while it is open, and lets go of it when it closes.
-        recordings.windowClosed = { [weak self] id in self?.retention.releaseIfUnheld(id) }
+        recordings.windowClosed = { [weak self] id in
+            self?.retention.releaseIfUnheld(id)
+            self?.retryUpdateReminderAfterActivity()
+        }
         captures.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
         recordings.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
         recordings.onStatus = { [weak self] status in
@@ -277,6 +282,7 @@ final class CompositionRoot {
                 self.statusItem?.showProgress(.exportingStudio(progress))
             case .idle:
                 self.statusItem?.endRecording()
+                self.retryUpdateReminderAfterActivity()
             }
         }
         recordings.onChanged = { [weak self] entry in
@@ -490,6 +496,38 @@ final class CompositionRoot {
             || onboardingWindow != nil || communityInviteWindow != nil
             || NSApp.modalWindow != nil || NSApp.windows.contains { $0.isVisible && $0.attachedSheet != nil }
             || NSApp.keyWindow != nil
+    }
+
+    /// Capture callbacks can arrive just before their coordinator clears its busy flag.
+    func retryUpdateReminderAfterActivity() {
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            self?.updates?.presentReminderIfNeeded()
+        }
+    }
+
+    private var isBusyForUpdateReminder: Bool {
+        overlay.isActive || captures.isSelfTimerRunning || recordings.isRecording || recordings.isCountingDown
+            || scrolling.isCapturing || annotations.isEditing || !recordings.openRecordingIDs.isEmpty
+            || onboardingWindow != nil || communityInviteWindow != nil || NSApp.modalWindow != nil
+            || NSApp.windows.contains { $0.isVisible && $0.attachedSheet != nil }
+    }
+
+    func connectUpdates(_ updates: UpdateController) {
+        updates.canPresentReminder = { [weak self] in
+            guard let self else { return false }
+            return !self.isBusyForUpdateReminder
+        }
+        observations.append(Task { [weak self, weak updates] in
+            for await version in Observations({ updates?.status.waiting }) {
+                self?.statusItem?.setUpdateVersion(version)
+            }
+        })
+        observations.append(Task { [weak updates] in
+            for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
+                updates?.presentReminderIfNeeded()
+            }
+        })
     }
 
     /// Schedules the updater's daily look while Settings › General says so; runs once now.

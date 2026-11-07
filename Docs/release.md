@@ -10,21 +10,37 @@ tag, and CI builds every push to main the way it does (Releasing from CI, below)
 
 ## How the app updates
 
-- **Only release builds look.** `SUFeedURL` is set in `Config/Release.xcconfig`:
-  `https://github.com/MMFoundation/OhMyShot/releases/latest/download/appcast.xml`. Debug builds ("OhMyShot Dev") have no
-  feed, so they never look and show neither Settings › General › Updates nor Check for Updates… in the menu.
-- **Everything is signed.** The appcast and every archive are signed with the project's EdDSA key; the public half is
-  `SUPublicEDKey` in `Config/Info.plist`. The app refuses an appcast or an archive that doesn't match it
-  (`SURequireSignedFeed`, `SUVerifyUpdateBeforeExtraction`).
-- **No timer of its own.** Sparkle's schedule is off (`SUEnableAutomaticChecks` is NO), since it would keep a timer in
-  the app. While Settings › General › Check for updates automatically is on (the default), `UpdateController` asks the
-  system's background activity scheduler for a look about once a day (24 h, ± 4 h, utility), and skips a look less than
-  18 h after the last one. The app holds nothing while idle.
-- **Gently.** A version found by the app's own look waits in the menu bar menu ("Update to Version 0.2.0…") and in
-  Settings ("Version 0.2.0 is available."), rather than putting a window in front of what the person is doing. Sparkle
-  shows its own window at once only when it would anyway: the app has just launched, or the Mac was left idle. Check for
-  Updates… and Check Now always show Sparkle's windows. Nothing is downloaded before the person says so:
-  `SUAllowsAutomaticUpdates` is NO, so Sparkle never offers to download and install by itself.
+- Release builds check `https://www.ohmyshot.org/updates/appcast`. The website Worker streams the original signed
+  GitHub appcast unchanged. Its `/updates/download/v<version>/OhMyShot-<version>.zip` endpoint streams the archive,
+  including byte-range requests, so neither request redirects the user's Mac to GitHub. The app retries transport
+  failures once through GitHub directly. For a manual check or download, dismiss Sparkle’s error alert to start
+  that retry; a retried download asks for installation confirmation again. Signature failures are not retried through a different source.
+- Deploy the companion website change **before shipping this app**. The update routes have no new secrets or storage
+  dependencies. This removes the user's direct GitHub dependency; Cloudflare's international network is not a mainland
+  CDN SLA. Check the feed and a complete archive download on mainland networks without VPN before release. A dedicated
+  mainland/Hong Kong mirror can replace this transport later without weakening Sparkle verification.
+- Signed-feed recovery expiration is disabled, so a prolonged outage never allows unsigned metadata.
+- The signed appcast and every archive retain EdDSA verification (`SURequireSignedFeed`, `SUVerifyUpdateBeforeExtraction`).
+  Never rewrite a signed feed at the proxy. Release publishing stays the same; no second upload is necessary.
+- The system background activity scheduler checks every six hours (± one hour). Enabling checks also checks at launch
+  unless the last check was less than 4.5 hours ago. Automatic checks remain on by default and can be disabled in Settings.
+- A found version is persisted by build number and stays at the top of the status menu, with an arrow beside its icon,
+  until the installed build catches up. Opening/dismissing Sparkle does not erase it. Settings also shows the version.
+  A reminder offers Update Now and Remind Me Tomorrow, at most once per version per day, when no capture, recording,
+  editor or modal is active. If busy, the menu remains available; finishing a capture, activation and scheduled wakes retry the reminder.
+- Downloads and installation still require confirmation. The updater never forces a restart during a capture.
+- Debug builds have no production feed. `ohmyshot-dev://debug/updates-preview` shows a **simulated** 0.2.0 menu reminder
+  and the Unreleased notes for visual QA, without checking or downloading an update.
+
+### The post-update window
+
+`CHANGELOG.md` is bundled in the signed application. On the first launch with this feature, and once per higher build
+number afterwards, What’s New opens with the exact installed version's section. The menu's What’s New… reopens it.
+Notes work offline and don't execute HTML or JavaScript. Headings, paragraphs, bullet lists, inline Markdown (bold,
+italic, links, inline code), and fenced code blocks are supported. Other Markdown constructs stay readable as text.
+The default banner is a blue/teal native illustration. To customize it, add a `ReleaseBanner` image set to
+`App/Assets.xcassets` (recommended 1200 × 400 or larger); it is bundled and code-signed too. Keep its lower-left area
+clear for the localized headline. Without an image, the default banner is always available.
 
 ## The signing key
 

@@ -93,6 +93,8 @@
 	<true/>
 	<key>SURequireSignedFeed</key>
 	<true/>
+	<key>SUSignedFeedFailureExpirationInterval</key>
+	<integer>0</integer>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

@@ -177,6 +177,26 @@
         }
       }
     },
+    "A little more powerful." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次更新，更进一步。"
+          }
+        }
+      }
+    },
+    "A newer OhMyShot is ready. Update now for the latest improvements and fixes. Your captures will stay safe." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新版 OhMyShot 已就绪。立即更新，体验最新改进与修复。你的截图将安全保留。"
+          }
+        }
+      }
+    },
     "A script wants to control OhMyShot" : {
       "localizations" : {
         "es" : {
@@ -3623,6 +3643,16 @@
         }
       }
     },
+    "Let’s Go" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始使用"
+          }
+        }
+      }
+    },
     "Link copied" : {
       "localizations" : {
         "es" : {
@@ -3791,6 +3821,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "記錄顯示器資訊"
+          }
+        }
+      }
+    },
+    "Made for your next great capture." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为你的下一次精彩截图而来。"
           }
         }
       }
@@ -4233,6 +4273,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "目前沒有保留任何內容。請在選單列的「保留最後 15 秒」中選擇一個顯示器。"
+          }
+        }
+      }
+    },
+    "OhMyShot checks at launch and about every six hours through its website, with GitHub as a backup. It asks before downloading. Update reminders stay until you install the new version." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 在启动时及大约每六小时通过官网检查更新，GitHub 作为备用。下载前会征求你的同意，更新提示会持续显示，直到安装新版本。"
           }
         }
       }
@@ -5156,6 +5206,16 @@
         }
       }
     },
+    "Ready to capture" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已就绪，开始截图"
+          }
+        }
+      }
+    },
     "Recognize Formula in Image" : {
       "localizations" : {
         "es" : {
@@ -5873,6 +5933,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新啟動"
+          }
+        }
+      }
+    },
+    "Remind Me Tomorrow" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明天提醒我"
           }
         }
       }
@@ -6830,6 +6900,16 @@
         }
       }
     },
+    "Thanks for using OhMyShot." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "感谢使用 OhMyShot。"
+          }
+        }
+      }
+    },
     "That destination was removed, so the file can’t be deleted from here." : {
       "localizations" : {
         "es" : {
@@ -7170,6 +7250,16 @@
         }
       }
     },
+    "This update includes improvements and fixes." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此更新包含体验改进与问题修复。"
+          }
+        }
+      }
+    },
     "Toggle" : {
       "localizations" : {
         "es" : {
@@ -7340,6 +7430,16 @@
         }
       }
     },
+    "Update Now" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即更新"
+          }
+        }
+      }
+    },
     "Update to Version %@…" : {
       "localizations" : {
         "es" : {
@@ -7363,7 +7463,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新到版本 %@…"
+            "value" : "更新到 %@…"
           }
         },
         "zh-Hant" : {
@@ -7608,6 +7708,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用所選範圍尋找"
+          }
+        }
+      }
+    },
+    "Version %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本 %@"
+          }
+        }
+      }
+    },
+    "What’s New" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日志"
+          }
+        }
+      }
+    },
+    "What’s New in OhMyShot" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 更新日志"
+          }
+        }
+      }
+    },
+    "What’s New…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日志…"
           }
         }
       }

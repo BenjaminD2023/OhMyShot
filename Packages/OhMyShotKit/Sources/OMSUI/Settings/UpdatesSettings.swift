@@ -28,7 +28,7 @@ struct UpdatesRow: View {
 
     /// Its part of its group's help, which General's first row holds.
     static var help: HelpTopic {
-        HelpTopic(String(localized: "Check for updates automatically", bundle: .module), Text("About once a day, OhMyShot asks GitHub whether there is a newer version. It asks you before it downloads anything.", bundle: .module))
+        HelpTopic(String(localized: "Check for updates automatically", bundle: .module), Text("OhMyShot checks at launch and about every six hours through its website, with GitHub as a backup. It asks before downloading. Update reminders stay until you install the new version.", bundle: .module))
     }
 
     var body: some View {

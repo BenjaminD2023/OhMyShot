@@ -1,7 +1,7 @@
 #include "Base.xcconfig"
 
-// The appcast attached to the latest GitHub release (Docs/release.md). "/$()/" keeps "//" from starting a comment.
-OMS_UPDATE_FEED_URL = https:/$()/github.com/MMFoundation/OhMyShot/releases/latest/download/appcast.xml
+// The website transports the signed GitHub appcast without changing its bytes (Docs/release.md). "/$()/" keeps "//" from starting a comment.
+OMS_UPDATE_FEED_URL = https:/$()/www.ohmyshot.org/updates/appcast
 
 SWIFT_OPTIMIZATION_LEVEL = -O
 SWIFT_COMPILATION_MODE = wholemodule

@@ -165,16 +165,23 @@ extension CompositionRoot {
                     self?.quickAccess.restoreRecentlyClosed()
                 },
             ],
+            priorityEntries: [
+                .init(title: String(localized: "Check for Updates…"),
+                      isEnabled: { [weak self] in self?.updates?.status.canCheck ?? false },
+                      currentTitle: { [weak self] in self?.updates?.menuTitle ?? "" },
+                      isHidden: { [weak self] in self?.updates?.status.waiting == nil }) { [weak self] in self?.updates?.checkNow() },
+            ],
             appEntries: [
                 .init(title: String(localized: "Join Discord")) { NSWorkspace.shared.open(CommunityInvite.discord) },
                 .init(
                     title: String(localized: "Check for Updates…"),
                     isEnabled: { [weak self] in self?.updates?.status.canCheck ?? false },
                     currentTitle: { [weak self] in self?.updates?.menuTitle ?? "" },
-                    isHidden: { [weak self] in self?.updates == nil }
+                    isHidden: { [weak self] in self?.updates == nil || self?.updates?.status.waiting != nil }
                 ) { [weak self] in
                     self?.updates?.checkNow()
                 },
+                .init(title: String(localized: "What’s New…"), isHidden: { [weak self] in self?.updates == nil }) { [weak self] in self?.updates?.showReleaseNotes() },
             ],
             openSettings: { [weak self] in self?.showSettings() },
             quit: { NSApp.terminate(nil) },

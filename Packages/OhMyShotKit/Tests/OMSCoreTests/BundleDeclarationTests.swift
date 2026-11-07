@@ -120,7 +120,7 @@ struct BundleDeclarationTests {
         #expect(try plist("Info.plist")["SUFeedURL"] as? String == "$(OMS_UPDATE_FEED_URL)")
         #expect(try buildSettings("Debug.xcconfig")["OMS_UPDATE_FEED_URL"] == "")
         let feed = try #require(try buildSettings("Release.xcconfig")["OMS_UPDATE_FEED_URL"])
-        #expect(feed == "https://github.com/MMFoundation/OhMyShot/releases/latest/download/appcast.xml")
+        #expect(feed == "https://www.ohmyshot.org/updates/appcast")
     }
 
     /// Sparkle's own timer stays off (the app schedules its looks), nothing is downloaded before the person says so (as
@@ -133,5 +133,6 @@ struct BundleDeclarationTests {
         #expect(info["SUAllowsAutomaticUpdates"] as? Bool == false)
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SURequireSignedFeed"] as? Bool == true)
+        #expect(info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)
     }
 }

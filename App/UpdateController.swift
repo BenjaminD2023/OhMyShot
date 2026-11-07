@@ -5,27 +5,30 @@ import OMSUI
 import OSLog
 import Sparkle
 
-/// Updates, with Sparkle, in builds that have a feed (release builds: `SUFeedURL` from Config/Release.xcconfig). The
-/// feed and the archives it lists are signed with the key in `SUPublicEDKey`, and Sparkle checks both (Info.plist).
-///
-/// Sparkle's own schedule stays off (`SUEnableAutomaticChecks` is NO): it would keep a timer of its own in the app.
-/// The daily look is a background activity instead, which the system runs when it suits it, so the app holds nothing
-/// while idle. A version found that way waits in the menu bar menu (Sparkle's gentle reminders), unless Sparkle would
-/// show it in full focus anyway (the app just launched, or the Mac was left idle).
+/// Signed Sparkle updates through the website, with a direct GitHub fallback.
+/// Discovery stays visible until the installed build catches up, including after dismissal or restart.
 @MainActor
 final class UpdateController: NSObject {
     let status = UpdateStatus()
 
     private var controller: SPUStandardUpdaterController!
     private var activity: NSBackgroundActivityScheduler?
+    var canPresentReminder: () -> Bool = { true }
+    private var releaseWindow: ReleaseNotesWindowController?
+    private var reminder: NSAlert?
+    private var usingFallback = false
+    private var userInitiated = false
+    private var fallbackTask: Task<Void, Never>?
+    private static let pendingKey = "updates.pending"
+    private static let seenBuildKey = "updates.seenBuild"
     private var canCheckObservation: NSKeyValueObservation?
     /// The feed a debug hook points the updater at, in place of the build's.
     private let feedOverride: URL?
     /// Never put a found version in front of the person, for debug runs: the menu says so instead.
     private let alwaysGentle: Bool
 
-    /// About once a day; a look sooner than most of that since the last one is skipped, as after a relaunch.
-    private static let interval: TimeInterval = 24 * 60 * 60
+    /// About every six hours; a look sooner than most of that since the last one is skipped, as after a relaunch.
+    private static let interval: TimeInterval = 6 * 60 * 60
 
     /// The build's updater, or nil when it has no feed (debug builds).
     static func make() -> UpdateController? {
@@ -40,6 +43,13 @@ final class UpdateController: NSObject {
         super.init()
         controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: self, userDriverDelegate: self)
         status.checkNow = { [weak self] in self?.checkNow() }
+        if feedOverride == nil, let pending = UserDefaults.standard.dictionary(forKey: Self.pendingKey),
+           let build = pending["build"] as? String, let version = pending["version"] as? String,
+           build.compare(currentBuild, options: .numeric) == .orderedDescending {
+            status.waiting = version
+        } else if feedOverride == nil {
+            UserDefaults.standard.removeObject(forKey: Self.pendingKey)
+        }
     }
 
     private var updater: SPUUpdater { controller.updater }
@@ -62,7 +72,7 @@ final class UpdateController: NSObject {
         return true
     }
 
-    /// Looks by itself about once a day while `on`, through the system's background activity scheduler.
+    /// Looks by itself about every six hours while `on`, through the system's background activity scheduler.
     func setChecksAutomatically(_ on: Bool) {
         if on, activity == nil {
             let activity = NSBackgroundActivityScheduler(identifier: (Bundle.main.bundleIdentifier ?? "ohmyshot") + ".update-check")
@@ -77,6 +87,7 @@ final class UpdateController: NSObject {
                 }
             }
             self.activity = activity
+            checkInBackground(skippingRecent: true)
         } else if !on, let activity {
             activity.invalidate()
             self.activity = nil
@@ -85,13 +96,15 @@ final class UpdateController: NSObject {
 
     /// The person asked: Sparkle's windows say what it found, or bring back the version waiting in the menu.
     func checkNow() {
-        status.waiting = nil
+        userInitiated = true
+        usingFallback = false
         updater.checkForUpdates()
     }
 
     /// A look of the app's own: nothing shows unless a newer version is found. `skippingRecent` leaves it when the
-    /// last look, by whoever, was less than most of a day ago.
+    /// last look, by whoever, was less than most of six hours ago.
     func checkInBackground(skippingRecent: Bool) {
+        presentReminderIfNeeded()
         if skippingRecent, let last = updater.lastUpdateCheckDate, Date.now.timeIntervalSince(last) < Self.interval * 0.75 {
             Log.updates.notice("updates.background skipped: looked \(Int(Date.now.timeIntervalSince(last)), privacy: .public) s ago")
             return
@@ -100,8 +113,53 @@ final class UpdateController: NSObject {
             Log.updates.notice("updates.background skipped: a session is in progress")
             return
         }
+        usingFallback = false
+        userInitiated = false
         Log.updates.notice("updates.background checking")
         updater.checkForUpdatesInBackground()
+    }
+
+    private var currentBuild: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0" }
+
+    func showReleaseNotes(preview: Bool = false) {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let changelog = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md")
+            .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+        let notes = ReleaseNotes.section(in: changelog, version: preview ? "Unreleased" : version)
+            ?? String(localized: "This update includes improvements and fixes.")
+        releaseWindow = ReleaseNotesWindowController(version: preview ? "0.2.0" : version, markdown: notes, banner: NSImage(named: "ReleaseBanner"))
+        releaseWindow?.present()
+    }
+
+    func showReleaseNotesAfterUpdate() {
+        guard feedOverride == nil else { return }
+        let previous = UserDefaults.standard.string(forKey: Self.seenBuildKey)
+        if ReleaseNotes.shouldShow(previousBuild: previous, currentBuild: currentBuild) { showReleaseNotes() }
+        UserDefaults.standard.set(currentBuild, forKey: Self.seenBuildKey)
+    }
+
+    /// Called when an update arrives and when the person returns to the app. Snooze for a day, never forget it.
+    func presentReminderIfNeeded(preview: Bool = false) {
+        guard (!alwaysGentle || preview), let version = status.waiting, reminder == nil, canPresentReminder() else { return }
+        let key = "updates.reminded." + version
+        if !preview, let last = UserDefaults.standard.object(forKey: key) as? Date, Date.now.timeIntervalSince(last) < 86400 { return }
+        if !preview { UserDefaults.standard.set(Date.now, forKey: key) }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Update to Version \(version)…")
+        alert.informativeText = String(localized: "A newer OhMyShot is ready. Update now for the latest improvements and fixes. Your captures will stay safe.")
+        alert.addButton(withTitle: String(localized: "Update Now"))
+        alert.addButton(withTitle: String(localized: "Remind Me Tomorrow"))
+        reminder = alert
+        NSApp.activate(ignoringOtherApps: true)
+        let answer = alert.runModal()
+        reminder = nil
+        if answer == .alertFirstButtonReturn { checkNow() }
+    }
+
+    func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest) {
+        guard feedOverride == nil, !usingFallback, let url = request.url,
+              let mirror = UpdateTransport.mirroredDownload(url) else { return }
+        request.url = mirror
     }
 
     /// The title for the menu bar menu's entry: a waiting version by name.
@@ -116,11 +174,15 @@ final class UpdateController: NSObject {
 
 extension UpdateController: SPUUpdaterDelegate {
     func feedURLString(for updater: SPUUpdater) -> String? {
-        feedOverride?.absoluteString
+        feedOverride?.absoluteString ?? (usingFallback ? UpdateTransport.fallbackFeed : UpdateTransport.feed).absoluteString
     }
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         status.lastCheck = updater.lastUpdateCheckDate
+        status.waiting = item.displayVersionString
+        if feedOverride == nil {
+            UserDefaults.standard.set(["build": item.versionString, "version": item.displayVersionString], forKey: Self.pendingKey)
+        }
         Log.updates.notice("updates.found \(item.displayVersionString, privacy: .public) (\(item.versionString, privacy: .public))")
     }
 
@@ -132,6 +194,17 @@ extension UpdateController: SPUUpdaterDelegate {
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
         status.lastCheck = updater.lastUpdateCheckDate
         if let error = error as NSError?, error.domain != SUSparkleErrorDomain || error.code != Int(SUError.noUpdateError.rawValue) {
+            // Retry transport failures only. A bad signature must never turn into a different trust path.
+            if feedOverride == nil, !usingFallback,
+               error.domain == NSURLErrorDomain || (error.domain == SUSparkleErrorDomain && [Int(SUError.appcastError.rawValue), Int(SUError.downloadError.rawValue)].contains(error.code)) {
+                usingFallback = true
+                fallbackTask = Task { @MainActor [weak self] in
+                    await Task.yield()
+                    guard let self, !Task.isCancelled else { return }
+                    if self.userInitiated { self.updater.checkForUpdates() }
+                    else { self.updater.checkForUpdatesInBackground() }
+                }
+            }
             Log.updates.error("updates.cycle ended: \(error.domain, privacy: .public) \(error.code, privacy: .public) \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -141,20 +214,14 @@ extension UpdateController: SPUStandardUserDriverDelegate {
     nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
 
     func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
-        immediateFocus && !alwaysGentle
+        false // Our reminder waits until captures and recordings have finished.
     }
 
     func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
-        guard !handleShowingUpdate, !state.userInitiated else { return }
         status.waiting = update.displayVersionString
-        Log.updates.notice("updates.waiting \(update.displayVersionString, privacy: .public) in the menu")
+        if !state.userInitiated { presentReminderIfNeeded() }
     }
 
-    func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {
-        status.waiting = nil
-    }
-
-    func standardUserDriverWillFinishUpdateSession() {
-        status.waiting = nil
-    }
+    func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {}
+    func standardUserDriverWillFinishUpdateSession() {}
 }

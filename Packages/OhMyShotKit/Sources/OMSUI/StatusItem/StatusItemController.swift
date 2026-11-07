@@ -111,6 +111,8 @@ public final class StatusItemController {
     private let pinEntries: [Entry]
     private let historyEntries: [Entry]
     /// The app's own entries above Settings…, such as Check for Updates….
+    private let priorityEntries: [Entry]
+    private var updateVersion: String?
     private let appEntries: [Entry]
     private let openSettings: () -> Void
     private let quit: () -> Void
@@ -121,6 +123,7 @@ public final class StatusItemController {
         textEntries: [Entry] = [],
         pinEntries: [Entry] = [],
         historyEntries: [Entry] = [],
+        priorityEntries: [Entry] = [],
         appEntries: [Entry] = [],
         openSettings: @escaping () -> Void,
         quit: @escaping () -> Void,
@@ -130,6 +133,7 @@ public final class StatusItemController {
         self.textEntries = textEntries
         self.pinEntries = pinEntries
         self.historyEntries = historyEntries
+        self.priorityEntries = priorityEntries
         self.appEntries = appEntries
         self.openSettings = openSettings
         self.quit = quit
@@ -148,6 +152,39 @@ public final class StatusItemController {
         }
     }
 
+    #if DEBUG
+    private var debugMenuWindow: NSWindow?
+    private let debugMenuTarget = MenuTarget()
+    public func showMenuForDebugging() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 90),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "Status Menu Preview"
+        window.isReleasedWhenClosed = false
+        let button = NSPopUpButton(frame: NSRect(x: 24, y: 26, width: 312, height: 32), pullsDown: true)
+        let menu = makeMenu(using: debugMenuTarget)
+        menu.insertItem(withTitle: "OhMyShot", action: nil, keyEquivalent: "", at: 0)
+        button.menu = menu
+        window.contentView?.addSubview(button)
+        debugMenuWindow?.close()
+        debugMenuWindow = window
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+    #endif
+
+    public func setUpdateVersion(_ version: String?) {
+        updateVersion = version
+        if let item = statusItem, !showsActivity { applyUpdateBadge(to: item) }
+    }
+
+    private func applyUpdateBadge(to item: NSStatusItem) {
+        item.length = updateVersion == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
+        item.button?.title = updateVersion == nil ? "" : " ↑"
+        item.button?.imagePosition = updateVersion == nil ? .imageOnly : .imageLeading
+        item.button?.toolTip = updateVersion.map { String(localized: "Update to Version \($0)…", bundle: .module) } ?? appName
+    }
+
     private func makeItem() -> NSStatusItem {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.autosaveName = "OhMyShotStatusItem"
@@ -160,6 +197,7 @@ public final class StatusItemController {
             }
         }
         item.menu = makeMenu()
+        applyUpdateBadge(to: item)
         return item
     }
 
@@ -274,11 +312,18 @@ public final class StatusItemController {
             button.imagePosition = .imageOnly
         }
         item.menu = makeMenu()
+        applyUpdateBadge(to: item)
     }
 
-    private func makeMenu() -> NSMenu {
+    private func makeMenu(using target: MenuTarget? = nil) -> NSMenu {
+        let menuTarget = target ?? self.menuTarget
         menuTarget.removeAll()
         let menu = NSMenu()
+        for entry in priorityEntries {
+            let item = menuTarget.item(for: entry)
+            item.image = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: nil)
+            menu.addItem(item)
+        }
         for group in [captureEntries, textEntries, pinEntries, historyEntries] where !group.isEmpty {
             for entry in group {
                 let item = menuTarget.item(for: entry)

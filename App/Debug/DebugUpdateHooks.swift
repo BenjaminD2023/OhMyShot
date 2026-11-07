@@ -14,6 +14,7 @@ struct DebugUpdateHooks {
     let start: (URL) -> UpdateController?
     let current: () -> UpdateController?
     let stop: () -> Void
+    let showMenu: () -> Void
     /// A Settings window of the hooks' own, not the one the user may have open.
     let makeSettings: () -> SettingsWindowController
     let capture: (NSWindow, String) async -> Void
@@ -31,6 +32,14 @@ struct DebugUpdateHooks {
             let feed = value("feed").flatMap(URL.init(string:)) ?? URL(string: "http://127.0.0.1:19020/appcast.xml")!
             let started = start(feed) != nil
             Log.updates.notice("debug.updates-start \(feed.absoluteString, privacy: .public): \(started ? "started" : "refused", privacy: .public)")
+        case "updates-preview":
+            let controller = current() ?? start(URL(string: "http://127.0.0.1:19020/appcast.xml")!)
+            controller?.status.waiting = "0.2.0"
+            controller?.showReleaseNotes(preview: true)
+        case "updates-menu":
+            showMenu()
+        case "updates-reminder-preview":
+            current()?.presentReminderIfNeeded(preview: true)
         case "updates-check":
             // As the daily background activity does, without skipping a recent look.
             current()?.checkInBackground(skippingRecent: false)

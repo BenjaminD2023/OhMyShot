@@ -17,6 +17,7 @@ extension CompositionRoot {
     // MARK: Kept captures
 
     func didCapture(_ item: QuickAccessItem) {
+        retryUpdateReminderAfterActivity()
         if settings.afterCapture(for: item.kind).showsQuickAccess {
             quickAccess.add(item)
         } else {

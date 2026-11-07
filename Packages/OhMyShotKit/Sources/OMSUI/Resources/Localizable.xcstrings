@@ -1455,6 +1455,16 @@
         }
       }
     },
+    "A little more powerful." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次更新，更进一步。"
+          }
+        }
+      }
+    },
     "A model pack reads text that macOS reads poorly on its own. It’s downloaded once, from %@, and stays on this Mac; nothing you capture leaves it." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1624,6 +1634,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每個擷取內容和儲存的檔案都會依此格式命名。{date} 和 {time} 是擷取的時間；{app} 是最前方的 App；{window} 是視窗的標題，擷取區域時則為最前方視窗的標題；{counter} 是每儲存一個檔案就加一的數字。"
+          }
+        }
+      }
+    },
+    "A newer OhMyShot is ready. Update now for the latest improvements and fixes. Your captures will stay safe." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新版 OhMyShot 已就绪。立即更新，体验最新改进与修复。你的截图将安全保留。"
           }
         }
       }
@@ -12645,6 +12665,16 @@
         }
       }
     },
+    "Let’s Go" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始使用"
+          }
+        }
+      }
+    },
     "License" : {
       "localizations" : {
         "es" : {
@@ -13118,6 +13148,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "容差越低，找到的邊界越細；容差越高，越會忽略細微的顏色變化。這會影響量尺線與選取範圍貼齊。測量時按 T 鍵循環切換預設，按 +/− 調整；所選的值會記在這裡。"
+          }
+        }
+      }
+    },
+    "Made for your next great capture." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为你的下一次精彩截图而来。"
           }
         }
       }
@@ -15469,6 +15509,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OhMyShot 可以使用與系統不同的語言顯示。找不到你的語言嗎？歡迎在 GitHub 上貢獻翻譯。"
+          }
+        }
+      }
+    },
+    "OhMyShot checks at launch and about every six hours through its website, with GitHub as a backup. It asks before downloading. Update reminders stay until you install the new version." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 在启动时及大约每六小时通过官网检查更新，GitHub 作为备用。下载前会征求你的同意，更新提示会持续显示，直到安装新版本。"
           }
         }
       }
@@ -18308,6 +18358,16 @@
         }
       }
     },
+    "Ready to capture" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已就绪，开始截图"
+          }
+        }
+      }
+    },
     "Recent uploads" : {
       "localizations" : {
         "es" : {
@@ -19104,6 +19164,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "立即重新啟動"
+          }
+        }
+      }
+    },
+    "Remind Me Tomorrow" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明天提醒我"
           }
         }
       }
@@ -23813,6 +23883,16 @@
         }
       }
     },
+    "Thanks for using OhMyShot." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "感谢使用 OhMyShot。"
+          }
+        }
+      }
+    },
     "The API key saved for %@ is deleted from the Keychain." : {
       "localizations" : {
         "es" : {
@@ -24559,6 +24639,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此擷取內容有標註或背景，它們會保持原樣。"
+          }
+        }
+      }
+    },
+    "This update includes improvements and fixes." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此更新包含体验改进与问题修复。"
           }
         }
       }
@@ -25829,6 +25919,26 @@
         }
       }
     },
+    "Update Now" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即更新"
+          }
+        }
+      }
+    },
+    "Update to Version %@…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新到 %@…"
+          }
+        }
+      }
+    },
     "Updates" : {
       "localizations" : {
         "es" : {
@@ -26340,6 +26450,16 @@
         }
       }
     },
+    "Version %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本 %@"
+          }
+        }
+      }
+    },
     "Version %@ (%@)" : {
       "localizations" : {
         "en" : {
@@ -26649,6 +26769,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "截圖和「標註區域」在你選定區域之前，於指標處顯示的內容。「放大」會放大指標周圍的像素，方便把邊緣放在準確的像素上。「實際大小」在以指標為中心的清晰圓圈裡按原始大小顯示它們，開始拖移時圓圈消失，十字準線保留。"
+          }
+        }
+      }
+    },
+    "What’s New" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日志"
+          }
+        }
+      }
+    },
+    "What’s New in OhMyShot" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 更新日志"
+          }
+        }
+      }
+    },
+    "What’s New…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日志…"
           }
         }
       }

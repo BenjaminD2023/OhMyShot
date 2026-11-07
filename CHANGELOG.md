@@ -9,6 +9,20 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Stay up to date
+
+- **Updates, closer to you.** Checks use the OhMyShot website for both the update feed and download, with GitHub as a backup.
+- **Easy to spot.** An update stays at the top of the menu, with an arrow beside the menu bar icon. A reminder lets you update now or come back tomorrow.
+
+### A fresh welcome
+
+- A new **What’s New** window opens after updating, with release notes available offline.
+- Release notes support Markdown headings, lists, links, emphasis and code, with an optional bundled banner.
+
+### Always your choice
+
+- Updates are checked at launch and every six hours. Downloads and restarts still wait for your confirmation.
+
 ### Added
 
 - Window opens a chooser that previews every app's windows on any display or Space, full-screen games included, without bringing the app forward or leaving its Space; Capture Window opens it directly. ([0946850]; by [@fzlzjerry])
@@ -24,6 +38,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - The editor's eyedropper tooltip, a locked pin's Unlock button, and the overlay's window count are translated. ([4c48f7e]; by [@fzlzjerry])
 - Capture Text no longer waits about 37 s and copies nothing after a cleaner empties `~/Library/Caches` or macOS updates: the app compiles Vision's text models again in the background as soon as they are gone. ([81a46de]; by [@fzlzjerry])
 - A first reading that has to wait for Vision's models to compile (about 37 s) now finishes: Capture Text, Translate Area, and the Recognized Text window wait up to 60 seconds instead of 30, and Escape still stops them. ([7304cae]; by [@fzlzjerry])
+
 
 ## [0.1.0] - 2026-11-03
 
