@@ -22,6 +22,33 @@ public final class ScreenCapturer {
         self.content = content
     }
 
+    /// Enumerates windows across every Space only when the user opens the list. Pointer hit-testing
+    /// continues to use the visible catalog, so a hidden window never intercepts a click.
+    func availableWindows(in layout: DisplayLayout) async throws -> [WindowCatalog.Choice] {
+        WindowCatalog.choices(from: try await content.fresh().windows, layout: layout)
+    }
+
+    /// A bounded preview of just the selected window, never every window and never a new stream.
+    /// The chooser has already refreshed the catalog; switching apps reuses it.
+    func windowPreview(_ target: WindowTarget) async throws -> CGImage {
+        guard let window = try await content.current().windows.first(where: { $0.windowID == target.id }) else {
+            throw CaptureError.windowNotFound(target.id)
+        }
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let scale = CGFloat(filter.pointPixelScale)
+        let size = CGSize(width: filter.contentRect.width * scale, height: filter.contentRect.height * scale)
+        let reduction = min(1, 1120 / max(1, size.width, size.height))
+        let configuration = SCScreenshotConfiguration()
+        configuration.width = max(1, Int((size.width * reduction).rounded()))
+        configuration.height = max(1, Int((size.height * reduction).rounded()))
+        configuration.showsCursor = false
+        configuration.ignoreShadows = true
+        configuration.dynamicRange = .sdr
+        let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
+        guard let image = output.sdrImage else { throw CaptureError.emptyResult }
+        return image
+    }
+
     /// Captures a whole display at its framebuffer resolution. `includingOwnWindows` is for rendering
     /// the overlay itself in scripted checks; real captures always leave this app out.
     public func captureDisplay(
@@ -73,8 +100,7 @@ public final class ScreenCapturer {
     /// in the picture when it is over the window.
     public func captureWindow(_ target: WindowTarget, shadow: Bool, layout: DisplayLayout, showsCursor: Bool = false) async throws -> CapturedFrame {
         // Windows come and go, so look this one up in fresh content.
-        content.refresh()
-        guard let window = try await content.current().windows.first(where: { $0.windowID == target.id }) else {
+        guard let window = try await content.fresh().windows.first(where: { $0.windowID == target.id }) else {
             throw CaptureError.windowNotFound(target.id)
         }
         let filter = SCContentFilter(desktopIndependentWindow: window)
@@ -86,7 +112,7 @@ public final class ScreenCapturer {
         // shadow's margin. Setting the window's own size would shrink a shadowed capture to fit.
         let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
         guard let image = output.sdrImage else { throw CaptureError.emptyResult }
-        let displayID = layout.display(at: CGPoint(x: target.frame.midX, y: target.frame.midY))?.id ?? layout.primary?.id ?? 0
+        let displayID = target.display(in: layout)?.id ?? 0
         return CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: target.frame)
     }
 
@@ -200,8 +226,7 @@ public final class ScreenCapturer {
     ) async throws -> RecordingSource {
         switch target {
         case .window(let window):
-            content.refresh()
-            guard let found = try await content.current().windows.first(where: { $0.windowID == window.id }) else {
+            guard let found = try await content.fresh().windows.first(where: { $0.windowID == window.id }) else {
                 throw CaptureError.windowNotFound(window.id)
             }
             let filter = SCContentFilter(desktopIndependentWindow: found)

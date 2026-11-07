@@ -32,6 +32,10 @@ final class RecordingBar: NSView {
     var onCameraStyle: ((CameraStyle) -> Void)?
     var onRecord: (() -> Void)?
     var onCancel: (() -> Void)?
+    /// The all-windows selector requires an explicit selection before Record can run.
+    var canRecord = true {
+        didSet { recordButton.isEnabled = canRecord }
+    }
 
     static let height: CGFloat = 42
     private static let inset: CGFloat = 6
@@ -51,6 +55,8 @@ final class RecordingBar: NSView {
     private var cameraStyle = CameraStyle()
     /// A window is recorded on its own: what the app shows over the screen can't be in it.
     private let recordsWindow: Bool
+    private let compact: Bool
+    private var optionsButton: BarButton?
     private var hovered: NSButton?
     /// The name of the microphone or camera a chip that is on records, by its ID (empty for the system's default).
     private let deviceName: (Toggle, String) -> String?
@@ -59,8 +65,9 @@ final class RecordingBar: NSView {
 
     /// `deviceName` names the microphone or camera a chip records; by default the device itself is asked, once access
     /// to it is granted (asking starts the system's capture machinery, and only for that one device).
-    init(choices: RecordingChoices, recordsWindow: Bool = false, deviceName: @escaping (Toggle, String) -> String? = RecordingBar.lookUpDevice) {
+    init(choices: RecordingChoices, recordsWindow: Bool = false, compact: Bool = false, deviceName: @escaping (Toggle, String) -> String? = RecordingBar.lookUpDevice) {
         self.recordsWindow = recordsWindow
+        self.compact = compact
         self.deviceName = deviceName
         if NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency {
             let solid = NSView()
@@ -85,12 +92,24 @@ final class RecordingBar: NSView {
         stack.spacing = 2
         stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
-        for output in RecordingOutput.allCases {
-            stack.addArrangedSubview(makeOutput(output))
+        if !compact {
+            for output in RecordingOutput.allCases { stack.addArrangedSubview(makeOutput(output)) }
+            addDivider()
         }
-        addDivider()
         for toggle in Toggle.allCases {
-            stack.addArrangedSubview(makeToggle(toggle))
+            let button = makeToggle(toggle)
+            if !compact || toggle == .systemAudio || toggle == .microphone { stack.addArrangedSubview(button) }
+        }
+        if compact {
+            let button = BarButton(title: String(localized: "Options", bundle: .module), image: NSImage(), target: self, action: #selector(showOptions(_:)))
+            configureChip(button)
+            button.horizontalPadding = 10
+            button.imagePosition = .noImage
+            button.font = Theme.Typeface.label(size: 12)
+            button.toolTip = String(localized: "Recording options", bundle: .module)
+            button.setAccessibilityRole(.popUpButton)
+            optionsButton = button
+            stack.addArrangedSubview(button)
         }
         addDivider()
         configureRecordButton()
@@ -144,6 +163,12 @@ final class RecordingBar: NSView {
         microphoneID = choices.microphoneID
         cameraID = choices.cameraID
         cameraStyle = choices.cameraStyle
+        optionsButton?.title = switch choices.output {
+        case .video: String(localized: "Options", bundle: .module)
+        case .gif: String(localized: "GIF", bundle: .module)
+        case .studio: String(localized: "Studio", bundle: .module)
+        }
+        optionsButton?.setAccessibilityLabel(String(localized: "Recording options", bundle: .module))
         for (candidate, button) in outputs {
             let isSelected = candidate == output
             button.state = isSelected ? .on : .off
@@ -248,7 +273,7 @@ final class RecordingBar: NSView {
             for (toggle, button) in toggles {
                 button.layer?.backgroundColor = states[toggle] == true ? selected : button === hovered && button.isEnabled ? hover : .clear
             }
-            for button in [recordButton, cancelButton] {
+            for button in [recordButton, cancelButton] + [optionsButton].compactMap({ $0 }) {
                 button.layer?.backgroundColor = button === hovered ? hover : .clear
             }
         }
@@ -372,6 +397,43 @@ final class RecordingBar: NSView {
         if let last = stack.arrangedSubviews.last { stack.setCustomSpacing(6, after: last) }
         stack.addArrangedSubview(divider)
         stack.setCustomSpacing(6, after: divider)
+    }
+
+    @objc private func showOptions(_ sender: NSButton) {
+        let menu = NSMenu()
+        menu.addItem(.sectionHeader(title: String(localized: "Format", bundle: .module)))
+        for (index, output) in RecordingOutput.allCases.enumerated() {
+            let title = switch output {
+            case .video: String(localized: "Video", bundle: .module)
+            case .gif: String(localized: "GIF", bundle: .module)
+            case .studio: String(localized: "Studio", bundle: .module)
+            }
+            let item = NSMenuItem(title: title, action: #selector(optionFormat(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.state = output == self.output ? .on : .off
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        for toggle in [Toggle.clicks, .keystrokes] {
+            guard let button = toggles[toggle], button.isEnabled else { continue }
+            let item = NSMenuItem(title: button.accessibilityLabel() ?? "", action: #selector(optionToggle(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = Toggle.allCases.firstIndex(of: toggle) ?? 0
+            item.state = button.state
+            menu.addItem(item)
+        }
+        menu.popUp(under: sender)
+    }
+
+    @objc private func optionFormat(_ item: NSMenuItem) {
+        guard RecordingOutput.allCases.indices.contains(item.tag) else { return }
+        onOutput?(RecordingOutput.allCases[item.tag])
+    }
+
+    @objc private func optionToggle(_ item: NSMenuItem) {
+        guard Toggle.allCases.indices.contains(item.tag), let button = toggles[Toggle.allCases[item.tag]] else { return }
+        toggled(button)
     }
 
     @objc private func outputClicked(_ sender: NSButton) {

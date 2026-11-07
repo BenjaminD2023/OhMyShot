@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import OMSCore
+import ScreenCaptureKit
 
 /// A window that can be captured on its own.
 public struct WindowTarget: Equatable, Sendable {
@@ -16,6 +17,14 @@ public struct WindowTarget: Equatable, Sendable {
         self.ownerName = ownerName
         self.title = title
     }
+
+    /// The display holding most of this window, independent of the pointer or the selector's host.
+    public func display(in layout: DisplayLayout) -> DisplayInfo? {
+        layout.displays.filter { frame.intersects($0.frame) }.max {
+            let a = frame.intersection($0.frame), b = frame.intersection($1.frame)
+            return a.width * a.height < b.width * b.height
+        } ?? layout.primary
+    }
 }
 
 /// The on-screen windows, front to back, read once when window selection starts. Hit-testing the
@@ -24,6 +33,46 @@ public struct WindowTarget: Equatable, Sendable {
 /// Standard windows only (layer 0), this app's own among them (Settings, Capture History, the editor, the
 /// OCR panel); its panels over the screen (the overlay, cards, pins, readings) sit on higher layers.
 public enum WindowCatalog {
+    /// A shareable window from any display or Space. Kept separate from the visible hit-test catalog:
+    /// windows on different Spaces may occupy exactly the same coordinates.
+    struct Choice: Equatable {
+        let target: WindowTarget
+        let processID: pid_t
+        let isOnScreen: Bool
+
+        func matches(_ query: String) -> Bool {
+            query.split(whereSeparator: \.isWhitespace).allSatisfy {
+                "\(target.ownerName) \(target.title ?? "")".localizedStandardContains(String($0))
+            }
+        }
+    }
+
+    static func choices(from windows: [SCWindow], layout: DisplayLayout) -> [Choice] {
+        let order = Dictionary(uniqueKeysWithValues: snapshot(layout: layout, excludingPID: getpid()).enumerated().map { ($0.element.id, $0.offset) })
+        return windows.compactMap { window -> Choice? in
+            guard let app = window.owningApplication, app.processID != getpid(),
+                  let running = NSRunningApplication(processIdentifier: app.processID),
+                  running.activationPolicy == .regular,
+                  window.frame.width >= 100, window.frame.height >= 80,
+                  window.windowLayer >= 0 else { return nil }
+            // Some games use an elevated full-screen window. Ordinary app windows and these full-screen
+            // surfaces are selectable; menu extras, tooltips, desktops and our own panels are not.
+            let fillsDisplay = layout.displays.contains {
+                let screen = layout.flipped($0.frame)
+                return window.frame.insetBy(dx: -1, dy: -1).contains(screen)
+            }
+            guard window.windowLayer == 0 || fillsDisplay else { return nil }
+            return Choice(
+                target: WindowTarget(id: window.windowID, frame: layout.flipped(window.frame), ownerName: app.applicationName, title: window.title),
+                processID: app.processID, isOnScreen: window.isOnScreen
+            )
+        }.sorted {
+            let lhs = order[$0.target.id] ?? Int.max, rhs = order[$1.target.id] ?? Int.max
+            if lhs != rhs { return lhs < rhs }
+            return $0.target.frame.width * $0.target.frame.height > $1.target.frame.width * $1.target.frame.height
+        }
+    }
+
     public static func snapshot(layout: DisplayLayout, excludingPID: pid_t? = nil) -> [WindowTarget] {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }

@@ -69,6 +69,17 @@ final class RecordingCoordinator {
         let display: DisplayInfo
         let choices: RecordingChoices
         let appName: String?
+
+        init(target: RecordingTarget, display: DisplayInfo, choices: RecordingChoices, appName: String?) {
+            self.target = target
+            self.display = display
+            self.choices = choices
+            if case .window(let window) = target {
+                self.appName = window.ownerName
+            } else {
+                self.appName = appName
+            }
+        }
     }
 
     private struct Session {

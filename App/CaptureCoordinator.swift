@@ -361,9 +361,9 @@ final class CaptureCoordinator {
         Task { await captureArea(rect, appName: app, windowTitle: title, followUp: followUp) }
     }
 
-    /// Hover a window and click it: captured on its own, with its rounded corners and shadow.
+    /// Preview an app's window, including full-screen Spaces, then capture it independently.
     func captureWindow(followUp: CaptureFollowUp = .none) {
-        begin(mode: .window, followUp: followUp)
+        begin(mode: .windowPicker, followUp: followUp)
     }
 
     /// Captures the whole display under the pointer.
