@@ -229,6 +229,13 @@ Still open:
   more than 10 s (two attempts timed out at 10 s); the system prepares the model once for a new client.
   Capture Text therefore warms the model while the person is selecting and allows 30 s per request,
   keeping the selection highlighted meanwhile.
+- **Escape stops a reading** (2026-11-07): the system's preparation can outlast even 30 s. A Capture Text on
+  macOS 27.2 waited on Neural Engine compiles of Vision's models, one of 16 s and then another still running when
+  the 30 s ran out, with the overlay long gone, so nothing of the app's had the key. While the highlight shows,
+  it takes Escape as a Carbon hot key (`EscapeHotKey`, no permission, every other key left to the app in front,
+  so a ⌘V pressed early isn't lost); a panel of the app's that holds the keyboard (the overlay of a capture
+  started meanwhile) is given the Escape instead. Capture Formula and Translate Area stop the same way: the
+  highlight goes without a sound, a run of the text reader is ended, and nothing is copied or shown.
 
 ## The OCR panel (`VisionPipeline.analyze`, 2026-10-08)
 

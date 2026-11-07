@@ -6,11 +6,18 @@ import OMSDesign
 /// while the text is read, then fades. A click-through panel that never takes focus, drawn exactly like
 /// the overlay's text selection and at the overlay's level, so letting go of the mouse looks like one
 /// continuous gesture.
+///
+/// While it shows, Escape stops what it waits for (`onCancel`): the app in front keeps every other key.
 public final class TextSelectionHighlight {
     private var panel: NSPanel?
     private var shape: CAShapeLayer?
     private var breathing: Task<Void, Never>?
     private var windowLease: ActiveResources.Lease?
+    private lazy var escape = EscapeHotKey { [weak self] in self?.escapePressed() }
+
+    /// Told that Escape was pressed while the highlight showed, after it has gone: what it waited for should stop.
+    /// While nil, Escape stays the app in front's.
+    public var onCancel: (() -> Void)?
 
     public init() {}
 
@@ -30,6 +37,7 @@ public final class TextSelectionHighlight {
         panel.alphaValue = 1
         panel.orderFrontRegardless()
         if windowLease == nil { windowLease = ActiveResources.shared.acquire(.window) }
+        if onCancel != nil { escape.arm() }
 
         breathing?.cancel()
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
@@ -51,6 +59,7 @@ public final class TextSelectionHighlight {
     /// there was none (`nil`). Instant with Reduce Motion. `announces` tells VoiceOver the count or the
     /// empty result, for when no card does; `formula` says what Capture Formula copied, or didn't.
     public func finish(copied text: String?, announces: Bool, formula: Bool = false) {
+        escape.disarm()
         breathing?.cancel()
         breathing = nil
         if text == nil { NSSound.beep() }
@@ -86,6 +95,7 @@ public final class TextSelectionHighlight {
 
     /// Takes the highlight away at once, without a sound: something else now shows the result, over it.
     public func hide() {
+        escape.disarm()
         breathing?.cancel()
         breathing = nil
         guard let panel else { return }
@@ -95,6 +105,23 @@ public final class TextSelectionHighlight {
         panel.orderOut(nil)
         windowLease = nil
     }
+
+    /// Escape while the highlight shows: it goes at once, without a sound, and what it waited for is told to stop.
+    private func escapePressed() {
+        guard panel != nil else { return }
+        hide()
+        VoiceOver.announce(String(localized: "Cancelled.", bundle: .module))
+        onCancel?()
+    }
+
+    #if DEBUG
+    /// Whether Escape is taken from the app in front now. For scripted checks.
+    public var takesEscape: Bool { escape.isArmed }
+
+    /// A press of Escape as its hot key delivers one (`EscapeHotKey.simulatePress`). For scripted checks.
+    @discardableResult
+    public func simulateEscape() -> Bool { escape.simulatePress() }
+    #endif
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)

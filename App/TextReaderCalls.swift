@@ -19,7 +19,7 @@ extension TextCaptureCoordinator {
         do {
             return try await TextReaderTool.formula(ofPictureAt: file, pack: pack, helper: helper)
         } catch {
-            Log.capture.error("Reading a formula failed: \(String(describing: error), privacy: .public)")
+            if !Task.isCancelled { Log.capture.error("Reading a formula failed: \(String(describing: error), privacy: .public)") }
             return nil
         }
     }
