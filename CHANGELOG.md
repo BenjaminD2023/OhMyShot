@@ -19,6 +19,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - The editor's Picture menu and a Quick Access card's Transform menu use a rotate symbol instead of a crop symbol. ([4601011]; by [@fzlzjerry])
 - The editor's eyedropper tooltip, a locked pin's Unlock button, and the overlay's window count are translated. ([4c48f7e]; by [@fzlzjerry])
 - Capture Text no longer waits about 37 s and copies nothing after a cleaner empties `~/Library/Caches` or macOS updates: the app compiles Vision's text models again in the background as soon as they are gone. ([81a46de]; by [@fzlzjerry])
+- A first reading that has to wait for Vision's models to compile (about 37 s) now finishes: Capture Text, Translate Area, and the Recognized Text window wait up to 60 seconds instead of 30, and Escape still stops them. ([7304cae]; by [@fzlzjerry])
 
 ## [0.1.0] - 2026-11-03
 
@@ -155,6 +156,7 @@ Each entry links its implementation commits or merged pull request and credits v
 [4c48f7e]: https://github.com/MMFoundation/OhMyShot/commit/4c48f7e1851c1139fcc267161808ee636a623983
 [7cfd445]: https://github.com/MMFoundation/OhMyShot/commit/7cfd445909e8298f04e098f4343f364ecab7c920
 [81a46de]: https://github.com/MMFoundation/OhMyShot/commit/81a46defc0b498eba30e6ebd086116ff06ffadb7
+[7304cae]: https://github.com/MMFoundation/OhMyShot/commit/7304cae0a7e7330c69022d49f463d610aedf63a2
 [c999cc0]: https://github.com/MMFoundation/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/MMFoundation/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/MMFoundation/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287
