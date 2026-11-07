@@ -11,6 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Fixed
 
+- Escape stops Capture Text, Capture Formula, and Translate Area while the selection is still highlighted, so a reading the system holds up (the first after a macOS update can take over 30 seconds) no longer has to be waited out. ([7cfd445]; by [@fzlzjerry])
 - Studio's Plain color is a tile beside the gradients that opens the Colors panel, every time reads to the hundredth in one format, saving is reported under the window's title, and Fit and Fit Selection look like buttons. ([7502f44], [0b20def], [9514883]; by [@fzlzjerry])
 - The editor sets kept colors apart from the inks with a divider and no longer offers to keep a color that is indistinguishable from an ink; Other Color… no longer changes the window that last used the Colors panel, and opening an editor no longer logs broken layout constraints. ([4353a67], [bae605a], [5fb5917]; by [@fzlzjerry])
 - Scrolling capture's Auto button uses Auto-scroll's arrow instead of a triangle that looked like a pop-up menu. ([be0a7ed]; by [@fzlzjerry])
@@ -151,6 +152,7 @@ Each entry links its implementation commits or merged pull request and credits v
 [5203022]: https://github.com/MMFoundation/OhMyShot/commit/5203022dd97c8ff760a76dc33455434e5b861c6e
 [4601011]: https://github.com/MMFoundation/OhMyShot/commit/4601011d5b85125b335a3ed0adf27af096a4ea97
 [4c48f7e]: https://github.com/MMFoundation/OhMyShot/commit/4c48f7e1851c1139fcc267161808ee636a623983
+[7cfd445]: https://github.com/MMFoundation/OhMyShot/commit/7cfd445909e8298f04e098f4343f364ecab7c920
 [c999cc0]: https://github.com/MMFoundation/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/MMFoundation/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/MMFoundation/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287
