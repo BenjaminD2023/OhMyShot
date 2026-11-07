@@ -13,6 +13,17 @@ struct ReleaseNotesTests {
         #expect(ReleaseNotes.section(in: notes, version: "1.2") == nil)
     }
 
+    @Test func translatedNotesMustMatchTheRequestedVersion() {
+        let english = "## [1.2.0]\nNew features\n## [1.1.0]\nOld features"
+        let chinese = "## [1.2.0]\n新功能\n## [1.1.0]\n旧功能"
+        #expect(ReleaseNotes.localizedSection(chinese, fallback: english, version: "1.2.0") == "新功能")
+        #expect(ReleaseNotes.localizedSection("## [1.1.0]\n旧功能", fallback: english, version: "1.2.0") == "New features")
+        #expect(ReleaseNotes.localizedSection(nil, fallback: english, version: "1.2.0") == "New features")
+        #expect(ReleaseNotes.localizedSection("## [1.2.0]\n", fallback: english, version: "1.2.0") == "New features")
+        #expect(ReleaseNotes.localizedSection("## [1.2.0]\n\n## [1.1.0]\n旧功能\n[docs]: https://www.ohmyshot.org", fallback: english, version: "1.2.0") == "New features")
+        #expect(ReleaseNotes.localizedSection("## [1.2.0]\n[docs]: https://www.ohmyshot.org", fallback: english, version: "1.2.0") == "New features")
+    }
+
     @Test func resolvesChangelogReferenceLinks() {
         let text = ReleaseNotes.inline("Fixed capture. ([#20]; by [@fzlzjerry])", referencesIn: "[#20]: https://github.com/MMFoundation/OhMyShot/pull/20\n[@fzlzjerry]: https://github.com/fzlzjerry")
         #expect(text.runs.compactMap { $0.link }.count == 2)

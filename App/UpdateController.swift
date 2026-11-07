@@ -125,7 +125,10 @@ final class UpdateController: NSObject {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         let changelog = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md")
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
-        let notes = ReleaseNotes.section(in: changelog, version: preview ? "Unreleased" : version)
+        let localized = Bundle.main.preferredLocalizations.first
+            .flatMap { Bundle.main.url(forResource: "ReleaseNotes-" + $0, withExtension: "md") }
+            .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        let notes = ReleaseNotes.localizedSection(localized, fallback: changelog, version: preview ? "Unreleased" : version)
             ?? String(localized: "This update includes improvements and fixes.")
         releaseWindow = ReleaseNotesWindowController(version: preview ? "0.2.0" : version, markdown: notes, banner: NSImage(named: "ReleaseBanner"))
         releaseWindow?.present()

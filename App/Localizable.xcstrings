@@ -184,6 +184,30 @@
             "state" : "translated",
             "value" : "每次更新，更进一步。"
           }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次更新，更進一步。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップデートで、もっと便利に。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada vez más potente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toujours plus performant."
+          }
         }
       }
     },
@@ -193,6 +217,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新版 OhMyShot 已就绪。立即更新，体验最新改进与修复。你的截图将安全保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新版 OhMyShot 已就緒。立即更新，體驗最新改進與修正。你的截圖將安全保留。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい OhMyShot が利用できます。アップデートして、最新の改善と修正をご利用ください。キャプチャはそのまま保持されます。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay una nueva versión de OhMyShot. Actualiza para disfrutar de las últimas mejoras y correcciones. Tus capturas se conservarán."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une nouvelle version d’OhMyShot est disponible. Profitez des dernières améliorations et corrections. Vos captures seront conservées."
           }
         }
       }
@@ -3650,6 +3698,30 @@
             "state" : "translated",
             "value" : "开始使用"
           }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始使用"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使い始める"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "C’est parti"
+          }
         }
       }
     },
@@ -3831,6 +3903,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "为你的下一次精彩截图而来。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為你的下一次精彩截圖而來。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次の素敵なキャプチャのために。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para tu próxima gran captura."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour votre prochaine belle capture."
           }
         }
       }
@@ -4283,6 +4379,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OhMyShot 在启动时及大约每六小时通过官网检查更新，GitHub 作为备用。下载前会征求你的同意，更新提示会持续显示，直到安装新版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 在啟動時及大約每六小時透過官網檢查更新，GitHub 作為備用。下載前會徵求你的同意，更新提示會持續顯示，直到安裝新版本。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot は起動時と約6時間ごとに公式サイトで更新を確認し、接続できない場合は GitHub を使用します。ダウンロード前に確認します。更新の通知は、新しいバージョンをインストールするまで表示されます。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot busca actualizaciones al iniciarse y aproximadamente cada seis horas en su web, con GitHub como alternativa. Pide permiso antes de descargar. Los avisos permanecen hasta que instales la nueva versión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot recherche les mises à jour au lancement et environ toutes les six heures sur son site, avec GitHub en secours. Il demande votre accord avant le téléchargement. Les rappels restent visibles jusqu’à l’installation de la nouvelle version."
           }
         }
       }
@@ -5206,16 +5326,6 @@
         }
       }
     },
-    "Ready to capture" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已就绪，开始截图"
-          }
-        }
-      }
-    },
     "Recognize Formula in Image" : {
       "localizations" : {
         "es" : {
@@ -5943,6 +6053,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "明天提醒我"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明天提醒我"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明日通知する"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recordármelo mañana"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Me rappeler demain"
           }
         }
       }
@@ -6900,16 +7034,6 @@
         }
       }
     },
-    "Thanks for using OhMyShot." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "感谢使用 OhMyShot。"
-          }
-        }
-      }
-    },
     "That destination was removed, so the file can’t be deleted from here." : {
       "localizations" : {
         "es" : {
@@ -7257,6 +7381,30 @@
             "state" : "translated",
             "value" : "此更新包含体验改进与问题修复。"
           }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此更新包含體驗改進與問題修正。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアップデートには改善と不具合の修正が含まれています。"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta actualización incluye mejoras y correcciones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette mise à jour apporte des améliorations et des corrections."
+          }
         }
       }
     },
@@ -7437,6 +7585,30 @@
             "state" : "translated",
             "value" : "立即更新"
           }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即更新"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今すぐアップデート"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizar ahora"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettre à jour"
+          }
         }
       }
     },
@@ -7469,7 +7641,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新至版本 %@…"
+            "value" : "更新至 %@…"
           }
         }
       }
@@ -7719,6 +7891,30 @@
             "state" : "translated",
             "value" : "版本 %@"
           }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本 %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バージョン %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versión %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %@"
+          }
         }
       }
     },
@@ -7728,6 +7924,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新日志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日誌"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新内容"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novedades"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveautés"
           }
         }
       }
@@ -7739,6 +7959,30 @@
             "state" : "translated",
             "value" : "OhMyShot 更新日志"
           }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 更新日誌"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot の更新内容"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novedades de OhMyShot"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveautés d’OhMyShot"
+          }
         }
       }
     },
@@ -7748,6 +7992,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新日志…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日誌…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新内容…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novedades…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveautés…"
           }
         }
       }

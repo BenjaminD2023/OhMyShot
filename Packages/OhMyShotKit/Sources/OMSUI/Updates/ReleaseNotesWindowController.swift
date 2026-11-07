@@ -51,19 +51,17 @@ private struct ReleaseNotesView: View {
                             Text("Made for your next great capture.", bundle: .module).font(.system(size: 14)).opacity(0.85)
                         }.foregroundStyle(.white).padding(28)
                     }.frame(height: 200).clipShape(RoundedRectangle(cornerRadius: 18))
-                    VStack(alignment: .leading, spacing: 9) {
-                        Text("What’s New", bundle: .module).font(.system(size: 28, weight: .bold))
-                        HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 9) {
+                            Text("What’s New", bundle: .module).font(.system(size: 28, weight: .bold))
                             Text("Version \(version)", bundle: .module).font(.system(size: 12, weight: .semibold)).padding(.horizontal, 10).padding(.vertical, 5).background(.quaternary, in: Capsule())
-                            Label(String(localized: "Ready to capture", bundle: .module), systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.secondary)
                         }
+                        MarkdownNotes(markdown: markdown)
                     }
-                    MarkdownNotes(markdown: markdown)
                 }.padding(28)
             }
             Divider()
             HStack {
-                Text("Thanks for using OhMyShot.", bundle: .module).font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 Button(action: done) { Text("Let’s Go", bundle: .module) }.buttonStyle(.borderedProminent).controlSize(.large).keyboardShortcut(.defaultAction)
             }.padding(.horizontal, 28).padding(.vertical, 18)
@@ -76,7 +74,7 @@ private struct MarkdownNotes: View {
     let markdown: String
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 if block.hasPrefix("```") {
                     Text(block.components(separatedBy: "\n").dropFirst().dropLast().joined(separator: "\n"))
                         .font(.system(size: 12, design: .monospaced)).padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
@@ -88,7 +86,7 @@ private struct MarkdownNotes: View {
                     Text(ReleaseNotes.inline(content, referencesIn: markdown))
                         .font(heading > 0 ? .system(size: heading <= 2 ? 20 : 16, weight: .semibold) : .system(size: 14))
                         .lineSpacing(6).frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, heading > 0 ? 10 : 0)
+                        .padding(.top, heading > 0 && index > 0 ? 10 : 0)
                 }
             }
         }.textSelection(.enabled)

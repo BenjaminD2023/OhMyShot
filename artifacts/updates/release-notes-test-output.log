@@ -1,0 +1,466 @@
+Building for debugging...
+[Computing dependencies]
+[1 / 40] OMSOCR
+[2 / 37] OMSCore
+[4 / 39] OMSCore
+[22 / 33] OMSCaptureTests-product
+[33 / 40] OMSUITests-product
+[34 / 41] OMSCoreTests-product
+[39 / 42] OMSCoreTests-product
+Build complete! (3.43 sec)
+◇ Test run started.
+↳ Testing Library Version: 2403
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite OCRPanelFormulaTests started.
+◇ Suite PinViewTests started.
+◇ Suite CaptureCardPictureTests started.
+◇ Suite HistoryAsyncTests started.
+◇ Suite TextResultHUDTests started.
+◇ Suite PinGeometryTests started.
+◇ Suite SettingsWindowTitleTests started.
+◇ Suite LicenseWellTests started.
+◇ Suite RecordingWindowLevelTests started.
+◇ Suite OCRPanelCloudTests started.
+◇ Suite RecordingEditTests started.
+◇ Suite TableTabStopsTests started.
+◇ Suite RecordingControlBarTests started.
+◇ Suite SettingsSearchTests started.
+◇ Suite HistoryTextLoadingTests started.
+◇ Suite SystemScreenshotKeysTests started.
+◇ Suite ShortcutListTests started.
+◇ Suite PinColorTests started.
+◇ Suite HistoryAsyncBenchmarks started.
+◇ Suite QuickAccessKeyboardTests started.
+◇ Suite PinTextTests started.
+◇ Suite OCRTextWrappingTests started.
+◇ Suite HistorySelectionTests started.
+◇ Suite FileNameTrayTests started.
+◇ Suite SavePanelTests started.
+◇ Suite AcknowledgmentsDocumentTests started.
+◇ Suite OCRImageLineBreakTests started.
+◇ Test aTableReadLaterTakesVisionsLinesAndTable() started.
+◇ Test editsStayAndRevertBringsTheFormulas() started.
+◇ Test closingCancelsAPendingSearchWithoutPublishingItsResult() started.
+◇ Test formulasComeIntoTheTextOnceRead() started.
+◇ Test aNewImageDropsTheLastOnesFormulas() started.
+◇ Test theBottomLeftCardGoesBesideATallStack() started.
+◇ Test neverKeepsEveryCardUntilItIsClosed() started.
+◇ Test aResultExpiresWhenItsTimeIsUp() started.
+◇ Test theIndexRunsOffTheMainThreadAndRejectsOldUpdatesAndReleasedWork() started.
+◇ Test directoryChangesCoalesceAndOnlyTheNewestListingCanPublish() started.
+◇ Test oldSearchResultsCannotReplaceANewerQueryOrAClearedQuery() started.
+◇ Test aCardNobodyAskedForKeepsTheTimeEachStateAlwaysHad() started.
+◇ Test zoomingInAndOutKeepsThePicturesShape() started.
+◇ Test aWideCaptureShowsItsLeftEnd() started.
+◇ Test anImageWithNoTextButAFormulaHasText() started.
+◇ Test anOldTimerCannotCloseANewerResult() started.
+◇ Test lockedPinProvidesClickableUnlockBadgeAndCornerDragResizesWindow() started.
+◇ Test theBottomLeftCardStandsAboveQuickAccessCardsInItsCorner() started.
+◇ Test aScrollingCaptureShowsItsTop() started.
+◇ Test aLargerPictureIsCenteredOnItsArea() started.
+◇ Test noFormulasLeaveTheTextAsItWas() started.
+◇ Test changedPicturesUseTheReloadedFileNameAndRejectLateOldThumbnails() started.
+◇ Test atAZoomItsTextStillTakesPressesWhereItIs() started.
+◇ Test aPicturesTextTakesPressesOnlyWhereThereIsText() started.
+◇ Test cornerButtonsStandInTheTopCornersOfARoomyPin() started.
+◇ Test theExistingVoiceOverReadingTimeIsPreserved() started.
+◇ Test openInPanelChipShowsOnCopiedStatesAndInvokesCallback() started.
+◇ Test hoveringHoldsIndefinitelyAndLeavingRestartsTheWholeInterval() started.
+◇ Test aOneLineCardHasThemCenteredInItsHeight() started.
+◇ Test aCardsTextTakesPressesOnlyOnItsLines() started.
+◇ Test closingRejectsAnUncooperativeDirectoryLoader() started.
+◇ Test cornerButtonsTakeClicksOnlyWhileTheyShow() started.
+◇ Test aCaptureIsPinnedWhereItWasAtItsOwnSize() started.
+◇ Test neverDisablesTheTimerAcrossHoverAndResultReplacement() started.
+◇ Test pointAnchorsAndSpanningSelectionsChooseTheCorrectDisplay() started.
+◇ Test scrollingZoomsAndFadesWithinBounds() started.
+◇ Test zoomingKeepsThePointUnderThePointer() started.
+◇ Test theBottomLeftCardStaysInTheCornerWhenNothingStandsThere() started.
+◇ Test aResultShownUnderAStationaryPointerStartsHeld() started.
+◇ Test aPictureFromElsewhereIsCenteredAndFitsTheScreen() started.
+◇ Test aLongCardStopsAtThirtyLinesWithAnEllipsis() started.
+◇ Test copyingASelectionTakesItOrAllOfTheText() started.
+◇ Test translationAndTheCloudTakeTurns() started.
+◇ Test placementKeepsTheCardInsideDockAndMenuBarInsets() started.
+◇ Test voiceOverKeepsLongerUserChoicesAndNever() started.
+◇ Test aPointerAlreadyOverTheCardWhenItsAreaIsMadeCountsAsInside() started.
+◇ Test theDefaultChoiceIsWhatCopiedResultsAlwaysStayed() started.
+◇ Test defaultPlacementKeepsTheExistingTenPointSelectionGap() started.
+◇ Test readWithShowsTheModelsTextAndOffShowsThisMacsAgain() started.
+◇ Test bottomLeftUsesTheSelectionDisplaysVisibleEdges() started.
+◇ Test aChoiceSetsCopiedResultsAndNeverCutsTheCardsThatReportAProblem() started.
+◇ Test aNarrowPinHasCloseAloneAndATinyOneNeither() started.
+◇ Test standardWindowsTrackCommandTabActivationAndCachedLanguages() started.
+◇ Test theWindowOpensTitledAfterItsFirstPane() started.
+◇ Test aFailureSaysWhyAndKeepsThisMacsText() started.
+◇ Test anEarlyWakeDoesNotExpireTheRemainingUptime() started.
+◇ Test eachQualityHasItsOwnNames() started.
+◇ Test wrappedLinesJoinButAddressesKeepTheirLines() started.
+◇ Test eachConfiguredDelayAndHoverReleaseUseTheChosenInterval() started.
+◇ Test aRecordingLeftAloneHasNoEdits() started.
+◇ Test theMenuCopiesTheSelectionOrAllOfTheText() started.
+◇ Test withoutAUsableModelThereIsNoReadWith() started.
+◇ Test formulasReadLaterGoIntoThisMacsTextOnly() started.
+◇ Test theVolumeStaysBetweenSilenceAndFullAndMovesInWholePercents() started.
+◇ Test onlyVisibleCardsBuildExcerptsAndInvalidationHidesOldTextImmediately() started.
+◇ Test everyChangeIsAnEdit() started.
+◇ Test aSelectionAtTheBottomPlacesTheCardAboveIt() started.
+◇ Test duplicateExitEventsDoNotKeepExtendingTheCard() started.
+◇ Test indentingTabsAndPlainTextHaveNoStops() started.
+◇ Test pausedLightsResumeAndPulsesTheTime() started.
+◇ Test aQuestionStopsThePulse() started.
+◇ Test aSearchLandsOnTheRowThatHasWhatItFound() started.
+◇ Test aCardsTextBreaksWhereItsSizeWasMeasured() started.
+◇ Test handwritingVisionMissedComesFromTheCloud() started.
+◇ Test aTablesRowsLineUpOnItsColumns() started.
+◇ Test closingAHoveredCardDoesNotHoldTheNextResult() started.
+◇ Test recordingLooksAsItDid() started.
+◇ Test aNewPictureStopsTheReadingAndIsntSentByItself() started.
+◇ Test anEmptyAnswerLeavesThisMacsTextShown() started.
+◇ Test refreshingOneCaptureDoesNotInvalidateAnotherCapturesLoad() started.
+◇ Test theDimLiesUnderTheControlBarTheKeystrokesAndTheClickRings() started.
+◇ Test aRecordingWithoutSoundHasNoVolumeToChange() started.
+◇ Test eachPanesRowsHaveTitlesOfTheirOwn() started.
+◇ Test theDebugBuildsKeysNeverClash() started.
+◇ Test everyPictureIsReadWhenSettingsSaysSo() started.
+◇ Test everyRowAPaneDrawsCanBeFound() started.
+◇ Test hoverTracksTheCardAndNotItsTransparentShadowMargin() started.
+◇ Test cornerResizeAnchorsOppositeCornerAndScalesProportionally() started.
+◇ Test theQualityGoesWithTheEdit() started.
+◇ Test anUploadShortcutWithAKeyStaysListedWithoutADestination() started.
+◇ Test closingCancelsTheLoadAndRejectsEvenAnUncooperativeLoader() started.
+◇ Test aBlocksLinesTakeItsStops() started.
+◇ Test turningItOffStopsTheReading() started.
+◇ Test rgbFunctionsParse() started.
+◇ Test aReadNotificationDuringLoadingIsRetriedAndCoalesced() started.
+◇ Test aColorFromElsewhereKeepsItselfAndReadsInSRGB() started.
+◇ Test theAreaShortcutsAreListedTogetherAndInOrder() started.
+◇ Test replacingThePictureInvalidatesThePendingOldResult() started.
+◇ Test captureFormulaIsListedOnlyOnceThePackIsInstalled() started.
+◇ Test onlyAWholeColorIsAColor() started.
+◇ Test aVolumeBroughtBackToFullIsNoEdit() started.
+◇ Test theUploadShortcutsAreListedOnlyOnceADestinationExists() started.
+◇ Test returnWaitsForTheInitialIndexInsteadOfAcceptingAnEmptySearch() started.
+◇ Test aNewAssignmentTakesTheKeysFromAllPreviousActions() started.
+◇ Test clearingARecorderDoesNotChangeOtherAssignments() started.
+◇ Test aHugeTextIsCutBeforeItIsLaidOut() started.
+◇ Test everyAvailableShortcutIsListedOnceAndNoGroupIsEmpty() started.
+◇ Test ordinaryCapturesAreShownWhole() started.
+◇ Test theNewShortcutsHaveNoKeysUntilChosen() started.
+◇ Test hexColorsParseAndPrintBack() started.
+➜ Test directoryAndSearchLeaveTheMainActorFree() skipped.
+◇ Test aScreenshotKeyMovedElsewhereNoLongerClashes() started.
+◇ Test longTextIsCutAtTheLineCap() started.
+◇ Test aParagraphWrapsAtTheCap() started.
+◇ Test theChosenFormatComesFirstInThePanelsTypes() started.
+◇ Test aShortLineIsAsWideAsItself() started.
+◇ Test keysTurnedOffInKeyboardSettingsAreOhMyShots() started.
+◇ Test thePanelsOptionsAreKeptAndTheTypedExtensionPicksTheFormat() started.
+◇ Test aDropLandsBeforeOrAfterTheBrickByItsHalf() started.
+◇ Test typingAnotherQueryWhileReturnWaitsCancelsThatSubmission() started.
+◇ Test theCaretStandsBetweenBricksAndAtTheEndOfARow() started.
+◇ Test everyShortcutHasItsOwnTitleAndName() started.
+◇ Test withoutThePackNothingIsRead() started.
+◇ Test aPaneNamedByTheSearchComesFirst() started.
+◇ Test aScreenshotKeepsTheExtensionEveryOtherWayOfSavingItUses() started.
+◇ Test anOhMyShotShortcutOnAMovedKeyClashesWithItThere() started.
+◇ Test changingTheFormatTellsThePanel() started.
+◇ Test temporaryOverridesStayWithTheirWindowAndNewWindowsSnapshotTheSavedDefault() started.
+◇ Test headingsAreSemiboldAndOriginsQuieter() started.
+◇ Test addressesAreLinksWithoutThePunctuationAroundThem() started.
+◇ Test pickingAFormatRenamesTheFileToMatch() started.
+◇ Test theCardHoldsItsLinesAtItsOwnWidth() started.
+◇ Test mixedParagraphsCopyTheirExactUnicodeWhitespaceInBothModes() started.
+◇ Test changingTheWindowChoiceRebuildsActualNewlinesAndLeavesDisplayWrappingIndependent() started.
+◇ Test codeKeepsItsLinesEvenWhenTheSavedDefaultJoinsProse() started.
+◇ Test codeIsReadConservatively() started.
+◇ Test onAMacWhoseKeysWereNeverChangedMacOSTakesTheReleaseDefaults() started.
+◇ Test trailingBlankLinesAreNotShown() started.
+◇ Test theCommentTitleAndMarksAreLeftOut() started.
+◇ Test aStackWithoutAnOwnerTakesNoKeys() started.
+◇ Test commandKeysReachTheStackAsCommands() started.
+◇ Test aCardWaitingToGoOnlyComesBack() started.
+◇ Test cardsGrowWithTheirSizeAndKeepTheirShapeWithinBounds() started.
+◇ Test theStackIsAsWideAndTallAsItsCards() started.
+◇ Test thePanelTakesTheKeysOnlyWhenAskedTo() started.
+◇ Test aKeyThatMeansNothingIsNotTaken() started.
+◇ Test deletingACaptureRejectsTheResultAndItsQueuedRefresh() started.
+◇ Test aDropBelowTheLastRowLandsInIt() started.
+◇ Test theToolbarsTrashTakesWhatIsShown() started.
+◇ Test swipeFeedbackCountdownRingAndCompactShortCardLayout() started.
+◇ Test anotherKindOfFileTakesTheSystemsExtension() started.
+◇ Test selectAllTakesEveryCaptureShown() started.
+◇ Test aLicenseKeepsItsLinesInAMonospacedFace() started.
+◇ Test activePointerEntryNotifiesHoverFocusWhileStationaryHoverDoesNot() started.
+◇ Test aClickSelectsOneAndCommandClickAddsOrTakesAway() started.
+◇ Test thePanelSaysWhenItLosesTheKeys() started.
+◇ Test plainKeysReachTheStackAsCommands() started.
+◇ Test wrappingReflowsWithoutChangingTextAttributesSelectionOrUndo() started.
+◇ Test aSelectionShownBeforeLayoutLeavesUnwrappedTextAtItsStart() started.
+◇ Test severalCapturesAskBeforeTheyGo() started.
+◇ Test oneSelectedCaptureGoesWithoutAsking() started.
+✔ Suite HistoryAsyncBenchmarks passed after 0.002 seconds.
+◇ Test shiftClickSelectsTheRunFromTheLastClick() started.
+◇ Test eachWindowSnapshotsTheDefaultAndKeepsItsOverrideLocal() started.
+✔ Test withoutAUsableModelThereIsNoReadWith() passed after 0.076 seconds.
+✔ Test changingTheFormatTellsThePanel() passed after 0.285 seconds.
+✔ Test swipeFeedbackCountdownRingAndCompactShortCardLayout() passed after 0.293 seconds.
+✔ Test withoutThePackNothingIsRead() passed after 0.462 seconds.
+✔ Test mixedParagraphsCopyTheirExactUnicodeWhitespaceInBothModes() passed after 0.468 seconds.
+✔ Test changingTheWindowChoiceRebuildsActualNewlinesAndLeavesDisplayWrappingIndependent() passed after 0.496 seconds.
+✔ Test codeKeepsItsLinesEvenWhenTheSavedDefaultJoinsProse() passed after 0.505 seconds.
+✔ Test neverKeepsEveryCardUntilItIsClosed() passed after 0.508 seconds.
+✔ Test theBottomLeftCardGoesBesideATallStack() passed after 0.508 seconds.
+✔ Test zoomingInAndOutKeepsThePicturesShape() passed after 0.508 seconds.
+✔ Test anOldTimerCannotCloseANewerResult() passed after 0.508 seconds.
+✔ Test aScrollingCaptureShowsItsTop() passed after 0.508 seconds.
+✔ Test aCardNobodyAskedForKeepsTheTimeEachStateAlwaysHad() passed after 0.508 seconds.
+✔ Test aResultExpiresWhenItsTimeIsUp() passed after 0.508 seconds.
+✔ Test theBottomLeftCardStandsAboveQuickAccessCardsInItsCorner() passed after 0.508 seconds.
+✔ Test lockedPinProvidesClickableUnlockBadgeAndCornerDragResizesWindow() passed after 0.508 seconds.
+✔ Test openInPanelChipShowsOnCopiedStatesAndInvokesCallback() passed after 0.508 seconds.
+✔ Test cornerButtonsStandInTheTopCornersOfARoomyPin() passed after 0.508 seconds.
+✔ Test hoveringHoldsIndefinitelyAndLeavingRestartsTheWholeInterval() passed after 0.508 seconds.
+✔ Test aLargerPictureIsCenteredOnItsArea() passed after 0.508 seconds.
+✔ Test aCardsTextTakesPressesOnlyOnItsLines() passed after 0.508 seconds.
+✔ Test aOneLineCardHasThemCenteredInItsHeight() passed after 0.508 seconds.
+✔ Test theExistingVoiceOverReadingTimeIsPreserved() passed after 0.508 seconds.
+✔ Test aWideCaptureShowsItsLeftEnd() passed after 0.508 seconds.
+✔ Test neverDisablesTheTimerAcrossHoverAndResultReplacement() passed after 0.508 seconds.
+✔ Test cornerButtonsTakeClicksOnlyWhileTheyShow() passed after 0.508 seconds.
+✔ Test zoomingKeepsThePointUnderThePointer() passed after 0.508 seconds.
+✔ Test aPictureFromElsewhereIsCenteredAndFitsTheScreen() passed after 0.508 seconds.
+✔ Test theBottomLeftCardStaysInTheCornerWhenNothingStandsThere() passed after 0.508 seconds.
+✔ Test voiceOverKeepsLongerUserChoicesAndNever() passed after 0.508 seconds.
+✔ Test aLongCardStopsAtThirtyLinesWithAnEllipsis() passed after 0.508 seconds.
+✔ Test theDefaultChoiceIsWhatCopiedResultsAlwaysStayed() passed after 0.508 seconds.
+✔ Test defaultPlacementKeepsTheExistingTenPointSelectionGap() passed after 0.508 seconds.
+✔ Test aCaptureIsPinnedWhereItWasAtItsOwnSize() passed after 0.508 seconds.
+✔ Test anEarlyWakeDoesNotExpireTheRemainingUptime() passed after 0.508 seconds.
+✔ Test pointAnchorsAndSpanningSelectionsChooseTheCorrectDisplay() passed after 0.508 seconds.
+✔ Test copyingASelectionTakesItOrAllOfTheText() passed after 0.508 seconds.
+✔ Test standardWindowsTrackCommandTabActivationAndCachedLanguages() passed after 0.508 seconds.
+✔ Test aChoiceSetsCopiedResultsAndNeverCutsTheCardsThatReportAProblem() passed after 0.508 seconds.
+✔ Test eachQualityHasItsOwnNames() passed after 0.508 seconds.
+✔ Test aRecordingLeftAloneHasNoEdits() passed after 0.508 seconds.
+✔ Test aResultShownUnderAStationaryPointerStartsHeld() passed after 0.508 seconds.
+✔ Test aPointerAlreadyOverTheCardWhenItsAreaIsMadeCountsAsInside() passed after 0.508 seconds.
+✔ Test wrappedLinesJoinButAddressesKeepTheirLines() passed after 0.508 seconds.
+✔ Test noFormulasLeaveTheTextAsItWas() passed after 0.509 seconds.
+✔ Suite LicenseWellTests passed after 0.509 seconds.
+✔ Test theMenuCopiesTheSelectionOrAllOfTheText() passed after 0.508 seconds.
+✔ Test aNewImageDropsTheLastOnesFormulas() passed after 0.509 seconds.
+✔ Test placementKeepsTheCardInsideDockAndMenuBarInsets() passed after 0.508 seconds.
+✔ Test theVolumeStaysBetweenSilenceAndFullAndMovesInWholePercents() passed after 0.509 seconds.
+✔ Test aCardsTextBreaksWhereItsSizeWasMeasured() passed after 0.509 seconds.
+✔ Test aQuestionStopsThePulse() passed after 0.509 seconds.
+✔ Test recordingLooksAsItDid() passed after 0.509 seconds.
+✔ Test everyChangeIsAnEdit() passed after 0.509 seconds.
+✔ Test aSelectionAtTheBottomPlacesTheCardAboveIt() passed after 0.509 seconds.
+✔ Test scrollingZoomsAndFadesWithinBounds() passed after 0.509 seconds.
+✔ Test closingAHoveredCardDoesNotHoldTheNextResult() passed after 0.509 seconds.
+✔ Test eachConfiguredDelayAndHoverReleaseUseTheChosenInterval() passed after 0.509 seconds.
+✔ Test pausedLightsResumeAndPulsesTheTime() passed after 0.509 seconds.
+✔ Test duplicateExitEventsDoNotKeepExtendingTheCard() passed after 0.509 seconds.
+✔ Test eachPanesRowsHaveTitlesOfTheirOwn() passed after 0.509 seconds.
+✔ Test hoverTracksTheCardAndNotItsTransparentShadowMargin() passed after 0.509 seconds.
+✔ Test theDimLiesUnderTheControlBarTheKeystrokesAndTheClickRings() passed after 0.509 seconds.
+✔ Suite RecordingControlBarTests passed after 0.510 seconds.
+✔ Test anUploadShortcutWithAKeyStaysListedWithoutADestination() passed after 0.509 seconds.
+✔ Test theDebugBuildsKeysNeverClash() passed after 0.509 seconds.
+✔ Test atAZoomItsTextStillTakesPressesWhereItIs() passed after 0.509 seconds.
+✔ Test everyRowAPaneDrawsCanBeFound() passed after 0.509 seconds.
+✔ Suite RecordingWindowLevelTests passed after 0.510 seconds.
+✔ Test aSearchLandsOnTheRowThatHasWhatItFound() passed after 0.509 seconds.
+✔ Test theAreaShortcutsAreListedTogetherAndInOrder() passed after 0.509 seconds.
+✔ Test aColorFromElsewhereKeepsItselfAndReadsInSRGB() passed after 0.509 seconds.
+✔ Test rgbFunctionsParse() passed after 0.509 seconds.
+✔ Test theQualityGoesWithTheEdit() passed after 0.509 seconds.
+✔ Test captureFormulaIsListedOnlyOnceThePackIsInstalled() passed after 0.509 seconds.
+✔ Test clearingARecorderDoesNotChangeOtherAssignments() passed after 0.509 seconds.
+✔ Test aParagraphWrapsAtTheCap() passed after 0.509 seconds.
+✔ Test aHugeTextIsCutBeforeItIsLaidOut() passed after 0.509 seconds.
+✔ Test aNarrowPinHasCloseAloneAndATinyOneNeither() passed after 0.510 seconds.
+✔ Test aRecordingWithoutSoundHasNoVolumeToChange() passed after 0.509 seconds.
+✔ Test cornerResizeAnchorsOppositeCornerAndScalesProportionally() passed after 0.509 seconds.
+✔ Test longTextIsCutAtTheLineCap() passed after 0.509 seconds.
+✔ Suite PinGeometryTests passed after 0.511 seconds.
+✔ Test hexColorsParseAndPrintBack() passed after 0.509 seconds.
+✔ Test keysTurnedOffInKeyboardSettingsAreOhMyShots() passed after 0.509 seconds.
+✔ Test thePanelsOptionsAreKeptAndTheTypedExtensionPicksTheFormat() passed after 0.509 seconds.
+✔ Test aShortLineIsAsWideAsItself() passed after 0.509 seconds.
+✔ Test onlyAWholeColorIsAColor() passed after 0.509 seconds.
+✔ Suite PinColorTests passed after 0.511 seconds.
+✔ Test theUploadShortcutsAreListedOnlyOnceADestinationExists() passed after 0.510 seconds.
+✔ Test theNewShortcutsHaveNoKeysUntilChosen() passed after 0.510 seconds.
+✔ Test everyShortcutHasItsOwnTitleAndName() passed after 0.510 seconds.
+✔ Test aVolumeBroughtBackToFullIsNoEdit() passed after 0.510 seconds.
+✔ Test pickingAFormatRenamesTheFileToMatch() passed after 0.510 seconds.
+✔ Test theChosenFormatComesFirstInThePanelsTypes() passed after 0.510 seconds.
+✔ Test aScreenshotKeyMovedElsewhereNoLongerClashes() passed after 0.510 seconds.
+✔ Test theCaretStandsBetweenBricksAndAtTheEndOfARow() passed after 0.510 seconds.
+✔ Test anOhMyShotShortcutOnAMovedKeyClashesWithItThere() passed after 0.510 seconds.
+✔ Test codeIsReadConservatively() passed after 0.510 seconds.
+✔ Test aNewAssignmentTakesTheKeysFromAllPreviousActions() passed after 0.510 seconds.
+✔ Test aDropLandsBeforeOrAfterTheBrickByItsHalf() passed after 0.510 seconds.
+✔ Test aScreenshotKeepsTheExtensionEveryOtherWayOfSavingItUses() passed after 0.510 seconds.
+✔ Test aCardWaitingToGoOnlyComesBack() passed after 0.510 seconds.
+✔ Test theCardHoldsItsLinesAtItsOwnWidth() passed after 0.510 seconds.
+✔ Test onAMacWhoseKeysWereNeverChangedMacOSTakesTheReleaseDefaults() passed after 0.510 seconds.
+✔ Test everyAvailableShortcutIsListedOnceAndNoGroupIsEmpty() passed after 0.510 seconds.
+✔ Test commandKeysReachTheStackAsCommands() passed after 0.510 seconds.
+✔ Test selectAllTakesEveryCaptureShown() passed after 0.509 seconds.
+✔ Test theStackIsAsWideAndTallAsItsCards() passed after 0.509 seconds.
+✔ Test activePointerEntryNotifiesHoverFocusWhileStationaryHoverDoesNot() passed after 0.509 seconds.
+✔ Test severalCapturesAskBeforeTheyGo() passed after 0.509 seconds.
+✔ Test aSelectionShownBeforeLayoutLeavesUnwrappedTextAtItsStart() passed after 0.509 seconds.
+✔ Test thePanelSaysWhenItLosesTheKeys() passed after 0.509 seconds.
+✔ Test theToolbarsTrashTakesWhatIsShown() passed after 0.509 seconds.
+✔ Test aDropBelowTheLastRowLandsInIt() passed after 0.509 seconds.
+✔ Test aClickSelectsOneAndCommandClickAddsOrTakesAway() passed after 0.509 seconds.
+✔ Test aKeyThatMeansNothingIsNotTaken() passed after 0.509 seconds.
+✔ Test trailingBlankLinesAreNotShown() passed after 0.510 seconds.
+✔ Test plainKeysReachTheStackAsCommands() passed after 0.509 seconds.
+✔ Test thePanelTakesTheKeysOnlyWhenAskedTo() passed after 0.510 seconds.
+✔ Test oneSelectedCaptureGoesWithoutAsking() passed after 0.509 seconds.
+✔ Test aStackWithoutAnOwnerTakesNoKeys() passed after 0.510 seconds.
+✔ Test anotherKindOfFileTakesTheSystemsExtension() passed after 0.510 seconds.
+✔ Test ordinaryCapturesAreShownWhole() passed after 0.510 seconds.
+✔ Test cardsGrowWithTheirSizeAndKeepTheirShapeWithinBounds() passed after 0.510 seconds.
+✔ Test eachWindowSnapshotsTheDefaultAndKeepsItsOverrideLocal() passed after 0.509 seconds.
+✔ Test bottomLeftUsesTheSelectionDisplaysVisibleEdges() passed after 0.511 seconds.
+✔ Test aPaneNamedByTheSearchComesFirst() passed after 0.510 seconds.
+✔ Test wrappingReflowsWithoutChangingTextAttributesSelectionOrUndo() passed after 0.509 seconds.
+✔ Test shiftClickSelectsTheRunFromTheLastClick() passed after 0.509 seconds.
+✔ Suite ShortcutListTests passed after 0.511 seconds.
+✔ Suite SystemScreenshotKeysTests passed after 0.512 seconds.
+✔ Suite RecordingEditTests passed after 0.512 seconds.
+✔ Suite SettingsSearchTests passed after 0.512 seconds.
+✔ Suite FileNameTrayTests passed after 0.511 seconds.
+✔ Suite PinTextTests passed after 0.512 seconds.
+✔ Suite SavePanelTests passed after 0.511 seconds.
+✔ Suite OCRTextWrappingTests passed after 0.512 seconds.
+✔ Suite CaptureCardPictureTests passed after 0.512 seconds.
+✔ Suite HistorySelectionTests passed after 0.512 seconds.
+✔ Suite TextResultHUDTests passed after 0.512 seconds.
+✔ Suite QuickAccessKeyboardTests passed after 0.512 seconds.
+✔ Test indentingTabsAndPlainTextHaveNoStops() passed after 0.517 seconds.
+✔ Test aTablesRowsLineUpOnItsColumns() passed after 0.522 seconds.
+✔ Test aBlocksLinesTakeItsStops() passed after 0.522 seconds.
+✔ Suite TableTabStopsTests passed after 0.523 seconds.
+✔ Test headingsAreSemiboldAndOriginsQuieter() passed after 0.522 seconds.
+✔ Test addressesAreLinksWithoutThePunctuationAroundThem() passed after 0.522 seconds.
+✔ Test theCommentTitleAndMarksAreLeftOut() passed after 0.522 seconds.
+✔ Test aLicenseKeepsItsLinesInAMonospacedFace() passed after 0.523 seconds.
+✔ Suite AcknowledgmentsDocumentTests passed after 0.524 seconds.
+✔ Test aTableReadLaterTakesVisionsLinesAndTable() passed after 0.524 seconds.
+✔ Test translationAndTheCloudTakeTurns() passed after 0.524 seconds.
+✔ Test editsStayAndRevertBringsTheFormulas() passed after 0.525 seconds.
+✔ Test anEmptyAnswerLeavesThisMacsTextShown() passed after 0.524 seconds.
+✔ Test everyPictureIsReadWhenSettingsSaysSo() passed after 0.524 seconds.
+✔ Test turningItOffStopsTheReading() passed after 0.524 seconds.
+✔ Test handwritingVisionMissedComesFromTheCloud() passed after 0.524 seconds.
+✔ Test aPicturesTextTakesPressesOnlyWhereThereIsText() passed after 0.532 seconds.
+✔ Suite PinViewTests passed after 0.532 seconds.
+✔ Test readWithShowsTheModelsTextAndOffShowsThisMacsAgain() passed after 0.548 seconds.
+✔ Test anImageWithNoTextButAFormulaHasText() passed after 0.549 seconds.
+✔ Test aFailureSaysWhyAndKeepsThisMacsText() passed after 0.548 seconds.
+✔ Test formulasComeIntoTheTextOnceRead() passed after 0.549 seconds.
+✔ Suite OCRPanelFormulaTests passed after 0.549 seconds.
+✔ Test closingRejectsAnUncooperativeDirectoryLoader() passed after 0.550 seconds.
+✔ Test closingCancelsAPendingSearchWithoutPublishingItsResult() passed after 0.551 seconds.
+✔ Test aNewPictureStopsTheReadingAndIsntSentByItself() passed after 0.550 seconds.
+✔ Test closingCancelsTheLoadAndRejectsEvenAnUncooperativeLoader() passed after 0.567 seconds.
+✔ Test temporaryOverridesStayWithTheirWindowAndNewWindowsSnapshotTheSavedDefault() passed after 0.567 seconds.
+✔ Suite OCRImageLineBreakTests passed after 0.568 seconds.
+✔ Test theIndexRunsOffTheMainThreadAndRejectsOldUpdatesAndReleasedWork() passed after 0.568 seconds.
+✔ Test theWindowOpensTitledAfterItsFirstPane() passed after 0.568 seconds.
+✔ Suite SettingsWindowTitleTests passed after 0.569 seconds.
+✔ Test directoryChangesCoalesceAndOnlyTheNewestListingCanPublish() passed after 0.583 seconds.
+✔ Test onlyVisibleCardsBuildExcerptsAndInvalidationHidesOldTextImmediately() passed after 0.583 seconds.
+✔ Test oldSearchResultsCannotReplaceANewerQueryOrAClearedQuery() passed after 0.584 seconds.
+✔ Test changedPicturesUseTheReloadedFileNameAndRejectLateOldThumbnails() passed after 0.584 seconds.
+✔ Suite HistoryAsyncTests passed after 0.585 seconds.
+✔ Test formulasReadLaterGoIntoThisMacsTextOnly() passed after 0.590 seconds.
+✔ Suite OCRPanelCloudTests passed after 0.591 seconds.
+✔ Test deletingACaptureRejectsTheResultAndItsQueuedRefresh() passed after 0.657 seconds.
+✔ Test replacingThePictureInvalidatesThePendingOldResult() passed after 0.690 seconds.
+✔ Test aReadNotificationDuringLoadingIsRetriedAndCoalesced() passed after 0.690 seconds.
+✔ Test returnWaitsForTheInitialIndexInsteadOfAcceptingAnEmptySearch() passed after 0.732 seconds.
+✔ Test typingAnotherQueryWhileReturnWaitsCancelsThatSubmission() passed after 0.732 seconds.
+✔ Test refreshingOneCaptureDoesNotInvalidateAnotherCapturesLoad() passed after 0.764 seconds.
+✔ Suite HistoryTextLoadingTests passed after 0.765 seconds.
+✔ Test run with 163 tests in 27 suites passed after 0.765 seconds.
+◇ Test run started.
+↳ Testing Library Version: 2403
+↳ Target Platform: arm64e-apple-macos14.0
+◇ Suite ReleaseNotesTests started.
+◇ Suite BundleDeclarationTests started.
+◇ Test resolvesChangelogReferenceLinks() started.
+◇ Test translatedNotesMustMatchTheRequestedVersion() started.
+◇ Test extractsExactVersionAndReferences() started.
+◇ Test mirrorOnlyKnownReleaseArchives() started.
+◇ Test theAppOffersItselfInOpenWithForEveryImageType() started.
+◇ Test updatesAreSignedAndScheduledByTheApp() started.
+◇ Test onlyReleaseBuildsLookForUpdates() started.
+◇ Test theAppAnswersToTheSchemeItIsBuiltWith() started.
+◇ Test theShareExtensionIsAShareServiceForPictures() started.
+◇ Test welcomeOncePerNewBuild() started.
+◇ Test theShareExtensionKnowsItsHostAndItsScheme() started.
+◇ Test theShareExtensionAnswersToTheAppOfItsOwnConfiguration() started.
+◇ Test theShareExtensionMayWriteExactlyTheShareInbox() started.
+◇ Test theShareExtensionIsNamedTheSameInEveryConfiguration() started.
+◇ Test theAppOwnsItsProjectFiles() started.
+✔ Test welcomeOncePerNewBuild() passed after 0.001 seconds.
+✔ Test translatedNotesMustMatchTheRequestedVersion() passed after 0.001 seconds.
+✔ Test theShareExtensionIsAShareServiceForPictures() passed after 0.001 seconds.
+✔ Test extractsExactVersionAndReferences() passed after 0.001 seconds.
+✔ Test theShareExtensionKnowsItsHostAndItsScheme() passed after 0.001 seconds.
+✔ Test theAppAnswersToTheSchemeItIsBuiltWith() passed after 0.001 seconds.
+✔ Test theAppOwnsItsProjectFiles() passed after 0.001 seconds.
+✔ Test theAppOffersItselfInOpenWithForEveryImageType() passed after 0.001 seconds.
+✔ Test updatesAreSignedAndScheduledByTheApp() passed after 0.001 seconds.
+✔ Test mirrorOnlyKnownReleaseArchives() passed after 0.001 seconds.
+✔ Test onlyReleaseBuildsLookForUpdates() passed after 0.001 seconds.
+✔ Test theShareExtensionIsNamedTheSameInEveryConfiguration() passed after 0.001 seconds.
+✔ Test theShareExtensionMayWriteExactlyTheShareInbox() passed after 0.001 seconds.
+✔ Test resolvesChangelogReferenceLinks() passed after 0.001 seconds.
+✔ Suite ReleaseNotesTests passed after 0.001 seconds.
+✔ Test theShareExtensionAnswersToTheAppOfItsOwnConfiguration() passed after 0.001 seconds.
+✔ Suite BundleDeclarationTests passed after 0.001 seconds.
+✔ Test run with 15 tests in 2 suites passed after 0.001 seconds.
+Building for debugging...
+[Using on-disk description]
+warning: missing creator for mutated node: ('/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/mlx-swift_Cmlx.bundle/Contents/MacOS')
+warning: /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/steel_attention.dia Could not read serialized diagnostics file: Error Domain=NSCocoaErrorDomain Code=260 "The file “steel_attention.dia” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/steel_attention.dia, NSURL=file:///Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/steel_attention.dia, NSUnderlyingError=0x7aa2d6d740 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+error: CompileMetalFile /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/steel_attention.metal failed with a nonzero exit code. Command line:     cd /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c -target air64-apple-macos14.0 -I/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/include -F/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.2.sdk -fmetal-math-mode\=fast -fmetal-math-fp32-functions\=fast -serialize-diagnostics /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/steel_attention.dia -o /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/steel_attention.air -MMD -MT dependencies -MF /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/steel_attention.dat /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/steel/attn/kernels/steel_attention.metal
+warning: /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/searchsorted.dia Could not read serialized diagnostics file: Error Domain=NSCocoaErrorDomain Code=260 "The file “searchsorted.dia” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/searchsorted.dia, NSURL=file:///Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/searchsorted.dia, NSUnderlyingError=0x7aa25245d0 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+error: CompileMetalFile /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/searchsorted.metal failed with a nonzero exit code. Command line:     cd /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c -target air64-apple-macos14.0 -I/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/include -F/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.2.sdk -fmetal-math-mode\=fast -fmetal-math-fp32-functions\=fast -serialize-diagnostics /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/searchsorted.dia -o /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/searchsorted.air -MMD -MT dependencies -MF /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/searchsorted.dat /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/searchsorted.metal
+warning: /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rms_norm.dia Could not read serialized diagnostics file: Error Domain=NSCocoaErrorDomain Code=260 "The file “rms_norm.dia” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rms_norm.dia, NSURL=file:///Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rms_norm.dia, NSUnderlyingError=0x7aa25245a0 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+error: CompileMetalFile /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/rms_norm.metal failed with a nonzero exit code. Command line:     cd /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c -target air64-apple-macos14.0 -I/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/include -F/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.2.sdk -fmetal-math-mode\=fast -fmetal-math-fp32-functions\=fast -serialize-diagnostics /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rms_norm.dia -o /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rms_norm.air -MMD -MT dependencies -MF /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rms_norm.dat /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/rms_norm.metal
+warning: /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rope.dia Could not read serialized diagnostics file: Error Domain=NSCocoaErrorDomain Code=260 "The file “rope.dia” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rope.dia, NSURL=file:///Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rope.dia, NSUnderlyingError=0x7aa25245d0 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+error: CompileMetalFile /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/rope.metal failed with a nonzero exit code. Command line:     cd /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c -target air64-apple-macos14.0 -I/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/include -F/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.2.sdk -fmetal-math-mode\=fast -fmetal-math-fp32-functions\=fast -serialize-diagnostics /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rope.dia -o /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rope.air -MMD -MT dependencies -MF /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/rope.dat /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/rope.metal
+warning: /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/scaled_dot_product_attention.dia Could not read serialized diagnostics file: Error Domain=NSCocoaErrorDomain Code=260 "The file “scaled_dot_product_attention.dia” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/scaled_dot_product_attention.dia, NSURL=file:///Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/scaled_dot_product_attention.dia, NSUnderlyingError=0x7aa25245a0 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+error: CompileMetalFile /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/scaled_dot_product_attention.metal failed with a nonzero exit code. Command line:     cd /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c -target air64-apple-macos14.0 -I/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/include -F/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.2.sdk -fmetal-math-mode\=fast -fmetal-math-fp32-functions\=fast -serialize-diagnostics /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/scaled_dot_product_attention.dia -o /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/scaled_dot_product_attention.air -MMD -MT dependencies -MF /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/scaled_dot_product_attention.dat /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/scaled_dot_product_attention.metal
+warning: /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/random.dia Could not read serialized diagnostics file: Error Domain=NSCocoaErrorDomain Code=260 "The file “random.dia” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/random.dia, NSURL=file:///Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/random.dia, NSUnderlyingError=0x7aa25245d0 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+error: CompileMetalFile /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/random.metal failed with a nonzero exit code. Command line:     cd /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c -target air64-apple-macos14.0 -I/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/include -F/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.2.sdk -fmetal-math-mode\=fast -fmetal-math-fp32-functions\=fast -serialize-diagnostics /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/random.dia -o /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/random.air -MMD -MT dependencies -MF /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/random.dat /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/random.metal
+warning: /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/layer_norm.dia Could not read serialized diagnostics file: Error Domain=NSCocoaErrorDomain Code=260 "The file “layer_norm.dia” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/layer_norm.dia, NSURL=file:///Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/layer_norm.dia, NSUnderlyingError=0x7aa2524510 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+error: CompileMetalFile /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/layer_norm.metal failed with a nonzero exit code. Command line:     cd /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c -target air64-apple-macos14.0 -I/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/include -F/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.2.sdk -fmetal-math-mode\=fast -fmetal-math-fp32-functions\=fast -serialize-diagnostics /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/layer_norm.dia -o /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/layer_norm.air -MMD -MT dependencies -MF /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/layer_norm.dat /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/layer_norm.metal
+warning: /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/conv.dia Could not read serialized diagnostics file: Error Domain=NSCocoaErrorDomain Code=260 "The file “conv.dia” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/conv.dia, NSURL=file:///Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/conv.dia, NSUnderlyingError=0x7aa25244e0 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+error: CompileMetalFile /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/conv.metal failed with a nonzero exit code. Command line:     cd /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c -target air64-apple-macos14.0 -I/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/include -F/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.2.sdk -fmetal-math-mode\=fast -fmetal-math-fp32-functions\=fast -serialize-diagnostics /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/conv.dia -o /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/conv.air -MMD -MT dependencies -MF /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/conv.dat /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/conv.metal
+warning: /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/dot.dia Could not read serialized diagnostics file: Error Domain=NSCocoaErrorDomain Code=260 "The file “dot.dia” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/dot.dia, NSURL=file:///Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/dot.dia, NSUnderlyingError=0x7aa2524570 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+error: CompileMetalFile /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/dot.metal failed with a nonzero exit code. Command line:     cd /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c -target air64-apple-macos14.0 -I/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/include -F/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.2.sdk -fmetal-math-mode\=fast -fmetal-math-fp32-functions\=fast -serialize-diagnostics /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/dot.dia -o /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/dot.air -MMD -MT dependencies -MF /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/dot.dat /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/dot.metal
+warning: /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/arg_reduce.dia Could not read serialized diagnostics file: Error Domain=NSCocoaErrorDomain Code=260 "The file “arg_reduce.dia” couldn’t be opened because there is no such file." UserInfo={NSFilePath=/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/arg_reduce.dia, NSURL=file:///Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/arg_reduce.dia, NSUnderlyingError=0x7aa2d6ed60 {Error Domain=NSPOSIXErrorDomain Code=2 "No such file or directory"}}
+error: CompileMetalFile /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/arg_reduce.metal failed with a nonzero exit code. Command line:     cd /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/metal -c -target air64-apple-macos14.0 -I/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug/include -F/Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Products/Debug -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.2.sdk -fmetal-math-mode\=fast -fmetal-math-fp32-functions\=fast -serialize-diagnostics /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/arg_reduce.dia -o /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/arg_reduce.air -MMD -MT dependencies -MF /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/out/Intermediates.noindex/mlx-swift.build/Debug/mlx-swift_Cmlx-b.build/Metal/arg_reduce.dat /Users/bobby/Developer/OhMyShot/Packages/OhMyShotVLM/.build/checkouts/mlx-swift/Source/Cmlx/mlx-generated/metal/arg_reduce.metal
+error: Build failed
+error: fatalError

@@ -7,7 +7,16 @@ public enum ReleaseNotes {
         guard let start = lines.firstIndex(where: { $0 == "## [\(version)]" || $0.hasPrefix("## [\(version)] - ") }) else { return nil }
         let end = lines[(start + 1)...].firstIndex(where: { $0.hasPrefix("## [") }) ?? lines.endIndex
         let references = lines.filter { $0.hasPrefix("[") && $0.contains("]: ") }
-        return (Array(lines[(start + 1)..<end]) + references).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = lines[(start + 1)..<end].filter { !($0.hasPrefix("[") && $0.contains("]: ")) }
+            .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return nil }
+        return ([body] + references).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Use a translation only when it contains this release; an older translation must not hide newer notes.
+    public static func localizedSection(_ localized: String?, fallback: String, version: String) -> String? {
+        if let localized, let notes = section(in: localized, version: version), !notes.isEmpty { return notes }
+        return section(in: fallback, version: version)
     }
 
     /// Resolve reference-style links as well as ordinary inline Markdown, using the whole document's definitions.

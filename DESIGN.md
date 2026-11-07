@@ -966,7 +966,10 @@ Studio's speed changes, redaction in the movie, and a GIF from Studio are not bu
 
 What’s New opens once per installed build (also on the first launch with this feature) and can be reopened from the
 status menu. A 640 × 720 pt, resizable native window (minimum 540 × 540) contains a scrolling document and a fixed
-footer with Thanks for using OhMyShot and the default Let’s Go button. The 200 pt banner has 18 pt corners, a blue-to-teal
+footer containing only the trailing default Let’s Go button. The 200 pt banner has 18 pt corners, a blue-to-teal
 gradient, a translucent viewfinder and white type; an optional bundled ReleaseBanner replaces its background. The body
 has 28 pt insets, a 28 pt title, a version pill, and selectable Markdown with 20/16 pt headings and 14 pt body type.
+The version pill stands alone, with 14 pt to the notes and no extra top padding on the first heading. Subsequent
+headings keep their 10 pt top padding. The window and reminders support all six app languages; localized release-note
+files are selected by the app language and fall back to the English section for versions not yet translated.
 Colors follow the system outside the banner. Notes and the banner work offline. Downloads and restarts require consent.

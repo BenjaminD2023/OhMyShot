@@ -36,6 +36,10 @@ tag, and CI builds every push to main the way it does (Releasing from CI, below)
 
 `CHANGELOG.md` is bundled in the signed application. On the first launch with this feature, and once per higher build
 number afterwards, What’s New opens with the exact installed version's section. The menu's What’s New… reopens it.
+Translations live in `App/ReleaseNotes-<language>.md` (`zh-Hans`, `zh-Hant`, `ja`, `es`, `fr`), with the same
+`## [<version>]` sections as CHANGELOG.md. When releasing, move each translated Unreleased section under the release
+version too. The app reads its selected language's matching version, falling back to CHANGELOG.md when missing;
+it never substitutes a different version's notes. English remains the source of truth.
 Notes work offline and don't execute HTML or JavaScript. Headings, paragraphs, bullet lists, inline Markdown (bold,
 italic, links, inline code), and fenced code blocks are supported. Other Markdown constructs stay readable as text.
 The default banner is a blue/teal native illustration. To customize it, add a `ReleaseBanner` image set to
