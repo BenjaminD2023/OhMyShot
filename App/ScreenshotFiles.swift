@@ -314,7 +314,8 @@ final class ScreenshotFiles {
                 Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to copy it")
                 return
             }
-            return PasteboardWriter.write(png: data, image: image)
+            PasteboardWriter.write(png: data, image: image)
+            return
         }
         Task {
             guard let loaded = await Self.load(url) else {
@@ -333,17 +334,21 @@ final class ScreenshotFiles {
     ///   - historyFile: the capture's file in the history, which is the clipboard's file when Settings leave it as it is
     ///     and the history keeps captures.
     ///   - withFile: false for a picture that is to go alone (a pin's).
-    func copy(_ picture: Picture, png: Data?, name: String, scale: Double?, historyFile: URL? = nil, withFile: Bool = true) async {
+    @discardableResult
+    func copy(_ picture: Picture, png: Data?, name: String, scale: Double?, historyFile: URL? = nil, withFile: Bool = true) async -> Bool {
         let output = output
         var shown = picture.image
         var data = png
         if output.changesPicture {
-            guard let processed = await PictureExport.clipboardPicture(shown, pixelsPerPoint: scale, output: output) else { return NSSound.beep() }
+            guard let processed = await PictureExport.clipboardPicture(shown, pixelsPerPoint: scale, output: output) else {
+                NSSound.beep()
+                return false
+            }
             shown = processed.image
             data = processed.png
         }
         if data == nil { data = try? await ImageExporter.encode(shown, as: .png) }
-        guard let data else { return NSSound.beep() }
+        guard let data else { NSSound.beep(); return false }
         var file: URL?
         if withFile, settings.clipboardFormat == .fileAndPicture {
             // The history's file only where it stays: with History off, a capture leaves it when its card closes.
@@ -354,7 +359,7 @@ final class ScreenshotFiles {
                 sweepConvertedCopies()
             }
         }
-        PasteboardWriter.write(png: data, image: shown, fileURL: file)
+        return PasteboardWriter.write(png: data, image: shown, fileURL: file)
     }
 
     @concurrent private static func decode(_ data: Data) async -> CGImage? {

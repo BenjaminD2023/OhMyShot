@@ -172,6 +172,7 @@ extension CompositionRoot {
                       isHidden: { [weak self] in self?.updates?.status.waiting == nil }) { [weak self] in self?.updates?.checkNow() },
             ],
             appEntries: [
+                .init(title: String(localized: "Getting Started…")) { [weak self] in self?.replayOnboarding() },
                 .init(title: String(localized: "Join Discord")) { NSWorkspace.shared.open(CommunityInvite.discord) },
                 .init(
                     title: String(localized: "Check for Updates…"),

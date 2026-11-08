@@ -53,6 +53,7 @@ public struct SettingsDependencies {
     public let urlScheme: String
     public let relaunch: () -> Void
     public let openHistory: () -> Void
+    public let showOnboarding: () -> Void
     /// How many captures a retention would delete now, so Settings can ask before shortening it.
     public let expiredCount: (HistoryRetention) -> Int
     public let backgrounds: Backgrounds
@@ -133,6 +134,7 @@ public struct SettingsDependencies {
         urlScheme: String,
         relaunch: @escaping () -> Void,
         openHistory: @escaping () -> Void,
+        showOnboarding: @escaping () -> Void = {},
         expiredCount: @escaping (HistoryRetention) -> Int,
         destinations: UploadDestinationStore,
         uploadRecords: UploadRecordStore,
@@ -148,6 +150,7 @@ public struct SettingsDependencies {
         self.urlScheme = urlScheme
         self.relaunch = relaunch
         self.openHistory = openHistory
+        self.showOnboarding = showOnboarding
         self.expiredCount = expiredCount
         self.backgrounds = backgrounds
         self.destinations = destinations
@@ -286,6 +289,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             host(GeneralSettingsView(
                 settings: dependencies.settings,
                 openHistory: dependencies.openHistory,
+                showOnboarding: dependencies.showOnboarding,
                 expiredCount: dependencies.expiredCount,
                 updates: dependencies.updates
             ))

@@ -54,6 +54,7 @@ extension CompositionRoot {
             capture: capture
         )
         let aboutHooks = DebugAboutHooks(makeSettings: makeSettings, capture: capture)
+        let onboardingHooks = DebugOnboardingHooks(captureWindow: capture)
         #endif
         return AutomationController(scheme: urlScheme, settings: settings) { [weak self] command in
             self?.perform(command)
@@ -64,6 +65,7 @@ extension CompositionRoot {
             if modelPackHooks.handle(url) { return true }
             if updateHooks.handle(url) { return true }
             if aboutHooks.handle(url) { return true }
+            if onboardingHooks.handle(url) { return true }
             hooks.handle(url)
             return true
             #else
@@ -78,7 +80,7 @@ extension CompositionRoot {
         return [
             .init(title: String(localized: "Log Displays")) { hooks.logDisplays() },
             .init(title: String(localized: "Log Active Resources")) { hooks.logResources() },
-            .init(title: String(localized: "Show Onboarding")) { [weak self] in self?.showOnboarding() },
+            .init(title: String(localized: "Show Onboarding")) { [weak self] in self?.replayOnboarding() },
             .init(title: String(localized: "Relaunch")) { Relauncher.relaunch() },
         ]
         #else

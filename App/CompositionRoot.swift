@@ -14,6 +14,8 @@ import UniformTypeIdentifiers
 /// Builds the app's services once and wires them together. Feature modules never import each other;
 /// they meet here, through closures.
 final class CompositionRoot {
+    // Read legacy installation markers before start() installs this launch's default shortcuts.
+    private let onboardingProgress = OnboardingProgress()
     let settings = SettingsStore()
     let permissions = PermissionCenter()
     let displays = DisplayTopology()
@@ -128,6 +130,8 @@ final class CompositionRoot {
     private var automation: AutomationController?
     private(set) var settingsWindow: SettingsWindowController?
     private var onboardingWindow: OnboardingWindowController?
+    private var onboardingCapture: UUID?
+    private var onboardingApplication: NSRunningApplication?
     /// The invitation to MMFoundation's Discord: counted as captures are kept, shown once, at a later launch.
     private let communityInvite = CommunityInvite()
     private var communityInviteWindow: CommunityInviteWindowController?
@@ -356,7 +360,7 @@ final class CompositionRoot {
             self?.files.fileToHandOver(file, scale: scale) ?? file
         }
         annotations.copyPicture = { [weak self] image, png, name, scale in
-            await self?.files.copy(.init(image), png: png, name: name, scale: scale)
+            _ = await self?.files.copy(.init(image), png: png, name: name, scale: scale)
         }
 
         displays.onChange = { [weak self] _ in
@@ -381,15 +385,6 @@ final class CompositionRoot {
             // first: the app is listed in the shareable content only once it has windows.
             overlay.prepare()
             shareableContent.refresh()
-            // Once, after the permission (often a relaunch later): while macOS answers its screenshot keys, the
-            // shortcuts that have them never fire.
-            if !OnboardingWindowController.hasShownShortcuts,
-               SystemScreenshotKeys.clashes(hotKeys: SystemScreenshotKeys.readHotKeys(), bindings: SystemScreenshotKeys.currentBindings())
-                .contains(where: \.takenByMacOS) {
-                showOnboarding(at: .shortcuts)
-            }
-        } else {
-            showOnboarding()
         }
         // On the next turn, once what launched the app (a URL, a file to annotate) has begun.
         Task { @MainActor [weak self] in self?.offerCommunityInvite() }
@@ -397,6 +392,8 @@ final class CompositionRoot {
 
     /// Keeps edits still open in the editor before the app quits.
     func prepareForTermination() {
+        onboardingWindow?.preserveProgress()
+        quickAccess.dismissFirstCaptureHint()
         annotations.keepAll()
         // A card waiting under Undo goes to the Trash as it would have a moment later.
         quickAccess.finishTrashingNow()
@@ -448,15 +445,119 @@ final class CompositionRoot {
         if settings.historyRetention != .never { textReader.readNow() }
     }
 
-    /// An open onboarding window is brought forward as it is. Scripted checks pass `keys`, macOS's hot keys and
-    /// OhMyShot's shortcuts to show in place of the Mac's, which replaces an open window.
+    /// Ordinary launches and Finder reopens can resume a guide. URL/file launches call neither: their operation
+    /// comes first, and a later ordinary open is the next opportunity. No permissions prompt is repeated at launch.
+    @discardableResult
+    func presentOnboardingIfNeeded() -> Bool {
+        guard onboardingProgress.shouldPresentAutomatically else { return false }
+        guard onboardingCapture == nil else { return true }
+        showGuide(at: onboardingProgress.step)
+        return true
+    }
+
+    func replayOnboarding() {
+        guard onboardingCapture == nil else { return }
+        if let onboardingWindow, onboardingWindow.isTour { return onboardingWindow.show() }
+        onboardingWindow?.preserveProgress()
+        onboardingWindow?.close()
+        onboardingWindow = nil
+        onboardingProgress.replay()
+        showGuide(at: .welcome)
+    }
+
+    private func rememberOnboardingApplication() {
+        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            onboardingApplication = front
+        }
+    }
+
+    private func showGuide(at step: OnboardingProgress.Step, message: String? = nil) {
+        if let onboardingWindow { return onboardingWindow.show() }
+        rememberOnboardingApplication()
+        let controller = OnboardingWindowController(
+            permissions: permissions, startingAt: step, mode: .tour, captureMessage: message,
+            cardCorner: settings.quickAccessCorner,
+            stepChanged: { [weak self] in self?.onboardingProgress.move(to: $0) },
+            openShortcuts: { [weak self] in self?.showSettings(.shortcuts) },
+            capture: { [weak self] in self?.beginOnboardingCapture() },
+            relaunch: { Relauncher.relaunch() }
+        )
+        controller.onDismiss = { [weak self] in
+            self?.onboardingProgress.skip()
+            self?.onboardingApplication = nil
+        }
+        keepOnboarding(controller)
+    }
+
+    /// The guide's button and Capture Area's real shortcut share this path, including cancellation and retry.
+    @discardableResult
+    func beginOnboardingCaptureIfReady() -> Bool {
+        if onboardingCapture != nil { return true }
+        guard onboardingWindow?.isTour == true, onboardingWindow?.currentStep == .capture else { return false }
+        beginOnboardingCapture()
+        return true
+    }
+
+    private func beginOnboardingCapture() {
+        guard onboardingCapture == nil else { return }
+        permissions.refresh([.screenRecording])
+        guard permissions.status(of: .screenRecording) == .granted else {
+            onboardingProgress.move(to: .permission)
+            onboardingWindow?.closeForCapture()
+            onboardingWindow = nil
+            showGuide(at: .permission)
+            return
+        }
+        // Don't let another active operation turn an unrelated capture into the guide's result.
+        guard !overlay.isActive, !recordings.isRecording, !recordings.isCountingDown, !scrolling.isCapturing else { return NSSound.beep() }
+        let attempt = UUID()
+        onboardingCapture = attempt
+        onboardingProgress.move(to: .capture)
+        onboardingWindow?.closeForCapture()
+        onboardingWindow = nil
+        settingsWindow?.close()
+        quickAccess.dismissFirstCaptureHint()
+        if let application = onboardingApplication, !application.isTerminated { application.activate() }
+        // Let WindowServer remove the guide and restore the previous app before freezing the screen.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard let self, onboardingCapture == attempt else { return }
+            captures.captureArea(followUp: CaptureFollowUp(deliverCard: { [weak self] item, isCopied in
+                guard let self else { return }
+                didCapture(item, forceQuickAccess: true)
+                guard onboardingCapture == attempt else { return }
+                quickAccess.showFirstCaptureHint(for: item.id, isCopied: isCopied)
+            }, done: { [weak self] entry in
+                guard let self, onboardingCapture == attempt else { return }
+                onboardingCapture = nil
+                if entry != nil {
+                    onboardingProgress.complete()
+                    onboardingApplication = nil
+                } else {
+                    showGuide(at: .capture, message: String(localized: "No capture was completed. Try again, or skip the guide. If access just changed, relaunch OhMyShot."))
+                }
+            }))
+        }
+    }
+
+    /// An operation without screen access opens the permission page. Active tours keep their progress and
+    /// continue from there; returning users see just the repair. Debug checks can substitute the shortcut data.
     func showOnboarding(
         at step: OnboardingWindowController.Step = .permission,
         keys: (hotKeys: () -> [String: Any]?, bindings: @MainActor () -> [SystemScreenshotKeys.Binding])? = nil
     ) {
         if keys != nil, let open = onboardingWindow {
+            open.preserveProgress()
             open.close()
             onboardingWindow = nil
+        }
+        if keys == nil, onboardingProgress.shouldPresentAutomatically {
+            onboardingProgress.move(to: .permission)
+            if let open = onboardingWindow {
+                open.closeForCapture()
+                onboardingWindow = nil
+            }
+            return showGuide(at: .permission)
         }
         let controller = onboardingWindow ?? OnboardingWindowController(
             permissions: permissions,
@@ -465,6 +566,10 @@ final class CompositionRoot {
             bindings: keys?.bindings ?? SystemScreenshotKeys.currentBindings,
             relaunch: { Relauncher.relaunch() }
         )
+        keepOnboarding(controller)
+    }
+
+    private func keepOnboarding(_ controller: OnboardingWindowController) {
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self, weak controller] in
             if self?.onboardingWindow === controller { self?.onboardingWindow = nil }
         }
@@ -548,6 +653,7 @@ final class CompositionRoot {
             urlScheme: urlScheme,
             relaunch: { Relauncher.relaunch() },
             openHistory: { [weak self] in self?.showHistory() },
+            showOnboarding: { [weak self] in self?.replayOnboarding() },
             expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
             destinations: uploads.destinations,
             uploadRecords: uploads.records,

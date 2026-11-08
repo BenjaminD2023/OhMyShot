@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var root: CompositionRoot?
     private var pendingURLs: [(url: URL, senderPID: pid_t?)] = []
     private var pendingFiles: [URL] = []
+    private var receivedLaunchInput = false
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.make(settingsTarget: self)
@@ -39,11 +40,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingURLs.removeAll()
         root.open(pendingFiles)
         pendingFiles.removeAll()
+        // LaunchServices may deliver the opening URL or file just after didFinishLaunching. Give queued
+        // opening events a turn to arrive before deciding whether this was an ordinary launch.
+        DispatchQueue.main.async { [weak self, weak root] in
+            guard let self, let root, self.root === root, !receivedLaunchInput else { return }
+            root.presentOnboardingIfNeeded()
+        }
     }
 
     /// Files opened with the app from Finder: projects, and pictures to mark up.
     func application(_ application: NSApplication, open urls: [URL]) {
         let files = urls.filter(\.isFileURL)
+        if !files.isEmpty { receivedLaunchInput = true }
         if let root {
             root.open(files)
         } else {
@@ -92,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Opening the app again (from Finder, Spotlight, or the Dock) shows Settings. The menu bar icon
     /// may be hidden by the user or pushed into the menu bar's overflow, so this is the way back in.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        root?.showSettings()
+        if root?.presentOnboardingIfNeeded() != true { root?.showSettings() }
         return false
     }
 
@@ -101,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let string = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
             let url = URL(string: string)
         else { return }
+        receivedLaunchInput = true
         let senderPID = event.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr)).map { pid_t($0.int32Value) }
         if let root {
             root.handle(url: url, senderPID: senderPID)

@@ -3147,6 +3147,46 @@
         }
       }
     },
+    "Getting Started…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Getting Started…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Primeros pasos…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Premiers pas…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使い始める…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新手引导…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新手導覽…"
+          }
+        }
+      }
+    },
     "Hide" : {
       "localizations" : {
         "es" : {
@@ -4233,6 +4273,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無聲音"
+          }
+        }
+      }
+    },
+    "No capture was completed. Try again, or skip the guide. If access just changed, relaunch OhMyShot." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No capture was completed. Try again, or skip the guide. If access just changed, relaunch OhMyShot."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se completó la captura. Inténtalo de nuevo u omite la guía. Si acabas de cambiar el permiso, reinicia OhMyShot."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune capture n’a été réalisée. Réessayez ou passez le guide. Si l’autorisation vient de changer, relancez OhMyShot."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撮影は完了しませんでした。もう一度試すか、ガイドをスキップしてください。権限を変更した直後なら OhMyShot を再起動してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有完成截图。可以重试或跳过引导；如果刚开启权限，请重新启动 OhMyShot。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還沒有完成截圖。可以重試或略過導覽；如果剛開啟權限，請重新啟動 OhMyShot。"
           }
         }
       }
