@@ -973,3 +973,11 @@ The version pill stands alone, with 14 pt to the notes and no extra top padding 
 headings keep their 10 pt top padding. The window and reminders support all six app languages; localized release-note
 files are selected by the app language and fall back to the English section for versions not yet translated.
 Colors follow the system outside the banner. Notes and the banner work offline. Downloads and restarts require consent.
+
+## Distribution acceptance
+
+The public website download and update archive stay on `ohmyshot.org` / `www.ohmyshot.org`. The website transports
+signed bytes; signature enforcement remains in Sparkle. A release is ready for mainland promotion only after the
+actual public download contains the website updater and the site, complete download, and an installed update have
+passed on mainland connections without VPN. `Scripts/check-distribution.py` verifies transport, public-key signatures
+and packaged updater configuration; it cannot certify the user's network or successful installation. See Docs/release.md.

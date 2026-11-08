@@ -32,6 +32,27 @@ tag, and CI builds every push to main the way it does (Releasing from CI, below)
 - Debug builds have no production feed. `ohmyshot-dev://debug/updates-preview` shows a **simulated** 0.2.0 menu reminder
   and the Unreleased notes for visual QA, without checking or downloading an update.
 
+### Mainland distribution acceptance
+
+The website's `/download` and both installation guides must use the website archive route, including when release
+lookup fails. A GitHub redirect is a failure, even if it works on the maintainer's connection. The published 0.1.0
+archive still has a GitHub `SUFeedURL`; changing the website cannot change that installed binary. Publish a higher
+version/build containing the website updater before mainland promotion. Users of 0.1.0 who cannot reach GitHub need
+one manual download from the website to migrate; do not overwrite the signed 0.1.0 asset in place.
+
+Run `python3 Scripts/check-distribution.py` on a mainland Mac with VPN/TUN disabled. It checks both home pages,
+refuses external download redirects, downloads the complete browser and updater archives, compares them, checks
+range responses, verifies the signed feed and archive against `Config/Info.plist`'s public key, and inspects the
+updater settings inside the actual downloaded app. It needs Xcode's Swift compiler and Python 3, no private key or
+Keychain access. Results and files go to `build/distribution-check/` (or `--output <directory>`). A legacy app or
+external redirect makes it exit nonzero. HTTP proxies are bypassed; a system VPN/TUN must be disabled separately.
+
+Record ISP, city, date and the report for China Telecom, Unicom and Mobile. An overseas `loc` in the diagnostic is
+not mainland evidence. A successful transport check is not proof of installation: on a disposable copy of an older
+website-updater release, accept a signed newer update, restart and confirm the installed build and permissions.
+Do not use the working Dev app for that replacement. If mainland site reachability fails, arrange a measured
+mainland/Hong Kong origin or CDN with the site maintainer and repeat these checks before promotion.
+
 ### The post-update window
 
 `CHANGELOG.md` is bundled in the signed application. On the first launch with this feature, and once per higher build
