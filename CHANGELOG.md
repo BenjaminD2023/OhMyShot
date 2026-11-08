@@ -26,6 +26,7 @@ Each entry links its implementation commits or merged pull request and credits v
 ### Added
 
 - Window opens a chooser that previews every app's windows on any display or Space, full-screen games included, without bringing the app forward or leaving its Space; Capture Window opens it directly. ([0946850]; by [@fzlzjerry])
+- A getting-started guide for new installations walks through allowing Screen Recording, freeing the screenshot keys macOS still takes, and a real first capture, whose Quick Access card gets a hint naming its Copy, Save, and Annotate buttons. The status menu and Settings › General replay it. ([bf3ce5e]; by [@fzlzjerry])
 
 ### Fixed
 
@@ -177,6 +178,7 @@ Each entry links its implementation commits or merged pull request and credits v
 [81a46de]: https://github.com/MMFoundation/OhMyShot/commit/81a46defc0b498eba30e6ebd086116ff06ffadb7
 [7304cae]: https://github.com/MMFoundation/OhMyShot/commit/7304cae0a7e7330c69022d49f463d610aedf63a2
 [0946850]: https://github.com/MMFoundation/OhMyShot/commit/0946850a6bc20896c0d6646526d7a3a08735e0be
+[bf3ce5e]: https://github.com/MMFoundation/OhMyShot/commit/bf3ce5ed6403c19a926a5d48e1fc6a68c576f362
 [c999cc0]: https://github.com/MMFoundation/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/MMFoundation/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/MMFoundation/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287
