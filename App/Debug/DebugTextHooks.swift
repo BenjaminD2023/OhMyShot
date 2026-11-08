@@ -77,9 +77,23 @@ extension DebugHooks {
                     }
                 }
             } else if let display = displays.layout.primary {
+                // stall=<seconds>: Vision's reading takes that much longer, for text-escape to stop.
+                textCapture.debugStall = Self.parameter("stall", in: url).flatMap(Double.init).map { .seconds($0) }
                 let rect = CGRect(x: display.frame.midX - 200, y: display.frame.midY - 150, width: 400, height: 300)
-                Task { await textCapture.recognize(region: rect, joinLines: join, copiesToClipboard: false) }
+                let started = ContinuousClock.now
+                Task { [textCapture] in
+                    await textCapture.recognize(region: rect, joinLines: join, copiesToClipboard: false) { text in
+                        Log.app.notice("debug.text-test read \(text.map { "\($0.count) characters" } ?? "nothing", privacy: .public) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+                    }
+                    textCapture.debugStall = nil
+                }
             }
+        case "text-escape":
+            // Escape while the highlight shows, as its hot key delivers it (only the window server's match of the key is
+            // left out); the log says whether Escape was taken from the app in front before.
+            let taken = textCapture.takesEscape
+            let pressed = textCapture.pressEscape()
+            Log.app.notice("debug.text-escape: Escape taken \(taken, privacy: .public), pressed \(pressed, privacy: .public), taken after \(textCapture.takesEscape, privacy: .public)")
         case "formula-test":
             // Capture Formula without touching the clipboard: path=<a picture> reads that file; without it, the same
             // centered region as capture-test. Needs the formula pack; the log says what was read, and how fast.

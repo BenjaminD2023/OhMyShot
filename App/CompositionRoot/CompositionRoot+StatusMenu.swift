@@ -166,6 +166,8 @@ extension CompositionRoot {
                 },
             ],
             appEntries: [
+                .init(title: String(localized: "Getting Started…")) { [weak self] in self?.replayOnboarding() },
+                .init(title: String(localized: "What’s New…")) { [updates] in updates.showReleaseNotes() },
                 .init(title: String(localized: "Join Discord")) { NSWorkspace.shared.open(CommunityInvite.discord) },
             ],
             openSettings: { [weak self] in self?.showSettings() },

@@ -362,9 +362,9 @@ final class CaptureCoordinator {
         Task { await captureArea(rect, appName: app, windowTitle: title, followUp: followUp) }
     }
 
-    /// Hover a window and click it: captured on its own, with its rounded corners and shadow.
+    /// Preview an app's window, including full-screen Spaces, then capture it independently.
     func captureWindow(followUp: CaptureFollowUp = .none) {
-        begin(mode: .window, followUp: followUp)
+        begin(mode: .windowPicker, followUp: followUp)
     }
 
     /// Captures the whole display under the pointer.
@@ -435,9 +435,10 @@ final class CaptureCoordinator {
     #if DEBUG
     /// Delivers a drawn picture as if it were a capture (history and a card), never touching the
     /// clipboard: for scripted checks that must not read the screen.
-    func deliverDemo(_ image: CGImage, displayID: CGDirectDisplayID) async {
+    @discardableResult
+    func deliverDemo(_ image: CGImage, displayID: CGDirectDisplayID, followUp: CaptureFollowUp = .none) async -> HistoryItem? {
         let frame = CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: CGRect(x: 0, y: 0, width: CGFloat(image.width) / 2, height: CGFloat(image.height) / 2))
-        await deliver(frame, appName: "Demo", copiesToClipboard: false)
+        return await deliver(frame, appName: "Demo", copiesToClipboard: false, followUp: followUp)
     }
     #endif
 
@@ -624,6 +625,7 @@ final class CaptureCoordinator {
         let probe = LatencyProbe("capture.deliver")
         // The picture still to be put on the clipboard, with the file beside it, once the file is there.
         var waiting: (picture: ScreenshotFiles.Picture, png: Data, scale: Double)?
+        var copiedAt: Int?
         do {
             let png = try await ImageExporter.encode(frame.image, as: .png)
             // Marks drawn in place, and the background chosen for every screenshot, are drawn in first. The
@@ -652,7 +654,9 @@ final class CaptureCoordinator {
             if copies, settings.clipboardFormat == .fileAndPicture {
                 waiting = (picture, shown.png, Double(scale))
             } else if copies {
-                await files.copy(picture, png: shown.png, name: name, scale: Double(scale))
+                if await files.copy(picture, png: shown.png, name: name, scale: Double(scale)) {
+                    copiedAt = NSPasteboard.general.changeCount
+                }
             }
             var entry = try history.add(
                 data: png,
@@ -674,7 +678,9 @@ final class CaptureCoordinator {
             }
             if let pending = waiting {
                 waiting = nil
-                await files.copy(pending.picture, png: pending.png, name: (entry.fileName as NSString).deletingPathExtension, scale: pending.scale, historyFile: history.fileURL(for: entry))
+                if await files.copy(pending.picture, png: pending.png, name: (entry.fileName as NSString).deletingPathExtension, scale: pending.scale, historyFile: history.fileURL(for: entry)) {
+                    copiedAt = NSPasteboard.general.changeCount
+                }
             }
             var item = QuickAccessItem(
                 entry, fileURL: history.fileURL(for: entry),
@@ -698,7 +704,11 @@ final class CaptureCoordinator {
             case .pin: onPin?(frame, entry)
             case .copy, .save, .upload, nil: break
             }
-            if carded { onCaptured?(item) }
+            if carded {
+                if let deliverCard = followUp.deliverCard {
+                    deliverCard(item, copiedAt == NSPasteboard.general.changeCount)
+                } else { onCaptured?(item) }
+            }
             onKept?(entry)
             followUp.finish(entry)
             return entry
@@ -736,6 +746,9 @@ final class CaptureCoordinator {
 /// shortcut's action waiting for the capture.
 struct CaptureFollowUp {
     var action: CaptureAction?
+    /// A request's own card delivery, before retention cleanup. The first-use practice shows one card even when
+    /// the user's usual setting hides them; every other capture uses the coordinator's normal delivery.
+    var deliverCard: ((QuickAccessItem, _ isCopied: Bool) -> Void)?
     /// Told the capture's record once it is kept, or nil when none is: it was cancelled, or failed.
     var done: ((HistoryItem?) -> Void)?
     /// Whether saving the capture asks for the file's name first, when Settings say to. Someone at the keyboard is
@@ -744,8 +757,9 @@ struct CaptureFollowUp {
 
     static let none = CaptureFollowUp()
 
-    init(action: CaptureAction? = nil, asksForName: Bool = true, done: ((HistoryItem?) -> Void)? = nil) {
+    init(action: CaptureAction? = nil, asksForName: Bool = true, deliverCard: ((QuickAccessItem, Bool) -> Void)? = nil, done: ((HistoryItem?) -> Void)? = nil) {
         self.action = action
+        self.deliverCard = deliverCard
         self.asksForName = asksForName
         self.done = done
     }

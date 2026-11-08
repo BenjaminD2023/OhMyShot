@@ -29,6 +29,8 @@ targets:
     sources:
       - path: App
         type: syncedFolder
+      - path: CHANGELOG.md
+        buildPhase: resources
       - path: Config
         buildPhase: none
       - path: LICENSE

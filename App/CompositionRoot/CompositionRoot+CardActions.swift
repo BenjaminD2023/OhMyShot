@@ -16,8 +16,9 @@ import UniformTypeIdentifiers
 extension CompositionRoot {
     // MARK: Kept captures
 
-    func didCapture(_ item: QuickAccessItem) {
-        if settings.afterCapture(for: item.kind).showsQuickAccess {
+    func didCapture(_ item: QuickAccessItem, forceQuickAccess: Bool = false) {
+        retryUpdateReminderAfterActivity()
+        if forceQuickAccess || settings.afterCapture(for: item.kind).showsQuickAccess {
             quickAccess.add(item)
         } else {
             // With history off and no card, nothing else may hold on to it: a screenshot already went to the clipboard

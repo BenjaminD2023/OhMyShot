@@ -133,5 +133,6 @@ struct BundleDeclarationTests {
         #expect(info["SUPublicEDKey"] as? String == "hKR+RgxaJihsYToYeaJSyUtwJE0hBH+QR2sRKVcEH5I=")
         #expect(info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
         #expect(info["SURequireSignedFeed"] as? Bool == true)
+        #expect(info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)
     }
 }

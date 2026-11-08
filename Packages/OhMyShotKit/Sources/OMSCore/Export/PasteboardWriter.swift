@@ -20,7 +20,8 @@ public enum PasteboardWriter {
     ///   - fileURL: also offered as a file when given, for apps that paste files rather than images.
     ///   - pasteboard: the clipboard; scripted checks and tests write to one of their own.
     @MainActor
-    public static func write(png: Data, image: CGImage, fileURL: URL? = nil, to pasteboard: NSPasteboard = .general) {
+    @discardableResult
+    public static func write(png: Data, image: CGImage, fileURL: URL? = nil, to pasteboard: NSPasteboard = .general) -> Bool {
         let item = NSPasteboardItem()
         item.setData(png, forType: .png)
         if image.width * image.height <= largestTIFF {
@@ -30,7 +31,7 @@ public enum PasteboardWriter {
             item.setString(fileURL.absoluteString, forType: .fileURL)
         }
         pasteboard.clearContents()
-        pasteboard.writeObjects([item])
+        return pasteboard.writeObjects([item])
     }
 
     /// Puts a file on the clipboard, as Finder's Copy does: a recording, which pastes into chats, mail,

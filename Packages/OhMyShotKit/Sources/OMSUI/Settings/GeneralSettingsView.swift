@@ -6,6 +6,7 @@ import SwiftUI
 struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
     let openHistory: () -> Void
+    var showOnboarding: () -> Void = {}
     let expiredCount: (HistoryRetention) -> Int
     var updates: SettingsDependencies.Updates? = nil
     @State private var launchAtLogin = false
@@ -133,6 +134,11 @@ struct GeneralSettingsView: View {
                     confirmsReset = true
                 } label: {
                     Text("Reset to Default Settings…", bundle: .module)
+                }
+            }
+            SettingsRow(String(localized: "Getting Started", bundle: .module)) {
+                Button(action: showOnboarding) {
+                    Text("Show the Getting Started Guide…", bundle: .module)
                 }
             }
         }

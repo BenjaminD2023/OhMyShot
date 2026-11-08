@@ -18,6 +18,8 @@ public struct CardCountdown: Equatable, Sendable {
         case upload
         /// The annotation editor has the capture open, and keeps its marks over the card's picture when it closes.
         case editor
+        /// The first-use hint is teaching the controls on this card.
+        case onboarding
     }
 
     /// The least a held card has left when its last hold ends, in seconds (or its whole time, when that is shorter).

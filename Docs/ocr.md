@@ -231,8 +231,20 @@ Still open:
 - **Cold start, measured in the app**: the first recognition after a relaunch took 315 ms against
   290 ms warm, so a process pays only about 25 ms. The very first recognition ever made by the app took
   more than 10 s (two attempts timed out at 10 s); the system prepares the model once for a new client.
-  Capture Text therefore warms the model while the person is selecting and allows 30 s per request,
-  keeping the selection highlighted meanwhile.
+  Capture Text therefore warms the model while the person is selecting and allows 30 s per request (60 s since
+  2026-11-07, below), keeping the selection highlighted meanwhile.
+- **Escape stops a reading** (2026-11-07): the system's preparation can outlast even 30 s. A Capture Text on
+  macOS 27.2 waited on Neural Engine compiles of Vision's models, one of 16 s and then another still running when
+  the 30 s ran out, with the overlay long gone, so nothing of the app's had the key. While the highlight shows,
+  it takes Escape as a Carbon hot key (`EscapeHotKey`, no permission, every other key left to the app in front,
+  so a ⌘V pressed early isn't lost); a panel of the app's that holds the keyboard (the overlay of a capture
+  started meanwhile) is given the Escape instead. Capture Formula and Translate Area stop the same way: the
+  highlight goes without a sound, a run of the text reader is ended, and nothing is copied or shown. With Escape
+  there, the limit went from 30 s to 60 s, per request and per reading, for everything that reads with Capture
+  Text's pipeline (Translate Area, the Recognized Text window, Capture Text from Shortcuts and the URL API): a
+  reading after the compiled models are gone (a cache cleaner, a macOS update, a fresh install) compiles each of
+  its two passes' models for about 18 s, one after the other, so about 37 s in all, which 30 s failed nearly
+  every time. The text reader already allowed 60 s.
 
 ## The OCR panel (`VisionPipeline.analyze`, 2026-10-08)
 

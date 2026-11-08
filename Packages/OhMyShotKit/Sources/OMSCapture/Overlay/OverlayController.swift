@@ -84,6 +84,8 @@ public final class OverlayController {
     public enum Mode: Sendable {
         case area
         case window
+        /// Start directly in the app preview chooser, without capturing or covering every display.
+        case windowPicker
     }
 
     /// What one session is begun with besides its purpose: given to `begin`, gone again when the session ends.
@@ -201,6 +203,7 @@ public final class OverlayController {
     private var frameLeases: [ActiveResources.Lease] = []
     private var windowLease: ActiveResources.Lease?
     private var windows: [WindowTarget] = []
+    private var windowPicker: WindowPickerController?
     private var purpose: Purpose = .screenshot
     /// This app's windows are no window to scroll: a scrolling capture's stream never sees them, and Auto-scroll
     /// would scroll what is behind them.
@@ -305,6 +308,15 @@ public final class OverlayController {
         let pointer = NSEvent.mouseLocation
         let layout = topology.layout
         let pointerDisplay = layout.display(at: pointer) ?? layout.primary
+        if mode == .windowPicker, let pointerDisplay, purpose == .screenshot || purpose == .record {
+            hasInput = true
+            windowLease = ActiveResources.shared.acquire(.window)
+            showWindowPicker(on: pointerDisplay)
+            visible.end()
+            frozen.end()
+            beginning.end()
+            return
+        }
 
         // The window list is read only when windows are the target; area capture never pays for it.
         windows = mode == .window ? WindowCatalog.snapshot(layout: layout, excludingPID: windowsExcluded) : []
@@ -402,9 +414,8 @@ public final class OverlayController {
     private func takeInput(pointerDisplay: DisplayInfo?) {
         guard isActive, !hasInput else { return }
         hasInput = true
-        // Active, so the overlay owns the keyboard and the pointer. The app stays an accessory, so no
-        // Dock icon appears, and the overlay covers the menu bar while it is ours.
-        NSApp.activate()
+        // A nonactivating panel can take key focus without activating OhMyShot. Activating the app
+        // here can leave a game's full-screen Space or make the game minimize on loss of focus.
         // On a frozen screen this comes a moment after the session began: the crosshair goes where the
         // pointer is now.
         let pointer = NSEvent.mouseLocation
@@ -433,16 +444,15 @@ public final class OverlayController {
         }
         // A screenshot draws its own crosshair and magnifier, but over the bar the system's arrow shows; copying text
         // keeps the system crosshair, from the start rather than the first move. Only once the overlay has input, so an
-        // early move never hides the pointer; and the pointer is the overlay's whether or not the activation asked for
-        // above has come. The arrow, for the bar and for the moment the hidden pointer comes back, in place of whatever
+        // early move never hides the pointer. A nonactivating key panel owns selection input while the
+        // previous app remains active. The arrow, for the bar and for the moment the hidden pointer comes back, in place of whatever
         // cursor was set last (an earlier text session's crosshair).
         BackgroundCursor.allow(true)
         (purpose == .text ? NSCursor.crosshair : NSCursor.arrow).set()
         cursorVisibility.begin(drawsPointer: purpose != .text, overControls: wantsSystemCursor(at: pointer))
         for entry in entries.values { entry.view.beginCanvasCursorOwnership(at: pointer) }
         CATransaction.flush()
-        // A frozen overlay asks for activation a moment after the shortcut, not while handling it: the log
-        // says whether it was granted, which only a real shortcut press can show.
+        // Log key focus after AppKit has processed the nonactivating panel's request.
         let session = self.session
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(150))
@@ -656,7 +666,7 @@ public final class OverlayController {
                 frame = try await capturer.captureDisplay(display, showsCursor: showsCursor)
                 #endif
                 capturing?.end()
-                guard isActive, session == self.session else { return }
+                guard isActive, session == self.session, windowPicker == nil else { return }
                 entries[display.id]?.view.show(frame, frozen: holdsStill)
                 frameLeases.append(ActiveResources.shared.acquire(.frameBuffer))
                 if index == 0 {
@@ -673,7 +683,7 @@ public final class OverlayController {
                 }
             } catch {
                 Log.capture.error("Overlay frame for display \(display.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-                if index == 0, isActive, session == self.session { end(.cancelled) }
+                if index == 0, isActive, session == self.session, windowPicker == nil { end(.cancelled) }
                 return
             }
         }
@@ -717,7 +727,7 @@ public final class OverlayController {
     /// The first frame normally lands within about 50 ms. If it has not after half a second, macOS is
     /// most likely asking the user to confirm Screen Recording, and the overlay would hide that prompt.
     private func watchdog(session: Int) {
-        guard isActive, session == self.session, !firstFrameArrived else { return }
+        guard isActive, session == self.session, !firstFrameArrived, windowPicker == nil else { return }
         Log.capture.notice("Overlay dismissed: no frame after 500 ms")
         end(.cancelled)
     }
@@ -842,6 +852,8 @@ public final class OverlayController {
     private func end(_ outcome: Outcome) {
         guard isActive else { return }
         cursorVisibility.end()
+        windowPicker?.close()
+        windowPicker = nil
         isActive = false
         options = SessionOptions()
         allInOneMode = nil
@@ -867,8 +879,9 @@ public final class OverlayController {
         frameLeases.removeAll()
         windowLease = nil
         windows = []
-        // A frozen overlay that never took the keyboard has nothing to give back.
-        if hasInput, let previousApp {
+        // Nonactivating panels return key focus themselves. Only yield activation if a child control
+        // actually activated us; reactivating the old app unconditionally can switch Spaces again.
+        if hasInput, NSApp.isActive, let previousApp, !previousApp.isActive {
             NSApp.yieldActivation(to: previousApp)
             previousApp.activate(from: .current, options: [])
         }
@@ -1269,17 +1282,81 @@ extension OverlayController: OverlayViewDelegate {
         VoiceOver.announce(announcement, from: view)
     }
 
+    func overlayViewDidRequestWindowPicker(_ view: OverlayView) {
+        guard isActive, windowPicker == nil, drag == nil, !isAnnotating,
+              purpose == .screenshot || purpose == .record else { return }
+        if let mode = allInOneMode, mode != .record {
+            overlayView(view, didSwitchTo: .window)
+            return
+        }
+        showWindowPicker(on: view.display, returningTo: view.mode == .area ? .area : .window)
+    }
+
+    private func showWindowPicker(on display: DisplayInfo, returningTo mode: Mode? = nil) {
+        let records = purpose == .record || allInOneMode == .record
+        if records {
+            if isAllInOne { onWillSetUpRecording?() }
+            didSetUpRecording = true
+        }
+        let layout = topology.layout
+        let picker = WindowPickerController(
+            layout: layout, recording: records ? recordingChoices : nil,
+            preferredProcessID: previousApp?.processIdentifier, offersBack: mode != nil,
+            load: { [capturer] in try await capturer.availableWindows(in: layout) },
+            preview: { [capturer] target in try await capturer.windowPreview(target) }
+        )
+        picker.onCancel = { [weak self] in self?.cancel() }
+        if let mode, let completion {
+            let purpose = purpose, options = options, chosenMode = allInOneMode
+            picker.onBack = { [weak self] in
+                guard let self else { return }
+                self.completion = nil
+                end(.cancelled)
+                begin(mode: mode, purpose: purpose, options: options, completion: completion)
+                allInOneMode = chosenMode
+                for entry in entries.values { entry.view.markPurpose(chosenMode.flatMap(AllInOneBar.Choice.init(purpose:))) }
+            }
+        }
+        picker.onRecordingChange = { [weak self] target, choices in
+            guard let self, let display = target.display(in: topology.layout) else { return }
+            recordingChoices = choices
+            onRecordingSetupChange?(.window(target), display, choices)
+        }
+        picker.onChoose = { [weak self] target, choices in
+            guard let self, isActive else { return }
+            if let choices, let display = target.display(in: topology.layout) {
+                end(.record(.window(target), display: display, choices: choices))
+            } else if choices == nil {
+                end(.window(target, modifiers: []))
+            } else {
+                end(.cancelled)
+            }
+        }
+        windowPicker = picker
+        // Choosing an off-Space window needs no screen-sized overlay and no frame over the wrong app.
+        cursorVisibility.end()
+        NSCursor.arrow.set()
+        for entry in entries.values {
+            entry.panel.orderOut(nil)
+            entry.view.clear()
+        }
+        frameLeases.removeAll()
+        cancelTextDetections()
+        picker.show(on: display)
+    }
+
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {
+        let targetDisplay = target.display(in: topology.layout) ?? view.display
         if isAllInOne, let mode = allInOneMode {
             switch mode {
-            case .record: setUpRecording(on: view.display, target: .window(target))
+            case .record: setUpRecording(on: targetDisplay, target: .window(target))
             case .scroll, .text, .screenshot: endAllInOne(mode, target.frame.intersection(view.display.frame), on: view.display)
             }
             return
         }
         switch purpose {
         case .record:
-            startRecordingSetup(on: view.display, target: .window(target))
+            startRecordingSetup(on: targetDisplay, target: .window(target))
         case .scroll:
             // A window's frame where it is on screen: its title bar and toolbar stay put, as a header does.
             startScrollingSetup(on: view.display, area: target.frame)

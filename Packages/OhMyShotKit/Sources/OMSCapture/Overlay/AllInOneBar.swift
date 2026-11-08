@@ -202,6 +202,14 @@ final class AllInOneBar: NSView {
         modesDivider.isHidden = !shows
     }
 
+    /// Window means an app preview for independent captures, direct pointing for visible-region tools.
+    func usesWindowPreview(_ usesPreview: Bool) {
+        let help = usesPreview ? String(localized: "Choose an app and preview its window", bundle: .module)
+            : String(localized: "Click a window to capture it (Space)", bundle: .module)
+        buttons[.window]?.toolTip = help
+        buttons[.window]?.setAccessibilityHelp(help)
+    }
+
     /// Marks how the next capture is chosen: an area or a window (the screen is taken at once, never held).
     func select(_ choice: Choice) {
         guard choice == .area || choice == .window else { return }
@@ -272,7 +280,7 @@ final class AllInOneBar: NSView {
         case .area:
             ("rectangle.dashed", String(localized: "Area", bundle: .module), String(localized: "Drag to capture an area", bundle: .module))
         case .window:
-            ("macwindow", String(localized: "Window", bundle: .module), String(localized: "Click a window to capture it (Space)", bundle: .module))
+            ("macwindow", String(localized: "Window", bundle: .module), String(localized: "Choose an app and preview its window", bundle: .module))
         case .fullscreen:
             ("display", String(localized: "Screen", bundle: .module), String(localized: "Capture this whole screen", bundle: .module))
         case .text:

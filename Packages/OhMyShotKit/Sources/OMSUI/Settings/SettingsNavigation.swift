@@ -51,6 +51,9 @@ extension SettingsTab {
                 SettingsSearchRow(String(localized: "Reset", bundle: .module), terms: [
                     String(localized: "Reset to Default Settings…", bundle: .module),
                 ]),
+                SettingsSearchRow(String(localized: "Getting Started", bundle: .module), terms: [
+                    String(localized: "Show the Getting Started Guide…", bundle: .module),
+                ]),
             ]
         case .capture:
             [

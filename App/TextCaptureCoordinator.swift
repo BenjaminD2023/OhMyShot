@@ -21,11 +21,14 @@ final class TextCaptureCoordinator {
     private let displays: DisplayTopology
     private let capturer: ScreenCapturer
     private let overlay: OverlayController
-    /// A model's first use can take seconds; the highlight stays on meanwhile.
+    /// A process's first reading after its compiled models are gone (a cache cleaner, a macOS update, a fresh install)
+    /// compiles them on the Neural Engine first: about 18 s for each of the two passes, one after the other, so about
+    /// 37 s in all, and longer while other apps compile. The highlight stays on meanwhile, and Escape stops the reading
+    /// (Docs/ocr.md › Escape stops a reading); at 30 s nearly every such reading failed and copied nothing.
     private let pipeline: VisionPipeline = {
         var options = VisionPipeline.Options.preferred()
-        options.timeout = .seconds(30)
-        options.overallTimeout = .seconds(30)
+        options.timeout = .seconds(60)
+        options.overallTimeout = .seconds(60)
         options.trace = { step in Log.performance.notice("ocr.pipeline \(step, privacy: .public)") }
         return VisionPipeline(options: options)
     }()
@@ -34,7 +37,7 @@ final class TextCaptureCoordinator {
     private let highlight = TextSelectionHighlight()
     private let lens = TranslationLens()
     private let hud = TextResultHUD()
-    private var captureReading: Task<Void, Never>?
+    private var selectionReading: Task<Void, Never>?
     /// Keep the compatibility choice after the current isolated recognizer stops answering.
     /// This is process state, not a saved preference; a relaunch tries the current recognizer again.
     private var usesCompatibilityTextReader = false
@@ -107,6 +110,33 @@ final class TextCaptureCoordinator {
             guard let self, let captured = self.lastCapturedImage else { return }
             self.openPanel(image: captured.image, scale: captured.scale, source: captured.source, place: captured.place)
         }
+        highlight.onCancel = { [weak self] in self?.cancelReading() }
+    }
+
+    /// Runs `reading`, one the highlight shows, as `selectionReading`, so Escape reaches it whoever started it; one still
+    /// running is let go, as a newer reading replaces an older one anyway. The caller's own cancellation stops it too.
+    private func asSelectionReading(_ reading: @escaping () async -> Void) async {
+        selectionReading?.cancel()
+        let task = Task { await reading() }
+        selectionReading = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if selectionReading == task { selectionReading = nil }
+    }
+
+    /// Escape while the highlight showed (it has gone, without a sound): the reading stops, and nothing is copied or
+    /// shown. A wait on Vision ends at once, a run of the text reader is ended, and the cloud model is no longer waited
+    /// for; each reading's `done` is told nil, as for any reading cancelled.
+    private func cancelReading() {
+        guard let reading = selectionReading else { return }
+        reading.cancel()
+        selectionReading = nil
+        waitingForCloud?.cancel()
+        waitingForCloud = nil
+        Log.capture.notice("Escape stopped the reading behind the highlight")
     }
 
     /// Test model readiness before a shortcut selection. A failed startup request is killed with its
@@ -157,7 +187,7 @@ final class TextCaptureCoordinator {
     }
 
     func stop() {
-        captureReading?.cancel()
+        selectionReading?.cancel()
         waitingForCloud?.cancel()
         readerPreparation?.cancel()
         recoveryPreparation?.cancel()
@@ -200,7 +230,7 @@ final class TextCaptureCoordinator {
     /// keeps the reading on this Mac, for the URL API and Shortcuts.
     func captureText(joinLines: Bool, allowsCloud: Bool = true, done: ((String?) -> Void)? = nil) {
         guard !overlay.isActive else { done?(nil); return }
-        captureReading?.cancel()
+        selectionReading?.cancel()
         waitingForCloud?.cancel()
         highlight.hide()
         prepareCaptureText()
@@ -223,14 +253,14 @@ final class TextCaptureCoordinator {
                 }
             case .region(let rect, _, _, let frozen):
                 highlight.show(rect)
-                captureReading = Task { await self.recognize(region: rect, frozen: frozen, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
+                Task { await self.recognize(region: rect, frozen: frozen, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
             case .window(let target, _):
                 highlight.show(target.frame)
-                captureReading = Task { await self.recognize(window: target, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
+                Task { await self.recognize(window: target, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
             case .windows(let targets, _):
                 if let union = targets.combinedFrame {
                     highlight.show(union)
-                    captureReading = Task { await self.recognize(region: union, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
+                    Task { await self.recognize(region: union, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
                 } else {
                     done?(nil)
                 }
@@ -247,47 +277,62 @@ final class TextCaptureCoordinator {
     ///     the user copied.
     ///   - allowsCloud: true for a person's own drag: it reads with the cloud model while Settings says Capture Text
     ///     does. The URL API never sends a capture to one.
-    ///   - done: told the text copied, or nil when there was none.
+    ///   - done: told the text copied, or nil when there was none (also when Escape stopped the reading).
     func recognize(
         region rect: CGRect, frozen: CapturedFrame? = nil, joinLines: Bool, copiesToClipboard: Bool = true, allowsCloud: Bool = false,
         done: ((String?) -> Void)? = nil
     ) async {
         guard !Task.isCancelled else { done?(nil); return }
-        highlight.show(rect)
-        do {
-            let frame = try await capture(rect, frozen: frozen)
-            try Task.checkCancellation()
-            await recognize(
-                frame.image, selection: rect, place: Self.place(of: frame), joinLines: joinLines, copiesToClipboard: copiesToClipboard,
-                allowsCloud: allowsCloud, done: done
-            )
-        } catch {
+        await asSelectionReading { [self] in
             guard !Task.isCancelled else { done?(nil); return }
-            Log.capture.error("Capture Text failed to capture: \(error.localizedDescription, privacy: .public)")
-            highlight.finish(copied: nil, announces: !settings.showTextResult)
-            done?(nil)
+            highlight.show(rect)
+            do {
+                let frame = try await capture(rect, frozen: frozen)
+                try Task.checkCancellation()
+                await recognize(
+                    frame.image, selection: rect, place: Self.place(of: frame), joinLines: joinLines, copiesToClipboard: copiesToClipboard,
+                    allowsCloud: allowsCloud, done: done
+                )
+            } catch {
+                guard !Task.isCancelled else { done?(nil); return }
+                Log.capture.error("Capture Text failed to capture: \(error.localizedDescription, privacy: .public)")
+                highlight.finish(copied: nil, announces: !settings.showTextResult)
+                done?(nil)
+            }
         }
     }
 
     private func recognize(window target: WindowTarget, joinLines: Bool, allowsCloud: Bool, done: ((String?) -> Void)? = nil) async {
         guard !Task.isCancelled else { done?(nil); return }
-        highlight.show(target.frame)
-        do {
-            let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
-            try Task.checkCancellation()
-            await recognize(
-                frame.image, selection: target.frame, place: Self.place(of: frame, window: target), joinLines: joinLines, copiesToClipboard: true,
-                allowsCloud: allowsCloud, done: done
-            )
-        } catch {
+        await asSelectionReading { [self] in
             guard !Task.isCancelled else { done?(nil); return }
-            Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
-            highlight.finish(copied: nil, announces: !settings.showTextResult)
-            done?(nil)
+            highlight.show(target.frame)
+            do {
+                let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
+                try Task.checkCancellation()
+                await recognize(
+                    frame.image, selection: target.frame, place: Self.place(of: frame, window: target), joinLines: joinLines, copiesToClipboard: true,
+                    allowsCloud: allowsCloud, done: done
+                )
+            } catch {
+                guard !Task.isCancelled else { done?(nil); return }
+                Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
+                highlight.finish(copied: nil, announces: !settings.showTextResult)
+                done?(nil)
+            }
         }
     }
 
     #if DEBUG
+    /// How long Vision's reading takes longer than it does, as when the Neural Engine compiles its models first: a
+    /// reading to stop with Escape. For scripted checks.
+    var debugStall: Duration?
+
+    /// Whether the highlight takes Escape now, and a press of it as its hot key delivers one. For scripted checks.
+    var takesEscape: Bool { highlight.takesEscape }
+    @discardableResult
+    func pressEscape() -> Bool { highlight.simulateEscape() }
+
     /// Where a window is on screen, for asking its app for its text (the scale taken from the window's display). For
     /// scripted checks.
     func place(ofWindow target: WindowTarget) -> AppTextPlace? {
@@ -359,7 +404,7 @@ final class TextCaptureCoordinator {
         let showsCard = settings.showTextResult
         let probe = LatencyProbe("ocr.recognize")
         defer { probe.end() }
-        let localDeadline = ContinuousClock.now + .seconds(30)
+        let localDeadline = ContinuousClock.now + .seconds(60)
         readings += 1
         let reading = readings
         waitingForCloud?.cancel()
@@ -384,6 +429,9 @@ final class TextCaptureCoordinator {
         var visionFailure: String?
         let vision = LatencyProbe("ocr.vision")
         do {
+            #if DEBUG
+            if let stall = debugStall { try await Task.sleep(for: stall) }
+            #endif
             let result = try await captureTextLines(in: image, deadline: localDeadline)
             visionLines = result.lines
             visionReader = result.reader
@@ -465,8 +513,12 @@ final class TextCaptureCoordinator {
         }
         if let formulas {
             let started = ContinuousClock.now
-            let found = await formulas.value
-            if !found.formulas.isEmpty {
+            let found = await withTaskCancellationHandler {
+                await formulas.value
+            } onCancel: {
+                formulas.cancel()
+            }
+            if !found.formulas.isEmpty, !Task.isCancelled {
                 let remaining = ContinuousClock.now.duration(to: localDeadline)
                 if remaining > .zero {
                     if let visionReader {
@@ -747,26 +799,34 @@ final class TextCaptureCoordinator {
     /// pixels (a formula drawn at 2x reads better than at 1x: Docs/ocr.md › L3 spike). Also the URL API's
     /// `capture-formula` with an area. `copiesToClipboard` false leaves the clipboard alone, for scripted checks.
     func readFormula(region rect: CGRect, frozen: CapturedFrame? = nil, copiesToClipboard: Bool = true, done: ((String?) -> Void)? = nil) async {
-        highlight.show(rect)
-        do {
-            let frame = try await capture(rect, frozen: frozen)
-            await readFormula(frame.image, selection: rect, copiesToClipboard: copiesToClipboard, done: done)
-        } catch {
-            Log.capture.error("Capture Formula failed to capture: \(error.localizedDescription, privacy: .public)")
-            highlight.finish(copied: nil, announces: !settings.showTextResult, formula: true)
-            done?(nil)
+        await asSelectionReading { [self] in
+            highlight.show(rect)
+            do {
+                let frame = try await capture(rect, frozen: frozen)
+                try Task.checkCancellation()
+                await readFormula(frame.image, selection: rect, copiesToClipboard: copiesToClipboard, done: done)
+            } catch {
+                guard !Task.isCancelled else { done?(nil); return }
+                Log.capture.error("Capture Formula failed to capture: \(error.localizedDescription, privacy: .public)")
+                highlight.finish(copied: nil, announces: !settings.showTextResult, formula: true)
+                done?(nil)
+            }
         }
     }
 
     private func readFormula(window target: WindowTarget, done: ((String?) -> Void)?) async {
-        highlight.show(target.frame)
-        do {
-            let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
-            await readFormula(frame.image, selection: target.frame, copiesToClipboard: true, done: done)
-        } catch {
-            Log.capture.error("Capture Formula failed to capture the window: \(error.localizedDescription, privacy: .public)")
-            highlight.finish(copied: nil, announces: !settings.showTextResult, formula: true)
-            done?(nil)
+        await asSelectionReading { [self] in
+            highlight.show(target.frame)
+            do {
+                let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
+                try Task.checkCancellation()
+                await readFormula(frame.image, selection: target.frame, copiesToClipboard: true, done: done)
+            } catch {
+                guard !Task.isCancelled else { done?(nil); return }
+                Log.capture.error("Capture Formula failed to capture the window: \(error.localizedDescription, privacy: .public)")
+                highlight.finish(copied: nil, announces: !settings.showTextResult, formula: true)
+                done?(nil)
+            }
         }
     }
 
@@ -796,6 +856,8 @@ final class TextCaptureCoordinator {
         let started = ContinuousClock.now
         let formula = await Self.formula(in: image, pack: pack, helper: reader.helper)
         probe.end()
+        // Escape stopped it: the highlight has gone, and nothing is said.
+        guard !Task.isCancelled else { done?(nil); return }
         guard let formula, formula.isFormula else {
             Log.capture.notice("Capture Formula found no formula (\(formula?.ended.rawValue ?? "failed", privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
@@ -808,6 +870,12 @@ final class TextCaptureCoordinator {
         Log.capture.notice("Capture Formula \(copiesToClipboard ? "copied" : "read", privacy: .public) \(formula.latex.count, privacy: .public) characters of LaTeX in \(String(describing: ContinuousClock.now - started), privacy: .public)")
         if showsCard { presentCard(.copiedFormula(latex: formula.latex), near: selection) }
         done?(formula.latex)
+    }
+
+    /// Warms both of Capture Text's models again, as its first reading would, for `TextModelWarmup`.
+    func warmModelsAgain() async -> Bool {
+        await VisionPipeline.forgetWarmups()
+        return await pipeline.prewarm()
     }
 
     // MARK: Translate Area
@@ -838,22 +906,30 @@ final class TextCaptureCoordinator {
     }
 
     private func translate(region rect: CGRect, frozen: CapturedFrame?, inPanel: Bool) async {
-        do {
-            let frame = try await capture(rect, frozen: frozen)
-            await translate(frame.image, scale: Self.scale(of: frame), over: rect, source: String(localized: "Screen Area"), inPanel: inPanel)
-        } catch {
-            Log.capture.error("Translate Area failed to capture: \(error.localizedDescription, privacy: .public)")
-            highlight.finish(copied: nil, announces: true)
+        await asSelectionReading { [self] in
+            do {
+                let frame = try await capture(rect, frozen: frozen)
+                try Task.checkCancellation()
+                await translate(frame.image, scale: Self.scale(of: frame), over: rect, source: String(localized: "Screen Area"), inPanel: inPanel)
+            } catch {
+                guard !Task.isCancelled else { return }
+                Log.capture.error("Translate Area failed to capture: \(error.localizedDescription, privacy: .public)")
+                highlight.finish(copied: nil, announces: true)
+            }
         }
     }
 
     private func translate(window target: WindowTarget, inPanel: Bool) async {
-        do {
-            let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
-            await translate(frame.image, scale: Self.scale(of: frame), over: target.frame, source: target.ownerName, inPanel: inPanel)
-        } catch {
-            Log.capture.error("Translate Area failed to capture the window: \(error.localizedDescription, privacy: .public)")
-            highlight.finish(copied: nil, announces: true)
+        await asSelectionReading { [self] in
+            do {
+                let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
+                try Task.checkCancellation()
+                await translate(frame.image, scale: Self.scale(of: frame), over: target.frame, source: target.ownerName, inPanel: inPanel)
+            } catch {
+                guard !Task.isCancelled else { return }
+                Log.capture.error("Translate Area failed to capture the window: \(error.localizedDescription, privacy: .public)")
+                highlight.finish(copied: nil, announces: true)
+            }
         }
     }
 
@@ -872,8 +948,11 @@ final class TextCaptureCoordinator {
         let target = settings.translationLanguage
         do {
             let lines = try await pipeline.recognize(image).lines
+            try Task.checkCancellation()
             let units = TranslationUnits.group(lines)
             let outcome = try await translator.translate(units, to: target)
+            // Escape stopped it (the highlight has gone): nothing is laid over the area, nor the panel opened.
+            try Task.checkCancellation()
             guard !outcome.translations.isEmpty else {
                 let skipped = Dictionary(grouping: units.compactMap(\.skip), by: { "\($0)" }).map { "\($1.count) \($0)" }.sorted().joined(separator: ", ")
                 Log.capture.notice("Translate Area translated nothing into \(outcome.target.minimalIdentifier, privacy: .public): \(units.count, privacy: .public) units, skipped \(skipped, privacy: .public), \(outcome.inTarget.count, privacy: .public) already in it, to download \(outcome.needsDownload.map(\.minimalIdentifier), privacy: .public); opening the panel")
@@ -881,9 +960,11 @@ final class TextCaptureCoordinator {
                 openPanel(image: image, scale: scale, source: source, translating: true, place: place)
                 return
             }
-            guard let rendering = await TranslationOverlay.render(
+            let rendering = await TranslationOverlay.render(
                 image, lines: lines, units: units, translations: outcome.translations, language: outcome.target, scale: scale
-            ) else {
+            )
+            try Task.checkCancellation()
+            guard let rendering else {
                 highlight.finish(copied: nil, announces: true)
                 return
             }
@@ -899,6 +980,7 @@ final class TextCaptureCoordinator {
             highlight.hide()
             Log.capture.notice("Translate Area translated \(outcome.translations.count, privacy: .public) of \(units.count, privacy: .public) units into \(outcome.target.minimalIdentifier, privacy: .public), \(rendering.truncated.count, privacy: .public) shortened")
         } catch {
+            guard !Task.isCancelled else { return }
             Log.capture.error("Translate Area failed: \(String(describing: error), privacy: .public)")
             highlight.finish(copied: nil, announces: true)
         }

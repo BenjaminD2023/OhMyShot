@@ -1,357 +1,535 @@
 import AppKit
 import Foundation
+import Observation
 import OMSCore
+import OMSDesign
 import SwiftUI
 
-/// Walks the user through the one permission OhMyShot cannot work without, then, while macOS still answers the keys of
-/// OhMyShot's shortcuts, through turning its screenshot keys off. A plain window rather than a modal alert: the user has
-/// to leave for System Settings and come back.
+/// A nonmodal first-use guide. Permission repair uses just its permission page; explicit replay and new
+/// installations use the four-step tour. The owner keeps progress when this window leaves for a capture or relaunch.
 public final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
-    public enum Step {
-        case permission, shortcuts
+    public typealias Step = OnboardingProgress.Step
+
+    public enum Mode {
+        case tour, permissionRecovery
+    }
+
+    /// Scripted previews and tests supply their own permission state, without changing TCC or asking for access.
+    public struct Access {
+        public var isGranted: () -> Bool
+        public var hasAsked: () -> Bool
+        public var refresh: () -> Void
+        public var request: () async -> Void
+        public var openSettings: () -> Void
+
+        public init(
+            isGranted: @escaping () -> Bool, hasAsked: @escaping () -> Bool,
+            refresh: @escaping () -> Void, request: @escaping () async -> Void, openSettings: @escaping () -> Void
+        ) {
+            self.isGranted = isGranted
+            self.hasAsked = hasAsked
+            self.refresh = refresh
+            self.request = request
+            self.openSettings = openSettings
+        }
+
+        static func live(_ permissions: PermissionCenter) -> Self {
+            Self(
+                isGranted: { permissions.status(of: .screenRecording) == .granted },
+                hasAsked: { permissions.hasAsked(.screenRecording) },
+                refresh: { permissions.refresh([.screenRecording]) },
+                request: { await permissions.request(.screenRecording) },
+                openSettings: { permissions.openSystemSettings(for: .screenRecording) }
+            )
+        }
     }
 
     public var onClose: (() -> Void)?
-
+    public var onDismiss: (() -> Void)?
+    private var continuing = false
     private var windowLease: ActiveResources.Lease?
+    let model: OnboardingModel
 
-    static let showedShortcutsKey = "onboardingShowedShortcuts"
+    public var currentStep: Step { model.step }
+    public var isTour: Bool { model.mode == .tour }
 
-    /// Whether the shortcuts step has been shown: it opens by itself at launch once, never again.
-    public static var hasShownShortcuts: Bool {
-        UserDefaults.standard.bool(forKey: showedShortcutsKey)
-    }
-
-    /// `readHotKeys` reads macOS's hot keys and `bindings` OhMyShot's shortcuts (scripted checks put others in their place).
     public init(
         permissions: PermissionCenter,
         startingAt step: Step = .permission,
+        mode: Mode = .permissionRecovery,
         readHotKeys: @escaping () -> [String: Any]? = SystemScreenshotKeys.readHotKeys,
         bindings: @escaping @MainActor () -> [SystemScreenshotKeys.Binding] = SystemScreenshotKeys.currentBindings,
+        access: Access? = nil,
+        captureMessage: String? = nil,
+        cardCorner: QuickAccessCorner = .bottomLeft,
+        stepChanged: @escaping (Step) -> Void = { _ in },
+        openShortcuts: @escaping () -> Void = {},
+        capture: @escaping () -> Void = {},
         relaunch: @escaping () -> Void
     ) {
+        model = OnboardingModel(
+            step: step, mode: mode, access: access ?? .live(permissions), readHotKeys: readHotKeys,
+            bindings: bindings, stepChanged: stepChanged
+        )
         let window = OnboardingWindow(
             contentRect: .zero,
-            styleMask: [.titled, .closable, .fullSizeContentView],
-            backing: .buffered,
-            defer: true
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered, defer: true
         )
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        // Hidden on screen, read by VoiceOver, which would otherwise say the window has no title.
-        window.title = AppIdentity.displayName
+        window.title = String(localized: "Getting Started", bundle: .module)
         window.isReleasedWhenClosed = false
         super.init(window: window)
-        let controller = NSHostingController(rootView: OnboardingView(
-            permissions: permissions,
-            readHotKeys: readHotKeys,
-            bindings: bindings,
-            relaunch: relaunch,
-            close: { [weak self] in self?.close() },
-            step: step
+        let content = NSHostingController(rootView: OnboardingView(
+            model: model, captureMessage: captureMessage, cardCorner: cardCorner, openShortcuts: openShortcuts,
+            capture: capture, relaunch: relaunch, close: { [weak self] in self?.close() }
         ))
-        controller.sizingOptions = [.preferredContentSize]
-        window.contentViewController = controller
+        content.sizingOptions = [.minSize]
+        window.contentViewController = content
+        window.setContentSize(NSSize(width: 600, height: mode == .tour ? 600 : 560))
         window.delegate = self
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     public func show() {
-        if windowLease == nil {
-            windowLease = ActiveResources.shared.acquire(.window)
+        model.refresh()
+        if windowLease == nil { windowLease = ActiveResources.shared.acquire(.window) }
+        if window?.isVisible != true {
+            if let window, let screen = window.screen ?? NSScreen.main {
+                let size = window.frame.size
+                window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(
+                    width: min(size.width, screen.visibleFrame.width), height: min(size.height, screen.visibleFrame.height)
+                )), display: false)
+            }
+            window?.center()
         }
-        window?.center()
         showWindow(nil)
         AppActivation.bringForward(window)
     }
 
+    /// A programmatic close for a capture, or quitting for a permission change, must not count as skipping.
+    public func preserveProgress() { continuing = true }
+
+    public func closeForCapture() {
+        preserveProgress()
+        close()
+    }
+
+    public func windowDidBecomeKey(_ notification: Notification) { model.refresh() }
+
     public func windowWillClose(_ notification: Notification) {
+        if !continuing { onDismiss?() }
         windowLease?.end()
         windowLease = nil
         onClose?()
     }
 }
 
-/// Closes on Escape at every step. Its buttons take no focus, so the window itself is the first responder, and an Escape
-/// no button answers stops in its own `cancelOperation`, before the controller or the view could hear it.
 private final class OnboardingWindow: NSWindow {
-    override func cancelOperation(_ sender: Any?) {
-        close()
-    }
+    override func cancelOperation(_ sender: Any?) { performClose(sender) }
 }
 
-struct OnboardingView: View {
-    let permissions: PermissionCenter
-    let readHotKeys: () -> [String: Any]?
-    let bindings: @MainActor () -> [SystemScreenshotKeys.Binding]
-    let relaunch: () -> Void
-    let close: () -> Void
+@Observable
+final class OnboardingModel {
+    typealias Step = OnboardingProgress.Step
+    private(set) var step: Step
+    let mode: OnboardingWindowController.Mode
+    private(set) var isGranted = false
+    private(set) var hasAsked = false
+    private(set) var isRequesting = false
+    private(set) var clashes: [SystemScreenshotKeys.Clash] = []
+    private(set) var shortcuts: [SystemScreenshotKeys.Binding] = []
+    private let access: OnboardingWindowController.Access
+    private let readHotKeys: () -> [String: Any]?
+    private let bindings: () -> [SystemScreenshotKeys.Binding]
+    private let stepChanged: (Step) -> Void
 
-    @State private var step: OnboardingWindowController.Step
-    @State private var openedSettings = false
-    @State private var clashes: [SystemScreenshotKeys.Clash] = []
+    var keysTaken: Bool { clashes.contains(where: \.takenByMacOS) }
+    var shownShortcuts: [CaptureShortcut] {
+        let main: [CaptureShortcut] = [.captureArea, .captureFullscreen, .allInOne]
+        return main + clashes.filter { $0.takenByMacOS && !main.contains($0.shortcut) }.map(\.shortcut)
+    }
+    var index: Int { Step.allCases.firstIndex(of: step) ?? 0 }
+    /// The top of the status menu as it is, with the current keys: what the welcome page shows under the icon.
+    var menuEntries: [MenuBarPreview.Entry] {
+        [CaptureShortcut.allInOne, .captureArea, .annotateArea, .pinArea].map { shortcut in
+            MenuBarPreview.Entry(title: shortcut.title, keys: shortcuts.first { $0.shortcut == shortcut }?.keys)
+        }
+    }
 
     init(
-        permissions: PermissionCenter,
-        readHotKeys: @escaping () -> [String: Any]?,
-        bindings: @escaping @MainActor () -> [SystemScreenshotKeys.Binding],
-        relaunch: @escaping () -> Void,
-        close: @escaping () -> Void,
-        step: OnboardingWindowController.Step
+        step: Step, mode: OnboardingWindowController.Mode, access: OnboardingWindowController.Access,
+        readHotKeys: @escaping () -> [String: Any]?, bindings: @escaping () -> [SystemScreenshotKeys.Binding],
+        stepChanged: @escaping (Step) -> Void
     ) {
-        self.permissions = permissions
+        self.step = step
+        self.mode = mode
+        self.access = access
         self.readHotKeys = readHotKeys
         self.bindings = bindings
-        self.relaunch = relaunch
-        self.close = close
-        _step = State(initialValue: step)
-        _clashes = State(initialValue: SystemScreenshotKeys.clashes(hotKeys: readHotKeys(), bindings: bindings()))
+        self.stepChanged = stepChanged
+        refresh()
     }
 
-    private var isGranted: Bool {
-        permissions.status(of: .screenRecording) == .granted
+    func refresh() {
+        access.refresh()
+        isGranted = access.isGranted()
+        hasAsked = access.hasAsked()
+        shortcuts = bindings()
+        clashes = SystemScreenshotKeys.clashes(hotKeys: readHotKeys(), bindings: shortcuts)
     }
 
-    /// Whether macOS still answers the keys of any of OhMyShot's shortcuts.
-    private var keysTaken: Bool {
-        clashes.contains(where: \.takenByMacOS)
+    func move(to step: Step) {
+        self.step = step
+        stepChanged(step)
+        refresh()
     }
 
-    private var title: LocalizedStringKey {
-        isGranted ? "Screen Recording Is On" : "Allow Screen Recording"
+    func back() {
+        guard index > 0 else { return }
+        move(to: Step.allCases[index - 1])
     }
 
-    private var message: LocalizedStringKey {
-        if isGranted { return "If captures come out blank, relaunch once." }
-        if openedSettings { return "Turn on OhMyShot, then relaunch." }
-        return "OhMyShot needs it to capture your screen."
+    func next() {
+        guard index < Step.allCases.count - 1, step != .permission || isGranted else { return }
+        move(to: Step.allCases[index + 1])
     }
 
-    /// Before macOS's own prompt has appeared, the button only leads to it.
-    private var primaryAction: LocalizedStringKey {
-        permissions.hasAsked(.screenRecording) ? "Open System Settings" : "Continue"
-    }
-
-    /// The first time, macOS's own prompt offers System Settings, so opening it too would ask twice.
-    /// macOS prompts only once; after that this opens System Settings itself.
-    private func openSettings() {
-        openedSettings = true
-        if permissions.hasAsked(.screenRecording) {
-            permissions.openSystemSettings(for: .screenRecording)
-        } else {
-            Task { await permissions.request(.screenRecording) }
-        }
-    }
-
-    @ViewBuilder private var buttons: some View {
-        if isGranted && keysTaken {
-            // On to the keys; relaunching first comes back to them too, as the next launch opens on them.
-            Button(action: relaunch) {
-                Text("Relaunch", bundle: .module)
-                    .frame(maxWidth: .infinity)
-            }
-            Button { step = .shortcuts } label: {
-                Text("Continue", bundle: .module)
-                    .frame(maxWidth: .infinity)
-            }
-            .keyboardShortcut(.defaultAction)
-        } else {
-            Button(action: close) {
-                Text(isGranted ? "Done" : "Not Now", bundle: .module)
-                    .frame(maxWidth: .infinity)
-            }
-            .keyboardShortcut(.cancelAction)
-        }
-        if !isGranted && !openedSettings {
-            Button(action: openSettings) {
-                Text(primaryAction, bundle: .module)
-                    .frame(maxWidth: .infinity)
-            }
-            .keyboardShortcut(.defaultAction)
-        }
-        if openedSettings && !isGranted || isGranted && !keysTaken {
-            Button(action: relaunch) {
-                Text("Relaunch", bundle: .module)
-                    .frame(maxWidth: .infinity)
-            }
-            .keyboardShortcut(.defaultAction)
-        }
-    }
-
-    var body: some View {
-        Group {
-            switch step {
-            case .permission: permissionStep
-            case .shortcuts: shortcutsStep
-            }
-        }
-        .padding(.horizontal, 28)
-        .padding(.top, 36)
-        .padding(.bottom, 24)
-        .frame(width: 380)
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            permissions.refresh([.screenRecording])
-            clashes = SystemScreenshotKeys.clashes(hotKeys: readHotKeys(), bindings: bindings())
-        }
-    }
-
-    private var permissionStep: some View {
-        VStack(spacing: 16) {
-            Image(systemName: isGranted ? "checkmark.circle" : "rectangle.dashed")
-                .font(.system(size: 40, weight: .regular))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
-
-            VStack(spacing: 6) {
-                Text(title, bundle: .module)
-                    .font(.title2.weight(.semibold))
-                    .accessibilityAddTraits(.isHeader)
-                Text(message, bundle: .module)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if openedSettings && !isGranted {
-                    Button(action: openSettings) {
-                        Text("Open System Settings", bundle: .module)
-                    }
-                    .buttonStyle(.link)
-                }
-            }
-            .multilineTextAlignment(.center)
-
-            ButtonRow { buttons }
-            .controlSize(.large)
-            .padding(.top, 8)
-        }
-    }
-
-    private var shortcutsStep: some View {
-        VStack(spacing: 16) {
-            Image(systemName: keysTaken ? "keyboard" : "checkmark.circle")
-                .font(.system(size: 40, weight: .regular))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
-
-            VStack(spacing: 6) {
-                Text(keysTaken ? "Turn Off macOS’s Screenshot Keys" : "OhMyShot Has Its Keys", bundle: .module)
-                    .font(.title2.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-                Text(
-                    keysTaken
-                        ? "macOS answers these keys before OhMyShot can. Turn them off in Keyboard Settings › Keyboard Shortcuts › Screenshots."
-                        : "macOS’s screenshot keys are off, so these keys capture with OhMyShot.",
-                    bundle: .module
-                )
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .multilineTextAlignment(.center)
-
-            if !clashes.isEmpty {
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
-                    ForEach(clashes) { clash in
-                        GridRow {
-                            Text(verbatim: clash.keys)
-                                .monospacedDigit()
-                            Text(clash.shortcut.title)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            Group {
-                                if clash.takenByMacOS {
-                                    Text(verbatim: "macOS")
-                                        .foregroundStyle(.secondary)
-                                } else {
-                                    Label { Text(verbatim: "OhMyShot") } icon: { Image(systemName: "checkmark") }
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                            .gridColumnAlignment(.trailing)
-                        }
-                    }
-                }
-                .padding(.horizontal, 8)
-                // A row's modifiers go to each of its cells: VoiceOver gets one element a row from here instead.
-                .accessibilityChildren {
-                    ForEach(clashes) { clash in
-                        Text(verbatim: "\(clash.shortcut.title), \(clash.keys)")
-                            .accessibilityValue(Text(verbatim: clash.takenByMacOS ? "macOS" : "OhMyShot"))
-                    }
-                }
-            }
-
-            ButtonRow {
-                if keysTaken {
-                    Button(action: close) {
-                        Text("Not Now", bundle: .module)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .keyboardShortcut(.cancelAction)
-                    Button {
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
-                    } label: {
-                        Text("Open Keyboard Settings", bundle: .module)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .keyboardShortcut(.defaultAction)
-                } else {
-                    Button(action: close) {
-                        Text("Done", bundle: .module)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
-            .controlSize(.large)
-            .padding(.top, 8)
-        }
-        // Shown once is enough: it never opens by itself again.
-        .onAppear { UserDefaults.standard.set(true, forKey: OnboardingWindowController.showedShortcutsKey) }
+    func requestAccess() async {
+        guard !isRequesting else { return }
+        isRequesting = true
+        defer { isRequesting = false }
+        if access.hasAsked() { access.openSettings() } else { await access.request() }
+        refresh()
     }
 }
 
-/// Buttons of one width side by side, or one above the other, full width, when a language's labels are too long for
-/// each to fit its share of the row. The community invitation lays its buttons out the same way.
-struct ButtonRow: Layout {
-    var horizontalSpacing: CGFloat = 10
-    var verticalSpacing: CGFloat = 8
-
-    private func fitsInRow(_ subviews: Subviews, width: CGFloat?) -> Bool {
-        guard let width, !subviews.isEmpty else { return true }
-        let widest = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
-        let count = CGFloat(subviews.count)
-        return widest * count + horizontalSpacing * (count - 1) <= width
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-        let width = proposal.width ?? sizes.map(\.width).reduce(0, +)
-        let height = sizes.map(\.height).max() ?? 0
-        if fitsInRow(subviews, width: proposal.width) {
-            return CGSize(width: width, height: height)
+private extension OnboardingProgress.Step {
+    var title: String {
+        switch self {
+        case .welcome: String(localized: "Welcome", bundle: .module)
+        case .permission: String(localized: "Screen Recording", bundle: .module)
+        case .shortcuts: String(localized: "Shortcuts", bundle: .module)
+        case .capture: String(localized: "Your First Capture", bundle: .module)
         }
-        let count = CGFloat(subviews.count)
-        return CGSize(width: width, height: sizes.map(\.height).reduce(0, +) + verticalSpacing * (count - 1))
+    }
+}
+
+private struct OnboardingView: View {
+    @Bindable var model: OnboardingModel
+    let captureMessage: String?
+    let cardCorner: QuickAccessCorner
+    let openShortcuts: () -> Void
+    let capture: () -> Void
+    let relaunch: () -> Void
+    let close: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if model.mode == .tour { progress.padding(.horizontal, 32).padding(.top, 38).padding(.bottom, 4) }
+            // A new step starts at its top and fades in over the last one, in place; at once under Reduce Motion.
+            ZStack {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        switch model.step {
+                        case .welcome: welcome
+                        case .permission: permission
+                        case .shortcuts: shortcuts
+                        case .capture: practice
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 40)
+                    .padding(.top, model.mode == .tour ? 24 : 44)
+                    .padding(.bottom, 24)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .id(model.step)
+                .transition(.opacity)
+            }
+            .frame(maxHeight: .infinity)
+            Divider()
+            footer.padding(.horizontal, 24).padding(.vertical, 20)
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.slide), value: model.step)
+        .frame(minWidth: 520, minHeight: 440)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refresh() }
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let count = CGFloat(subviews.count)
-        if fitsInRow(subviews, width: bounds.width) {
-            let width = (bounds.width - horizontalSpacing * (count - 1)) / count
-            for (index, subview) in subviews.enumerated() {
-                let x = bounds.minX + CGFloat(index) * (width + horizontalSpacing)
-                subview.place(at: CGPoint(x: x, y: bounds.minY), proposal: ProposedViewSize(width: width, height: bounds.height))
+    // MARK: Progress
+
+    /// Every step by name, so what is left is plain from the first page: done and current segments in the accent.
+    private var progress: some View {
+        HStack(alignment: .top, spacing: 8) {
+            ForEach(Array(OnboardingProgress.Step.allCases.enumerated()), id: \.offset) { index, step in
+                VStack(alignment: .leading, spacing: 7) {
+                    Capsule()
+                        .fill(index <= model.index ? Color.accentColor : Color.primary.opacity(0.1))
+                        .frame(height: 3)
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        if index < model.index {
+                            Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.tint)
+                        }
+                        Text(verbatim: step.title)
+                            .font(.system(size: 11, weight: index == model.index ? .semibold : .regular))
+                            .foregroundStyle(index == model.index ? .primary : .secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-        } else {
-            // The default button, last and rightmost in a row, on top, as in a stacked alert.
-            var y = bounds.minY
-            for subview in subviews.reversed() {
-                let height = subview.sizeThatFits(.unspecified).height
-                subview.place(at: CGPoint(x: bounds.minX, y: y), proposal: ProposedViewSize(width: bounds.width, height: height))
-                y += height + verticalSpacing
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Step \(model.index + 1) of 4", bundle: .module))
+        .accessibilityValue(Text(verbatim: model.step.title))
+    }
+
+    // MARK: Pieces
+
+    private func heading(_ title: LocalizedStringKey, message: LocalizedStringKey) -> some View {
+        VStack(spacing: 8) {
+            Text(title, bundle: .module)
+                .font(.system(size: 26, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text(message, bundle: .module)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: OnboardingColumn.width)
+    }
+
+    /// Instructions in the order they are done, numbered because the order matters.
+    private func steps(_ items: [LocalizedStringKey]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(verbatim: "\(index + 1)")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .background(Color.primary.opacity(0.07), in: Circle())
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                        .accessibilityHidden(true)
+                    Text(item, bundle: .module).fixedSize(horizontal: false, vertical: true)
+                }
             }
+        }
+        .frame(width: OnboardingColumn.width, alignment: .leading)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func footnote(_ text: LocalizedStringKey) -> some View {
+        Text(text, bundle: .module)
+            .font(.callout).foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: OnboardingColumn.width)
+    }
+
+    /// A sentence with its one action beside it, for what only some people need: a relaunch, other keys.
+    private func aside(_ text: LocalizedStringKey, action title: LocalizedStringKey, perform: @escaping () -> Void) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                Text(text, bundle: .module).foregroundStyle(.secondary)
+                Button(action: perform) { Text(title, bundle: .module) }.buttonStyle(.link)
+            }
+            VStack(spacing: 4) {
+                Text(text, bundle: .module).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: perform) { Text(title, bundle: .module) }.buttonStyle(.link)
+            }
+        }
+        .font(.callout)
+        .frame(maxWidth: OnboardingColumn.width)
+    }
+
+    // MARK: Steps
+
+    private var welcome: some View {
+        VStack(spacing: 0) {
+            Image(nsImage: AppActivation.appIcon).resizable().interpolation(.high)
+                .frame(width: 72, height: 72).accessibilityHidden(true)
+                .padding(.bottom, 14)
+            heading("Welcome to OhMyShot", message: "Allow Screen Recording, check your shortcuts, and take your first screenshot. It takes about a minute.")
+                .padding(.bottom, 24)
+            MenuBarPreview(entries: model.menuEntries)
+                .padding(.bottom, 12)
+            footnote("OhMyShot lives in the menu bar, not the Dock. Click its icon to capture, or open the app from Finder or Spotlight for Settings.")
+        }
+    }
+
+    private var permission: some View {
+        VStack(spacing: 0) {
+            ScreenRecordingSettingsPreview(isOn: model.isGranted)
+                .animation(reduceMotion ? nil : .snappy(duration: Theme.Motion.slide), value: model.isGranted)
+                .padding(.bottom, 20)
+            if model.isGranted {
+                heading("Screen Recording Is On", message: "You’re ready to capture your screen.")
+                    .padding(.bottom, 20)
+                if model.hasAsked {
+                    aside("If captures come out blank, relaunch once.", action: "Relaunch", perform: relaunch)
+                        .padding(.bottom, 20)
+                }
+            } else {
+                heading("Allow Screen Recording", message: "macOS requires it before any app can capture the screen, screenshots included.")
+                    .padding(.bottom, 16)
+                steps([
+                    model.hasAsked ? "Click Open System Settings." : "Click Allow Screen Recording, then choose Open System Settings in the prompt.",
+                    "Turn on OhMyShot under Screen & System Audio Recording.",
+                    "If macOS asks, choose Quit & Reopen. The guide continues where you left off.",
+                ])
+                .padding(.bottom, 16)
+                if model.hasAsked {
+                    aside("Already turned it on?", action: "Relaunch OhMyShot", perform: relaunch)
+                        .padding(.bottom, 12)
+                }
+            }
+            footnote("Microphone, camera, and other permissions are only requested when a feature needs them.")
+        }
+    }
+
+    private var shortcuts: some View {
+        VStack(spacing: 0) {
+            Group {
+                if model.keysTaken {
+                    heading("Free up your screenshot keys", message: "macOS’s own screenshot shortcuts use these keys first, so OhMyShot never receives them.")
+                } else if !model.clashes.isEmpty {
+                    heading("Your shortcuts are ready", message: "macOS’s screenshot keys are off, so these keys capture with OhMyShot.")
+                } else {
+                    heading("Capture from any app", message: "Use these shortcuts from any app, or choose a capture from the menu bar.")
+                }
+            }
+            .padding(.bottom, 22)
+            shortcutList
+                .padding(.bottom, 16)
+            if model.keysTaken {
+                steps(["In Keyboard Settings, open Keyboard Shortcuts, then Screenshots.", "Turn off the ones that use the keys above."])
+                    .padding(.bottom, 16)
+            }
+            Button(action: openShortcuts) { Text("Choose Different Shortcuts…", bundle: .module) }
+                .buttonStyle(.link)
+                .font(.callout)
+        }
+    }
+
+    private var shortcutList: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(model.shownShortcuts.enumerated()), id: \.element) { index, shortcut in
+                let taken = model.clashes.contains { $0.shortcut == shortcut && $0.takenByMacOS }
+                if index > 0 { Divider().padding(.leading, 14) }
+                HStack(spacing: 10) {
+                    Text(shortcut.title).lineLimit(1)
+                    Spacer(minLength: 8)
+                    if taken {
+                        Label { Text("Used by macOS", bundle: .module) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
+                            .font(.callout)
+                            .foregroundStyle(.orange)
+                            .lineLimit(1)
+                    }
+                    if let binding = model.shortcuts.first(where: { $0.shortcut == shortcut }) {
+                        KeyCaps(keys: binding.keys).opacity(taken ? 0.55 : 1)
+                    } else {
+                        Text("Not set", bundle: .module).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .frame(minHeight: 40)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .frame(width: OnboardingColumn.width)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+    }
+
+    private var practice: some View {
+        VStack(spacing: 0) {
+            FirstCapturePreview(cardsOnLeft: cardCorner.slidesFromLeft)
+                .padding(.bottom, 24)
+            heading("Take your first screenshot", message: "Drag over any part of the screen, then let go. Press Esc to cancel.")
+                .padding(.bottom, 20)
+            footnote(cardCorner.slidesFromLeft
+                ? "When you let go, a card with your screenshot appears in the bottom-left corner, ready to copy, save, or mark up."
+                : "When you let go, a card with your screenshot appears in the bottom-right corner, ready to copy, save, or mark up.")
+                .padding(.bottom, 16)
+            if let keys = model.shortcuts.first(where: { $0.shortcut == .captureArea })?.keys,
+               !model.clashes.contains(where: { $0.shortcut == .captureArea && $0.takenByMacOS }) {
+                HStack(spacing: 8) {
+                    Text("Or from any app:", bundle: .module).font(.callout).foregroundStyle(.secondary)
+                    KeyCaps(keys: keys)
+                }
+                .accessibilityElement(children: .combine)
+                .padding(.bottom, 16)
+            }
+            if let captureMessage {
+                VStack(spacing: 6) {
+                    Label { Text(captureMessage).fixedSize(horizontal: false, vertical: true) } icon: {
+                        Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
+                    }
+                    Button(action: relaunch) { Text("Relaunch", bundle: .module) }.buttonStyle(.link)
+                }
+                .font(.callout)
+                .padding(12)
+                .frame(width: OnboardingColumn.width)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+        }
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        GuideFooterLayout {
+            Button(action: close) { Text(model.mode == .tour ? "Skip Guide" : "Not Now", bundle: .module) }
+                .buttonStyle(.link)
+                .keyboardShortcut(.cancelAction)
+            if model.mode == .tour, model.index > 0 {
+                Button { model.back() } label: { Text("Back", bundle: .module) }.controlSize(.large)
+            }
+            if model.step == .shortcuts, model.keysTaken {
+                Button { model.next() } label: { Text("Set Up Later", bundle: .module) }.controlSize(.large)
+            }
+            Button(action: primaryAction) {
+                Text(primaryTitle, bundle: .module).padding(.horizontal, 8)
+            }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+            .keyboardShortcut(.defaultAction)
+            .disabled(model.isRequesting)
+        }
+    }
+
+    private var primaryTitle: LocalizedStringKey {
+        switch model.step {
+        case .welcome: "Get Started"
+        case .permission:
+            if model.isGranted { model.mode == .tour ? "Continue" : "Done" }
+            else { model.hasAsked ? "Open System Settings" : "Allow Screen Recording" }
+        case .shortcuts: model.keysTaken ? "Open Keyboard Settings" : "Continue"
+        case .capture: captureMessage == nil ? "Start Capture" : "Try Again"
+        }
+    }
+
+    private func primaryAction() {
+        switch model.step {
+        case .permission:
+            if !model.isGranted { Task { await model.requestAccess() }; return }
+            if model.mode == .permissionRecovery { return close() }
+            model.next()
+        case .shortcuts where model.keysTaken:
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
+        case .capture: capture()
+        default: model.next()
         }
     }
 }

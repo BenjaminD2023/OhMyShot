@@ -2818,3 +2818,136 @@ export session saw three luma bytes there one level apart. In `StudioCompositorT
 209 to 212 of 360 frames over three runs, is 6.0 s long in all and in its video track, seeks into held frames correctly, and shows at
 every 1/60 s the picture the movie made of every frame shows, to a mean difference of at most 0.28. A long
 recording whose pointer never rests is no faster: it has no frames to hand back.
+
+## OCR — Vision's first reading after its cache is emptied (2026-11-07)
+
+Capture Text sometimes waited 16–30+ s and copied nothing. Vision's text models had lost their Neural Engine
+compilation. Each process compiles them once, on its first reading after that compilation is gone: after its
+Caches folder is emptied, after a macOS update, or after a fresh install. Nothing in Vision or OhMyShot removes
+the compilation. The bursts that looked like repeated recompiles all followed one clean of `~/Library/Caches` at
+about 03:09, which matches the Mole cleaner. The text reader, the Dev app, `swift test` and another app's helper
+then each paid the cost once.
+
+**Where the compilation lives.** Three models a reading uses are `_e5` models in `TextRecognition.framework`:
+- the detector (`cr_td_model_v3_e5`)
+- the orientation model (`cr_orientation_model_v1_e5`)
+- the Latin and Cyrillic recognizer (`cr_tr_model_latincyrillic_v3_e5`)
+
+A process compiles them on first use and keeps them in
+`~/Library/Caches/<bundle id, or process name>/com.apple.e5rt.e5bundlecache/<macOS build>/`. That folder holds
+three entries, 136 KB in all. Every process names the entries the same way, but none shares them:
+- The Dev app, the Release app, the text reader and `swift test` (`swiftpm-testing-helper`) each compile their own.
+- Each macOS build starts a new folder.
+
+The Chinese and Japanese recognizer (`cr_tr_model_cj_v3`) isn't an `_e5` model and compiled nothing in any run.
+
+A scratch command-line tool ran the app's two passes on the warmup picture: `.accurate`, no language correction,
+zh-Hans + en, then en. The Mac ran macOS 27.2 (26B118). Compile times are from ANECompilerService's log.
+
+| Run | Primary pass | Latin pass |
+| --- | --- | --- |
+| Cold: no folder | 18.50 s | 18.59 s |
+| Again, in the same process | 0.16 s | 0.07 s |
+| Warm, a new process (two runs) | 0.21–0.24 s | 0.07 s |
+| The same binary under a second name, the first one's folder still there | 18.64 s | 17.41 s |
+| The first name again, with only its `com.apple.e5rt.e5bundlecache` deleted | 18.79 s | 17.58 s |
+| Both passes at once, a third name | 18.82 s | 36.03 s |
+
+| Compile, four cold runs | Time |
+| --- | --- |
+| Detector | 1.11–1.13 s |
+| Orientation model (22 procedures) | 14.50–14.76 s |
+| Latin recognizer | 14.76–16.05 s |
+
+- **The compiles ran one at a time.** The client worked for about 2.5 s before each of the last two. Started
+  together, the Latin pass waited for the orientation model and still ended 36.0 s in. A cold reading that needs
+  the Latin pass takes about 37 s however it is started, and longer when other apps compile at the same moment.
+- **Footprint:** 5 MB before a cold reading, 211 MB during it, 51 MB 3 s after (warm: 197 MB, then 37–38 MB).
+  Vision unloads its models after each request and reloads them from the folder in a fraction of a second.
+  Unloading, memory pressure and rebuilds therefore cost nothing. The Dev app was rebuilt and relaunched three
+  times (12:54–12:58), and none of those runs compiled.
+
+**What emptied the folders.** Everything in `~/Library/Caches` and `~/Library/Logs` went shortly before 03:09:49:
+- Folders that apps had kept for weeks came back between 03:09:49 and 03:25: `org.swift.swiftpm`, `CloudKit`,
+  `claude-cli-nodejs`, the text reader's folder, and Claude's logs.
+- The Dev app's folder came back only with its next reading.
+
+The Mole cleaner on this Mac does exactly this. Its `clean` runs `safe_clean ~/Library/Caches/*` and
+`~/Library/Logs/*`, and also has a rule of its own for `~/Library/Caches/com.apple.e5rt.e5bundlecache/*`. No log
+line names who ran it. Every one of our compiles that day followed from it:
+
+| When | Process | What happened |
+| --- | --- | --- |
+| 03:12 | The text reader (its folder came back at 03:11:06) | 2 compiles |
+| 03:22–03:30 | The text reader, and another app's `ClipboardTextHelper`, each folder emptied | 7 compiles between them. The text reader timed out twice (03:23:48, 03:29:42, 60 s each) |
+| 12:33:30 | The Dev app: running since 03:42, its first reading since, its folder back at 12:33:30 | 3 compiles, then Capture Text timed out |
+| 12:53:10 | `swift test` (its folder back at 12:53:10) | 3 compiles. Three OCR tests timed out at 20 s |
+
+The bursts at 21:09 the evening before and at 06:22 weren't ours: no OhMyShot process loaded a model then. The
+21:09 burst followed a model load in `mediaanalysisd`.
+
+**What else was ruled out:**
+- **CacheDelete:** the disk had 97 GB free. That night it only cleared `/private/var/dirs_cleaner` and skipped its
+  purges.
+- **`CompiledModelCache.removeStale`:** it works only in the text reader's own folder, and only on entries whose
+  model files are gone. Vision's entries name files in `/System`. It removed nothing that day. The only "Removed 1
+  entries" line, at 12:53:53, came from `CompiledModelCacheTests`' own fixture.
+
+**The 12:33 reading:**
+- 12:33:30.84: the warmup started.
+- About 1.1 s later: the selection ended, and the warmup was cancelled with it.
+- 12:33:32.04: the reading began. Its primary pass came back at 12:33:48.9: 16.9 s, 14.1 s of it compiling the
+  orientation model.
+- 12:33:51: the Latin pass began compiling.
+- 12:34:02: Capture Text's 30 s overall timeout fired.
+- 12:34:05: the compile finished, and Vision answered anyway.
+
+So a reading that times out still leaves the folder filled, and Try Again is fast. Keeping the warmup going past
+the selection would have saved nothing: the compile goes on in ANECompilerService either way, and the reading waits
+for the same compile.
+
+**Release behaves the same.** The compiling is done by the system, per bundle ID, so the build configuration makes
+no difference. Release keeps its own folder under `io.github.fzlzjerry.ohmyshot`. That folder is gone at the moment,
+so Release's next reading pays the full cost. So does every app's first reading after a macOS update or a fresh
+install.
+
+**Warming in the background (`TextModelWarmup`).** The app now compiles the models before anyone asks:
+- **When it checks:** 10 s after launch, and 10 s after anything changes its Caches folder. A kernel event on the
+  folder triggers the second check, so nothing runs while the folder stays as it is.
+- **What it checks:** the note `Compiled Text Models`, which names the macOS build, beside Core ML's cache. A
+  warmup that read both passes writes that note (`CompiledTextModels`).
+- **What it does when the note or the cache is missing:** it clears `RecognitionWarmup`'s record for the process
+  and warms both passes at utility priority.
+- **If a warmup can't run or finish:** it tries again after 1, 2, 4, 8 and 16 minutes, then waits for the folder
+  to change.
+
+Tried in an isolated copy of the Dev app (Debug, with a bundle ID of its own):
+
+| Step | What happened | Footprint |
+| --- | --- | --- |
+| Launch with no Caches folder | Warming began 10 s in and took 38.7 s; note written, three entries | 33 → 72 MB |
+| Launch again | Nothing warmed, no model loaded, no compile | 24 MB |
+| The whole Caches folder deleted while the app ran | Warming began 10 s later and took 42.1 s | 24 → 66 MB |
+| Only Core ML's cache deleted | Warming began 10 s later and took 38.8 s | 66 → 68 MB |
+
+- **Utility priority reaches the compiler** (QoS 0x11, against 0x19 for a reading). The detector took 1.2 s, the
+  orientation model 16.2 s and the Latin recognizer 15.4 s: about a tenth longer than at a reading's priority.
+- **A reading started during a warmup** waits for the one Vision slot, then finds the models the warmup has
+  compiled. The Latin warmup gives way to the reading and runs later. That is how `RecognitionSlots` is designed;
+  it wasn't tried live.
+- **Memory:** after a warmup the footprint is what a first reading leaves anyway. Only a launch that finds the
+  models missing carries it from launch on.
+- **Still cold:** a Capture Text started within about 50 s of a wipe (the 10 s wait, then 38–42 s of compiling),
+  and the text reader and `swift test`, which keep caches of their own.
+- **Idle power wasn't sampled.** The watch runs on kernel events, and the only timers are the retries after a
+  failed warmup.
+- **A cold reading finishes.** Capture Text's 30 s limit failed nearly every cold reading that needs the Latin
+  pass; now that Esc cancels a reading, its pipeline allows 60 s per request and per reading
+  (`TextCaptureCoordinator`), as the text reader already did. With the Dev app's `com.apple.e5rt.e5bundlecache`
+  moved aside, `text-test?demo=1` compiled three networks (1.3 s, 14.5 s and 15.1 s) and read the demo page's 401
+  characters in about 36.5 s, where 30 s would have failed it.
+
+Not done; each of these is a choice to make:
+- **History:** a capture that the text reader timed out on stays out until the app relaunches
+  (`HistoryTextReader.failed`). Captures read during a cold start therefore can't be searched until then.
+- **For the user:** add `~/Library/Caches/io.github.fzlzjerry.ohmyshot*` to the cleaner's exclusions.

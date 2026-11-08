@@ -16,6 +16,7 @@ extension CompositionRoot {
     func handle(_ shortcut: CaptureShortcut) {
         Log.signposter.emitEvent("hotkey")
         Log.hotkeys.notice("hotkey.\(shortcut.rawValue, privacy: .public)")
+        if shortcut == .captureArea, beginOnboardingCaptureIfReady() { return }
         switch shortcut {
         case .openHistory:
             showHistory()
@@ -35,6 +36,8 @@ extension CompositionRoot {
         default:
             break
         }
+        quickAccess.dismissFirstCaptureHint()
+        permissions.refresh([.screenRecording])
         guard permissions.status(of: .screenRecording) == .granted else {
             showOnboarding()
             return
@@ -111,7 +114,11 @@ extension CompositionRoot {
             followUpTakesDone = true
             return followUp
         }
-        if command.readsScreen, permissions.status(of: .screenRecording) != .granted { return showOnboarding() }
+        if command.readsScreen {
+            quickAccess.dismissFirstCaptureHint()
+            permissions.refresh([.screenRecording])
+            if permissions.status(of: .screenRecording) != .granted { return showOnboarding() }
+        }
         switch command {
         case .allInOne(let region):
             guard let area = area(of: region) else { return }

@@ -82,6 +82,10 @@ jobs:
             Scripts/release.sh --check
           fi
 
+      - name: Test the release updater checks
+        if: steps.version.outputs.skip != 'true'
+        run: python3 -B -m unittest discover -s Scripts/tests -p 'test_release_updater.py' -v
+
       - name: Check the secrets
         if: steps.version.outputs.skip != 'true'
         env:
@@ -223,10 +227,17 @@ jobs:
       BUILD: ${{ needs.preflight.outputs.build }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: OhMyShot-${{ needs.preflight.outputs.version }}
           path: dist
+
+      - name: Verify the updater in the archive being published
+        run: python3 -I Scripts/check-release-updater.py "dist/archives/OhMyShot-$VERSION.zip" --version "$VERSION" --build "$BUILD"
 
       # The zip and the appcast go to the release; the feed is the latest release's appcast.xml.
       - name: Publish the GitHub release

@@ -99,10 +99,39 @@ public final class QuickAccessController {
 
     private let actions: Actions
     private var panel: QuickAccessPanel?
+    private var firstCaptureHint: FirstCaptureHintController?
+
+    /// Only the practice capture gets this hint. It holds that card's countdown without changing preferences.
+    public func showFirstCaptureHint(for id: UUID, isCopied: Bool) {
+        dismissFirstCaptureHint()
+        guard let item = item(id), let frame = screenFrame(ofCard: id), !isTrashing(id) else { return }
+        let hint = FirstCaptureHintController(captureID: id, isCopied: isCopied, isSaved: item.savedURL != nil) { [weak self] in
+            self?.dismissFirstCaptureHint()
+        }
+        firstCaptureHint = hint
+        hold(.onboarding, for: id, if: true)
+        hint.show(near: frame)
+    }
+
+    public func dismissFirstCaptureHint() {
+        guard let hint = firstCaptureHint else { return }
+        firstCaptureHint = nil
+        hint.dismiss()
+        hold(.onboarding, for: hint.captureID, if: false)
+    }
+
+    private func updateFirstCaptureHint() {
+        guard let hint = firstCaptureHint else { return }
+        guard item(hint.captureID) != nil, !isTrashing(hint.captureID), let frame = screenFrame(ofCard: hint.captureID) else {
+            return dismissFirstCaptureHint()
+        }
+        hint.place(near: frame)
+    }
 
     #if DEBUG
     /// The cards' panel while it shows, for scripted captures of it.
     public var debugPanel: NSWindow? { panel }
+    public var debugFirstCaptureHintWindow: NSWindow? { firstCaptureHint?.debugWindow }
 
     /// Moves the newest card to the Trash as its Trash button does, for scripted checks.
     public func debugTrashLatest() {
@@ -181,6 +210,7 @@ public final class QuickAccessController {
 
     /// Shows a card for `item`, or brings an existing card for it back to the bottom of the stack.
     public func add(_ item: QuickAccessItem) {
+        if firstCaptureHint?.captureID != item.id { dismissFirstCaptureHint() }
         // Restored while its card waits to go to the Trash: it stays.
         if let index = trashing.firstIndex(where: { $0.id == item.id }) {
             trashing.remove(at: index).sender.cancel()
@@ -248,6 +278,7 @@ public final class QuickAccessController {
     /// The annotation editor opened (or closed) on a capture. A card is not closed by itself while it is open, and has
     /// at least `CardCountdown.grace` more seconds once it is closed.
     public func setEditing(_ editing: Bool, for id: UUID) {
+        if editing, firstCaptureHint?.captureID == id { dismissFirstCaptureHint() }
         hold(.editor, for: id, if: editing)
     }
 
@@ -265,6 +296,7 @@ public final class QuickAccessController {
     /// Copies the newest card's capture: the keyboard path to Quick Access.
     public func copyLatest() {
         guard let latest = liveItems.last else { return }
+        if firstCaptureHint?.captureID == latest.id { dismissFirstCaptureHint() }
         actions.copy(latest)
         stack?.showCopied(latest.id)
     }
@@ -340,6 +372,7 @@ public final class QuickAccessController {
     /// can no longer be restored.
     public func remove(_ id: UUID) {
         clearHover(for: id)
+        if firstCaptureHint?.captureID == id { dismissFirstCaptureHint() }
         recentlyClosed.removeAll { $0.id == id }
         if let index = trashing.firstIndex(where: { $0.id == id }) { trashing.remove(at: index).sender.cancel() }
         guard items.contains(where: { $0.id == id }) else { return }
@@ -374,6 +407,7 @@ public final class QuickAccessController {
 
     private func close(_ item: QuickAccessItem) {
         clearHover(for: item.id)
+        if firstCaptureHint?.captureID == item.id { dismissFirstCaptureHint() }
         recentlyClosed.append(item)
         if recentlyClosed.count > 20 { recentlyClosed.removeFirst() }
         schedule.forget(item.id)
@@ -422,10 +456,12 @@ public final class QuickAccessController {
         stack.updatePointerHover()
         // The display actually used, so a stack moved off a removed display stays where it now is.
         self.displayID = screen.cgDirectDisplayID ?? displayID
+        updateFirstCaptureHint()
     }
 
     private func tearDown() {
         guard items.isEmpty else { return }
+        dismissFirstCaptureHint()
         closer?.cancel()
         closer = nil
         schedule.removeAll()
@@ -459,7 +495,10 @@ public final class QuickAccessController {
         stack.currentUpload = sharing.current
         stack.pictureOffer = actions.pictureChangeOffer
         stack.cardCount = { [weak self] in self?.liveItems.count ?? 0 }
-        stack.onHold = { [weak self] id, hold, on in self?.hold(hold, for: id, if: on) }
+        stack.onHold = { [weak self] id, hold, on in
+            if hold == .drag, on, self?.firstCaptureHint?.captureID == id { self?.dismissFirstCaptureHint() }
+            self?.hold(hold, for: id, if: on)
+        }
         stack.onFocus = { [weak self] id in self?.focus(on: id) }
         stack.onPointerHover = { [weak self] id, hovering in self?.pointerHovered(id, hovering: hovering) }
         stack.onKey = { [weak self] command in self?.performKeyed(command) ?? false }
@@ -729,6 +768,7 @@ public final class QuickAccessController {
     /// panel, or closes the card, gives the keyboard back to the app in front first, as the click that would have
     /// done it with the pointer never came. Close All gives it back however it was asked for: no card is left to hold it.
     private func perform(_ command: CardCommand, on item: QuickAccessItem, keyed: Bool) {
+        if firstCaptureHint?.captureID == item.id { dismissFirstCaptureHint() }
         // A card waiting to go to the Trash only comes back.
         guard !isTrashing(item.id) else {
             if command == .undoTrash { undoTrash(item.id) }

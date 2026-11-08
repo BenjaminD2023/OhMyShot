@@ -38,6 +38,7 @@ struct OverlayKeyTests {
             heard.append("windows \(targets.map(\.id))")
         }
         func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) { heard.append("switch") }
+        func overlayViewDidRequestWindowPicker(_ view: OverlayView) { heard.append("windowPicker") }
         func overlayViewDidCancel(_ view: OverlayView) { heard.append("cancel") }
         func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) {
             heard.append("pick")
@@ -97,6 +98,19 @@ struct OverlayKeyTests {
         return (recorder.heard, !passedOn.keys.isEmpty, recorder.nudge)
     }
 
+    @Test func wOpensTheWindowPreviewWhileSpaceKeepsDirectPointing() throws {
+        for purpose in [OverlayController.Purpose.screenshot, .record] {
+            let result = try press(13, characters: "w", in: purpose)
+            #expect(result.heard == ["windowPicker"] && !result.passedOn)
+            #expect(try press(49, characters: " ", in: purpose).heard == ["space"])
+        }
+        for purpose in [OverlayController.Purpose.annotate, .scroll, .text, .color, .measure] {
+            #expect(try press(13, characters: "W", modifiers: .shift, in: purpose).heard.isEmpty)
+        }
+        #expect(try press(13, characters: "w", in: .screenshot, allInOne: true).heard == ["windowPicker"])
+        #expect(try press(13, characters: "W", modifiers: [.command, .shift], in: .screenshot).heard.isEmpty)
+    }
+
     private static let arrows: [UInt16] = [123, 124, 125, 126]
     private static let returns: [UInt16] = [36, 76]
 
@@ -151,7 +165,7 @@ struct OverlayKeyTests {
     @Test func allInOneLettersChooseWhatTheNextAreaIsFor() throws {
         let cases: [(UInt16, String, [String])] = [
             (31, "o", ["mode text"]), (1, "s", ["mode scroll"]), (15, "r", ["mode record"]),
-            (13, "w", ["switch"]), (3, "f", ["select"]),
+            (13, "w", ["windowPicker"]), (3, "f", ["select"]),
             // A: a plain capture of an area, letting go of what the next area was for.
             (0, "a", ["mode screenshot(nil)"]),
         ]
@@ -161,9 +175,9 @@ struct OverlayKeyTests {
         }
     }
 
-    /// Capture Area's overlay has none of them: the letters are passed on.
-    @Test func captureAreaPassesTheLettersOn() throws {
-        for (code, letter) in [(UInt16(31), "o"), (1, "s"), (15, "r"), (13, "w"), (3, "f")] {
+    /// Other All-In-One purpose letters are passed on by Capture Area.
+    @Test func captureAreaPassesTheOtherModeLettersOn() throws {
+        for (code, letter) in [(UInt16(31), "o"), (1, "s"), (15, "r"), (3, "f")] {
             let result = try press(code, characters: letter, in: .screenshot)
             #expect(result.heard.isEmpty && result.passedOn, "\(letter): \(result.heard)")
         }

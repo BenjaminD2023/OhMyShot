@@ -24,6 +24,7 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode)
+    func overlayViewDidRequestWindowPicker(_ view: OverlayView)
     func overlayViewDidCancel(_ view: OverlayView)
     /// A color taken at a point in global space (a click, Return, or C), with the keys held then; `keyboard`
     /// says it was a key, so what follows can take the keyboard too.
@@ -55,6 +56,7 @@ extension OverlayViewDelegate {
             overlayView(view, didSelectWindow: first, modifiers: modifiers)
         }
     }
+    func overlayViewDidRequestWindowPicker(_ view: OverlayView) {}
     func overlayViewDidRequestLastArea(_ view: OverlayView) {}
     func overlayViewDidResetDrag(_ view: OverlayView) {}
 }
@@ -232,6 +234,7 @@ final class OverlayView: NSView {
         toolbar.isHidden = !showsToolbar
         toolbar.alphaValue = 1
         toolbar.showModes(isAllInOne)
+        toolbar.usesWindowPreview(purpose == .screenshot || purpose == .record)
         toolbar.markPurpose(nil)
         toolbar.select(mode == .area ? .area : .window)
         layoutToolbar()
@@ -693,7 +696,12 @@ final class OverlayView: NSView {
             onToolbarVisibilityToggle()
             return
         }
-        let picks = purpose == .color || purpose == .measure
+        if character == "w", event.modifierFlags.intersection([.shift, .command, .control, .option]).isEmpty,
+           !isDraggingSelection, purpose == .screenshot || purpose == .record {
+            delegate?.overlayViewDidRequestWindowPicker(self)
+            return
+        }
+        let picks = purpose.picksPixels
         if purpose == .measure, let measure,
            event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
             let tolerance: MeasureTolerance? = switch character {
@@ -804,6 +812,8 @@ final class OverlayView: NSView {
     /// Marks what All-In-One's next area is for on the bar; nil for a plain capture.
     func markPurpose(_ choice: AllInOneBar.Choice?) {
         toolbar.markPurpose(choice)
+        toolbar.usesWindowPreview((purpose == .screenshot || purpose == .record) && choice != .text && choice != .scroll)
+        layoutToolbar()
     }
 
     /// Shows the screen as it is now instead of as it was frozen, for a recording set up from a frozen All-In-One.
@@ -824,8 +834,12 @@ final class OverlayView: NSView {
             delegate?.overlayView(self, didChooseMode: .screenshot(nil))
         case .area where mode != .area:
             delegate?.overlayView(self, didSwitchTo: .area)
-        case .window where mode != .window:
-            delegate?.overlayView(self, didSwitchTo: .window)
+        case .window:
+            if purpose == .screenshot || purpose == .record {
+                delegate?.overlayViewDidRequestWindowPicker(self)
+            } else if mode != .window {
+                delegate?.overlayView(self, didSwitchTo: .window)
+            }
         case .fullscreen:
             delegate?.overlayView(self, didSelect: display.frame, modifiers: [])
         case .cancel:

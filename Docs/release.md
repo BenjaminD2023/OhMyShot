@@ -1,3 +1,5 @@
+> Fork releases follow [releasing.md](releasing.md). Website distribution instructions below apply to upstream only; this fork retains its signed BenjaminD2023 GitHub feed and saved automatic-update preferences.
+
 > Fork maintenance: use [releasing.md](releasing.md) and `Scripts/package-release.sh`.
 > The following describes upstream’s release process, scheduler and debug/updates-* hooks.
 > This fork retains Sparkle scheduling and saved automatic-download preferences; those debug hooks are not included.
@@ -16,21 +18,69 @@ runs. Both the workflow and script are guarded in this fork: use [releasing.md](
 
 ## How the app updates
 
-- **Only release builds look.** `SUFeedURL` is set in `Config/Release.xcconfig`:
-  `https://github.com/MMFoundation/OhMyShot/releases/latest/download/appcast.xml`. Debug builds ("OhMyShot Dev") have no
-  feed, so they never look and show neither Settings › General › Updates nor Check for Updates… in the menu.
-- **Everything is signed.** The appcast and every archive are signed with the project's EdDSA key; the public half is
-  `SUPublicEDKey` in `Config/Info.plist`. The app refuses an appcast or an archive that doesn't match it
-  (`SURequireSignedFeed`, `SUVerifyUpdateBeforeExtraction`).
-- **No timer of its own.** Sparkle's schedule is off (`SUEnableAutomaticChecks` is NO), since it would keep a timer in
-  the app. While Settings › General › Check for updates automatically is on (the default), `UpdateController` asks the
-  system's background activity scheduler for a look about once a day (24 h, ± 4 h, utility), and skips a look less than
-  18 h after the last one. The app holds nothing while idle.
-- **Gently.** A version found by the app's own look waits in the menu bar menu ("Update to Version 0.2.0…") and in
-  Settings ("Version 0.2.0 is available."), rather than putting a window in front of what the person is doing. Sparkle
-  shows its own window at once only when it would anyway: the app has just launched, or the Mac was left idle. Check for
-  Updates… and Check Now always show Sparkle's windows. Nothing is downloaded before the person says so:
-  `SUAllowsAutomaticUpdates` is NO, so Sparkle never offers to download and install by itself.
+- Release builds check `https://www.ohmyshot.org/updates/appcast`. The website Worker streams the original signed
+  GitHub appcast unchanged. Its `/updates/download/v<version>/OhMyShot-<version>.zip` endpoint streams the archive,
+  including byte-range requests, so neither request redirects the user's Mac to GitHub. The app retries transport
+  failures once through GitHub directly. For a manual check or download, dismiss Sparkle’s error alert to start
+  that retry; a retried download asks for installation confirmation again. Signature failures are not retried through a different source.
+- Deploy the companion website change **before shipping this app**. The update routes have no new secrets or storage
+  dependencies. This removes the user's direct GitHub dependency; Cloudflare's international network is not a mainland
+  CDN SLA. Check the feed and a complete archive download on mainland networks without VPN before release. A dedicated
+  mainland/Hong Kong mirror can replace this transport later without weakening Sparkle verification.
+- Signed-feed recovery expiration is disabled, so a prolonged outage never allows unsigned metadata.
+- The signed appcast and every archive retain EdDSA verification (`SURequireSignedFeed`, `SUVerifyUpdateBeforeExtraction`).
+  Never rewrite a signed feed at the proxy. Release publishing stays the same; no second upload is necessary.
+- The system background activity scheduler checks every six hours (± one hour). Enabling checks also checks at launch
+  unless the last check was less than 4.5 hours ago. Automatic checks remain on by default and can be disabled in Settings.
+- A found version is persisted by build number and stays at the top of the status menu, with an arrow beside its icon,
+  until the installed build catches up. Opening/dismissing Sparkle does not erase it. Settings also shows the version.
+  A reminder offers Update Now and Remind Me Tomorrow, at most once per version per day, when no capture, recording,
+  editor or modal is active. If busy, the menu remains available; finishing a capture, activation and scheduled wakes retry the reminder.
+- Downloads and installation still require confirmation. The updater never forces a restart during a capture.
+- Debug builds have no production feed. `ohmyshot-dev://debug/updates-preview` shows a **simulated** 0.2.0 menu reminder
+  and the Unreleased notes for visual QA, without checking or downloading an update.
+
+### Mainland distribution acceptance
+
+Before signing, `Scripts/release.sh` validates the built Release app with `Scripts/check-release-updater.py`,
+including CI's `--build-only` run. It checks the processed feed URL, release identity and version/build, public key,
+signed-feed enforcement, archive verification and disabled unsigned-feed recovery. After packaging it checks the
+actual ZIP again; the CI publish job repeats the ZIP check immediately before creating the GitHub release. A missing
+or legacy GitHub updater stops publication. `python3 -B -m unittest discover -s Scripts/tests -p 'test_release_updater.py'`
+exercises valid packages, the legacy feed, missing/weakened signature settings and mismatched artifacts.
+
+The website's `/download` and both installation guides must use the website archive route, including when release
+lookup fails. A GitHub redirect is a failure, even if it works on the maintainer's connection. The published 0.1.0
+archive still has a GitHub `SUFeedURL`; changing the website cannot change that installed binary. Publish a higher
+version/build containing the website updater before mainland promotion. Users of 0.1.0 who cannot reach GitHub need
+one manual download from the website to migrate; do not overwrite the signed 0.1.0 asset in place.
+
+Run `python3 Scripts/check-distribution.py` on a mainland Mac with VPN/TUN disabled. It checks both home pages,
+refuses external download redirects, downloads the complete browser and updater archives, compares them, checks
+range responses, verifies the signed feed and archive against `Config/Info.plist`'s public key, and inspects the
+updater settings inside the actual downloaded app. It needs Xcode's Swift compiler and Python 3, no private key or
+Keychain access. Results and files go to `build/distribution-check/` (or `--output <directory>`). A legacy app or
+external redirect makes it exit nonzero. HTTP proxies are bypassed; a system VPN/TUN must be disabled separately.
+
+Record ISP, city, date and the report for China Telecom, Unicom and Mobile. An overseas `loc` in the diagnostic is
+not mainland evidence. A successful transport check is not proof of installation: on a disposable copy of an older
+website-updater release, accept a signed newer update, restart and confirm the installed build and permissions.
+Do not use the working Dev app for that replacement. If mainland site reachability fails, arrange a measured
+mainland/Hong Kong origin or CDN with the site maintainer and repeat these checks before promotion.
+
+### The post-update window
+
+`CHANGELOG.md` is bundled in the signed application. On the first launch with this feature, and once per higher build
+number afterwards, What’s New opens with the exact installed version's section. The menu's What’s New… reopens it.
+Translations live in `App/ReleaseNotes-<language>.md` (`zh-Hans`, `zh-Hant`, `ja`, `es`, `fr`), with the same
+`## [<version>]` sections as CHANGELOG.md. When releasing, move each translated Unreleased section under the release
+version too. The app reads its selected language's matching version, falling back to CHANGELOG.md when missing;
+it never substitutes a different version's notes. English remains the source of truth.
+Notes work offline and don't execute HTML or JavaScript. Headings, paragraphs, bullet lists, inline Markdown (bold,
+italic, links, inline code), and fenced code blocks are supported. Other Markdown constructs stay readable as text.
+The default banner is a blue/teal native illustration. To customize it, add a `ReleaseBanner` image set to
+`App/Assets.xcassets` (recommended 1200 × 400 or larger); it is bundled and code-signed too. Keep its lower-left area
+clear for the localized headline. Without an image, the default banner is always available.
 
 ## The signing key
 

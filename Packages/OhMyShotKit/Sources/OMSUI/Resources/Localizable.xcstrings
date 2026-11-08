@@ -1523,6 +1523,40 @@
         }
       }
     },
+    "A little more powerful." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada vez más potente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toujours plus performant."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップデートで、もっと便利に。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次更新，更进一步。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次更新，更進一步。"
+          }
+        }
+      }
+    },
     "A model pack reads text that macOS reads poorly on its own. It’s downloaded once, from %@, and stays on this Mac; nothing you capture leaves it." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1692,6 +1726,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每個擷取內容和儲存的檔案都會依此格式命名。{date} 和 {time} 是擷取的時間；{app} 是最前方的 App；{window} 是視窗的標題，擷取區域時則為最前方視窗的標題；{counter} 是每儲存一個檔案就加一的數字。"
+          }
+        }
+      }
+    },
+    "A newer OhMyShot is ready. Update now for the latest improvements and fixes. Your captures will stay safe." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hay una nueva versión de OhMyShot. Actualiza para disfrutar de las últimas mejoras y correcciones. Tus capturas se conservarán."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une nouvelle version d’OhMyShot est disponible. Profitez des dernières améliorations et corrections. Vos captures seront conservées."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい OhMyShot が利用できます。アップデートして、最新の改善と修正をご利用ください。キャプチャはそのまま保持されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新版 OhMyShot 已就绪。立即更新，体验最新改进与修复。你的截图将安全保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新版 OhMyShot 已就緒。立即更新，體驗最新改進與修正。你的截圖將安全保留。"
           }
         }
       }
@@ -2684,6 +2752,46 @@
         }
       }
     },
+    "Adds arrows, text, and highlights." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adds arrows, text, and highlights."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añade flechas, texto y resaltados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajoute des flèches, du texte et des surlignages."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "矢印やテキスト、ハイライトを追加できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加箭头、文字和高亮。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入箭頭、文字和醒目標示。"
+          }
+        }
+      }
+    },
     "After %lld seconds" : {
       "localizations" : {
         "es" : {
@@ -3092,6 +3200,46 @@
         }
       }
     },
+    "Allow Screen Recording, check your shortcuts, and take your first screenshot. It takes about a minute." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow Screen Recording, check your shortcuts, and take your first screenshot. It takes about a minute."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permite la grabación de pantalla, revisa tus atajos y haz tu primera captura. Tardarás un minuto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorisez l’enregistrement de l’écran, vérifiez vos raccourcis et faites votre première capture. Comptez environ une minute."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面収録を許可し、ショートカットを確認して、最初の1枚を撮りましょう。1分ほどで終わります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许录屏、检查快捷键，然后截取第一张图片。大约需要一分钟。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允許螢幕錄製、檢查快速鍵，然後擷取第一張圖片。大約需要一分鐘。"
+          }
+        }
+      }
+    },
     "Allow other apps to control OhMyShot" : {
       "localizations" : {
         "es" : {
@@ -3258,6 +3406,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已經是每點一個像素。"
+          }
+        }
+      }
+    },
+    "Already turned it on?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already turned it on?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Ya lo activaste?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déjà activé ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もうオンにしましたか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已经开启了？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已經開啟了？"
           }
         }
       }
@@ -4657,6 +4845,40 @@
         }
       }
     },
+    "Cancelled." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancelado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annulé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャンセルしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消。"
+          }
+        }
+      }
+    },
     "Capture" : {
       "localizations" : {
         "es" : {
@@ -5235,6 +5457,46 @@
         }
       }
     },
+    "Capture from any app" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capture from any app"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Captura desde cualquier app"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturez depuis n’importe quelle app"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どのアプリからでも撮影"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在任意应用中截图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在任何 App 中截圖"
+          }
+        }
+      }
+    },
     "Capture the shadow" : {
       "localizations" : {
         "es" : {
@@ -5729,6 +5991,46 @@
         }
       }
     },
+    "Choose Different Shortcuts…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Different Shortcuts…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elegir otros atajos…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisir d’autres raccourcis…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のショートカットを設定…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置其他快捷键…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定其他快捷鍵…"
+          }
+        }
+      }
+    },
     "Choose GIF on the recording bar to keep a recording as an animated GIF, which shows wherever pictures do. GIFs have no sound and are made as large as things were on screen, at most 1920 pixels on their longer side. More frames move more smoothly and make larger files." : {
       "localizations" : {
         "es" : {
@@ -5967,6 +6269,46 @@
         }
       }
     },
+    "Click Allow Screen Recording, then choose Open System Settings in the prompt." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click Allow Screen Recording, then choose Open System Settings in the prompt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en «Permitir la grabación de pantalla» y elige «Abrir Ajustes del Sistema» en el aviso."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez sur Autoriser l’enregistrement de l’écran, puis choisissez Ouvrir Réglages Système dans la fenêtre qui s’affiche."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「画面収録を許可」をクリックし、表示されたダイアログで「システム設定を開く」を選びます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击“允许录屏”，然后在弹出的提示中选择“打开系统设置”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按一下「允許螢幕錄製」，然後在跳出的提示中選擇「打開系統設定」。"
+          }
+        }
+      }
+    },
     "Click Delete again to throw this recording away" : {
       "localizations" : {
         "es" : {
@@ -6001,6 +6343,46 @@
         }
       }
     },
+    "Click Open System Settings." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click Open System Settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en «Abrir Ajustes del Sistema»."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez sur Ouvrir Réglages Système."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「システム設定を開く」をクリックします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击“打开系统设置”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按一下「打開系統設定」。"
+          }
+        }
+      }
+    },
     "Click Restart again to throw this recording away and start over" : {
       "localizations" : {
         "es" : {
@@ -6031,6 +6413,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "再按一次「重新開始」即可丟棄這段錄影並重錄"
+          }
+        }
+      }
+    },
+    "Click to show the file in Finder." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click to show the file in Finder."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic para mostrar el archivo en Finder."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez pour afficher le fichier dans le Finder."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリックすると Finder でファイルを表示します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击可在访达中显示文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按一下即可在 Finder 中顯示檔案。"
           }
         }
       }
@@ -7095,6 +7517,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已將公式拷貝為 LaTeX"
+          }
+        }
+      }
+    },
+    "Copies it, ready to paste with ⌘V." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copies it, ready to paste with ⌘V."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copia para pegarla con ⌘V."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La copie, prête à coller avec ⌘V."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コピーして、⌘V で貼り付けられます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝后即可按 ⌘V 粘贴。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝後即可按 ⌘V 貼上。"
           }
         }
       }
@@ -9010,6 +9472,86 @@
         }
       }
     },
+    "Drag over any part of the screen, then let go. Press Esc to cancel." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag over any part of the screen, then let go. Press Esc to cancel."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra sobre cualquier parte de la pantalla y suelta. Pulsa Esc para cancelar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faites glisser sur une partie de l’écran, puis relâchez. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面の好きな範囲をドラッグして離します。Esc でキャンセルできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在屏幕上拖移选择任意区域，然后松开。按 Esc 键取消。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在螢幕上拖移選取任意區域，然後放開。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
+    "Drag over part of the screen. When you let go, its Quick Access card appears in the corner." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag over part of the screen. When you let go, its Quick Access card appears in the corner."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra sobre una parte de la pantalla. Al soltar, su tarjeta de Acceso rápido aparece en la esquina."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faites glisser sur une partie de l’écran. Quand vous relâchez, sa carte Accès rapide apparaît dans le coin."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面の一部をドラッグします。離すと、そのクイックアクセスカードが画面の隅に表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在屏幕上拖移选择一个区域。松开后，它的快速访问卡片会出现在屏幕角落。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在螢幕上拖移選取一個區域。放開後，它的快速取用卡片會出現在螢幕角落。"
+          }
+        }
+      }
+    },
     "Drag to move. Double-click to fill the recording." : {
       "localizations" : {
         "es" : {
@@ -10498,6 +11040,46 @@
         }
       }
     },
+    "Free up your screenshot keys" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free up your screenshot keys"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Libera tus teclas de captura"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Libérez vos raccourcis de capture"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショットのキーを空けましょう"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "腾出截图快捷键"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "騰出截圖快速鍵"
+          }
+        }
+      }
+    },
     "Freeze the screen" : {
       "localizations" : {
         "es" : {
@@ -10886,6 +11468,126 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "一般"
+          }
+        }
+      }
+    },
+    "Get Started" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get Started"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commencer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定を始める"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始設定"
+          }
+        }
+      }
+    },
+    "Getting Started" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Getting Started"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Primeros pasos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Premiers pas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使い始める"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新手引导"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新手導覽"
+          }
+        }
+      }
+    },
+    "Got It" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Got It"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entendido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compris"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "わかりました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知道了"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "知道了"
           }
         }
       }
@@ -11622,6 +12324,46 @@
         }
       }
     },
+    "If macOS asks, choose Quit & Reopen. The guide continues where you left off." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If macOS asks, choose Quit & Reopen. The guide continues where you left off."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si macOS lo pide, elige «Salir y volver a abrir». La guía seguirá donde la dejaste."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si macOS le demande, choisissez Quitter et rouvrir. Le guide reprend là où vous en étiez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "確認が表示されたら「終了して再度開く」を選びます。ガイドは中断したところから続きます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如 macOS 提示，请选择“退出并重新打开”。引导会从中断处继续。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "若 macOS 提示，請選擇「結束並重新打開」。導覽會從中斷處繼續。"
+          }
+        }
+      }
+    },
     "Image line breaks" : {
       "localizations" : {
         "es" : {
@@ -11754,6 +12496,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已輸入「%@」"
+          }
+        }
+      }
+    },
+    "In Keyboard Settings, open Keyboard Shortcuts, then Screenshots." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Keyboard Settings, open Keyboard Shortcuts, then Screenshots."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En los ajustes de Teclado, abre «Atajos de teclado» y luego «Capturas de pantalla»."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dans les réglages Clavier, ouvrez Raccourcis clavier, puis Captures d’écran."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーボード設定で「キーボードショートカット」を開き、「スクリーンショット」を選びます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在键盘设置中打开“键盘快捷键”，然后选择“截屏”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在鍵盤設定中打開「鍵盤快速鍵」，然後選擇「截圖」。"
+          }
+        }
+      }
+    },
+    "In System Settings, turn on OhMyShot under Screen & System Audio Recording." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In System Settings, turn on OhMyShot under Screen & System Audio Recording."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En Ajustes del Sistema, activa OhMyShot en «Grabación de pantalla y del audio del sistema»."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dans Réglages Système, activez OhMyShot sous Enregistrement de l’écran et des sons du système."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム設定の「画面収録とシステムオーディオ録音」で OhMyShot をオンにします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在系统设置的“录屏与系统录音”中开启 OhMyShot。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在系統設定的「螢幕與系統錄音」中開啟 OhMyShot。"
           }
         }
       }
@@ -12216,6 +13038,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "其已儲存的密鑰和密碼會從鑰匙圈中刪除。已上傳的檔案仍留在原處。"
+          }
+        }
+      }
+    },
+    "It’s already copied: paste it anywhere with ⌘V." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It’s already copied: paste it anywhere with ⌘V."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya está copiada: pégala donde quieras con ⌘V."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elle est déjà copiée : collez-la où vous voulez avec ⌘V."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すでにコピー済みです。⌘V でどこにでも貼り付けられます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已经拷贝好了，按 ⌘V 即可粘贴到任何地方。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已經拷貝好了，按 ⌘V 即可貼到任何地方。"
           }
         }
       }
@@ -12696,6 +13558,46 @@
         }
       }
     },
+    "Keeps a file. Or drag the card into any app." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keeps a file. Or drag the card into any app."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guarda un archivo. O arrastra la tarjeta a cualquier app."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistre un fichier. Ou faites glisser la carte dans une app."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルとして保存します。カードを別のアプリにドラッグすることもできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存储为文件。也可以把卡片拖到任意应用中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存為檔案。也可以把卡片拖到任何 App 中。"
+          }
+        }
+      }
+    },
     "Keys chosen for one action are taken from any other that had them." : {
       "localizations" : {
         "es" : {
@@ -13032,6 +13934,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "讓「自動捲動」在捲動擷取時替你捲動頁面，並讓「擷取文字」直接讀取 App 顯示的文字，而不是從圖片中辨識。沒有此權限，你需要自己捲動，文字從圖片中辨識。"
+          }
+        }
+      }
+    },
+    "Let’s Go" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "C’est parti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使い始める"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始使用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始使用"
           }
         }
       }
@@ -13509,6 +14445,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "容差越低，找到的邊界越細；容差越高，越會忽略細微的顏色變化。這會影響量尺線與選取範圍貼齊。測量時按 T 鍵循環切換預設，按 +/− 調整；所選的值會記在這裡。"
+          }
+        }
+      }
+    },
+    "Made for your next great capture." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para tu próxima gran captura."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pour votre prochaine belle capture."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次の素敵なキャプチャのために。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为你的下一次精彩截图而来。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為你的下一次精彩截圖而來。"
           }
         }
       }
@@ -14223,6 +15193,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "麥克風音量"
+          }
+        }
+      }
+    },
+    "Microphone, camera, and other permissions are only requested when a feature needs them." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microphone, camera, and other permissions are only requested when a feature needs them."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los permisos de micrófono, cámara y otros solo se solicitan al usar una función que los necesita."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les autres autorisations, comme le micro et la caméra, ne sont demandées que lorsqu’une fonction en a besoin."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクやカメラなどの権限は、必要な機能を使うときにのみ求められます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风、摄像头等其他权限，只会在使用相关功能时申请。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麥克風、相機等其他權限，只會在使用相關功能時要求。"
           }
         }
       }
@@ -15694,6 +16704,46 @@
         }
       }
     },
+    "Not set" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not set"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin asignar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non défini"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未設定"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未設定"
+          }
+        }
+      }
+    },
     "Nothing to translate" : {
       "localizations" : {
         "es" : {
@@ -15797,6 +16847,7 @@
       }
     },
     "OhMyShot Has Its Keys" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -15864,7 +16915,82 @@
         }
       }
     },
+    "OhMyShot checks at launch and about every six hours through its website, with GitHub as a backup. It asks before downloading. Update reminders stay until you install the new version." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot busca actualizaciones al iniciarse y aproximadamente cada seis horas en su web, con GitHub como alternativa. Pide permiso antes de descargar. Los avisos permanecen hasta que instales la nueva versión."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot recherche les mises à jour au lancement et environ toutes les six heures sur son site, avec GitHub en secours. Il demande votre accord avant le téléchargement. Les rappels restent visibles jusqu’à l’installation de la nouvelle version."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot は起動時と約6時間ごとに公式サイトで更新を確認し、接続できない場合は GitHub を使用します。ダウンロード前に確認します。更新の通知は、新しいバージョンをインストールするまで表示されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 在启动时及大约每六小时通过官网检查更新，GitHub 作为备用。下载前会征求你的同意，更新提示会持续显示，直到安装新版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 在啟動時及大約每六小時透過官網檢查更新，GitHub 作為備用。下載前會徵求你的同意，更新提示會持續顯示，直到安裝新版本。"
+          }
+        }
+      }
+    },
+    "OhMyShot lives in the menu bar, not the Dock. Click its icon to capture, or open the app from Finder or Spotlight for Settings." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot lives in the menu bar, not the Dock. Click its icon to capture, or open the app from Finder or Spotlight for Settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot está en la barra de menús, no en el Dock. Haz clic en su icono para capturar, o abre la app desde Finder o Spotlight para ver los ajustes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot se trouve dans la barre des menus, pas dans le Dock. Cliquez sur son icône pour capturer, ou ouvrez l’app depuis le Finder ou Spotlight pour accéder aux réglages."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot は Dock ではなくメニューバーにあります。アイコンをクリックして撮影できます。設定は Finder や Spotlight からアプリを開いて表示します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 位于菜单栏，而不是程序坞。点击图标即可截图；从访达或 Spotlight 打开应用可进入设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 位於選單列，而不是 Dock。按一下圖示即可截圖；從 Finder 或 Spotlight 開啟 App 可進入設定。"
+          }
+        }
+      }
+    },
     "OhMyShot needs it to capture your screen." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -15894,6 +17020,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OhMyShot 需要此權限才能擷取你的螢幕。"
+          }
+        }
+      }
+    },
+    "OhMyShot’s menu bar icon opens the capture menu." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot’s menu bar icon opens the capture menu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El icono de OhMyShot en la barra de menús abre el menú de capturas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’icône OhMyShot dans la barre des menus ouvre le menu de capture."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メニューバーの OhMyShot アイコンで撮影メニューが開きます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击菜单栏中的 OhMyShot 图标可打开截图菜单。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按一下選單列中的 OhMyShot 圖示可開啟截圖選單。"
           }
         }
       }
@@ -16575,6 +17741,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選用。伺服器回應錯誤時顯示，讓失敗的上傳說明原因。"
+          }
+        }
+      }
+    },
+    "Or from any app:" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Or from any app:"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O desde cualquier app:"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ou depuis n’importe quelle app :"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どのアプリからでも："
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "也可在任意应用中按："
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "也可在任何 App 中按："
           }
         }
       }
@@ -17511,6 +18717,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放音效"
+          }
+        }
+      }
+    },
+    "Point at the card to show its buttons. Double-click it to mark it up." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Point at the card to show its buttons. Double-click it to mark it up."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pasa el puntero sobre la tarjeta para ver sus botones. Haz doble clic para anotarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Placez le pointeur sur la carte pour afficher ses boutons. Double-cliquez pour l’annoter."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カードにポインタを合わせるとボタンが表示されます。ダブルクリックで注釈を付けられます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将指针移到卡片上即可显示按钮。连按两次可进行标注。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將指標移到卡片上即可顯示按鈕。按兩下可進行標註。"
           }
         }
       }
@@ -19516,6 +20762,80 @@
         }
       }
     },
+    "Relaunch OhMyShot" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relaunch OhMyShot"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a abrir OhMyShot"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relancer OhMyShot"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot を再起動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新启动 OhMyShot"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新啟動 OhMyShot"
+          }
+        }
+      }
+    },
+    "Remind Me Tomorrow" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recordármelo mañana"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Me rappeler demain"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明日通知する"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明天提醒我"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明天提醒我"
+          }
+        }
+      }
+    },
     "Remove" : {
       "localizations" : {
         "es" : {
@@ -21021,6 +22341,46 @@
         }
       }
     },
+    "Screen & System Audio Recording" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screen & System Audio Recording"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grabación de pantalla y del audio del sistema"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement de l’écran et des sons du système"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面収録とシステムオーディオ録音"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录屏与系统录音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "螢幕與系統錄音"
+          }
+        }
+      }
+    },
     "Screen Recording" : {
       "localizations" : {
         "es" : {
@@ -21879,6 +23239,46 @@
         }
       }
     },
+    "Set Up Later" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set Up Later"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurar después"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurer plus tard"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "後で設定"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "稍后设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "稍後設定"
+          }
+        }
+      }
+    },
     "Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -22532,6 +23932,46 @@
         }
       }
     },
+    "Show the Getting Started Guide…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the Getting Started Guide…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a ver la guía de inicio…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revoir le guide de démarrage…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使い方ガイドをもう一度表示…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新查看新手引导…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新查看新手導覽…"
+          }
+        }
+      }
+    },
     "Show the copied text" : {
       "localizations" : {
         "es" : {
@@ -23010,6 +24450,46 @@
         }
       }
     },
+    "Skip Guide" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip Guide"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Omitir guía"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Passer le guide"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ガイドをスキップ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过引导"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "略過導覽"
+          }
+        }
+      }
+    },
     "Small" : {
       "localizations" : {
         "es" : {
@@ -23282,6 +24762,46 @@
         }
       }
     },
+    "Start Capture" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Capture"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar captura"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lancer la capture"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撮影を始める"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始截图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始截圖"
+          }
+        }
+      }
+    },
     "Startup" : {
       "localizations" : {
         "es" : {
@@ -23312,6 +24832,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "啟動"
+          }
+        }
+      }
+    },
+    "Step %lld of 4" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Step %lld of 4"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paso %lld de 4"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Étape %lld sur 4"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ステップ %lld / 4"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %lld 步，共 4 步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %lld 步，共 4 步"
           }
         }
       }
@@ -23986,6 +25546,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已讀取表格"
+          }
+        }
+      }
+    },
+    "Take your first screenshot" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take your first screenshot"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz tu primera captura"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faites votre première capture"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "初めての1枚を撮りましょう"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截取第一张图片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "擷取第一張圖片"
           }
         }
       }
@@ -25046,6 +26646,40 @@
         }
       }
     },
+    "This update includes improvements and fixes." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta actualización incluye mejoras y correcciones."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette mise à jour apporte des améliorations et des corrections."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアップデートには改善と不具合の修正が含まれています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此更新包含体验改进与问题修复。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此更新包含體驗改進與問題修正。"
+          }
+        }
+      }
+    },
     "Three Quarters (%@)" : {
       "localizations" : {
         "es" : {
@@ -26041,6 +27675,7 @@
       }
     },
     "Turn Off macOS’s Screenshot Keys" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -26142,7 +27777,88 @@
         }
       }
     },
+    "Turn off the ones that use the keys above." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn off the ones that use the keys above."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Desactiva los que usan las teclas de arriba."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Désactivez ceux qui utilisent les raccourcis ci-dessus."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上のキーを使っている項目をオフにします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭使用上述按键的快捷键。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉使用上述按鍵的快速鍵。"
+          }
+        }
+      }
+    },
+    "Turn on OhMyShot under Screen & System Audio Recording." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on OhMyShot under Screen & System Audio Recording."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa OhMyShot en «Grabación de pantalla y del audio del sistema»."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activez OhMyShot sous Enregistrement de l’écran et des sons du système."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「画面収録とシステムオーディオ録音」で OhMyShot をオンにします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“录屏与系统录音”中开启 OhMyShot。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「螢幕與系統錄音」中開啟 OhMyShot。"
+          }
+        }
+      }
+    },
     "Turn on OhMyShot, then relaunch." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -26308,6 +28024,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "解鎖"
+          }
+        }
+      }
+    },
+    "Update Now" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizar ahora"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettre à jour"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今すぐアップデート"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即更新"
+          }
+        }
+      }
+    },
+    "Update to Version %@…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizar a la versión %@…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettre à jour vers la version %@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バージョン %@ にアップデート…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新到 %@…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新至 %@…"
           }
         }
       }
@@ -26755,6 +28539,86 @@
         }
       }
     },
+    "Use these shortcuts from any app, or choose a capture from the menu bar." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use these shortcuts from any app, or choose a capture from the menu bar."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa estos atajos desde cualquier app o elige una captura en la barra de menús."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisez ces raccourcis depuis n’importe quelle app, ou choisissez une capture dans la barre des menus."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "どのアプリからでもショートカットを使えます。メニューバーからも選べます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在任意应用中按下快捷键，或从菜单栏选择截图方式。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在任何 App 中按下快捷鍵，或從選單列選擇截圖方式。"
+          }
+        }
+      }
+    },
+    "Used by macOS" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used by macOS"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usado por macOS"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisé par macOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS が使用中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "被 macOS 占用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 macOS 使用"
+          }
+        }
+      }
+    },
     "User name" : {
       "localizations" : {
         "es" : {
@@ -26819,6 +28683,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "值"
+          }
+        }
+      }
+    },
+    "Version %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versión %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バージョン %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本 %@"
           }
         }
       }
@@ -27033,6 +28931,86 @@
         }
       }
     },
+    "Welcome" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bienvenida"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bienvenue"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ようこそ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欢迎"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歡迎"
+          }
+        }
+      }
+    },
+    "Welcome to OhMyShot" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to OhMyShot"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Te damos la bienvenida a OhMyShot"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bienvenue dans OhMyShot"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot へようこそ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欢迎使用 OhMyShot"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歡迎使用 OhMyShot"
+          }
+        }
+      }
+    },
     "What the Read with button calls it." : {
       "localizations" : {
         "es" : {
@@ -27136,6 +29114,108 @@
         }
       }
     },
+    "What’s New" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novedades"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveautés"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新内容"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日誌"
+          }
+        }
+      }
+    },
+    "What’s New in OhMyShot" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novedades de OhMyShot"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveautés d’OhMyShot"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot の更新内容"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 更新日志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 更新日誌"
+          }
+        }
+      }
+    },
+    "What’s New…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novedades…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveautés…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新内容…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日志…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新日誌…"
+          }
+        }
+      }
+    },
     "When the time is up" : {
       "localizations" : {
         "es" : {
@@ -27166,6 +29246,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "時間到時"
+          }
+        }
+      }
+    },
+    "When you let go, a card with your screenshot appears in the bottom-left corner, ready to copy, save, or mark up." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When you let go, a card with your screenshot appears in the bottom-left corner, ready to copy, save, or mark up."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al soltar, aparece una tarjeta con tu captura en la esquina inferior izquierda, lista para copiar, guardar o anotar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quand vous relâchez, une carte avec votre capture apparaît dans le coin inférieur gauche, prête à être copiée, enregistrée ou annotée."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "離すと、スクリーンショットのカードが左下に表示され、コピー、保存、注釈付けができます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "松开后，截图卡片会出现在左下角，可直接拷贝、存储或标注。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放開後，截圖卡片會出現在左下角，可直接拷貝、儲存或標註。"
+          }
+        }
+      }
+    },
+    "When you let go, a card with your screenshot appears in the bottom-right corner, ready to copy, save, or mark up." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When you let go, a card with your screenshot appears in the bottom-right corner, ready to copy, save, or mark up."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al soltar, aparece una tarjeta con tu captura en la esquina inferior derecha, lista para copiar, guardar o anotar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quand vous relâchez, une carte avec votre capture apparaît dans le coin inférieur droit, prête à être copiée, enregistrée ou annotée."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "離すと、スクリーンショットのカードが右下に表示され、コピー、保存、注釈付けができます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "松开后，截图卡片会出现在右下角，可直接拷贝、存储或标注。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放開後，截圖卡片會出現在右下角，可直接拷貝、儲存或標註。"
           }
         }
       }
@@ -27702,6 +29862,206 @@
         }
       }
     },
+    "Your First Capture" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your First Capture"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu primera captura"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre première capture"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "初めてのスクリーンショット"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第一张截图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第一張截圖"
+          }
+        }
+      }
+    },
+    "Your first capture is ready" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your first capture is ready"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu primera captura está lista"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre première capture est prête"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "初めての1枚ができました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第一张截图，完成了"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第一張截圖，完成了"
+          }
+        }
+      }
+    },
+    "Your first capture is ready. Copy, save, or annotate it using its Quick Access card." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your first capture is ready. Copy, save, or annotate it using its Quick Access card."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu primera captura está lista. Usa su tarjeta de acceso rápido para copiarla, guardarla o anotarla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre première capture est prête. Copiez, enregistrez ou annotez-la depuis sa carte d’accès rapide."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "初めてのスクリーンショットができました。クイックアクセスカードでコピー、保存、注釈の追加ができます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第一张截图已完成。通过快速访问卡片可以复制、保存或添加标注。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第一張截圖已完成。透過快速存取卡片可以複製、儲存或加入標註。"
+          }
+        }
+      }
+    },
+    "Your shortcuts are ready" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your shortcuts are ready"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tus atajos están listos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vos raccourcis sont prêts"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ショートカットの準備ができました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷键已就绪"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速鍵已就緒"
+          }
+        }
+      }
+    },
+    "You’re ready to capture your screen." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You’re ready to capture your screen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ya puedes capturar tu pantalla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous pouvez maintenant capturer votre écran."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面を撮影する準備ができました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已经可以截取屏幕内容了。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已經可以擷取螢幕內容了。"
+          }
+        }
+      }
+    },
     "Zoom" : {
       "localizations" : {
         "es" : {
@@ -27805,6 +30165,7 @@
       }
     },
     "macOS answers these keys before OhMyShot can. Turn them off in Keyboard Settings › Keyboard Shortcuts › Screenshots." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -27902,6 +30263,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在你於鍵盤設定中將其關閉之前，macOS 會保留 ⇧⌘3、⇧⌘4 和 ⇧⌘5。"
+          }
+        }
+      }
+    },
+    "macOS requires it before any app can capture the screen, screenshots included." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS requires it before any app can capture the screen, screenshots included."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS lo exige para que cualquier app pueda capturar la pantalla, incluso para hacer capturas de pantalla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS l’exige pour qu’une app puisse capturer l’écran, y compris pour de simples captures d’écran."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS では、スクリーンショットを含め、画面を撮影するアプリにこの許可が必要です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 要求任何应用在截取屏幕前获得此权限，截图也不例外。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 要求任何 App 在擷取螢幕前取得此權限，截圖也不例外。"
+          }
+        }
+      }
+    },
+    "macOS’s own screenshot shortcuts use these keys first, so OhMyShot never receives them." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS’s own screenshot shortcuts use these keys first, so OhMyShot never receives them."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los atajos de captura de macOS usan estas teclas primero, así que OhMyShot nunca las recibe."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les raccourcis de capture de macOS utilisent ces touches en premier, OhMyShot ne les reçoit donc jamais."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 標準のスクリーンショットのショートカットがこれらのキーを先に使うため、OhMyShot には届きません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 自带的截屏快捷键会先响应这些按键，OhMyShot 因此收不到。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 內建的截圖快速鍵會先回應這些按鍵，OhMyShot 因此收不到。"
           }
         }
       }
