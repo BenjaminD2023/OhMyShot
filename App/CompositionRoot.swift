@@ -122,7 +122,7 @@ final class CompositionRoot {
     private(set) var replayStorage: AnyObject?
     private let hotkeys: HotkeyCenter
     let urlScheme: String
-    private var statusItem: StatusItemController?
+    private(set) var statusItem: StatusItemController?
     /// Release builds' updates; nil in builds without a feed, until a debug hook starts one against a feed of its own.
     var updates: UpdateController?
     private var automation: AutomationController?

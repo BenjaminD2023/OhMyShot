@@ -32,3 +32,17 @@ report the effective tier. Final verdict: APPROVE.
   round 2 input 577185, cached input 516864, output 6869, reasoning output 2784.
 
 App changes committed locally; not pushed. No PR or new app release was created.
+
+## Push integration verification
+
+Rebased the two app commits onto main at 27a8096, preserving the intervening 22 commits.
+Update menu entries and capture/Debug callbacks now live in the corresponding CompositionRoot
+extensions. The status item retains a private setter and permits those extensions to read it.
+
+- Final Debug build: PASS.
+- Relevant tests: 181 PASS (166 UI and 15 core). The unrelated VLM Metal build still fails.
+- Localization placeholder checks: PASS; upstream translations retained.
+- Release-notes UI sources and translations are unchanged from the screenshots above.
+- Sol-loop round 3 reviewed only the rebase integration and returned APPROVE, with no findings.
+  Same configured model/effort/tier as above; final build success was independently verified after launch.
+  Raw reported usage: input 915615, cached input 757888, output 8664, reasoning output 3660.
