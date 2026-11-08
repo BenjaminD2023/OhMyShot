@@ -8,6 +8,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-09
+
+Fork release: `v0.6.0-fork.8`, build 9.
+
 ### Updates and release notes
 
 - Keep available updates visible with a menu bar badge and a reminder that can wait until tomorrow. This fork continues to check its signed GitHub feed and retains saved automatic-check and download preferences.
