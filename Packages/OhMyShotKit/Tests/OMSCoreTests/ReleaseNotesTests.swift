@@ -38,6 +38,7 @@ struct ReleaseNotesTests {
     }
 
     @Test func mirrorOnlyKnownReleaseArchives() {
+        #expect(UpdateTransport.feed.absoluteString == "https://www.ohmyshot.org/updates/appcast")
         let url = URL(string: "https://github.com/MMFoundation/OhMyShot/releases/download/v0.2.0/OhMyShot-0.2.0.zip")!
         #expect(UpdateTransport.mirroredDownload(url)?.absoluteString == "https://www.ohmyshot.org/updates/download/v0.2.0/OhMyShot-0.2.0.zip")
         for invalid in [url.absoluteString.replacingOccurrences(of: "https:", with: "http:"), url.absoluteString + "?token=123", url.absoluteString.replacingOccurrences(of: "github.com", with: "evil.com"), url.absoluteString.replacingOccurrences(of: "OhMyShot-0.2.0.zip", with: "Other.zip")] {

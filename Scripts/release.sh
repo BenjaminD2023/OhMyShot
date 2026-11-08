@@ -221,6 +221,10 @@ if ! python3 -I Scripts/acknowledgments.py --check; then
   [ $DRY_RUN = 1 ] || fail "App/Acknowledgments.md doesn't match the packages the app was built with"
   echo "A release would stop here."
 fi
+# Check the processed Info.plist, including CI's ordinary Release build. Source settings alone
+# cannot catch an Xcode override that silently ships the old GitHub feed or weakens verification.
+python3 -I Scripts/check-release-updater.py "build/Build/Products/Release/OhMyShot.app" \
+  --version "$VERSION" --build "$BUILD" || fail "the built app does not have the required website updater"
 if [ $BUILD_ONLY = 1 ]; then
   echo "Built build/Build/Products/Release/OhMyShot.app as a release builds it, before signing: $OUT/build.log"
   exit 0
@@ -331,6 +335,8 @@ if [ $DRY_RUN = 0 ]; then
   codesign --verify --strict --check-notarization -R="notarized" "$APP" || fail "the app doesn't read as notarized"
 fi
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+python3 -I Scripts/check-release-updater.py "$ZIP" --version "$VERSION" --build "$BUILD" \
+  || fail "the release archive does not have the required website updater"
 
 # The release notes: the version's section of CHANGELOG.md, with the link definitions its references use.
 NOTES="$OUT/archives/OhMyShot-$VERSION.md"

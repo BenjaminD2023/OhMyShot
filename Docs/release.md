@@ -34,6 +34,13 @@ tag, and CI builds every push to main the way it does (Releasing from CI, below)
 
 ### Mainland distribution acceptance
 
+Before signing, `Scripts/release.sh` validates the built Release app with `Scripts/check-release-updater.py`,
+including CI's `--build-only` run. It checks the processed feed URL, release identity and version/build, public key,
+signed-feed enforcement, archive verification and disabled unsigned-feed recovery. After packaging it checks the
+actual ZIP again; the CI publish job repeats the ZIP check immediately before creating the GitHub release. A missing
+or legacy GitHub updater stops publication. `python3 -B -m unittest discover -s Scripts/tests -p 'test_release_updater.py'`
+exercises valid packages, the legacy feed, missing/weakened signature settings and mismatched artifacts.
+
 The website's `/download` and both installation guides must use the website archive route, including when release
 lookup fails. A GitHub redirect is a failure, even if it works on the maintainer's connection. The published 0.1.0
 archive still has a GitHub `SUFeedURL`; changing the website cannot change that installed binary. Publish a higher

@@ -981,3 +981,7 @@ signed bytes; signature enforcement remains in Sparkle. A release is ready for m
 actual public download contains the website updater and the site, complete download, and an installed update have
 passed on mainland connections without VPN. `Scripts/check-distribution.py` verifies transport, public-key signatures
 and packaged updater configuration; it cannot certify the user's network or successful installation. See Docs/release.md.
+
+Release packaging enforces this contract against the built app and final ZIP, including the CI publish job, before
+a release can be published. Source configuration alone is insufficient: the gate checks the actual embedded
+`SUFeedURL`, public key, signature requirements, recovery setting, release identity, and version/build.
