@@ -990,3 +990,9 @@ and packaged updater configuration; it cannot certify the user's network or succ
 Release packaging enforces this contract against the built app and final ZIP, including the CI publish job, before
 a release can be published. Source configuration alone is insufficient: the gate checks the actual embedded
 `SUFeedURL`, public key, signature requirements, recovery setting, release identity, and version/build.
+
+After publication, a separate read-only workflow verifies the website download and Sparkle archive against the
+original signed ZIP's SHA-256 and explicit expected version/build, verifies feed/archive signatures with the public
+key, and applies that same embedded-updater policy to both downloads. It preserves reports for bounded retries and
+can be rerun without publishing or installing anything. This public artifact check does not replace the first real
+Publish run, mainland network acceptance, or a disposable installation test. See Docs/release.md.
