@@ -8,6 +8,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- A click on the menu bar icon opens a capture launcher: every command that takes a shortcut is a tile, whose keys (or Set Shortcut, while it has none) open Settings › Shortcuts on its row; every other command of the status menu (Images & Pins, Getting Started, Join Discord, Keyboard Shortcuts…, Debug, Quit) is a row, those with more choices opening a menu in place. A right-click still opens the status menu. ([6bda14e]; by [@bobbyhuang-dev]; coauthored by Codex and Claude Opus 5.5)
+
 ## [0.6.0] - 2026-11-09
 
 Fork release: `v0.6.0-fork.8`, build 9.
@@ -239,6 +243,7 @@ Fork release: `v0.6.0-fork.8`, build 9.
 [7304cae]: https://github.com/MMFoundation/OhMyShot/commit/7304cae0a7e7330c69022d49f463d610aedf63a2
 [0946850]: https://github.com/MMFoundation/OhMyShot/commit/0946850a6bc20896c0d6646526d7a3a08735e0be
 [bf3ce5e]: https://github.com/MMFoundation/OhMyShot/commit/bf3ce5ed6403c19a926a5d48e1fc6a68c576f362
+[6bda14e]: https://github.com/MMFoundation/OhMyShot/commit/6bda14ecb7bf955eb70bb4a81c6bd9f443010b07
 [c999cc0]: https://github.com/MMFoundation/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/MMFoundation/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/MMFoundation/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287

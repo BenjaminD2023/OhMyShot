@@ -14,6 +14,7 @@ import UniformTypeIdentifiers
 /// What the global shortcuts and the URL API's commands run.
 extension CompositionRoot {
     func handle(_ shortcut: CaptureShortcut) {
+        statusItem?.dismissLauncher()
         Log.signposter.emitEvent("hotkey")
         Log.hotkeys.notice("hotkey.\(shortcut.rawValue, privacy: .public)")
         if shortcut == .captureArea, beginOnboardingCaptureIfReady() { return }

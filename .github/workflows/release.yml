@@ -1,7 +1,7 @@
 # Releases the version in Config/Base.xcconfig, for a pushed v* tag or by hand (Actions › Release › Run workflow):
 #
-#   Preflight ──── Build, sign, and notarize ──── Publish
-#   (Linux)        (a Mac)                        (Linux)
+#   Preflight ──── Build, sign, and notarize ──── Publish ──── Verify public distribution
+#   (Linux)        (a Mac)                        (Linux)     (a Mac, public key only)
 #
 # Preflight makes the checks that need no Mac (Scripts/release.sh --check) and the secrets', so a release that can't be
 # made stops within seconds. The Mac builds from the compilation cache CI keeps for main (.github/workflows/ci.yml), so
@@ -222,6 +222,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+    outputs:
+      sha256: ${{ steps.artifact.outputs.sha256 }}
     env:
       VERSION: ${{ needs.preflight.outputs.version }}
       BUILD: ${{ needs.preflight.outputs.build }}
@@ -237,7 +239,11 @@ jobs:
           path: dist
 
       - name: Verify the updater in the archive being published
-        run: python3 -I Scripts/check-release-updater.py "dist/archives/OhMyShot-$VERSION.zip" --version "$VERSION" --build "$BUILD"
+        id: artifact
+        run: |
+          python3 -I Scripts/check-release-updater.py "dist/archives/OhMyShot-$VERSION.zip" --version "$VERSION" --build "$BUILD"
+          digest=$(sha256sum "dist/archives/OhMyShot-$VERSION.zip" | cut -d' ' -f1)
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
 
       # The zip and the appcast go to the release; the feed is the latest release's appcast.xml.
       - name: Publish the GitHub release
@@ -270,3 +276,14 @@ jobs:
             echo "| --- | ---: | --- |"
             echo "| OhMyShot-$VERSION.zip | $(du -h "dist/archives/OhMyShot-$VERSION.zip" | cut -f1) | \`$made\` |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  verify-distribution:
+    name: Verify public distribution
+    needs: [preflight, publish]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/verify-release.yml
+    with:
+      version: ${{ needs.preflight.outputs.version }}
+      build: ${{ needs.preflight.outputs.build }}
+      sha256: ${{ needs.publish.outputs.sha256 }}

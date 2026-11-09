@@ -2,11 +2,9 @@ import AppKit
 import Foundation
 import KeyboardShortcuts
 import OMSCore
+import SwiftUI
 
-/// The menu bar icon and its menu.
-///
-/// Plain AppKit on purpose: it lives for the whole session, so it has to stay small and do nothing
-/// until clicked.
+/// The menu bar icon and its capture launcher. The launcher is built only when opened.
 public final class StatusItemController {
     /// A menu entry with its own action.
     public struct Entry {
@@ -20,6 +18,8 @@ public final class StatusItemController {
 
         public let kind: Kind
         public let title: String
+        /// The SF Symbol the capture launcher shows beside the title.
+        public let systemImage: String?
         public let keyEquivalent: String
         /// A global shortcut to show beside the title.
         public let shortcut: CaptureShortcut?
@@ -37,6 +37,7 @@ public final class StatusItemController {
 
         public init(
             title: String,
+            systemImage: String? = nil,
             keyEquivalent: String = "",
             shortcut: CaptureShortcut? = nil,
             isEnabled: (() -> Bool)? = nil,
@@ -47,6 +48,7 @@ public final class StatusItemController {
         ) {
             kind = .item
             self.title = title
+            self.systemImage = systemImage
             self.keyEquivalent = keyEquivalent
             self.shortcut = shortcut
             self.isEnabled = isEnabled
@@ -58,9 +60,10 @@ public final class StatusItemController {
         }
 
         /// An entry that opens a submenu of `children`, made each time it opens.
-        public init(title: String, children: @escaping () -> [Entry]) {
+        public init(title: String, systemImage: String? = nil, children: @escaping () -> [Entry]) {
             kind = .item
             self.title = title
+            self.systemImage = systemImage
             keyEquivalent = ""
             shortcut = nil
             isEnabled = nil
@@ -74,6 +77,7 @@ public final class StatusItemController {
         private init(kind: Kind, title: String) {
             self.kind = kind
             self.title = title
+            systemImage = nil
             keyEquivalent = ""
             shortcut = nil
             isEnabled = nil
@@ -97,7 +101,11 @@ public final class StatusItemController {
     public var onDrop: ((NSPasteboard) -> Bool)?
 
     private var statusItem: NSStatusItem?
+    private let launcher = NSPopover()
+    private let launcherDelegate = LauncherDelegate()
     private let menuTarget = MenuTarget()
+    /// Runs the menus the launcher's rows open, closing the launcher before the command.
+    private let launcherMenuTarget = MenuTarget()
     /// Whether Settings wants the icon; a recording shows it regardless while it runs.
     private var wantsVisible = false
     /// Stops the recording when the item is clicked; set only while recording.
@@ -107,37 +115,43 @@ public final class StatusItemController {
     /// The symbol a progress shows, so a change of what is being made changes it.
     private var shownSymbol: String?
     private let captureEntries: [Entry]
-    private let textEntries: [Entry]
-    private let pinEntries: [Entry]
+    /// The status menu's Tools submenu; the launcher lists them.
+    private let toolEntries: [Entry]
+    /// Pictures already on disk or on the clipboard, and the pins.
+    private let imageEntries: [Entry]
     private let historyEntries: [Entry]
     /// The app's own entries above Settings…, such as Check for Updates….
     private let priorityEntries: [Entry]
     private var updateVersion: String?
     private let appEntries: [Entry]
     private let openSettings: () -> Void
+    /// Opens Settings › Shortcuts on a shortcut's row, or on the pane for none.
+    private let editShortcut: (CaptureShortcut?) -> Void
     private let quit: () -> Void
     private let debugEntries: [Entry]
     private let updateEntries: [Entry]
 
     public init(
         captureEntries: [Entry],
-        textEntries: [Entry] = [],
-        pinEntries: [Entry] = [],
+        toolEntries: [Entry] = [],
+        imageEntries: [Entry] = [],
         historyEntries: [Entry] = [],
         priorityEntries: [Entry] = [],
         appEntries: [Entry] = [],
         openSettings: @escaping () -> Void,
+        editShortcut: @escaping (CaptureShortcut?) -> Void,
         quit: @escaping () -> Void,
         debugEntries: [Entry] = [],
         updateEntries: [Entry] = []
     ) {
         self.captureEntries = captureEntries
-        self.textEntries = textEntries
-        self.pinEntries = pinEntries
+        self.toolEntries = toolEntries
+        self.imageEntries = imageEntries
         self.historyEntries = historyEntries
         self.priorityEntries = priorityEntries
         self.appEntries = appEntries
         self.openSettings = openSettings
+        self.editShortcut = editShortcut
         self.quit = quit
         self.debugEntries = debugEntries
         self.updateEntries = updateEntries
@@ -150,29 +164,19 @@ public final class StatusItemController {
         if visible, statusItem == nil {
             statusItem = makeItem()
         } else if !visible, let item = statusItem {
+            dismissLauncher()
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
         }
     }
 
     #if DEBUG
-    private var debugMenuWindow: NSWindow?
-    private let debugMenuTarget = MenuTarget()
-    public func showMenuForDebugging() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 90),
-                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Status Menu Preview"
-        window.isReleasedWhenClosed = false
-        let button = NSPopUpButton(frame: NSRect(x: 24, y: 26, width: 312, height: 32), pullsDown: true)
-        let menu = makeMenu(using: debugMenuTarget)
-        menu.insertItem(withTitle: "OhMyShot", action: nil, keyEquivalent: "", at: 0)
-        button.menu = menu
-        window.contentView?.addSubview(button)
-        debugMenuWindow?.close()
-        debugMenuWindow = window
-        window.center()
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+    public func showMenuForDebugging(capture: ((NSWindow) async -> Void)? = nil) {
+        if statusItem == nil { statusItem = makeItem() }
+        showLauncher()
+        if let capture, let window = launcher.contentViewController?.view.window {
+            Task { await capture(window) }
+        }
     }
     #endif
 
@@ -199,7 +203,7 @@ public final class StatusItemController {
                 button.addSubview(dropView)
             }
         }
-        item.menu = makeMenu()
+        configureLauncherButton(item)
         applyUpdateBadge(to: item)
         return item
     }
@@ -207,13 +211,16 @@ public final class StatusItemController {
     /// While recording: the icon gives way to a stop symbol and the time, and a click stops the recording.
     /// Shown even when Settings hides the icon, since it is one of the ways to stop. Call again each second.
     public func showRecording(elapsed: String, paused: Bool, stop: @escaping () -> Void) {
+        dismissLauncher()
         stopRecording = stop
+        shownSymbol = nil
         showsActivity = true
         let item = statusItem ?? makeItem()
         statusItem = item
         item.menu = nil
         item.length = NSStatusItem.variableLength
         guard let button = item.button else { return }
+        button.sendAction(on: [.leftMouseUp])
         if button.action != #selector(MenuTarget.stopClicked(_:)) {
             button.image = NSImage(systemSymbolName: "stop.circle", accessibilityDescription: nil)
             button.image?.isTemplate = true
@@ -271,13 +278,11 @@ public final class StatusItemController {
         showsActivity = true
         let item = statusItem ?? makeItem()
         statusItem = item
-        if item.menu == nil { item.menu = makeMenu() }
+        configureLauncherButton(item)
         item.length = NSStatusItem.variableLength
         guard let button = item.button else { return }
-        if button.action != nil || button.title.isEmpty || shownSymbol != progress.symbolName {
+        if button.title.isEmpty || shownSymbol != progress.symbolName {
             shownSymbol = progress.symbolName
-            button.target = nil
-            button.action = nil
             button.image = NSImage(systemSymbolName: progress.symbolName, accessibilityDescription: nil)
             button.image?.isTemplate = true
             button.imagePosition = .imageLeading
@@ -301,6 +306,7 @@ public final class StatusItemController {
         menuTarget.stop = nil
         guard let item = statusItem else { return }
         guard wantsVisible else {
+            dismissLauncher()
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
             return
@@ -314,12 +320,86 @@ public final class StatusItemController {
             button.image = NSImage.statusItemIcon(accessibilityDescription: appName)
             button.imagePosition = .imageOnly
         }
-        item.menu = makeMenu()
+        configureLauncherButton(item)
         applyUpdateBadge(to: item)
     }
 
-    private func makeMenu(using target: MenuTarget? = nil) -> NSMenu {
-        let menuTarget = target ?? self.menuTarget
+    /// Close synchronously before a capture freezes the screen, including captures started by a hotkey.
+    public func dismissLauncher() {
+        launcher.close()
+    }
+
+    private func configureLauncherButton(_ item: NSStatusItem) {
+        item.menu = nil
+        item.button?.target = menuTarget
+        item.button?.action = #selector(MenuTarget.launcherClicked(_:))
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        menuTarget.launcher = { [weak self] in
+            guard let self else { return }
+            if NSApp.currentEvent?.type == .rightMouseUp, let button = statusItem?.button {
+                dismissLauncher()
+                let menu = makeMenu()
+                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY), in: button)
+            } else if launcher.isShown {
+                dismissLauncher()
+            } else {
+                showLauncher()
+            }
+        }
+    }
+
+    /// Share the exact launcher command wiring with regression checks.
+    var launcherModel: CaptureLauncherModel {
+        CaptureLauncherModel(captureEntries: captureEntries, toolEntries: toolEntries,
+                                         imageEntries: imageEntries, historyEntries: historyEntries,
+                                         priorityEntries: priorityEntries, appEntries: appEntries + updateEntries,
+                                         debugEntries: debugEntries, openSettings: openSettings,
+                                         editShortcut: editShortcut, quit: quit)
+    }
+
+    private func showLauncher() {
+        guard let button = statusItem?.button else { return }
+        let model = launcherModel
+        launcher.behavior = .transient
+        // No closing animation: the next frame may already be the screenshot being captured.
+        launcher.animates = false
+        launcher.delegate = launcherDelegate
+        launcherDelegate.didClose = { [weak self, weak button] in
+            button?.highlight(false)
+            self?.launcher.contentViewController = nil
+        }
+        let view = CaptureLauncherView(model: model) { [weak self] entry in
+            self?.dismissLauncher()
+            Task { @MainActor in entry.perform() }
+        } showMenu: { [weak self] entry, anchor in
+            self?.showLauncherMenu(entry, below: anchor)
+        }
+        let host = NSHostingController(rootView: view)
+        // The popover takes the launcher's own height, so nothing in it scrolls.
+        host.sizingOptions = [.preferredContentSize]
+        launcher.contentViewController = host
+        launcher.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        button.highlight(true)
+        launcher.contentViewController?.view.window?.makeKey()
+    }
+
+    /// A row's commands in a native menu under it: nested menus, checkmarks, and validation as in the status menu.
+    /// `anchor` is the row's frame in the launcher's coordinate space, origin at the top left.
+    private func showLauncherMenu(_ entry: Entry, below anchor: CGRect) {
+        guard let children = entry.children, let view = launcher.contentViewController?.view else { return }
+        launcherMenuTarget.removeAll()
+        launcherMenuTarget.willPerform = { [weak self] in self?.dismissLauncher() }
+        let menu = NSMenu()
+        for child in children() {
+            let item = launcherMenuTarget.item(for: child)
+            if let shortcut = child.shortcut { item.setShortcut(for: shortcut.name) }
+            menu.addItem(item)
+        }
+        let y = view.isFlipped ? anchor.maxY + 2 : view.bounds.height - anchor.maxY - 2
+        menu.popUp(positioning: nil, at: NSPoint(x: anchor.minX, y: y), in: view)
+    }
+
+    private func makeMenu() -> NSMenu {
         menuTarget.removeAll()
         let menu = NSMenu()
         for entry in priorityEntries {
@@ -327,7 +407,8 @@ public final class StatusItemController {
             item.image = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: nil)
             menu.addItem(item)
         }
-        for group in [captureEntries, textEntries, pinEntries, historyEntries, updateEntries] where !group.isEmpty {
+        let tools = toolEntries.isEmpty ? [] : [Entry(title: String(localized: "Tools", bundle: .module)) { [toolEntries] in toolEntries }]
+        for group in [captureEntries + tools, imageEntries, historyEntries, updateEntries] where !group.isEmpty {
             for entry in group {
                 let item = menuTarget.item(for: entry)
                 if let shortcut = entry.shortcut {
@@ -415,6 +496,11 @@ private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
     /// The submenus made again each time they open, and what makes their entries.
     private var submenus: [ObjectIdentifier: () -> [StatusItemController.Entry]] = [:]
     var stop: (() -> Void)?
+    var launcher: (() -> Void)?
+    /// Called as a command is chosen, before it runs.
+    var willPerform: (() -> Void)?
+
+    @objc func launcherClicked(_ sender: Any?) { launcher?() }
 
     /// A submenu's entry, held by its item.
     private final class Held {
@@ -495,6 +581,7 @@ private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
     private func perform(_ entry: StatusItemController.Entry) {
         // Once the menu has closed: a window opened while it was still up went behind the app in front
         // again as the menu closed, and a capture began over the closing menu.
+        willPerform?()
         Task { @MainActor in entry.perform() }
     }
 
@@ -506,4 +593,10 @@ private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
         case .header: .sectionHeader(title: entry.title)
         }
     }
+}
+
+/// Releases the hosting tree on dismissal, so the closed launcher has no timer or retained UI work.
+private final class LauncherDelegate: NSObject, NSPopoverDelegate {
+    var didClose: (() -> Void)?
+    func popoverDidClose(_ notification: Notification) { didClose?() }
 }

@@ -68,6 +68,55 @@ website-updater release, accept a signed newer update, restart and confirm the i
 Do not use the working Dev app for that replacement. If mainland site reachability fails, arrange a measured
 mainland/Hong Kong origin or CDN with the site maintainer and repeat these checks before promotion.
 
+### First signed release through Publish: remaining acceptance
+
+The CI trials exercised build, signing, notarization, and artifact upload with publishing disabled. They did **not**
+exercise Publish end to end. The pre-publication updater checks alone cannot establish that the public website
+download and Sparkle transport serve the release just built. The older post-publish GitHub check also cannot detect
+a stale website download, a mismatched website cache, or an incorrect updater inside a public archive.
+
+After the first real publication, `release.yml` now calls `verify-release.yml` with the version, build, and SHA-256
+of the exact ZIP validated before upload. This independent job has only `contents: read`, no signing secrets, and
+never publishes, modifies a release, installs an app, or accesses the Keychain. It runs `check-distribution.py` with
+all three expectations. Success requires:
+
+- The website's signed latest feed names the expected version and build (a different newer release also fails).
+- The feed and its complete archive pass Ed25519 verification against the repository's public key.
+- `/download` and the website's Sparkle archive route return complete, byte-identical ZIPs whose SHA-256 matches the
+  original signed build artifact. Every redirect stays on the HTTPS website hosts.
+- Both downloaded ZIPs pass the shared release-updater policy, including identity, version/build, feed, public key,
+  signature enforcement, and disabled unsigned-feed recovery. Byte-range responses also match the verified archive.
+
+The workflow retries up to three times, 20 seconds apart, for publication/cache propagation, preserving each
+attempt's JSON report, log, and signed feed as a run artifact. A verification failure happens **after** publication;
+it does not roll back, replace, or republish anything. Investigate the failed check, then rerun **Verify release
+distribution** from Actions with the same three expectations. Do not rerun the Release workflow to retry this check:
+its already-released preflight skips the build/publish jobs. The verification-only workflow can also be run locally
+on a Mac after downloading the original CI build artifact (or using the original locally signed release ZIP):
+
+```sh
+# Example values: set these to the real release, not the checkout's possibly older Base.xcconfig.
+VERSION=0.2.0
+BUILD=2
+SIGNED_ZIP="build/release/$VERSION/archives/OhMyShot-$VERSION.zip"
+DIGEST=$(shasum -a 256 "$SIGNED_ZIP" | cut -d' ' -f1)
+python3 -I Scripts/check-distribution.py --version "$VERSION" --build "$BUILD" \
+  --sha256 "$DIGEST" --output "build/distribution-check/$VERSION-attempt-1"
+```
+
+Use the original build artifact's digest, not one computed from the public website being tested. All three
+expectations must be supplied together; omitting all three retains the mainland diagnostic mode. Keep the report
+and original release run URL as acceptance evidence. A passing hosted run proves public artifact parity, not
+mainland reachability, Developer ID/notarization validation, or successful installation: retain the signing job's
+evidence and perform the mainland and disposable-install checks above. The first real Publish run and this public
+verification remain unproven until that release actually happens; adding or testing this verifier does not close
+that operational acceptance item.
+
+`python3 -B -m unittest discover -s Scripts/tests -p 'test_*.py' -v` exercises this offline. On macOS it creates a
+throwaway key and uses the real CryptoKit verifier to test signed fixtures, stale versions/builds, archive/hash
+mismatches, tampered signatures, weakened updater settings, partial responses, bad ranges, and failed reruns. It
+never contacts production endpoints or uses a production private key. CI runs these before a real release is needed.
+
 ### The post-update window
 
 `CHANGELOG.md` is bundled in the signed application. On the first launch with this feature, and once per higher build
@@ -196,13 +245,14 @@ after 0.1.0, on a throwaway branch that raised the version to 0.1.1 (build 2) wi
 `xcode-27` runner built, signed, and notarized it (accepted within minutes) in 17 minutes, and its appcast kept 0.1.0.
 The workflow as it is now was tried the same way on 2026-11-05 (The times, below).
 
-It runs three jobs, each after the one before:
+It runs four jobs, each after the one before:
 
 | Job | Runs on | What it does |
 | --- | --- | --- |
 | Preflight | Linux, seconds | `Scripts/release.sh --check` (nothing uncommitted, the tag, the section in CHANGELOG.md, the feed's build number, and gh when publishing), and that the secrets are set |
 | Build, sign, and notarize | a Mac (The runner, below) | `Scripts/release.sh`, from CI's compilation cache, keeping `build/release/<version>/` as the run's artifact |
 | Publish | Linux | `gh release create` with the artifact's zip, appcast, and notes, then checks that the feed lists the build and serves that very zip |
+| Verify public distribution | macOS, public key only | Reusable `verify-release.yml`: pins both website downloads and the signed feed to the version, build, and original ZIP hash; retains reports and can be rerun independently |
 
 So a release that can't be made stops before a Mac is involved: the two runs that failed on 2026-11-04 (the secrets not
 yet set, then a tag on another commit) each took a minute on the Mac, and would stop in Preflight now. Only Publish can
@@ -273,7 +323,8 @@ upload of 15 MB. A release with no cache at all would take about 8 minutes.
 
 ### The tests
 
-Neither workflow runs the unit tests: run `Scripts/test.sh` on a Mac before a release. They were tried on GitHub's
+The workflows run the Python release-check tests, but not the Swift package tests: run `Scripts/test.sh` on a Mac
+before a release. The package tests were tried on GitHub's
 macOS runners, which are virtual machines, on 2026-11-05: the VLM package's passed (in 4½ minutes), but much of
 OhMyShotKit's needs a Mac. Vision's text recognition failed in 9 OCR tests (`e5rtError("e5rt_e5_compiler_compile call
 failed")`), as did Live Text in a pin (PinViewTests) and a studio export's colors (StudioExportTests), and the recording

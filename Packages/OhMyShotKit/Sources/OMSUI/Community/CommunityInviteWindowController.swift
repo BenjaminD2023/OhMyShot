@@ -24,6 +24,9 @@ public final class CommunityInviteWindowController: NSWindowController, NSWindow
         // Hidden on screen, read by VoiceOver, which would otherwise say the window has no title.
         window.title = AppIdentity.displayName
         window.isReleasedWhenClosed = false
+        // Keep the invitation above ordinary windows, on the Space the person is using when it opens.
+        window.level = .floating
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         super.init(window: window)
         let controller = NSHostingController(rootView: CommunityInviteView(
             join: { [weak self] in
@@ -85,8 +88,10 @@ struct CommunityInviteView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 40, weight: .regular))
+            Image("DiscordMark", bundle: .module)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 56, height: 44)
                 .foregroundStyle(.tint)
                 .accessibilityHidden(true)
 

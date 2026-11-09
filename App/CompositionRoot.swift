@@ -448,10 +448,10 @@ final class CompositionRoot {
         automation?.handle(url, senderPID: senderPID)
     }
 
-    func showSettings(_ tab: SettingsTab = .general) {
+    func showSettings(_ tab: SettingsTab = .general, landingOn row: String? = nil) {
         let controller = settingsWindow ?? makeSettingsWindow()
         settingsWindow = controller
-        controller.show(tab)
+        controller.show(tab, landingOn: row)
     }
 
     func showHistory() {

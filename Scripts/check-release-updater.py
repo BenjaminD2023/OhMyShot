@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 WEBSITE_FEED = 'https://github.com/BenjaminD2023/OhMyShot/releases/latest/download/appcast.xml'
 
 
-def check_artifact(path, version, build):
+def check_artifact(path, version, build, *, expected_feed=None):
     if path.is_dir():
         info = plistlib.loads((path / 'Contents/Info.plist').read_bytes())
     else:
@@ -28,7 +28,7 @@ def check_artifact(path, version, build):
         'CFBundleIdentifier': 'io.github.fzlzjerry.ohmyshot',
         'CFBundleShortVersionString': version,
         'CFBundleVersion': build,
-        'SUFeedURL': WEBSITE_FEED,
+        'SUFeedURL': WEBSITE_FEED if expected_feed is None else expected_feed,
         'SUPublicEDKey': expected_key,
         'SURequireSignedFeed': True,
         'SUVerifyUpdateBeforeExtraction': True,

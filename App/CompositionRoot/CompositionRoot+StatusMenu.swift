@@ -17,12 +17,12 @@ extension CompositionRoot {
     func makeStatusItem() -> StatusItemController {
         let statusItem = StatusItemController(
             captureEntries: [
-                .init(title: String(localized: "All-In-One"), shortcut: .allInOne) { [weak self] in self?.handle(.allInOne) },
-                .init(title: String(localized: "Capture Area"), shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
-                .init(title: String(localized: "Annotate Area"), shortcut: .annotateArea) { [weak self] in self?.handle(.annotateArea) },
-                .init(title: String(localized: "Capture Area and Pin"), shortcut: .pinArea) { [weak self] in self?.handle(.pinArea) },
+                .init(title: String(localized: "All-In-One"), systemImage: "camera.viewfinder", shortcut: .allInOne) { [weak self] in self?.handle(.allInOne) },
+                .init(title: String(localized: "Capture Area"), systemImage: "rectangle.dashed", shortcut: .captureArea) { [weak self] in self?.handle(.captureArea) },
+                .init(title: String(localized: "Annotate Area"), systemImage: "pencil.and.scribble", shortcut: .annotateArea) { [weak self] in self?.handle(.annotateArea) },
+                .init(title: String(localized: "Capture Area and Pin"), systemImage: "pin", shortcut: .pinArea) { [weak self] in self?.handle(.pinArea) },
                 // The rest of what an area can go straight to, out of the way of the ones used most.
-                .init(title: String(localized: "More Area Captures")) { [weak self] in
+                .init(title: String(localized: "More Area Captures"), systemImage: "rectangle.dashed.badge.record") { [weak self] in
                     [
                         .init(title: String(localized: "Capture Area and Copy"), shortcut: .captureAreaAndCopy) { [weak self] in self?.handle(.captureAreaAndCopy) },
                         .init(title: String(localized: "Capture Area and Save"), shortcut: .captureAreaAndSave) { [weak self] in self?.handle(.captureAreaAndSave) },
@@ -34,10 +34,11 @@ extension CompositionRoot {
                         ) { [weak self] in self?.handle(.captureAreaAndUpload) },
                     ]
                 },
-                .init(title: String(localized: "Capture Window"), shortcut: .captureWindow) { [weak self] in self?.handle(.captureWindow) },
-                .init(title: String(localized: "Capture Fullscreen"), shortcut: .captureFullscreen) { [weak self] in self?.handle(.captureFullscreen) },
+                .init(title: String(localized: "Capture Window"), systemImage: "macwindow", shortcut: .captureWindow) { [weak self] in self?.handle(.captureWindow) },
+                .init(title: String(localized: "Capture Fullscreen"), systemImage: "display", shortcut: .captureFullscreen) { [weak self] in self?.handle(.captureFullscreen) },
                 .init(
                     title: String(localized: "Self-Timer"),
+                    systemImage: "timer",
                     shortcut: .selfTimer,
                     currentTitle: { [weak self] in
                         self?.captures.isSelfTimerRunning == true ? String(localized: "Cancel Self-Timer") : String(localized: "Self-Timer")
@@ -47,6 +48,7 @@ extension CompositionRoot {
                 },
                 .init(
                     title: String(localized: "Scrolling Capture"),
+                    systemImage: "scroll",
                     shortcut: .scrollingCapture,
                     currentTitle: { [weak self] in self?.scrolling.menuTitle ?? String(localized: "Scrolling Capture") }
                 ) { [weak self] in
@@ -54,12 +56,14 @@ extension CompositionRoot {
                 },
                 .init(
                     title: String(localized: "Cancel Scrolling Capture"),
+                    systemImage: "xmark.circle",
                     isHidden: { [weak self] in self?.scrolling.isCapturing != true }
                 ) { [weak self] in
                     self?.scrolling.cancel()
                 },
                 .init(
                     title: String(localized: "Record Screen"),
+                    systemImage: "record.circle",
                     shortcut: .recordScreen,
                     currentTitle: { [weak self] in
                         guard let self else { return String(localized: "Record Screen") }
@@ -73,46 +77,47 @@ extension CompositionRoot {
                 // While a Studio movie is exported after its window closed, it can be stopped from here.
                 .init(
                     title: String(localized: "Cancel Studio Export"),
+                    systemImage: "xmark.circle",
                     isHidden: { [weak self] in self?.recordings.isExportingStudio != true }
                 ) { [weak self] in
                     self?.recordings.cancelStudioExports()
                 },
             ] + replayEntries() + [
-                .init(title: String(localized: "Capture Text"), shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
+                .init(title: String(localized: "Capture Text"), systemImage: "text.viewfinder", shortcut: .captureText) { [weak self] in self?.handle(.captureText) },
                 .init(
-                    title: String(localized: "Capture Formula"), shortcut: .captureFormula,
+                    title: String(localized: "Capture Formula"), systemImage: "function", shortcut: .captureFormula,
                     isHidden: { [weak self] in self?.readerPacks.formula == nil }
                 ) { [weak self] in
                     self?.handle(.captureFormula)
                 },
-                .init(title: String(localized: "Translate Area"), shortcut: .translateArea) { [weak self] in self?.handle(.translateArea) },
-                .init(title: String(localized: "Tools")) { [weak self] in
-                    [
-                        .init(title: String(localized: "Pick Color"), shortcut: .pickColor) { [weak self] in self?.handle(.pickColor) },
-                        .init(title: String(localized: "Measure"), shortcut: .measure) { [weak self] in self?.handle(.measure) },
-                        .separator,
-                        .init(
-                            title: String(localized: "Hide Desktop Icons"),
-                            currentTitle: { [weak self] in
-                                self?.settings.hidesDesktopIcons == true ? String(localized: "Show Desktop Icons") : String(localized: "Hide Desktop Icons")
-                            }
-                        ) { [weak self] in
-                            guard let self else { return }
-                            setDesktopIconsHidden(!settings.hidesDesktopIcons)
-                        },
-                    ]
+                .init(title: String(localized: "Translate Area"), systemImage: "translate", shortcut: .translateArea) { [weak self] in self?.handle(.translateArea) },
+            ],
+            // The status menu holds these in Tools; the launcher lists them.
+            toolEntries: [
+                .init(title: String(localized: "Pick Color"), systemImage: "eyedropper", shortcut: .pickColor) { [weak self] in self?.handle(.pickColor) },
+                .init(title: String(localized: "Measure"), systemImage: "ruler", shortcut: .measure) { [weak self] in self?.handle(.measure) },
+                .separator,
+                .init(
+                    title: String(localized: "Hide Desktop Icons"),
+                    systemImage: "eye.slash",
+                    currentTitle: { [weak self] in
+                        self?.settings.hidesDesktopIcons == true ? String(localized: "Show Desktop Icons") : String(localized: "Hide Desktop Icons")
+                    }
+                ) { [weak self] in
+                    guard let self else { return }
+                    setDesktopIconsHidden(!settings.hidesDesktopIcons)
                 },
             ],
-            textEntries: [
+            imageEntries: [
                 // A picture already on disk or on the clipboard, to annotate, pin, or read.
-                .init(title: String(localized: "Open Image")) { [weak self] in
+                .init(title: String(localized: "Open Image"), systemImage: "photo") { [weak self] in
                     [
                         .init(title: String(localized: "Annotate…")) { [weak self] in self?.chooseFilesToAnnotate() },
                         .init(title: String(localized: "Pin…")) { [weak self] in self?.choosePicturesToPin() },
                         .init(title: String(localized: "Recognize Text…")) { [weak self] in self?.textCapture.openImageFile() },
                     ]
                 },
-                .init(title: String(localized: "From Clipboard")) { [weak self] in
+                .init(title: String(localized: "From Clipboard"), systemImage: "list.clipboard") { [weak self] in
                     [
                         .init(
                             title: String(localized: "Annotate"),
@@ -130,7 +135,7 @@ extension CompositionRoot {
                         },
                     ]
                 },
-                .init(title: String(localized: "Pins")) { [weak self] in
+                .init(title: String(localized: "Pins"), systemImage: "pin.circle") { [weak self] in
                     [
                         .init(
                             title: String(localized: "Hide Pins"),
@@ -156,26 +161,30 @@ extension CompositionRoot {
                 },
             ],
             historyEntries: [
-                .init(title: String(localized: "Annotate Latest Capture"), shortcut: .annotateLatestCapture) { [weak self] in self?.handle(.annotateLatestCapture) },
-                .init(title: String(localized: "Capture History…"), shortcut: .openHistory) { [weak self] in self?.showHistory() },
+                .init(title: String(localized: "Annotate Latest Capture"), systemImage: "pencil.tip.crop.circle", shortcut: .annotateLatestCapture) { [weak self] in self?.handle(.annotateLatestCapture) },
+                .init(title: String(localized: "Capture History…"), systemImage: "clock.arrow.circlepath", shortcut: .openHistory) { [weak self] in self?.showHistory() },
                 .init(
                     title: String(localized: "Restore Recently Closed"),
+                    systemImage: "arrow.uturn.backward.circle",
                     isEnabled: { [weak self] in self?.quickAccess.canRestoreRecentlyClosed ?? false }
                 ) { [weak self] in
                     self?.quickAccess.restoreRecentlyClosed()
                 },
             ],
             appEntries: [
-                .init(title: String(localized: "Getting Started…")) { [weak self] in self?.replayOnboarding() },
-                .init(title: String(localized: "What’s New…")) { [updates] in updates.showReleaseNotes() },
-                .init(title: String(localized: "Join Discord")) { NSWorkspace.shared.open(CommunityInvite.discord) },
+                .init(title: String(localized: "Getting Started…"), systemImage: "questionmark.circle") { [weak self] in self?.replayOnboarding() },
+                .init(title: String(localized: "What’s New…"), systemImage: "sparkles") { [updates] in updates.showReleaseNotes() },
+                .init(title: String(localized: "Join Discord"), systemImage: "bubble.left.and.bubble.right") { NSWorkspace.shared.open(CommunityInvite.discord) },
             ],
             openSettings: { [weak self] in self?.showSettings() },
+            // A shortcut's row in Settings › Shortcuts, lit up, or the pane's top for none.
+            editShortcut: { [weak self] shortcut in self?.showSettings(.shortcuts, landingOn: shortcut?.title) },
             quit: { NSApp.terminate(nil) },
             debugEntries: debugMenuEntries(),
             updateEntries: [
                 .init(
                     title: String(localized: "Check for Updates…"),
+                    systemImage: "arrow.triangle.2.circlepath",
                     isEnabled: { [updates] in updates.canCheckForUpdates },
                     currentTitle: { [updates] in updates.menuTitle }
                 ) { [updates] in updates.checkForUpdates() },
@@ -202,7 +211,7 @@ extension CompositionRoot {
     private func replayEntries() -> [StatusItemController.Entry] {
         guard #available(macOS 27, *), replay != nil else { return [] }
         return [
-            .init(title: String(localized: "Keep Last 15 Seconds")) { [weak self] in self?.replayMenu() ?? [] },
+            .init(title: String(localized: "Keep Last 15 Seconds"), systemImage: "gobackward.15") { [weak self] in self?.replayMenu() ?? [] },
         ]
     }
 

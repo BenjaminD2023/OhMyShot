@@ -251,9 +251,11 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         fatalError("init(coder:) is not supported")
     }
 
-    public func show(_ tab: SettingsTab) {
+    /// Shows `tab`, scrolled to the row titled `row` and lighting it up for a moment, as a search does.
+    public func show(_ tab: SettingsTab, landingOn row: String? = nil) {
         // Opened afresh, the window starts at the pane asked for with nothing to go back to.
         if window?.isVisible == true { navigator.go(to: tab) } else { navigator.start(at: tab) }
+        if let row { navigator.target.land(on: row) }
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }

@@ -58,6 +58,9 @@ jobs:
         id: build
         run: Scripts/release.sh --build-only
 
+      - name: Test release distribution checks offline
+        run: python3 -B -m unittest discover -s Scripts/tests -p 'test_*.py' -v
+
       - name: Summarize the build
         if: always() && steps.build.outcome != 'skipped'
         run: Scripts/build-summary.sh build/release/build-only/build.log | tee -a "$GITHUB_STEP_SUMMARY"

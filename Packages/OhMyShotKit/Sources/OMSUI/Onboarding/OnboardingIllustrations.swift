@@ -64,8 +64,7 @@ struct KeyCaps: View {
     }
 }
 
-/// The real menu bar entry and the top of its menu: the shipped mark highlighted as it is while its menu is open,
-/// and the menu's first captures with their current keys, the second (Capture Area) under the pointer.
+/// The menu bar icon opens the capture launcher: its first tiles, each mode with its current keys.
 struct MenuBarPreview: View {
     struct Entry: Hashable {
         let title: String
@@ -105,21 +104,17 @@ struct MenuBarPreview: View {
 
     private var menu: some View {
         let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
-        return VStack(spacing: 0) {
+        let symbols = ["rectangle.dashed", "macwindow", "display"]
+        return HStack(spacing: 5) {
             ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
-                let selected = index == 1
-                HStack(spacing: 12) {
-                    Text(verbatim: entry.title).lineLimit(1)
-                    Spacer(minLength: 0)
-                    if let keys = entry.keys {
-                        Text(verbatim: keys).foregroundStyle(selected ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
-                    }
+                VStack(spacing: 4) {
+                    Image(systemName: symbols[index % symbols.count]).font(.system(size: 15)).frame(height: 20)
+                    Text(verbatim: entry.title).font(.system(size: 10, weight: .medium))
+                        .multilineTextAlignment(.center).lineLimit(2).frame(height: 26, alignment: .top)
+                    Text(verbatim: entry.keys ?? "").font(.system(size: 9)).foregroundStyle(.secondary)
                 }
-                .font(.system(size: 13))
-                .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-                .padding(.horizontal, 9)
-                .frame(height: 22)
-                .background(selected ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .padding(.horizontal, 3).padding(.vertical, 8).frame(maxWidth: .infinity)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
         .padding(5)
