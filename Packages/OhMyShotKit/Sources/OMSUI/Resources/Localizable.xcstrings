@@ -1696,6 +1696,41 @@
         }
       }
     },
+    "A quick guide to capturing and sharing." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una guía rápida para capturar y compartir."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un guide rapide pour capturer et partager."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撮影と共有のクイックガイド。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速了解如何截图与分享。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速瞭解如何截圖與分享。"
+          }
+        }
+      }
+    },
     "A screenshot taken at 2× is scaled down to its size in points where it leaves the app. The clipboard’s picture follows too." : {
       "localizations" : {
         "es" : {
@@ -4743,6 +4778,41 @@
         }
       }
     },
+    "Capture & Record" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturar y grabar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturer et enregistrer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撮影と録画"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截图与录屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截圖與錄影"
+          }
+        }
+      }
+    },
     "Capture Area" : {
       "localizations" : {
         "es" : {
@@ -5323,6 +5393,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在任何 App 中截圖"
+          }
+        }
+      }
+    },
+    "Capture something great." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Captura algo especial."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturez vos meilleures idées."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撮りたい瞬間を、すぐに。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "精彩瞬间，随手捕捉。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "精彩瞬間，隨手捕捉。"
           }
         }
       }
@@ -9144,6 +9249,41 @@
         }
       }
     },
+    "Drag to capture any part of your screen." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra para capturar cualquier parte de la pantalla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faites glisser pour capturer une partie de votre écran."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドラッグして画面の好きな部分を撮影。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖动以截取屏幕上的任意区域。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖曳以擷取螢幕上的任意區域。"
+          }
+        }
+      }
+    },
     "Drag to move. Double-click to fill the recording." : {
       "localizations" : {
         "es" : {
@@ -11969,6 +12109,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "圖片中的換行"
+          }
+        }
+      }
+    },
+    "Images & Pins" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imágenes y fijaciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Images et épingles"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画像とピン留め"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图片与贴图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圖片與貼圖"
           }
         }
       }
@@ -14910,6 +15085,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更多"
+          }
+        }
+      }
+    },
+    "More Tools" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más herramientas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autres outils"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他のツール"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多工具"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多工具"
           }
         }
       }
@@ -19516,6 +19726,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在這台 Mac 讀不好的地方（手寫、密集的表格、複雜的版面），用你有帳號的模型讀取圖片，例如 Claude、GPT 或通義千問，也可以是這台 Mac 上用 Ollama 執行的模型。圖片會直接從這台 Mac 傳送到該服務，服務可能會為此收費：在「辨識出的文字」視窗中按「用…讀取」時傳送，或在下方開啟自動讀取的地方自動傳送。密鑰保留在鑰匙圈中。"
+          }
+        }
+      }
+    },
+    "Recent Captures" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturas recientes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Captures récentes"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近のキャプチャ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近截图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近截圖"
           }
         }
       }
@@ -29440,6 +29685,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "第一張截圖已完成。透過快速存取卡片可以複製、儲存或加入標註。"
+          }
+        }
+      }
+    },
+    "Your first screenshot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tu primera captura"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre première capture"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "はじめてのスクリーンショット"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的第一张截图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的第一張截圖"
           }
         }
       }

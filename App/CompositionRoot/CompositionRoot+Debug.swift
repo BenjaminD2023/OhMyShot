@@ -49,7 +49,9 @@ extension CompositionRoot {
             start: { [unowned self] feed in startDebugUpdates(feed: feed) },
             current: { [unowned self] in debugUpdates },
             stop: { [unowned self] in stopDebugUpdates() },
-            showMenu: { [weak self] in self?.statusItem?.showMenuForDebugging() },
+            showMenu: { [weak self] in
+                self?.statusItem?.showMenuForDebugging { window in await capture(window, "capture-launcher") }
+            },
             makeSettings: makeSettings,
             capture: capture
         )

@@ -155,7 +155,7 @@ final class OnboardingModel {
     var index: Int { Step.allCases.firstIndex(of: step) ?? 0 }
     /// The top of the status menu as it is, with the current keys: what the welcome page shows under the icon.
     var menuEntries: [MenuBarPreview.Entry] {
-        [CaptureShortcut.allInOne, .captureArea, .annotateArea, .pinArea].map { shortcut in
+        [CaptureShortcut.captureArea, .captureWindow, .captureFullscreen].map { shortcut in
             MenuBarPreview.Entry(title: shortcut.title, keys: shortcuts.first { $0.shortcut == shortcut }?.keys)
         }
     }

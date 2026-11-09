@@ -184,6 +184,7 @@ extension CompositionRoot {
                 },
                 .init(title: String(localized: "What’s New…"), isHidden: { [weak self] in self?.updates == nil }) { [weak self] in self?.updates?.showReleaseNotes() },
             ],
+            openGuide: { [weak self] in self?.replayOnboarding() },
             openSettings: { [weak self] in self?.showSettings() },
             quit: { NSApp.terminate(nil) },
             debugEntries: debugMenuEntries()

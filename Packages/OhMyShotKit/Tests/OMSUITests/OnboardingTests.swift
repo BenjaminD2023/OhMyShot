@@ -68,10 +68,10 @@ struct OnboardingTests {
             step: .welcome, mode: .tour, access: access.access, readHotKeys: { nil },
             bindings: { SystemScreenshotKeys.defaultBindings(for: .release) }, stepChanged: { _ in }
         )
-        #expect(model.menuEntries.map(\.title) == [CaptureShortcut.allInOne, .captureArea, .annotateArea, .pinArea].map(\.title))
-        #expect(model.menuEntries[1].keys == "⇧⌘4")
-        // The release build leaves Capture Area and Pin without keys.
-        #expect(model.menuEntries[3].keys == nil)
+        #expect(model.menuEntries.map(\.title) == [CaptureShortcut.captureArea, .captureWindow, .captureFullscreen].map(\.title))
+        #expect(model.menuEntries[0].keys == "⇧⌘4")
+        // The release build leaves Capture Window without keys.
+        #expect(model.menuEntries[1].keys == nil)
     }
 
     @Test func hintFitsBesideEitherCornerOnItsOwnDisplay() {

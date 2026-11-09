@@ -2,11 +2,9 @@ import AppKit
 import Foundation
 import KeyboardShortcuts
 import OMSCore
+import SwiftUI
 
-/// The menu bar icon and its menu.
-///
-/// Plain AppKit on purpose: it lives for the whole session, so it has to stay small and do nothing
-/// until clicked.
+/// The menu bar icon and its capture launcher. The launcher is built only when opened.
 public final class StatusItemController {
     /// A menu entry with its own action.
     public struct Entry {
@@ -97,6 +95,8 @@ public final class StatusItemController {
     public var onDrop: ((NSPasteboard) -> Bool)?
 
     private var statusItem: NSStatusItem?
+    private let launcher = NSPopover()
+    private let launcherDelegate = LauncherDelegate()
     private let menuTarget = MenuTarget()
     /// Whether Settings wants the icon; a recording shows it regardless while it runs.
     private var wantsVisible = false
@@ -114,6 +114,7 @@ public final class StatusItemController {
     private let priorityEntries: [Entry]
     private var updateVersion: String?
     private let appEntries: [Entry]
+    private let openGuide: (() -> Void)?
     private let openSettings: () -> Void
     private let quit: () -> Void
     private let debugEntries: [Entry]
@@ -125,6 +126,7 @@ public final class StatusItemController {
         historyEntries: [Entry] = [],
         priorityEntries: [Entry] = [],
         appEntries: [Entry] = [],
+        openGuide: (() -> Void)? = nil,
         openSettings: @escaping () -> Void,
         quit: @escaping () -> Void,
         debugEntries: [Entry] = []
@@ -135,6 +137,7 @@ public final class StatusItemController {
         self.historyEntries = historyEntries
         self.priorityEntries = priorityEntries
         self.appEntries = appEntries
+        self.openGuide = openGuide
         self.openSettings = openSettings
         self.quit = quit
         self.debugEntries = debugEntries
@@ -147,29 +150,19 @@ public final class StatusItemController {
         if visible, statusItem == nil {
             statusItem = makeItem()
         } else if !visible, let item = statusItem {
+            dismissLauncher()
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
         }
     }
 
     #if DEBUG
-    private var debugMenuWindow: NSWindow?
-    private let debugMenuTarget = MenuTarget()
-    public func showMenuForDebugging() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 90),
-                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Status Menu Preview"
-        window.isReleasedWhenClosed = false
-        let button = NSPopUpButton(frame: NSRect(x: 24, y: 26, width: 312, height: 32), pullsDown: true)
-        let menu = makeMenu(using: debugMenuTarget)
-        menu.insertItem(withTitle: "OhMyShot", action: nil, keyEquivalent: "", at: 0)
-        button.menu = menu
-        window.contentView?.addSubview(button)
-        debugMenuWindow?.close()
-        debugMenuWindow = window
-        window.center()
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+    public func showMenuForDebugging(capture: ((NSWindow) async -> Void)? = nil) {
+        if statusItem == nil { statusItem = makeItem() }
+        showLauncher()
+        if let capture, let window = launcher.contentViewController?.view.window {
+            Task { await capture(window) }
+        }
     }
     #endif
 
@@ -196,7 +189,7 @@ public final class StatusItemController {
                 button.addSubview(dropView)
             }
         }
-        item.menu = makeMenu()
+        configureLauncherButton(item)
         applyUpdateBadge(to: item)
         return item
     }
@@ -204,13 +197,16 @@ public final class StatusItemController {
     /// While recording: the icon gives way to a stop symbol and the time, and a click stops the recording.
     /// Shown even when Settings hides the icon, since it is one of the ways to stop. Call again each second.
     public func showRecording(elapsed: String, paused: Bool, stop: @escaping () -> Void) {
+        dismissLauncher()
         stopRecording = stop
+        shownSymbol = nil
         showsActivity = true
         let item = statusItem ?? makeItem()
         statusItem = item
         item.menu = nil
         item.length = NSStatusItem.variableLength
         guard let button = item.button else { return }
+        button.sendAction(on: [.leftMouseUp])
         if button.action != #selector(MenuTarget.stopClicked(_:)) {
             button.image = NSImage(systemSymbolName: "stop.circle", accessibilityDescription: nil)
             button.image?.isTemplate = true
@@ -268,13 +264,11 @@ public final class StatusItemController {
         showsActivity = true
         let item = statusItem ?? makeItem()
         statusItem = item
-        if item.menu == nil { item.menu = makeMenu() }
+        configureLauncherButton(item)
         item.length = NSStatusItem.variableLength
         guard let button = item.button else { return }
-        if button.action != nil || button.title.isEmpty || shownSymbol != progress.symbolName {
+        if button.title.isEmpty || shownSymbol != progress.symbolName {
             shownSymbol = progress.symbolName
-            button.target = nil
-            button.action = nil
             button.image = NSImage(systemSymbolName: progress.symbolName, accessibilityDescription: nil)
             button.image?.isTemplate = true
             button.imagePosition = .imageLeading
@@ -298,6 +292,7 @@ public final class StatusItemController {
         menuTarget.stop = nil
         guard let item = statusItem else { return }
         guard wantsVisible else {
+            dismissLauncher()
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
             return
@@ -311,8 +306,56 @@ public final class StatusItemController {
             button.image = NSImage.statusItemIcon(accessibilityDescription: appName)
             button.imagePosition = .imageOnly
         }
-        item.menu = makeMenu()
+        configureLauncherButton(item)
         applyUpdateBadge(to: item)
+    }
+
+    /// Close synchronously before a capture freezes the screen, including captures started by a hotkey.
+    public func dismissLauncher() {
+        launcher.close()
+    }
+
+    private func configureLauncherButton(_ item: NSStatusItem) {
+        item.menu = nil
+        item.button?.target = menuTarget
+        item.button?.action = #selector(MenuTarget.launcherClicked(_:))
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        menuTarget.launcher = { [weak self] in
+            guard let self else { return }
+            if NSApp.currentEvent?.type == .rightMouseUp, let button = statusItem?.button {
+                dismissLauncher()
+                let menu = makeMenu()
+                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY), in: button)
+            } else if launcher.isShown {
+                dismissLauncher()
+            } else {
+                showLauncher()
+            }
+        }
+    }
+
+    private func showLauncher() {
+        guard let button = statusItem?.button else { return }
+        let model = CaptureLauncherModel(captureEntries: captureEntries, textEntries: textEntries,
+                                         pinEntries: pinEntries, historyEntries: historyEntries,
+                                         priorityEntries: priorityEntries, appEntries: appEntries,
+                                         debugEntries: debugEntries, openGuide: openGuide, openSettings: openSettings, quit: quit)
+        launcher.behavior = .transient
+        // No closing animation: the next frame may already be the screenshot being captured.
+        launcher.animates = false
+        launcher.delegate = launcherDelegate
+        launcherDelegate.didClose = { [weak self, weak button] in
+            button?.highlight(false)
+            self?.launcher.contentViewController = nil
+        }
+        launcher.contentViewController = NSHostingController(rootView: CaptureLauncherView(model: model) { [weak self] entry in
+            self?.dismissLauncher()
+            Task { @MainActor in entry.perform() }
+        })
+        launcher.contentSize = NSSize(width: 368, height: 568)
+        launcher.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        button.highlight(true)
+        launcher.contentViewController?.view.window?.makeKey()
     }
 
     private func makeMenu(using target: MenuTarget? = nil) -> NSMenu {
@@ -412,6 +455,9 @@ private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
     /// The submenus made again each time they open, and what makes their entries.
     private var submenus: [ObjectIdentifier: () -> [StatusItemController.Entry]] = [:]
     var stop: (() -> Void)?
+    var launcher: (() -> Void)?
+
+    @objc func launcherClicked(_ sender: Any?) { launcher?() }
 
     /// A submenu's entry, held by its item.
     private final class Held {
@@ -503,4 +549,10 @@ private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
         case .header: .sectionHeader(title: entry.title)
         }
     }
+}
+
+/// Releases the hosting tree on dismissal, so the closed launcher has no timer or retained UI work.
+private final class LauncherDelegate: NSObject, NSPopoverDelegate {
+    var didClose: (() -> Void)?
+    func popoverDidClose(_ notification: Notification) { didClose?() }
 }
