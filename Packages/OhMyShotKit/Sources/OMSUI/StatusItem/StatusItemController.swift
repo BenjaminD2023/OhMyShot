@@ -18,6 +18,8 @@ public final class StatusItemController {
 
         public let kind: Kind
         public let title: String
+        /// The SF Symbol the capture launcher shows beside the title.
+        public let systemImage: String?
         public let keyEquivalent: String
         /// A global shortcut to show beside the title.
         public let shortcut: CaptureShortcut?
@@ -35,6 +37,7 @@ public final class StatusItemController {
 
         public init(
             title: String,
+            systemImage: String? = nil,
             keyEquivalent: String = "",
             shortcut: CaptureShortcut? = nil,
             isEnabled: (() -> Bool)? = nil,
@@ -45,6 +48,7 @@ public final class StatusItemController {
         ) {
             kind = .item
             self.title = title
+            self.systemImage = systemImage
             self.keyEquivalent = keyEquivalent
             self.shortcut = shortcut
             self.isEnabled = isEnabled
@@ -56,9 +60,10 @@ public final class StatusItemController {
         }
 
         /// An entry that opens a submenu of `children`, made each time it opens.
-        public init(title: String, children: @escaping () -> [Entry]) {
+        public init(title: String, systemImage: String? = nil, children: @escaping () -> [Entry]) {
             kind = .item
             self.title = title
+            self.systemImage = systemImage
             keyEquivalent = ""
             shortcut = nil
             isEnabled = nil
@@ -72,6 +77,7 @@ public final class StatusItemController {
         private init(kind: Kind, title: String) {
             self.kind = kind
             self.title = title
+            systemImage = nil
             keyEquivalent = ""
             shortcut = nil
             isEnabled = nil
@@ -98,6 +104,8 @@ public final class StatusItemController {
     private let launcher = NSPopover()
     private let launcherDelegate = LauncherDelegate()
     private let menuTarget = MenuTarget()
+    /// Runs the menus the launcher's rows open, closing the launcher before the command.
+    private let launcherMenuTarget = MenuTarget()
     /// Whether Settings wants the icon; a recording shows it regardless while it runs.
     private var wantsVisible = false
     /// Stops the recording when the item is clicked; set only while recording.
@@ -107,38 +115,41 @@ public final class StatusItemController {
     /// The symbol a progress shows, so a change of what is being made changes it.
     private var shownSymbol: String?
     private let captureEntries: [Entry]
-    private let textEntries: [Entry]
-    private let pinEntries: [Entry]
+    /// The status menu's Tools submenu; the launcher lists them.
+    private let toolEntries: [Entry]
+    /// Pictures already on disk or on the clipboard, and the pins.
+    private let imageEntries: [Entry]
     private let historyEntries: [Entry]
     /// The app's own entries above Settings…, such as Check for Updates….
     private let priorityEntries: [Entry]
     private var updateVersion: String?
     private let appEntries: [Entry]
-    private let openGuide: (() -> Void)?
     private let openSettings: () -> Void
+    /// Opens Settings › Shortcuts on a shortcut's row, or on the pane for none.
+    private let editShortcut: (CaptureShortcut?) -> Void
     private let quit: () -> Void
     private let debugEntries: [Entry]
 
     public init(
         captureEntries: [Entry],
-        textEntries: [Entry] = [],
-        pinEntries: [Entry] = [],
+        toolEntries: [Entry] = [],
+        imageEntries: [Entry] = [],
         historyEntries: [Entry] = [],
         priorityEntries: [Entry] = [],
         appEntries: [Entry] = [],
-        openGuide: (() -> Void)? = nil,
         openSettings: @escaping () -> Void,
+        editShortcut: @escaping (CaptureShortcut?) -> Void,
         quit: @escaping () -> Void,
         debugEntries: [Entry] = []
     ) {
         self.captureEntries = captureEntries
-        self.textEntries = textEntries
-        self.pinEntries = pinEntries
+        self.toolEntries = toolEntries
+        self.imageEntries = imageEntries
         self.historyEntries = historyEntries
         self.priorityEntries = priorityEntries
         self.appEntries = appEntries
-        self.openGuide = openGuide
         self.openSettings = openSettings
+        self.editShortcut = editShortcut
         self.quit = quit
         self.debugEntries = debugEntries
     }
@@ -336,10 +347,11 @@ public final class StatusItemController {
 
     private func showLauncher() {
         guard let button = statusItem?.button else { return }
-        let model = CaptureLauncherModel(captureEntries: captureEntries, textEntries: textEntries,
-                                         pinEntries: pinEntries, historyEntries: historyEntries,
+        let model = CaptureLauncherModel(captureEntries: captureEntries, toolEntries: toolEntries,
+                                         imageEntries: imageEntries, historyEntries: historyEntries,
                                          priorityEntries: priorityEntries, appEntries: appEntries,
-                                         debugEntries: debugEntries, openGuide: openGuide, openSettings: openSettings, quit: quit)
+                                         debugEntries: debugEntries, openSettings: openSettings,
+                                         editShortcut: editShortcut, quit: quit)
         launcher.behavior = .transient
         // No closing animation: the next frame may already be the screenshot being captured.
         launcher.animates = false
@@ -348,18 +360,38 @@ public final class StatusItemController {
             button?.highlight(false)
             self?.launcher.contentViewController = nil
         }
-        launcher.contentViewController = NSHostingController(rootView: CaptureLauncherView(model: model) { [weak self] entry in
+        let view = CaptureLauncherView(model: model) { [weak self] entry in
             self?.dismissLauncher()
             Task { @MainActor in entry.perform() }
-        })
-        launcher.contentSize = NSSize(width: 368, height: 568)
+        } showMenu: { [weak self] entry, anchor in
+            self?.showLauncherMenu(entry, below: anchor)
+        }
+        let host = NSHostingController(rootView: view)
+        // The popover takes the launcher's own height, so nothing in it scrolls.
+        host.sizingOptions = [.preferredContentSize]
+        launcher.contentViewController = host
         launcher.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         button.highlight(true)
         launcher.contentViewController?.view.window?.makeKey()
     }
 
-    private func makeMenu(using target: MenuTarget? = nil) -> NSMenu {
-        let menuTarget = target ?? self.menuTarget
+    /// A row's commands in a native menu under it: nested menus, checkmarks, and validation as in the status menu.
+    /// `anchor` is the row's frame in the launcher's coordinate space, origin at the top left.
+    private func showLauncherMenu(_ entry: Entry, below anchor: CGRect) {
+        guard let children = entry.children, let view = launcher.contentViewController?.view else { return }
+        launcherMenuTarget.removeAll()
+        launcherMenuTarget.willPerform = { [weak self] in self?.dismissLauncher() }
+        let menu = NSMenu()
+        for child in children() {
+            let item = launcherMenuTarget.item(for: child)
+            if let shortcut = child.shortcut { item.setShortcut(for: shortcut.name) }
+            menu.addItem(item)
+        }
+        let y = view.isFlipped ? anchor.maxY + 2 : view.bounds.height - anchor.maxY - 2
+        menu.popUp(positioning: nil, at: NSPoint(x: anchor.minX, y: y), in: view)
+    }
+
+    private func makeMenu() -> NSMenu {
         menuTarget.removeAll()
         let menu = NSMenu()
         for entry in priorityEntries {
@@ -367,7 +399,8 @@ public final class StatusItemController {
             item.image = NSImage(systemSymbolName: "arrow.down.circle.fill", accessibilityDescription: nil)
             menu.addItem(item)
         }
-        for group in [captureEntries, textEntries, pinEntries, historyEntries] where !group.isEmpty {
+        let tools = toolEntries.isEmpty ? [] : [Entry(title: String(localized: "Tools", bundle: .module)) { [toolEntries] in toolEntries }]
+        for group in [captureEntries + tools, imageEntries, historyEntries] where !group.isEmpty {
             for entry in group {
                 let item = menuTarget.item(for: entry)
                 if let shortcut = entry.shortcut {
@@ -456,6 +489,8 @@ private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
     private var submenus: [ObjectIdentifier: () -> [StatusItemController.Entry]] = [:]
     var stop: (() -> Void)?
     var launcher: (() -> Void)?
+    /// Called as a command is chosen, before it runs.
+    var willPerform: (() -> Void)?
 
     @objc func launcherClicked(_ sender: Any?) { launcher?() }
 
@@ -538,6 +573,7 @@ private final class MenuTarget: NSObject, NSMenuItemValidation, NSMenuDelegate {
     private func perform(_ entry: StatusItemController.Entry) {
         // Once the menu has closed: a window opened while it was still up went behind the app in front
         // again as the menu closed, and a capture began over the closing menu.
+        willPerform?()
         Task { @MainActor in entry.perform() }
     }
 

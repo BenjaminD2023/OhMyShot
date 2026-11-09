@@ -64,7 +64,7 @@ struct KeyCaps: View {
     }
 }
 
-/// The menu bar icon opens a compact launcher: one main capture and a grid of other capture modes.
+/// The menu bar icon opens the capture launcher: its first tiles, each mode with its current keys.
 struct MenuBarPreview: View {
     struct Entry: Hashable {
         let title: String
@@ -104,31 +104,17 @@ struct MenuBarPreview: View {
 
     private var menu: some View {
         let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
-        return VStack(alignment: .leading, spacing: 8) {
-            if let entry = entries.first {
-                HStack(spacing: 10) {
-                    Image(systemName: "viewfinder").font(.system(size: 23, weight: .light)).foregroundStyle(Color.accentColor)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(verbatim: entry.title).font(.system(size: 13, weight: .semibold))
-                        if let keys = entry.keys {
-                            Text(verbatim: keys).font(.system(size: 10)).foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer(minLength: 0)
+        let symbols = ["rectangle.dashed", "macwindow", "display"]
+        return HStack(spacing: 5) {
+            ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
+                VStack(spacing: 4) {
+                    Image(systemName: symbols[index % symbols.count]).font(.system(size: 15)).frame(height: 20)
+                    Text(verbatim: entry.title).font(.system(size: 10, weight: .medium))
+                        .multilineTextAlignment(.center).lineLimit(2).frame(height: 26, alignment: .top)
+                    Text(verbatim: entry.keys ?? "").font(.system(size: 9)).foregroundStyle(.secondary)
                 }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
-            }
-            HStack(spacing: 6) {
-                ForEach(Array(entries.dropFirst().enumerated()), id: \.offset) { index, entry in
-                    VStack(alignment: .leading, spacing: 5) {
-                        Image(systemName: index == 0 ? "macwindow" : "rectangle.inset.filled")
-                        Text(verbatim: entry.title).font(.system(size: 10)).lineLimit(1)
-                    }
-                    .foregroundStyle(.secondary).padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
-                }
+                .padding(.horizontal, 3).padding(.vertical, 8).frame(maxWidth: .infinity)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
         .padding(5)

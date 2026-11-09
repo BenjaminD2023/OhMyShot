@@ -1696,41 +1696,6 @@
         }
       }
     },
-    "A quick guide to capturing and sharing." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Una guía rápida para capturar y compartir."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Un guide rapide pour capturer et partager."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "撮影と共有のクイックガイド。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "快速了解如何截图与分享。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "快速瞭解如何截圖與分享。"
-          }
-        }
-      }
-    },
     "A screenshot taken at 2× is scaled down to its size in points where it leaves the app. The clipboard’s picture follows too." : {
       "localizations" : {
         "es" : {
@@ -4778,41 +4743,6 @@
         }
       }
     },
-    "Capture & Record" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Capturar y grabar"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Capturer et enregistrer"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "撮影と録画"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "截图与录屏"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "截圖與錄影"
-          }
-        }
-      }
-    },
     "Capture Area" : {
       "localizations" : {
         "es" : {
@@ -5397,41 +5327,6 @@
         }
       }
     },
-    "Capture something great." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Captura algo especial."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Capturez vos meilleures idées."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "撮りたい瞬間を、すぐに。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "精彩瞬间，随手捕捉。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "精彩瞬間，隨手捕捉。"
-          }
-        }
-      }
-    },
     "Capture the shadow" : {
       "localizations" : {
         "es" : {
@@ -5666,6 +5561,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "卡片會顯示在擷取時所在的顯示器上。開啟此選項後，卡片會顯示在擷取時指標所在的顯示器上。"
+          }
+        }
+      }
+    },
+    "Change the shortcut for %@ in Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambiar el atajo de %@ en Ajustes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier le raccourci de %@ dans Réglages"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定で%@のショートカットを変更"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在设置中更改“%@”的快捷键"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在設定中更改「%@」的快速鍵"
           }
         }
       }
@@ -9245,41 +9175,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在螢幕上拖移選取一個區域。放開後，它的快速取用卡片會出現在螢幕角落。"
-          }
-        }
-      }
-    },
-    "Drag to capture any part of your screen." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Arrastra para capturar cualquier parte de la pantalla."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Faites glisser pour capturer une partie de votre écran."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ドラッグして画面の好きな部分を撮影。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖动以截取屏幕上的任意区域。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖曳以擷取螢幕上的任意區域。"
           }
         }
       }
@@ -13348,6 +13243,41 @@
         }
       }
     },
+    "Keyboard Shortcuts…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atajos de teclado…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Raccourcis clavier…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キーボードショートカット…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "键盘快捷键…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鍵盤快速鍵…"
+          }
+        }
+      }
+    },
     "Keys chosen for one action are taken from any other that had them." : {
       "localizations" : {
         "es" : {
@@ -15085,41 +15015,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更多"
-          }
-        }
-      }
-    },
-    "More Tools" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Más herramientas"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Autres outils"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "その他のツール"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更多工具"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更多工具"
           }
         }
       }
@@ -19730,41 +19625,6 @@
         }
       }
     },
-    "Recent Captures" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Capturas recientes"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Captures récentes"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近のキャプチャ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近截图"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近截圖"
-          }
-        }
-      }
-    },
     "Recent uploads" : {
       "localizations" : {
         "es" : {
@@ -23042,6 +22902,41 @@
         }
       }
     },
+    "Set Shortcut" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asignar atajo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définir"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置快捷键"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定快速鍵"
+          }
+        }
+      }
+    },
     "Set Up Later" : {
       "localizations" : {
         "en" : {
@@ -23078,6 +22973,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "稍後設定"
+          }
+        }
+      }
+    },
+    "Set a shortcut for %@ in Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Asignar un atajo a %@ en Ajustes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Définir un raccourci pour %@ dans Réglages"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定で%@のショートカットを設定"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在设置中为“%@”设置快捷键"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在設定中為「%@」設定快速鍵"
           }
         }
       }
@@ -29685,41 +29615,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "第一張截圖已完成。透過快速存取卡片可以複製、儲存或加入標註。"
-          }
-        }
-      }
-    },
-    "Your first screenshot" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tu primera captura"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Votre première capture"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "はじめてのスクリーンショット"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的第一张截图"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的第一張截圖"
           }
         }
       }
