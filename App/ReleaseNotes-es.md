@@ -1,5 +1,17 @@
 # Release notes
 
+## [0.7.0]
+
+### Novedades
+
+- Un clic en el icono de la barra de menús abre un lanzador con mosaicos para capturas, grabaciones, reconocimiento de texto y herramientas.
+- Pulsa el atajo de un mosaico para abrir su ajuste. El clic derecho mantiene el menú tradicional.
+
+### Mejoras
+
+- Se ha refinado la distribución del selector de ventanas.
+- El lanzador conserva los comandos y las preferencias de actualización del fork.
+
 ## [0.6.0]
 
 ### Novedades

@@ -8,9 +8,18 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-10
+
+Fork release: `v0.7.0-fork.9`, build 10.
+
 ### Added
 
 - A click on the menu bar icon opens a capture launcher: every command that takes a shortcut is a tile, whose keys (or Set Shortcut, while it has none) open Settings › Shortcuts on its row; every other command of the status menu (Images & Pins, Getting Started, Join Discord, Keyboard Shortcuts…, Debug, Quit) is a row, those with more choices opening a menu in place. A right-click still opens the status menu. ([6bda14e]; by [@bobbyhuang-dev]; coauthored by Codex and Claude Opus 5.5)
+
+### Improved
+
+- Refine the window chooser layout and bring the one-time community invitation to the active Space.
+- Add offline public-distribution verification tests for upstream releases; the fork retains its signed GitHub feed and saved automatic-update preferences.
 
 ## [0.6.0] - 2026-11-09
 

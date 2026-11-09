@@ -1,5 +1,17 @@
 # Release notes
 
+## [0.7.0]
+
+### Nouveautés
+
+- Un clic sur l’icône de la barre des menus ouvre un lanceur de capture : captures, enregistrements, reconnaissance de texte et outils sont accessibles par tuiles.
+- Cliquez sur le raccourci d’une tuile pour ouvrir son réglage. Le clic droit conserve le menu classique.
+
+### Améliorations
+
+- La disposition du sélecteur de fenêtres a été affinée.
+- Le lanceur conserve les commandes et les préférences de mise à jour du fork.
+
 ## [0.6.0]
 
 ### Nouveautés
