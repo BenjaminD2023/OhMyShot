@@ -1,6 +1,7 @@
 import AppKit
 import OMSCore
 import OMSDesign
+import UniformTypeIdentifiers
 
 /// One app, one preview, one capture action. Other windows stay inside their app's switcher instead of
 /// becoming a flat inventory. The panel takes key focus without activating us or moving the target.
@@ -30,6 +31,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
     private let back: NSButton
     private let recordingBar: RecordingBar?
     private var barWidth: NSLayoutConstraint?
+    private var appScrollHeight: NSLayoutConstraint?
     private var choices: RecordingChoices?
     private(set) var model = WindowPickerModel()
     private var loading: Task<Void, Never>?
@@ -42,6 +44,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
     private var hasClosed = false
     private var appButtons: [pid_t: WindowAppButton] = [:]
     private var menuLevel: NSWindow.Level?
+    private static let appRowHeight: CGFloat = WindowAppButton.size.height + 4
 
     init(
         layout: DisplayLayout, recording: RecordingChoices?, preferredProcessID: pid_t? = nil, offersBack: Bool = false,
@@ -54,10 +57,12 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         choices = recording
         recordingBar = recording.map { RecordingBar(choices: $0, recordsWindow: true, compact: true) }
         back = NSButton(title: offersBack ? String(localized: "Back", bundle: .module) : String(localized: "Cancel", bundle: .module), target: nil, action: nil)
+        // The title sits on the content's own background: no separate title bar band above the preview.
         let panel = WindowPickerPanel(
-            contentRect: CGRect(x: 0, y: 0, width: 620, height: 452),
-            styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false
+            contentRect: CGRect(x: 0, y: 0, width: 620, height: 480),
+            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false
         )
+        panel.titlebarAppearsTransparent = true
         panel.title = recording == nil ? String(localized: "Capture Window", bundle: .module) : String(localized: "Record Window", bundle: .module)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.level = OverlayPanel.annotationLevel
@@ -113,7 +118,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         NSLayoutConstraint.activate([
             content.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 20),
             content.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -20),
-            content.topAnchor.constraint(equalTo: root.topAnchor, constant: 16),
+            content.topAnchor.constraint(equalTo: root.safeAreaLayoutGuide.topAnchor, constant: 4),
             content.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -16),
         ])
         search.placeholderString = String(localized: "Find an app or window", bundle: .module)
@@ -130,14 +135,15 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         picture.setAccessibilityLabel(String(localized: "Window preview", bundle: .module))
         previewSurface.addSubview(picture)
         NSLayoutConstraint.activate([
-            picture.leadingAnchor.constraint(equalTo: previewSurface.leadingAnchor, constant: 8),
-            picture.trailingAnchor.constraint(equalTo: previewSurface.trailingAnchor, constant: -8),
-            picture.topAnchor.constraint(equalTo: previewSurface.topAnchor, constant: 8),
-            picture.bottomAnchor.constraint(equalTo: previewSurface.bottomAnchor, constant: -8),
+            picture.leadingAnchor.constraint(equalTo: previewSurface.leadingAnchor, constant: 12),
+            picture.trailingAnchor.constraint(equalTo: previewSurface.trailingAnchor, constant: -12),
+            picture.topAnchor.constraint(equalTo: previewSurface.topAnchor, constant: 12),
+            picture.bottomAnchor.constraint(equalTo: previewSurface.bottomAnchor, constant: -12),
             previewSurface.heightAnchor.constraint(greaterThanOrEqualToConstant: 180),
         ])
-        let previewHeight = previewSurface.heightAnchor.constraint(equalToConstant: 246)
-        previewHeight.priority = .defaultHigh
+        // Below the window's own size priority: the preview takes whatever height the rows around it leave.
+        let previewHeight = previewSurface.heightAnchor.constraint(equalToConstant: 300)
+        previewHeight.priority = .dragThatCannotResizeWindow
         previewHeight.isActive = true
         spinner.style = .spinning
         spinner.controlSize = .small
@@ -162,14 +168,21 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
 
         let caption = NSView()
         windowTitle.lineBreakMode = .byTruncatingTail
-        windowTitle.font = .systemFont(ofSize: 12)
-        windowTitle.textColor = .secondaryLabelColor
+        windowTitle.font = .systemFont(ofSize: 13, weight: .medium)
+        windowTitle.textColor = .labelColor
+        windowTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        // A borderless switcher as wide as its window's name, not a full-width field.
+        windowSwitch.isBordered = false
+        windowSwitch.font = .systemFont(ofSize: 13, weight: .medium)
+        (windowSwitch.cell as? NSPopUpButtonCell)?.lineBreakMode = .byTruncatingTail
+        windowSwitch.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         windowSwitch.target = self
         windowSwitch.action = #selector(windowChosen(_:))
         windowSwitch.setAccessibilityLabel(String(localized: "Window", bundle: .module))
         windowSwitch.menu?.delegate = self
         searchButton.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: String(localized: "Find an app or window", bundle: .module))
         searchButton.isBordered = false
+        searchButton.contentTintColor = .secondaryLabelColor
         searchButton.target = self
         searchButton.action = #selector(searchClicked(_:))
         searchButton.toolTip = String(localized: "Find an app or window", bundle: .module)
@@ -183,21 +196,25 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
             searchButton.trailingAnchor.constraint(equalTo: caption.trailingAnchor),
             searchButton.widthAnchor.constraint(equalToConstant: 28),
             searchButton.heightAnchor.constraint(equalToConstant: 26),
-            windowTitle.leadingAnchor.constraint(equalTo: caption.leadingAnchor),
-            windowTitle.trailingAnchor.constraint(equalTo: searchButton.leadingAnchor, constant: -12),
+            windowTitle.leadingAnchor.constraint(equalTo: caption.leadingAnchor, constant: 4),
+            windowTitle.trailingAnchor.constraint(lessThanOrEqualTo: searchButton.leadingAnchor, constant: -12),
             windowSwitch.leadingAnchor.constraint(equalTo: caption.leadingAnchor),
-            windowSwitch.trailingAnchor.constraint(equalTo: searchButton.leadingAnchor, constant: -12),
+            windowSwitch.trailingAnchor.constraint(lessThanOrEqualTo: searchButton.leadingAnchor, constant: -12),
         ])
 
         apps.orientation = .horizontal
-        apps.spacing = 6
+        apps.spacing = 4
         apps.alignment = .centerY
         appScroll.documentView = apps
         appScroll.drawsBackground = false
         appScroll.hasHorizontalScroller = true
         appScroll.autohidesScrollers = true
         appScroll.scrollerStyle = .overlay
-        appScroll.heightAnchor.constraint(equalToConstant: 76).isActive = true
+        // The full-size content view would otherwise push the tiles down by the title bar's height.
+        appScroll.automaticallyAdjustsContentInsets = false
+        appScroll.contentInsets = NSEdgeInsetsZero
+        appScrollHeight = appScroll.heightAnchor.constraint(equalToConstant: Self.appRowHeight)
+        appScrollHeight?.isActive = true
         appScroll.setAccessibilityLabel(String(localized: "Applications", bundle: .module))
 
         let footer = NSView()
@@ -215,15 +232,18 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
             footer.addSubview(view)
             view.centerYAnchor.constraint(equalTo: footer.centerYAnchor).isActive = true
         }
-        back.leadingAnchor.constraint(equalTo: footer.leadingAnchor).isActive = true
         let action: NSView = recordingBar ?? capture
         action.trailingAnchor.constraint(equalTo: footer.trailingAnchor).isActive = true
         if let recordingBar {
+            back.leadingAnchor.constraint(equalTo: footer.leadingAnchor).isActive = true
             barWidth = recordingBar.widthAnchor.constraint(equalToConstant: recordingBar.fittingSize.width)
             barWidth?.isActive = true
             recordingBar.heightAnchor.constraint(equalToConstant: RecordingBar.height).isActive = true
         } else {
-            capture.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
+            // A dialog's buttons: Cancel beside the default button, both at the trailing edge.
+            back.trailingAnchor.constraint(equalTo: capture.leadingAnchor, constant: -12).isActive = true
+            back.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
+            capture.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
         }
         footer.heightAnchor.constraint(equalToConstant: 42).isActive = true
         for view in [search, previewSurface, caption, appScroll, footer] {
@@ -305,7 +325,12 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
             apps.addArrangedSubview(button)
             appButtons[application.processID] = button
         }
-        apps.frame = CGRect(origin: .zero, size: CGSize(width: max(appScroll.contentSize.width, apps.fittingSize.width), height: 72))
+        // An always-shown scroller takes its height from the clip view; the row grows by it instead of cutting the tiles.
+        root.layoutSubtreeIfNeeded()
+        let overflows = apps.fittingSize.width > appScroll.frame.width
+        appScrollHeight?.constant = Self.appRowHeight
+            + (overflows && appScroll.scrollerStyle == .legacy ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0)
+        apps.frame = CGRect(origin: .zero, size: CGSize(width: max(appScroll.frame.width, apps.fittingSize.width), height: Self.appRowHeight))
     }
 
     @discardableResult
@@ -475,42 +500,79 @@ private final class WindowPickerContent: NSView {
     }
 }
 
+/// A quiet well the window's picture sits in: the chip hover fill with a card's hairline.
 private final class WindowPreviewSurface: NSView {
+    override func viewDidChangeEffectiveAppearance() { needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.controlBackgroundColor.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10).fill()
+        let dark = effectiveAppearance.isDark, contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        let width = Theme.Material.edgeWidth(contrast: contrast)
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: width / 2, dy: width / 2), xRadius: Theme.Radius.card, yRadius: Theme.Radius.card)
+        NSColor(white: dark ? 1 : 0, alpha: Theme.ChipFill.hover(dark: dark, contrast: contrast)).setFill()
+        path.fill()
+        NSColor(cgColor: Theme.Material.edge(dark: dark, contrast: contrast))?.setStroke()
+        path.lineWidth = width
+        path.stroke()
     }
 }
 
+/// An app's tile: its icon over its name, filled like every other chip under the pointer and when chosen.
 private final class WindowAppButton: NSButton {
+    static let size = NSSize(width: 78, height: 72)
+    private static let iconSide: CGFloat = 36
     var selected = false { didSet { state = selected ? .on : .off; needsDisplay = true } }
+    private let icon: NSImage
+    private var hovering = false { didSet { if hovering != oldValue { needsDisplay = true } } }
+
     init(name: String, processID: pid_t) {
+        icon = NSRunningApplication(processIdentifier: processID)?.icon ?? NSWorkspace.shared.icon(for: .application)
         super.init(frame: .zero)
         title = name
-        let icon = (NSRunningApplication(processIdentifier: processID)?.icon?.copy() as? NSImage)
-            ?? NSImage(systemSymbolName: "app", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 28, weight: .regular))
-        icon?.size = NSSize(width: 32, height: 32)
-        image = icon
-        imagePosition = .imageAbove
-        imageScaling = .scaleProportionallyDown
-        font = .systemFont(ofSize: 11)
-        (cell as? NSButtonCell)?.lineBreakMode = .byTruncatingTail
         isBordered = false
         setButtonType(.onOff)
         toolTip = name
         setAccessibilityRole(.radioButton)
         setAccessibilityLabel(name)
         translatesAutoresizingMaskIntoConstraints = false
-        widthAnchor.constraint(equalToConstant: 76).isActive = true
-        heightAnchor.constraint(equalToConstant: 66).isActive = true
+        widthAnchor.constraint(equalToConstant: Self.size.width).isActive = true
+        heightAnchor.constraint(equalToConstant: Self.size.height).isActive = true
     }
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas where area.owner === self { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+    override func mouseEntered(with event: NSEvent) { hovering = true }
+    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func viewDidChangeEffectiveAppearance() { needsDisplay = true }
+
     override func draw(_ dirtyRect: NSRect) {
-        if selected {
-            NSColor.controlAccentColor.withAlphaComponent(NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 0.24 : 0.12).setFill()
-            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 10, yRadius: 10).fill()
+        let dark = effectiveAppearance.isDark, contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        let fill = selected || isHighlighted ? Theme.ChipFill.selected(dark: dark, contrast: contrast)
+            : hovering && isEnabled ? Theme.ChipFill.hover(dark: dark, contrast: contrast) : 0
+        if fill > 0 {
+            NSColor(white: dark ? 1 : 0, alpha: fill).setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10).fill()
         }
-        super.draw(dirtyRect)
+        let fraction: CGFloat = isEnabled ? 1 : 0.5
+        // Top-down positions, whichever way this view is flipped.
+        func rect(top: CGFloat, height: CGFloat, inset: CGFloat) -> NSRect {
+            NSRect(x: inset, y: isFlipped ? top : bounds.height - top - height, width: bounds.width - inset * 2, height: height)
+        }
+        let side = Self.iconSide
+        icon.draw(in: NSRect(x: (bounds.width - side) / 2, y: rect(top: 8, height: side, inset: 0).minY, width: side, height: side),
+                   from: .zero, operation: .sourceOver, fraction: fraction, respectFlipped: true, hints: nil)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+        let color: NSColor = selected ? .labelColor : .secondaryLabelColor
+        let label = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: selected ? .semibold : .regular),
+            .foregroundColor: color.withAlphaComponent(color.alphaComponent * fraction),
+            .paragraphStyle: paragraph,
+        ])
+        label.draw(with: rect(top: 8 + side + 6, height: 15, inset: 6), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 }

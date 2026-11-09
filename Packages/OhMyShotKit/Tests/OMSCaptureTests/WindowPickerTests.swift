@@ -167,7 +167,7 @@ struct WindowPickerTests {
         root.layoutSubtreeIfNeeded()
         let views = descendants(of: root)
         #expect(!root.hasAmbiguousLayout)
-        #expect(root.bounds.width == 620 && root.bounds.height == 452)
+        #expect(root.bounds.width == 620 && root.bounds.height == 480)
         let preview = try #require(views.compactMap { $0 as? NSImageView }.first)
         #expect(preview.frame.width > 500 && preview.frame.height > 180)
         for control in views.compactMap({ $0 as? NSControl }) where !control.isHiddenOrHasHiddenAncestor {
