@@ -8580,7 +8580,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "删除 %lld 项"
+            "value" : "删除 %lld 个截图"
           }
         },
         "zh-Hant" : {
@@ -15112,7 +15112,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要将全部 %lld 项移到废纸篓吗？"
+            "value" : "要将全部 %lld 个截图移到废纸篓吗？"
           }
         },
         "zh-Hant" : {
@@ -15282,7 +15282,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要将 %lld 项移到废纸篓吗？"
+            "value" : "要将 %lld 个截图移到废纸篓吗？"
           }
         },
         "zh-Hant" : {
