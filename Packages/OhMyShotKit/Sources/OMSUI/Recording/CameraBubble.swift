@@ -33,6 +33,27 @@ public final class CameraBubble {
     public init() {
         view.onDrag = { [weak self] delta in self?.drag(by: delta) }
         view.onDoubleClick = { [weak self] in self?.toggleFill() }
+        view.onCommand = { [weak self] command in self?.perform(command) }
+    }
+
+    /// Does what the camera's menu or a VoiceOver action asks: fills what is recorded or goes back to the bubble, or
+    /// moves the bubble to a corner (back from filling, if it filled).
+    public func perform(_ command: CameraBubbleCommand) {
+        guard panel != nil else { return }
+        switch command {
+        case .toggleFill:
+            toggleFill()
+        case .move(let corner):
+            if fills {
+                fills = false
+                onFillChange?(false)
+            }
+            bubble = Self.corner(corner, of: area, side: side)
+            // Put there on purpose: it stays when what is recorded changes, as a dragged bubble does.
+            wasMoved = true
+            layout()
+            VoiceOver.announce(Self.name(of: corner), from: view)
+        }
     }
 
     /// The window, for the recording's filter to take in; nil while hidden.
@@ -131,8 +152,28 @@ public final class CameraBubble {
 
     /// 24 points in from the bottom-left corner of `area`.
     private static func corner(of area: CGRect, side: CGFloat) -> CGRect {
+        corner(.bottomLeft, of: area, side: side)
+    }
+
+    /// 24 points in from `corner` of `area` (in global points, y up).
+    static func corner(_ corner: CameraBubbleCommand.Corner, of area: CGRect, side: CGFloat) -> CGRect {
         let inset = min(24, max(min(area.width, area.height) - side, 0) / 2)
-        return CGRect(x: area.minX + inset, y: area.minY + inset, width: side, height: side)
+        let left = corner == .topLeft || corner == .bottomLeft
+        let bottom = corner == .bottomLeft || corner == .bottomRight
+        return CGRect(
+            x: left ? area.minX + inset : area.maxX - inset - side, y: bottom ? area.minY + inset : area.maxY - inset - side,
+            width: side, height: side
+        )
+    }
+
+    /// A corner's name, as VoiceOver says where the bubble went.
+    static func name(of corner: CameraBubbleCommand.Corner) -> String {
+        switch corner {
+        case .topLeft: String(localized: "Top left", bundle: .module)
+        case .topRight: String(localized: "Top right", bundle: .module)
+        case .bottomLeft: String(localized: "Bottom left", bundle: .module)
+        case .bottomRight: String(localized: "Bottom right", bundle: .module)
+        }
     }
 
     private func makePanel() -> BubblePanel {
@@ -330,6 +371,8 @@ private final class BubbleView: NSView {
     private let edge = CAShapeLayer()
     var onDrag: ((CGVector) -> Void)?
     var onDoubleClick: (() -> Void)?
+    /// A VoiceOver action: what the camera's menu does.
+    var onCommand: ((CameraBubbleCommand) -> Void)?
     private var lastDrag: CGPoint?
     private var style = CameraStyle()
     private var fills = false
@@ -357,6 +400,30 @@ private final class BubbleView: NSView {
         setAccessibilityRole(.image)
         setAccessibilityLabel(String(localized: "Camera", bundle: .module))
         setAccessibilityHelp(String(localized: "Drag to move. Double-click to fill the recording.", bundle: .module))
+        updateActions()
+    }
+
+    /// The camera menu's commands for VoiceOver: fill or back to the bubble, and the four corners.
+    private func updateActions() {
+        let fill = NSAccessibilityCustomAction(
+            name: fills ? String(localized: "Show in a Bubble", bundle: .module) : String(localized: "Fill the Recording", bundle: .module)
+        ) { [weak self] in
+            self?.onCommand?(.toggleFill)
+            return true
+        }
+        let moves = CameraBubbleCommand.Corner.allCases.map { corner in
+            let name = switch corner {
+            case .topLeft: String(localized: "Move to Top Left", bundle: .module)
+            case .topRight: String(localized: "Move to Top Right", bundle: .module)
+            case .bottomLeft: String(localized: "Move to Bottom Left", bundle: .module)
+            case .bottomRight: String(localized: "Move to Bottom Right", bundle: .module)
+            }
+            return NSAccessibilityCustomAction(name: name) { [weak self] in
+                self?.onCommand?(.move(corner))
+                return true
+            }
+        }
+        setAccessibilityCustomActions([fill] + moves)
     }
 
     @available(*, unavailable)
@@ -366,7 +433,10 @@ private final class BubbleView: NSView {
 
     func apply(_ style: CameraStyle, fills: Bool) {
         self.style = style
-        self.fills = fills
+        if self.fills != fills {
+            self.fills = fills
+            updateActions()
+        }
         // Before the camera's first frame, the capsule surface: never a dark disc in a recording.
         let dark = NSApp.effectiveAppearance.isDark
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast

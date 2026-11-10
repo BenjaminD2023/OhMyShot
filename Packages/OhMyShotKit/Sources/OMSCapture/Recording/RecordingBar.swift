@@ -30,6 +30,10 @@ final class RecordingBar: NSView {
     var onCamera: ((String?) -> Void)?
     /// The camera bubble's look was changed from the camera's menu.
     var onCameraStyle: ((CameraStyle) -> Void)?
+    /// The camera's menu moved the bubble to a corner, or filled what is recorded with the camera, or went back.
+    var onCameraCommand: ((CameraBubbleCommand) -> Void)?
+    /// Whether the camera fills what is recorded, for Fill the Recording's checkmark.
+    var cameraFills: () -> Bool = { false }
     var onRecord: (() -> Void)?
     var onCancel: (() -> Void)?
     /// The all-windows selector requires an explicit selection before Record can run.
@@ -516,7 +520,8 @@ final class RecordingBar: NSView {
         onMicrophone?(sender.representedObject as? String)
     }
 
-    /// No camera, or one of the Mac's, then the bubble's shape, size, and whether it is mirrored.
+    /// No camera, or one of the Mac's, then the bubble's shape, size, where it is while it shows, and whether it is
+    /// mirrored.
     private func showCameraMenu(from button: NSButton) {
         let menu = NSMenu()
         let showing = states[.camera] == true
@@ -562,6 +567,26 @@ final class RecordingBar: NSView {
             item.state = cameraStyle.size == size ? .on : .off
             menu.addItem(item)
         }
+        if showing {
+            // Where the bubble is, as dragging it and double-clicking it say with the pointer.
+            menu.addItem(.sectionHeader(title: String(localized: "Position", bundle: .module)))
+            for corner in CameraBubbleCommand.Corner.allCases {
+                let title = switch corner {
+                case .topLeft: String(localized: "Top Left", bundle: .module)
+                case .topRight: String(localized: "Top Right", bundle: .module)
+                case .bottomLeft: String(localized: "Bottom Left", bundle: .module)
+                case .bottomRight: String(localized: "Bottom Right", bundle: .module)
+                }
+                let item = NSMenuItem(title: title, action: #selector(cameraCornerChosen(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = corner.rawValue
+                menu.addItem(item)
+            }
+            let fill = NSMenuItem(title: String(localized: "Fill the Recording", bundle: .module), action: #selector(cameraFillToggled(_:)), keyEquivalent: "")
+            fill.target = self
+            fill.state = cameraFills() ? .on : .off
+            menu.addItem(fill)
+        }
         menu.addItem(.separator())
         let mirror = NSMenuItem(title: String(localized: "Mirror", bundle: .module), action: #selector(cameraMirrorToggled(_:)), keyEquivalent: "")
         mirror.target = self
@@ -599,6 +624,15 @@ final class RecordingBar: NSView {
         guard let size = (sender.representedObject as? String).flatMap(CameraStyle.Size.init(rawValue:)) else { return }
         cameraStyle.size = size
         onCameraStyle?(cameraStyle)
+    }
+
+    @objc private func cameraCornerChosen(_ sender: NSMenuItem) {
+        guard let corner = (sender.representedObject as? String).flatMap(CameraBubbleCommand.Corner.init(rawValue:)) else { return }
+        onCameraCommand?(.move(corner))
+    }
+
+    @objc private func cameraFillToggled(_ sender: NSMenuItem) {
+        onCameraCommand?(.toggleFill)
     }
 
     @objc private func cameraMirrorToggled(_ sender: NSMenuItem) {
