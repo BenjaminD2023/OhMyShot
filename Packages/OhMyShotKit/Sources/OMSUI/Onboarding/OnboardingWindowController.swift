@@ -227,6 +227,7 @@ private struct OnboardingView: View {
     let relaunch: () -> Void
     let close: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(spacing: 0) {
@@ -252,10 +253,11 @@ private struct OnboardingView: View {
                 .transition(.opacity)
             }
             .frame(maxHeight: .infinity)
+            // The fade is the step's alone: the progress line and the buttons change at once.
+            .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.slide), value: model.step)
             Divider()
             footer.padding(.horizontal, 24).padding(.vertical, 20)
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.slide), value: model.step)
         .frame(minWidth: 520, minHeight: 440)
         .background(Color(nsColor: .windowBackgroundColor))
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refresh() }
@@ -269,7 +271,7 @@ private struct OnboardingView: View {
             ForEach(Array(OnboardingProgress.Step.allCases.enumerated()), id: \.offset) { index, step in
                 VStack(alignment: .leading, spacing: 7) {
                     Capsule()
-                        .fill(index <= model.index ? Color.accentColor : Color.primary.opacity(0.1))
+                        .fill(index <= model.index ? Color.accentColor : Color.primary.opacity(contrast == .increased ? 0.25 : 0.1))
                         .frame(height: 3)
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         if index < model.index {
@@ -313,11 +315,11 @@ private struct OnboardingView: View {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(verbatim: "\(index + 1)")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(.system(size: 11, weight: .semibold))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .frame(width: 20, height: 20)
-                        .background(Color.primary.opacity(0.07), in: Circle())
+                        .background(Color.primary.opacity(contrast == .increased ? 0.14 : 0.07), in: Circle())
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                         .accessibilityHidden(true)
                     Text(item, bundle: .module).fixedSize(horizontal: false, vertical: true)
@@ -448,8 +450,7 @@ private struct OnboardingView: View {
             }
         }
         .frame(width: OnboardingColumn.width)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
+        .guideWell()
     }
 
     private var practice: some View {
@@ -481,7 +482,8 @@ private struct OnboardingView: View {
                 .font(.callout)
                 .padding(12)
                 .frame(width: OnboardingColumn.width)
-                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                // The guide's own well: the warning is the symbol's orange, never a tint behind the words.
+                .guideWell()
             }
         }
     }
