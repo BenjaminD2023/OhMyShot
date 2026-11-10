@@ -26,12 +26,18 @@ enum FirstCaptureHintPlacement {
 
 /// A single hint beside the practice card. It never activates the app or makes itself key, and has no timer.
 final class FirstCaptureHintController {
+    /// Room around the card for its shadow to fade out completely, as the text result card leaves: twice the blur
+    /// plus the drop. The panel is that much larger than the card on every side.
+    static let margin: CGFloat = Theme.Shadow.radius * 2 + Theme.Shadow.drop
+
     let captureID: UUID
     private let panel: FirstCaptureHintPanel
     private let content: NSHostingController<FirstCaptureHintView>
     private var lease: ActiveResources.Lease?
     #if DEBUG
     var debugWindow: NSWindow { panel }
+    /// The card itself on screen, without the shadow's room.
+    var debugCardFrame: CGRect { panel.frame.insetBy(dx: Self.margin, dy: Self.margin) }
     #endif
 
     init(captureID: UUID, isCopied: Bool, isSaved: Bool, close: @escaping () -> Void) {
@@ -52,12 +58,19 @@ final class FirstCaptureHintController {
 
     func place(near card: CGRect) {
         guard let screen = NSScreen.screens.first(where: { $0.frame.intersects(card) }) ?? NSScreen.main else { return }
-        panel.setFrame(FirstCaptureHintPlacement.frame(size: fittingSize, card: card, visible: screen.visibleFrame), display: true)
+        // The hint's card is placed; the panel reaches past it by the shadow's room, which takes no clicks.
+        let frame = FirstCaptureHintPlacement.frame(size: fittingSize, card: card, visible: screen.visibleFrame)
+        panel.setFrame(frame.insetBy(dx: -Self.margin, dy: -Self.margin), display: true)
     }
 
     // NSHostingView.fittingSize is zero before a layout when sizingOptions is empty. Measure the SwiftUI
     // tree explicitly so the very first presentation already has the full, localized text's height.
-    var fittingSize: CGSize { content.sizeThatFits(in: CGSize(width: 320, height: 1000)) }
+    /// The card's size, without the shadow's room around it.
+    var fittingSize: CGSize {
+        let room = Self.margin * 2
+        let whole = content.sizeThatFits(in: CGSize(width: FirstCaptureHintView.width + room, height: 1000))
+        return CGSize(width: whole.width - room, height: whole.height - room)
+    }
 
     func dismiss() {
         panel.orderOut(nil)
@@ -73,7 +86,8 @@ private final class FirstCaptureHintPanel: NSPanel {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        // The card draws the floating card's shadow itself, as the Quick Access card beside it does.
+        hasShadow = false
         level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         hidesOnDeactivate = false
@@ -92,6 +106,7 @@ private final class FirstCaptureHintPanel: NSPanel {
 }
 
 private struct FirstCaptureHintView: View {
+    static let width: CGFloat = 320
     let isCopied: Bool
     let isSaved: Bool
     let close: () -> Void
@@ -128,36 +143,74 @@ private struct FirstCaptureHintView: View {
             .padding(.bottom, 16)
             HStack {
                 Spacer()
-                Button(action: close) { Text("Got It", bundle: .module).padding(.horizontal, 6) }
-                    .keyboardShortcut(.defaultAction)
+                // The panel never becomes key, where AppKit draws a standard button dimmed: the card's own chip.
+                HintChip(title: String(localized: "Got It", bundle: .module), symbolName: "checkmark", action: close)
             }
         }
         .padding(18)
-        .frame(width: 320)
+        .frame(width: Self.width)
         .fixedSize(horizontal: false, vertical: true)
-        .background(Color(cgColor: Theme.Material.cardFill(dark: dark)), in: shape)
+        .background {
+            shape.fill(Color(cgColor: Theme.Material.cardFill(dark: dark)))
+                .shadow(color: .black.opacity(Double(Theme.Shadow.opacity)), radius: Theme.Shadow.radius, y: Theme.Shadow.drop)
+        }
         .overlay(shape.strokeBorder(Color(cgColor: Theme.Material.edge(dark: dark, contrast: increased)),
                                     lineWidth: Theme.Material.edgeWidth(contrast: increased)))
+        .padding(FirstCaptureHintController.margin)
     }
 
-    /// One of the card's buttons as the card draws it, a white capsule with its symbol and name, and what it does.
+    /// One of the card's buttons as the card draws it, the action white capsule with its symbol and name in the
+    /// card's ink and face, and what it does. It names a button and is not one: smaller than the card's, and flat,
+    /// with a hairline where the card's capsule has its lift.
     private func row(_ title: String, _ symbol: String, _ text: LocalizedStringKey) -> some View {
         GridRow {
             Label { Text(verbatim: title) } icon: { Image(systemName: symbol).font(.system(size: 10, weight: .bold)) }
                 .labelStyle(.titleAndIcon)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color(white: 0.102))
+                .font(Font(Theme.Typeface.label(size: 11, weight: .semibold) as CTFont))
+                .foregroundStyle(Color(white: Theme.ActionWhite.ink))
                 .lineLimit(1)
                 .padding(.horizontal, 8)
                 .frame(height: 22)
-                .background(Color(white: 0.969), in: Capsule())
-                .overlay(Capsule().strokeBorder(.black.opacity(contrast == .increased ? 0.35 : 0.1), lineWidth: contrast == .increased ? 1 : 0.5))
-                .shadow(color: .black.opacity(0.1), radius: 1.5, y: 1)
+                .background(Color(white: Theme.ActionWhite.fill), in: Capsule())
+                .overlay(Capsule().strokeBorder(.black.opacity(contrast == .increased ? Theme.ActionWhite.contrastEdge : 0.1),
+                                                lineWidth: contrast == .increased ? 1 : 0.5))
                 .fixedSize()
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             Text(text, bundle: .module).font(.callout).fixedSize(horizontal: false, vertical: true)
                 .gridColumnAlignment(.leading)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// One of the cards' hand-drawn chips, in the hint: it takes the first click in a panel that is not key, shows its
+/// hover and press there, and is a button to VoiceOver.
+private struct HintChip: NSViewRepresentable {
+    let title: String
+    let symbolName: String
+    let action: () -> Void
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func pressed(_ sender: Any?) { action() }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
+
+    func makeNSView(context: Context) -> CardButton {
+        let button = CardButton(style: .chip, title: title, symbolName: symbolName)
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.pressed(_:))
+        return button
+    }
+
+    func updateNSView(_ button: CardButton, context: Context) {
+        context.coordinator.action = action
+        if button.title != title { button.title = title }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: CardButton, context: Context) -> CGSize? {
+        nsView.intrinsicContentSize
     }
 }

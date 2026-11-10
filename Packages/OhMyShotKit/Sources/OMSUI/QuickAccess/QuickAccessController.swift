@@ -130,6 +130,8 @@ public final class QuickAccessController {
     /// The cards' panel while it shows, for scripted captures of it.
     public var debugPanel: NSWindow? { panel }
     public var debugFirstCaptureHintWindow: NSWindow? { firstCaptureHint?.debugWindow }
+    /// The hint's card on screen, without the room its panel leaves around it for the shadow.
+    public var debugFirstCaptureHintCardFrame: CGRect? { firstCaptureHint?.debugCardFrame }
 
     /// Moves the newest card to the Trash as its Trash button does, for scripted checks.
     public func debugTrashLatest() {

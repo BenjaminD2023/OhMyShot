@@ -105,6 +105,20 @@ struct OnboardingTests {
         }
     }
 
+    @Test func theHintsPanelLeavesRoomAroundItsCardForTheShadow() throws {
+        let screen = try #require(NSScreen.main)
+        let hint = FirstCaptureHintController(captureID: UUID(), isCopied: true, isSaved: false, close: {})
+        let card = CGRect(x: screen.visibleFrame.minX + 26, y: screen.visibleFrame.minY + 26, width: 220, height: 165)
+        hint.place(near: card)
+        // The card is where the placement puts it; the panel reaches past it by twice the blur plus the drop, so the
+        // floating card's shadow fades out whole instead of ending at the panel's edge.
+        let placed = FirstCaptureHintPlacement.frame(size: hint.fittingSize, card: card, visible: screen.visibleFrame)
+        #expect(hint.debugCardFrame == placed)
+        #expect(FirstCaptureHintController.margin == 34)
+        #expect(hint.debugWindow.frame == placed.insetBy(dx: -34, dy: -34))
+        #expect(!hint.debugWindow.hasShadow)
+    }
+
     @Test func aHintHoldsOnlyItsOwnCardAndReleasesWithTheNormalGracePeriod() {
         let practice = UUID(), other = UUID()
         var schedule = CardCloseSchedule()
