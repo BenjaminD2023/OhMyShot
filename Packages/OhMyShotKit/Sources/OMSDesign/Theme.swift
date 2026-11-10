@@ -79,6 +79,18 @@ public enum Theme {
         }
     }
 
+    /// The edge of a picture shown as content (a Quick Access card's, the editor's, the Recognized Text window's):
+    /// black at 0.10 or white at 0.16 in Dark, 0.5 pt; under Increase Contrast the contrast hairline, 1 pt.
+    public enum PictureBorder {
+        public static func color(dark: Bool, contrast: Bool) -> CGColor {
+            contrast ? Material.edge(dark: dark, contrast: true) : dark ? CGColor(gray: 1, alpha: 0.16) : CGColor(gray: 0, alpha: 0.10)
+        }
+
+        public static func width(contrast: Bool) -> CGFloat {
+            contrast ? 1 : 0.5
+        }
+    }
+
     /// The fill a chip or a row takes under the pointer, and a chip that is on, as the alpha of white in Dark and of
     /// black in Light (DESIGN.md's chip-hover and chip-selected): every bar, rail, capsule, and card button fills its
     /// chips alike. About twice as strong under Increase Contrast where the control follows it.

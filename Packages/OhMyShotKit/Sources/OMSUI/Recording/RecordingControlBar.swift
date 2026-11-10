@@ -201,7 +201,8 @@ final class ControlBarPanel: NSPanel {
 /// way to a pause symbol, the time pulses, and Resume is lit as a chip that is on.
 final class ControlBarView: NSView {
     private let actions: RecordingControlBar.Actions
-    private let container: NSView
+    private var container = NSView()
+    private var displayOptions: (any NSObjectProtocol)?
     private let backing = NSView()
     /// The capsule's hairline, drawn inside the backing as the countdown disc's rim is.
     private let rim = CAShapeLayer()
@@ -238,7 +239,6 @@ final class ControlBarView: NSView {
     init(actions: RecordingControlBar.Actions, showsMicrophone: Bool = false) {
         self.actions = actions
         self.showsMicrophone = showsMicrophone
-        container = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency ? NSView() : NSGlassEffectView()
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false
@@ -300,13 +300,7 @@ final class ControlBarView: NSView {
         backing.addSubview(stack)
         rim.fillColor = nil
         backing.layer?.addSublayer(rim)
-        if let glass = container as? NSGlassEffectView {
-            glass.contentView = backing
-        } else {
-            container.wantsLayer = true
-            container.addSubview(backing)
-        }
-        addSubview(container)
+        installContainer()
         setAccessibilityElement(true)
         setAccessibilityRole(.toolbar)
         setAccessibilityLabel(String(localized: "Recording controls", bundle: .module))
@@ -359,6 +353,48 @@ final class ControlBarView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         applyAppearance()
+    }
+
+    /// Glass, or a solid capsule with Reduce Transparency; swapped when the setting changes, as the bar stays up for the
+    /// whole recording.
+    private func installContainer() {
+        let wantsSolid = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        let isSolid = !(container is NSGlassEffectView) && container.superview != nil
+        guard container.superview == nil || wantsSolid != isSolid else { return }
+        container.removeFromSuperview()
+        backing.removeFromSuperview()
+        if wantsSolid {
+            let solid = NSView()
+            solid.wantsLayer = true
+            solid.addSubview(backing)
+            container = solid
+        } else {
+            let glass = NSGlassEffectView()
+            glass.contentView = backing
+            container = glass
+        }
+        addSubview(container, positioned: .below, relativeTo: nil)
+        needsLayout = true
+    }
+
+    /// Reduce Transparency and Increase Contrast switched during the recording take effect at once.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        displayOptions = nil
+        guard window != nil else { return }
+        displayOptions = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.installContainer()
+                self?.needsLayout = true
+            }
+        }
+    }
+
+    isolated deinit {
+        if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
     }
 
     override func viewDidChangeBackingProperties() {

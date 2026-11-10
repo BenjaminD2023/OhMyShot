@@ -1942,8 +1942,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let dark = effectiveAppearance.isDark
-            pictureLayer.borderWidth = contrast ? 1 : 0.5
-            pictureLayer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.16) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.10)
+            pictureLayer.borderWidth = Theme.PictureBorder.width(contrast: contrast)
+            pictureLayer.borderColor = Theme.PictureBorder.color(dark: dark, contrast: contrast)
             selectionLayer.accent = NSColor.controlAccentColor.cgColor
             suggestions.applyAppearance(increasedContrast: contrast)
             backdropLayer.checker = Theme.Checkerboard.colors(dark: dark, increasedContrast: contrast)

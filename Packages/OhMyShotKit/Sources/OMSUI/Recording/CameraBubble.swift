@@ -374,6 +374,7 @@ private final class BubbleView: NSView {
     /// A VoiceOver action: what the camera's menu does.
     var onCommand: ((CameraBubbleCommand) -> Void)?
     private var lastDrag: CGPoint?
+    private var displayOptions: (any NSObjectProtocol)?
     private var style = CameraStyle()
     private var fills = false
 
@@ -429,6 +430,26 @@ private final class BubbleView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    /// Increase Contrast switched while the bubble shows: its edge comes or goes at once.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        displayOptions = nil
+        guard window != nil else { return }
+        displayOptions = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.apply(self.style, fills: self.fills)
+            }
+        }
+    }
+
+    isolated deinit {
+        if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
     }
 
     func apply(_ style: CameraStyle, fills: Bool) {

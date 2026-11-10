@@ -167,11 +167,12 @@ final class CardButton: NSControl {
             NSColor(white: dark ? 1 : 0, alpha: (dark ? 0.1 : 0.06) * strength).setFill()
             ink = .labelColor
         case .barIcon:
-            // The bar's own hover and pressed fills, or its selected fill (a press adds the hover fill to it), doubled
-            // under Increase Contrast.
-            let hoverFill = Theme.ChipFill.hover(dark: dark)
-            let fill = isSelected ? Theme.ChipFill.selected(dark: dark) + (pressed ? hoverFill : 0) : hoverFill * (pressed ? 2 : hovering ? 1 : 0)
-            NSColor(white: dark ? 1 : 0, alpha: fill * (increaseContrast ? 2 : 1)).setFill()
+            // The bar's own hover and pressed fills, or its selected fill (a press adds the hover fill to it), at the
+            // chip fills' Increase Contrast steps as every bar's chips are.
+            let hoverFill = Theme.ChipFill.hover(dark: dark, contrast: increaseContrast)
+            let selectedFill = Theme.ChipFill.selected(dark: dark, contrast: increaseContrast)
+            let fill = isSelected ? selectedFill + (pressed ? hoverFill : 0) : hoverFill * (pressed ? 2 : hovering ? 1 : 0)
+            NSColor(white: dark ? 1 : 0, alpha: fill).setFill()
             ink = isSelected ? .controlAccentColor : .labelColor
         }
         NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
