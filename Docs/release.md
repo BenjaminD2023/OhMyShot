@@ -220,6 +220,35 @@ now gives `ARCHS=arm64` to every target.
 section in CHANGELOG.md, the feed's build number, and with `--publish` gh), and `Scripts/release.sh --build-only` only
 its build and the notices' check, signing nothing: the release workflow's preflight and CI run them.
 
+## The installer disk image
+
+`Scripts/make-dmg.sh` makes `OhMyShot-<version>.dmg` from an app that is already built and signed: a release's
+(`build/release/<version>/OhMyShot.app`, with no arguments), or any other given as its first argument, such as a dry
+run's or `build/Build/Products/Release/OhMyShot.app`. The image opens as a window with the app beside the Applications
+folder (DESIGN.md, Installer Disk Image). It is not part of `Scripts/release.sh` or the release workflow, and nothing
+publishes it: the release, the feed, the website's `/download`, and `Scripts/check-distribution.py` all still carry
+the zip, which Sparkle updates from and which stays whatever becomes of the image.
+
+- `Tools/dmg/installer.swift` draws the window's picture (`.background/background.tiff`, at 1× and 2× in one file) and
+  writes the `.DS_Store` that lays the window out, from the same numbers. Finder is never scripted, so the script needs
+  no window server and no Automation permission, and both files are the same bytes on every run. The `.DS_Store` names
+  the picture by its path on a volume called `OhMyShot`; mounted beside another volume of that name (`OhMyShot 1`),
+  Finder still found it (macOS 27.0.1).
+- The image is HFS+, compressed with LZMA (`ULMO`: 12.5 MB for the 39 MB app, where zlib made 18.7 MB and LZFSE 17.0),
+  and is made read-write first, only to set the custom-icon flag on the volume's root, which is what makes Finder show
+  `.VolumeIcon.icns` (the app's own `AppIcon.icns`). `hdiutil makehybrid` would need no mount, but it writes empty
+  Finder information on every file, and the app's signature no longer verifies.
+- It signs the image with the Developer ID Application certificate when there is one (`SIGNING_KEYCHAIN` as for a
+  release) and says so when there is none. Then it reads back what it made: the image's checksums, the signature of
+  the app inside, the link to Applications, and the window's three files.
+- It does not notarize. A stapled app inside passes Gatekeeper on its own, but an image for the public should be
+  notarized and stapled too: `xcrun notarytool submit <dmg> --keychain-profile OhMyShot --wait`, then
+  `xcrun stapler staple <dmg>`. That was not tried here: the Mac the script was written on has no Developer ID.
+
+After changing the picture or the layout, open the image and look at the window in Light and in Dark: Finder draws
+the names in black in both, which is why the ground under them is light. A Finder with View › Show Path Bar on covers
+the window's last 28 pt with it; nothing is drawn there.
+
 ## Releasing from CI
 
 `.github/workflows/release.yml` does steps 4 and 6 on GitHub Actions, with credentials from the repository's secrets in
