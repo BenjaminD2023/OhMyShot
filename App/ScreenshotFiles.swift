@@ -42,6 +42,8 @@ final class ScreenshotFiles {
     func prepareHandOver(_ url: URL, scale: Double?) {
         let output = output
         guard !output.isUnchanged, ExportedFiles.isPicture(url) else { return }
+        // A copy is made for every capture now, dragged or not: the old ones go as they do after a drag.
+        sweepConvertedCopies()
         Task(priority: .utility) {
             do {
                 _ = try await ExportedFiles.fileOffMain(for: url, pixelsPerPoint: scale, output: output)

@@ -96,8 +96,7 @@ final class CaptureRetention {
             // Back on the main actor, and the listing took a while: a capture taken since is newer than `now`, and one
             // a card, an editor, or the clipboard took up since is held now; neither goes. With history off, that is
             // every capture but the ones still in use.
-            let held = heldCaptureIDs
-            let removable = expired.filter { !held.contains($0.id) && $0.createdAt <= now }
+            let removable = HistoryStore.removable(expired, held: heldCaptureIDs, checkedAt: now)
             removable.forEach(history.delete)
             if !removable.isEmpty {
                 Log.capture.notice("Removed \(removable.count, privacy: .public) expired capture(s) from the history")

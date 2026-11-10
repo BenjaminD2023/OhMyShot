@@ -458,6 +458,13 @@ public final class HistoryStore: Sendable {
         Self.expired(readItems(cancelled: { Task.isCancelled }), retention: retention, keeping: keeping, now: now)
     }
 
+    /// Of `expired`, listed off the main actor for a check made at `checkedAt`, the captures to delete now: none that
+    /// something holds now (`held`, asked again after the listing), and none newer than the check. With history off
+    /// every capture not held is expired, so a capture taken, or put back on a card, while the listing ran must not go.
+    public static func removable(_ expired: [HistoryItem], held: Set<UUID>, checkedAt: Date) -> [HistoryItem] {
+        expired.filter { !held.contains($0.id) && $0.createdAt <= checkedAt }
+    }
+
     private static func expired(_ items: [HistoryItem], retention: HistoryRetention, keeping: Set<UUID>, now: Date) -> [HistoryItem] {
         items.filter { item in
             guard !keeping.contains(item.id) else { return false }

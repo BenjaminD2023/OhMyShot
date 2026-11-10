@@ -53,4 +53,19 @@ struct HistoryLookupTests {
         // History off: everything not held.
         #expect(Set(await store.loadExpired(retention: .never, keeping: [held.id], now: now).map(\.id)) == [old.id, recent.id])
     }
+
+    @Test func historyOffNeverTakesACaptureTakenOrPutBackWhileTheListingRan() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let closed = try add(store, 1, ago: 60), restored = try add(store, 2, ago: 120)
+        let checkedAt = Date.now
+        // History off: everything not held when the check began is expired.
+        let expired = await store.loadExpired(retention: .never, keeping: [], now: checkedAt)
+        // Meanwhile a capture is taken (its card holds it, but it was not held when the check began), and an old one
+        // is put back on a card.
+        let taken = try add(store, 3)
+        let listedLate = expired + [taken]
+        let removable = HistoryStore.removable(listedLate, held: [restored.id], checkedAt: checkedAt)
+        #expect(removable.map(\.id) == [closed.id])
+    }
 }

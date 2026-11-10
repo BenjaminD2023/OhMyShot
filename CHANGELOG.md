@@ -30,7 +30,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - A click on the menu bar icon opens a capture launcher: every command that takes a shortcut is a tile, whose keys (or Set Shortcut, while it has none) open Settings › Shortcuts on its row; every other command of the status menu (Images & Pins, Getting Started, Join Discord, Keyboard Shortcuts…, Debug, Quit) is a row, those with more choices opening a menu in place. A right-click still opens the status menu. ([6bda14e]; by [@bobbyhuang-dev]; coauthored by Codex and Claude Opus 5.5)
 - The capture launcher answers the arrow keys: they move a highlight across its tiles and rows as a menu's do, passing over dimmed commands, and Return or Space presses the command they reach. ([db7bffc]; by [@fzlzjerry])
 - In the window chooser, Up and Down go through the chosen app's windows, as Left and Right go through the apps. ([84a0c3a]; by [@fzlzjerry])
-- The camera bubble can be placed and made to fill the recording without the pointer: the recording bar's camera menu has Position (each corner) and Fill the Recording, and VoiceOver offers the same as the bubble's actions. ([ea1e905]; by [@fzlzjerry])
+- The camera bubble can be placed and made to fill the recording without dragging or double-clicking it: before recording, the recording bar's camera menu has Position (each corner) and Fill the Recording; VoiceOver offers the same as the bubble's actions at any time. ([ea1e905]; by [@fzlzjerry])
 
 ### Fixed
 
