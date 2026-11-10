@@ -55,6 +55,13 @@ struct WindowPickerModel {
         selectedWindowID = id
     }
 
+    /// The chosen app's next or previous window, around the ends; remembered for the app as one picked by hand is.
+    mutating func moveWindow(by step: Int) {
+        guard let app = application, app.windows.count > 1 else { return }
+        let current = app.windows.firstIndex { $0.target.id == selectedWindowID } ?? 0
+        selectWindow(app.windows[(current + step + app.windows.count) % app.windows.count].target.id)
+    }
+
     mutating func moveApplication(by step: Int) {
         guard !applications.isEmpty else { return }
         let current = applications.firstIndex { $0.processID == selectedProcessID } ?? 0

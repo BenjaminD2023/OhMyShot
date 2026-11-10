@@ -47,6 +47,30 @@ struct WindowPickerTests {
         #expect(detached.display(in: DisplayLayout(displays: [])) == nil)
     }
 
+    @Test func upAndDownGoThroughTheChosenAppsWindowsAndAreRemembered() {
+        let second = WindowCatalog.Choice(target: WindowTarget(id: 101, frame: main.frame, ownerName: "Safari", title: "Swift reference"), processID: 998, isOnScreen: true)
+        let third = WindowCatalog.Choice(target: WindowTarget(id: 102, frame: main.frame, ownerName: "Safari", title: "Downloads"), processID: 998, isOnScreen: true)
+        var model = WindowPickerModel()
+        model.replace([browser, second, third, game], preferredProcessID: browser.processID)
+        #expect(model.selected == browser)
+        model.moveWindow(by: 1)
+        #expect(model.selected == second)
+        model.moveWindow(by: -1)
+        model.moveWindow(by: -1)
+        // Around the ends, as the apps go.
+        #expect(model.selected == third)
+        model.moveWindow(by: 1)
+        #expect(model.selected == browser)
+        // The window reached by the keys is the app's remembered one, as a window picked by hand is.
+        model.moveWindow(by: 1)
+        model.selectApplication(game.processID)
+        // An app with one window has nowhere to go.
+        model.moveWindow(by: 1)
+        #expect(model.selected == game)
+        model.selectApplication(browser.processID)
+        #expect(model.selected == second)
+    }
+
     @Test func applicationsReplaceTheFlatWindowListAndPreferTheUsersCurrentApp() {
         let second = WindowCatalog.Choice(target: WindowTarget(id: 101, frame: main.frame, ownerName: "Safari", title: "Swift reference"), processID: 998, isOnScreen: true)
         var model = WindowPickerModel()
