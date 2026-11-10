@@ -2914,6 +2914,8 @@ Tried in an isolated copy of the Dev app (Debug, with a bundle ID of its own):
   characters in about 36.5 s, where 30 s would have failed it.
 
 Not done; each of these is a choice to make:
-- **History:** a capture that the text reader timed out on stays out until the app relaunches
-  (`HistoryTextReader.failed`). Captures read during a cold start therefore can't be searched until then.
+- ~~**History:** a capture that the text reader timed out on stays out until the app relaunches.~~ Done
+  2026-11-10: the reader counts tries per capture (`HistoryTextReader.attempts`). A capture it failed on goes again
+  with the next capture's reading, up to three tries, and opening History sends it once more; when the reader stops
+  partway, only the capture it had counts a try.
 - **For the user:** add `~/Library/Caches/io.github.fzlzjerry.ohmyshot*` to the cleaner's exclusions.

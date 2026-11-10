@@ -227,8 +227,11 @@ struct HistoryTextReaderTests {
     }
 
     /// A stand-in reader answering "read <id>" for each picture, or, with `answering`, for that many and then
-    /// exiting; every start appends a line to `starts`.
-    private func fakeReader(in directory: URL, answering limit: Int? = nil, pause: Double = 0, holdFirstRun: Bool = false) throws -> (helper: URL, starts: URL) {
+    /// exiting; in its first `failingRuns` runs it answers each with an error instead, as a reading that timed out
+    /// does. Every start appends a line to `starts`.
+    private func fakeReader(
+        in directory: URL, answering limit: Int? = nil, failingRuns: Int = 0, pause: Double = 0, holdFirstRun: Bool = false
+    ) throws -> (helper: URL, starts: URL) {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let helper = directory.appending(path: "fake-reader.sh"), starts = directory.appending(path: "starts")
         let stop = limit.map { "[ \"$n\" -ge \($0) ] && exit 0" } ?? ""
@@ -252,7 +255,11 @@ struct HistoryTextReaderTests {
           \(stop)
           \(pause > 0 ? "sleep \(pause)" : "")
           id=$(printf '%s' "$line" | sed 's/.*"id":"\\([^"]*\\)".*/\\1/')
-          printf '{"id":"%s","text":"read %s"}\\n' "$id" "$id"
+          if [ "$(wc -l < '\(starts.path(percentEncoded: false))' | tr -d ' ')" -le \(failingRuns) ]; then
+            printf '{"id":"%s","error":"timedOut"}\\n' "$id"
+          else
+            printf '{"id":"%s","text":"read %s"}\\n' "$id" "$id"
+          fi
           n=$((n + 1))
         done
         """
@@ -336,26 +343,59 @@ struct HistoryTextReaderTests {
         #expect(items.allSatisfy { store.text(of: $0) != nil })
     }
 
-    @Test func whatTheReaderLeftUnreadIsNotTriedAgainUntilTheAppRunsAgain() async throws {
+    private func readAndSettle(_ reader: HistoryTextReader, now: Bool = false, retrying: Bool = false) async {
+        if now { reader.readNow(retryingFailed: retrying) } else { reader.read(priority: .utility) }
+        try? await Task.sleep(for: .milliseconds(50))
+        await settled(reader)
+    }
+
+    @Test func aCaptureTheReaderFailedOnIsTriedAgainAtTheNextReading() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        // The first reading times out (Vision compiling its models after a cleaner emptied the caches).
+        let (helper, startsFile) = try fakeReader(in: store.directory.appending(path: "bin"), failingRuns: 1)
+        let reader = HistoryTextReader(store: store, helper: helper)
+        await readAndSettle(reader)
+        #expect(store.text(of: item) == nil)
+        // The next capture's reading, not the app's next run, reads it.
+        await readAndSettle(reader)
+        #expect(starts(startsFile) == 2)
+        #expect(store.text(of: item) == "read \(item.id.uuidString)")
+    }
+
+    @Test func aCaptureThatKeepsFailingWaitsForHistoryToOpenAfterThreeTries() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        let (helper, startsFile) = try fakeReader(in: store.directory.appending(path: "bin"), failingRuns: HistoryTextReader.maxAttempts)
+        let reader = HistoryTextReader(store: store, helper: helper)
+        for _ in 0..<HistoryTextReader.maxAttempts + 1 {
+            await readAndSettle(reader)
+        }
+        // Not sent a fourth time after a capture, nor while History is open and a capture comes in.
+        await readAndSettle(reader, now: true)
+        #expect(starts(startsFile) == HistoryTextReader.maxAttempts)
+        #expect(store.text(of: item) == nil)
+        // History opening sends it once more.
+        await readAndSettle(reader, now: true, retrying: true)
+        #expect(starts(startsFile) == HistoryTextReader.maxAttempts + 1)
+        #expect(store.text(of: item) == "read \(item.id.uuidString)")
+    }
+
+    @Test func aReaderThatStopsPartwayCountsATryOnlyForTheCaptureItHad() async throws {
         let store = makeStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }
         let items = try (1...3).map { try store.add(data: Data([UInt8($0)]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil) }
+        // Answers one, then stops with the next in hand, every run.
         let (helper, startsFile) = try fakeReader(in: store.directory.appending(path: "bin"), answering: 1)
         let reader = HistoryTextReader(store: store, helper: helper)
-        reader.readNow()
-        try? await Task.sleep(for: .milliseconds(50))
-        await settled(reader)
+        await readAndSettle(reader)
         #expect(items.filter { store.text(of: $0) != nil }.count == 1)
-        reader.readNow()
-        try? await Task.sleep(for: .milliseconds(200))
-        await settled(reader)
-        #expect(starts(startsFile) == 1)
-        // A new reader (the app's next run) tries them again.
-        let next = HistoryTextReader(store: store, helper: helper)
-        next.readNow()
-        try? await Task.sleep(for: .milliseconds(50))
-        await settled(next)
-        #expect(starts(startsFile) == 2)
-        #expect(items.filter { store.text(of: $0) != nil }.count == 2)
+        // Each later reading goes on where the last stopped: none of them is held back for the app's next run.
+        await readAndSettle(reader)
+        await readAndSettle(reader)
+        #expect(starts(startsFile) == 3)
+        #expect(items.allSatisfy { store.text(of: $0) != nil })
     }
 }
