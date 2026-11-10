@@ -31,6 +31,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - The capture launcher answers the arrow keys: they move a highlight across its tiles and rows as a menu's do, passing over dimmed commands, and Return or Space presses the command they reach. ([db7bffc]; by [@fzlzjerry])
 - In the window chooser, Up and Down go through the chosen app's windows, as Left and Right go through the apps. ([84a0c3a]; by [@fzlzjerry])
 - The camera bubble can be placed and made to fill the recording without dragging or double-clicking it: before recording, the recording bar's camera menu has Position (each corner) and Fill the Recording; VoiceOver offers the same as the bubble's actions at any time. ([ea1e905]; by [@fzlzjerry])
+- In the editor and when marking up in place, Text and the dragged shapes (Arrow, Line, Rectangle, Ellipse, Highlight Box, Redact, Spotlight) put themselves down once their mark is made, and Select takes over: a click away from text you wrote finishes it instead of starting another, and a shape just drawn is selected to adjust. Pen, Highlighter, and Counter stay in hand, and the next editor still opens with the tool you last picked. ([f69d36e]; by [@bobbyhuang-dev])
 
 ### Fixed
 
@@ -55,6 +56,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - Increase Contrast and Reduce Transparency take effect at once on Quick Access cards, the Recognized Text picture, the recording control bar, and the camera bubble; the auto-close ring on a card starts at twelve o'clock, reads on light pictures, and steps once a second under Reduce Motion. ([a336488]; by [@fzlzjerry])
 - The camera bubble's ring and shadow follow its rounded corners, so a recording and its Studio export match; a History recording's badge matches the Quick Access card's, and History's hover controls fade in; shadows follow continuous corners and are no longer cut off at the scrolling panel's, the keystrokes', and the Copied note's edges; window notices in Studio, the recording window, and History look alike; Studio's keystroke captions keep their digits steady, and its chosen click color is ringed in label ink. ([3009de2], [33ce73f], [f29ccf0], [44be1b8]; by [@fzlzjerry])
 - The app no longer logs broken layout constraints at launch or each time an editor opens. ([c66815b]; by [@fzlzjerry])
+- Text typed in the editor is shown whole while it is typed: a long line's last words are no longer cut off at the field's edge when the picture is zoomed out (as a Retina capture is, and always in place), and the field wraps where the mark does. ([f69d36e]; by [@bobbyhuang-dev])
+- Selected text shows on a white or black label, where the selection had no color of its own. ([f69d36e]; by [@bobbyhuang-dev])
 
 
 ## [0.1.0] - 2026-11-03
@@ -215,6 +218,7 @@ Each entry links its implementation commits or merged pull request and credits v
 [f29ccf0]: https://github.com/MMFoundation/OhMyShot/commit/f29ccf06c4d35f1cf33088039d734de0b7720f77
 [44be1b8]: https://github.com/MMFoundation/OhMyShot/commit/44be1b8296f9e04530c90534294bca862ed9810c
 [c66815b]: https://github.com/MMFoundation/OhMyShot/commit/c66815b972f787cbb1bea89f69d7e51917e6e500
+[f69d36e]: https://github.com/MMFoundation/OhMyShot/commit/f69d36eb7a58764e3c70fbe066797f1b89aaf21e
 [c999cc0]: https://github.com/MMFoundation/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/MMFoundation/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/MMFoundation/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287

@@ -40,6 +40,12 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
         case .select, .pen, .highlighter, .text, .counter, .crop, .background: false
         }
     }
+
+    /// Tools put down once they have made a mark, Select taking over: Text and the dragged shapes. The
+    /// pen, the highlighter, and the counter stay in hand, as they are used several times in a row.
+    public var isPutDownAfterMark: Bool {
+        self == .text || dragsShape
+    }
 }
 
 /// Everything a tool remembers between uses: the color, width, and the tool's own variant. Each tool

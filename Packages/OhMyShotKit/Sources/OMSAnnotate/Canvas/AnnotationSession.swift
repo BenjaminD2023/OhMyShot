@@ -67,13 +67,15 @@ public final class AnnotationSession {
         didSet {
             guard tool != oldValue else { return }
             // Cropping and the background are passing modes; the next capture opens with a drawing tool.
-            if !tool.isPictureMode, remembersTool { defaults.set(tool.rawValue, forKey: Self.toolKey) }
+            if !tool.isPictureMode, remembersTool, !isPuttingToolDown { defaults.set(tool.rawValue, forKey: Self.toolKey) }
             if tool.isPictureMode, !oldValue.isPictureMode { toolBeforeMode = oldValue }
             if tool == .redact { findRedactionsIfNeeded() }
             if tool == .highlighter { findTextLinesIfNeeded() }
             notify(.tool)
         }
     }
+    /// Set while `putToolDown` changes the tool, which the next editor is not to open with.
+    @ObservationIgnored private var isPuttingToolDown = false
     /// The tool in hand before cropping or the background, to go back to when done.
     public private(set) var toolBeforeMode: AnnotationTool = .arrow
     /// Whether the tool in hand is the one the next editor opens with. In-place annotation starts with
@@ -251,6 +253,16 @@ public final class AnnotationSession {
     /// Leaves cropping or the background for the tool in hand before.
     public func leavePictureMode() {
         if tool.isPictureMode { tool = toolBeforeMode }
+    }
+
+    /// Puts down a tool that has made its mark (`AnnotationTool.isPutDownAfterMark`): Select takes over, so
+    /// the next press adjusts the marks rather than adding another. The tool stays the one the next editor
+    /// opens with.
+    public func putToolDown() {
+        guard tool.isPutDownAfterMark else { return }
+        isPuttingToolDown = true
+        tool = .select
+        isPuttingToolDown = false
     }
 
     // MARK: Background
