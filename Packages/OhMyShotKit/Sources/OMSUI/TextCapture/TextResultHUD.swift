@@ -499,7 +499,7 @@ final class TextResultCard: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         background.frame = card
-        background.shadowPath = CGPath(roundedRect: background.bounds, cornerWidth: Theme.Radius.card, cornerHeight: Theme.Radius.card, transform: nil)
+        background.shadowPath = .continuousRoundedRect(background.bounds, radius: Theme.Radius.card)
         CATransaction.commit()
 
         let left = card.minX + Self.padding

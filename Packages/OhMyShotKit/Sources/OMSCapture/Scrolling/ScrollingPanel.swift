@@ -272,8 +272,9 @@ public final class ScrollingPanel {
         window.setFrame(outer, display: false)
     }
 
-    /// Room around the card and bar for their shadows, which the window would otherwise cut off square at its edges.
-    static let shadowRoom: CGFloat = 24
+    /// Room around the card and bar for their shadows, which the window would otherwise cut off square at its edges:
+    /// twice the card shadow's blur and its drop.
+    static let shadowRoom: CGFloat = Theme.Shadow.radius * 2 + Theme.Shadow.drop
 
     /// `frame` with the shadows' room around it, except over `area`: on the side that faces it the room ends at its
     /// edge, so the panel never takes the clicks and scrolls meant for what is being captured.
@@ -481,7 +482,7 @@ private final class CardView: NSView {
             image.borderWidth = 0.5
             image.borderColor = NSColor.separatorColor.cgColor
         }
-        layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: Theme.Radius.card, cornerHeight: Theme.Radius.card, transform: nil)
+        layer?.shadowPath = .continuousRoundedRect(bounds, radius: Theme.Radius.card)
         // y up: the picture at the top, the reading under it, the hint at the bottom.
         image.frame = CGRect(x: (bounds.width - pictureSize.width) / 2, y: bounds.height - Self.inset - pictureSize.height, width: pictureSize.width, height: pictureSize.height)
         let hintHeight = hintField.isHidden ? 0 : hintField.fittingSize.height

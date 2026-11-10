@@ -10,8 +10,8 @@ public final class CopiedHUD {
     private let reading = ReadingCapsule(showsSwatch: true)
     private var fade: Task<Void, Never>?
     private var windowLease: ActiveResources.Lease?
-    /// Room around the capsule for its shadow.
-    private static let margin: CGFloat = 16
+    /// Room around the capsule for its shadow: twice the reading capsule's blur (8) and its drop (2).
+    private static let margin: CGFloat = 8 * 2 + 2
 
     public init() {}
 

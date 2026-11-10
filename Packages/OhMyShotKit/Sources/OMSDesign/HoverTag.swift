@@ -174,7 +174,9 @@ public final class HoverTag {
         capsule.layer?.cornerRadius = radius
         // One line is a capsule; a wrapped tag is a small card, with a card's continuous corners.
         capsule.layer?.cornerCurve = oneLine ? .circular : .continuous
-        capsule.layer?.shadowPath = CGPath(roundedRect: capsule.bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        capsule.layer?.shadowPath = oneLine
+            ? CGPath(roundedRect: capsule.bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            : .continuousRoundedRect(capsule.bounds, radius: radius)
         label.frame = CGRect(x: 11, y: (frame.height - textHeight) / 2, width: textWidth, height: textHeight)
 
         // Above the chip's window and moving with it; at its level, so it shows over the overlay's panels too.
