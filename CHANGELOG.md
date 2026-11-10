@@ -30,6 +30,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - A click on the menu bar icon opens a capture launcher: every command that takes a shortcut is a tile, whose keys (or Set Shortcut, while it has none) open Settings › Shortcuts on its row; every other command of the status menu (Images & Pins, Getting Started, Join Discord, Keyboard Shortcuts…, Debug, Quit) is a row, those with more choices opening a menu in place. A right-click still opens the status menu. ([6bda14e]; by [@bobbyhuang-dev]; coauthored by Codex and Claude Opus 5.5)
 - The capture launcher answers the arrow keys: they move a highlight across its tiles and rows as a menu's do, passing over dimmed commands, and Return or Space presses the command they reach. ([db7bffc]; by [@fzlzjerry])
 - In the window chooser, Up and Down go through the chosen app's windows, as Left and Right go through the apps. ([84a0c3a]; by [@fzlzjerry])
+- In the editor and when marking up in place, Text and the dragged shapes (Arrow, Line, Rectangle, Ellipse, Highlight Box, Redact, Spotlight) put themselves down once their mark is made, and Select takes over: a click away from text you wrote finishes it instead of starting another, and a shape just drawn is selected to adjust. Pen, Highlighter, and Counter stay in hand, and the next editor still opens with the tool you last picked. ([f69d36e]; by [@bobbyhuang-dev])
 
 ### Fixed
 
@@ -47,6 +48,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - The first-capture hint's Got It no longer looks dimmed, and the hint casts the same shadow as the Quick Access card beside it. ([3ba14d1]; by [@fzlzjerry])
 - The window chooser's preview and app tiles have the continuous corners the rest of the app has, a tile shows a focus ring under Full Keyboard Access, a long app name is shown whole when the pointer rests on it, and Increase Contrast applies as it is switched. ([84a0c3a]; by [@fzlzjerry])
 - The getting-started guide's step numbers and keycaps use the system typeface, a failed first capture's note no longer has an orange tint, and only the step itself fades when the step changes. ([d955c65]; by [@fzlzjerry])
+- Text typed in the editor is shown whole while it is typed: a long line's last words are no longer cut off at the field's edge when the picture is zoomed out (as a Retina capture is, and always in place), and the field wraps where the mark does. ([f69d36e]; by [@bobbyhuang-dev])
+- Selected text shows on a white or black label, where the selection had no color of its own. ([f69d36e]; by [@bobbyhuang-dev])
 
 
 ## [0.1.0] - 2026-11-03
@@ -193,6 +196,7 @@ Each entry links its implementation commits or merged pull request and credits v
 [84a0c3a]: https://github.com/MMFoundation/OhMyShot/commit/84a0c3a6e9f9b6f70c2db252f40d8d297d4de309
 [d955c65]: https://github.com/MMFoundation/OhMyShot/commit/d955c65dd378a4660adb2a00614c68961e163b68
 [3ba14d1]: https://github.com/MMFoundation/OhMyShot/commit/3ba14d10a1f8119dd5bd6721748c488e48113158
+[f69d36e]: https://github.com/MMFoundation/OhMyShot/commit/f69d36eb7a58764e3c70fbe066797f1b89aaf21e
 [c999cc0]: https://github.com/MMFoundation/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/MMFoundation/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/MMFoundation/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287
