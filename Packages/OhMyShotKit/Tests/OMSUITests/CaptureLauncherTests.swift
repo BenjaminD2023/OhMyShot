@@ -48,6 +48,73 @@ struct CaptureLauncherTests {
         #expect(launcher.activeEntries.map(\.title) == ["Cancel Scrolling Capture"])
     }
 
+    /// The arrow keys cross the launcher as it is laid out: tiles four to a row, then the rows two to a row.
+    @Test func arrowKeysFollowTheLayoutAndKeepTheirSide() {
+        typealias Cell = CaptureLauncherModel.Cell
+        // Two rows of tiles (the second one short), then two rows of menu rows (the second one short).
+        let rows: [(count: Int, columns: Int)] = [(4, 4), (3, 4), (2, 2), (1, 2)]
+        func move(_ cell: Cell?, _ direction: CaptureLauncherModel.Direction) -> Cell? {
+            CaptureLauncherModel.move(from: cell, direction, rows: rows)
+        }
+        // From nothing, Down and Right start at the first command, Up and Left in the last row.
+        #expect(move(nil, .down) == Cell(row: 0, column: 0))
+        #expect(move(nil, .right) == Cell(row: 0, column: 0))
+        #expect(move(nil, .up) == Cell(row: 3, column: 0))
+        // Along a row, and no further than its ends.
+        #expect(move(Cell(row: 0, column: 0), .right) == Cell(row: 0, column: 1))
+        #expect(move(Cell(row: 0, column: 3), .right) == Cell(row: 0, column: 3))
+        #expect(move(Cell(row: 0, column: 0), .left) == Cell(row: 0, column: 0))
+        // Down a column; a short row gives its last place.
+        #expect(move(Cell(row: 0, column: 2), .down) == Cell(row: 1, column: 2))
+        #expect(move(Cell(row: 0, column: 3), .down) == Cell(row: 1, column: 2))
+        // From the tiles to the rows and back, the highlight stays on its side of the launcher.
+        #expect(move(Cell(row: 1, column: 0), .down) == Cell(row: 2, column: 0))
+        #expect(move(Cell(row: 1, column: 2), .down) == Cell(row: 2, column: 1))
+        #expect(move(Cell(row: 2, column: 1), .up) == Cell(row: 1, column: 2))
+        #expect(move(Cell(row: 2, column: 1), .down) == Cell(row: 3, column: 0))
+        // At the top and the bottom it stays.
+        #expect(move(Cell(row: 0, column: 1), .up) == Cell(row: 0, column: 1))
+        #expect(move(Cell(row: 3, column: 0), .down) == Cell(row: 3, column: 0))
+        // A place that is no longer there (a command went away) starts over.
+        #expect(move(Cell(row: 9, column: 0), .down) == Cell(row: 0, column: 0))
+    }
+
+    @Test func arrowKeysPassOverDimmedCommands() {
+        typealias Cell = CaptureLauncherModel.Cell
+        let rows: [(count: Int, columns: Int)] = [(4, 4), (2, 2), (2, 2)]
+        let dimmed: Set<Cell> = [Cell(row: 0, column: 1), Cell(row: 1, column: 0), Cell(row: 1, column: 1)]
+        func move(_ cell: Cell?, _ direction: CaptureLauncherModel.Direction) -> Cell? {
+            CaptureLauncherModel.move(from: cell, direction, rows: rows) { !dimmed.contains($0) }
+        }
+        #expect(move(Cell(row: 0, column: 0), .right) == Cell(row: 0, column: 2))
+        // A row with nothing to choose is passed over whole.
+        #expect(move(Cell(row: 0, column: 0), .down) == Cell(row: 2, column: 0))
+        #expect(move(Cell(row: 2, column: 1), .up) == Cell(row: 0, column: 2))
+        // With every command dimmed there is nothing to light.
+        #expect(CaptureLauncherModel.move(from: nil, .down, rows: rows) { _ in false } == nil)
+    }
+
+    @Test func theArrowKeysRowsAreTheLaunchersOwnOrder() {
+        var scrolling = true
+        let launcher = model(
+            [
+                .init(title: "Capture Area", shortcut: .captureArea) {},
+                .init(title: "Capture Window", shortcut: .captureWindow) {},
+                .init(title: "Cancel Scrolling Capture", isHidden: { !scrolling }) {},
+                .init(title: "More Area Captures") { [] },
+            ],
+            tools: [.init(title: "Pick Color", shortcut: .pickColor) {}],
+            images: [.init(title: "Open Image") { [] }]
+        )
+        // What is running leads, one to a row; then the capture tiles, the tools, and the rows.
+        #expect(launcher.rows.map { $0.entries.map(\.title) }.prefix(4) == [
+            ["Cancel Scrolling Capture"], ["Capture Area", "Capture Window"], ["Pick Color"], ["More Area Captures"],
+        ])
+        #expect(launcher.rows.map(\.columns).prefix(4) == [1, 4, 4, 2])
+        scrolling = false
+        #expect(launcher.rows.first?.entries.map(\.title) == ["Capture Area", "Capture Window"])
+    }
+
     /// The launcher replaces the status menu on a left click, so every command in it is there exactly once: a
     /// command with a shortcut as a tile, where its keys can be changed, and one without as a row.
     @Test func everyStatusMenuCommandAppearsOnceAsATileExactlyWhenItHasAShortcut() {
