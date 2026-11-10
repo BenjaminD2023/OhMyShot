@@ -89,6 +89,10 @@ extension CompositionRoot {
         let previous = pictureUpdates
         pictureUpdates = Task {
             await previous?.value
+            if quickAccess.item(entry.id) != nil {
+                // Its card hands over the new picture when dragged: converted meanwhile, off the main actor.
+                files.prepareHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
+            }
             if let card = quickAccess.item(entry.id),
                let thumbnail = await HistoryStore.cardThumbnail(of: data, maxPixels: QuickAccessItem.thumbnailPixels) {
                 quickAccess.update(QuickAccessItem(
@@ -233,7 +237,8 @@ extension CompositionRoot {
         // Each in the format Settings choose, as one dragged out would be.
         historyActions.copyFiles = { [weak self] entries in
             guard let self else { return }
-            PasteboardWriter.write(fileURLs: entries.map { self.files.fileToHandOver(self.history.fileURL(for: $0), scale: $0.pixelsPerPoint) })
+            let captures = entries.map { (url: history.fileURL(for: $0), scale: $0.pixelsPerPoint) }
+            Task { PasteboardWriter.write(fileURLs: await self.files.filesToHandOver(captures)) }
         }
         historyActions.sharing.isUploading = { [weak self] entry in self?.uploads.isUploading(entry.id) ?? false }
         historyActions.sharing.cancel = { [weak self] entry in self?.uploads.cancel(captureID: entry.id) }

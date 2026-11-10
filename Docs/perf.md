@@ -2919,3 +2919,47 @@ Not done; each of these is a choice to make:
   with the next capture's reading, up to three tries, and opening History sends it once more; when the reader stops
   partway, only the capture it had counts a try.
 - **For the user:** add `~/Library/Caches/io.github.fzlzjerry.ohmyshot*` to the cleaner's exclusions.
+
+## Main-thread work after a capture (2026-11-11)
+
+A read of the code (the polish pass of 2026-11-10) found work on the main actor that grows with the history or
+with a capture's size. Each was measured before anything changed; only what reached 8 ms on the main actor was
+moved. Measured on the development Mac (its built-in display, 4112 × 2658 pixels), Debug builds.
+
+**The history's listing.** `HistoryScanSpeedTests` (opt-in: `OMS_HISTORY_SPEED=1`) fills a scratch history and
+lists it. Each listing reads the folder, decodes every record, and checks every file:
+
+| Captures | `items()` | `expired(retention:)` | `item(id:)` before | `item(id:)` after | `needingText` |
+| --- | --- | --- | --- | --- | --- |
+| 300 | 20.7 ms | 15.8 ms | 17.0 ms | 0.05 ms | 18.6 ms |
+| 1,000 | 58.0 ms | 59.4 ms | 56.4 ms | 0.05 ms | 67.3 ms |
+| 5,000 | 279.6 ms | 284.5 ms | 282.8 ms | 0.04 ms | 351.3 ms |
+
+Every capture ran the retention check (`CaptureRetention.removeExpired`, a listing) and, two seconds later, the
+desktop picture sweep (another listing) on the main actor; card actions, pin drags, and the editor's keep looked a
+capture up by id with a listing too. Now:
+- **The retention check lists off the main actor** (`HistoryStore.loadExpired`). Back on the main actor it deletes
+  only what is still unheld and no newer than the check: with history off every unheld capture is expired, and a
+  capture taken, or put back on a card, while the listing ran must not go with them.
+- **The sweep lists off the main actor** (`loadItems`).
+- **`item(id:)` reads one record**, by a file-name index the store keeps as it writes and lists records, checked
+  against the record before it is trusted; a capture not seen since launch falls back to a listing.
+- **Left as it is:** `needingText` runs on the text reader's background queue three seconds after a capture; it
+  costs battery, not frames.
+
+**A capture's delivery.** Temporary probes over 33 captures (`debug/capture-test`, `debug/freeze-demo`): writing
+the PNG and its record to the history took p50 0.9 ms, p95 1.3 ms, max 2.3 ms; cutting a frozen selection out of
+the display's frame took 1.7 ms for 1520 × 1120 pixels and 4.2–4.8 ms for 3400 × 2120. Both stay on the main actor.
+A whole 6K display (about 20 megapixels) would cut in roughly 13 ms, by the same rate; not measured.
+
+**A converted copy for a drag.** With Settings changing the file (another format, 1×, sRGB, a border), the first
+drag of a capture converted it on the main actor (opt-in `OMS_EXPORT_SPEED=1`):
+
+| Capture | JPEG | HEIC | 1× PNG |
+| --- | --- | --- | --- |
+| 3456 × 2234 | 36.5 ms | 154.4 ms | 48.3 ms |
+| 6016 × 3384 | 74.5 ms | 138.0 ms | 117.2 ms |
+
+The copy is now made off the main actor as soon as a capture has a card, and again after the editor changes its
+picture (`ScreenshotFiles.prepareHandOver`), so the drag finds it made; History's Copy converts off the main actor.
+A drag that comes before the copy is ready still converts as before.

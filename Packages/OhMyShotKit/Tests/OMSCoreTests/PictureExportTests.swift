@@ -375,6 +375,26 @@ struct PictureExportTests {
         #expect(heic.pathExtension == "heic" && heic != first)
     }
 
+    /// How long a drag waits for the converted copy when Settings change the file (Docs/perf.md › Main-thread work after
+    /// a capture): a drag converts on the main actor, between two frames. Opt-in: OMS_EXPORT_SPEED=1.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["OMS_EXPORT_SPEED"] != nil))
+    func convertingAFullScreenCaptureForADrag() throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for (width, height) in [(3456, 2234), (6016, 3384)] {
+            let file = folder.appending(path: "Shot \(width).png")
+            try writePNG(try picture(width, height), to: file)
+            for output in [ScreenshotOutput(format: .jpeg), ScreenshotOutput(format: .heic), ScreenshotOutput(retinaAtOneX: true)] {
+                let cache = folder.appending(path: "Exports-\(UUID().uuidString)", directoryHint: .isDirectory)
+                let start = ContinuousClock.now
+                _ = try ExportedFiles.file(for: file, pixelsPerPoint: 2, output: output, in: cache)
+                let duration = ContinuousClock.now - start
+                let ms = Double(duration.components.seconds) * 1_000 + Double(duration.components.attoseconds) / 1e15
+                print("EXPORT_BENCH \(width)x\(height) \(output.format) oneX=\(output.retinaAtOneX) ms=\(ms)")
+            }
+        }
+    }
+
     @Test func aChangedCaptureIsExportedAgain() throws {
         let folder = try makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }

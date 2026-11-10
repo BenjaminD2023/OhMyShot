@@ -35,6 +35,34 @@ final class ScreenshotFiles {
     /// How screenshots are written now.
     var output: ScreenshotOutput { settings.screenshotOutput }
 
+    /// Makes the copy a drag will hand over, off the main actor and before anyone drags: when Settings change the file
+    /// (another format, 1×, sRGB, a border), a drag converts on the main actor between two frames otherwise, 36–154 ms
+    /// for a full-screen capture (Docs/perf.md › Main-thread work after a capture). Nothing to do while Settings leave
+    /// captures as they are.
+    func prepareHandOver(_ url: URL, scale: Double?) {
+        let output = output
+        guard !output.isUnchanged, ExportedFiles.isPicture(url) else { return }
+        Task(priority: .utility) {
+            do {
+                _ = try await ExportedFiles.fileOffMain(for: url, pixelsPerPoint: scale, output: output)
+            } catch {
+                Log.capture.notice("Converting \(url.lastPathComponent, privacy: .public) ahead of a drag failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// `fileToHandOver` for several captures at once (History's Copy), converted off the main actor.
+    func filesToHandOver(_ captures: [(url: URL, scale: Double?)]) async -> [URL] {
+        let output = output
+        guard !output.isUnchanged else { return captures.map(\.url) }
+        defer { sweepConvertedCopies() }
+        var files: [URL] = []
+        for (url, scale) in captures {
+            files.append((try? await ExportedFiles.fileOffMain(for: url, pixelsPerPoint: scale, output: output)) ?? url)
+        }
+        return files
+    }
+
     /// A picture in memory, and the extended-range copy of it when the capture has one.
     struct Picture {
         var image: CGImage
