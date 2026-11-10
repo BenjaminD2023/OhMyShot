@@ -169,7 +169,8 @@ final class UpdateController: NSObject {
         if !preview, let last = UserDefaults.standard.object(forKey: key) as? Date, Date.now.timeIntervalSince(last) < 86400 { return }
         if !preview { UserDefaults.standard.set(Date.now, forKey: key) }
         let alert = NSAlert()
-        alert.messageText = String(localized: "Update to Version \(version)…")
+        // A statement, not the menu command's title: the alert asks nothing more after its buttons.
+        alert.messageText = String(localized: "OhMyShot \(version) Is Available")
         alert.informativeText = String(localized: "A newer OhMyShot is ready. Update now for the latest improvements and fixes. Your captures will stay safe.")
         alert.addButton(withTitle: String(localized: "Update Now"))
         alert.addButton(withTitle: String(localized: "Remind Me Tomorrow"))
