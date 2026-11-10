@@ -8072,6 +8072,40 @@
         }
       }
     },
+    "Couldn’t change Launch at login. You can turn OhMyShot on or off in System Settings." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo cambiar «Abrir al iniciar sesión». Puedes activar o desactivar OhMyShot en Ajustes del Sistema."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de modifier « Ouvrir à l’ouverture de session ». Vous pouvez activer ou désactiver OhMyShot dans Réglages Système."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「ログイン時に起動」を変更できませんでした。OhMyShot のオン／オフはシステム設定で切り替えられます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法更改“登录时启动”。你可以在系统设置中打开或关闭 OhMyShot。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法更改「登入時啟動」。你可以在系統設定中開啟或關閉 OhMyShot。"
+          }
+        }
+      }
+    },
     "Couldn’t download · %@ of %@" : {
       "localizations" : {
         "en" : {

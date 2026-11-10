@@ -14,4 +14,9 @@ public enum LoginItem {
             try SMAppService.mainApp.unregister()
         }
     }
+
+    /// System Settings' Login Items, where the user can turn the app on or off when it can't do so itself.
+    public static func openSettings() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
 }

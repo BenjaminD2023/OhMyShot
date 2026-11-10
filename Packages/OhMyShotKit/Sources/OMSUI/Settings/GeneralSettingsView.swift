@@ -1,5 +1,6 @@
 import Foundation
 import OMSCore
+import OSLog
 import SwiftUI
 
 /// Settings › General: the app itself, and how long captures are kept.
@@ -66,14 +67,21 @@ struct GeneralSettingsView: View {
                             try LoginItem.setEnabled(enabled)
                             loginItemError = nil
                         } catch {
+                            Log.app.error("Launch at login couldn’t be turned \(enabled ? "on" : "off", privacy: .public): \(error.localizedDescription, privacy: .public)")
                             loginItemError = error.localizedDescription
                             launchAtLogin = LoginItem.isEnabled
                         }
                     }
                     if let loginItemError {
-                        Text(loginItemError)
-                            .font(.callout)
-                            .foregroundStyle(.red)
+                        // What went wrong in the app's words, the system's own reason on the pointer, and where to do it.
+                        SettingsWarning(Text("Couldn’t change Launch at login. You can turn OhMyShot on or off in System Settings.", bundle: .module))
+                            .help(loginItemError)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button {
+                            LoginItem.openSettings()
+                        } label: {
+                            Text("Open System Settings", bundle: .module)
+                        }
                     }
                 }
             }
