@@ -157,8 +157,8 @@ final class CardButton: NSControl {
         switch style {
         case .pill:
             // Opaque, so text in the capture never shows through the label.
-            NSColor(white: pressed ? 0.84 : hovering ? 1 : 0.97, alpha: 1).setFill()
-            ink = NSColor(white: 0.1, alpha: 1)
+            NSColor(white: pressed ? Theme.ActionWhite.pressed : hovering ? Theme.ActionWhite.hover : Theme.ActionWhite.fill, alpha: 1).setFill()
+            ink = NSColor(white: Theme.ActionWhite.ink, alpha: 1)
         case .round:
             NSColor(white: 0, alpha: pressed ? 0.72 : hovering ? 0.62 : 0.5).setFill()
             ink = .white
@@ -177,7 +177,7 @@ final class CardButton: NSControl {
         NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
         if increaseContrast {
             let edge: NSColor = switch style {
-            case .pill: NSColor(white: 0, alpha: 0.5)
+            case .pill: NSColor(white: 0, alpha: Theme.ActionWhite.contrastEdge)
             case .round: NSColor(white: 1, alpha: 0.7)
             case .chip, .chipIcon: dark ? NSColor(white: 1, alpha: 0.5) : NSColor(white: 0, alpha: 0.35)
             case .barIcon: .clear

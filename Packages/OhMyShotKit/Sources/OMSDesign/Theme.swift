@@ -102,6 +102,32 @@ public enum Theme {
         }
     }
 
+    /// The opaque capsules over a picture (Copy and Save on a hovered card) and the hint that names them: white in
+    /// both appearances, because they stand on a picture and not on chrome. Grays, at full opacity.
+    public enum ActionWhite {
+        public static let fill: CGFloat = 0.97
+        public static let hover: CGFloat = 1
+        public static let pressed: CGFloat = 0.84
+        public static let ink: CGFloat = 0.1
+        /// The outline a capsule takes under Increase Contrast: black at this opacity, 1 pt.
+        public static let contrastEdge: CGFloat = 0.5
+    }
+
+    /// The brand mark's own colors, for the one place chrome shows the mark at size (the What's New banner). Chrome
+    /// takes no hue from here otherwise.
+    public enum Brand {
+        /// The app icon's ground, which is the Ocean background fill: top-left to bottom-right.
+        public static let groundStart: UInt32 = 0x5E9CF5
+        public static let groundEnd: UInt32 = 0x37CDBE
+        /// The wordmark's ink on a light ground, and what stands beside it there.
+        public static let ink: UInt32 = 0x1D1D1F
+
+        public static func color(_ hex: UInt32, alpha: CGFloat = 1) -> CGColor {
+            CGColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                    blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
+        }
+    }
+
     /// Short, eased, and skipped entirely with Reduce Motion; nothing trails the pointer.
     public enum Motion {
         /// Cards sliding in, out, and into their new places.
