@@ -9,6 +9,9 @@ struct HistoryCard: View {
     let model: HistoryModel
     let isSelected: Bool
     @State private var hovering = false
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -48,7 +51,10 @@ struct HistoryCard: View {
                 }
             }
             .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
-            .onHover { hovering = $0 }
+            // The scrim and the buttons fade as a Quick Access card's do.
+            .onHover { inside in
+                withAnimation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade)) { hovering = inside }
+            }
             // Dragged out as the file, as from a Quick Access card: copied wherever it lands, never moved out
             // of the history.
             .onDrag { NSItemProvider(object: fileToHandOver as NSURL) }
@@ -190,6 +196,9 @@ struct HistoryCard: View {
         }
     }
 
+    private var dark: Bool { colorScheme == .dark }
+    private var increasedContrast: Bool { contrast == .increased }
+
     /// A small play badge in the corner, or "GIF" for a GIF, with the length when it is known.
     private var recordingBadge: some View {
         HStack(spacing: 4) {
@@ -204,10 +213,15 @@ struct HistoryCard: View {
             }
         }
         .font(.caption.weight(.semibold))
-        .foregroundStyle(.white)
+        .foregroundStyle(Color(nsColor: dark ? NSColor(white: 1, alpha: 0.92) : NSColor(white: 0, alpha: 0.85)))
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
-        .background(.black.opacity(0.55), in: Capsule())
+        // The reading capsule's materials, as a Quick Access card's length badge (BadgeMaterial).
+        .background(Capsule().fill(Color(cgColor: Theme.Material.capsuleFill(dark: dark))))
+        .overlay {
+            Capsule().strokeBorder(Color(cgColor: Theme.Material.edge(dark: dark, contrast: increasedContrast)), lineWidth: Theme.Material.edgeWidth(contrast: increasedContrast))
+        }
+        .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
         .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
     }
