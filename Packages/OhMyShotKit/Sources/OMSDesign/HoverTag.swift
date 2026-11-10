@@ -172,6 +172,8 @@ public final class HoverTag {
         panel.setFrame(frame.insetBy(dx: -m, dy: -m), display: false)
         capsule.frame = CGRect(x: m, y: m, width: frame.width, height: frame.height)
         capsule.layer?.cornerRadius = radius
+        // One line is a capsule; a wrapped tag is a small card, with a card's continuous corners.
+        capsule.layer?.cornerCurve = oneLine ? .circular : .continuous
         capsule.layer?.shadowPath = CGPath(roundedRect: capsule.bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
         label.frame = CGRect(x: 11, y: (frame.height - textHeight) / 2, width: textWidth, height: textHeight)
 

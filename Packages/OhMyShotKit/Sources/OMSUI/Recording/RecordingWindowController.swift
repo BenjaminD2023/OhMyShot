@@ -597,7 +597,8 @@ struct RecordingWindowView: View {
                     // Opaque behind its text, over whatever frame the movie shows.
                     .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
+                    // Over the movie's picture, so the floating bar's shadow.
+                    .shadow(color: .black.opacity(0.16), radius: 10, y: 3)
                     .accessibilityElement(children: .combine)
                 }
             }
