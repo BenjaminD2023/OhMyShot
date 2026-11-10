@@ -47,10 +47,7 @@ struct StudioView: View {
                 }
                 .padding(.horizontal, 22)
                 .padding(.vertical, 16)
-                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5))
-                // Over the movie's picture, so the floating bar's shadow.
-                .shadow(color: .black.opacity(0.16), radius: 10, y: 3)
+                .windowNoticeCard()
                 .accessibilityElement(children: .combine)
             }
         }
@@ -76,7 +73,7 @@ struct StudioView: View {
                     Text("Updating preview…", bundle: .module).font(.callout)
                 }
                 .padding(8)
-                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .windowNoticeCard()
                 .padding(12)
             }
             .allowsHitTesting(false)
@@ -106,7 +103,7 @@ struct StudioView: View {
                     } label: { Text("Retry Preview", bundle: .module) }
                 }
                 .padding(12)
-                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                .windowNoticeCard()
                 .padding(12)
                 .accessibilityElement(children: .contain)
             }
@@ -747,7 +744,8 @@ extension StudioProject.Camera.Layout {
 }
 
 /// One color for the clicks' effect: a 14 pt disc of the color (the accent as the user has it), edged with the
-/// Capsule Swatch Edge, and ringed by a 2 pt accent line 2 pt outside it while chosen.
+/// Capsule Swatch Edge, and ringed by a 2 pt line in label ink 2 pt outside it while chosen: never the accent, which
+/// is one of the colors it rings (DESIGN.md › Shapes).
 struct ClickColorSwatch: View {
     let color: StudioProject.ClickColor
     let isChosen: Bool
@@ -760,7 +758,7 @@ struct ClickColorSwatch: View {
                 .fill(fill)
                 .frame(width: 14, height: 14)
                 .overlay(Circle().strokeBorder(contrast == .increased ? StudioInspector.swatchEdgeStrong : StudioInspector.swatchEdge, lineWidth: contrast == .increased ? 1 : 0.5))
-                .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: 2).padding(-4).opacity(isChosen ? 1 : 0))
+                .overlay(Circle().strokeBorder(Color(nsColor: .labelColor), lineWidth: 2).padding(-4).opacity(isChosen ? 1 : 0))
                 .padding(4)
         }
         .buttonStyle(.plain)

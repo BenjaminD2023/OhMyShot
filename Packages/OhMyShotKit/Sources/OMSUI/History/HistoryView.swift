@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import KeyboardShortcuts
 import OMSCore
+import OMSDesign
 import QuickLook
 import SwiftUI
 
@@ -50,7 +51,7 @@ struct HistoryView: View {
                 }
                 .font(.callout)
                 .padding(10)
-                .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+                .windowNoticeCard()
                 .padding(8)
                 .allowsHitTesting(false)
                 .accessibilityElement(children: .combine)
