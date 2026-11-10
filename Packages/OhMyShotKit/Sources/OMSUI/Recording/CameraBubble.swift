@@ -388,20 +388,26 @@ private final class BubbleView: NSView {
         let radius: CGFloat = fills ? 0 : style.shape == .circle ? bounds.width / 2 : bounds.width * 0.2
         clip.frame = bounds
         clip.cornerRadius = radius
-        clip.cornerCurve = .continuous
+        // A circle is a circle: continuous corners only round the square, as Studio draws the bubble.
+        clip.cornerCurve = style.shape == .circle ? .circular : .continuous
         preview.frame = clip.bounds
         // The connection exists once the session has its camera: mirror it as chosen then.
         if let connection = preview.connection, connection.isVideoMirroringSupported, connection.isVideoMirrored != style.mirrored {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = style.mirrored
         }
-        let path = CGPath(roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5), cornerWidth: max(radius - 1.5, 0), cornerHeight: max(radius - 1.5, 0), transform: nil)
-        ring.path = path
+        // The ring, the contrast edge, and the shadow follow the picture's own outline.
+        ring.path = outline(bounds.insetBy(dx: 1.5, dy: 1.5), radius: max(radius - 1.5, 0))
         ring.isHidden = fills
-        edge.path = CGPath(roundedRect: bounds.insetBy(dx: -0.5, dy: -0.5), cornerWidth: radius + 0.5, cornerHeight: radius + 0.5, transform: nil)
+        edge.path = outline(bounds.insetBy(dx: -0.5, dy: -0.5), radius: radius + 0.5)
         edge.isHidden = fills || !NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        layer?.shadowPath = fills ? nil : CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        layer?.shadowPath = fills ? nil : outline(bounds, radius: radius)
         CATransaction.commit()
+    }
+
+    /// The bubble's outline in `rect`: a circle, or a square with continuous corners of `radius`.
+    private func outline(_ rect: CGRect, radius: CGFloat) -> CGPath {
+        style.shape == .circle ? CGPath(ellipseIn: rect, transform: nil) : .continuousRoundedRect(rect, radius: radius)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
