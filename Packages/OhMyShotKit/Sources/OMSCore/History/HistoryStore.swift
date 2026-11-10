@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreGraphics
 import Foundation
+import Synchronization
 import ImageIO
 import OSLog
 
@@ -88,6 +89,9 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
 /// database to keep in sync. Cleanup runs at launch and after each capture, never on a timer.
 public final class HistoryStore: Sendable {
     public let directory: URL
+    /// Each capture's file name by its id, as records are written and read: `item(id:)` reads one sidecar, not the
+    /// whole history. A name it holds is checked against the record before it is trusted.
+    private let fileNames = Mutex<[UUID: String]>([:])
 
     public init(directory: URL) {
         self.directory = directory
@@ -368,11 +372,21 @@ public final class HistoryStore: Sendable {
             items.append(item)
         }
         guard !cancelled() else { return [] }
+        fileNames.withLock { names in
+            for item in items { names[item.id] = item.fileName }
+        }
         return items.sorted { $0.createdAt > $1.createdAt }
     }
 
+    /// The capture with `id`: from its own sidecar when its file name is known, as it is for every capture written or
+    /// listed since launch; otherwise from the whole history, which a listing takes tens of milliseconds over
+    /// (Docs/perf.md › Main-thread work after a capture).
     public func item(id: UUID) -> HistoryItem? {
-        items().first { $0.id == id }
+        if let name = fileNames.withLock({ $0[id] }), let item = item(fileName: name), item.id == id,
+           FileManager.default.fileExists(atPath: fileURL(for: item).path(percentEncoded: false)) {
+            return item
+        }
+        return items().first { $0.id == id }
     }
 
     /// The record whose file is `url`; nil for a file outside the history folder. Reads that record's sidecar alone, not
@@ -406,6 +420,7 @@ public final class HistoryStore: Sendable {
     }
 
     public func delete(_ item: HistoryItem) {
+        fileNames.withLock { $0[item.id] = nil }
         try? FileManager.default.removeItem(at: fileURL(for: item))
         try? FileManager.default.removeItem(at: sidecarURL(forFileName: item.fileName))
         removeExtras(of: item)
@@ -414,6 +429,7 @@ public final class HistoryStore: Sendable {
 
     /// Moves the capture to the Trash, where it can still be recovered, and forgets it.
     public func moveToTrash(_ item: HistoryItem) {
+        fileNames.withLock { $0[item.id] = nil }
         do {
             try FileManager.default.trashItem(at: fileURL(for: item), resultingItemURL: nil)
         } catch {
@@ -432,7 +448,18 @@ public final class HistoryStore: Sendable {
     /// The items older than the retention allows, except those in `keeping` (captures still on screen as
     /// Quick Access cards). With history off, that is everything else.
     public func expired(retention: HistoryRetention, keeping: Set<UUID> = [], now: Date = .now) -> [HistoryItem] {
-        items().filter { item in
+        Self.expired(items(), retention: retention, keeping: keeping, now: now)
+    }
+
+    /// `expired(retention:keeping:now:)`, listed off the caller's actor: after every capture, where a listing on the
+    /// main actor took 17 ms with 300 captures and 280 ms with 5,000 (Docs/perf.md). The caller deletes; what it lists
+    /// may have changed by then (see `CaptureRetention.removeExpired`).
+    @concurrent public func loadExpired(retention: HistoryRetention, keeping: Set<UUID> = [], now: Date = .now) async -> [HistoryItem] {
+        Self.expired(readItems(cancelled: { Task.isCancelled }), retention: retention, keeping: keeping, now: now)
+    }
+
+    private static func expired(_ items: [HistoryItem], retention: HistoryRetention, keeping: Set<UUID>, now: Date) -> [HistoryItem] {
+        items.filter { item in
             guard !keeping.contains(item.id) else { return false }
             guard let interval = retention.interval else { return true }
             return now.timeIntervalSince(item.createdAt) > interval
@@ -455,6 +482,7 @@ public final class HistoryStore: Sendable {
     /// Writes `item`'s record beside its file.
     private func writeRecord(_ item: HistoryItem) throws {
         try JSONEncoder.records.encode(item).write(to: sidecarURL(forFileName: item.fileName), options: .atomic)
+        fileNames.withLock { $0[item.id] = item.fileName }
     }
 
     /// The record kept in the sidecar at `url`; nil when there is none, or it can't be read.

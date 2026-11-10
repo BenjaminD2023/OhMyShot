@@ -23,6 +23,7 @@ final class CaptureRetention {
     /// Captures were removed from the history: Capture History shows it.
     private let historyChanged: () -> Void
     private var pictureSweep: Task<Void, Never>?
+    private var expiry: Task<Void, Never>?
     /// The recording whose file is on the clipboard, and the clipboard's change count when it went there.
     private var clipboardRecording: (id: UUID, changeCount: Int)?
     private var clipboardWatch: Task<Void, Never>?
@@ -83,14 +84,27 @@ final class CaptureRetention {
         return held.id
     }
 
-    /// Takes away the captures older than Settings keep them, but those something holds.
+    /// Takes away the captures older than Settings keep them, but those something holds. The history is listed off the
+    /// main actor, as it runs after every capture (Docs/perf.md › Main-thread work after a capture); a newer request
+    /// takes over from one under way.
     func removeExpired() {
-        let removed = history.removeExpired(retention: settings.historyRetention, keeping: heldCaptureIDs)
-        if removed > 0 {
-            Log.capture.notice("Removed \(removed, privacy: .public) expired capture(s) from the history")
+        expiry?.cancel()
+        let retention = settings.historyRetention, keeping = heldCaptureIDs, now = Date.now
+        expiry = Task { [weak self, history] in
+            let expired = await history.loadExpired(retention: retention, keeping: keeping, now: now)
+            guard let self, !Task.isCancelled else { return }
+            // Back on the main actor, and the listing took a while: a capture taken since is newer than `now`, and one
+            // a card, an editor, or the clipboard took up since is held now; neither goes. With history off, that is
+            // every capture but the ones still in use.
+            let held = heldCaptureIDs
+            let removable = expired.filter { !held.contains($0.id) && $0.createdAt <= now }
+            removable.forEach(history.delete)
+            if !removable.isEmpty {
+                Log.capture.notice("Removed \(removable.count, privacy: .public) expired capture(s) from the history")
+            }
+            historyChanged()
+            sweepWallpaperPictures()
         }
-        historyChanged()
-        sweepWallpaperPictures()
     }
 
     /// How many captures a retention would delete now; captures still on screen as cards are kept.
@@ -107,7 +121,7 @@ final class CaptureRetention {
         pictureSweep = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard let self, !Task.isCancelled, editors().isEmpty else { return }
-            let marks = history.items().map { history.annotationsURL(for: $0) }
+            let marks = await history.loadItems().map { history.annotationsURL(for: $0) }
             var used = BackdropPresets.shared.pictureNames
             used.formUnion(await Self.wallpaperPictures(namedIn: marks))
             guard !Task.isCancelled, editors().isEmpty else { return }
