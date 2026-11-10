@@ -90,11 +90,17 @@ struct StudioView: View {
                             ? Text("The recording couldn’t be read", bundle: .module)
                             : Text("The preview couldn’t be updated", bundle: .module)
                     } icon: { Image(systemName: "exclamationmark.triangle") }
-                    Text(verbatim: reason)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .help(reason)
+                    // What it means in the app's words; the system's own reason on the pointer and in the log.
+                    Group {
+                        document.composition == nil
+                            ? Text("It may have been moved or damaged.", bundle: .module)
+                            : Text("Your edits are kept.", bundle: .module)
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .help(reason)
+                    .accessibilityHint(reason)
                     Button {
                         Task { await document.makeComposition() }
                     } label: { Text("Retry Preview", bundle: .module) }
@@ -269,9 +275,19 @@ struct TransportBar: View {
 
     /// Where the movie is, for VoiceOver: "1.2 of 3.5 seconds".
     static func spokenPosition(of document: StudioDocument) -> Text {
-        let now = String(format: "%.1f", document.movieTime(document.time))
-        let length = String(format: "%.1f", movieDuration(of: document))
+        let now = oneDecimal(document.movieTime(document.time))
+        let length = oneDecimal(movieDuration(of: document))
         return Text("\(now) of \(length) seconds", bundle: .module)
+    }
+
+    /// A number with one decimal, as the app's language writes it: "2.5" in English, "2,5" in French.
+    static func oneDecimal(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(1)))
+    }
+
+    /// A scale with one decimal: "2.0×".
+    static func scale(_ value: Double) -> String {
+        oneDecimal(value) + "×"
     }
 
     /// A time as the transport shows it, in the inspector's clock but rounded down: 0:12.34, 1:02:09.40.
@@ -316,7 +332,7 @@ struct StudioInspector: View {
                     LabeledSlider(
                         title: Text("Zoom", bundle: .module),
                         value: Binding(get: { zoom.scale }, set: { scale in document.updateZoom(id) { $0.scale = scale } }),
-                        range: 1.2...4, reading: { String(format: "%.1f×", $0) }, document: document
+                        range: 1.2...4, reading: { TransportBar.scale($0) }, document: document
                     )
                     Button(role: .destructive) {
                         document.removeZoom(id)
@@ -405,7 +421,7 @@ struct StudioInspector: View {
                     Text("Style", bundle: .module)
                 }
                 .accessibilityLabel(Text("Cursor style", bundle: .module))
-                LabeledSlider(title: Text("Size", bundle: .module), value: $document.project.cursor.size, range: 1...3, reading: { String(format: "%.1f×", $0) }, document: document)
+                LabeledSlider(title: Text("Size", bundle: .module), value: $document.project.cursor.size, range: 1...3, reading: { TransportBar.scale($0) }, document: document)
                 LabeledSlider(title: Text("Smoothing", bundle: .module), value: $document.project.cursor.smoothing, range: 0...1, reading: Self.percent, document: document)
                 Toggle(isOn: $document.project.cursor.hidesWhenIdle) { Text("Hide when still", bundle: .module) }
                 // Typing is known only when the keys were written down.

@@ -302,7 +302,7 @@ struct HistoryView: View {
     private var emptyHint: String {
         let keep = model.settings.historyRetention == .never
             ? String(localized: "History is off, so captures are removed when their card closes.", bundle: .module)
-            : String(localized: "Captures stay here for \(model.settings.historyRetention.title.lowercased()).", bundle: .module)
+            : String(localized: "Captures stay here for \(model.settings.historyRetention.duration).", bundle: .module)
         guard let shortcut = KeyboardShortcuts.getShortcut(for: CaptureShortcut.captureArea.name) else { return keep }
         return Sentences.joined(keep, String(localized: "Press \(shortcut.description) to capture an area.", bundle: .module))
     }

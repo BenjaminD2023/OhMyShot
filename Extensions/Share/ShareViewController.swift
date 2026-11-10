@@ -126,7 +126,7 @@ final class ShareViewController: NSViewController {
                 }
                 extensionContext?.completeRequest(returningItems: nil)
             } catch {
-                fail(String(localized: "The pictures could not be handed to \(appName). Open \(appName) once, then try again."))
+                fail(String(localized: "The pictures couldn’t be handed to \(appName). Open \(appName) once, then try again."))
             }
         }
     }

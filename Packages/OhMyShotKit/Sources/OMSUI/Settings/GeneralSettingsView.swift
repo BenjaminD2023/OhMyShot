@@ -113,7 +113,7 @@ struct GeneralSettingsView: View {
                     .labelsHidden()
                     .fixedSize()
                     Button(action: openHistory) {
-                        Text("Open History", bundle: .module)
+                        Text("Open Capture History", bundle: .module)
                     }
                 }
             }

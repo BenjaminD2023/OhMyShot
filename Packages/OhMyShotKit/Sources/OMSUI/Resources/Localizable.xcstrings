@@ -1663,6 +1663,7 @@
       }
     },
     "A newer OhMyShot is ready. Update now for the latest improvements and fixes. Your captures will stay safe." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -2003,6 +2004,7 @@
       }
     },
     "About once a day, OhMyShot asks GitHub whether there is a newer version. It asks you before it downloads anything." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -5429,7 +5431,7 @@
         }
       }
     },
-    "Captures older than %@ are deleted now. This can't be undone." : {
+    "Captures older than %@ are deleted now. This can’t be undone." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -9961,6 +9963,40 @@
         }
       }
     },
+    "Fill the Recording" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocupar toda la grabación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remplir l’enregistrement"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収録全体に表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "充满录制画面"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "填滿錄影畫面"
+          }
+        }
+      }
+    },
     "Fits a measurement box to the content inside it when you release the pointer. Turn off to keep the box as drawn, or hold Command while releasing to skip snapping once." : {
       "localizations" : {
         "es" : {
@@ -10809,7 +10845,7 @@
         }
       }
     },
-    "From now on, a capture is deleted when its Quick Access card closes, unless you saved it. This can't be undone." : {
+    "From now on, a capture is deleted when its Quick Access card closes, unless you saved it. This can’t be undone." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -15360,6 +15396,142 @@
         }
       }
     },
+    "Move to Bottom Left" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover abajo a la izquierda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer en bas à gauche"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左下に移動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到左下角"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到左下角"
+          }
+        }
+      }
+    },
+    "Move to Bottom Right" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover abajo a la derecha"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer en bas à droite"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右下に移動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到右下角"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到右下角"
+          }
+        }
+      }
+    },
+    "Move to Top Left" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover arriba a la izquierda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer en haut à gauche"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左上に移動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到左上角"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到左上角"
+          }
+        }
+      }
+    },
+    "Move to Top Right" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mover arriba a la derecha"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Déplacer en haut à droite"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右上に移動"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到右上角"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移到右上角"
+          }
+        }
+      }
+    },
     "Move to Trash" : {
       "localizations" : {
         "es" : {
@@ -16983,6 +17155,7 @@
       }
     },
     "Open History" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -17119,6 +17292,7 @@
       }
     },
     "Open System Settings…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -20500,6 +20674,7 @@
       }
     },
     "Remind Me Tomorrow" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -23624,6 +23799,40 @@
         }
       }
     },
+    "Show in a Bubble" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar en una burbuja"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher dans une bulle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バブルで表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示在气泡中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以泡泡顯示"
+          }
+        }
+      }
+    },
     "Show in screenshots" : {
       "localizations" : {
         "es" : {
@@ -26235,7 +26444,7 @@
         }
       }
     },
-    "They leave Capture History with their marks and text, and putting them back from the Trash doesn't bring them back here. Copies you saved elsewhere are not affected." : {
+    "They leave Capture History with their marks and text, and putting them back from the Trash doesn’t bring them back here. Copies you saved elsewhere are not affected." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -26339,6 +26548,7 @@
       }
     },
     "This update includes improvements and fixes." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -26504,6 +26714,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "工具"
+          }
+        }
+      }
+    },
+    "Top left" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arriba a la izquierda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En haut à gauche"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左上"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左上角"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左上角"
+          }
+        }
+      }
+    },
+    "Top right" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arriba a la derecha"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En haut à droite"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右上"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右上角"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "右上角"
           }
         }
       }
@@ -27721,6 +27999,7 @@
       }
     },
     "Update Now" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -28875,6 +29154,7 @@
       }
     },
     "What’s New…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -29226,7 +29506,7 @@
         }
       }
     },
-    "With Show Clicks on the recording bar, each click shows in the recording: as the system's dark circles, or as a ring in your accent color that widens and fades. A window recorded on its own always gets the system's circles." : {
+    "With Show Clicks on the recording bar, each click shows in the recording: as the system’s dark circles, or as a ring in your accent color that widens and fades. A window recorded on its own always gets the system’s circles." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {

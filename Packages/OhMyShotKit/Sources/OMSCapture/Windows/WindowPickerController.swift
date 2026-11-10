@@ -371,7 +371,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         windowTitle.toolTip = model.selected.map { "\($0.target.ownerName) — \(title(of: $0.target))\n\($0.target.display(in: layout)?.name ?? "")" }
         updateActions()
         guard let selected = model.selected, !isLoading else {
-            let message = listFailed ? String(localized: "Could not load windows. Try again.", bundle: .module)
+            let message = listFailed ? String(localized: "Couldn’t load windows. Try again.", bundle: .module)
                 : model.query.isEmpty ? String(localized: "Open an app to capture its window.", bundle: .module)
                 : String(localized: "No matching apps or windows.", bundle: .module)
             showStatus(message, busy: isLoading, canRetry: model.query.isEmpty)

@@ -178,6 +178,7 @@
       }
     },
     "A little more powerful." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -483,6 +484,40 @@
         }
       }
     },
+    "An extra action for the screenshot, on top of what Settings does after a capture." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una acción más para la captura, además de lo que hacen los Ajustes después de capturar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une action de plus pour la capture d’écran, en plus de ce que font les réglages après une capture."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「設定」のキャプチャ後の操作に加えて、スクリーンショットに対して行う操作です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“设置”的截图后操作之外，对截图额外执行的操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「設定」的擷取後動作之外，對截圖額外執行的動作。"
+          }
+        }
+      }
+    },
     "Annotate" : {
       "localizations" : {
         "es" : {
@@ -620,6 +655,7 @@
       }
     },
     "Annotate Image…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -2603,40 +2639,6 @@
         }
       }
     },
-    "Done to the screenshot besides what Settings says." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lo que se hace con la captura además de lo que indican los Ajustes."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Action appliquée à la capture d’écran en plus de ce qu’indiquent les réglages."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「設定」の内容に加えて、スクリーンショットに対して行う操作です。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "除“设置”中的操作外，对截图额外执行的操作。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "除了「設定」中的設定外，對截圖執行的動作。"
-          }
-        }
-      }
-    },
     "Don’t Allow" : {
       "localizations" : {
         "es" : {
@@ -3732,6 +3734,7 @@
       }
     },
     "Let’s Go" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -3938,6 +3941,7 @@
       }
     },
     "Made for your next great capture." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -4488,6 +4492,7 @@
       }
     },
     "OhMyShot checks at launch and about every six hours through its website, with GitHub as a backup. It asks before downloading. Update reminders stay until you install the new version." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -4692,6 +4697,7 @@
       }
     },
     "Open from Clipboard" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -5066,6 +5072,7 @@
       }
     },
     "Pin Image…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -5100,6 +5107,7 @@
       }
     },
     "Pin from Clipboard" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -5509,6 +5517,7 @@
       }
     },
     "Recognize Text in Clipboard Image" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -5577,6 +5586,7 @@
       }
     },
     "Recognize Text in Image…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -8000,6 +8010,7 @@
       }
     },
     "Version %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -8034,6 +8045,7 @@
       }
     },
     "What’s New" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -8068,6 +8080,7 @@
       }
     },
     "What’s New in OhMyShot" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {

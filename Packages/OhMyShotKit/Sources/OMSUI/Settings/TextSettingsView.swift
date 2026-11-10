@@ -125,7 +125,7 @@ private struct AppTextSetting: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     SettingsWarning(Text("Needs Accessibility to ask apps for their text.", bundle: .module))
                     Button(action: allow) {
-                        permissions.hasAsked(.accessibility) ? Text("Open System Settings…", bundle: .module) : Text("Allow…", bundle: .module)
+                        permissions.hasAsked(.accessibility) ? Text("Open System Settings", bundle: .module) : Text("Allow…", bundle: .module)
                     }
                     .controlSize(.small)
                 }

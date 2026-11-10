@@ -1516,7 +1516,7 @@
         }
       }
     },
-    "PP-OCRv6 small, by PaddlePaddle: reads Chinese and Japanese more accurately than macOS alone, in the OCR panel and in History’s search." : {
+    "PP-OCRv6 small, by PaddlePaddle: reads Chinese and Japanese more accurately than macOS alone, in Recognized Text and in Capture History’s search." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {

@@ -257,7 +257,7 @@ struct StudioTimeline: View {
                 .fill(contrast == .increased ? Self.chipFillStrong : Self.chipFill)
                 .overlay(shape.strokeBorder(chosen ? Color.accentColor : lineColor, lineWidth: chosen ? 2 : lineWidth))
                 .overlay(
-                    Text(verbatim: String(format: "%.1f×", zoom.scale))
+                    Text(verbatim: TransportBar.scale(zoom.scale))
                         .font(.system(size: 11, weight: chosen ? .semibold : .regular).monospacedDigit())
                         .foregroundStyle(.primary)
                         .lineLimit(1)
@@ -271,7 +271,7 @@ struct StudioTimeline: View {
                 }
                 .offset(x: left, y: Self.zoomTop)
                 .accessibilityElement()
-                .accessibilityLabel(Text("Zoom \(String(format: "%.1f", zoom.scale)) times, \(TransportBar.format(zoom.start)) to \(TransportBar.format(zoom.end))", bundle: .module))
+                .accessibilityLabel(Text("Zoom \(TransportBar.oneDecimal(zoom.scale)) times, \(TransportBar.format(zoom.start)) to \(TransportBar.format(zoom.end))", bundle: .module))
                 .accessibilityAddTraits(chosen ? .isSelected : [])
                 .accessibilityAction { choose(zoom: zoom.id) }
                 .accessibilityAction(named: Text("Remove Zoom", bundle: .module)) { document.removeZoom(zoom.id) }
@@ -371,7 +371,7 @@ struct StudioTimeline: View {
                             Image(systemName: "scissors")
                                 .font(.system(size: 11, weight: .semibold))
                             if cutRight - cutLeft >= 64 {
-                                Text(verbatim: "−" + String(format: "%.1f s", cut.upperBound - cut.lowerBound))
+                                Text(verbatim: "−" + TransportBar.oneDecimal(cut.upperBound - cut.lowerBound) + " s")
                                     .font(.system(size: 11).monospacedDigit())
                                     .lineLimit(1)
                             }

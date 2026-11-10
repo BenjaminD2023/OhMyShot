@@ -1958,9 +1958,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func updateAccessibility() {
         let count = session.document.items.count
         let suggestions = session.tool == .redact ? session.openRedactionSuggestions.count : 0
-        setAccessibilityLabel(suggestions > 0
-            ? String(localized: "Capture, \(count) marks, \(suggestions) suggestions to redact", bundle: .module)
-            : String(localized: "Capture, \(count) marks", bundle: .module))
+        // One count to a string, so each takes its language's plural: the marks in the label, the suggestions as its
+        // value, which VoiceOver reads after it.
+        setAccessibilityLabel(String(localized: "Capture, \(count) marks", bundle: .module))
+        setAccessibilityValue(suggestions > 0 ? String(localized: "\(suggestions) suggestions to redact", bundle: .module) : nil)
     }
 }
 

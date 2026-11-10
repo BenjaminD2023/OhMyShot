@@ -70,7 +70,7 @@ private struct PermissionRow: View {
                     Button {
                         permissions.openSystemSettings(for: permission)
                     } label: {
-                        Text("Open System Settings…", bundle: .module)
+                        Text("Open System Settings", bundle: .module)
                     }
                 }
             }

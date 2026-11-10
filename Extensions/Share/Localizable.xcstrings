@@ -205,14 +205,8 @@
         }
       }
     },
-    "The pictures could not be handed to %@. Open %@ once, then try again." : {
+    "The pictures couldn’t be handed to %@. Open %@ once, then try again." : {
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "The pictures could not be handed to %1$@. Open %2$@ once, then try again."
-          }
-        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",

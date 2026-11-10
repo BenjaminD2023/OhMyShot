@@ -44,8 +44,7 @@ extension SettingsTab {
                     String(localized: "Play sounds", bundle: .module),
                 ]),
                 SettingsSearchRow(String(localized: "Keep captures", bundle: .module), terms: [
-                    String(localized: "Open History", bundle: .module),
-                    String(localized: "Capture History", bundle: .module),
+                    String(localized: "Open Capture History", bundle: .module),
                 ]),
                 SettingsSearchRow(String(localized: "Reset", bundle: .module), terms: [
                     String(localized: "Reset to Default Settings…", bundle: .module),
