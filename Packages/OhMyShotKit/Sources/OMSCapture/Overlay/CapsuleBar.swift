@@ -40,6 +40,8 @@ class CapsuleBar: NSView {
         stack.spacing = 2
         stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
+        // Room for the chips a subclass adds before the bar is first placed (`rearrange`); layout fits it.
+        stack.makeRoom()
         if let glass = container as? NSGlassEffectView {
             backing.wantsLayer = true
             backing.addSubview(stack)
@@ -68,10 +70,10 @@ class CapsuleBar: NSView {
             glass.cornerRadius = radius
             backing.frame = glass.bounds
             backing.layer?.cornerRadius = radius
-            stack.frame = backing.bounds
+            stack.place(in: backing.bounds)
         } else {
             container.layer?.cornerRadius = radius
-            stack.frame = container.bounds
+            stack.place(in: container.bounds)
         }
         layer?.cornerRadius = radius
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)

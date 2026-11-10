@@ -103,7 +103,7 @@ final class StyleCapsule: NSView {
 
     override func layout() {
         super.layout()
-        stack.frame = bounds
+        stack.place(in: bounds)
         let radius = bounds.height / 2
         layer?.cornerRadius = radius
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
@@ -228,6 +228,11 @@ final class StyleCapsule: NSView {
     }
 
     private func rebuild() {
+        stack.rearrange(in: bounds, rebuildChips)
+        needsLayout = true
+    }
+
+    private func rebuildChips() {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         chips.removeAll()
         setAccessibilityLabel(String(localized: "\(kind.name) Style", bundle: .module))
