@@ -218,7 +218,7 @@ final class OverlayView: NSView {
         case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         }
-        setAccessibilityHelp(snapsToText ? help + " " + String(localized: "The selection's edges snap to text; hold Command to place them freely.", bundle: .module) : help)
+        setAccessibilityHelp(snapsToText ? Sentences.joined(help, String(localized: "The selection’s edges snap to text; hold Command to place them freely.", bundle: .module)) : help)
         withoutAnimation {
             layoutLoupe()
             applyAppearance()

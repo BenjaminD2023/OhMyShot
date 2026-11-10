@@ -22,7 +22,8 @@ struct CloudToggle: View {
         .help(help)
     }
 
-    /// Where the picture goes, and in how many pieces or at what size when it doesn't go whole.
+    /// Where the picture goes, and in how many pieces or at what size when it doesn't go whole, on a line of its own:
+    /// the first line has no closing period to put a second sentence after.
     private var help: Text {
         if model.readsInCloud { return Text("Show the text read on this Mac (⇧⌘R)", bundle: .module) }
         let host = cloud.host ?? cloud.address
@@ -31,9 +32,9 @@ struct CloudToggle: View {
         let plan = CloudPicture.plan(width: image.width, height: image.height, limits: .of(cloud.kind))
         let percent = Int((plan.scale * 100).rounded())
         switch (plan.pieces.count > 1, plan.scale < 1) {
-        case (true, true): return sends + Text(verbatim: ". ") + Text("It goes in \(plan.pieces.count) pieces, at \(percent)% of its size.", bundle: .module)
-        case (true, false): return sends + Text(verbatim: ". ") + Text("It goes in \(plan.pieces.count) pieces.", bundle: .module)
-        case (false, true): return sends + Text(verbatim: ". ") + Text("It goes at \(percent)% of its size.", bundle: .module)
+        case (true, true): return sends + Text(verbatim: "\n") + Text("It goes in \(plan.pieces.count) pieces, at \(percent)% of its size.", bundle: .module)
+        case (true, false): return sends + Text(verbatim: "\n") + Text("It goes in \(plan.pieces.count) pieces.", bundle: .module)
+        case (false, true): return sends + Text(verbatim: "\n") + Text("It goes at \(percent)% of its size.", bundle: .module)
         case (false, false): return sends
         }
     }

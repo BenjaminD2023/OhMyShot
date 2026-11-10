@@ -43,9 +43,9 @@ public enum UploadError: Error, LocalizedError, Equatable, Sendable {
                 String(localized: "The file is too large for this server.", bundle: .module)
             }
         case .authRejected(let detail):
-            [String(localized: "The server didn’t accept the credentials.", bundle: .module), detail].compactMap { $0 }.joined(separator: " ")
+            Sentences.joined(String(localized: "The server didn’t accept the credentials.", bundle: .module), detail)
         case .notFound(let detail):
-            [String(localized: "Couldn’t find the bucket or folder.", bundle: .module), detail].compactMap { $0 }.joined(separator: " ")
+            Sentences.joined(String(localized: "Couldn’t find the bucket or folder.", bundle: .module), detail)
         case .unreachable(let host):
             String(localized: "Couldn’t reach \(host). Check the address and your network connection.", bundle: .module)
         case .certificateRejected(let host):
