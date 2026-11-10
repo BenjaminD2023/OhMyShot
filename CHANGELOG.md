@@ -30,6 +30,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - A click on the menu bar icon opens a capture launcher: every command that takes a shortcut is a tile, whose keys (or Set Shortcut, while it has none) open Settings › Shortcuts on its row; every other command of the status menu (Images & Pins, Getting Started, Join Discord, Keyboard Shortcuts…, Debug, Quit) is a row, those with more choices opening a menu in place. A right-click still opens the status menu. ([6bda14e]; by [@bobbyhuang-dev]; coauthored by Codex and Claude Opus 5.5)
 - The capture launcher answers the arrow keys: they move a highlight across its tiles and rows as a menu's do, passing over dimmed commands, and Return or Space presses the command they reach. ([db7bffc]; by [@fzlzjerry])
 - In the window chooser, Up and Down go through the chosen app's windows, as Left and Right go through the apps. ([84a0c3a]; by [@fzlzjerry])
+- The camera bubble can be placed and made to fill the recording without the pointer: the recording bar's camera menu has Position (each corner) and Fill the Recording, and VoiceOver offers the same as the bubble's actions. ([ea1e905]; by [@fzlzjerry])
 
 ### Fixed
 
@@ -47,6 +48,13 @@ Each entry links its implementation commits or merged pull request and credits v
 - The first-capture hint's Got It no longer looks dimmed, and the hint casts the same shadow as the Quick Access card beside it. ([3ba14d1]; by [@fzlzjerry])
 - The window chooser's preview and app tiles have the continuous corners the rest of the app has, a tile shows a focus ring under Full Keyboard Access, a long app name is shown whole when the pointer rests on it, and Increase Contrast applies as it is switched. ([84a0c3a]; by [@fzlzjerry])
 - The getting-started guide's step numbers and keycaps use the system typeface, a failed first capture's note no longer has an orange tint, and only the step itself fades when the step changes. ([d955c65]; by [@fzlzjerry])
+- Capture History no longer stops searching a capture whose text reading failed until the app relaunches: it is read again with the next capture, up to three times, and once more when History opens. ([71ba1c3]; by [@fzlzjerry])
+- Taking a capture no longer lists the whole history on the main thread (17 ms with 300 captures, 280 ms with 5,000), and a card's actions find their capture at once; with Settings changing the file format or scale, a capture is converted for dragging out ahead of time instead of when the drag starts (up to 150 ms), and History's Copy converts in the background. ([b5acc7d], [dc8b831]; by [@fzlzjerry])
+- In Chinese and Japanese, sentences put together no longer take a stray space or a Latin period; VoiceOver counts in the editor use singular and plural ("1 suggestion to redact"); Studio's decimals use the language's separator; a retention inside a sentence uses the system's own words for the duration; and a Custom HTTP destination's kind is translated. ([f2b90c0], [fa9a2c0]; by [@fzlzjerry])
+- A failed Launch at login explains itself and offers System Settings instead of showing the system's error in red; the update reminder's title no longer ends in an ellipsis; a Studio preview that fails says what that means and keeps the system's reason in its tooltip; and Settings, the model pack's description, and Shortcuts name things as the app does (Capture History, Recognized Text). ([a98c3a5], [1050f8b], [fa9a2c0]; by [@fzlzjerry])
+- Increase Contrast and Reduce Transparency take effect at once on Quick Access cards, the Recognized Text picture, the recording control bar, and the camera bubble; the auto-close ring on a card starts at twelve o'clock, reads on light pictures, and steps once a second under Reduce Motion. ([a336488]; by [@fzlzjerry])
+- The camera bubble's ring and shadow follow its rounded corners, so a recording and its Studio export match; a History recording's badge matches the Quick Access card's, and History's hover controls fade in; shadows follow continuous corners and are no longer cut off at the scrolling panel's, the keystrokes', and the Copied note's edges; window notices in Studio, the recording window, and History look alike; Studio's keystroke captions keep their digits steady, and its chosen click color is ringed in label ink. ([3009de2], [33ce73f], [f29ccf0], [44be1b8]; by [@fzlzjerry])
+- The app no longer logs broken layout constraints at launch or each time an editor opens. ([c66815b]; by [@fzlzjerry])
 
 
 ## [0.1.0] - 2026-11-03
@@ -193,6 +201,20 @@ Each entry links its implementation commits or merged pull request and credits v
 [84a0c3a]: https://github.com/MMFoundation/OhMyShot/commit/84a0c3a6e9f9b6f70c2db252f40d8d297d4de309
 [d955c65]: https://github.com/MMFoundation/OhMyShot/commit/d955c65dd378a4660adb2a00614c68961e163b68
 [3ba14d1]: https://github.com/MMFoundation/OhMyShot/commit/3ba14d10a1f8119dd5bd6721748c488e48113158
+[ea1e905]: https://github.com/MMFoundation/OhMyShot/commit/ea1e9058dfe37035757d429ec52cac5357455c6c
+[71ba1c3]: https://github.com/MMFoundation/OhMyShot/commit/71ba1c3ff943b5e225f7d289bad01588c73bf04e
+[b5acc7d]: https://github.com/MMFoundation/OhMyShot/commit/b5acc7d4a0763f203592d1386781bf42b9301079
+[dc8b831]: https://github.com/MMFoundation/OhMyShot/commit/dc8b83146cd28502868beb032636a51c943c2f66
+[f2b90c0]: https://github.com/MMFoundation/OhMyShot/commit/f2b90c0f1ca5f2dfa54fa7b2fc8f35ce03aa5bc2
+[fa9a2c0]: https://github.com/MMFoundation/OhMyShot/commit/fa9a2c098747be41aa7c9d0355d61a6b3ab6d335
+[a98c3a5]: https://github.com/MMFoundation/OhMyShot/commit/a98c3a59b00428fed0f472bae7e17eb162af26d5
+[1050f8b]: https://github.com/MMFoundation/OhMyShot/commit/1050f8be152cf0390695c3ddcd37375ade751b86
+[a336488]: https://github.com/MMFoundation/OhMyShot/commit/a336488af47364ec65d633ad200ce028e55c651f
+[3009de2]: https://github.com/MMFoundation/OhMyShot/commit/3009de268fd48b3b82824e90dcadd8adcf87ad50
+[33ce73f]: https://github.com/MMFoundation/OhMyShot/commit/33ce73f60b206e8888f7cdd655135ad25253e274
+[f29ccf0]: https://github.com/MMFoundation/OhMyShot/commit/f29ccf06c4d35f1cf33088039d734de0b7720f77
+[44be1b8]: https://github.com/MMFoundation/OhMyShot/commit/44be1b8296f9e04530c90534294bca862ed9810c
+[c66815b]: https://github.com/MMFoundation/OhMyShot/commit/c66815b972f787cbb1bea89f69d7e51917e6e500
 [c999cc0]: https://github.com/MMFoundation/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/MMFoundation/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/MMFoundation/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287
