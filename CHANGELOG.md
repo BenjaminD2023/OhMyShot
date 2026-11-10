@@ -28,6 +28,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - Window opens a chooser that previews every app's windows on any display or Space, full-screen games included, without bringing the app forward or leaving its Space; Capture Window opens it directly. ([0946850]; by [@fzlzjerry])
 - A getting-started guide for new installations walks through allowing Screen Recording, freeing the screenshot keys macOS still takes, and a real first capture, whose Quick Access card gets a hint naming its Copy, Save, and Annotate buttons. The status menu and Settings › General replay it. ([bf3ce5e]; by [@fzlzjerry])
 - A click on the menu bar icon opens a capture launcher: every command that takes a shortcut is a tile, whose keys (or Set Shortcut, while it has none) open Settings › Shortcuts on its row; every other command of the status menu (Images & Pins, Getting Started, Join Discord, Keyboard Shortcuts…, Debug, Quit) is a row, those with more choices opening a menu in place. A right-click still opens the status menu. ([6bda14e]; by [@bobbyhuang-dev]; coauthored by Codex and Claude Opus 5.5)
+- The capture launcher answers the arrow keys: they move a highlight across its tiles and rows as a menu's do, passing over dimmed commands, and Return or Space presses the command they reach. ([db7bffc]; by [@fzlzjerry])
+- In the window chooser, Up and Down go through the chosen app's windows, as Left and Right go through the apps. ([84a0c3a]; by [@fzlzjerry])
 
 ### Fixed
 
@@ -40,6 +42,11 @@ Each entry links its implementation commits or merged pull request and credits v
 - The editor's eyedropper tooltip, a locked pin's Unlock button, and the overlay's window count are translated. ([4c48f7e]; by [@fzlzjerry])
 - Capture Text no longer waits about 37 s and copies nothing after a cleaner empties `~/Library/Caches` or macOS updates: the app compiles Vision's text models again in the background as soon as they are gone. ([81a46de]; by [@fzlzjerry])
 - A first reading that has to wait for Vision's models to compile (about 37 s) now finishes: Capture Text, Translate Area, and the Recognized Text window wait up to 60 seconds instead of 30, and Escape still stops them. ([7304cae]; by [@fzlzjerry])
+- The What’s New banner shows OhMyShot's own mark (the app icon's ground, the loupe, and the wordmark) with type that reads on it, in place of a gradient and a viewfinder of its own, and a list item's wrapped lines start under its text. ([b2b2471]; by [@fzlzjerry])
+- The capture launcher no longer cuts command names short in French and Spanish (a row's name takes a second line, and Set Shortcut fits its capsule), its tiles are easier to see in Dark, and Set Shortcut no longer sits on a wash of the accent. ([db7bffc]; by [@fzlzjerry])
+- The first-capture hint's Got It no longer looks dimmed, and the hint casts the same shadow as the Quick Access card beside it. ([3ba14d1]; by [@fzlzjerry])
+- The window chooser's preview and app tiles have the continuous corners the rest of the app has, a tile shows a focus ring under Full Keyboard Access, a long app name is shown whole when the pointer rests on it, and Increase Contrast applies as it is switched. ([84a0c3a]; by [@fzlzjerry])
+- The getting-started guide's step numbers and keycaps use the system typeface, a failed first capture's note no longer has an orange tint, and only the step itself fades when the step changes. ([d955c65]; by [@fzlzjerry])
 
 
 ## [0.1.0] - 2026-11-03
@@ -181,6 +188,11 @@ Each entry links its implementation commits or merged pull request and credits v
 [0946850]: https://github.com/MMFoundation/OhMyShot/commit/0946850a6bc20896c0d6646526d7a3a08735e0be
 [bf3ce5e]: https://github.com/MMFoundation/OhMyShot/commit/bf3ce5ed6403c19a926a5d48e1fc6a68c576f362
 [6bda14e]: https://github.com/MMFoundation/OhMyShot/commit/6bda14ecb7bf955eb70bb4a81c6bd9f443010b07
+[db7bffc]: https://github.com/MMFoundation/OhMyShot/commit/db7bffc0d269c1709c5a57f44fb1428851567601
+[b2b2471]: https://github.com/MMFoundation/OhMyShot/commit/b2b2471de5f14ffbd4e63fdb21710874a87eee5a
+[84a0c3a]: https://github.com/MMFoundation/OhMyShot/commit/84a0c3a6e9f9b6f70c2db252f40d8d297d4de309
+[d955c65]: https://github.com/MMFoundation/OhMyShot/commit/d955c65dd378a4660adb2a00614c68961e163b68
+[3ba14d1]: https://github.com/MMFoundation/OhMyShot/commit/3ba14d10a1f8119dd5bd6721748c488e48113158
 [c999cc0]: https://github.com/MMFoundation/OhMyShot/commit/c999cc03ce4ca38c5596a17b13265ddebd1cc54d
 [47460d9]: https://github.com/MMFoundation/OhMyShot/commit/47460d9161fd9a2526b7964ce00a5727a34b688d
 [4fba5e2]: https://github.com/MMFoundation/OhMyShot/commit/4fba5e228a53a7d7bf18be4495663cd7c89c4287
