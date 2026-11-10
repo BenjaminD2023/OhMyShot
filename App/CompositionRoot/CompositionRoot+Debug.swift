@@ -52,6 +52,8 @@ extension CompositionRoot {
             showMenu: { [weak self] in
                 self?.statusItem?.showMenuForDebugging { window in await capture(window, "capture-launcher") }
             },
+            renderMenu: { [weak self] dark, keys in self?.statusItem?.launcherWindowForDebugging(dark: dark, keys: keys) },
+            closeMenuRender: { [weak self] in self?.statusItem?.closeLauncherWindowForDebugging() },
             makeSettings: makeSettings,
             capture: capture
         )

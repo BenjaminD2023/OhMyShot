@@ -15,6 +15,9 @@ struct DebugUpdateHooks {
     let current: () -> UpdateController?
     let stop: () -> Void
     let showMenu: () -> Void
+    /// The launcher's view in a window behind the wallpaper (dark or light, after these key codes), and closing it again.
+    let renderMenu: (Bool, [UInt16]) -> NSWindow?
+    let closeMenuRender: () -> Void
     /// A Settings window of the hooks' own, not the one the user may have open.
     let makeSettings: () -> SettingsWindowController
     let capture: (NSWindow, String) async -> Void
@@ -34,9 +37,35 @@ struct DebugUpdateHooks {
             Log.updates.notice("debug.updates-start \(feed.absoluteString, privacy: .public): \(started ? "started" : "refused", privacy: .public)")
         case "updates-preview":
             let controller = current() ?? start(URL(string: "http://127.0.0.1:19020/appcast.xml")!)
+            // render=1&mode=dark&name=: What's New behind the wallpaper as <name>.png (release-notes-<light|dark>), then
+            // closed; nothing is shown and no version is left waiting in the menu.
+            if value("render") == "1" {
+                let dark = value("mode") == "dark"
+                guard let controller, let window = controller.renderReleaseNotes(dark: dark) else { return true }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    await capture(window, value("name") ?? "release-notes-\(dark ? "dark" : "light")")
+                    controller.closeReleaseNotes()
+                }
+                return true
+            }
             controller?.status.waiting = "0.2.0"
             controller?.showReleaseNotes(preview: true)
         case "updates-menu":
+            // render=1&mode=dark&keys=125,124&name=: the launcher's view behind the wallpaper as <name>.png
+            // (capture-launcher-<light|dark>), after those key codes were pressed in it (125 Down, 124 Right), then
+            // closed; without render the real popover opens at the menu bar.
+            if value("render") == "1" {
+                let dark = value("mode") == "dark"
+                let keys = (value("keys") ?? "").split(separator: ",").compactMap { UInt16($0) }
+                guard let window = renderMenu(dark, keys) else { return true }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    await capture(window, value("name") ?? "capture-launcher-\(dark ? "dark" : "light")")
+                    closeMenuRender()
+                }
+                return true
+            }
             showMenu()
         case "updates-reminder-preview":
             current()?.presentReminderIfNeeded(preview: true)

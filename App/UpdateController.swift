@@ -122,6 +122,28 @@ final class UpdateController: NSObject {
     private var currentBuild: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0" }
 
     func showReleaseNotes(preview: Bool = false) {
+        releaseWindow = makeReleaseNotesWindow(preview: preview)
+        releaseWindow?.present()
+    }
+
+    #if DEBUG
+    /// The preview's window behind the desktop picture in the appearance asked for, for a scripted capture.
+    func renderReleaseNotes(dark: Bool) -> NSWindow? {
+        releaseWindow?.close()
+        let controller = makeReleaseNotesWindow(preview: true)
+        releaseWindow = controller
+        controller.window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        controller.showBehindWallpaper()
+        return controller.window
+    }
+
+    func closeReleaseNotes() {
+        releaseWindow?.close()
+        releaseWindow = nil
+    }
+    #endif
+
+    private func makeReleaseNotesWindow(preview: Bool) -> ReleaseNotesWindowController {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         let changelog = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md")
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
@@ -130,8 +152,7 @@ final class UpdateController: NSObject {
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
         let notes = ReleaseNotes.localizedSection(localized, fallback: changelog, version: preview ? "Unreleased" : version)
             ?? String(localized: "This update includes improvements and fixes.")
-        releaseWindow = ReleaseNotesWindowController(version: preview ? "0.2.0" : version, markdown: notes, banner: NSImage(named: "ReleaseBanner"))
-        releaseWindow?.present()
+        return ReleaseNotesWindowController(version: preview ? "0.2.0" : version, markdown: notes, banner: NSImage(named: "ReleaseBanner"))
     }
 
     func showReleaseNotesAfterUpdate() {

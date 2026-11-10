@@ -4,8 +4,11 @@
 Usage: python3 Tools/logo/make_wordmark.py <path to Nunito[wght].ttf>
 The font (SIL Open Font License) is not kept in the repository; get it from
 https://github.com/google/fonts/tree/main/ofl/nunito. Writes Tools/logo/preview/wordmark-light.svg and
-wordmark-dark.svg as plain paths, so they render where SVG fonts don't load (GitHub READMEs).
+wordmark-dark.svg as plain paths, so they render where SVG fonts don't load (GitHub READMEs), and the same two files
+as the app's Wordmark image (Packages/OhMyShotKit/Sources/OMSUI/Resources/Assets.xcassets/Wordmark.imageset), light
+for any appearance and dark for Dark, where the What's New banner shows it.
 """
+import json
 import math
 import os
 import sys
@@ -18,7 +21,10 @@ from fontTools.ttLib import TTFont
 from fontTools.varLib import instancer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from make_icon import BLUE, LENS, MID, PREVIEW, WHITE  # noqa: E402
+from make_icon import BLUE, LENS, MID, PREVIEW, ROOT, WHITE  # noqa: E402
+
+IMAGESET = os.path.join(ROOT, "Packages", "OhMyShotKit", "Sources", "OMSUI", "Resources", "Assets.xcassets",
+                        "Wordmark.imageset")
 
 WEIGHT = 800
 TRACKING = -15          # font units per letter, the canvas's -0.015 em
@@ -139,9 +145,23 @@ def main(font_path):
                f'role="img" aria-label="OhMyShot"><defs>{clip}</defs>{lens}'
                f'<path fill-rule="evenodd" fill="{ink}" d="{paths[0]}"/>'
                f'<path fill="{ink}" d="{" ".join(paths[1:])}"/></svg>\n')
-        with open(os.path.join(PREVIEW, f"wordmark-{mode}.svg"), "w") as f:
-            f.write(svg)
-    print("wrote wordmark-light.svg, wordmark-dark.svg in", os.path.relpath(PREVIEW))
+        for folder in (PREVIEW, IMAGESET):
+            os.makedirs(folder, exist_ok=True)
+            with open(os.path.join(folder, f"wordmark-{mode}.svg"), "w") as f:
+                f.write(svg)
+    contents = {
+        "images": [
+            {"filename": "wordmark-light.svg", "idiom": "universal"},
+            {"appearances": [{"appearance": "luminosity", "value": "dark"}],
+             "filename": "wordmark-dark.svg", "idiom": "universal"},
+        ],
+        "info": {"author": "xcode", "version": 1},
+        "properties": {"preserves-vector-representation": True},
+    }
+    with open(os.path.join(IMAGESET, "Contents.json"), "w") as f:
+        json.dump(contents, f, indent=2)
+        f.write("\n")
+    print("wrote wordmark-light.svg, wordmark-dark.svg in", os.path.relpath(PREVIEW), "and", os.path.relpath(IMAGESET))
 
 
 if __name__ == "__main__":
