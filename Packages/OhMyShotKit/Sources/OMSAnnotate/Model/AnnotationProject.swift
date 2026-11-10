@@ -42,7 +42,7 @@ nonisolated public struct AnnotationProject: Sendable {
         public var errorDescription: String? {
             switch self {
             case .newerVersion: String(localized: "This project was made by a newer version of OhMyShot.", bundle: .module)
-            case .unreadableCapture: String(localized: "The capture in this project can't be read.", bundle: .module)
+            case .unreadableCapture: String(localized: "The capture in this project can’t be read.", bundle: .module)
             }
         }
     }

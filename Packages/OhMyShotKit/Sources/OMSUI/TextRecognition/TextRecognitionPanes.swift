@@ -49,8 +49,8 @@ struct RecognizedImagePane: View {
                 .clipShape(shape)
                 .overlay {
                     shape.strokeBorder(
-                        colorScheme == .dark ? Color.white.opacity(0.16) : Color.black.opacity(0.10),
-                        lineWidth: contrast == .increased ? 1 : 0.5
+                        Color(cgColor: Theme.PictureBorder.color(dark: colorScheme == .dark, contrast: contrast == .increased)),
+                        lineWidth: Theme.PictureBorder.width(contrast: contrast == .increased)
                     )
                 }
                 .background { shape.fill(.background).shadow(color: .black.opacity(0.12), radius: 10, y: 4) }

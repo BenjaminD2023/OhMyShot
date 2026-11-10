@@ -41,7 +41,7 @@ Lives in the menu bar and is summoned by global shortcuts dozens of times a day.
 - A Studio recording keeps the keys pressed, so Studio can show them after the recording: by default whenever Input Monitoring is already on, and under All keys what was typed is stored as typed in the project on this Mac (never sent anywhere, never from a password field or while the system keeps keystrokes private, and from a window recorded on its own only when Show Keystrokes was on). Settings › Recording › Studio › Keep the keys pressed turns it off, and Shortcuts only keeps no typing. Input Monitoring is never asked for by it. Left on by default (2026-10-17) because without it Studio could not add keystrokes to a recording made with Show Keystrokes off; revisit if it troubles users.
 - Processing is on-device by default. Cloud OCR models run only with a user-supplied API key the user explicitly enables.
 - Apple Intelligence (Foundation Models) reports the author's machine as not eligible; it may enhance features but is never required.
-- UI languages: English and Simplified Chinese.
+- UI languages: English, Spanish, French, Japanese, Simplified Chinese, and Traditional Chinese.
 - Idle power targets: 0.0% CPU, fewer than 1 wakeup per second, memory footprint under 30 MB after launch and under 60 MB after use.
 
 ## Brand Commitments

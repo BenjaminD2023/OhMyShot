@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import OMSCore
+import OMSDesign
 import SwiftUI
 
 public final class ReleaseNotesWindowController: NSWindowController {
@@ -23,6 +24,16 @@ public final class ReleaseNotesWindowController: NSWindowController {
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
+
+    #if DEBUG
+    /// For scripted captures: the window as it is shown, but behind the desktop picture, never in front of anyone.
+    public func showBehindWallpaper() {
+        guard let window else { return }
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+        window.center()
+        window.orderFront(nil)
+    }
+    #endif
 }
 
 private struct ReleaseNotesView: View {
@@ -35,25 +46,11 @@ private struct ReleaseNotesView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
-                    ZStack(alignment: .bottomLeading) {
-                        LinearGradient(colors: [Color(red: 0.20, green: 0.39, blue: 0.83), Color(red: 0.12, green: 0.68, blue: 0.64)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        if let banner {
-                            Image(nsImage: banner).resizable().scaledToFill().frame(height: 200).clipped()
-                        } else {
-                            HStack {
-                                Spacer()
-                                Image(systemName: "viewfinder").font(.system(size: 150, weight: .ultraLight)).rotationEffect(.degrees(-12)).offset(x: 20, y: -8)
-                            }.foregroundStyle(.white.opacity(0.16))
-                        }
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("OHMYSHOT").font(.system(size: 11, weight: .bold, design: .rounded)).tracking(3)
-                            Text("A little more powerful.", bundle: .module).font(.system(size: 29, weight: .bold))
-                            Text("Made for your next great capture.", bundle: .module).font(.system(size: 14)).opacity(0.85)
-                        }.foregroundStyle(.white).padding(28)
-                    }.frame(height: 200).clipShape(RoundedRectangle(cornerRadius: 18))
+                    ReleaseBanner(image: banner)
                     VStack(alignment: .leading, spacing: 14) {
                         VStack(alignment: .leading, spacing: 9) {
-                            Text("What’s New", bundle: .module).font(.system(size: 28, weight: .bold))
+                            Text("What’s New", bundle: .module).font(.system(size: 26, weight: .semibold))
+                                .accessibilityAddTraits(.isHeader)
                             Text("Version \(version)", bundle: .module).font(.system(size: 12, weight: .semibold)).padding(.horizontal, 10).padding(.vertical, 5).background(.quaternary, in: Capsule())
                         }
                         MarkdownNotes(markdown: markdown)
@@ -63,9 +60,51 @@ private struct ReleaseNotesView: View {
             Divider()
             HStack {
                 Spacer()
-                Button(action: done) { Text("Let’s Go", bundle: .module) }.buttonStyle(.borderedProminent).controlSize(.large).keyboardShortcut(.defaultAction)
+                Button(action: done) { Text("Let’s Go", bundle: .module).padding(.horizontal, 8) }
+                    .buttonStyle(.glassProminent).controlSize(.large).keyboardShortcut(.defaultAction)
             }.padding(.horizontal, 28).padding(.vertical, 18)
         }.background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+/// The banner over the notes: the brand mark at size. On the app icon's own ground (the Ocean fill) stand the wordmark
+/// and two lines in the wordmark's ink, the same in either appearance since they stand on a picture, with the loupe
+/// large and faint behind them. White type on that ground is under 3:1, so the type is ink. A bundled picture
+/// replaces the ground and the loupe, and takes the type in white.
+private struct ReleaseBanner: View {
+    let image: NSImage?
+    private static let height: CGFloat = 200
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            if let image {
+                Image(nsImage: image).resizable().scaledToFill().frame(height: Self.height).clipped()
+            } else {
+                LinearGradient(colors: [Color(cgColor: Theme.Brand.color(Theme.Brand.groundStart)), Color(cgColor: Theme.Brand.color(Theme.Brand.groundEnd))],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                    // An overlay, so the loupe runs off the banner's edges without making the banner any taller.
+                    .overlay(alignment: .trailing) {
+                        Image(nsImage: .statusItemIcon(accessibilityDescription: nil) ?? NSImage())
+                            .resizable().scaledToFit().frame(width: 250, height: 250)
+                            .foregroundStyle(.white.opacity(0.3))
+                            .offset(x: 46, y: 34)
+                            .accessibilityHidden(true)
+                    }
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                // The wordmark's light form is the ink one; its dark form is for a dark picture.
+                Image("Wordmark", bundle: .module).resizable().scaledToFit().frame(height: 22)
+                    .environment(\.colorScheme, image == nil ? .light : .dark)
+                    .accessibilityLabel(Text(verbatim: "OhMyShot"))
+                Text("A little more powerful.", bundle: .module).font(.system(size: 26, weight: .semibold))
+                    .accessibilityAddTraits(.isHeader)
+                Text("Made for your next great capture.", bundle: .module).font(.system(size: 14)).opacity(0.85)
+            }
+            .foregroundStyle(image == nil ? Color(cgColor: Theme.Brand.color(Theme.Brand.ink)) : .white)
+            .padding(28)
+        }
+        .frame(height: Self.height)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 }
 
@@ -80,6 +119,14 @@ private struct MarkdownNotes: View {
                         .font(.system(size: 12, design: .monospaced)).padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
                 } else if block == "---" {
                     Divider()
+                } else if block.hasPrefix(Self.bullet) {
+                    // The bullet stands in a column of its own, so a wrapped line starts under the text, not under it.
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(verbatim: "•").accessibilityHidden(true)
+                        Text(ReleaseNotes.inline(String(block.dropFirst(Self.bullet.count)), referencesIn: markdown))
+                            .lineSpacing(6).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.system(size: 14))
                 } else {
                     let heading = block.prefix(while: { $0 == "#" }).count
                     let content = heading > 0 ? String(block.dropFirst(heading)).trimmingCharacters(in: .whitespaces) : block
@@ -87,10 +134,14 @@ private struct MarkdownNotes: View {
                         .font(heading > 0 ? .system(size: heading <= 2 ? 20 : 16, weight: .semibold) : .system(size: 14))
                         .lineSpacing(6).frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, heading > 0 && index > 0 ? 10 : 0)
+                        .accessibilityAddTraits(heading > 0 ? .isHeader : [])
                 }
             }
         }.textSelection(.enabled)
     }
+
+    /// How `blocks` marks a list item.
+    private static let bullet = "• "
 
     private var blocks: [String] {
         var result: [String] = [], paragraph: [String] = []
@@ -104,7 +155,7 @@ private struct MarkdownNotes: View {
             else if line.hasPrefix("[") && line.contains("]: ") { continue }
             else if line.isEmpty { flush() }
             else if line.hasPrefix("#") || line.hasPrefix("- ") || line == "---" {
-                flush(); result.append(line.hasPrefix("- ") ? "• " + line.dropFirst(2) : line)
+                flush(); result.append(line.hasPrefix("- ") ? Self.bullet + line.dropFirst(2) : line)
             } else { paragraph.append(line) }
         }
         if code { paragraph.append("```") }

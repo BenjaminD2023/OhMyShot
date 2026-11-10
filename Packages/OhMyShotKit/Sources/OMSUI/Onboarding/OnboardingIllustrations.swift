@@ -11,18 +11,42 @@ enum OnboardingColumn {
     static let width: CGFloat = 440
 }
 
-/// The stage every diagram sits on: a faint well with a hairline, the width of the guide's column.
+/// The guide's well: a faint fill with a hairline, 12 pt continuous corners. The diagrams' stage, the shortcut list,
+/// and a failed attempt's note all sit in one. Under Increase Contrast the hairline is the 1 pt contrast hairline.
+private struct GuideWell: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+        let increased = contrast == .increased
+        content
+            .background(.quaternary.opacity(0.5), in: shape)
+            .clipShape(shape)
+            .overlay {
+                if increased {
+                    shape.strokeBorder(Color(cgColor: Theme.Material.edge(dark: scheme == .dark, contrast: true)),
+                                       lineWidth: Theme.Material.edgeWidth(contrast: true))
+                } else {
+                    shape.strokeBorder(.separator, lineWidth: 0.5)
+                }
+            }
+    }
+}
+
+extension View {
+    func guideWell() -> some View { modifier(GuideWell()) }
+}
+
+/// The stage every diagram sits on: the guide's well, the width of the guide's column.
 struct IllustrationStage<Content: View>: View {
     let height: CGFloat
     @ViewBuilder let content: Content
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
         content
             .frame(width: OnboardingColumn.width, height: height, alignment: .topLeading)
-            .background(.quaternary.opacity(0.5), in: shape)
-            .clipShape(shape)
-            .overlay(shape.strokeBorder(.separator, lineWidth: 0.5))
+            .guideWell()
     }
 }
 
@@ -49,7 +73,7 @@ struct KeyCaps: View {
             ForEach(Array(Self.parts(of: keys).enumerated()), id: \.offset) { _, part in
                 let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
                 Text(verbatim: part)
-                    .font(.system(size: size, weight: .medium, design: .rounded))
+                    .font(.system(size: size, weight: .medium))
                     .frame(minWidth: size + 4)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
@@ -188,6 +212,7 @@ private struct SwitchDrawing: View {
 struct FirstCapturePreview: View {
     let cardsOnLeft: Bool
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.colorSchemeContrast) private var contrast
     private static let screen = CGSize(width: 176, height: 110)
 
     var body: some View {
@@ -213,14 +238,18 @@ struct FirstCapturePreview: View {
     private var choosing: some View {
         MiniScreen(size: Self.screen) {
             let selection = CGRect(x: 58, y: 16, width: 60, height: 60)
+            // The overlay's own dimming and outline, firmer under Increase Contrast as the overlay's are.
+            let increased = contrast == .increased
+            let dimming = increased ? Theme.Overlay.dimmingIncreasedContrast : Theme.Overlay.dimming
+            let outline = increased ? Theme.Overlay.outlineOpacityIncreasedContrast : Theme.Overlay.outlineOpacity
             ZStack(alignment: .topLeading) {
                 icon.position(x: selection.midX, y: selection.midY)
                 Canvas { context, size in
                     var dim = Path(CGRect(origin: .zero, size: size))
                     dim.addRect(selection)
-                    context.fill(dim, with: .color(.black.opacity(Theme.Overlay.dimming)), style: FillStyle(eoFill: true))
+                    context.fill(dim, with: .color(.black.opacity(dimming)), style: FillStyle(eoFill: true))
                     let edge = Path(selection)
-                    context.stroke(edge, with: .color(.black.opacity(Theme.Overlay.outlineOpacity)), lineWidth: 2.5)
+                    context.stroke(edge, with: .color(.black.opacity(outline)), lineWidth: 2.5)
                     context.stroke(edge, with: .color(.white), lineWidth: 1.5)
                     // The crosshair, at the corner being dragged: white arms over the overlay's dark outline.
                     let center = CGPoint(x: selection.maxX, y: selection.maxY)
@@ -229,7 +258,7 @@ struct FirstCapturePreview: View {
                         cross.move(to: CGPoint(x: center.x + dx * 3, y: center.y + dy * 3))
                         cross.addLine(to: CGPoint(x: center.x + dx * 9, y: center.y + dy * 9))
                     }
-                    context.stroke(cross, with: .color(.black.opacity(Theme.Overlay.outlineOpacity)), lineWidth: 2.5)
+                    context.stroke(cross, with: .color(.black.opacity(outline)), lineWidth: 2.5)
                     context.stroke(cross, with: .color(.white), lineWidth: 1)
                 }
                 SizeReading(text: "512 × 512").position(x: selection.midX, y: selection.maxY + 15)

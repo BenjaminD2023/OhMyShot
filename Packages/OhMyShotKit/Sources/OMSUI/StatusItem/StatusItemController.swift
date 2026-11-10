@@ -106,6 +106,11 @@ public final class StatusItemController {
     private let menuTarget = MenuTarget()
     /// Runs the menus the launcher's rows open, closing the launcher before the command.
     private let launcherMenuTarget = MenuTarget()
+    /// The launcher's lit command, moved by the pointer and by the arrow keys while it is open.
+    private let launcherHighlight = LauncherHighlight()
+    /// The open launcher's commands, for the arrow keys; nil while it is closed.
+    private var activeLauncherModel: CaptureLauncherModel?
+    private var launcherKeyMonitor: Any?
     /// Whether Settings wants the icon; a recording shows it regardless while it runs.
     private var wantsVisible = false
     /// Stops the recording when the item is clicked; set only while recording.
@@ -177,6 +182,39 @@ public final class StatusItemController {
         if let capture, let window = launcher.contentViewController?.view.window {
             Task { await capture(window) }
         }
+    }
+
+    private var debugLauncherWindow: NSWindow?
+
+    /// For scripted captures: the launcher's own view in a plain window behind the desktop picture, never in front of
+    /// anyone. The popover's material is the system's and is not drawn here; its layout and states are. `keys` are
+    /// key codes pressed first, as the open launcher takes them (125 is Down, 124 Right), to show where they lead.
+    public func launcherWindowForDebugging(dark: Bool, keys: [UInt16] = []) -> NSWindow {
+        debugLauncherWindow?.close()
+        let model = makeLauncherModel()
+        launcherHighlight.cell = nil
+        launcherHighlight.fromKeys = false
+        activeLauncherModel = model
+        for key in keys { _ = handleLauncherKey(code: key, modifiers: []) }
+        activeLauncherModel = nil
+        let view = CaptureLauncherView(model: model, highlight: launcherHighlight, perform: { _ in }, showMenu: { _, _ in })
+            .background(Color(nsColor: .windowBackgroundColor))
+        let host = NSHostingController(rootView: view)
+        host.sizingOptions = [.preferredContentSize]
+        let window = NSWindow(contentViewController: host)
+        window.styleMask = [.borderless]
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
+        window.center()
+        window.orderFront(nil)
+        debugLauncherWindow = window
+        return window
+    }
+
+    public func closeLauncherWindowForDebugging() {
+        debugLauncherWindow?.close()
+        debugLauncherWindow = nil
     }
     #endif
 
@@ -357,9 +395,13 @@ public final class StatusItemController {
                                          editShortcut: editShortcut, quit: quit)
     }
 
+    private func makeLauncherModel() -> CaptureLauncherModel {
+        launcherModel
+    }
+
     private func showLauncher() {
         guard let button = statusItem?.button else { return }
-        let model = launcherModel
+        let model = makeLauncherModel()
         launcher.behavior = .transient
         // No closing animation: the next frame may already be the screenshot being captured.
         launcher.animates = false
@@ -367,8 +409,12 @@ public final class StatusItemController {
         launcherDelegate.didClose = { [weak self, weak button] in
             button?.highlight(false)
             self?.launcher.contentViewController = nil
+            self?.stopLauncherKeys()
         }
-        let view = CaptureLauncherView(model: model) { [weak self] entry in
+        launcherHighlight.cell = nil
+        launcherHighlight.fromKeys = false
+        activeLauncherModel = model
+        let view = CaptureLauncherView(model: model, highlight: launcherHighlight) { [weak self] entry in
             self?.dismissLauncher()
             Task { @MainActor in entry.perform() }
         } showMenu: { [weak self] entry, anchor in
@@ -381,6 +427,50 @@ public final class StatusItemController {
         launcher.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         button.highlight(true)
         launcher.contentViewController?.view.window?.makeKey()
+        startLauncherKeys()
+    }
+
+    /// While the launcher is open its window's keys pass here first: the arrow keys move the highlight as they move
+    /// a menu's, whatever in the launcher has the keyboard focus.
+    private func startLauncherKeys() {
+        stopLauncherKeys()
+        launcherKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, let window = launcher.contentViewController?.view.window, event.window === window else { return event }
+            return handleLauncherKey(code: event.keyCode, modifiers: event.modifierFlags) ? nil : event
+        }
+    }
+
+    private func stopLauncherKeys() {
+        if let launcherKeyMonitor { NSEvent.removeMonitor(launcherKeyMonitor) }
+        launcherKeyMonitor = nil
+        activeLauncherModel = nil
+    }
+
+    /// An arrow key moves the launcher's highlight, passing over dimmed commands; Return or Space presses the
+    /// command the arrow keys reached, which opens its menu when it has one. Returns whether the key was taken:
+    /// with a modifier, or Return and Space before any arrow key, it is the focused control's as before.
+    func handleLauncherKey(code: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard let model = activeLauncherModel, modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
+        let direction: CaptureLauncherModel.Direction
+        switch code {
+        case 126: direction = .up
+        case 125: direction = .down
+        case 123: direction = .left
+        case 124: direction = .right
+        case 36, 76, 49:
+            guard launcherHighlight.fromKeys, launcherHighlight.cell != nil else { return false }
+            launcherHighlight.presses += 1
+            return true
+        default:
+            return false
+        }
+        let rows = model.rows
+        launcherHighlight.cell = CaptureLauncherModel.move(from: launcherHighlight.cell, direction,
+                                                           rows: rows.map { ($0.entries.count, $0.columns) }) { cell in
+            rows[cell.row].entries[cell.column].isEnabled?() != false
+        }
+        launcherHighlight.fromKeys = true
+        return true
     }
 
     /// A row's commands in a native menu under it: nested menus, checkmarks, and validation as in the status menu.

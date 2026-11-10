@@ -25,8 +25,8 @@ public final class KeystrokeDisplay {
     private static let lingering: Duration = .milliseconds(1400)
     private static let fontSize: CGFloat = 26
     private static let height: CGFloat = 52
-    /// Room around the capsule for its shadow.
-    private static let margin: CGFloat = 14
+    /// Room around the capsule for its shadow: twice its blur (8) and its drop (2).
+    private static let margin: CGFloat = 8 * 2 + 2
 
     public init(mode: KeystrokeMode) {
         caption = KeystrokeCaption(mode: mode)

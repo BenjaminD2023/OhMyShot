@@ -161,6 +161,7 @@ struct FoundRow: View {
     @State private var hovering = false
     @State private var copied = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
@@ -181,7 +182,7 @@ struct FoundRow: View {
             }
             Button(action: copy) {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    .contentTransition(.symbolEffect(.replace))
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }
             .help(Text("Copy", bundle: .module))
         }

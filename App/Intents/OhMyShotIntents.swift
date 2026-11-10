@@ -101,7 +101,7 @@ struct CaptureAreaIntent: AppIntent {
     static let title: LocalizedStringResource = "Capture Area"
     static let description = IntentDescription("Choose an area of the screen and capture it. The screenshot is passed to the next action.")
 
-    @Parameter(title: "After Capture", description: "Done to the screenshot besides what Settings says.")
+    @Parameter(title: "After Capture", description: "An extra action for the screenshot, on top of what Settings does after a capture.")
     var after: AfterCaptureOption?
 
     static var parameterSummary: some ParameterSummary {
@@ -118,7 +118,7 @@ struct CaptureWindowIntent: AppIntent {
     static let title: LocalizedStringResource = "Capture Window"
     static let description = IntentDescription("Click a window to capture it with its shadow. The screenshot is passed to the next action.")
 
-    @Parameter(title: "After Capture", description: "Done to the screenshot besides what Settings says.")
+    @Parameter(title: "After Capture", description: "An extra action for the screenshot, on top of what Settings does after a capture.")
     var after: AfterCaptureOption?
 
     static var parameterSummary: some ParameterSummary {
@@ -135,7 +135,7 @@ struct CaptureFullscreenIntent: AppIntent {
     static let title: LocalizedStringResource = "Capture Fullscreen"
     static let description = IntentDescription("Capture the whole display under the pointer. The screenshot is passed to the next action.")
 
-    @Parameter(title: "After Capture", description: "Done to the screenshot besides what Settings says.")
+    @Parameter(title: "After Capture", description: "An extra action for the screenshot, on top of what Settings does after a capture.")
     var after: AfterCaptureOption?
 
     static var parameterSummary: some ParameterSummary {
@@ -152,7 +152,7 @@ struct CapturePreviousAreaIntent: AppIntent {
     static let title: LocalizedStringResource = "Capture Previous Area"
     static let description = IntentDescription("Capture the area chosen last again, as it is on screen now. The screenshot is passed to the next action.")
 
-    @Parameter(title: "After Capture", description: "Done to the screenshot besides what Settings says.")
+    @Parameter(title: "After Capture", description: "An extra action for the screenshot, on top of what Settings does after a capture.")
     var after: AfterCaptureOption?
 
     static var parameterSummary: some ParameterSummary {
@@ -169,7 +169,7 @@ struct SelfTimerIntent: AppIntent {
     static let title: LocalizedStringResource = "Self-Timer"
     static let description = IntentDescription("Choose an area or a window; it is captured once the Self-Timer delay is over. The screenshot is passed to the next action.")
 
-    @Parameter(title: "After Capture", description: "Done to the screenshot besides what Settings says.")
+    @Parameter(title: "After Capture", description: "An extra action for the screenshot, on top of what Settings does after a capture.")
     var after: AfterCaptureOption?
 
     static var parameterSummary: some ParameterSummary {

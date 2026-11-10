@@ -157,8 +157,8 @@ final class CardButton: NSControl {
         switch style {
         case .pill:
             // Opaque, so text in the capture never shows through the label.
-            NSColor(white: pressed ? 0.84 : hovering ? 1 : 0.97, alpha: 1).setFill()
-            ink = NSColor(white: 0.1, alpha: 1)
+            NSColor(white: pressed ? Theme.ActionWhite.pressed : hovering ? Theme.ActionWhite.hover : Theme.ActionWhite.fill, alpha: 1).setFill()
+            ink = NSColor(white: Theme.ActionWhite.ink, alpha: 1)
         case .round:
             NSColor(white: 0, alpha: pressed ? 0.72 : hovering ? 0.62 : 0.5).setFill()
             ink = .white
@@ -167,17 +167,18 @@ final class CardButton: NSControl {
             NSColor(white: dark ? 1 : 0, alpha: (dark ? 0.1 : 0.06) * strength).setFill()
             ink = .labelColor
         case .barIcon:
-            // The bar's own hover and pressed fills, or its selected fill (a press adds the hover fill to it), doubled
-            // under Increase Contrast.
-            let hoverFill = Theme.ChipFill.hover(dark: dark)
-            let fill = isSelected ? Theme.ChipFill.selected(dark: dark) + (pressed ? hoverFill : 0) : hoverFill * (pressed ? 2 : hovering ? 1 : 0)
-            NSColor(white: dark ? 1 : 0, alpha: fill * (increaseContrast ? 2 : 1)).setFill()
+            // The bar's own hover and pressed fills, or its selected fill (a press adds the hover fill to it), at the
+            // chip fills' Increase Contrast steps as every bar's chips are.
+            let hoverFill = Theme.ChipFill.hover(dark: dark, contrast: increaseContrast)
+            let selectedFill = Theme.ChipFill.selected(dark: dark, contrast: increaseContrast)
+            let fill = isSelected ? selectedFill + (pressed ? hoverFill : 0) : hoverFill * (pressed ? 2 : hovering ? 1 : 0)
+            NSColor(white: dark ? 1 : 0, alpha: fill).setFill()
             ink = isSelected ? .controlAccentColor : .labelColor
         }
         NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
         if increaseContrast {
             let edge: NSColor = switch style {
-            case .pill: NSColor(white: 0, alpha: 0.5)
+            case .pill: NSColor(white: 0, alpha: Theme.ActionWhite.contrastEdge)
             case .round: NSColor(white: 1, alpha: 0.7)
             case .chip, .chipIcon: dark ? NSColor(white: 1, alpha: 0.5) : NSColor(white: 0, alpha: 0.35)
             case .barIcon: .clear

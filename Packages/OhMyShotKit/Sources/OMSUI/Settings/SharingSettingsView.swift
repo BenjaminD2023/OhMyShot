@@ -301,11 +301,11 @@ private struct DestinationRow: View {
     private var subtitle: String {
         switch destination.configuration {
         case .s3(let settings):
-            "\(destination.kindName) · \(settings.bucket) · \(settings.endpoint.host() ?? settings.endpoint.absoluteString)"
+            "\(destination.localizedKindName) · \(settings.bucket) · \(settings.endpoint.host() ?? settings.endpoint.absoluteString)"
         case .webDAV(let settings):
-            "\(destination.kindName) · \(settings.baseURL.host() ?? settings.baseURL.absoluteString)"
+            "\(destination.localizedKindName) · \(settings.baseURL.host() ?? settings.baseURL.absoluteString)"
         case .customHTTP(let settings):
-            "\(destination.kindName) · \(URL(string: settings.requestURL)?.host() ?? settings.requestURL)"
+            "\(destination.localizedKindName) · \(URL(string: settings.requestURL)?.host() ?? settings.requestURL)"
         }
     }
 }

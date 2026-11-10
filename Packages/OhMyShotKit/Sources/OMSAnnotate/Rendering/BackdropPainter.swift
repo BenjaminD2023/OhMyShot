@@ -1,6 +1,7 @@
 import Accelerate
 import CoreGraphics
 import Foundation
+import OMSDesign
 
 /// Draws backgrounds: the fill behind everything, and the soft shadow under the capture. The canvas
 /// and exports both draw through here.
@@ -241,7 +242,8 @@ nonisolated extension BackdropGradient {
                 .init(center: CGPoint(x: 0.9, y: 0.92), radius: 0.6, color: hex(0x39B8B5, 0.4)),
             ])
         case .ocean:
-            return GradientRecipe(from: hex(0x5E9CF5), to: hex(0x37CDBE), glows: [
+            // The app icon's ground too, so the two colors are kept in one place.
+            return GradientRecipe(from: hex(Theme.Brand.groundStart), to: hex(Theme.Brand.groundEnd), glows: [
                 .init(center: CGPoint(x: 0.88, y: 0.1), radius: 0.62, color: hex(0x9FD8FF, 0.45)),
                 .init(center: CGPoint(x: 0.12, y: 0.9), radius: 0.62, color: hex(0x3C63D9, 0.42)),
             ])

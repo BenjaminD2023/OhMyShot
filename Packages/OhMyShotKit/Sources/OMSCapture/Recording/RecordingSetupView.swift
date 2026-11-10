@@ -13,6 +13,16 @@ final class RecordingSetupView: AreaSetupView<RecordingBar> {
     /// What is chosen changed: the choices on the bar, or the area once an adjustment ends.
     var onChange: ((RecordingTarget, RecordingChoices) -> Void)?
     var onRecord: ((RecordingTarget, RecordingChoices) -> Void)?
+    /// The camera's menu asked the bubble to move or to fill what is recorded.
+    var onCameraCommand: ((CameraBubbleCommand) -> Void)? {
+        get { bar.onCameraCommand }
+        set { bar.onCameraCommand = newValue }
+    }
+    /// Whether the camera fills what is recorded.
+    var cameraFills: () -> Bool {
+        get { bar.cameraFills }
+        set { bar.cameraFills = newValue }
+    }
 
     private(set) var target: RecordingTarget
     private(set) var choices: RecordingChoices

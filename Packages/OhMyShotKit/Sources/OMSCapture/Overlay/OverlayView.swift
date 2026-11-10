@@ -249,8 +249,12 @@ final class OverlayView: NSView {
         case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         }
-        var accessibilityHelp = snapsToText ? help + " " + String(localized: "The selection's edges snap to text; hold Command to place them freely.", bundle: .module) : help
-        if showsToolbar { accessibilityHelp += " " + String(localized: "Press H to hide or show the toolbar.", bundle: .module) }
+        var accessibilityHelp = snapsToText
+            ? Sentences.joined(help, String(localized: "The selection’s edges snap to text; hold Command to place them freely.", bundle: .module))
+            : help
+        if showsToolbar {
+            accessibilityHelp = Sentences.joined(accessibilityHelp, String(localized: "Press H to hide or show the toolbar.", bundle: .module))
+        }
         setAccessibilityHelp(accessibilityHelp)
         withoutAnimation {
             layoutLoupe()

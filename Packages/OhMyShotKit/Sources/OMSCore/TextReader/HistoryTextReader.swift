@@ -29,13 +29,19 @@ public final class HistoryTextReader {
     @ObservationIgnored private(set) var starting = false
     @ObservationIgnored private var stopped = false
     @ObservationIgnored private var runsAgain: QualityOfService?
-    /// Screenshots the reader could not read this time the app runs; not tried again until it next runs.
-    @ObservationIgnored private var failed: Set<UUID> = []
+    /// How often each screenshot was sent and not read this time the app runs: the reader answered with an error (a
+    /// reading that timed out while Vision compiled its models, say), or stopped while it had the screenshot. Tried
+    /// again at the next reading until `attempts` reach `maxAttempts`, so a picture that stops the reader every time
+    /// isn't sent after every capture; opening History tries them all once more.
+    @ObservationIgnored private var attempts: [UUID: Int] = [:]
     @ObservationIgnored private var soon: Task<Void, Never>?
     @ObservationIgnored private var soonLease: ActiveResources.Lease?
 
     /// How long `readSoon()` waits, so captures taken one after another are read in one run.
     static let delay: Duration = .seconds(3)
+
+    /// How many readings a screenshot is sent to before it waits for History to open.
+    static let maxAttempts = 3
 
     private final class Run {
         let process: Process
@@ -45,17 +51,20 @@ public final class HistoryTextReader {
         let reading: String?
         /// What was sent, by id: the record and its file as it was when sent.
         var sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)]
+        /// The ids in the order they were sent, which the reader reads and answers them in.
+        let order: [String]
         var stopped = false
 
         init(
             process: Process, priority: QualityOfService, lease: ActiveResources.Lease, reading: String?,
-            sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)]
+            sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], order: [String]
         ) {
             self.process = process
             self.priority = priority
             self.lease = lease
             self.reading = reading
             self.sent = sent
+            self.order = order
         }
     }
 
@@ -85,8 +94,9 @@ public final class HistoryTextReader {
     }
 
     /// Reads every screenshot waiting now, at utility priority: the History window is open, and its search
-    /// waits on them.
-    public func readNow() {
+    /// waits on them. `retryingFailed` (History opening) sends the screenshots the reader failed on again.
+    public func readNow(retryingFailed: Bool = false) {
+        if retryingFailed { attempts.removeAll() }
         soon?.cancel()
         soon = nil
         soonLease?.end()
@@ -122,7 +132,7 @@ public final class HistoryTextReader {
         }
         guard let helper, !stopped else { return }
         starting = true
-        let store = store, failed = failed, pack = pack()
+        let store = store, failed = Set(attempts.filter { $0.value >= Self.maxAttempts }.keys), pack = pack()
         Task {
             // Off the main actor: a record and a text file for every capture in the history.
             let waiting = await Self.waiting(in: store, except: failed, pack: pack)
@@ -136,8 +146,9 @@ public final class HistoryTextReader {
     @concurrent
     private static func waiting(
         in store: HistoryStore, except failed: Set<UUID>, pack: TextReaderPack?
-    ) async -> (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], jobs: Data) {
+    ) async -> (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], order: [String], jobs: Data) {
         var sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)] = [:]
+        var order: [String] = []
         var jobs = Data()
         for item in store.needingText(store.items(), reading: pack?.reading) where !failed.contains(item.id) {
             let job = TextReaderWire.Job(
@@ -147,15 +158,16 @@ public final class HistoryTextReader {
             line.append(0x0A)
             jobs.append(line)
             sent[item.id.uuidString] = (item, stamp)
+            order.append(item.id.uuidString)
         }
-        return (sent, jobs)
+        return (sent, order, jobs)
     }
 
     private func start(
-        _ helper: URL, reading waiting: (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], jobs: Data), with pack: TextReaderPack?,
-        priority requested: QualityOfService
+        _ helper: URL, reading waiting: (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], order: [String], jobs: Data),
+        with pack: TextReaderPack?, priority requested: QualityOfService
     ) {
-        let (sent, jobs) = waiting
+        let (sent, order, jobs) = waiting
         guard !sent.isEmpty else { return runAgainIfAsked() }
         // Asked again at a higher priority while the screenshots were being found: this run is that one.
         var priority = requested
@@ -182,7 +194,9 @@ public final class HistoryTextReader {
             Log.history.error("The text reader didn't start: \(error.localizedDescription, privacy: .public)")
             return runAgainIfAsked()
         }
-        let run = Run(process: process, priority: priority, lease: ActiveResources.shared.acquire(.helperProcess), reading: pack?.reading, sent: sent)
+        let run = Run(
+            process: process, priority: priority, lease: ActiveResources.shared.acquire(.helperProcess), reading: pack?.reading, sent: sent, order: order
+        )
         self.run = run
         reading = sent.count
         Log.history.notice("Reading the text in \(sent.count, privacy: .public) capture(s)\(pack.map { " with \($0.reading)" } ?? "", privacy: .public)")
@@ -216,6 +230,7 @@ public final class HistoryTextReader {
         else { return }
         reading = run.sent.count
         if let text = result.text {
+            attempts[item.id] = nil
             // Unless the capture left the history while it was read.
             guard store.stamp(of: item) != nil else { return }
             do {
@@ -225,8 +240,8 @@ public final class HistoryTextReader {
                 Log.history.error("Keeping the text of \(item.fileName, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             }
         } else {
-            failed.insert(item.id)
-            Log.history.error("The text reader couldn't read \(item.fileName, privacy: .public): \(result.error ?? "", privacy: .public)")
+            attempts[item.id, default: 0] += 1
+            Log.history.error("The text reader couldn't read \(item.fileName, privacy: .public) (try \(self.attempts[item.id] ?? 0, privacy: .public)): \(result.error ?? "", privacy: .public)")
         }
     }
 
@@ -235,10 +250,11 @@ public final class HistoryTextReader {
         self.run = nil
         run.lease.end()
         Log.history.notice("The text reader finished with status \(status, privacy: .public)")
-        // What the reader never answered for, it could not read (it stopped partway): not tried again this time.
-        if !run.stopped, !run.sent.isEmpty {
-            failed.formUnion(run.sent.values.map(\.item.id))
-            Log.history.error("The text reader stopped with status \(status, privacy: .public), \(run.sent.count, privacy: .public) capture(s) unread")
+        // It stopped partway: the first capture it hadn't answered for is the one it had, which counts as a try; the
+        // ones after it were never tried, and are sent again at the next reading.
+        if !run.stopped, let had = run.order.first(where: { run.sent[$0] != nil }), let item = run.sent[had]?.item {
+            attempts[item.id, default: 0] += 1
+            Log.history.error("The text reader stopped with status \(status, privacy: .public) on \(item.fileName, privacy: .public), \(run.sent.count, privacy: .public) capture(s) unread")
         }
         reading = 0
         runAgainIfAsked()

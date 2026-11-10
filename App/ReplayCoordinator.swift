@@ -175,7 +175,7 @@ final class ReplayCoordinator {
             sentences.append(String(localized: "The last 15 seconds couldn’t be saved."))
         }
         if saved < outcomes.count { NSSound.beep() }
-        if !sentences.isEmpty { VoiceOver.announce(sentences.joined(separator: " ")) }
+        if !sentences.isEmpty { VoiceOver.announce(Sentences.joined(sentences)) }
     }
 
     private func save(_ buffer: ReplayBuffer, of displayID: CGDirectDisplayID, at savedAt: Date) async -> Saved {

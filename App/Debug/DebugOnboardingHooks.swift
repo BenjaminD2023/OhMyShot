@@ -159,7 +159,8 @@ struct DebugOnboardingHooks {
             finished += 1
             if entry != nil { progress.complete() }
         }))
-        let hintShown = cards.debugFirstCaptureHintWindow.map { $0.isVisible && $0.frame.width == 320 && $0.frame.height > 100 } ?? false
+        let hintCard = cards.debugFirstCaptureHintCardFrame ?? .zero
+        let hintShown = cards.debugFirstCaptureHintWindow?.isVisible == true && hintCard.width == 320 && hintCard.height > 100
         cards.dismissAll()
         let hintClosed = cards.debugFirstCaptureHintWindow == nil
         let released = entry.map { !FileManager.default.fileExists(atPath: history.fileURL(for: $0).path(percentEncoded: false)) } ?? false

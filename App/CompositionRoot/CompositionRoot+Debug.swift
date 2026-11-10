@@ -13,6 +13,26 @@ import UniformTypeIdentifiers
 
 /// The URL scheme's controller, and in debug builds the hooks scripted checks reach through it.
 extension CompositionRoot {
+    #if DEBUG
+    /// The updater against `feed` (`debug/updates-start`), in place of any the build has; a found version always waits
+    /// in the menu. Nothing is looked for until a hook asks.
+    func startDebugUpdates(feed: URL) -> UpdateController? {
+        updates?.setChecksAutomatically(false)
+        updates = nil
+        let controller = UpdateController(feedOverride: feed, alwaysGentle: true)
+        guard controller.start() else { return nil }
+        updates = controller
+        connectUpdates(controller)
+        return controller
+    }
+
+    func stopDebugUpdates() {
+        updates?.setChecksAutomatically(false)
+        updates = nil
+    }
+
+    var debugUpdates: UpdateController? { updates }
+    #endif
 
     func makeAutomationController() -> AutomationController {
         #if DEBUG
@@ -25,6 +45,18 @@ extension CompositionRoot {
         }
         let capture = { (window: NSWindow, name: String) in await hooks.captureHiddenWindow(window, name: name) }
         let modelPackHooks = DebugModelPackHooks(center: { [unowned self] in readerPacks.center }, makeSettings: makeSettings, capture: capture)
+        let updateHooks = DebugUpdateHooks(
+            start: { [unowned self] feed in startDebugUpdates(feed: feed) },
+            current: { [unowned self] in debugUpdates },
+            stop: { [unowned self] in stopDebugUpdates() },
+            showMenu: { [weak self] in
+                self?.statusItem?.showMenuForDebugging { window in await capture(window, "capture-launcher") }
+            },
+            renderMenu: { [weak self] dark, keys in self?.statusItem?.launcherWindowForDebugging(dark: dark, keys: keys) },
+            closeMenuRender: { [weak self] in self?.statusItem?.closeLauncherWindowForDebugging() },
+            makeSettings: makeSettings,
+            capture: capture
+        )
         let aboutHooks = DebugAboutHooks(makeSettings: makeSettings, capture: capture)
         let onboardingHooks = DebugOnboardingHooks(captureWindow: capture)
         #endif
@@ -35,6 +67,7 @@ extension CompositionRoot {
         } debugHandler: { url in
             #if DEBUG
             if modelPackHooks.handle(url) { return true }
+            if updateHooks.handle(url) { return true }
             if aboutHooks.handle(url) { return true }
             if onboardingHooks.handle(url) { return true }
             hooks.handle(url)

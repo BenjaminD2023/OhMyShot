@@ -228,6 +228,8 @@ final class RecordingCoordinator {
             settings.recordingCameraStyle = choices.cameraStyle
             settings.recordingShowsClicks = choices.showsClicks
         }
+        overlay.onRecordingCameraCommand = { [weak self] command in self?.camera.perform(command) }
+        overlay.recordingCameraFills = { [weak self] in self?.camera.isFilling ?? false }
     }
 
     /// A recording All-In-One set up was cancelled: the camera's preview goes.

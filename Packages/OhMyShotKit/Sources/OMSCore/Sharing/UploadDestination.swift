@@ -53,12 +53,21 @@ public struct UploadDestination: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
-    /// What kind of server this is, for a list row's subtitle and icon.
+    /// What kind of server this is, in English for logs and upload records: `S3`, `WebDAV` or `Custom HTTP`.
     public var kindName: String {
         switch configuration {
         case .s3: "S3"
         case .webDAV: "WebDAV"
         case .customHTTP: "Custom HTTP"
+        }
+    }
+
+    /// What kind of server this is in the app's language, for a list row's subtitle.
+    public var localizedKindName: String {
+        switch configuration {
+        case .s3: "S3"
+        case .webDAV: String(localized: "WebDAV", bundle: .module)
+        case .customHTTP: String(localized: "Custom HTTP", bundle: .module)
         }
     }
 }

@@ -460,7 +460,8 @@ final class CompositionRoot {
         controller.show()
         // Its search waits on captures not read yet, Low Power Mode or not; with history off they leave with
         // their cards.
-        if settings.historyRetention != .never { textReader.readNow() }
+        // A capture the reader failed on is sent once more.
+        if settings.historyRetention != .never { textReader.readNow(retryingFailed: true) }
     }
 
     /// Ordinary launches and Finder reopens can resume a guide. URL/file launches call neither: their operation

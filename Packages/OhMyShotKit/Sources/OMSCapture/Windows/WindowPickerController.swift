@@ -19,7 +19,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
     private let apps = NSStackView()
     private let appScroll = NSScrollView()
     private let search = NSSearchField()
-    private let searchButton = NSButton()
+    private let searchButton = HoverTagButton()
     private let picture = NSImageView()
     private let previewSurface = WindowPreviewSurface()
     private let status = NSTextField(wrappingLabelWithString: "")
@@ -44,6 +44,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
     private var hasClosed = false
     private var appButtons: [pid_t: WindowAppButton] = [:]
     private var menuLevel: NSWindow.Level?
+    private var displayOptions: (any NSObjectProtocol)?
     private static let appRowHeight: CGFloat = WindowAppButton.size.height + 4
 
     init(
@@ -77,6 +78,17 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         panel.onRefresh = { [weak self] in self?.reload() }
         root.onConfirm = { [weak self] in self?.choose() }
         root.onMove = { [weak self] step in self?.moveApplication(by: step) }
+        root.onMoveWindow = { [weak self] step in self?.moveWindow(by: step) }
+        // The well and the tiles draw themselves, so Increase Contrast reaches them only when they are drawn again.
+        displayOptions = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.previewSurface.needsDisplay = true
+                for button in self.appButtons.values { button.needsDisplay = true }
+            }
+        }
         buildContent(offersBack: offersBack)
         configureRecordingBar()
         showStatus(String(localized: "Loading windows…", bundle: .module), busy: true)
@@ -103,6 +115,8 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         loading = nil
         previewTask = nil
         picture.image = nil
+        if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        displayOptions = nil
         super.close()
     }
 
@@ -182,6 +196,9 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         windowSwitch.menu?.delegate = self
         searchButton.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: String(localized: "Find an app or window", bundle: .module))
         searchButton.isBordered = false
+        // A symbol alone: its help comes as a hover tag, since the system's tooltip does not show over this panel.
+        searchButton.imagePosition = .imageOnly
+        searchButton.hoverTagGap = 6
         searchButton.contentTintColor = .secondaryLabelColor
         searchButton.target = self
         searchButton.action = #selector(searchClicked(_:))
@@ -354,7 +371,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         windowTitle.toolTip = model.selected.map { "\($0.target.ownerName) — \(title(of: $0.target))\n\($0.target.display(in: layout)?.name ?? "")" }
         updateActions()
         guard let selected = model.selected, !isLoading else {
-            let message = listFailed ? String(localized: "Could not load windows. Try again.", bundle: .module)
+            let message = listFailed ? String(localized: "Couldn’t load windows. Try again.", bundle: .module)
                 : model.query.isEmpty ? String(localized: "Open an app to capture its window.", bundle: .module)
                 : String(localized: "No matching apps or windows.", bundle: .module)
             showStatus(message, busy: isLoading, canRetry: model.query.isEmpty)
@@ -429,6 +446,22 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         guard !isLoading else { return }
         model.moveApplication(by: step)
         selectCurrent()
+        announceSelection()
+    }
+
+    /// Up and Down go through the chosen app's windows, as its switcher does for the pointer.
+    private func moveWindow(by step: Int) {
+        guard !isLoading, (model.application?.windows.count ?? 0) > 1 else { return }
+        model.moveWindow(by: step)
+        selectCurrent()
+        announceSelection()
+    }
+
+    /// The content view keeps the keys, so no control's own change tells VoiceOver what the arrow keys chose.
+    private func announceSelection() {
+        guard let selected = model.selected else { return }
+        let name = title(of: selected.target)
+        VoiceOver.announce(name == selected.target.ownerName ? name : "\(selected.target.ownerName), \(name)", from: window)
     }
 
     @objc private func appChosen(_ sender: NSButton) {
@@ -487,6 +520,7 @@ private final class WindowPickerPanel: NSPanel {
 private final class WindowPickerContent: NSView {
     var onConfirm: (() -> Void)?
     var onMove: ((Int) -> Void)?
+    var onMoveWindow: ((Int) -> Void)?
     override var acceptsFirstResponder: Bool { true }
     override func draw(_ dirtyRect: NSRect) { NSColor.windowBackgroundColor.setFill(); dirtyRect.fill() }
     override func keyDown(with event: NSEvent) {
@@ -494,6 +528,8 @@ private final class WindowPickerContent: NSView {
         case 36, 76: onConfirm?()
         case 123: onMove?(-1)
         case 124: onMove?(1)
+        case 126: onMoveWindow?(-1)
+        case 125: onMoveWindow?(1)
         case 53: window?.cancelOperation(nil)
         default: super.keyDown(with: event)
         }
@@ -505,13 +541,16 @@ private final class WindowPreviewSurface: NSView {
     override func viewDidChangeEffectiveAppearance() { needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
         let dark = effectiveAppearance.isDark, contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
         let width = Theme.Material.edgeWidth(contrast: contrast)
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: width / 2, dy: width / 2), xRadius: Theme.Radius.card, yRadius: Theme.Radius.card)
-        NSColor(white: dark ? 1 : 0, alpha: Theme.ChipFill.hover(dark: dark, contrast: contrast)).setFill()
-        path.fill()
-        NSColor(cgColor: Theme.Material.edge(dark: dark, contrast: contrast))?.setStroke()
-        path.lineWidth = width
-        path.stroke()
+        let path = CGPath.continuousRoundedRect(bounds.insetBy(dx: width / 2, dy: width / 2), radius: Theme.Radius.card)
+        context.addPath(path)
+        context.setFillColor(Theme.ChipFill.hoverColor(dark: dark, contrast: contrast))
+        context.fillPath()
+        context.addPath(path)
+        context.setStrokeColor(Theme.Material.edge(dark: dark, contrast: contrast))
+        context.setLineWidth(width)
+        context.strokePath()
     }
 }
 
@@ -519,6 +558,8 @@ private final class WindowPreviewSurface: NSView {
 private final class WindowAppButton: NSButton {
     static let size = NSSize(width: 78, height: 72)
     private static let iconSide: CGFloat = 36
+    private static let cornerRadius: CGFloat = 10
+    private static let labelInset: CGFloat = 6
     var selected = false { didSet { state = selected ? .on : .off; needsDisplay = true } }
     private let icon: NSImage
     private var hovering = false { didSet { if hovering != oldValue { needsDisplay = true } } }
@@ -529,7 +570,6 @@ private final class WindowAppButton: NSButton {
         title = name
         isBordered = false
         setButtonType(.onOff)
-        toolTip = name
         setAccessibilityRole(.radioButton)
         setAccessibilityLabel(name)
         translatesAutoresizingMaskIntoConstraints = false
@@ -544,17 +584,53 @@ private final class WindowAppButton: NSButton {
         for area in trackingAreas where area.owner === self { removeTrackingArea(area) }
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        // A name cut short is read whole in a hover tag: the system's tooltip does not show over this panel.
+        if label.size().width > bounds.width - Self.labelInset * 2 { HoverTag.shared.schedule(title, for: self, gap: 6) }
+    }
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        HoverTag.shared.withdraw(from: self)
+    }
+    override func mouseDown(with event: NSEvent) {
+        HoverTag.shared.withdraw(from: self)
+        super.mouseDown(with: event)
+    }
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        HoverTag.shared.withdraw(from: self)
+    }
     override func viewDidChangeEffectiveAppearance() { needsDisplay = true }
+
+    // Reached with Tab when Full Keyboard Access is on; the ring follows the tile's own shape.
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.addPath(.continuousRoundedRect(bounds, radius: Self.cornerRadius))
+        context.fillPath()
+    }
+
+    private var label: NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+        let color: NSColor = selected ? .labelColor : .secondaryLabelColor
+        return NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: selected ? .semibold : .regular),
+            .foregroundColor: color.withAlphaComponent(color.alphaComponent * (isEnabled ? 1 : 0.5)),
+            .paragraphStyle: paragraph,
+        ])
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let dark = effectiveAppearance.isDark, contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         let fill = selected || isHighlighted ? Theme.ChipFill.selected(dark: dark, contrast: contrast)
             : hovering && isEnabled ? Theme.ChipFill.hover(dark: dark, contrast: contrast) : 0
-        if fill > 0 {
-            NSColor(white: dark ? 1 : 0, alpha: fill).setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10).fill()
+        if fill > 0, let context = NSGraphicsContext.current?.cgContext {
+            context.addPath(.continuousRoundedRect(bounds, radius: Self.cornerRadius))
+            context.setFillColor(CGColor(gray: dark ? 1 : 0, alpha: fill))
+            context.fillPath()
         }
         let fraction: CGFloat = isEnabled ? 1 : 0.5
         // Top-down positions, whichever way this view is flipped.
@@ -564,15 +640,6 @@ private final class WindowAppButton: NSButton {
         let side = Self.iconSide
         icon.draw(in: NSRect(x: (bounds.width - side) / 2, y: rect(top: 8, height: side, inset: 0).minY, width: side, height: side),
                    from: .zero, operation: .sourceOver, fraction: fraction, respectFlipped: true, hints: nil)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.lineBreakMode = .byTruncatingTail
-        let color: NSColor = selected ? .labelColor : .secondaryLabelColor
-        let label = NSAttributedString(string: title, attributes: [
-            .font: NSFont.systemFont(ofSize: 11, weight: selected ? .semibold : .regular),
-            .foregroundColor: color.withAlphaComponent(color.alphaComponent * fraction),
-            .paragraphStyle: paragraph,
-        ])
-        label.draw(with: rect(top: 8 + side + 6, height: 15, inset: 6), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        label.draw(with: rect(top: 8 + side + 6, height: 15, inset: Self.labelInset), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 }

@@ -5,6 +5,7 @@ import CoreImage.CIFilterBuiltins
 import Foundation
 import ImageIO
 import OMSCore
+import OMSDesign
 import SwiftUI
 
 /// Films one frame of a Studio recording: the background, the recording framed on it with its shadow and
@@ -661,8 +662,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     /// semibold; drawn once per text with `captionRoom` points around it for the shadow.
     private func captionImage(_ text: String) -> CIImage {
         let unit = pixelsPerPoint * layout.scale
-        let base = NSFont.systemFont(ofSize: 26 * unit, weight: .semibold)
-        let font = NSFont(descriptor: base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor, size: 26 * unit) ?? base
+        // The live display's reading face: rounded, with fixed-width figures.
+        let font = Theme.Typeface.reading(size: 26 * unit, weight: .semibold)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
             .font: font, .foregroundColor: CGColor(gray: 0, alpha: 0.85),
         ]))

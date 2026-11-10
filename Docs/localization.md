@@ -56,7 +56,9 @@ around. Open a pull request with the changed `.xcstrings` files.
   macOS's own.
 - **Keep names consistent.** Translate each feature (Quick Access, Pin, Capture Text, Scrolling Capture, Studio…)
   the same way everywhere. `DESIGN.md` describes each one. In Simplified Chinese, the Capture pane is 截取 and the
-  Screenshots pane 截图, and a number of captures, which counts recordings as well as screenshots, is "%lld 项".
+  Screenshots pane 截图. A capture, recordings included, is 截图, as in 截图历史 (Capture History): "%lld 个截图",
+  "正在载入截图…". Where it matters that both kinds are meant, it is "截图或录制", as in "还没有截图或录制". The verb
+  stays 截取 ("OhMyShot 截取的一切").
 - **VoiceOver text** (labels and announcements) is read aloud, so write it as natural speech.
 - Keep "…" where the English has it, and use your language's own punctuation and quotation marks.
 - **Check that it fits.** Most of the app grows with its text, but some places are only so wide. If a Settings

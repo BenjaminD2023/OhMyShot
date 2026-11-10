@@ -80,6 +80,10 @@ public final class OverlayController {
     /// What is chosen to record changed: a choice on the recording bar (to be remembered), or the area once
     /// it is adjusted; also told once when the bar appears.
     public var onRecordingSetupChange: ((RecordingTarget, DisplayInfo, RecordingChoices) -> Void)?
+    /// The recording bar's camera menu asked the camera's bubble to move to a corner or to fill what is recorded.
+    public var onRecordingCameraCommand: ((CameraBubbleCommand) -> Void)?
+    /// Whether the camera fills what is recorded, for the camera menu's checkmark.
+    public var recordingCameraFills: () -> Bool = { false }
 
     public enum Mode: Sendable {
         case area
@@ -770,6 +774,8 @@ public final class OverlayController {
         setup.onRecord = { [weak self] target, choices in
             self?.end(.record(target, display: display, choices: choices))
         }
+        setup.onCameraCommand = { [weak self] command in self?.onRecordingCameraCommand?(command) }
+        setup.cameraFills = { [weak self] in self?.recordingCameraFills() ?? false }
         host(setup, in: entry)
     }
 

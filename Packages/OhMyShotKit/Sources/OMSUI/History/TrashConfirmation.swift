@@ -26,7 +26,7 @@ extension View {
             }
         } message: { _ in
             // The Trash keeps the files, but what made them captures (the record, the marks, the text) goes now.
-            Text("They leave Capture History with their marks and text, and putting them back from the Trash doesn't bring them back here. Copies you saved elsewhere are not affected.", bundle: .module)
+            Text("They leave Capture History with their marks and text, and putting them back from the Trash doesn’t bring them back here. Copies you saved elsewhere are not affected.", bundle: .module)
         }
     }
 

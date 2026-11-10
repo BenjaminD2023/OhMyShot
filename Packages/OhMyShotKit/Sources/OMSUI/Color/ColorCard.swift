@@ -491,7 +491,7 @@ final class ColorCard: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         background.frame = card
-        background.shadowPath = CGPath(roundedRect: background.bounds, cornerWidth: Theme.Radius.card, cornerHeight: Theme.Radius.card, transform: nil)
+        background.shadowPath = .continuousRoundedRect(background.bounds, radius: Theme.Radius.card)
         let left = card.minX + Self.padding
         let right = card.maxX - Self.padding
         var y = card.minY + Self.padding

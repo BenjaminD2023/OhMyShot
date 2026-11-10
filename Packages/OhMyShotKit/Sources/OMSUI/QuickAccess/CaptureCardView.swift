@@ -98,8 +98,10 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     private let hoverShade = CALayer()
     /// The ring of a card that has the keyboard, like a pin's.
     private let selectionRing = CALayer()
-    /// A subtle progress ring around the top-left Close button while the card counts down to close by itself.
+    /// A subtle progress ring around the top-left Close button while the card counts down to close by itself, over a
+    /// soft dark line so it reads on a light picture as the selection's white edge does.
     private let countdownRing = CAShapeLayer()
+    private let countdownOutline = CAShapeLayer()
     let actions = NSStackView()
     let copyButton = CardButton(style: .pill, title: String(localized: "Copy", bundle: .module), symbolName: "doc.on.doc")
     let saveButton = CardButton(style: .pill, title: String(localized: "Save", bundle: .module), symbolName: "square.and.arrow.down")
@@ -125,6 +127,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     /// A recording's length and a play mark, in a small capsule in the corner.
     private let durationBadge = DurationBadge()
     private let uploadBadge = CardUploadBadge()
+    private var displayOptions: (any NSObjectProtocol)?
     private var finishedReset: Task<Void, Never>?
     private var mouseDownPoint: CGPoint?
     private var swipeDistance: CGFloat = 0
@@ -158,7 +161,6 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         picture.cornerRadius = Theme.Radius.card
         picture.cornerCurve = .continuous
         picture.masksToBounds = true
-        picture.borderWidth = 0.5
         hoverShade.backgroundColor = CGColor(gray: 0, alpha: 0.22)
         hoverShade.cornerRadius = Theme.Radius.card
         hoverShade.cornerCurve = .continuous
@@ -170,13 +172,19 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         layer.addSublayer(picture)
         layer.addSublayer(hoverShade)
         layer.addSublayer(selectionRing)
+        countdownOutline.fillColor = nil
+        countdownOutline.strokeColor = CGColor(gray: 0, alpha: Theme.Overlay.outlineOpacity)
+        countdownOutline.lineWidth = 2.5
+        countdownOutline.lineCap = .round
         countdownRing.fillColor = nil
         countdownRing.strokeColor = CGColor(gray: 1, alpha: 0.85)
         countdownRing.lineWidth = 1.5
         countdownRing.lineCap = .round
-        countdownRing.isHidden = true
-        countdownRing.zPosition = 2
-        layer.addSublayer(countdownRing)
+        for line in [countdownOutline, countdownRing] {
+            line.isHidden = true
+            line.zPosition = 2
+            layer.addSublayer(line)
+        }
         for button in [copyButton, saveButton, undoButton] { button.pillWidth = size == .small ? 96 : 112 }
 
         copyButton.target = self
@@ -295,7 +303,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         picture.frame = bounds
         hoverShade.frame = bounds
         selectionRing.frame = bounds
-        layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: Theme.Radius.card, cornerHeight: Theme.Radius.card, transform: nil)
+        layer?.shadowPath = .continuousRoundedRect(bounds, radius: Theme.Radius.card)
         CATransaction.commit()
         let compactActions = bounds.height > 0 && bounds.height < 124
         let desiredPillHeight: CGFloat = compactActions ? 26 : 30
@@ -310,9 +318,15 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         let actionsSize = actions.fittingSize
         actions.frame = CGRect(x: (bounds.width - actionsSize.width) / 2, y: (bounds.height - actionsSize.height) / 2, width: actionsSize.width, height: actionsSize.height)
         closeButton.frame = CGRect(x: 8, y: 8, width: 24, height: 24)
+        // The ring starts at twelve o'clock and runs clockwise, as the upload's and the Self-Timer's do (the view is
+        // flipped, so a growing angle turns clockwise); as the time runs out it shrinks back to twelve.
         let ringBounds = CGRect(x: 7, y: 7, width: 26, height: 26)
-        countdownRing.frame = ringBounds
-        countdownRing.path = CGPath(ellipseIn: CGRect(x: 1, y: 1, width: 24, height: 24), transform: nil)
+        let ringPath = CGMutablePath()
+        ringPath.addArc(center: CGPoint(x: 13, y: 13), radius: 12, startAngle: -.pi / 2, endAngle: .pi * 1.5, clockwise: false)
+        for line in [countdownOutline, countdownRing] {
+            line.frame = ringBounds
+            line.path = ringPath
+        }
         moreButton.frame = CGRect(x: bounds.width - 32, y: 8, width: 24, height: 24)
         let placed = extraPlacements()
         let recording = item.kind == .recording
@@ -377,9 +391,34 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
         applyAppearance()
     }
 
+    /// Increase Contrast switched while the card is up: its picture's edge and its badges take it at once.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        displayOptions = nil
+        guard window != nil else { return }
+        displayOptions = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.applyAppearance()
+                for badge in [self.noticeBadge, self.durationBadge, self.uploadBadge] as [NSView] {
+                    badge.viewDidChangeEffectiveAppearance()
+                }
+            }
+        }
+    }
+
+    isolated deinit {
+        if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+    }
+
     private func applyAppearance() {
         let dark = effectiveAppearance.isDark
-        picture.borderColor = dark ? CGColor(gray: 1, alpha: 0.16) : CGColor(gray: 0, alpha: 0.10)
+        let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        picture.borderColor = Theme.PictureBorder.color(dark: dark, contrast: contrast)
+        picture.borderWidth = Theme.PictureBorder.width(contrast: contrast)
         picture.backgroundColor = Theme.cgColor(.controlBackgroundColor, for: effectiveAppearance)
         selectionRing.borderColor = Theme.cgColor(.keyboardFocusIndicatorColor, for: effectiveAppearance)
     }
@@ -677,28 +716,44 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     }
 
     /// Shows or hides the zero-wakeup Core Animation countdown ring around the top-left corner.
+    /// Under Reduce Motion the ring steps down once a second, as the Self-Timer's does, rather than gliding.
     func setCountdown(_ state: (remaining: TimeInterval, interval: TimeInterval)?) {
         countdownState = state
-        countdownRing.removeAllAnimations()
+        let lines = [countdownOutline, countdownRing]
+        lines.forEach { $0.removeAllAnimations() }
         guard let state, state.remaining > 0, !isTrashing else {
-            countdownRing.isHidden = true
+            lines.forEach { $0.isHidden = true }
             return
         }
-        let fraction = CGFloat(min(max(state.remaining / max(state.interval, 0.1), 0), 1))
+        let interval = max(state.interval, 0.1)
+        let fraction = CGFloat(min(max(state.remaining / interval, 0), 1))
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        countdownRing.isHidden = false
-        countdownRing.strokeStart = 0
-        countdownRing.strokeEnd = fraction
+        for line in lines {
+            line.isHidden = false
+            line.strokeStart = 0
+            line.strokeEnd = 0
+        }
         CATransaction.commit()
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        let animation = CABasicAnimation(keyPath: "strokeEnd")
-        animation.fromValue = fraction
-        animation.toValue = 0
+        let animation: CAAnimation
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            // Each whole second's length held until the next: discrete steps, still without waking the app.
+            let seconds = Int(state.remaining.rounded(.up))
+            let stepping = CAKeyframeAnimation(keyPath: "strokeEnd")
+            let times = (0...seconds).map { min(Double($0), state.remaining) }
+            stepping.values = times.map { CGFloat(max(0, (state.remaining - $0) / interval)) }
+            stepping.keyTimes = times.map { NSNumber(value: $0 / state.remaining) }
+            stepping.calculationMode = .discrete
+            animation = stepping
+        } else {
+            let gliding = CABasicAnimation(keyPath: "strokeEnd")
+            gliding.fromValue = fraction
+            gliding.toValue = 0
+            gliding.timingFunction = CAMediaTimingFunction(name: .linear)
+            animation = gliding
+        }
         animation.duration = state.remaining
-        animation.timingFunction = CAMediaTimingFunction(name: .linear)
-        countdownRing.strokeEnd = 0
-        countdownRing.add(animation, forKey: "countdown")
+        lines.forEach { $0.add(animation, forKey: "countdown") }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

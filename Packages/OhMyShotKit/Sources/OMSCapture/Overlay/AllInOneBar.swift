@@ -149,6 +149,8 @@ final class AllInOneBar: NSView {
             self?.applyAppearance()
         }
         stack.addArrangedSubview(hideButton)
+        // Built with room, so no chip's size breaks before the bar is first placed (`rearrange`).
+        stack.makeRoom()
         showModes(false)
 
         if let glass = container as? NSGlassEffectView {
@@ -187,10 +189,10 @@ final class AllInOneBar: NSView {
             glass.cornerRadius = radius
             backing.frame = glass.bounds
             backing.layer?.cornerRadius = radius
-            stack.frame = backing.bounds
+            stack.place(in: backing.bounds)
         } else {
             container.layer?.cornerRadius = radius
-            stack.frame = container.bounds
+            stack.place(in: container.bounds)
         }
         layer?.cornerRadius = radius
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
@@ -198,8 +200,11 @@ final class AllInOneBar: NSView {
 
     /// Shows All-In-One's modes beside area, window, and screen; Capture Area's bar has only those three.
     func showModes(_ shows: Bool) {
-        for choice in [Choice.text, .scroll, .record] { buttons[choice]?.isHidden = !shows }
-        modesDivider.isHidden = !shows
+        stack.rearrange(in: stack.frame) {
+            for choice in [Choice.text, .scroll, .record] { buttons[choice]?.isHidden = !shows }
+            modesDivider.isHidden = !shows
+        }
+        needsLayout = true
     }
 
     /// Window means an app preview for independent captures, direct pointing for visible-region tools.

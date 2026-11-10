@@ -1181,6 +1181,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
             session.endLiveChange(actionName: tool.addName)
             session.select([id])
+            // The shape is made: Select takes over, with the shape selected to adjust.
+            session.putToolDown()
         case .drawing:
             session.endLiveChange(actionName: String(localized: "Draw", bundle: .module))
         case .highlighting(let id, _, _):
@@ -1787,37 +1789,34 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         view.selectAll(nil)
     }
 
-    /// Matches the editing field to the mark: same face, size, line height, and color, at the zoom.
+    /// Matches the editing field to the mark: same face, size, line height, and color. The field sets its
+    /// text in the capture's pixels, as the mark's own layout does, and is scaled to the zoom as a whole
+    /// (positionTextView): the system font spaces its letters by their size, so text set at the zoomed
+    /// size would be wider or narrower than the mark, and break its lines elsewhere.
     private func styleTextView(for item: Annotation) {
         guard let view = editing?.view, case .text(let block) = item.shape else { return }
         let scale = session.document.scale
         let layout = Self.fieldLayout(of: block, scale: scale)
-        let font = TextLayout.font(pointSize: block.fontSize * scale * zoom)
+        let font = TextLayout.font(pointSize: CTFontGetSize(layout.font))
         let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = layout.lineHeight * zoom
-        paragraph.maximumLineHeight = layout.lineHeight * zoom
+        paragraph.minimumLineHeight = layout.lineHeight
+        paragraph.maximumLineHeight = layout.lineHeight
         let ink: NSColor
         let fill = NSColor(cgColor: item.style.color.cgColor) ?? .systemRed
+        view.outlineColor = nil
+        view.labelFill = nil
         switch block.look {
         case .plain:
             ink = fill
-            view.outlineColor = nil
-            view.drawsBackground = false
-            view.layer?.backgroundColor = nil
         case .outlined:
             ink = fill
             view.outlineColor = item.style.color.prefersDarkOutline ? CGColor(gray: 0, alpha: 1) : CGColor(gray: 1, alpha: 1)
-            view.outlineFontSize = block.fontSize * scale * zoom
-            view.outlineWrapWidth = block.width.map { $0 * zoom }
-            view.drawsBackground = false
-            view.layer?.backgroundColor = nil
+            view.outlineFontSize = block.fontSize * scale
+            view.outlineWrapWidth = block.width
         case .label:
             ink = item.style.color.prefersDarkInk ? NSColor(white: 0, alpha: 0.88) : .white
-            view.outlineColor = nil
-            view.drawsBackground = false
-            view.wantsLayer = true
-            view.layer?.backgroundColor = fill.cgColor
-            view.layer?.cornerRadius = layout.cornerRadius * zoom
+            view.labelFill = fill.cgColor
+            view.labelCornerRadius = layout.cornerRadius
         }
         view.needsDisplay = true
         // The baseline sits where the renderer puts it: TextKit centers the font's box in a line taller
@@ -1826,15 +1825,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         view.typingAttributes = attributes
         view.textStorage?.setAttributes(attributes, range: NSRange(location: 0, length: view.textStorage?.length ?? 0))
         view.insertionPointColor = ink
-        // Selected text keeps its ink. On a label the selection is a wash opposite to the ink (dark under
-        // white ink, light under dark ink), so the label's color still shows and the text gains contrast
-        // rather than losing it; elsewhere the system selection color at the strength text selection
-        // uses here.
+        // Selected text keeps its ink; elsewhere than on a label the selection is the system selection
+        // color at the strength text selection uses here.
         let dark = effectiveAppearance.isDark
-        let labelWash = item.style.color.prefersDarkInk ? NSColor(white: 1, alpha: 0.35) : NSColor(white: 0, alpha: 0.22)
-        let wash = block.look == .label ? labelWash : NSColor.selectedTextBackgroundColor.withAlphaComponent(dark ? 0.45 : 0.35)
+        let wash = block.look == .label ? Self.labelSelectionWash(on: item.style.color) : NSColor.selectedTextBackgroundColor.withAlphaComponent(dark ? 0.45 : 0.35)
         view.selectedTextAttributes = [.backgroundColor: wash, .foregroundColor: ink]
-        view.textContainerInset = CGSize(width: layout.inset.width * zoom, height: layout.inset.height * zoom)
+        view.textContainerInset = layout.inset
         view.textContainer?.lineFragmentPadding = 0
         // The field's frame follows the mark's layout (positionTextView), so it never sizes itself.
         view.isHorizontallyResizable = false
@@ -1843,19 +1839,41 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         view.maxSize = CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
         view.textContainer?.widthTracksTextView = false
         view.textContainer?.heightTracksTextView = false
-        let wrap = block.width.map { ($0 - layout.inset.width * 2) * zoom } ?? .greatestFiniteMagnitude
+        // Wrapped where the mark's layout wraps.
+        let wrap = block.width == nil ? CGFloat.greatestFiniteMagnitude : layout.textSize.width
         view.textContainer?.containerSize = CGSize(width: wrap, height: .greatestFiniteMagnitude)
         positionTextView()
     }
 
+    /// The wash behind selected text on a label: opposite to the ink (light under dark ink, dark under
+    /// white ink), so the label's color still shows and the text gains contrast rather than losing it.
+    /// On a fill so near the wash's own shade that it would not show (white, black), it goes the ink's
+    /// way instead.
+    private static func labelSelectionWash(on fill: RGBA) -> NSColor {
+        if fill.prefersDarkInk {
+            return fill.luminance > 0.7 ? NSColor(white: 0, alpha: 0.16) : NSColor(white: 1, alpha: 0.35)
+        }
+        return fill.luminance < 0.1 ? NSColor(white: 1, alpha: 0.3) : NSColor(white: 0, alpha: 0.22)
+    }
+
+    /// Frames the field over the mark: laid out in the capture's pixels (its bounds) and scaled to the
+    /// zoom (its frame).
     private func positionTextView() {
         guard let editing, let item = session.document.item(editing.id), case .text(let block) = item.shape else { return }
         let scale = session.document.scale
         let layout = Self.fieldLayout(of: block, scale: scale)
-        let origin = viewPoint(block.origin)
+        let view = editing.view
         // A little room after the last character for the caret, outside a label (whose padding has it).
-        let caret = block.width == nil && block.look != .label ? max(block.fontSize * scale * zoom * 0.6, 4) : 0
-        editing.view.frame = CGRect(x: origin.x, y: origin.y, width: layout.size.width * zoom + caret, height: layout.size.height * zoom)
+        let caret = block.width == nil && block.look != .label ? max(block.fontSize * scale * 0.6, 4 / zoom) : 0
+        var size = CGSize(width: layout.size.width + caret, height: layout.size.height)
+        // Should the field ever break a line where the mark's layout does not, its last line still shows.
+        if let container = view.textContainer, let manager = view.layoutManager {
+            manager.ensureLayout(for: container)
+            size.height = max(size.height, ceil(manager.usedRect(for: container).maxY) + layout.inset.height * 2)
+        }
+        let origin = viewPoint(block.origin)
+        view.frame = CGRect(x: origin.x, y: origin.y, width: size.width * zoom, height: size.height * zoom)
+        view.bounds = CGRect(origin: .zero, size: size)
         onViewportChange?()
     }
 
@@ -1892,7 +1910,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         endEditing()
     }
 
-    /// Finishes editing text: an empty text mark goes away, and a new one leaves no undo step.
+    /// Finishes editing text: an empty text mark goes away, and a new one leaves no undo step. Text that
+    /// was written puts the Text tool down, so the click that ended it does not start another.
     func endEditing() {
         guard let editing else { return }
         self.editing = nil
@@ -1916,6 +1935,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
         } else {
             session.endLiveChange(actionName: editing.isNew ? String(localized: "Add Text", bundle: .module) : String(localized: "Edit Text", bundle: .module))
+            if session.tool == .text { session.putToolDown() }
         }
         updateSelectionOutlines()
         if window?.firstResponder == nil || window?.firstResponder === window {
@@ -1942,8 +1962,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let dark = effectiveAppearance.isDark
-            pictureLayer.borderWidth = contrast ? 1 : 0.5
-            pictureLayer.borderColor = dark ? CGColor(gray: 1, alpha: contrast ? 0.5 : 0.16) : CGColor(gray: 0, alpha: contrast ? 0.35 : 0.10)
+            pictureLayer.borderWidth = Theme.PictureBorder.width(contrast: contrast)
+            pictureLayer.borderColor = Theme.PictureBorder.color(dark: dark, contrast: contrast)
             selectionLayer.accent = NSColor.controlAccentColor.cgColor
             suggestions.applyAppearance(increasedContrast: contrast)
             backdropLayer.checker = Theme.Checkerboard.colors(dark: dark, increasedContrast: contrast)
@@ -1958,9 +1978,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func updateAccessibility() {
         let count = session.document.items.count
         let suggestions = session.tool == .redact ? session.openRedactionSuggestions.count : 0
-        setAccessibilityLabel(suggestions > 0
-            ? String(localized: "Capture, \(count) marks, \(suggestions) suggestions to redact", bundle: .module)
-            : String(localized: "Capture, \(count) marks", bundle: .module))
+        // One count to a string, so each takes its language's plural: the marks in the label, the suggestions as its
+        // value, which VoiceOver reads after it.
+        setAccessibilityLabel(String(localized: "Capture, \(count) marks", bundle: .module))
+        setAccessibilityValue(suggestions > 0 ? String(localized: "\(suggestions) suggestions to redact", bundle: .module) : nil)
     }
 }
 

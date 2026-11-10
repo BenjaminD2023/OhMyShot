@@ -85,6 +85,28 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
     }
 
     func showReleaseNotes(preview: Bool = false) {
+        releaseWindow = makeReleaseNotesWindow(preview: preview)
+        releaseWindow?.present()
+    }
+
+    #if DEBUG
+    /// The preview's window behind the desktop picture in the appearance asked for, for a scripted capture.
+    func renderReleaseNotes(dark: Bool) -> NSWindow? {
+        releaseWindow?.close()
+        let controller = makeReleaseNotesWindow(preview: true)
+        releaseWindow = controller
+        controller.window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        controller.showBehindWallpaper()
+        return controller.window
+    }
+
+    func closeReleaseNotes() {
+        releaseWindow?.close()
+        releaseWindow = nil
+    }
+    #endif
+
+    private func makeReleaseNotesWindow(preview: Bool) -> ReleaseNotesWindowController {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         let changelog = Bundle.main.url(forResource: "CHANGELOG", withExtension: "md")
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
@@ -93,8 +115,7 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
             .flatMap { try? String(contentsOf: $0, encoding: .utf8) }
         let notes = ReleaseNotes.localizedSection(localized, fallback: changelog, version: preview ? "Unreleased" : version)
             ?? String(localized: "This update includes improvements and fixes.")
-        releaseWindow = ReleaseNotesWindowController(version: preview ? "0.2.0" : version, markdown: notes, banner: NSImage(named: "ReleaseBanner"))
-        releaseWindow?.present()
+        return ReleaseNotesWindowController(version: preview ? "0.2.0" : version, markdown: notes, banner: NSImage(named: "ReleaseBanner"))
     }
 
     func showReleaseNotesAfterUpdate() {
@@ -110,7 +131,8 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
         if !preview, let last = UserDefaults.standard.object(forKey: key) as? Date, Date.now.timeIntervalSince(last) < 86400 { return }
         if !preview { UserDefaults.standard.set(Date.now, forKey: key) }
         let alert = NSAlert()
-        alert.messageText = String(localized: "Update to Version \(version)…")
+        // A statement, not the menu command's title: the alert asks nothing more after its buttons.
+        alert.messageText = String(localized: "OhMyShot \(version) Is Available")
         alert.informativeText = String(localized: "A newer OhMyShot is ready. Update now for the latest improvements and fixes. Your captures will stay safe.")
         alert.addButton(withTitle: String(localized: "Update Now"))
         alert.addButton(withTitle: String(localized: "Remind Me Tomorrow"))

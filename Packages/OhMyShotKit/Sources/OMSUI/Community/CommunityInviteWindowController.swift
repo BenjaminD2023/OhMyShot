@@ -116,6 +116,7 @@ struct CommunityInviteView: View {
                     Text("Join Discord", bundle: .module)
                         .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.glassProminent)
                 .keyboardShortcut(.defaultAction)
                 .help(Text(verbatim: CommunityInvite.discord.absoluteString))
             }
