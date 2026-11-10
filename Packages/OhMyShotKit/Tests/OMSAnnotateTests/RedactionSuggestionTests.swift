@@ -197,7 +197,8 @@ extension RedactionSuggestionTests {
         let buttons = (canvas.accessibilityChildren() ?? []).compactMap { $0 as? SuggestionElement }
         #expect(buttons.map { $0.accessibilityLabel() } == ["Email address, suggested redaction", "Phone number, suggested redaction"])
         #expect(buttons.allSatisfy { $0.accessibilityRole() == .button })
-        #expect(canvas.accessibilityLabel()?.contains("2 suggestions to redact") == true)
+        // The count is the canvas's value, read after its label, so each string holds one count and takes its plural.
+        #expect(canvas.accessibilityValue() as? String == "2 suggestions to redact")
         // Each sits where its outline is, on the screen.
         let frame = try #require(buttons.first).accessibilityFrame()
         #expect(frame.width > 0 && frame.height > 0)
