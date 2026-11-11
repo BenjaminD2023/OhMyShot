@@ -74,7 +74,7 @@ struct AnnotationCombineTests {
         var document = session.document
         document.items[0] = document.items[0].translated(by: CGSize(width: 0, height: 60))
         session.updateLive(document)
-        session.growCanvasToHoldImages()
+        session.fitCanvas(holding: [document.items[0].id])
         session.endLiveChange(actionName: "Move")
         session.undoManager.endUndoGrouping()
         #expect(session.document.canvas == CGRect(x: 0, y: 0, width: 100, height: 110))

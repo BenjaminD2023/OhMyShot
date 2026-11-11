@@ -59,6 +59,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         var hidesSuggestions: Bool {
             if case .creating(_, .redact, _, true) = self { true } else { false }
         }
+
+        /// Whether the drag draws or moves marks, which may go past the canvas's edge for it to grow to
+        /// once the drag ends.
+        var editsMarks: Bool {
+            switch self {
+            case .creating, .drawing, .highlighting, .moving, .reshaping: true
+            case .cropping, .panning, .marquee: false
+            }
+        }
     }
 
     private final class TextEditing {
@@ -103,7 +112,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// The capture point at the middle of the free area while zoomed in.
     private var focus: CGPoint?
     private var canvasFrame: CGRect = .zero
-    private var drag: Drag?
+    private var drag: Drag? {
+        didSet { updateCanvasClipping() }
+    }
     private var editing: TextEditing?
     /// The crop being chosen while the crop tool is in hand, in capture pixels. The crop frame shows it,
     /// and shows only while there is one.
@@ -441,6 +452,17 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         return bounds.insetBy(dx: -margin, dy: -margin).offsetBy(dx: -canvasFrame.minX, dy: -canvasFrame.minY)
     }
 
+    /// Marks are cut at the canvas's edge, as they are kept; while one is drawn or moved past it, for the
+    /// canvas to grow to once the drag ends, the part past the edge shows too.
+    private func updateCanvasClipping() {
+        let clips = !(drag?.editsMarks == true && session.growsCanvas)
+        guard canvasLayer.masksToBounds != clips else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        canvasLayer.masksToBounds = clips
+        CATransaction.commit()
+    }
+
     /// Places a mark's layer over the part of the mark on screen. Images lie in the kept part of the
     /// capture, under the spotlight; other marks over everything.
     private func position(_ layer: MarkLayer, frames: Frames) {
@@ -522,6 +544,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// not combined in, and only the drawing tools (and Select) answer their keys.
     public func configureInPlace() {
         isInPlace = true
+        // The canvas is the part of the screen chosen; marks past it are cut, as on any locked canvas.
+        session.keepsCanvasFixed = true
         contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         unregisterDraggedTypes()
         // The frozen screen under the canvas is the capture already: drawing it again would only hold a
@@ -1058,7 +1082,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             document.items.append(item)
             // Not selected: counters go down one click after another, and the capsule stays with the
             // tool, so a change of numbering applies to the next counters rather than the last one.
-            session.commit(document, selecting: [], actionName: String(localized: "Add Counter", bundle: .module))
+            session.commit(session.fitted(document, holding: [item.id]), selecting: [], actionName: String(localized: "Add Counter", bundle: .module))
         default:
             // Select, the crop, and the background draw nothing; the shapes were dragged out above.
             break
@@ -1179,14 +1203,17 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 if tool == .redact { session.acceptRedactionSuggestion(at: start) }
                 return
             }
+            session.fitCanvas(holding: [id])
             session.endLiveChange(actionName: tool.addName)
             session.select([id])
             // The shape is made: Select takes over, with the shape selected to adjust.
             session.putToolDown()
-        case .drawing:
+        case .drawing(let id):
+            session.fitCanvas(holding: [id])
             session.endLiveChange(actionName: String(localized: "Draw", bundle: .module))
         case .highlighting(let id, _, _):
             guard let index = session.document.index(of: id), case .textHighlight(let highlight) = session.document.items[index].shape else {
+                session.fitCanvas(holding: [id])
                 session.endLiveChange(actionName: String(localized: "Draw", bundle: .module))
                 return
             }
@@ -1194,11 +1221,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.endLiveChange(actionName: String(localized: "Highlight", bundle: .module))
         case .moving(_, let originals):
             selectionLayer.alignmentGuides = []
-            // An image moved past the canvas's edge takes the canvas with it.
-            if originals.contains(where: { if case .image = $0.shape { true } else { false } }) { session.growCanvasToHoldImages() }
+            // A mark or an image moved past the canvas's edge takes the canvas with it; moved back in, the
+            // canvas follows it back.
+            session.fitCanvas(holding: originals.map(\.id))
             session.endLiveChange(actionName: String(localized: "Move", bundle: .module))
         case .reshaping(let handle, let original):
-            if case .image = original.shape { session.growCanvasToHoldImages() }
+            session.fitCanvas(holding: [original.id])
             session.endLiveChange(actionName: handle == .bend ? String(localized: "Bend Arrow", bundle: .module) : String(localized: "Resize", bundle: .module))
         case .cropping:
             cropLayer.showsThirds = false
@@ -1662,7 +1690,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         return rect.width >= 4 && rect.height >= 4 ? rect : nil
     }
 
-    /// Lock Canvas: the canvas stops growing to hold pictures combined past its edges.
+    /// Lock Canvas: the canvas stops growing to hold pictures combined and marks drawn past its edges.
     @objc public func toggleCanvasLock(_ sender: Any?) {
         guard !isInPlace else { return }
         session.locksCanvas.toggle()
@@ -1931,9 +1959,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             if editing.isNew {
                 session.cancelLiveChange()
             } else {
+                // What held the canvas out may be gone.
+                session.fitCanvas(holding: [])
                 session.endLiveChange(actionName: String(localized: "Delete", bundle: .module))
             }
         } else {
+            session.fitCanvas(holding: [editing.id])
             session.endLiveChange(actionName: editing.isNew ? String(localized: "Add Text", bundle: .module) : String(localized: "Edit Text", bundle: .module))
             if session.tool == .text { session.putToolDown() }
         }

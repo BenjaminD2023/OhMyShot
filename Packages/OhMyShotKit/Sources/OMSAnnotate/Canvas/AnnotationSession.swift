@@ -52,8 +52,8 @@ public final class AnnotationSession {
         redactionCache = nil
     }
 
-    /// Whether the canvas stays the size it is when pictures are combined past its edges, which are then
-    /// cut off, instead of growing to hold them. Kept for the next editor.
+    /// Whether the canvas stays the size it is when pictures are combined or marks drawn past its edges,
+    /// which are then cut off, instead of growing to hold them. Kept for the next editor.
     public var locksCanvas: Bool {
         didSet {
             guard locksCanvas != oldValue else { return }
@@ -61,6 +61,11 @@ public final class AnnotationSession {
             notify(.settings)
         }
     }
+    /// Whether the canvas never grows whatever the lock says: in place, where it is the part of the screen
+    /// chosen.
+    @ObservationIgnored public var keepsCanvasFixed = false
+    /// Whether the canvas grows to hold what reaches past it (`AnnotationDocument.fittingCanvas`).
+    public var growsCanvas: Bool { !locksCanvas && !keepsCanvasFixed }
     /// The shape the crop frame keeps while the crop tool is in hand.
     public private(set) var cropRatio: CropRatio = .free
     public var tool: AnnotationTool {
@@ -209,7 +214,8 @@ public final class AnnotationSession {
                 // Restyling text while it is typed is part of that edit's one undo step.
                 updateLive(document)
             } else {
-                commit(document, actionName: actionName)
+                // A thicker line or larger type can reach past the edge.
+                commit(fitted(document, holding: selection), actionName: actionName)
             }
         }
         saveSettings()
@@ -340,19 +346,18 @@ public final class AnnotationSession {
             document.items.append(item)
             added.append(item.id)
         }
-        if !locksCanvas { document.canvas = Self.canvas(holdingImagesOf: document) }
+        document = fitted(document, holding: added)
         let name = pictures.count == 1 ? String(localized: "Add Image", bundle: .module) : String(localized: "Add Images", bundle: .module)
         commit(document, selecting: added, actionName: name)
     }
 
-    /// Grows the canvas to hold every image after one was moved or resized past its edge; part of the
-    /// live change in progress, if any. Never shrinks it: a crop does that. A locked canvas stays as it is.
-    public func growCanvasToHoldImages() {
-        guard !locksCanvas else { return }
-        let canvas = Self.canvas(holdingImagesOf: document)
-        guard canvas != document.canvas.standardized else { return }
-        var document = self.document
-        document.canvas = canvas
+    /// Fits the canvas to the marks after `touched` were drawn, moved, or changed: it grows to hold
+    /// what reaches past its edge, and shrinks back toward the canvas as set once nothing does
+    /// (`AnnotationDocument.fittingCanvas`). Part of the live change in progress, if any. A locked canvas
+    /// stays as it is.
+    public func fitCanvas(holding touched: [Annotation.ID]) {
+        let document = fitted(self.document, holding: touched)
+        guard document != self.document else { return }
         if isInLiveChange {
             updateLive(document)
         } else {
@@ -360,11 +365,9 @@ public final class AnnotationSession {
         }
     }
 
-    private static func canvas(holdingImagesOf document: AnnotationDocument) -> CGRect {
-        document.items.reduce(document.canvas.standardized) { canvas, item in
-            if case .image(let image) = item.shape { return canvas.union(image.rect.standardized) }
-            return canvas
-        }.integral
+    /// `document` with its canvas fitted to hold `touched` and what it holds already, unless it is locked.
+    func fitted(_ document: AnnotationDocument, holding touched: [Annotation.ID]) -> AnnotationDocument {
+        growsCanvas ? document.fittingCanvas(holding: Set(touched)) : document
     }
 
     /// What blurs and pixelations show: the capture with the images combined into it, and where its
@@ -687,7 +690,8 @@ public final class AnnotationSession {
         guard !selection.isEmpty else { return }
         var document = self.document
         document.items.removeAll { selection.contains($0.id) }
-        commit(document, selecting: [], actionName: String(localized: "Delete", bundle: .module))
+        // What held the canvas out may be gone.
+        commit(fitted(document, holding: []), selecting: [], actionName: String(localized: "Delete", bundle: .module))
     }
 
     /// Copies the selected marks a little down and to the right, and selects the copies.
@@ -707,7 +711,7 @@ public final class AnnotationSession {
             document.items.append(copy)
             copies.append(copy.id)
         }
-        commit(document, selecting: copies, actionName: String(localized: "Duplicate", bundle: .module))
+        commit(fitted(document, holding: copies), selecting: copies, actionName: String(localized: "Duplicate", bundle: .module))
     }
 
     /// Moves the selected marks by `points` of the captured screen.
@@ -719,7 +723,7 @@ public final class AnnotationSession {
             guard let index = document.index(of: id) else { continue }
             document.items[index] = document.items[index].translated(by: delta)
         }
-        commit(document, actionName: String(localized: "Move", bundle: .module))
+        commit(fitted(document, holding: selection), actionName: String(localized: "Move", bundle: .module))
     }
 
     /// Brings the selected marks to the front.
@@ -740,10 +744,12 @@ public final class AnnotationSession {
         commit(document, actionName: String(localized: "Send to Back", bundle: .module))
     }
 
-    /// Crops to `rect` (pixels; reaching past the capture adds canvas there).
+    /// Crops to `rect` (pixels; reaching past the capture adds canvas there). The crop is the canvas as
+    /// set from then on: marks it cuts through stay cut until they are moved or changed.
     public func crop(to rect: CGRect) {
         var document = self.document
         document.canvas = rect.standardized.integral
+        document.canvasBeforeGrowing = nil
         commit(document, actionName: String(localized: "Crop", bundle: .module))
     }
 
