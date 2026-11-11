@@ -6,7 +6,9 @@ import QuartzCore
 
 /// One capture: the picture with rounded corners and a soft shadow; on hover, buttons to copy or save
 /// it, close it, or reach the rest of its actions.
-final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
+final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharingServicePickerDelegate, NSSharingServiceDelegate {
+    private var sharingPicker: NSSharingServicePicker?
+    private var sharingService: NSSharingService?
     /// What its buttons, its menu, VoiceOver, a double-click, or a swipe asked of the capture: Undo on a card
     /// waiting to go to the Trash too. Share, Send by Email, and Copy Error are the card's own, as they need the card
     /// (a sheet beside it) or only its upload.
@@ -661,6 +663,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         onHold?(.drag, false)
+        if !operation.isEmpty { onCommand?(.close) }
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -931,11 +934,46 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate {
     #endif
 
     @objc private func shareClicked() {
-        NSSharingServicePicker(items: [fileToHandOver?() ?? item.fileURL]).show(relativeTo: bounds, of: self, preferredEdge: .maxY)
+        let picker = NSSharingServicePicker(items: [fileToHandOver?() ?? item.fileURL])
+        sharingPicker = picker
+        picker.delegate = self
+        onHold?(.action, true)
+        picker.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
     }
 
-    /// As Share, the file in the format Settings choose.
-    @objc private func emailClicked() { EmailSharing.send(fileToHandOver?() ?? item.fileURL) }
+    func sharingServicePicker(_ sharingServicePicker: NSSharingServicePicker, delegateFor sharingService: NSSharingService) -> (any NSSharingServiceDelegate)? {
+        self
+    }
+
+    func sharingServicePicker(_ sharingServicePicker: NSSharingServicePicker, didChoose service: NSSharingService?) {
+        sharingService = service
+        sharingPicker = nil
+        if service == nil { onHold?(.action, false) }
+    }
+
+    func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
+        self.sharingService = nil
+        onHold?(.action, false)
+        onCommand?(.close)
+    }
+
+    func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: any Error) {
+        self.sharingService = nil
+        onHold?(.action, false)
+    }
+
+    /// As Share, the file in the format Settings choose; close only after the service succeeds.
+    @objc private func emailClicked() {
+        let file = fileToHandOver?() ?? item.fileURL
+        guard let service = NSSharingService(named: .composeEmail), service.canPerform(withItems: [file]) else {
+            return NSSound.beep()
+        }
+        sharingService = service
+        service.delegate = self
+        service.subject = EmailSharing.subject(for: file)
+        onHold?(.action, true)
+        service.perform(withItems: [file])
+    }
 
     @objc private func copyClicked() { onCommand?(.copy) }
     @objc private func saveClicked() { onCommand?(.save) }

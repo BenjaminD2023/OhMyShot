@@ -256,10 +256,10 @@ struct PictureEditingTests {
         var document = locked.document
         document.items[0] = document.items[0].translated(by: CGSize(width: 100, height: 0))
         locked.updateLive(document)
-        locked.growCanvasToHoldImages()
+        locked.fitCanvas(holding: [locked.document.items[0].id])
         #expect(locked.document.canvas == CGRect(x: 0, y: 0, width: 200, height: 100))
         locked.locksCanvas = false
-        step(locked) { locked.growCanvasToHoldImages() }
+        step(locked) { locked.fitCanvas(holding: [locked.document.items[0].id]) }
         #expect(locked.document.canvas.maxX >= locked.document.items[0].bounds(scale: 2).maxX)
     }
 

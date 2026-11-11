@@ -8,6 +8,16 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- The editor canvas expands to hold marks drawn, moved or resized beyond its edges, using a matching edge color, and shrinks when the marks move back. Lock Canvas and in-place annotation retain their fixed bounds. ([4b4d6ed])
+
+### Fixed
+
+- The editor’s top-right Copy button closes the window after copying the edited picture. A failed clipboard write leaves the editor open instead of reporting success; ⌘C still copies without closing.
+- Quick Access cards dismiss after successful Copy, Save, Pin and Print actions; failed or cancelled actions leave the card available. ([e341378])
+- Center the editor’s Picture menu icon. ([01e3313])
+
 ## [0.7.0] - 2026-11-10
 
 Fork release: `v0.7.0-fork.9`, build 10.

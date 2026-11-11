@@ -76,7 +76,7 @@ struct PasteboardWriterTests {
     @Test func aFileAloneGoesOnAsFinderCopiesIt() throws {
         let pasteboard = makePasteboard()
         defer { pasteboard.releaseGlobally() }
-        PasteboardWriter.write(fileURL: URL(filePath: "/tmp/Clip.mp4"), to: pasteboard)
+        #expect(PasteboardWriter.write(fileURL: URL(filePath: "/tmp/Clip.mp4"), to: pasteboard))
         #expect(pasteboard.types?.contains(.fileURL) == true)
         #expect(pasteboard.types?.contains(.png) != true)
     }

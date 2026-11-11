@@ -37,16 +37,17 @@ public enum PasteboardWriter {
     /// Puts a file on the clipboard, as Finder's Copy does: a recording, which pastes into chats, mail,
     /// and upload forms as the file.
     @MainActor
-    public static func write(fileURL: URL, to pasteboard: NSPasteboard = .general) {
-        pasteboard.clearContents()
-        pasteboard.writeObjects([fileURL as NSURL])
+    @discardableResult
+    public static func write(fileURL: URL, to pasteboard: NSPasteboard = .general) -> Bool {
+        write(fileURLs: [fileURL], to: pasteboard)
     }
 
     /// Puts several files on the clipboard, as Finder's Copy does with a selection.
     @MainActor
-    public static func write(fileURLs: [URL], to pasteboard: NSPasteboard = .general) {
+    @discardableResult
+    public static func write(fileURLs: [URL], to pasteboard: NSPasteboard = .general) -> Bool {
         pasteboard.clearContents()
-        pasteboard.writeObjects(fileURLs.map { $0 as NSURL })
+        return pasteboard.writeObjects(fileURLs.map { $0 as NSURL })
     }
 }
 

@@ -328,11 +328,18 @@ final class ScreenshotFiles {
     /// a file reference instead of the picture when both are offered. A recording, a movie or a GIF, goes as its
     /// file, as Finder's Copy does: a GIF's picture alone would paste as its first frame.
     func copy(fileAt url: URL) {
+        if copyImmediately(fileAt: url) != nil { return }
+        Task { await copyToClipboard(fileAt: url) }
+    }
+
+    /// The fast paths retain their synchronous behavior for capture and automation callers.
+    /// Nil means the picture needs asynchronous conversion.
+    private func copyImmediately(fileAt url: URL) -> Bool? {
         guard !HistoryStore.isRecording(url) else {
-            PasteboardWriter.write(fileURL: url)
+            guard PasteboardWriter.write(fileURL: url) else { return false }
             // After the write, which the clipboard's change count then tells apart from a later copy.
             if let entry = history.item(forFileAt: url) { recordingCopied?(entry.id) }
-            return
+            return true
         }
         // As it has always been: the capture's PNG, as it is.
         if !output.changesPicture, settings.clipboardFormat == .pictureOnly {
@@ -342,18 +349,21 @@ final class ScreenshotFiles {
                 let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
             else {
                 Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to copy it")
-                return
+                return false
             }
-            PasteboardWriter.write(png: data, image: image)
-            return
+            return PasteboardWriter.write(png: data, image: image)
         }
-        Task {
-            guard let loaded = await Self.load(url) else {
-                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to copy it")
-                return
-            }
-            await copy(Picture(loaded.image), png: loaded.data, name: url.deletingPathExtension().lastPathComponent, scale: history.item(forFileAt: url)?.pixelsPerPoint, historyFile: url)
+        return nil
+    }
+
+    /// Returns only once the clipboard owns the capture, so its card can safely close.
+    func copyToClipboard(fileAt url: URL) async -> Bool {
+        if let copied = copyImmediately(fileAt: url) { return copied }
+        guard let loaded = await Self.load(url) else {
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to copy it")
+            return false
         }
+        return await copy(Picture(loaded.image), png: loaded.data, name: url.deletingPathExtension().lastPathComponent, scale: history.item(forFileAt: url)?.pixelsPerPoint, historyFile: url)
     }
 
     /// Puts a picture on the clipboard: its PNG, scaled, converted, and given a border as Settings say, and with

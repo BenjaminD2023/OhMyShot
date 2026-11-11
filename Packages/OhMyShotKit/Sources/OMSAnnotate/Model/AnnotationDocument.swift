@@ -14,8 +14,13 @@ nonisolated public struct AnnotationDocument: Codable, Sendable, Equatable {
     /// Pixels per point of the screen the capture came from (2 for a Retina capture).
     public var scale: CGFloat
     /// The part of the picture that is kept, in pixels: the whole capture unless it was cropped. Reaching
-    /// past the capture's edges adds empty canvas there.
+    /// past the capture's edges adds empty canvas there, as does growing to hold marks and images that
+    /// reach past it (`fittingCanvas(holding:)`).
     public var canvas: CGRect
+    /// The canvas as it was set (the whole capture, or its crop) while it has grown to hold marks past its
+    /// edges; nil while it has not. Fitting starts from it again, so the canvas shrinks back as the marks
+    /// come back in. Left out of the file while nil.
+    public var canvasBeforeGrowing: CGRect?
     /// Back to front.
     public var items: [Annotation]
     /// The background the capture sits on, if any. Marks may reach onto it.

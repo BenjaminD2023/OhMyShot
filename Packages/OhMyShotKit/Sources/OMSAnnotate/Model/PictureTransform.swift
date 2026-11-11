@@ -133,6 +133,7 @@ nonisolated extension AnnotationDocument {
             let turn = Orientation.identity.applying(operation)
             mapping = PictureMapping(affine: turn.transform(for: size), operation: operation, lengthFactor: 1)
             result.canvas = canvas.standardized.applying(mapping.affine).standardized
+            result.canvasBeforeGrowing = canvasBeforeGrowing.map { $0.standardized.applying(mapping.affine).standardized }
             transform.orientation = transform.orientation.applying(operation)
             // A resized picture stays as big as it was, turned.
             if turn.swapsAxes, let drawn = transform.size {
@@ -150,6 +151,8 @@ nonisolated extension AnnotationDocument {
             )
             result.canvas = Self.scaled(canvas, by: mapping.affine, to: target, within: imageBounds.contains(canvas) ? CGRect(origin: .zero, size: picture) : nil)
             result.scale = scale * mapping.lengthFactor
+            // The canvas comes out exactly the size asked for, which is the canvas as set from here on.
+            result.canvasBeforeGrowing = nil
             transform.size = picture
         }
         result.items = items.map { $0.mapped(by: mapping, scale: scale) }

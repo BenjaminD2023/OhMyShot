@@ -117,8 +117,9 @@ nonisolated public struct BackdropLayout: Equatable, Sendable {
     /// The kept part of the capture (the canvas) inside the card.
     public var picture: CGRect
     /// Fills the card under the capture: the room its inset and balance add, and canvas reaching past
-    /// the capture (images combined beside it). The capture's edge color, in the capture's color space,
-    /// or white for canvas past a capture whose edge has no one color. Nil leaves the card clear.
+    /// the capture (images combined beside it, marks reaching past it). The capture's edge color, in the
+    /// capture's color space, or for canvas past a capture whose edge has no one color, its edge's most
+    /// common color (`EdgeAnalysis.canvasColor`). Nil leaves the card clear.
     public var matte: RGBA?
     /// The card's corners, in pixels.
     public var cornerRadius: CGFloat
@@ -133,18 +134,20 @@ nonisolated extension AnnotationDocument {
         return (max(canvas.width, 1) * max(canvas.height, 1)).squareRoot()
     }
 
-    /// Whether the canvas reaches past the capture, as when images are combined beside it.
+    /// Whether the canvas reaches past the capture, as when images are combined beside it or it grew to
+    /// hold marks.
     public var canvasReachesPastCapture: Bool {
         !imageBounds.contains(canvas.standardized)
     }
 
-    /// What fills canvas reaching past the capture when there is no background: the capture's edge
-    /// color, or white where its edge has no one color, so a combined picture reads as one and never
-    /// carries clear slivers (which some apps show black). Nil when the canvas stays within the
-    /// capture, or the capture is a window with its shadow, whose surroundings stay clear.
+    /// What fills canvas reaching past the capture when there is no background: the edge's most common
+    /// color (`EdgeAnalysis.canvasColor`), as Shottr fills it, so the room added reads as the capture's
+    /// own and never carries clear slivers (which some apps show black); white for an edge with nothing
+    /// opaque to go by. Nil when the canvas stays within the capture, or the capture is a window with its
+    /// shadow, whose surroundings stay clear.
     public func canvasMatte(edges: EdgeAnalysis) -> RGBA? {
         guard canvasReachesPastCapture, edges.opaque else { return nil }
-        return edges.edgeColor ?? .white
+        return edges.canvasColor ?? edges.edgeColor ?? .white
     }
 
     /// Where the background, the card, and the capture go, or nil without a background. `edges`
@@ -159,7 +162,7 @@ nonisolated extension AnnotationDocument {
         let isBare = !edges.opaque
         if !isBare {
             // Canvas past the capture is filled too, so a card holding combined images reads as one.
-            matte = edges.edgeColor ?? (canvasReachesPastCapture ? .white : nil)
+            matte = edges.edgeColor ?? (canvasReachesPastCapture ? edges.canvasColor ?? .white : nil)
             if let edge = edges.edgeColor {
                 if backdrop.balanced, let content = edges.content {
                     // Each side gets the room of the wider one across from it, so what the capture shows

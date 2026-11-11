@@ -67,7 +67,7 @@ struct PreviewEditorTests {
     @Test func expansionLeavesAnInProgressTextEditOnTheSameCanvas() {
         let controller = makePreview()
         defer {
-            controller.content.canvas.endEditing()
+            step(controller.session) { controller.content.canvas.endEditing() }
             controller.window?.delegate = nil
             controller.close()
         }
@@ -133,12 +133,13 @@ struct PreviewEditorTests {
         actions.copy = { image, png in
             copiedImage = image
             copiedPNG = png
-            guard let session = preview?.session else { return }
+            guard let session = preview?.session else { return false }
             self.step(session) {
                 var document = session.document
                 document.items.append(Annotation(shape: .redaction(Redaction(rect: CGRect(x: 50, y: 40, width: 30, height: 15), method: .solid)), style: Style()))
                 session.commit(document, actionName: "Redact")
             }
+            return true
         }
         let controller = makePreview(actions: actions)
         preview = controller
@@ -184,8 +185,9 @@ struct PreviewEditorTests {
         actions.copy = { image, png in
             #expect(!closed)
             await Task.yield()
-            PasteboardWriter.write(png: png, image: image, to: pasteboard)
-            copied = true
+            let succeeded = PasteboardWriter.write(png: png, image: image, to: pasteboard)
+            copied = succeeded
+            return succeeded
         }
         let controller = makePreview(actions: actions)
         defer { controller.window?.delegate = nil; controller.close() }
@@ -228,7 +230,7 @@ struct PreviewEditorTests {
             keptDocument = document
             return URL.temporaryDirectory.appending(path: "preview-text.png")
         }, save: { _ in nil })
-        actions.copy = { _, png in copiedPNG = png }
+        actions.copy = { _, png in copiedPNG = png; return true }
         let controller = makePreview(actions: actions)
         defer { controller.window?.delegate = nil; controller.close() }
         controller.onClose = { closed = true }
@@ -255,7 +257,11 @@ struct PreviewEditorTests {
         }
         #expect(keptText.id == text.id && block.string == "Edited text")
         let image = try #require(copiedPNG.flatMap { NSBitmapImageRep(data: $0)?.cgImage })
-        #expect(Pixels(image).region(CGRect(x: 15, y: 15, width: 160, height: 25)) != Pixels(makeBase()).region(CGRect(x: 15, y: 15, width: 160, height: 25)))
+        let canvas = try #require(keptDocument).canvas
+        let textRegion = CGRect(x: 15, y: 15, width: 160, height: 25)
+        // An edited text mark can grow the canvas, shifting its capture coordinates in the output.
+        let outputRegion = textRegion.offsetBy(dx: -canvas.minX, dy: -canvas.minY)
+        #expect(Pixels(image).region(outputRegion) != Pixels(makeBase()).region(textRegion))
     }
 
     @Test(arguments: [true, false]) func saveExportsThePendingCropAndLeavesThePreviewOpen(succeeds: Bool) async throws {

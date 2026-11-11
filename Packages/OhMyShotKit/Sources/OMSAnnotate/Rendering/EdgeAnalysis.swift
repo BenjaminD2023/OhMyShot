@@ -15,17 +15,25 @@ nonisolated public struct EdgeAnalysis: Equatable, Sendable {
     /// Where the capture differs from its edge color, in the document's pixels; nil when nothing does,
     /// or the edge has no one color.
     public var content: CGRect?
+    /// The color canvas past the capture takes: the color the largest group of like colors along the
+    /// edge starts from, whether or not it holds most of the edge, in the capture's own color space; nil
+    /// when the edge has no opaque pixel.
+    public var canvasColor: RGBA?
 
-    public init(opaque: Bool, edgeColor: RGBA?, content: CGRect?) {
+    public init(opaque: Bool, edgeColor: RGBA?, content: CGRect?, canvasColor: RGBA? = nil) {
         self.opaque = opaque
         self.edgeColor = edgeColor
         self.content = content
+        self.canvasColor = canvasColor
     }
 
     /// The share of the edge one color must hold to count as the edge's color.
     static let dominantShare = 0.6
     /// How far a channel may stray (of 255) and still match the edge color.
     static let tolerance = 12
+    /// How far apart two colors may be (of 255, green weighed most) and still be grouped together when
+    /// choosing the canvas color.
+    static let groupingDistance = 39
 
     /// Reads the part of `base` the canvas keeps (the document's pixels).
     public static func of(_ base: CGImage, canvas: CGRect) -> EdgeAnalysis {
@@ -45,6 +53,7 @@ nonisolated public struct EdgeAnalysis: Equatable, Sendable {
 
         let corners = [top.pixel(0, 0), top.pixel(width - 1, 0), bottom.pixel(0, 0), bottom.pixel(width - 1, 0)]
         let opaque = corners.allSatisfy { $0.alpha == 255 }
+        let canvasColor = commonColor(of: [top, bottom, left, right])
 
         // The most common color along the edge, counted in coarse buckets and averaged within its own.
         var buckets: [Int: (count: Int, red: Int, green: Int, blue: Int)] = [:]
@@ -66,7 +75,7 @@ nonisolated public struct EdgeAnalysis: Equatable, Sendable {
             }
         }
         guard let dominant = buckets.values.max(by: { $0.count < $1.count }), total > 0 else {
-            return EdgeAnalysis(opaque: opaque, edgeColor: nil, content: nil)
+            return EdgeAnalysis(opaque: opaque, edgeColor: nil, content: nil, canvasColor: canvasColor)
         }
         let edge = Pixel(
             alpha: 255,
@@ -83,20 +92,66 @@ nonisolated public struct EdgeAnalysis: Equatable, Sendable {
             }
         }
         guard Double(matching) / Double(total) >= dominantShare else {
-            return EdgeAnalysis(opaque: opaque, edgeColor: nil, content: nil)
+            return EdgeAnalysis(opaque: opaque, edgeColor: nil, content: nil, canvasColor: canvasColor)
         }
         let edgeColor = RGBA(red: Double(edge.red) / 255, green: Double(edge.green) / 255, blue: Double(edge.blue) / 255)
 
         // Where the capture stops being its edge color, read in bands from each side inward.
         guard let firstRow = firstLine(in: base, region: region, edge: edge, rows: true, forward: true) else {
-            return EdgeAnalysis(opaque: opaque, edgeColor: edgeColor, content: nil)
+            return EdgeAnalysis(opaque: opaque, edgeColor: edgeColor, content: nil, canvasColor: canvasColor)
         }
         let lastRow = firstLine(in: base, region: region, edge: edge, rows: true, forward: false) ?? firstRow
         let rows = CGRect(x: region.minX, y: CGFloat(firstRow), width: region.width, height: CGFloat(lastRow - firstRow + 1))
         let firstColumn = firstLine(in: base, region: rows, edge: edge, rows: false, forward: true) ?? minX
         let lastColumn = firstLine(in: base, region: rows, edge: edge, rows: false, forward: false) ?? (minX + width - 1)
         let content = CGRect(x: firstColumn, y: firstRow, width: lastColumn - firstColumn + 1, height: lastRow - firstRow + 1)
-        return EdgeAnalysis(opaque: opaque, edgeColor: edgeColor, content: content)
+        return EdgeAnalysis(opaque: opaque, edgeColor: edgeColor, content: content, canvasColor: canvasColor)
+    }
+
+    /// The edge's most common color, as Shottr picks the color of canvas it adds: every opaque color along
+    /// the edge counted exactly, the most common first, each joining the nearest group begun by a more
+    /// common one within `groupingDistance` or beginning its own; the color that began the largest group.
+    /// The distance weighs green most and blue least, as the eye does. Nil without an opaque pixel.
+    static func commonColor(of strips: [Bitmap]) -> RGBA? {
+        var counts: [UInt32: Int] = [:]
+        for strip in strips {
+            for y in 0..<strip.height {
+                for x in 0..<strip.width {
+                    let pixel = strip.pixel(x, y)
+                    guard pixel.alpha == 255 else { continue }
+                    counts[UInt32(pixel.red) << 16 | UInt32(pixel.green) << 8 | UInt32(pixel.blue), default: 0] += 1
+                }
+            }
+        }
+        // Ties go to the lower color, so the screen and an export always pick the same one.
+        let colors = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+        var groups: [(color: UInt32, count: Int)] = []
+        for (color, count) in colors {
+            var nearest: (index: Int, distance: Int)?
+            for (index, group) in groups.enumerated() {
+                let distance = Self.distance(color, group.color)
+                if distance < (nearest?.distance ?? .max) { nearest = (index, distance) }
+            }
+            if let nearest, nearest.distance <= groupingDistance {
+                groups[nearest.index].count += count
+            } else {
+                groups.append((color, count))
+            }
+        }
+        // The first of the largest, which began with the more common color.
+        guard let largest = groups.enumerated().max(by: { $0.element.count != $1.element.count ? $0.element.count < $1.element.count : $0.offset > $1.offset }) else {
+            return nil
+        }
+        let color = largest.element.color
+        return RGBA(red: Double(color >> 16 & 0xFF) / 255, green: Double(color >> 8 & 0xFF) / 255, blue: Double(color & 0xFF) / 255)
+    }
+
+    /// How far apart two colors packed as 0xRRGGBB look, of 255: three tenths red, half green, a fifth blue.
+    private static func distance(_ a: UInt32, _ b: UInt32) -> Int {
+        let red = abs(Int(a >> 16 & 0xFF) - Int(b >> 16 & 0xFF))
+        let green = abs(Int(a >> 8 & 0xFF) - Int(b >> 8 & 0xFF))
+        let blue = abs(Int(a & 0xFF) - Int(b & 0xFF))
+        return (3 * red + 5 * green + 2 * blue) / 10
     }
 
     /// The first row (or column) of `region`, from its start or its end, holding a pixel that is not the

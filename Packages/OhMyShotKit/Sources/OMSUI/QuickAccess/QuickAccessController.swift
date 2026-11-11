@@ -7,7 +7,7 @@ import OMSDesign
 /// saved, dragged into another app, or dismissed. Nothing is saved anywhere until the user asks.
 public final class QuickAccessController {
     public struct Actions {
-        public var copy: (QuickAccessItem) -> Void
+        public var copy: (QuickAccessItem) async -> Bool
         /// Saves a copy to the export location and returns where it went; nil when it was not saved. Converting a
         /// large capture takes a while, so a card marks itself saved when this returns. `asks`: whether it may ask for
         /// the name first, as Settings say; false for a save nobody waits at (Save All, a card closing by itself).
@@ -23,9 +23,9 @@ public final class QuickAccessController {
         /// Opens the capture in the OCR panel.
         public var recognizeText: (QuickAccessItem) -> Void
         /// Keeps the capture on screen as a pin.
-        public var pin: (QuickAccessItem) -> Void
+        public var pin: (QuickAccessItem) async -> Bool
         /// Prints the capture's picture through the print panel.
-        public var print: (QuickAccessItem) -> Void = { _ in }
+        public var print: (QuickAccessItem) async -> Bool = { _ in false }
         public var moveToTrash: (QuickAccessItem) -> Void
         /// A card was dismissed without being trashed.
         public var closed: (QuickAccessItem) -> Void
@@ -70,14 +70,14 @@ public final class QuickAccessController {
         }
 
         public init(
-            copy: @escaping (QuickAccessItem) -> Void,
+            copy: @escaping (QuickAccessItem) async -> Bool,
             save: @escaping (QuickAccessItem, _ asks: Bool) async -> URL?,
             saveAs: @escaping (QuickAccessItem) async -> URL?,
             open: @escaping (QuickAccessItem) -> Void,
             annotate: @escaping (QuickAccessItem) -> Void,
             reveal: @escaping (QuickAccessItem) -> Void,
             recognizeText: @escaping (QuickAccessItem) -> Void,
-            pin: @escaping (QuickAccessItem) -> Void,
+            pin: @escaping (QuickAccessItem) async -> Bool,
             moveToTrash: @escaping (QuickAccessItem) -> Void,
             closed: @escaping (QuickAccessItem) -> Void
         ) {
@@ -298,9 +298,7 @@ public final class QuickAccessController {
     /// Copies the newest card's capture: the keyboard path to Quick Access.
     public func copyLatest() {
         guard let latest = liveItems.last else { return }
-        if firstCaptureHint?.captureID == latest.id { dismissFirstCaptureHint() }
-        actions.copy(latest)
-        stack?.showCopied(latest.id)
+        perform(.copy, on: latest, keyed: false)
     }
 
     /// Gives the newest card the keyboard, without the pointer: the cards then answer the keys of
@@ -364,9 +362,14 @@ public final class QuickAccessController {
     /// Saves a copy of every card's capture that has not been saved, as Save does on each, but under the file name
     /// pattern without asking: it is one command for many files, which Escape on one would not stop.
     public func saveAll() {
-        let unsaved = liveItems.filter { $0.savedURL == nil }
+        let saving = liveItems
         Task {
-            for item in unsaved { await save(item, .quiet) }
+            for item in saving {
+                await finish(item) { [self] in
+                    if item.savedURL != nil { return true }
+                    return await save(item, .quiet) != nil
+                }
+            }
         }
     }
 
@@ -763,13 +766,29 @@ public final class QuickAccessController {
         return true
     }
 
+    /// Keep the source alive while an action consumes it. Failure or cancellation leaves the card available.
+    private var completing: Set<UUID> = []
+
+    private func complete(_ item: QuickAccessItem, action: @escaping () async -> Bool) {
+        Task { await finish(item, action: action) }
+    }
+
+    private func finish(_ item: QuickAccessItem, action: () async -> Bool) async {
+        guard self.item(item.id) != nil, completing.insert(item.id).inserted else { return }
+        hold(.action, for: item.id, if: true)
+        let succeeded = await action()
+        completing.remove(item.id)
+        hold(.action, for: item.id, if: false)
+        if succeeded { dismiss(item.id) }
+    }
+
     // MARK: Commands
 
     /// What a card is told to do by its buttons, its menu, VoiceOver, or the keyboard: every way in comes here, so
     /// each command is done one way. `keyed`: it came from a key, and one that takes the person to a window or a
     /// panel, or closes the card, gives the keyboard back to the app in front first, as the click that would have
     /// done it with the pointer never came. Close All gives it back however it was asked for: no card is left to hold it.
-    private func perform(_ command: CardCommand, on item: QuickAccessItem, keyed: Bool) {
+    func perform(_ command: CardCommand, on item: QuickAccessItem, keyed: Bool) {
         if firstCaptureHint?.captureID == item.id { dismissFirstCaptureHint() }
         // A card waiting to go to the Trash only comes back.
         guard !isTrashing(item.id) else {
@@ -778,14 +797,20 @@ public final class QuickAccessController {
         }
         switch command {
         case .copy:
-            actions.copy(item)
-            stack?.showCopied(item.id)
+            if keyed { endKeyboard() }
+            complete(item) { [self] in await actions.copy(item) }
         case .save:
-            // A saved card's Save shows the copy in Finder.
-            if item.savedURL != nil { actions.reveal(item) } else { Task { await save(item, .save) } }
+            if keyed { endKeyboard() }
+            complete(item) { [self] in
+                if item.savedURL != nil {
+                    actions.reveal(item)
+                    return true
+                }
+                return await save(item, .save) != nil
+            }
         case .saveAs:
             if keyed { endKeyboard() }
-            Task { await save(item, .saveAs) }
+            complete(item) { [self] in await save(item, .saveAs) != nil }
         case .annotate:
             if keyed { endKeyboard() }
             actions.annotate(item)
@@ -799,9 +824,10 @@ public final class QuickAccessController {
             actions.recognizeText(item)
         case .print:
             if keyed { endKeyboard() }
-            actions.print(item)
+            complete(item) { [self] in await actions.print(item) }
         case .pin:
-            actions.pin(item)
+            if keyed { endKeyboard() }
+            complete(item) { [self] in await actions.pin(item) }
         case .upload:
             // Asked again: a key arrives without a menu having been read.
             if !actions.sharing.menu().isHidden { actions.sharing.upload(item, nil) }
@@ -812,7 +838,10 @@ public final class QuickAccessController {
         case .retryUpload:
             actions.sharing.retry(item)
         case .copyLink:
+            guard actions.sharing.hasLink(item) else { return }
             actions.sharing.copyLink(item)
+            dismiss(item.id)
+            if keyed { endKeyboard() }
         case .deleteFromStorage:
             actions.sharing.deleteFromStorage(item)
         case .quickLook:

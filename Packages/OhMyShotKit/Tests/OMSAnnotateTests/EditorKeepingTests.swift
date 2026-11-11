@@ -1,5 +1,7 @@
 import AppKit
 import Foundation
+import ImageIO
+import OMSCore
 import Testing
 @testable import OMSAnnotate
 
@@ -22,6 +24,59 @@ struct EditorKeepingTests {
         session.undoManager.endUndoGrouping()
     }
 
+    @Test(arguments: [false, true])
+    func successfulCopyKeepsTheRenderedEditsAndClosesOnlyWhenRequested(thenClose: Bool) async throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        var keptDocument: AnnotationDocument?
+        var closed = false
+        var actions = AnnotationEditorWindowController.Actions(keep: { document, _, _ in
+            keptDocument = document
+            return URL.temporaryDirectory.appending(path: "kept.png")
+        }, save: { _ in nil })
+        actions.copy = { image, png in
+            #expect(!closed)
+            return PasteboardWriter.write(png: png, image: image, to: pasteboard)
+        }
+        let controller = makeEditor(actions: actions)
+        defer { controller.window?.delegate = nil; controller.close() }
+        controller.onClose = { closed = true }
+        step(controller.session) { controller.session.crop(to: CGRect(x: 10, y: 10, width: 120, height: 70)) }
+        let document = controller.session.document
+
+        await controller.copyCapture(thenClose: thenClose).value
+
+        let data = try #require(pasteboard.data(forType: .png))
+        let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        #expect(image.width == 120 && image.height == 70)
+        #expect(keptDocument == document)
+        #expect(!controller.session.hasUnkeptChanges)
+        #expect(closed == thenClose)
+    }
+
+    @Test func failedCopyLeavesTheEditorAndEditsOpen() async {
+        var closed = false
+        var kept = false
+        var actions = AnnotationEditorWindowController.Actions(keep: { _, _, _ in
+            kept = true
+            return URL.temporaryDirectory.appending(path: "kept.png")
+        }, save: { _ in nil })
+        actions.copy = { _, _ in false }
+        let controller = makeEditor(actions: actions)
+        defer { controller.window?.delegate = nil; controller.close() }
+        controller.onClose = { closed = true }
+        step(controller.session) { controller.session.crop(to: CGRect(x: 10, y: 10, width: 120, height: 70)) }
+        let document = controller.session.document
+
+        await controller.copyCapture(thenClose: true).value
+
+        #expect(!closed)
+        #expect(!kept)
+        #expect(controller.session.hasUnkeptChanges)
+        #expect(controller.session.document == document)
+    }
+
     /// A mark made while the copy renders and goes to the clipboard is not kept as the copied picture's marks: the
     /// capture keeps the marks its picture shows, and the new mark waits to be kept.
     @Test func aMarkMadeDuringACopyIsNotKeptWithTheCopiedPicture() async throws {
@@ -40,12 +95,13 @@ struct EditorKeepingTests {
         actions.copy = { image, png in
             copiedImage = image
             copiedPNG = png
-            guard let session = editor?.session else { return }
+            guard let session = editor?.session else { return false }
             self.step(session) {
                 var document = session.document
                 document.items.append(Annotation(shape: .redaction(Redaction(rect: CGRect(x: 50, y: 40, width: 30, height: 15), method: .solid)), style: Style()))
                 session.commit(document, actionName: "Redact")
             }
+            return true
         }
         let controller = makeEditor(actions: actions)
         editor = controller
@@ -56,11 +112,7 @@ struct EditorKeepingTests {
             controller.session.commit(document, actionName: "Add Rectangle")
         }
         let copiedDocument = controller.session.document
-        controller.copyCapture()
-        for _ in 0..<200 {
-            if keptDocument != nil { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        await controller.copyCapture().value
         #expect(keptDocument == copiedDocument)
         #expect(keptImage === copiedImage)
         #expect(keptPNG == copiedPNG && copiedPNG != nil)
