@@ -35,6 +35,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Fixed
 
+- The editor’s top-right Copy button closes the window after copying the edited picture. A failed clipboard write leaves the editor open instead of reporting success; ⌘C still copies without closing.
 - Escape stops Capture Text, Capture Formula, and Translate Area while the selection is still highlighted, so a reading the system holds up (the first after a macOS update can take over 30 seconds) no longer has to be waited out. ([7cfd445]; by [@fzlzjerry])
 - Studio's Plain color is a tile beside the gradients that opens the Colors panel, every time reads to the hundredth in one format, saving is reported under the window's title, and Fit and Fit Selection look like buttons. ([7502f44], [0b20def], [9514883]; by [@fzlzjerry])
 - The editor sets kept colors apart from the inks with a divider and no longer offers to keep a color that is indistinguishable from an ink; Other Color… no longer changes the window that last used the Colors panel, and opening an editor no longer logs broken layout constraints. ([4353a67], [bae605a], [5fb5917]; by [@fzlzjerry])

@@ -24,8 +24,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// The file to hand to another app when the capture is dragged out of the window: the capture's file itself, or a
         /// copy of it in the format Settings choose.
         public var fileToHandOver: (_ file: URL) -> URL = { $0 }
-        /// Puts the rendered picture on the clipboard: the picture and its PNG. Left as it is, the PNG goes there as it is.
-        public var copy: ((_ image: CGImage, _ png: Data) async -> Void)?
+        /// Puts the rendered picture on the clipboard and returns whether it succeeded. Without a callback, the PNG goes as it is.
+        public var copy: ((_ image: CGImage, _ png: Data) async -> Bool)?
 
         public init(keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) async -> URL?) {
             self.keep = keep
@@ -316,20 +316,27 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     // MARK: Actions
 
-    /// Copies the picture as it is now; `thenClose` (Return) closes the window once it is on the clipboard, the marks
-    /// kept as closing always keeps them. A picture that couldn't be made leaves the window open and says so.
-    func copy(thenClose: Bool = false) {
+    /// Copies the picture as it is now; the toolbar and Return close only after a successful clipboard write.
+    /// Command-C keeps the window open. A picture that couldn't be copied leaves the window open and says so.
+    @discardableResult
+    func copy(thenClose: Bool = false) -> Task<Void, Never> {
         content.canvas.endEditing()
-        Task {
+        return Task {
             guard let rendered = await render() else {
                 NSSound.beep()
                 VoiceOver.announce(String(localized: "The picture couldn’t be copied.", bundle: .module), from: content.canvas)
                 return
             }
+            let copied: Bool
             if let copy = actions.copy {
-                await copy(rendered.image, rendered.png)
+                copied = await copy(rendered.image, rendered.png)
             } else {
-                PasteboardWriter.write(png: rendered.png, image: rendered.image)
+                copied = PasteboardWriter.write(png: rendered.png, image: rendered.image)
+            }
+            guard copied else {
+                NSSound.beep()
+                VoiceOver.announce(String(localized: "The picture couldn’t be copied.", bundle: .module), from: content.canvas)
+                return
             }
             model.flashCopied()
             VoiceOver.announce(String(localized: "Copied", bundle: .module), from: content.canvas)
@@ -656,7 +663,7 @@ struct EditorView: View {
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {
             Button {
-                model.controller?.copy()
+                model.controller?.copy(thenClose: true)
             } label: {
                 Label {
                     model.copied ? Text("Copied", bundle: .module) : Text("Copy", bundle: .module)

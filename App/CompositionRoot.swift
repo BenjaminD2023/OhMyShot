@@ -360,7 +360,7 @@ final class CompositionRoot {
             self?.files.fileToHandOver(file, scale: scale) ?? file
         }
         annotations.copyPicture = { [weak self] image, png, name, scale in
-            _ = await self?.files.copy(.init(image), png: png, name: name, scale: scale)
+            await self?.files.copy(.init(image), png: png, name: name, scale: scale) ?? false
         }
 
         displays.onChange = { [weak self] _ in

@@ -30,8 +30,8 @@ final class AnnotationCoordinator {
     /// The file to hand to another app when an editor's picture is dragged out, from the picture's file and its scale
     /// (nil when unknown).
     var fileToHandOver: ((URL, Double?) -> URL)?
-    /// Puts an editor's picture on the clipboard: the picture, its PNG, its name, and its scale (nil when unknown).
-    var copyPicture: ((CGImage, Data, String, Double?) async -> Void)?
+    /// Puts an editor's picture on the clipboard and reports success: the picture, its PNG, its name, and its scale (nil when unknown).
+    var copyPicture: ((CGImage, Data, String, Double?) async -> Bool)?
 
     init(history: HistoryStore) {
         self.history = history
@@ -97,9 +97,9 @@ final class AnnotationCoordinator {
         actions.fileToHandOver = { [weak coordinator] file in coordinator?.fileToHandOver?(file, scale()) ?? file }
         actions.copy = { [weak coordinator] image, png in
             if let copy = coordinator?.copyPicture {
-                await copy(image, png, name, scale())
+                return await copy(image, png, name, scale())
             } else {
-                PasteboardWriter.write(png: png, image: image)
+                return PasteboardWriter.write(png: png, image: image)
             }
         }
         return actions
