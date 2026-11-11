@@ -109,7 +109,7 @@ extension CompositionRoot {
 
     func makeQuickAccessActions() -> QuickAccessController.Actions {
         var actions = QuickAccessController.Actions(
-            copy: { [weak self] item in self?.files.copy(fileAt: item.fileURL) },
+            copy: { [weak self] item in await self?.files.copyToClipboard(fileAt: item.fileURL) ?? false },
             save: { [weak self] item, asks in await self?.files.saveCapture(fileAt: item.fileURL, asks: asks) },
             saveAs: { [weak self] item in await self?.files.saveCaptureAs(fileAt: item.fileURL) },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
@@ -126,8 +126,13 @@ extension CompositionRoot {
                 Task { await self.textCapture.openPanel(forFileAt: item.fileURL, fallbackScale: scale) }
             },
             pin: { [weak self] item in
-                guard let self, item.kind == .screenshot else { return }
-                pin(fileAt: item.fileURL, origin: .capture(item.id), fallbackScale: scale(of: item, orElse: 2))
+                guard let self, item.kind == .screenshot else { return false }
+                guard let loaded = await Self.loadImage(item.fileURL, fallbackScale: scale(of: item, orElse: 2)) else {
+                    NSSound.beep()
+                    return false
+                }
+                pins.pin(loaded.image, scale: loaded.scale, origin: .capture(item.id))
+                return true
             },
             moveToTrash: { [weak self] item in
                 guard let self else { return }
@@ -148,8 +153,14 @@ extension CompositionRoot {
             closed: { [weak self] item in self?.retention.releaseIfUnheld(item.id) }
         )
         actions.print = { [weak self] item in
-            guard let self, item.kind == .screenshot else { return }
-            printPicture(fileAt: item.fileURL, fallbackScale: scale(of: item, orElse: 2))
+            guard let self, item.kind == .screenshot else { return false }
+            guard let loaded = await Self.loadImage(item.fileURL, fallbackScale: scale(of: item, orElse: 2)) else {
+                NSSound.beep()
+                return false
+            }
+            return await ImagePrinter.printAndWait(
+                loaded.image, pixelsPerPoint: loaded.scale, title: item.fileURL.deletingPathExtension().lastPathComponent
+            )
         }
         actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? item.fileURL }
         actions.preferences = { [weak self] in self?.settings.quickAccessPreferences ?? QuickAccessPreferences() }

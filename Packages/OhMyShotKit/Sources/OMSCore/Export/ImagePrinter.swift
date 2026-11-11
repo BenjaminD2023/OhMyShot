@@ -91,13 +91,31 @@ public enum ImagePrinter {
         return operation
     }
 
-    /// Shows the print panel for `image`: as a sheet on `window`, else on its own with the app brought forward.
-    public static func print(_ image: CGImage, pixelsPerPoint: CGFloat, title: String, from window: NSWindow? = nil) {
+    private static func preparedOperation(_ image: CGImage, pixelsPerPoint: CGFloat, title: String) -> NSPrintOperation {
         let info = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
         let operation = operation(for: image, pixelsPerPoint: pixelsPerPoint, title: title, info: info)
         operation.showsPrintPanel = true
         operation.showsProgressPanel = true
         operation.printPanel.options.formUnion([.showsPreview, .showsCopies, .showsPageRange, .showsPaperSize, .showsOrientation, .showsScaling])
+        return operation
+    }
+
+    /// Prints from a Quick Access card and reports completion, including cancellation of the panel.
+    public static func printAndWait(_ image: CGImage, pixelsPerPoint: CGFloat, title: String) async -> Bool {
+        nonisolated(unsafe) let operation = preparedOperation(image, pixelsPerPoint: pixelsPerPoint, title: title)
+        return await withCheckedContinuation { continuation in
+            RunLoop.main.perform {
+                MainActor.assumeIsolated {
+                    NSApp.activate()
+                    continuation.resume(returning: operation.run())
+                }
+            }
+        }
+    }
+
+    /// Shows the print panel for `image`: as a sheet on `window`, else on its own with the app brought forward.
+    public static func print(_ image: CGImage, pixelsPerPoint: CGFloat, title: String, from window: NSWindow? = nil) {
+        let operation = preparedOperation(image, pixelsPerPoint: pixelsPerPoint, title: title)
         if let window, window.isVisible {
             operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
         } else {
