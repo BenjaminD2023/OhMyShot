@@ -1,5 +1,17 @@
 # Release notes
 
+## [0.8.0]
+
+### Nouveautés
+
+- Le canevas de l’éditeur s’agrandit pour accueillir les annotations hors cadre, puis se réduit lorsqu’elles reviennent. La zone ajoutée reprend une couleur du bord.
+- Le verrouillage du canevas et l’annotation sur place conservent des dimensions fixes.
+
+### Corrections
+
+- La copie dans l’éditeur et les actions Quick Access ne ferment la fenêtre ou la carte qu’après réussite. Un échec ou une annulation conserve le contenu.
+- Les modifications de texte et de recadrage de l’aperçu et les préférences du fork sont conservées.
+
 ## [0.7.0]
 
 ### Nouveautés

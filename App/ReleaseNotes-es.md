@@ -1,5 +1,17 @@
 # Release notes
 
+## [0.8.0]
+
+### Novedades
+
+- El lienzo del editor crece para incluir anotaciones fuera del borde y se reduce cuando vuelven. El área añadida usa un color del borde.
+- El bloqueo del lienzo y la anotación sobre la pantalla mantienen límites fijos.
+
+### Correcciones
+
+- La copia del editor y las acciones de Quick Access cierran la ventana o tarjeta solo al completarse correctamente. Si fallan o se cancelan, conservan el contenido.
+- Se mantienen las ediciones de texto y recorte de la vista previa y las preferencias del fork.
+
 ## [0.7.0]
 
 ### Novedades

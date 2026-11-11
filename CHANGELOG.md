@@ -8,6 +8,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-12
+
+Fork release: `v0.8.0-fork.10`, build 11.
+
 ### Added
 
 - The editor canvas expands to hold marks drawn, moved or resized beyond its edges, using a matching edge color, and shrinks when the marks move back. Lock Canvas and in-place annotation retain their fixed bounds. ([4b4d6ed])
