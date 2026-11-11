@@ -199,6 +199,34 @@ GitHub Releases 上的签名 appcast；Debug 版从不检查更新。发布、�
   <img src="https://contrib.rocks/image?repo=MMFoundation/OhMyShot" alt="贡献者">
 </a>
 
+<a id="sponsors"></a>
+
+## 赞助者
+
+OhMyShot 是 [MMFoundation](https://mmfoundation.dev/zh/) 的项目。MMFoundation 在
+[Open Collective](https://opencollective.com/mmfoundation) 上接受赞助，每一笔赞助和每一笔开销都在那里公开。
+赞助者会出现在这里：公司展示标志和链接，个人展示头像。赞助不会解锁任何功能，OhMyShot 对每个人都免费且完整。
+
+<!-- MMFoundation's sponsors, drawn by Open Collective and kept current there (its images are
+     cached for up to a day): each company's logo links to its website, and people's avatars to the
+     Collective. While no company sponsors, the first logo slot is Open Collective's Contribute button.
+     The same block is in WallpaperMachine's README. -->
+<p align="center">
+  <a href="https://opencollective.com/mmfoundation/organization/0/website"><img src="https://opencollective.com/mmfoundation/organization/0/avatar.svg" alt="赞助者"></a>
+  <a href="https://opencollective.com/mmfoundation/organization/1/website"><img src="https://opencollective.com/mmfoundation/organization/1/avatar.svg" alt="赞助者"></a>
+  <a href="https://opencollective.com/mmfoundation/organization/2/website"><img src="https://opencollective.com/mmfoundation/organization/2/avatar.svg" alt="赞助者"></a>
+  <a href="https://opencollective.com/mmfoundation/organization/3/website"><img src="https://opencollective.com/mmfoundation/organization/3/avatar.svg" alt="赞助者"></a>
+  <a href="https://opencollective.com/mmfoundation/organization/4/website"><img src="https://opencollective.com/mmfoundation/organization/4/avatar.svg" alt="赞助者"></a>
+  <a href="https://opencollective.com/mmfoundation/organization/5/website"><img src="https://opencollective.com/mmfoundation/organization/5/avatar.svg" alt="赞助者"></a>
+  <a href="https://opencollective.com/mmfoundation/organization/6/website"><img src="https://opencollective.com/mmfoundation/organization/6/avatar.svg" alt="赞助者"></a>
+  <a href="https://opencollective.com/mmfoundation/organization/7/website"><img src="https://opencollective.com/mmfoundation/organization/7/avatar.svg" alt="赞助者"></a>
+  <a href="https://opencollective.com/mmfoundation/organization/8/website"><img src="https://opencollective.com/mmfoundation/organization/8/avatar.svg" alt="赞助者"></a>
+  <a href="https://opencollective.com/mmfoundation/organization/9/website"><img src="https://opencollective.com/mmfoundation/organization/9/avatar.svg" alt="赞助者"></a>
+</p>
+<p align="center">
+  <a href="https://opencollective.com/mmfoundation"><img src="https://opencollective.com/mmfoundation/individuals.svg?width=890&avatarHeight=48&button=false" alt="在 Open Collective 上赞助 MMFoundation 的个人"></a>
+</p>
+
 ## 致谢
 
 OhMyShot 使用了 [Sparkle](https://sparkle-project.org)、
