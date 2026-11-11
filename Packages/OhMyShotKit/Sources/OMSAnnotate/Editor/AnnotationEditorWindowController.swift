@@ -592,7 +592,9 @@ struct EditorView: View {
                     Text("Lock Canvas", bundle: .module)
                 }
             } label: {
-                Label { Text("Picture", bundle: .module) } icon: { Image(systemName: "rotate.right") }
+                // crop.rotate, not rotate.right: its frame sits on the glyph's center, where rotate.right's square
+                // sits low and right of its corner arrow and so looks off-center beside the menu's arrow.
+                Label { Text("Picture", bundle: .module) } icon: { Image(systemName: "crop.rotate") }
             }
             .help(Text("Resize, turn, or flip the picture", bundle: .module))
         }
