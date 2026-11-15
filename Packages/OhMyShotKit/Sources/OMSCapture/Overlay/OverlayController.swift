@@ -70,6 +70,9 @@ public final class OverlayController {
         public let display: DisplayInfo
         public let area: CGRect
         public let frame: CapturedFrame
+        /// Shows the overlay's magnifier on a point in `host`'s points while the selection's edge is dragged; nil
+        /// hides it.
+        public let showEdgeLoupe: (CGPoint?) -> Void
     }
 
     /// Starts in-place annotation over the overlay; set by whoever owns the annotation interface.
@@ -820,7 +823,10 @@ public final class OverlayController {
             return
         }
         keepOnly(entry)
-        onAnnotate(AnnotationRequest(host: entry.view, display: entry.view.display, area: area, frame: frame))
+        onAnnotate(AnnotationRequest(
+            host: entry.view, display: entry.view.display, area: area, frame: frame,
+            showEdgeLoupe: { [weak view = entry.view] point in view?.showEdgeLoupe(at: point) }
+        ))
     }
 
     private func end(_ outcome: Outcome) {

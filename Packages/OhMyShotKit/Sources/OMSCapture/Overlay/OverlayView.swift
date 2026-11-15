@@ -222,9 +222,11 @@ final class OverlayView: NSView {
         withoutAnimation {
             layoutLoupe()
             applyAppearance()
-            // The panels are reused: the edges in-place annotation hid come back with a new session.
+            // The panels are reused: the edges in-place annotation hid come back with a new session, and a lens
+            // raised over its frame while an edge was dragged goes back under the bar.
             border.isHidden = false
             snapEdges.isHidden = false
+            for layer in [loupeShadow, loupe, loupeRim, loupePill.layer] { layer.zPosition = 0 }
             backdrop.contents = nil
             loupeImage.contents = nil
             updateSelectionLayers()
@@ -315,6 +317,11 @@ final class OverlayView: NSView {
         (loupeImage.frame, loupeImage.contentsRect, !loupeGrid.isHidden)
     }
 
+    /// Whether the lens is raised over what was handed over, as it is while an edge is dragged.
+    var debugLensRaised: Bool {
+        [loupeShadow, loupe, loupeRim, loupePill.layer].allSatisfy { $0.zPosition > 0 }
+    }
+
     /// Drags the ruler's box over `rect` (global space) and lets go, for scripted checks.
     func debugMeasureBox(_ rect: CGRect) {
         let box = local(rect)
@@ -368,6 +375,57 @@ final class OverlayView: NSView {
         guard !isSimulated, !isAnnotating else { return }
         let here = mode == .window || display.frame.contains(globalPointer)
         withoutAnimation { updatePointer(here ? local(globalPointer) : nil) }
+    }
+
+    /// Shows the magnifier on `point` (this view's points) while a corner or edge of a selection that was handed
+    /// over (in-place annotation, a set-up frame) is dragged, so the edge can be placed to the pixel; nil hides it.
+    /// `point` is the pixel just inside the selection where the dragged edges meet, which the lens centers on. Only a
+    /// frozen screen has pixels to enlarge; on a live one the lens stays hidden.
+    func showEdgeLoupe(at point: CGPoint?) {
+        let layers: [CALayer] = [loupeShadow, loupe, loupeRim, loupePill.layer]
+        withoutAnimation {
+            guard let point, isAnnotating, let frame = capturedFrame, backdrop.contents != nil else {
+                for layer in layers {
+                    layer.isHidden = true
+                    layer.zPosition = 0
+                }
+                return
+            }
+            let center = magnifiedLensCenter(for: point)
+            for layer in [loupe, loupeRim, loupeShadow] { layer.position = center }
+            // Always enlarged and opaque: the actual-size picker's see-through lens is for aiming before a press.
+            // The next session's appearance puts back what Settings chose.
+            loupeImage.opacity = 1
+            loupe.backgroundColor = .white
+            loupeShadow.fillColor = .white
+            loupeShadow.shadowOpacity = 0.28
+            let pixel = pixelCoordinate(at: point)
+            loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image)
+            let color = frame.color(atPixel: pixel.x, pixel.y)
+            updateLoupeCenter(for: color)
+            loupePill.swatch = color?.cgColor
+            let value = color.map { $0.string(in: colorFormat) }
+            loupePill.text = value.map { "\(pixel.x), \(pixel.y)   \($0)" } ?? "\(pixel.x), \(pixel.y)"
+            let pillSize = loupePill.layer.bounds.size
+            loupePill.layer.frame.origin = CGPoint(x: center.x - pillSize.width / 2, y: center.y - loupeDiameter / 2 - pillSize.height - 8)
+            // Above the frame and the dimming that what was handed over draws over the screen, as its views lie
+            // over this view's own layers.
+            for layer in layers {
+                layer.isHidden = false
+                layer.zPosition = 1
+            }
+        }
+    }
+
+    /// Where the magnified lens goes for a target at `point`: below and to the right of it, on the other side where
+    /// the display's edge would cut it off.
+    private func magnifiedLensCenter(for point: CGPoint) -> CGPoint {
+        let diameter = loupeDiameter
+        let offset = Theme.Loupe.offset
+        var center = CGPoint(x: point.x + offset + diameter / 2, y: point.y - offset - diameter / 2)
+        if center.x + diameter / 2 > bounds.maxX - 6 { center.x = point.x - offset - diameter / 2 }
+        if center.y - diameter / 2 - 32 < bounds.minY + 6 { center.y = point.y + offset + diameter / 2 }
+        return center
     }
 
     /// Draws the controller's selection: the part of it on this display, the size reading if this
@@ -997,12 +1055,7 @@ final class OverlayView: NSView {
         // away to keep it on screen would make its center cell point at the wrong location.
         let diameter = loupeDiameter
         let offset = Theme.Loupe.offset
-        var center = point
-        if !usesCenteredPicker {
-            center = CGPoint(x: point.x + offset + diameter / 2, y: point.y - offset - diameter / 2)
-            if center.x + diameter / 2 > bounds.maxX - 6 { center.x = point.x - offset - diameter / 2 }
-            if center.y - diameter / 2 - 32 < bounds.minY + 6 { center.y = point.y + offset + diameter / 2 }
-        }
+        let center = usesCenteredPicker ? point : magnifiedLensCenter(for: point)
         for layer in [loupe, loupeRim, loupeShadow] { layer.position = center }
 
         let pixel = pixelCoordinate(at: point)

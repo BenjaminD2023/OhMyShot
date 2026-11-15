@@ -11,10 +11,11 @@ enum AreaFrame {
     }
 
     /// What a drag on the frame does, from where it began (flipped points): moves the frame as it was, resizes it by a
-    /// handle, or, begun outside it, chooses a new area.
+    /// handle, or, begun outside it, chooses a new area. A resize keeps `grip`, how far the handle lay from the press
+    /// (`grip(of:on:pressedAt:)`), so the edge moves with the pointer instead of jumping to it.
     enum Adjustment {
         case moving(start: CGPoint, original: CGRect)
-        case resizing(Handle, original: CGRect)
+        case resizing(Handle, original: CGRect, grip: CGVector = .zero)
         case selecting(start: CGPoint)
     }
 
@@ -43,6 +44,43 @@ enum AreaFrame {
         if insideY, abs(point.x - rect.minX) <= reach { return .left }
         if insideY, abs(point.x - rect.maxX) <= reach { return .right }
         return nil
+    }
+
+    /// How far `handle` of `rect` lies from a press at `point`, along the axes the handle moves: a side's
+    /// distance across it, a corner's both ways. Added to the pointer while it drags, it keeps the edge where it was
+    /// taken hold of.
+    static func grip(of handle: Handle, on rect: CGRect, pressedAt point: CGPoint) -> CGVector {
+        let x: CGFloat? = switch handle {
+        case .topLeft, .left, .bottomLeft: rect.minX
+        case .topRight, .right, .bottomRight: rect.maxX
+        case .top, .bottom: nil
+        }
+        let y: CGFloat? = switch handle {
+        case .topLeft, .top, .topRight: rect.minY
+        case .bottomLeft, .bottom, .bottomRight: rect.maxY
+        case .left, .right: nil
+        }
+        return CGVector(dx: x.map { $0 - point.x } ?? 0, dy: y.map { $0 - point.y } ?? 0)
+    }
+
+    /// Where the edges under `handle` of `rect` meet, nudged half of `pixel` inside it (flipped points): the middle of
+    /// the pixel just inside the dragged corner, or, for a side, of the one across from `pointer`. The magnifier
+    /// centers there while the edge is dragged. The dragged edge is the side nearer the pointer, which stays with
+    /// it even once it has been dragged past the opposite one.
+    static func edgePoint(of handle: Handle, on rect: CGRect, near pointer: CGPoint, pixel: CGFloat) -> CGPoint {
+        let half = pixel / 2
+        func along(_ value: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
+            min(max(value, low + half), max(low + half, high - half))
+        }
+        func nearer(_ value: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
+            abs(value - low) <= abs(value - high) ? low + half : high - half
+        }
+        let movesX = handle != .top && handle != .bottom
+        let movesY = handle != .left && handle != .right
+        return CGPoint(
+            x: movesX ? nearer(pointer.x, rect.minX, rect.maxX) : along(pointer.x, rect.minX, rect.maxX),
+            y: movesY ? nearer(pointer.y, rect.minY, rect.maxY) : along(pointer.y, rect.minY, rect.maxY)
+        )
     }
 
     /// `rect` with the side or corner `handle` dragged to `point` (flipped points, as the overlay's views use).
@@ -92,11 +130,16 @@ enum AreaFrame {
     /// height) when one is kept: moved, kept inside the bounds whole; resized, or a new area, with the pointer held to
     /// the bounds. Cut to the bounds it may still have to be (`fitted`).
     static func adjusted(_ adjustment: Adjustment, to point: CGPoint, in bounds: CGRect, keeping ratio: CGFloat? = nil) -> CGRect {
-        let clamped = CGPoint(x: min(max(point.x, bounds.minX), bounds.maxX), y: min(max(point.y, bounds.minY), bounds.maxY))
+        func clampedToBounds(_ point: CGPoint) -> CGPoint {
+            CGPoint(x: min(max(point.x, bounds.minX), bounds.maxX), y: min(max(point.y, bounds.minY), bounds.maxY))
+        }
+        let clamped = clampedToBounds(point)
         switch adjustment {
         case .moving(let start, let original):
             return placed(original.offsetBy(dx: point.x - start.x, dy: point.y - start.y), in: bounds)
-        case .resizing(let handle, let original):
+        case .resizing(let handle, let original, let grip):
+            // The edge where the pointer took hold of it, then held to the bounds.
+            let clamped = clampedToBounds(CGPoint(x: point.x + grip.dx, y: point.y + grip.dy))
             return if let ratio {
                 resized(original, dragging: handle, to: clamped, keeping: ratio)
             } else {

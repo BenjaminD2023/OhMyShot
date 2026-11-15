@@ -36,6 +36,9 @@ public final class InPlaceAnnotationView: NSView {
     }
 
     public let session: AnnotationSession
+    /// While a corner or edge of the selection is dragged: the point (this view's points) of the pixel just inside
+    /// where the dragged edges meet, for a magnifier over the frozen screen; nil once the drag ends.
+    public var onEdgeDrag: ((CGPoint?) -> Void)?
     let canvas: AnnotationCanvasView
     private let chrome = SelectionChromeView()
     let toolbar = InPlaceToolbar()
@@ -55,7 +58,8 @@ public final class InPlaceAnnotationView: NSView {
 
     private enum Adjustment {
         case moving(start: CGPoint, original: CGRect)
-        case resizing(handle: Handle, original: CGRect)
+        /// `grip` is how far the handle lay from the press, so the edge moves with the pointer.
+        case resizing(handle: Handle, original: CGRect, grip: CGVector)
         case selecting(start: CGPoint)
     }
 
@@ -91,6 +95,7 @@ public final class InPlaceAnnotationView: NSView {
         canvas.onCopy = { [weak self] in self?.perform(.copy) }
         canvas.onSave = { [weak self] in self?.perform(.save) }
         canvas.onViewportChange = { [weak self] in self?.placeAccessories() }
+        canvas.onRightClickAway = { [weak self] in self?.backOut() }
         canvas.cursorOverride = { [weak self] point in
             guard let self else { return nil }
             return cursor(at: convert(point, from: canvas), overCanvas: true)
@@ -420,7 +425,10 @@ public final class InPlaceAnnotationView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let rect = selectionRect
         if let handle = handle(at: point, toolInHand: session.tool != .select) {
-            begin(.resizing(handle: handle, original: rect))
+            // Held by the line as drawn, which steps in where the selection meets the display's edge.
+            let line = SelectionChromeView.drawnFrame(for: rect, in: bounds)
+            begin(.resizing(handle: handle, original: rect, grip: Geometry.grip(of: handle, on: line, pressedAt: point)))
+            showEdgeLoupe(for: handle, near: point)
         } else if rect.contains(point) {
             if event.clickCount == 2 {
                 perform(.copy)
@@ -455,8 +463,10 @@ public final class InPlaceAnnotationView: NSView {
             // Moved whole, kept on the display.
             rect.origin.x = min(max(rect.minX, limits.minX), limits.maxX - rect.width)
             rect.origin.y = min(max(rect.minY, limits.minY), limits.maxY - rect.height)
-        case .resizing(let handle, let original):
-            let clamped = CGPoint(x: min(max(point.x, limits.minX), limits.maxX), y: min(max(point.y, limits.minY), limits.maxY))
+        case .resizing(let handle, let original, let grip):
+            // The edge where the pointer took hold of it, then held to the display.
+            let held = CGPoint(x: point.x + grip.dx, y: point.y + grip.dy)
+            let clamped = CGPoint(x: min(max(held.x, limits.minX), limits.maxX), y: min(max(held.y, limits.minY), limits.maxY))
             rect = Geometry.resized(original, dragging: handle, to: clamped, keepingAspect: event.modifierFlags.contains(.shift))
         case .selecting(let start):
             let clamped = CGPoint(x: min(max(point.x, limits.minX), limits.maxX), y: min(max(point.y, limits.minY), limits.maxY))
@@ -467,12 +477,20 @@ public final class InPlaceAnnotationView: NSView {
         var document = session.document
         document.canvas = Self.pixels(rect, scale: document.scale, within: document.imageBounds)
         session.updateLive(document)
+        if case .resizing(let handle, _, _) = adjustment { showEdgeLoupe(for: handle, near: point) }
+    }
+
+    /// The magnifier on the pixel just inside where the dragged edges of the selection, as it is now, meet.
+    private func showEdgeLoupe(for handle: Handle, near pointer: CGPoint) {
+        let pixel = 1 / max(session.document.scale, 1)
+        onEdgeDrag?(Geometry.edgePoint(of: handle, on: selectionRect, near: pointer, pixel: pixel))
     }
 
     public override func mouseUp(with event: NSEvent) {
         guard let adjustment else { return }
         self.adjustment = nil
         chrome.showsThirds = false
+        onEdgeDrag?(nil)
         let name = switch adjustment {
         case .moving: String(localized: "Move Selection", bundle: .module)
         case .resizing: String(localized: "Resize Selection", bundle: .module)
@@ -484,6 +502,27 @@ public final class InPlaceAnnotationView: NSView {
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
 
+    /// A right-click on the frame, outside it, or on the canvas away from the marks (marks keep their own menu).
+    public override func rightMouseDown(with event: NSEvent) {
+        backOut()
+    }
+
+    /// Backs out one step, as Escape does, but never throws marks away: a text being typed is finished, then the tool
+    /// in hand is put down, then the selected marks are let go, and only a selection with nothing drawn on it is
+    /// cancelled. With marks drawn the last step is Escape's, or the toolbar's.
+    func backOut() {
+        guard adjustment == nil, !finished else { return }
+        if canvas.isEditingText {
+            canvas.endEditing()
+        } else if session.tool != .select {
+            session.tool = .select
+        } else if !session.selection.isEmpty {
+            session.select([])
+        } else if session.document.items.isEmpty {
+            perform(.cancel)
+        }
+    }
+
     public override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 53:
@@ -492,6 +531,7 @@ public final class InPlaceAnnotationView: NSView {
             if adjustment != nil {
                 adjustment = nil
                 chrome.showsThirds = false
+                onEdgeDrag?(nil)
                 session.cancelLiveChange()
                 placeAccessories()
             } else if session.tool != .select {

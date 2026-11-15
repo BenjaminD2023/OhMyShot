@@ -126,7 +126,10 @@ class AreaSetupView<Bar: NSView>: NSView {
         let point = convert(event.locationInWindow, from: nil)
         if let area = adjustableArea.map({ AreaFrame.local($0, on: display) }) {
             if let handle = AreaFrame.handle(at: point, of: frameRect, in: bounds) {
-                begin(.resizing(handle, original: area))
+                // Held by the line as drawn, which steps in where the frame meets the display's edge.
+                let line = SelectionChromeView.drawnFrame(for: frameRect, in: bounds)
+                begin(.resizing(handle, original: area, grip: AreaFrame.grip(of: handle, on: line, pressedAt: point)))
+                showEdgeLoupe(for: handle, on: area, near: point)
                 return
             }
             if area.contains(point) {
@@ -153,11 +156,25 @@ class AreaSetupView<Bar: NSView>: NSView {
         guard let adjustment else { return }
         let point = convert(event.locationInWindow, from: nil)
         setArea(AreaFrame.adjusted(adjustment, to: point, in: bounds, keeping: keptRatio))
+        if case .resizing(let handle, _, _) = adjustment { showEdgeLoupe(for: handle, on: frameRect, near: point) }
+    }
+
+    /// The overlay's magnifier on the pixel just inside where the dragged edges of `rect` meet; on a frozen screen
+    /// only, which the overlay sees to.
+    private func showEdgeLoupe(for handle: AreaFrame.Handle, on rect: CGRect, near pointer: CGPoint) {
+        guard let overlay = superview as? OverlayView else { return }
+        let point = AreaFrame.edgePoint(of: handle, on: rect, near: pointer, pixel: 1 / max(display.pixelsPerPoint, 1))
+        overlay.showEdgeLoupe(at: overlay.convert(point, from: self))
+    }
+
+    private func hideEdgeLoupe() {
+        (superview as? OverlayView)?.showEdgeLoupe(at: nil)
     }
 
     override func mouseUp(with event: NSEvent) {
         guard adjustment != nil else { return }
         adjustment = nil
+        hideEdgeLoupe()
         chrome.showsThirds = false
         placeBar()
         updateCursor(event)
@@ -170,6 +187,7 @@ class AreaSetupView<Bar: NSView>: NSView {
         case 53: // Escape: an adjustment first, then the whole setup.
             if adjustment != nil {
                 adjustment = nil
+                hideEdgeLoupe()
                 chrome.showsThirds = false
                 placeBar()
             } else {

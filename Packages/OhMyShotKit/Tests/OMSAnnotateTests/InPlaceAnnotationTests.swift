@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import OMSDesign
 import Testing
 @testable import OMSAnnotate
 
@@ -144,5 +145,72 @@ struct InPlaceAnnotationTests {
         annotator.simulateKey(" ", keyCode: 49)
         annotator.simulateDrag(from: CGPoint(x: 170, y: 90), to: CGPoint(x: 170, y: 260))
         #expect(annotator.placementZone == .above)
+    }
+
+    /// An edge taken hold of a little way from the frame moves with the pointer, keeping that distance, and the
+    /// magnifier follows the pixel just inside it until the drag ends.
+    @Test func aDraggedEdgeKeepsWhereItWasTakenHoldOf() {
+        let annotator = view()
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = annotator
+        defer { window.close() }
+        annotator.layoutSubtreeIfNeeded()
+        annotator.begin()
+        var lens: [CGPoint?] = []
+        annotator.onEdgeDrag = { lens.append($0) }
+
+        // The selection is 80…180 × 40…100 pt; pressed 4 pt inside its right edge and dragged 24 pt right.
+        annotator.simulateDrag(from: CGPoint(x: 176, y: 70), to: CGPoint(x: 200, y: 70))
+        #expect(annotator.selectionRect == CGRect(x: 80, y: 40, width: 124, height: 60))
+        // At 2× a pixel is half a point: the lens sits a quarter point inside the edge, across from the pointer.
+        #expect(lens.first == CGPoint(x: 179.75, y: 70))
+        #expect(lens.dropLast().last == CGPoint(x: 203.75, y: 70))
+        #expect(lens.last == .some(nil))
+    }
+
+    /// Where the selection meets the display's edge its line is drawn stepped in: the line is what is held, so it stays
+    /// under the pointer from the first move.
+    @Test func anEdgeAtTheDisplaysEdgeIsHeldByItsDrawnLine() {
+        let annotator = view(selection: CGRect(x: 300, y: 40, width: 100, height: 60))
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = annotator
+        defer { window.close() }
+        annotator.layoutSubtreeIfNeeded()
+        annotator.begin()
+        let line = SelectionChromeView.drawnFrame(for: annotator.selectionRect, in: annotator.bounds)
+        #expect(line.maxX == 400 - SelectionChromeView.reach)
+        // Pressed on the drawn line and moved 2 pt in: the edge lands under the pointer.
+        annotator.simulateDrag(from: CGPoint(x: line.maxX, y: 70), to: CGPoint(x: line.maxX - 2, y: 70), steps: 2)
+        #expect(annotator.selectionRect.maxX == line.maxX - 2)
+    }
+
+    /// A right-click away from the marks backs out one step, as Escape does, but never cancels with marks drawn.
+    @Test func aRightClickBacksOutAStepAndKeepsTheMarks() {
+        var cancelled = false
+        let annotator = InPlaceAnnotationView(
+            frame: frame(), scale: 2, size: CGSize(width: 400, height: 300), selection: CGRect(x: 80, y: 40, width: 100, height: 60),
+            actions: .init(copy: { _ in }, save: { _ in }, openInEditor: { _ in }, cancel: { cancelled = true })
+        )
+        annotator.session.tool = .counter
+        annotator.backOut()
+        #expect(annotator.session.tool == .select)
+
+        let mark = Annotation(shape: .rectangle(Box(rect: CGRect(x: 250, y: 140, width: 30, height: 30))), style: Style())
+        var document = annotator.session.document
+        document.items = [mark]
+        annotator.session.commit(document, actionName: "Add")
+        annotator.session.select([mark.id])
+        annotator.backOut()
+        #expect(annotator.session.selection.isEmpty)
+        annotator.backOut()
+        #expect(!cancelled && annotator.session.document.items.count == 1)
+
+        // With nothing drawn, the last step cancels.
+        annotator.session.undo()
+        #expect(annotator.session.document.items.isEmpty)
+        annotator.backOut()
+        #expect(cancelled)
     }
 }

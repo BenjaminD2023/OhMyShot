@@ -28,6 +28,24 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// Drawing in place over the capture overlay: the picture at the screen's own size under the frozen
     /// screen's pixels, no zoom, no window chrome, the drawing tools only. Set by `configureInPlace`.
     public private(set) var isInPlace = false
+    /// In place: a right-click on the canvas away from every mark, for the host to back out a step.
+    public var onRightClickAway: (() -> Void)?
+
+    /// A counter whose number the wheel is stepping: what is left of the travel toward the next step, the document
+    /// as the last step left it (any other change since starts a new undo step), and the moment a mouse wheel's
+    /// gesture ends without phases.
+    private struct CounterWheel {
+        let id: Annotation.ID
+        var residue: CGFloat = 0
+        var stepped: AnnotationDocument?
+        var idle: DispatchWorkItem?
+    }
+
+    private var counterWheel: CounterWheel?
+    /// Whether the momentum now arriving follows a gesture that stepped a counter.
+    private var counterWheelCoasts = false
+    /// Trackpad travel, in points, for one step of a counter's number.
+    static let counterWheelStep: CGFloat = 12
     /// Chooses the pointer for a point in this view ahead of the canvas, for a host whose own controls
     /// reach over it (the in-place selection's edges); nil leaves it to the canvas.
     public var cursorOverride: ((CGPoint) -> NSCursor?)?
@@ -577,6 +595,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     public override func scrollWheel(with event: NSEvent) {
+        if renumberCounter(with: event) { return }
         guard !isInPlace else { return }
         if event.modifierFlags.contains(.command) {
             let factor = 1 + event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.01 : 0.1)
@@ -592,6 +611,85 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         updateViewport()
         // Clamped by the edges: keep the focus where the picture actually is.
         focus = documentPoint(CGPoint(x: freeArea.midX, y: freeArea.midY))
+    }
+
+    /// The wheel over a selected counter, in Select, steps its number: up (away from you, as the device moves) counts
+    /// up, down counts down, never below the first. A trackpad steps once per `counterWheelStep` points of travel and
+    /// a mouse wheel once per notch; the momentum after a flick steps nothing. One gesture's steps are one undo step,
+    /// which ends when the gesture does, or a moment after the last notch. True when the event was taken.
+    private func renumberCounter(with event: NSEvent) -> Bool {
+        guard !event.modifierFlags.contains(.command), session.tool == .select, drag == nil, !isEditingText else {
+            endCounterWheel()
+            return false
+        }
+        if event.momentumPhase != [] {
+            // A flick that stepped a counter coasts out swallowed, never a pan or more steps; others pass.
+            if counterWheel != nil {
+                endCounterWheel()
+                counterWheelCoasts = true
+            }
+            let swallowed = counterWheelCoasts
+            if event.momentumPhase == .ended || event.momentumPhase == .cancelled { counterWheelCoasts = false }
+            return swallowed
+        }
+        counterWheelCoasts = false
+        let point = documentPoint(convert(event.locationInWindow, from: nil))
+        guard let item = hitItem(at: point), session.selection.contains(item.id), case .counter = item.shape else {
+            endCounterWheel()
+            return false
+        }
+        // Another change under way (a drag of the selection's frame) is left to finish first.
+        if session.isInLiveChange { return true }
+        if counterWheel?.id != item.id {
+            endCounterWheel()
+            counterWheel = CounterWheel(id: item.id)
+        }
+        let travel = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
+        var steps = 0
+        if event.hasPreciseScrollingDeltas {
+            counterWheel?.residue += travel
+            let residue = counterWheel?.residue ?? 0
+            steps = Int((residue / Self.counterWheelStep).rounded(.towardZero))
+            counterWheel?.residue -= CGFloat(steps) * Self.counterWheelStep
+        } else if travel != 0 {
+            steps = travel > 0 ? 1 : -1
+        }
+        if steps != 0, let index = session.document.index(of: item.id), case .counter(var counter) = session.document.items[index].shape {
+            let value = max(1, counter.value + steps)
+            if value != counter.value {
+                counter.value = value
+                var document = session.document
+                document.items[index].shape = .counter(counter)
+                let name = String(localized: "Renumber Counter", bundle: .module)
+                // The gesture's first step is an undo step; the rest join it, as long as nothing else changed the
+                // document since (then they start another). Undo puts back the number before the gesture, and Redo
+                // the one it ended on.
+                if let stepped = counterWheel?.stepped, stepped == session.document, session.undoManager.undoActionName == name {
+                    session.updateLive(document)
+                } else {
+                    session.commit(document, actionName: name)
+                }
+                counterWheel?.stepped = session.document
+                VoiceOver.announce(counter.label, from: self)
+            }
+        }
+        if event.phase == .ended || event.phase == .cancelled {
+            endCounterWheel()
+        } else if !event.hasPreciseScrollingDeltas || event.phase == [] {
+            // A mouse wheel has no phases: its gesture ends when the notches stop.
+            counterWheel?.idle?.cancel()
+            let idle = DispatchWorkItem { [weak self] in self?.endCounterWheel() }
+            counterWheel?.idle = idle
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: idle)
+        }
+        return true
+    }
+
+    /// The wheel's gesture is over: the next notch, even on the same counter, is a new undo step.
+    private func endCounterWheel() {
+        guard let wheel = counterWheel else { return }
+        counterWheel = nil
+        wheel.idle?.cancel()
     }
 
     // MARK: Session
@@ -948,6 +1046,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     // MARK: Pointer
 
     public override func mouseDown(with event: NSEvent) {
+        // A press ends the wheel's gesture on a counter: notches after it are a new undo step.
+        endCounterWheel()
         if editing != nil {
             endEditing()
         }
@@ -1274,10 +1374,23 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     public override func rightMouseDown(with event: NSEvent) {
         let point = documentPoint(convert(event.locationInWindow, from: nil))
-        if let item = hitItem(at: point), !session.selection.contains(item.id) {
+        let item = hitItem(at: point)
+        if let item, !session.selection.contains(item.id) {
             session.select([item.id])
         }
-        super.rightMouseDown(with: event)
+        guard isInPlace else { return super.rightMouseDown(with: event) }
+        // In place, a right-click away from the marks backs out a step, as its host decides.
+        guard item != nil else {
+            onRightClickAway?()
+            return
+        }
+        // The overlay's panel floats above the pop-up menu level; it steps just below while the menu is open, or
+        // the menu would open under it.
+        guard let menu = menu(for: event), let window else { return }
+        let level = window.level
+        if level >= .popUpMenu { window.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1) }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+        window.level = level
     }
 
     public override func menu(for event: NSEvent) -> NSMenu? {
@@ -1480,6 +1593,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     // MARK: Keyboard
 
     public override func keyDown(with event: NSEvent) {
+        endCounterWheel()
         if !handleKey(event) {
             super.keyDown(with: event)
         }

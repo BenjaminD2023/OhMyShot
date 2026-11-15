@@ -32,6 +32,13 @@ Each entry links its implementation commits or merged pull request and credits v
 - In the window chooser, Up and Down go through the chosen app's windows, as Left and Right go through the apps. ([84a0c3a]; by [@fzlzjerry])
 - The camera bubble can be placed and made to fill the recording without dragging or double-clicking it: before recording, the recording bar's camera menu has Position (each corner) and Fill the Recording; VoiceOver offers the same as the bubble's actions at any time. ([ea1e905]; by [@fzlzjerry])
 - In the editor and when marking up in place, Text and the dragged shapes (Arrow, Line, Rectangle, Ellipse, Highlight Box, Redact, Spotlight) put themselves down once their mark is made, and Select takes over: a click away from text you wrote finishes it instead of starting another, and a shape just drawn is selected to adjust. Pen, Highlighter, and Counter stay in hand, and the next editor still opens with the tool you last picked. ([f69d36e]; by [@bobbyhuang-dev])
+- While an edge or corner of a selection is dragged on a frozen screen (marking up in place, All-In-One, or a typed size), the magnifier shows the pixel just inside it, so the edge can be placed to the pixel.
+- Marking up in place, a right-click away from the marks backs out one step: a text being typed is finished, then the tool in hand is put down, then the selected marks are let go, and a selection with nothing drawn on it is cancelled. With marks drawn it stops there; Escape still cancels.
+- The scroll wheel over a selected counter steps its number up or down, never below the first; one gesture is one undo step.
+
+### Changed
+
+- Resizing a selection by its frame keeps the edge where the pointer took hold of it, instead of jumping it to the pointer.
 
 ### Fixed
 

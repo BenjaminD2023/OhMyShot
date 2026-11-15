@@ -271,6 +271,51 @@ nonisolated enum Geometry {
         return CGRect(x: start.x, y: start.y, width: dx, height: dy).standardized
     }
 
+    /// How far the edges under `handle` of `rect` lie from a press at `point`, along the axes the handle
+    /// moves: a side's distance across it, a corner's both ways; zero for the handles of lines. Added to the
+    /// pointer while it drags, it keeps the edge where it was taken hold of instead of jumping to the pointer.
+    static func grip(of handle: Handle, on rect: CGRect, pressedAt point: CGPoint) -> CGVector {
+        let rect = rect.standardized
+        let x: CGFloat? = switch handle {
+        case .topLeft, .left, .bottomLeft: rect.minX
+        case .topRight, .right, .bottomRight: rect.maxX
+        case .top, .bottom, .start, .end, .bend: nil
+        }
+        let y: CGFloat? = switch handle {
+        case .topLeft, .top, .topRight: rect.minY
+        case .bottomLeft, .bottom, .bottomRight: rect.maxY
+        case .left, .right, .start, .end, .bend: nil
+        }
+        return CGVector(dx: x.map { $0 - point.x } ?? 0, dy: y.map { $0 - point.y } ?? 0)
+    }
+
+    /// Where the edges under `handle` of `rect` meet, nudged half of `pixel` inside it: the middle of the
+    /// pixel just inside the dragged corner, or, for a side, of the one across from `pointer`. A magnifier
+    /// centered there shows the edge against what it cuts off. The dragged edge is the side nearer the
+    /// pointer, which stays with it even once it has been dragged past the opposite one.
+    static func edgePoint(of handle: Handle, on rect: CGRect, near pointer: CGPoint, pixel: CGFloat) -> CGPoint {
+        let rect = rect.standardized
+        let half = pixel / 2
+        func along(_ value: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
+            min(max(value, low + half), max(low + half, high - half))
+        }
+        func nearer(_ value: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
+            abs(value - low) <= abs(value - high) ? low + half : high - half
+        }
+        let movesX: Bool = switch handle {
+        case .topLeft, .left, .bottomLeft, .topRight, .right, .bottomRight: true
+        case .top, .bottom, .start, .end, .bend: false
+        }
+        let movesY: Bool = switch handle {
+        case .topLeft, .top, .topRight, .bottomLeft, .bottom, .bottomRight: true
+        case .left, .right, .start, .end, .bend: false
+        }
+        return CGPoint(
+            x: movesX ? nearer(pointer.x, rect.minX, rect.maxX) : along(pointer.x, rect.minX, rect.maxX),
+            y: movesY ? nearer(pointer.y, rect.minY, rect.maxY) : along(pointer.y, rect.minY, rect.maxY)
+        )
+    }
+
     /// `rect` with the edges under `handle` moved to `point`; corners keep `rect`'s proportions when
     /// `keepingAspect`.
     static func resized(_ rect: CGRect, dragging handle: Handle, to point: CGPoint, keepingAspect: Bool) -> CGRect {
