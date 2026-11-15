@@ -26,25 +26,32 @@ public struct TranslationUnit: Sendable, Equatable {
     public var skip: Skip?
     /// Whether it holds a formula (`$…$`), whose LaTeX the translation keeps as it is.
     public var hasMath: Bool
+    /// A list item whose bullet was read as text: taken off `text`, so the bullet is not translated, and drawn again in
+    /// front of the translation (`Bullets.drawnMark`).
+    public var bulleted: Bool
 
-    public init(lines: [Int], text: String, box: CGRect, skip: Skip? = nil, hasMath: Bool = false) {
+    public init(lines: [Int], text: String, box: CGRect, skip: Skip? = nil, hasMath: Bool = false, bulleted: Bool = false) {
         self.lines = lines
         self.text = text
         self.box = box
         self.skip = skip
         self.hasMath = hasMath
+        self.bulleted = bulleted
     }
 }
 
 public enum TranslationUnits {
     /// Groups `lines` (in reading order) into units: lines that wrap into the next join it, as when
-    /// assembling text with joined lines; every other line stands alone.
-    public static func group(_ lines: [OCRLine]) -> [TranslationUnit] {
+    /// assembling text with joined lines; every other line stands alone. A list item starts a unit of its own
+    /// (`Bullets`), its bullet seen in `image`, the picture the lines were read from, when given.
+    public static func group(_ lines: [OCRLine], image: CGImage? = nil) -> [TranslationUnit] {
         guard !lines.isEmpty else { return [] }
         let isCode = TextAssembler.isCodeListing(lines)
         let technical = isTechnical(lines.map(\.text))
-        let wraps = isCode ? lines.map { _ in false } : zip(lines, TextAssembler.inferredWraps(lines)).map { line, guess in
-            line.wrapsToNextLine ?? guess
+        let items = image.flatMap { image in Pixels.reading(image) { Bullets.items(lines, in: $0) } } ?? Bullets.items(lines)
+        let wraps = isCode ? lines.map { _ in false } : zip(lines.indices, TextAssembler.inferredWraps(lines, items: items)).map { index, guess in
+            // Whatever an engine says, a list item never carries on the line before it.
+            index + 1 < lines.count && items[index + 1] ? false : lines[index].wrapsToNextLine ?? guess
         }
         var units: [TranslationUnit] = []
         var current: [Int] = []
@@ -54,16 +61,20 @@ public enum TranslationUnits {
                 || lines[index].math == .display || lines[index + 1].math == .display || lines[index].isTableRow || lines[index + 1].isTableRow
             else { continue }
             let members = current.map { lines[$0] }
-            let texts = members.map { line in
+            var texts = members.map { line in
                 line.math != nil ? TextAssembler.withMath(line.text) : TextAssembler.isCodeLike(line.text) ? TextAssembler.asCode(line.text) : TextAssembler.asProse(line.text)
             }
+            // A bullet read as text is not translated: it is drawn again in front of the translation.
+            let bulleted = !isCode && members[0].math == nil && Bullets.strippingMark(from: texts[0]) != nil
+            if bulleted, let rest = Bullets.strippingMark(from: texts[0]) { texts[0] = rest }
             let text = TextAssembler.joinWrapped(texts, wraps: members.dropLast().map { _ in true } + [false])
             let box = members.dropFirst().reduce(members[0].box) { $0.union($1.box) }
             // A formula's LaTeX is neither code nor figures: what is around it decides.
             let hasMath = members.contains { $0.math != nil }
             let prose = hasMath ? text.replacing(TextAssembler.mathSpan, with: " ") : text
             units.append(TranslationUnit(
-                lines: current, text: text, box: box, skip: skip(prose, members: members, isCode: isCode, technical: technical), hasMath: hasMath
+                lines: current, text: text, box: box, skip: skip(prose, members: members, isCode: isCode, technical: technical), hasMath: hasMath,
+                bulleted: bulleted
             ))
             current = []
         }

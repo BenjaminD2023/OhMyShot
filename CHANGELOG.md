@@ -36,6 +36,7 @@ Each entry links its implementation commits or merged pull request and credits v
 - Marking up in place, a right-click away from the marks backs out one step: a text being typed is finished, then the tool in hand is put down, then the selected marks are let go, and a selection with nothing drawn on it is cancelled. With marks drawn it stops there; Escape still cancels.
 - The scroll wheel over a selected counter steps its number up or down, never below the first; one gesture is one undo step.
 - QR codes and barcodes are found where a selection stays on a frozen screen (marking up in place, All-In-One's frame): a chip stands on each code, and opens a card with what it says, to copy, or to open when it is a web page (not once marks are drawn, as that would end the capture). Q goes through the cards from the keyboard. A screenshot's Quick Access card menu offers the same for the codes in it. Settings › Capture › Find QR codes and barcodes turns it off.
+- Translations drawn over the original are laid out more like the page: list items stay apart (a bullet read as text comes back in front of its translation), centered and right-aligned text keeps its alignment, a translation into English or another language of words runs on into the clear room beside and under it before shrinking, and nothing is shrunk below a readable 12 pt (13 pt for Chinese, Japanese, and Korean) unless the whole page is small print. Joining wrapped lines in Capture Text keeps list items apart too.
 
 ### Changed
 

@@ -4,9 +4,12 @@ import Foundation
 
 /// The image with each translated unit drawn where its text was, as Live Text's translation does: every
 /// original line is painted over with its own background, then the translation is laid out across the
-/// unit's box in the original text's color and size, shrinking to 70% when it does not fit and cut
-/// short with an ellipsis after that. A unit cut short is reported, so the full translation can be
-/// shown elsewhere.
+/// unit's box in the original text's color and size, aligned as its lines were (`alignments`). When it does not
+/// fit, a translation into a language of words (English, French…) first runs on into the clear room to its right
+/// and the blank rows under it, as SnowAir lays translations out, and only then shrinks; Chinese, Japanese and
+/// Korean shrink in place. Neither goes below 70% of the original size, nor below a readable 12 pt (13 pt for
+/// CJK) unless the page is of small text throughout; after that it is cut short with an ellipsis. A unit cut short
+/// is reported, so the full translation can be shown elsewhere.
 public enum TranslationOverlay {
     public struct Rendering: @unchecked Sendable {
         public var image: CGImage
@@ -43,16 +46,26 @@ public enum TranslationOverlay {
         let words = lines.indices.filter { lines[$0].math == nil }
         let bodySize = median((words.count < 3 ? Array(lines.indices) : words).map { sizes[$0] }) ?? 0
         let rightToLeft = language.characterDirection == .rightToLeft
+        let widens = !Self.isCJK(language)
+        let floor = Self.readableFloor(for: language, scale: scale, sizes: (words.isEmpty ? Array(lines.indices) : words).map { sizes[$0] })
+        let aligns = Self.alignments(lines.map(\.box), sizes: sizes)
         // Colors and room first, while every pixel is still the original.
         let drawn = units.indices.compactMap { index -> Drawn? in
             let unit = units[index]
             guard let text = translations[index], text != unit.text, !unit.lines.isEmpty else { return nil }
             let colors = unit.lines.map { LineColors(pixels: pixels, box: lines[$0].box) }
+            let members = Set(unit.lines)
+            let others = lines.indices.filter { !members.contains($0) }.map { lines[$0].box }
+            // Centered or right-aligned lines keep their place: only text set flush left runs on to the right.
+            let alignment = rightToLeft ? Alignment.right : unit.lines.allSatisfy({ aligns[$0] == .center }) ? .center : aligns[unit.lines[0]]
             var room = unit.box.width
-            if unit.lines.count == 1 {
-                let others = lines.indices.filter { $0 != unit.lines[0] }.map { lines[$0].box }
+            // A line on its own may run on into the room beside it; a paragraph keeps its column unless its language
+            // is one of words, which reads better wider than smaller.
+            if alignment == .left, unit.lines.count == 1 || widens {
                 room = clear(Self.room(for: unit.box, beside: others, imageWidth: CGFloat(width)), beside: unit.box, of: colors[0].paper, in: pixels)
             }
+            let lastLine = lines[unit.lines[unit.lines.count - 1]].box.height
+            let below = widens ? Self.blankBelow(unit.box, lineHeight: lastLine, width: room, beside: others, of: colors[colors.count - 1].paper, in: pixels) : 0
             let wordLines = unit.lines.filter { lines[$0].math == nil }
             let size = median((wordLines.isEmpty ? unit.lines : wordLines).map { sizes[$0] }) ?? unit.box.height
             // A heading: a third larger than the body or more. Its weight cannot be read from its pixels
@@ -60,8 +73,13 @@ public enum TranslationOverlay {
             // bold far more often than not.
             let isHeading = unit.lines.count <= 2 && size >= bodySize * 1.3
             // A formula drawn as its LaTeX would read as code: drawn readable instead (the text copied keeps the LaTeX).
-            let drawnText = unit.hasMath ? MathText.readable(in: text) : text
-            return Drawn(index: index, text: drawnText, colors: colors, room: room, size: size, bold: isHeading)
+            var drawnText = unit.hasMath ? MathText.readable(in: text) : text
+            // A bullet read as text was painted over with the line: it comes back in front of the translation.
+            if unit.bulleted { drawnText = Bullets.drawnMark + drawnText }
+            return Drawn(
+                index: index, text: drawnText, colors: colors, room: room, below: below, size: size, bold: isHeading,
+                alignment: alignment, minimumScale: floor.map { max(Self.minimumScale, min(1, $0 / size)) } ?? Self.minimumScale
+            )
         }
         let erasedLines = Set(drawn.flatMap { units[$0.index].lines })
         let kept = lines.indices.filter { !erasedLines.contains($0) }.map { lines[$0].box }
@@ -85,11 +103,13 @@ public enum TranslationOverlay {
                 box = CGRect(x: box.minX, y: top, width: box.width, height: bottom - top)
             }
             // On its column's left edge: Vision's boxes start a few pixels apart on lines that align.
-            let left = lefts[units[unit.index].lines[0]]
-            box = CGRect(x: left, y: box.minY, width: box.maxX - left, height: box.height)
+            if unit.alignment == .left {
+                let left = lefts[units[unit.index].lines[0]]
+                box = CGRect(x: left, y: box.minY, width: box.maxX - left, height: box.height)
+            }
             let layout = Self.layout(
                 unit.text, box: box, room: unit.room, members: members, size: unit.size, bold: unit.bold,
-                language: language, color: unit.colors[0].ink
+                language: language, color: unit.colors[0].ink, minimumScale: unit.minimumScale, widens: widens, below: unit.below
             )
             if layout.truncated { truncated.insert(unit.index) }
             context.saveGState()
@@ -100,7 +120,15 @@ public enum TranslationOverlay {
                 // with `CTLineGetImageBounds`, which counts in the context's text position, by then at the
                 // end of the line before.)
                 let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
-                let x = ink.isNull || ink.isEmpty ? origin.x : rightToLeft ? box.maxX - ink.maxX : box.minX - ink.minX
+                let x: CGFloat = if ink.isNull || ink.isEmpty {
+                    origin.x
+                } else {
+                    switch unit.alignment {
+                    case .left: box.minX - ink.minX
+                    case .center: box.midX - ink.midX
+                    case .right: box.maxX - ink.maxX
+                    }
+                }
                 context.textPosition = CGPoint(x: x, y: CGFloat(height) - origin.y)
                 CTLineDraw(line, context)
             }
@@ -115,8 +143,113 @@ public enum TranslationOverlay {
         let text: String
         let colors: [LineColors]
         let room: CGFloat
+        /// Blank height under the unit the translation may grow into, in pixels.
+        let below: CGFloat
         let size: CGFloat
         let bold: Bool
+        let alignment: Alignment
+        let minimumScale: CGFloat
+    }
+
+    enum Alignment: Equatable {
+        case left, center, right
+    }
+
+    /// Whether `language` is written in Chinese, Japanese or Korean, which shrink in place rather than run on.
+    static func isCJK(_ language: Locale.Language) -> Bool {
+        ["zh", "ja", "ko"].contains(language.languageCode?.identifier ?? "")
+    }
+
+    /// The smallest size a translation is drawn at, in pixels: 12 pt on screen, 13 pt for Chinese, Japanese and
+    /// Korean, whose strokes need it; nil when four fifths of the page's lines of words are already smaller (a
+    /// page of small print stays as it is, and only the share of the original holds).
+    static func readableFloor(for language: Locale.Language, scale: CGFloat, sizes: [CGFloat]) -> CGFloat? {
+        let floor = (isCJK(language) ? 13 : 12) * max(scale, 1)
+        guard !sizes.isEmpty else { return floor }
+        let smaller = sizes.filter { $0 < floor }.count
+        return Double(smaller) >= Double(sizes.count) * 0.8 ? nil : floor
+    }
+
+    /// How each line is aligned, told by how the lines of its block agree, as SnowAir reads alignment: a block is
+    /// lines one under the next (less than one and a half lines apart) whose spans overlap. Within a block, edges
+    /// and middles within 3% of its width (2 px at least) go together. The block is centered when the largest group
+    /// of middles holds two lines or more and beats the largest groups of left and right edges, both edges sit well
+    /// inside it (6% of its width), and about as far (within a tenth of its width). Otherwise a line is left aligned
+    /// when its left edge is shared, right aligned when its right edge is, or when it ends at the block's right edge
+    /// while being clearly shorter than the block; else left. A line on its own is left aligned.
+    static func alignments(_ boxes: [CGRect], sizes: [CGFloat]) -> [Alignment] {
+        var blocks = DisjointSets(count: boxes.count)
+        for a in boxes.indices {
+            for b in boxes.indices where b > a {
+                let size = max(min(sizes[a], sizes[b]), 1)
+                let gap = max(boxes[a].minY - boxes[b].maxY, boxes[b].minY - boxes[a].maxY)
+                let overlap = min(boxes[a].maxX, boxes[b].maxX) - max(boxes[a].minX, boxes[b].minX)
+                if gap < size * 1.5, overlap > 0 { blocks.join(a, b) }
+            }
+        }
+        var result = Array(repeating: Alignment.left, count: boxes.count)
+        for members in blocks.groups where members.count >= 2 {
+            let block = members.dropFirst().reduce(boxes[members[0]]) { $0.union(boxes[$1]) }
+            let width = block.width
+            let tolerance = max(2, width * 0.03)
+            // How many lines share each line's value, first come first grouped.
+            func shared(_ value: (CGRect) -> CGFloat) -> [Int: Int] {
+                var groups: [(value: CGFloat, members: [Int])] = []
+                for member in members {
+                    let v = value(boxes[member])
+                    if let index = groups.firstIndex(where: { abs($0.value - v) <= tolerance }) {
+                        groups[index].members.append(member)
+                    } else {
+                        groups.append((v, [member]))
+                    }
+                }
+                var counts: [Int: Int] = [:]
+                for group in groups { for member in group.members { counts[member] = group.members.count } }
+                return counts
+            }
+            let lefts = shared(\.minX), rights = shared(\.maxX), middles = shared(\.midX)
+            let largest = { (counts: [Int: Int]) in counts.values.max() ?? 0 }
+            let leftInset = median(members.map { boxes[$0].minX - block.minX }) ?? 0
+            let rightInset = median(members.map { block.maxX - boxes[$0].maxX }) ?? 0
+            let inset = max(3, width * 0.06)
+            let centered = largest(middles) >= 2 && largest(middles) > largest(lefts) && largest(middles) > largest(rights)
+                && leftInset > inset && rightInset > inset && abs(leftInset - rightInset) <= max(width * 0.1, 6)
+            for member in members {
+                let box = boxes[member]
+                if centered {
+                    result[member] = .center
+                } else if lefts[member, default: 1] >= 2 {
+                    result[member] = .left
+                } else if rights[member, default: 1] >= 2 || (block.maxX - box.maxX <= max(3, width * 0.05) && box.width < width * 0.85) {
+                    result[member] = .right
+                }
+            }
+        }
+        return result
+    }
+
+    /// How far down from `box` a translation may grow over the image's own background: the blank rows under it,
+    /// across `width` from its left edge, before the next line below or the first ink, less a third of a line
+    /// (`lineHeight`) to spare; at most as tall again as the box, or two lines for a short one. Zero when there is no
+    /// blank room.
+    static func blankBelow(_ box: CGRect, lineHeight: CGFloat, width: CGFloat, beside others: [CGRect], of paper: (Int, Int, Int), in pixels: Pixels) -> CGFloat {
+        let span = box.minX..<(box.minX + max(width, box.width))
+        let spare = lineHeight / 3
+        var limit = min(CGFloat(pixels.height), box.maxY + max(box.height, lineHeight * 2))
+        for other in others where other.minY >= box.maxY - 1 && other.maxX > span.lowerBound && other.minX < span.upperBound {
+            limit = min(limit, other.minY)
+        }
+        let left = max(0, Int(span.lowerBound.rounded(.down))), right = min(pixels.width, Int(span.upperBound.rounded(.up)))
+        let start = Int(box.maxY.rounded(.up)) + 2, end = Int(limit.rounded(.down))
+        guard left < right, start < end else { return 0 }
+        var lastBlank = start
+        rows: for y in start..<end {
+            for x in left..<right where LineColors.distance(pixels.rgb(x, y), paper) > LineColors.inkDistance {
+                break rows
+            }
+            lastBlank = y + 1
+        }
+        return max(0, CGFloat(lastBlank) - box.maxY - spare)
     }
 
     /// What is painted over to hide a line: its box and a little more, for the descenders and accents
@@ -271,37 +404,46 @@ public enum TranslationOverlay {
         return room
     }
 
-    /// The translation set in `box` at `size`: as is if it fits, a little smaller if that is enough;
-    /// then a line on its own may run on into the room beside it (a paragraph keeps its column) while
-    /// shrinking to 70%; after that it is cut short. Lines keep the original's spacing, scaled with the
-    /// type, and no more of them fit than the original had.
+    /// The translation set in `box` at `size`: as is if it fits, a little smaller if that is enough. Then, for a
+    /// language of words (`widens`), it runs on to the right into `room`, only as far as it needs, then down into the
+    /// blank height `below` the box, and only then shrinks, no smaller than `minimumScale`. Otherwise a line on its
+    /// own runs on into `room` while shrinking, and a paragraph keeps its column and shrinks. After that it is cut
+    /// short. Lines keep the original's spacing, scaled with the type, and no more of them fit than the original had,
+    /// with the room below added.
     static func layout(
         _ text: String, box: CGRect, room: CGFloat, members: [OCRLine], size: CGFloat, bold: Bool = false,
-        language: Locale.Language, color: CGColor
+        language: Locale.Language, color: CGColor, minimumScale: CGFloat = Self.minimumScale, widens: Bool = false, below: CGFloat = 0
     ) -> Layout {
         let pitch = members.count > 1
             ? (members[members.count - 1].box.midY - members[0].box.midY) / CGFloat(members.count - 1)
             : box.height
         // The height the original lines took, line to line, with a little to spare.
         let capacity = (CGFloat(members.count) + 0.1) * pitch
-        let width = members.count > 1 ? box.width : room
-        var steps: [(scale: CGFloat, width: CGFloat)] = [(1, box.width), (0.95, box.width), (0.9, box.width)]
-        if width > box.width {
-            for scale in stride(from: 1, through: minimumScale - 0.001, by: -0.05) { steps.append((scale, width)) }
+        let width = members.count > 1 && !widens ? box.width : max(room, box.width)
+        var steps: [(scale: CGFloat, width: CGFloat, capacity: CGFloat)] = [(1, box.width, capacity), (0.95, box.width, capacity)]
+        if widens {
+            // No wider than it needs: the column it was in, a little at a time, then all the room.
+            for factor in [1.15, 1.3, 1.5, 1.75, 2.0, 2.5] where box.width * factor < width { steps.append((1, box.width * factor, capacity)) }
+            if width > box.width { steps.append((1, width, capacity)) }
+            if below > 0 { steps.append((1, width, capacity + below)) }
+            for scale in stride(from: 0.95, through: minimumScale - 0.001, by: -0.05) { steps.append((scale, width, capacity + below)) }
         } else {
-            for scale in stride(from: 0.85, through: minimumScale - 0.001, by: -0.05) { steps.append((scale, width)) }
+            steps.append((0.9, box.width, capacity))
+            let first: CGFloat = width > box.width ? 1 : 0.85
+            for scale in stride(from: first, through: minimumScale - 0.001, by: -0.05) { steps.append((scale, width, capacity)) }
         }
-        for step in steps {
+        for step in steps where step.scale >= minimumScale - 0.001 {
             let lines = typeset(text, font: font(size: size * step.scale, bold: bold, language: language), width: step.width, color: color)
-            if CGFloat(lines.count) * pitch * step.scale <= capacity {
-                return place(lines, in: box, pitch: pitch * step.scale, scale: step.scale, truncated: false)
+            if CGFloat(lines.count) * pitch * step.scale <= step.capacity {
+                let grows = CGFloat(lines.count) * pitch * step.scale > capacity
+                return place(lines, in: box, pitch: pitch * step.scale, scale: step.scale, truncated: false, fromTop: grows)
             }
         }
-        // Cut short: as many lines as the box holds, the last one ending in an ellipsis.
+        // Cut short: as many lines as the box (and the room below) holds, the last one ending in an ellipsis.
         let small = font(size: size * minimumScale, bold: bold, language: language)
         let linePitch = pitch * minimumScale
         var lines = typeset(text, font: small, width: width, color: color)
-        let fitting = max(1, Int(capacity / linePitch))
+        let fitting = max(1, Int((capacity + (widens ? below : 0)) / linePitch))
         if lines.count > fitting {
             let lastRange = CTLineGetStringRange(lines[fitting - 1])
             let rest = (text as NSString).substring(from: lastRange.location)
@@ -309,7 +451,7 @@ public enum TranslationOverlay {
             let ellipsis = CTLineCreateWithAttributedString(attributedString("…", font: small, color: color))
             lines = Array(lines.prefix(fitting - 1)) + [CTLineCreateTruncatedLine(full, Double(width), .end, ellipsis) ?? full]
         }
-        return place(lines, in: box, pitch: linePitch, scale: minimumScale, truncated: true)
+        return place(lines, in: box, pitch: linePitch, scale: minimumScale, truncated: true, fromTop: CGFloat(lines.count) * linePitch > capacity)
     }
 
     /// The system font for the target language (Chinese in PingFang, Japanese in Hiragino), semibold for
@@ -333,9 +475,11 @@ public enum TranslationOverlay {
         ])
     }
 
-    /// Lines stacked at `pitch` from the box's left edge, the block centered in the box's height.
-    private static func place(_ lines: [CTLine], in box: CGRect, pitch: CGFloat, scale: CGFloat, truncated: Bool) -> Layout {
-        let top = box.midY - CGFloat(lines.count) * pitch / 2
+    /// Lines stacked at `pitch` from the box's left edge, the block centered in the box's height, or, grown into the
+    /// room below (`fromTop`), from the box's top.
+    private static func place(_ lines: [CTLine], in box: CGRect, pitch: CGFloat, scale: CGFloat, truncated: Bool, fromTop: Bool = false) -> Layout {
+        let height = CGFloat(lines.count) * pitch
+        let top = fromTop ? box.minY : box.midY - height / 2
         let origins = lines.indices.map { index -> CGPoint in
             var ascent: CGFloat = 0
             var descent: CGFloat = 0
@@ -355,6 +499,16 @@ struct Pixels {
     let width: Int
     let height: Int
     let bytesPerRow: Int
+
+    /// `body` given `image`'s pixels, drawn into a bitmap of their own for the while; nil when no bitmap could be made.
+    static func reading<T>(_ image: CGImage, _ body: (Pixels) -> T) -> T? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB), let context = CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ), let data = context.data else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return body(Pixels(base: data.assumingMemoryBound(to: UInt8.self), width: image.width, height: image.height, bytesPerRow: context.bytesPerRow))
+    }
 
     /// The color at `x`, `y` (top-left origin), as red, green, blue from 0 to 255.
     func rgb(_ x: Int, _ y: Int) -> (Int, Int, Int) {
