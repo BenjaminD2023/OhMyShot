@@ -68,6 +68,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case highlighting(id: Annotation.ID, points: [CGPoint], snapping: TextSnapping?)
         case moving(start: CGPoint, originals: [Annotation])
         case reshaping(handle: Handle, original: Annotation)
+        /// Several marks resized together by a corner of the box around them, as it was when the drag began.
+        case scaling(handle: Handle, originals: [Annotation], box: CGRect)
         case cropping(handle: Handle?, start: CGPoint, original: CGRect)
         case panning(start: CGPoint, originalFocus: CGPoint)
         case marquee(start: CGPoint, initialSelection: [Annotation.ID], additive: Bool)
@@ -82,7 +84,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         /// once the drag ends.
         var editsMarks: Bool {
             switch self {
-            case .creating, .drawing, .highlighting, .moving, .reshaping: true
+            case .creating, .drawing, .highlighting, .moving, .reshaping, .scaling: true
             case .cropping, .panning, .marquee: false
             }
         }
@@ -893,7 +895,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let scale = session.document.scale
         let single = session.selection.count == 1 && editing == nil
         // The text being typed shows its own field instead of a selection.
-        selectionLayer.outlines = session.selectedItems.filter { $0.id != editing?.id }.map { item in
+        var outlines = session.selectedItems.filter { $0.id != editing?.id }.map { item in
             let handles = single ? item.handles(scale: scale).map { viewPoint($0.point) } : []
             // A single arrow or line shows its handles alone; anything else, or several, a box too.
             switch item.shape {
@@ -904,6 +906,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
             return SelectionLayer.Outline(box: viewRect(item.bounds(scale: scale)).integral, handles: handles)
         }
+        // Several marks: a box around them all as well, its corners resizing them together.
+        if let box = groupBox, editing == nil {
+            outlines.append(SelectionLayer.Outline(
+                box: viewRect(box).integral, handles: Self.groupHandles(of: box).map { viewPoint($0.point) }
+            ))
+        }
+        selectionLayer.outlines = outlines
     }
 
     private func toolChanged() {
@@ -1042,6 +1051,72 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    /// The box around the selected marks while there are several, in document pixels; nil otherwise.
+    private var groupBox: CGRect? {
+        guard session.selection.count >= 2, session.tool == .select else { return nil }
+        let scale = session.document.scale
+        let box = session.selectedItems.map { $0.bounds(scale: scale) }.filter { !$0.isNull }.reduce(CGRect.null) { $0.union($1) }
+        return box.isNull || box.width < 1 || box.height < 1 ? nil : box
+    }
+
+    private static func groupHandles(of box: CGRect) -> [(handle: Handle, point: CGPoint)] {
+        [
+            (.topLeft, CGPoint(x: box.minX, y: box.minY)), (.topRight, CGPoint(x: box.maxX, y: box.minY)),
+            (.bottomRight, CGPoint(x: box.maxX, y: box.maxY)), (.bottomLeft, CGPoint(x: box.minX, y: box.maxY)),
+        ]
+    }
+
+    /// The corner of the box around several selected marks under `viewPoint`.
+    private func groupHandle(at viewPoint: CGPoint) -> (handle: Handle, box: CGRect)? {
+        guard let box = groupBox else { return nil }
+        let reach = SelectionLayer.handleSize / 2 + 4
+        return Self.groupHandles(of: box).first { candidate in
+            let point = self.viewPoint(candidate.point)
+            return hypot(point.x - viewPoint.x, point.y - viewPoint.y) <= reach
+        }.map { ($0.handle, box) }
+    }
+
+    /// Several marks scaled from `box` to `target` (document pixels): each carried by the same map, as a picture's
+    /// resize carries them. Shapes, strokes, redactions and images stretch with the box, lines keeping their width;
+    /// text and counters keep their size and move with the rest, by their middles, so a block's wrapping is kept too.
+    /// A tail left to point its own way still does; one pointed somewhere goes where the map takes that place, unless
+    /// that is on the mark itself, when it keeps its place beside the mark.
+    static func scaled(_ marks: [Annotation], from box: CGRect, to target: CGRect, scale: CGFloat) -> [Annotation] {
+        let a = target.width / box.width, d = target.height / box.height
+        let mapping = PictureMapping(
+            affine: CGAffineTransform(a: a, b: 0, c: 0, d: d, tx: target.minX - box.minX * a, ty: target.minY - box.minY * d),
+            operation: .resize(to: target.size), lengthFactor: sqrt(a * d)
+        )
+        return marks.map { mark in
+            var moved = mark.mapped(by: mapping, scale: scale)
+            let frame = mark.bounds(scale: scale)
+            let middle = mapping.point(CGPoint(x: frame.midX, y: frame.midY))
+            let dx = middle.x - frame.midX, dy = middle.y - frame.midY
+            func carried(_ tip: CGPoint?) -> CGPoint? {
+                guard let tip else { return nil }
+                let mapped = mapping.point(tip)
+                return moved.bounds(scale: scale).contains(mapped) ? CGPoint(x: tip.x + dx, y: tip.y + dy) : mapped
+            }
+            switch (moved.shape, mark.shape) {
+            case (.text(var block), .text(let before)):
+                block.width = before.width
+                block.origin = CGPoint(x: before.origin.x + dx, y: before.origin.y + dy)
+                block.tail = nil
+                moved.shape = .text(block)
+                block.tail = carried(before.tail)
+                moved.shape = .text(block)
+            case (.counter(var counter), .counter(let before)):
+                counter.tail = nil
+                moved.shape = .counter(counter)
+                counter.tail = carried(before.tail)
+                moved.shape = .counter(counter)
+            default:
+                break
+            }
+            return moved
+        }
+    }
+
     private func handle(at viewPoint: CGPoint, of item: Annotation) -> Handle? {
         let reach = SelectionLayer.handleSize / 2 + 4
         let scale = session.document.scale
@@ -1123,6 +1198,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         if session.selection.count == 1, let item = session.selectedItems.first, let handle = handle(at: location, of: item) {
             session.beginLiveChange()
             drag = .reshaping(handle: handle, original: item)
+            return
+        }
+
+        if let (handle, box) = groupHandle(at: location) {
+            session.beginLiveChange()
+            drag = .scaling(handle: handle, originals: session.selectedItems, box: box)
             return
         }
 
@@ -1272,6 +1353,22 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             guard let index = document.index(of: original.id) else { return }
             document.items[index] = original.moving(handle, to: point, constrained: shift, scale: document.scale)
             session.updateLive(document)
+        case .scaling(let handle, let originals, let box):
+            // Shift keeps the box's shape; a corner dragged past the opposite one stops short of it, as the marks
+            // are not turned over.
+            let least: CGFloat = 4
+            let left = handle == .topLeft || handle == .bottomLeft, up = handle == .topLeft || handle == .topRight
+            let held = CGPoint(
+                x: left ? min(point.x, box.maxX - least) : max(point.x, box.minX + least),
+                y: up ? min(point.y, box.maxY - least) : max(point.y, box.minY + least)
+            )
+            let target = Geometry.resized(box, dragging: handle, to: held, keepingAspect: shift)
+            guard target.width >= least, target.height >= least else { return }
+            for mark in Self.scaled(originals, from: box, to: target, scale: document.scale) {
+                guard let index = document.index(of: mark.id) else { continue }
+                document.items[index] = mark
+            }
+            session.updateLive(document)
         case .cropping(let handle, let start, let original):
             var rect: CGRect
             if let handle {
@@ -1353,6 +1450,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             // canvas follows it back.
             session.fitCanvas(holding: originals.map(\.id))
             session.endLiveChange(actionName: String(localized: "Move", bundle: .module))
+        case .scaling(_, let originals, _):
+            session.fitCanvas(holding: originals.map(\.id))
+            session.endLiveChange(actionName: String(localized: "Resize Marks", bundle: .module))
         case .reshaping(let handle, let original):
             session.fitCanvas(holding: [original.id])
             let name = switch handle {
@@ -1590,6 +1690,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
         } else if session.selection.count == 1, let item = session.selectedItems.first, let handle = handle(at: location, of: item) {
             cursor = handle == .bend || handle == .tail || handle == .start || handle == .end ? .crosshair : Self.resizeCursor(for: handle)
+        } else if let (handle, _) = groupHandle(at: location) {
+            cursor = Self.resizeCursor(for: handle)
         } else if hitItem(at: documentPoint(location), pressing: true) != nil {
             cursor = .openHand
         } else if session.tool == .redact, session.redactionSuggestion(at: documentPoint(location)) != nil {
