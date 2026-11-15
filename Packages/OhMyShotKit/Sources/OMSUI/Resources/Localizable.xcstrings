@@ -2550,6 +2550,40 @@
         }
       }
     },
+    "Add a watermark" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir una marca de agua"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter un filigrane"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "透かしを入れる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加水印"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入浮水印"
+          }
+        }
+      }
+    },
     "Add storage you own, such as an S3 bucket, a WebDAV folder, or your own server. Captures go from this Mac straight to it; OhMyShot has no server of its own." : {
       "localizations" : {
         "es" : {
@@ -26718,6 +26752,40 @@
         }
       }
     },
+    "Tiles this text, faint, across every copy that leaves OhMyShot. The history keeps the capture as it was, and printing prints it so." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repite este texto, tenue, en cada copia que sale de OhMyShot. El historial conserva la captura tal como era, y así se imprime."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Répète ce texte, discret, sur chaque copie qui quitte OhMyShot. L’historique garde la capture telle quelle, et c’est ainsi qu’elle s’imprime."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot から出ていくすべてのコピーに、このテキストを淡く敷き詰めます。履歴には撮ったままのキャプチャが残り、印刷もそのまま行われます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在每一份离开 OhMyShot 的副本上淡淡地平铺这段文字。截图历史保留原样的截图，打印也按原样打印。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在每一份離開 OhMyShot 的副本上淡淡地平鋪這段文字。截圖歷史保留原樣的截圖，列印也按原樣列印。"
+          }
+        }
+      }
+    },
     "Time" : {
       "localizations" : {
         "es" : {
@@ -28966,6 +29034,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "音量"
+          }
+        }
+      }
+    },
+    "Watermark text" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texto de la marca de agua"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texte du filigrane"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "透かしのテキスト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "水印文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浮水印文字"
           }
         }
       }

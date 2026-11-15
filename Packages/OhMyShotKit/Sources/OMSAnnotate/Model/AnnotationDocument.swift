@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import OMSCore
 
 /// What the editor edits: a capture and the marks drawn over it, all in the capture's own pixels, with
 /// the origin at the top left and y growing downward, as the picture is stored.
@@ -29,6 +30,8 @@ nonisolated public struct AnnotationDocument: Codable, Sendable, Equatable {
     /// the document (marks, canvas) is in the pixels of the picture this makes. Left out of the file while
     /// nil, so documents made before it existed read as they were.
     public var transform: CaptureTransform?
+    /// Text tiled faintly across the canvas, over every mark; nil for none. Left out of the file while nil.
+    public var watermark: Watermark?
 
     public init(pixelSize: CGSize, scale: CGFloat, items: [Annotation] = [], backdrop: Backdrop? = nil) {
         self.pixelSize = pixelSize
@@ -42,7 +45,7 @@ nonisolated public struct AnnotationDocument: Codable, Sendable, Equatable {
     public var imageBounds: CGRect { CGRect(origin: .zero, size: pictureSize) }
 
     /// Nothing drawn, cropped, turned, or set behind the capture: it is what was taken.
-    public var isEmpty: Bool { items.isEmpty && canvas == imageBounds && backdrop == nil && transform == nil }
+    public var isEmpty: Bool { items.isEmpty && canvas == imageBounds && backdrop == nil && transform == nil && watermark == nil }
 
     public func index(of id: Annotation.ID) -> Int? {
         items.firstIndex { $0.id == id }

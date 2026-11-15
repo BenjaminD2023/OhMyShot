@@ -13,14 +13,14 @@ nonisolated public struct AnnotationProject: Sendable {
     public static let fileExtension = "ohmyshot"
     /// The newest format this version reads and writes. Format 2 adds what an earlier version would read
     /// wrongly or not at all: a capture turned, flipped, or resized, combined images turned with it, and
-    /// highlight boxes. Format 3 adds speech bubbles and counters with a pointer.
+    /// highlight boxes. Format 3 adds speech bubbles, counters with a pointer, and watermarks.
     static let version = 3
 
     /// The oldest format that holds `document`, so a project nothing new is in is still read by an earlier
     /// version, and one it would misread is refused there rather than opened wrong and written over. Every
     /// kind of mark is named here, so a new one is placed in a format when it is added.
     static func version(for document: AnnotationDocument) -> Int {
-        let usesNewest = document.items.contains { item in
+        let usesNewest = document.watermark != nil || document.items.contains { item in
             switch item.shape {
             case .text(let block): block.look == .bubble || block.tail != nil
             case .counter(let counter): counter.tail != nil

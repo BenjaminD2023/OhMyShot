@@ -113,6 +113,17 @@ public final class SettingsStore {
         didSet { defaults.set(addsBorder, forKey: Key.addsBorder) }
     }
 
+    /// Every copy that leaves the app (saved, dragged out, uploaded, copied) carries `watermarkText` tiled across it.
+    /// The history keeps the capture as taken, and printing prints it so.
+    public var addsWatermark: Bool {
+        didSet { defaults.set(addsWatermark, forKey: Key.addsWatermark) }
+    }
+
+    /// The watermark's text, for every copy that leaves the app and the first one an editor adds to a picture.
+    public var watermarkText: String {
+        didSet { defaults.set(watermarkText, forKey: Key.watermarkText) }
+    }
+
     /// The pattern saved files are named from: `{date}`, `{time}`, `{app}`, `{window}`, and `{counter}`.
     public var fileNamePattern: String {
         didSet { defaults.set(fileNamePattern, forKey: Key.fileNamePattern) }
@@ -485,6 +496,8 @@ public final class SettingsStore {
             .savesRetinaAtOneX: false,
             .convertsToSRGB: false,
             .addsBorder: false,
+            .addsWatermark: false,
+            .watermarkText: "",
             .fileNamePattern: Default.fileNamePattern,
             .nextFileNumber: Default.nextFileNumber,
             .asksForFileName: false,
@@ -623,6 +636,8 @@ public final class SettingsStore {
         savesRetinaAtOneX = defaults.bool(forKey: Key.savesRetinaAtOneX)
         convertsToSRGB = defaults.bool(forKey: Key.convertsToSRGB)
         addsBorder = defaults.bool(forKey: Key.addsBorder)
+        addsWatermark = defaults.bool(forKey: Key.addsWatermark)
+        watermarkText = defaults.string(forKey: Key.watermarkText) ?? ""
         fileNamePattern = defaults.string(forKey: Key.fileNamePattern) ?? Default.fileNamePattern
         nextFileNumber = max(defaults.integer(forKey: Key.nextFileNumber), Default.nextFileNumber)
         asksForFileName = defaults.bool(forKey: Key.asksForFileName)
@@ -678,6 +693,8 @@ public final class SettingsStore {
         savesRetinaAtOneX = fresh.savesRetinaAtOneX
         convertsToSRGB = fresh.convertsToSRGB
         addsBorder = fresh.addsBorder
+        addsWatermark = fresh.addsWatermark
+        watermarkText = fresh.watermarkText
         fileNamePattern = fresh.fileNamePattern
         asksForFileName = fresh.asksForFileName
         clipboardFormat = fresh.clipboardFormat
@@ -847,6 +864,8 @@ public final class SettingsStore {
         case savesRetinaAtOneX
         case convertsToSRGB
         case addsBorder
+        case addsWatermark
+        case watermarkText
         case fileNamePattern
         case nextFileNumber
         case asksForFileName

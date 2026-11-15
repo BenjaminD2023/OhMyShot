@@ -201,6 +201,44 @@ nonisolated final class SpotlightLayer: StillLayer {
     }
 }
 
+/// The watermark, tiled over the canvas above every mark as exports draw it, over the part of the canvas on screen.
+nonisolated final class WatermarkLayer: StillLayer {
+    var watermark: Watermark? {
+        didSet { if watermark != oldValue { setNeedsDisplay() } }
+    }
+    /// The canvas, in document pixels.
+    var canvas: CGRect = .zero {
+        didSet { if canvas != oldValue { setNeedsDisplay() } }
+    }
+    /// The card's corners on a background, which the watermark keeps inside, in document pixels.
+    var cardCornerRadius: CGFloat = 0 {
+        didSet { if cardCornerRadius != oldValue { setNeedsDisplay() } }
+    }
+    var mapping = LayerMapping(origin: .zero, zoom: 1) {
+        didSet { if mapping != oldValue { setNeedsDisplay() } }
+    }
+
+    override init() {
+        super.init()
+        needsDisplayOnBoundsChange = true
+    }
+
+    override init(layer: Any) {
+        super.init(layer: layer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func draw(in context: CGContext) {
+        guard let watermark else { return }
+        prepareDocumentSpace(context, mapping: mapping)
+        WatermarkPainter.paint(watermark, in: canvas, cornerRadius: cardCornerRadius, context: context)
+    }
+}
+
 /// The selection, drawn in view points so its lines and handles keep their size at any zoom: a hairline
 /// box in the accent, and white handles ringed in the accent.
 nonisolated final class SelectionLayer: StillLayer {

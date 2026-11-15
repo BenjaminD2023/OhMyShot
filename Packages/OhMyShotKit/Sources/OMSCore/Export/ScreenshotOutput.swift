@@ -13,6 +13,8 @@ public struct ScreenshotOutput: Equatable, Sendable {
     public var convertsToSRGB: Bool
     /// A 1 px hairline is drawn around the picture, unless its edges are transparent.
     public var addsBorder: Bool
+    /// Text tiled across every copy that leaves the app; nil (or blank) for none.
+    public var watermark: Watermark?
 
     /// PNG, as captured.
     public static let standard = ScreenshotOutput()
@@ -23,25 +25,26 @@ public struct ScreenshotOutput: Equatable, Sendable {
 
     public init(
         format: ImageExporter.Format = .png, quality: Double = standardQuality,
-        retinaAtOneX: Bool = false, convertsToSRGB: Bool = false, addsBorder: Bool = false
+        retinaAtOneX: Bool = false, convertsToSRGB: Bool = false, addsBorder: Bool = false, watermark: Watermark? = nil
     ) {
         self.format = format
         self.quality = min(max(quality, Self.qualities.lowerBound), Self.qualities.upperBound)
         self.retinaAtOneX = retinaAtOneX
         self.convertsToSRGB = convertsToSRGB
         self.addsBorder = addsBorder
+        self.watermark = watermark.flatMap { $0.isBlank ? nil : $0 }
     }
 
     /// Whether a capture is written as it was kept: a PNG with nothing done to its picture. Its file is then
     /// copied rather than decoded and encoded again.
     public var isUnchanged: Bool {
-        format == .png && !retinaAtOneX && !convertsToSRGB && !addsBorder
+        format == .png && !changesPicture
     }
 
-    /// Whether the picture's pixels are to be changed (scaled, converted, or given a border), whatever the format.
-    /// What the clipboard follows: its picture is PNG always.
+    /// Whether the picture's pixels are to be changed (scaled, converted, given a border or a watermark), whatever the
+    /// format. What the clipboard follows: its picture is PNG always.
     public var changesPicture: Bool {
-        retinaAtOneX || convertsToSRGB || addsBorder
+        retinaAtOneX || convertsToSRGB || addsBorder || watermark != nil
     }
 
     /// Whether the format forgets quality: JPEG and HEIC.
@@ -63,7 +66,19 @@ public struct ScreenshotOutput: Equatable, Sendable {
         if retinaAtOneX { key += "-1x" }
         if convertsToSRGB { key += "-srgb" }
         if addsBorder { key += "-border" }
+        if let watermark { key += "-wm\(Self.fingerprint(of: watermark))" }
         return key
+    }
+
+    /// A short name that changes with every part of the watermark, stable from launch to launch (`hashValue` is not).
+    private static func fingerprint(of watermark: Watermark) -> String {
+        let text = "\(watermark.text)|\(watermark.tone.rawValue)|\(watermark.opacity)|\(watermark.size)"
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in text.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100_0000_01b3
+        }
+        return String(hash, radix: 36)
     }
 }
 

@@ -1,4 +1,5 @@
 import CoreGraphics
+import OMSCore
 import Foundation
 
 /// Draws marks with Core Graphics. The canvas draws each mark through here on screen and exports draw
@@ -190,6 +191,10 @@ nonisolated public enum AnnotationRenderer {
                 ground = HighlightGround.under(item, in: source?.image ?? base, origin: source?.origin ?? .zero, scale: document.scale)
             }
             draw(item, in: context, scale: document.scale, redacted: redacted, ground: ground)
+        }
+        // Over every mark, across the canvas, inside the card's corners on a background.
+        if let watermark = document.watermark {
+            WatermarkPainter.paint(watermark, in: canvas, cornerRadius: layout?.cornerRadius ?? 0, context: context)
         }
         return context.makeImage()
     }

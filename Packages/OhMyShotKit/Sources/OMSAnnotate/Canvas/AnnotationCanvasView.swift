@@ -122,6 +122,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var markLayers: [Annotation.ID: MarkLayer] = [:]
     private let selectionLayer = SelectionLayer()
     private let cropLayer = CropLayer()
+    /// The document's watermark, above every mark.
+    private let watermarkLayer = WatermarkLayer()
     /// The redaction tool's suggestions, outlined over the picture, each covered by a click.
     private lazy var suggestions = SuggestionOverlay(on: self)
 
@@ -183,6 +185,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         canvasLayer.masksToBounds = true
         canvasLayer.addSublayer(backdropLayer)
         canvasLayer.addSublayer(cardLayer)
+        watermarkLayer.zPosition = 10
+        watermarkLayer.isHidden = true
+        canvasLayer.addSublayer(watermarkLayer)
         pictureLayer.shadowColor = .black
         pictureLayer.shadowOpacity = 0.12
         pictureLayer.shadowRadius = 10
@@ -341,7 +346,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         let scale = window?.backingScaleFactor ?? 2
-        for layer in [pictureLayer, canvasLayer, cardLayer, keptLayer, imageLayer, spotlightLayer, selectionLayer, cropLayer] {
+        for layer in [pictureLayer, canvasLayer, cardLayer, keptLayer, imageLayer, spotlightLayer, selectionLayer, cropLayer, watermarkLayer] {
             layer.contentsScale = scale
         }
         // The background is soft (gradients, blurs, a shadow): drawn at one pixel per point, its backing
@@ -427,6 +432,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         for layer in markLayers.values {
             position(layer, frames: frames)
         }
+        updateWatermarkLayer(frames: frames)
         selectionLayer.frame = host.bounds
         cropLayer.frame = host.bounds
         cropLayer.pictureRect = canvasFrame
@@ -483,6 +489,26 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     /// Places a mark's layer over the part of the mark on screen. Images lie in the kept part of the
     /// capture, under the spotlight; other marks over everything.
+    /// The watermark over the part of the canvas on screen, or hidden without one.
+    private func updateWatermarkLayer(frames: Frames) {
+        guard let watermark = session.document.watermark, !watermark.isBlank else {
+            watermarkLayer.isHidden = true
+            watermarkLayer.watermark = nil
+            return
+        }
+        let shown = frames.shown
+        let canvas = session.document.canvas.standardized
+        let whole = CGRect(x: (canvas.minX - shown.minX) * zoom, y: (canvas.minY - shown.minY) * zoom, width: canvas.width * zoom, height: canvas.height * zoom)
+        let part = whole.intersection(visibleCanvasRect)
+        watermarkLayer.isHidden = part.isNull || part.isEmpty
+        guard !watermarkLayer.isHidden else { return }
+        watermarkLayer.frame = part
+        watermarkLayer.mapping = LayerMapping(origin: CGPoint(x: shown.minX + part.minX / zoom, y: shown.minY + part.minY / zoom), zoom: zoom)
+        watermarkLayer.canvas = canvas
+        watermarkLayer.cardCornerRadius = frames.backdrop == nil ? 0 : frames.cornerRadius
+        watermarkLayer.watermark = watermark
+    }
+
     private func position(_ layer: MarkLayer, frames: Frames) {
         // The document point at the parent layer's corner.
         let parent = layer.superlayer === keptLayer ? frames.picture.origin : frames.shown.origin
@@ -715,6 +741,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 updateViewport()
             } else {
                 updateSelectionOutlines()
+                // A watermark changes nothing of what is shown but itself.
+                if let laidOut { updateWatermarkLayer(frames: laidOut) }
             }
             CATransaction.commit()
             updateAccessibility()

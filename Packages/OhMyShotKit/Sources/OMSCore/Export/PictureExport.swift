@@ -50,18 +50,19 @@ public enum PictureExport {
         // A picture with clear corners or a clear shadow has no edge to draw along.
         let borders = output.addsBorder && width > 2 && height > 2 && !hasTransparentEdge(image)
         let hdr = output.format == .heic && !output.convertsToSRGB && hdr?.width == image.width && hdr?.height == image.height ? hdr : nil
-        guard resizes || converts || borders else {
+        let watermark = output.watermark
+        guard resizes || converts || borders || watermark != nil else {
             return Prepared(image: image, hdr: hdr, pixelsPerPoint: scale, isChanged: false)
         }
-        guard let drawn = draw(image, width: width, height: height, toSRGB: output.convertsToSRGB, border: borders) else {
+        guard let drawn = draw(image, width: width, height: height, toSRGB: output.convertsToSRGB, border: borders, watermark: watermark) else {
             return Prepared(image: image, hdr: hdr, pixelsPerPoint: pixelsPerPoint, isChanged: false)
         }
-        let drawnHDR = hdr.flatMap { resizes || borders ? drawHDR($0, width: width, height: height, border: borders) : $0 }
+        let drawnHDR = hdr.flatMap { resizes || borders || watermark != nil ? drawHDR($0, width: width, height: height, border: borders, watermark: watermark) : $0 }
         return Prepared(image: drawn, hdr: drawnHDR, pixelsPerPoint: scale, isChanged: true)
     }
 
     /// One pass: `image` at its new size in sRGB (or the color space it has), with the border over its outer ring.
-    private static func draw(_ image: CGImage, width: Int, height: Int, toSRGB: Bool, border: Bool) -> CGImage? {
+    private static func draw(_ image: CGImage, width: Int, height: Int, toSRGB: Bool, border: Bool, watermark: Watermark? = nil) -> CGImage? {
         let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
         let own = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil }
         let info = (image.hasAlpha ? CGImageAlphaInfo.premultipliedFirst : .noneSkipFirst).rawValue | CGBitmapInfo.byteOrder32Little.rawValue
@@ -71,11 +72,21 @@ public enum PictureExport {
         }).first else { return nil }
         context.interpolationQuality = .high
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        if let watermark { drawWatermark(watermark, in: context, width: width, height: height) }
         if border { drawBorder(in: context, width: width, height: height) }
         return context.makeImage()
     }
 
-    private static func drawHDR(_ image: CGImage, width: Int, height: Int, border: Bool) -> CGImage? {
+    /// The watermark across the whole picture, in the y-down space it is drawn in.
+    private static func drawWatermark(_ watermark: Watermark, in context: CGContext, width: Int, height: Int) {
+        context.saveGState()
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
+        WatermarkPainter.paint(watermark, in: CGRect(x: 0, y: 0, width: width, height: height), context: context)
+        context.restoreGState()
+    }
+
+    private static func drawHDR(_ image: CGImage, width: Int, height: Int, border: Bool, watermark: Watermark? = nil) -> CGImage? {
         let space = image.colorSpace ?? CGColorSpace(name: CGColorSpace.extendedSRGB)!
         let info = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.floatComponents.rawValue | CGBitmapInfo.byteOrder16Little.rawValue
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 16, bytesPerRow: 0, space: space, bitmapInfo: info) else {
@@ -83,6 +94,7 @@ public enum PictureExport {
         }
         context.interpolationQuality = .high
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        if let watermark { drawWatermark(watermark, in: context, width: width, height: height) }
         if border { drawBorder(in: context, width: width, height: height) }
         return context.makeImage()
     }

@@ -93,6 +93,8 @@ final class BackdropAdjustments {
     private(set) var backdrop: Backdrop
     /// Whether the capture's edge is one color, which inset and balance need.
     private(set) var hasEvenEdge: Bool
+    /// The picture's watermark; nil while it has none.
+    private(set) var watermark: Watermark?
     @ObservationIgnored private let session: AnnotationSession
     /// The slider being dragged: its changes make one undo step.
     @ObservationIgnored private var dragging: String?
@@ -101,12 +103,22 @@ final class BackdropAdjustments {
         self.session = session
         backdrop = session.document.backdrop ?? session.lastBackdrop
         hasEvenEdge = session.edges.opaque && session.edges.edgeColor != nil
+        watermark = session.document.watermark
+    }
+
+    /// The watermark a picture without one is given: the last one set.
+    var lastWatermark: Watermark { session.lastWatermark }
+
+    func setWatermark(_ name: String, _ change: (inout Watermark?) -> Void) {
+        session.changeWatermark(name, change)
+        watermark = session.document.watermark
     }
 
     /// After the session changed some other way, such as Undo.
     func refresh() {
         let current = session.document.backdrop ?? session.lastBackdrop
         if current != backdrop { backdrop = current }
+        if session.document.watermark != watermark { watermark = session.document.watermark }
         let even = session.edges.opaque && session.edges.edgeColor != nil
         if even != hasEvenEdge { hasEvenEdge = even }
     }
@@ -134,9 +146,11 @@ final class BackdropAdjustments {
     }
 }
 
-/// The background's adjustments: room, corners, shadow, and the picture's shape.
+/// The background's adjustments: room, corners, shadow, and the picture's shape; and the picture's watermark.
 struct BackdropAdjustView: View {
     @Bindable var model: BackdropAdjustments
+    /// Typing the watermark's text is one undo step, from the field taking the keys to its letting them go.
+    @FocusState private var typingWatermark: Bool
 
     var body: some View {
         Form {
@@ -191,6 +205,7 @@ struct BackdropAdjustView: View {
                 }
                 .disabled(model.backdrop.ratio == nil)
             }
+            watermarkSection
         }
         .formStyle(.grouped)
         // Opaque under the text: the popover's glass is its rim, never what the capture shows through.
@@ -202,6 +217,68 @@ struct BackdropAdjustView: View {
 
     private func percent(_ value: CGFloat) -> String {
         "\(Int((value * 100).rounded()))%"
+    }
+
+    /// The watermark: on or off, its text, how much it shows, how large, dark or light.
+    @ViewBuilder private var watermarkSection: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { model.watermark != nil },
+                set: { on in model.setWatermark(String(localized: "Watermark", bundle: .module)) { $0 = on ? model.lastWatermark : nil } }
+            )) {
+                Text("Watermark", bundle: .module)
+                Text("Text tiled faintly across the picture, over the marks.", bundle: .module)
+            }
+            if let watermark = model.watermark {
+                TextField(text: Binding(
+                    get: { watermark.text },
+                    set: { text in model.setWatermark(String(localized: "Watermark Text", bundle: .module)) { $0?.text = text } }
+                ), prompt: Text("Watermark text", bundle: .module)) {
+                    Text("Text", bundle: .module)
+                }
+                .focused($typingWatermark)
+                .onChange(of: typingWatermark) { _, typing in
+                    model.dragChanged(String(localized: "Watermark Text", bundle: .module), editing: typing)
+                }
+                watermarkSlider(String(localized: "Opacity", bundle: .module), \.opacity, in: Watermark.opacityRange)
+                watermarkSlider(String(localized: "Size", bundle: .module), \.size, in: Watermark.sizeRange)
+                Picker(selection: Binding(
+                    get: { watermark.tone },
+                    set: { tone in model.setWatermark(String(localized: "Watermark Tone", bundle: .module)) { $0?.tone = tone } }
+                )) {
+                    Text("Dark", bundle: .module).tag(Watermark.Tone.dark)
+                    Text("Light", bundle: .module).tag(Watermark.Tone.light)
+                } label: {
+                    Text("Tone", bundle: .module)
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+    }
+
+    private func watermarkSlider(_ name: String, _ path: WritableKeyPath<Watermark, Double>, in range: ClosedRange<Double>) -> some View {
+        let value = model.watermark?[keyPath: path] ?? range.lowerBound
+        let reading = "\(Int((value * 100).rounded()))%"
+        return LabeledContent {
+            HStack(spacing: 8) {
+                Slider(
+                    value: Binding(get: { model.watermark?[keyPath: path] ?? range.lowerBound }, set: { new in model.setWatermark(name) { $0?[keyPath: path] = new } }),
+                    in: range
+                ) { editing in
+                    model.dragChanged(name, editing: editing)
+                }
+                .labelsHidden()
+                .accessibilityLabel(Text(name))
+                .accessibilityValue(Text(verbatim: reading))
+                Text(verbatim: reading)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 40, alignment: .trailing)
+                    .accessibilityHidden(true)
+            }
+        } label: {
+            Text(name)
+        }
     }
 
     private func slider(_ name: String, _ path: WritableKeyPath<Backdrop, CGFloat>, in range: ClosedRange<CGFloat>, reading: @escaping (CGFloat) -> String) -> some View {

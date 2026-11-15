@@ -128,6 +128,18 @@ struct ScreenshotsSettingsView: View {
                     Toggle(isOn: $settings.addsBorder) {
                         Text("Add a 1 px border", bundle: .module)
                     }
+                    Toggle(isOn: $settings.addsWatermark) {
+                        Text("Add a watermark", bundle: .module)
+                    }
+                    .help(String(localized: "Tiles this text, faint, across every copy that leaves OhMyShot. The history keeps the capture as it was, and printing prints it so.", bundle: .module))
+                    if settings.addsWatermark {
+                        TextField(text: $settings.watermarkText, prompt: Text("Watermark text", bundle: .module)) {
+                            Text("Watermark text", bundle: .module)
+                        }
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 260)
+                    }
                 }
             }
 

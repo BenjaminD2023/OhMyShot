@@ -6,7 +6,8 @@ extension SettingsStore {
     public var screenshotOutput: ScreenshotOutput {
         ScreenshotOutput(
             format: screenshotFormat, quality: screenshotQuality,
-            retinaAtOneX: savesRetinaAtOneX, convertsToSRGB: convertsToSRGB, addsBorder: addsBorder
+            retinaAtOneX: savesRetinaAtOneX, convertsToSRGB: convertsToSRGB, addsBorder: addsBorder,
+            watermark: addsWatermark ? Watermark(text: watermarkText) : nil
         )
     }
 

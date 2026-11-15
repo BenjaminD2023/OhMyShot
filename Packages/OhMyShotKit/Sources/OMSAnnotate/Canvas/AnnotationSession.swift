@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OMSCore
 import Observation
 
 /// One capture being marked up: the document, the tool in hand, what is selected, and every tool's
@@ -131,6 +132,7 @@ public final class AnnotationSession {
     private static let toolKey = "annotation.tool"
     private static let settingsKey = "annotation.toolSettings"
     private static let backdropKey = "annotation.backdrop"
+    private static let watermarkKey = "annotation.watermark"
     private static let lockCanvasKey = "annotation.lockCanvas"
 
     /// - Parameters:
@@ -285,6 +287,24 @@ public final class AnnotationSession {
             if let backdrop { rememberBackdrop(backdrop) }
             commit(document, actionName: actionName)
         }
+    }
+
+    /// The watermark last set, which a picture without one starts from; its text is what was last typed.
+    public var lastWatermark: Watermark {
+        defaults.data(forKey: Self.watermarkKey).flatMap { try? JSONDecoder().decode(Watermark.self, from: $0) }
+            ?? Watermark(text: NSFullUserName())
+    }
+
+    /// Changes the picture's watermark, nil taking it off, as one undoable step (or a step of the live change under
+    /// way: a slider dragged, text typed); the watermark set is remembered for the next picture.
+    public func changeWatermark(_ actionName: String, _ change: (inout Watermark?) -> Void) {
+        var watermark = document.watermark
+        change(&watermark)
+        guard watermark != document.watermark else { return }
+        var document = self.document
+        document.watermark = watermark
+        if let watermark, let data = try? JSONEncoder().encode(watermark) { defaults.set(data, forKey: Self.watermarkKey) }
+        if isInLiveChange { updateLive(document) } else { commit(document, actionName: actionName) }
     }
 
     /// Changes the background, starting from the last one set when there is none.
