@@ -147,6 +147,8 @@ final class CompositionRoot {
     private let communityInvite = CommunityInvite()
     private var communityInviteWindow: CommunityInviteWindowController?
     var historyWindow: HistoryWindowController?
+    /// Combine into Collage's window, while it is open.
+    var collageWindow: CollageWindowController?
     private var observations: [Task<Void, Never>] = []
     /// Vision's text models, compiled again in the background once a cleaner or a macOS update takes them.
     private var textModelWarmup: TextModelWarmup?

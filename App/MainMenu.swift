@@ -34,6 +34,9 @@ enum MainMenu {
         file.addItem(.separator())
         // Answered by the editor and Capture History, which print the capture in front of them.
         file.addItem(withTitle: String(localized: "Print…"), action: Selector(("printCapture:")), keyEquivalent: "p")
+        // Answered by Capture History, on the screenshots selected there.
+        file.addItem(withTitle: String(localized: "Combine into Collage…"), action: Selector(("combineIntoCollage:")), keyEquivalent: "")
+        file.addItem(withTitle: String(localized: "Export as PDF…"), action: Selector(("exportPDF:")), keyEquivalent: "")
         file.addItem(.separator())
         let trash = file.addItem(withTitle: String(localized: "Move to Trash"), action: #selector(NSText.delete(_:)), keyEquivalent: "\u{8}")
         trash.keyEquivalentModifierMask = .command

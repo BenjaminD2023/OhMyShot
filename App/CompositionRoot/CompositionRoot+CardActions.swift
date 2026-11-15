@@ -242,6 +242,8 @@ extension CompositionRoot {
             guard let self, entry.kind == .screenshot else { return }
             printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale(of: entry, orElse: 2), from: window)
         }
+        historyActions.combine = { [weak self] entries in self?.combineIntoCollage(entries) }
+        historyActions.exportPDF = { [weak self] entries, _ in self?.exportPDF(entries) }
         historyActions.sharing.menu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }
         historyActions.sharing.upload = { [weak self] entry, destination in
             guard let self else { return }
