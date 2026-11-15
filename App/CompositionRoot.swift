@@ -183,6 +183,11 @@ final class CompositionRoot {
         // Where the blocks of text on a frozen screen lie, found quickly and never read, for a selection's edges
         // to snap to when Settings say so.
         overlay.textBlocks = TextBlockFinder(isOn: { [settings = self.settings] in settings.snapSelectionToText }, find: { await TextBlocks.find(in: $0) })
+        // The QR codes and barcodes in a selection that stays on a frozen screen, for chips over them.
+        overlay.codes = CodeFinder(isOn: { [settings = self.settings] in settings.showsCodesInSelection }, find: { picture in
+            let codes = (try? await VisionPipeline.selectionCodes(in: picture)) ?? []
+            return codes.map { FoundCode(payload: $0.payload, isMatrix: $0.kind.isMatrix, box: $0.box) }
+        })
         overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
         if #available(macOS 27, *) {

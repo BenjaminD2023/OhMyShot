@@ -16,6 +16,8 @@ final class CardStackView: NSView {
     var onCommand: ((CardCommand, QuickAccessItem) -> Void)?
     /// The file to hand to another app for a capture, dragged out or shared.
     var fileToHandOver: ((QuickAccessItem) -> URL)?
+    /// The codes in a screenshot, looked for as its card is made, for its menu.
+    var findCodes: ((QuickAccessItem) async -> [FoundCode])?
     /// What the menu offers for uploading, read each time a menu opens (see `UploadMenu`).
     var uploadMenu: () -> UploadMenu = { .hidden }
     var hasLink: ((QuickAccessItem) -> Bool)?
@@ -252,6 +254,7 @@ final class CardStackView: NSView {
         card.hasLink = { [weak self, weak card] in card.flatMap { self?.hasLink?($0.item) } ?? false }
         card.canDeleteFromStorage = { [weak self, weak card] in card.flatMap { self?.canDeleteFromStorage?($0.item) } ?? false }
         card.upload = currentUpload?(item)
+        if item.kind == .screenshot, let findCodes { card.lookForCodes { await findCodes(item) } }
         addSubview(card)
         cards[item.id] = card
         return card

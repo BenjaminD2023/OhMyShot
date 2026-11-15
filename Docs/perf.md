@@ -2963,3 +2963,25 @@ drag of a capture converted it on the main actor (opt-in `OMS_EXPORT_SPEED=1`):
 The copy is now made off the main actor as soon as a capture has a card, and again after the editor changes its
 picture (`ScreenshotFiles.prepareHandOver`), so the drag finds it made; History's Copy converts off the main actor.
 A drag that comes before the copy is ready still converts as before.
+
+## Codes in a selection (2026-11-16)
+
+Chips over the QR codes and barcodes in a selection that stays on a frozen screen (in-place annotation,
+All-In-One's frame) look once the selection settles, off the main actor, with one `DetectBarcodesRequest` limited
+to QR codes and the common barcodes (`VisionPipeline.selectionCodes`). A screenshot's Quick Access card looks once,
+for its menu, the first time the pointer rests on it or it takes the keyboard, so a card nobody touches costs
+nothing; that look decodes the capture's PNG first, which the table below does not time. Measured on the M3 Max under macOS 27.3 with a throwaway timing program: a 240 pt QR
+code on a white page with rows of gray bars, five warm runs each, median (minimum):
+
+| Picture | All kinds | QR + common barcodes | QR only |
+| --- | --- | --- | --- |
+| 800 × 600 | 16.1 ms (13.0) | 15.3 ms (11.6) | 14.5 ms (12.6) |
+| 1920 × 1080 | 30.9 ms (12.1) | 17.0 ms (13.0) | 18.0 ms (17.5) |
+| 3840 × 2160 | 30.3 ms (23.4) | 37.1 ms (24.8) | 26.4 ms (25.0) |
+| 6016 × 3384 | 58.0 ms (41.6) | 37.2 ms (32.6) | 41.5 ms (35.5) |
+
+A 1920 × 1080 page with no code took 20.9 ms (14.6), and a 240 × 240 crop tight around the code, its quiet zone cut
+off, still read in 15.5 ms. SnowAir's notes (a ZXing decoder) recommend reading QR codes first and barcodes in a
+second pass, shrinking large pictures, and widening a tight selection by 8–15% for the quiet zone; with Vision none
+of the three pays, so the selection is read once, as it is. Nothing runs while idle: a look happens only when a
+selection settles, or a card is first hovered or chosen from the keyboard.

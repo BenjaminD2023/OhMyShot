@@ -70,9 +70,31 @@ extension VisionPipeline {
     }
 
     private func detectCodes(in image: CGImage) async throws -> [OCRCode] {
+        try await Self.codes(in: image, request: DetectBarcodesRequest(), timeout: options.timeout)
+    }
+
+    /// The kinds of code looked for over a selection: QR codes and the barcodes screenshots show (shop and
+    /// product pages, tickets, labels). The rarer kinds wait for the OCR panel, which looks for every kind.
+    static let selectionSymbologies: [BarcodeSymbology] = [
+        .qr, .microQR, .ean13, .ean8, .upce, .code128, .code39, .code39Checksum, .code39FullASCII, .code39FullASCIIChecksum,
+        .itf14, .i2of5, .i2of5Checksum,
+    ]
+
+    /// The codes in a selection, for the chips over it: one pass over the whole picture, as it is. Measured on
+    /// a text page with a QR code (Docs/perf.md): about 15 ms at 800 × 600, 17 ms at 1920 × 1080, 30 ms at
+    /// 3840 × 2160, and under 60 ms for a whole 6K display, and a selection drawn tight around a code, its
+    /// quiet zone cut off, still reads. So the picture is neither shrunk, nor widened, nor read in two passes
+    /// (QR codes first) as a slower decoder would want.
+    @concurrent
+    public static func selectionCodes(in image: CGImage, timeout: Duration = .seconds(2)) async throws -> [OCRCode] {
+        var request = DetectBarcodesRequest()
+        request.symbologies = selectionSymbologies
+        return try await codes(in: image, request: request, timeout: timeout)
+    }
+
+    private static func codes(in image: CGImage, request: DetectBarcodesRequest, timeout: Duration) async throws -> [OCRCode] {
         let size = CGSize(width: image.width, height: image.height)
-        let request = DetectBarcodesRequest()
-        let observations = try await withTimeout(options.timeout) { try await request.perform(on: image) }
+        let observations = try await withTimeout(timeout) { try await request.perform(on: image) }
         return observations.compactMap { observation in
             guard let payload = observation.payloadString, !payload.isEmpty else { return nil }
             return OCRCode(

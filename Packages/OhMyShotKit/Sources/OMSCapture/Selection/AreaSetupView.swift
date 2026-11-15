@@ -20,6 +20,12 @@ class AreaSetupView<Bar: NSView>: NSView {
     let bar: Bar
     /// The drag adjusting the frame, while one goes on.
     private(set) var adjustment: AreaFrame.Adjustment?
+    /// Finds the codes in the area on a frozen screen, for chips over them; set by the overlay for the setups that
+    /// take a picture (All-In-One's frame), never for a recording's or a scrolling capture's, which show the live
+    /// screen.
+    var codeFinder: CodeFinder?
+    let codeChips = CodeChipsView(wording: .standard)
+    private var codeScan: Task<Void, Never>?
 
     init(display: DisplayInfo, bar: Bar) {
         self.display = display
@@ -28,7 +34,19 @@ class AreaSetupView<Bar: NSView>: NSView {
         chrome.frame = bounds
         chrome.autoresizingMask = [.width, .height]
         addSubview(chrome)
+        codeChips.frame = bounds
+        codeChips.autoresizingMask = [.width, .height]
+        addSubview(codeChips)
         addSubview(bar)
+        // A web page a code points to opens once the overlay has gone, which would cover it.
+        codeChips.onOpen = { [weak self] url in
+            self?.onCancel?()
+            NSWorkspace.shared.open(url)
+        }
+        codeChips.onCardClosed = { [weak self] in
+            guard let self else { return }
+            window?.makeFirstResponder(self)
+        }
         setAccessibilityElement(true)
         setAccessibilityRole(.layoutArea)
     }
@@ -87,7 +105,47 @@ class AreaSetupView<Bar: NSView>: NSView {
     func setArea(_ rect: CGRect) -> Bool {
         guard let kept = AreaFrame.fitted(rect, in: bounds) else { return false }
         areaAdjusted(AreaFrame.global(AreaFrame.snapped(kept, pixelsPerPoint: display.pixelsPerPoint), on: display))
+        // Moved by the keys or a typed size, the area is looked at again once the keys rest; a drag looks once it ends.
+        if adjustment == nil { refreshCodes(after: .milliseconds(250)) } else { clearCodes() }
         return true
+    }
+
+    // MARK: Codes
+
+    /// Looks for QR codes and barcodes in the area as it is now, for chips over them: on a frozen screen only, and
+    /// only when Settings want them. Any chips shown go at once; the new ones come when the look is done.
+    func refreshCodes(after delay: Duration = .zero) {
+        clearCodes()
+        guard let finder = codeFinder, finder.isOn(), let area = adjustableArea,
+              let overlay = superview as? OverlayView, overlay.isFrozen, let frame = overlay.frame() else { return }
+        // Not copied out (a frame across a whole 6K display is 80 MB): the decoder only reads it.
+        let scale = frame.pixelsPerPoint
+        let pixels = CGRect(
+            x: ((area.minX - frame.frame.minX) * scale).rounded(), y: ((frame.frame.maxY - area.maxY) * scale).rounded(),
+            width: (area.width * scale).rounded(), height: (area.height * scale).rounded()
+        ).intersection(CGRect(x: 0, y: 0, width: frame.image.width, height: frame.image.height))
+        guard !pixels.isNull, pixels.width >= 16, pixels.height >= 16, let picture = frame.image.cropping(to: pixels) else { return }
+        let local = AreaFrame.local(area, on: display)
+        codeScan = Task { [weak self] in
+            if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled else { return }
+            let found = await finder.find(picture)
+            guard !Task.isCancelled, let self, self.adjustableArea == area, self.adjustment == nil else { return }
+            let codes = found.map { code in
+                CodeChipsView.Code(
+                    box: CGRect(x: local.minX + code.box.minX / scale, y: local.minY + code.box.minY / scale, width: code.box.width / scale, height: code.box.height / scale),
+                    isMatrix: code.isMatrix, payload: code.payload, link: code.webURL
+                )
+            }
+            self.codeChips.show(codes, in: local)
+            if !codes.isEmpty { VoiceOver.announce(CodeChipWording.found(codes.count), from: self, priority: .medium) }
+        }
+    }
+
+    private func clearCodes() {
+        codeScan?.cancel()
+        codeScan = nil
+        codeChips.clear()
     }
 
     // MARK: Input
@@ -95,6 +153,8 @@ class AreaSetupView<Bar: NSView>: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
         if hit === bar || hit.isDescendant(of: bar) { return hit }
+        // The code chips answer only over a chip or the card, or anywhere while a card is open, to close it.
+        if hit === codeChips || hit.isDescendant(of: codeChips) { return hit }
         return self
     }
 
@@ -149,6 +209,7 @@ class AreaSetupView<Bar: NSView>: NSView {
     private func begin(_ adjustment: AreaFrame.Adjustment) {
         self.adjustment = adjustment
         chrome.showsThirds = true
+        clearCodes()
         placeBar()
     }
 
@@ -180,13 +241,17 @@ class AreaSetupView<Bar: NSView>: NSView {
         updateCursor(event)
         NSAccessibility.post(element: self, notification: .valueChanged)
         adjustmentEnded()
+        refreshCodes()
     }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 53: // Escape: an adjustment first, then the whole setup.
-            if adjustment != nil {
+        case 53: // Escape: a code's card first, then an adjustment, then the whole setup.
+            if codeChips.isShowingCard {
+                codeChips.dismissCard()
+            } else if adjustment != nil {
                 adjustment = nil
+                refreshCodes()
                 hideEdgeLoupe()
                 chrome.showsThirds = false
                 placeBar()
@@ -196,7 +261,20 @@ class AreaSetupView<Bar: NSView>: NSView {
         case 36, 76: // Return, Enter
             primaryAction()
         default:
+            // Q goes through the codes' cards, one after another: the keyboard's way to the chips.
+            if event.charactersIgnoringModifiers?.lowercased() == "q", event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+               codeChips.openNextCard() { return }
             super.keyDown(with: event)
         }
+    }
+}
+
+extension CodeChipsView.Wording {
+    /// The words of the chips over a selection's codes, as Core says them for every place that shows them.
+    static var standard: Self {
+        Self(
+            qrCode: CodeChipWording.qrCode, barcode: CodeChipWording.barcode, codes: CodeChipWording.codes,
+            copy: CodeChipWording.copy, openLink: CodeChipWording.openLink, copied: CodeChipWording.copied
+        )
     }
 }

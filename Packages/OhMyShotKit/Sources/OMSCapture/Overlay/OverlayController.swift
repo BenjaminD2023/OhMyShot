@@ -73,6 +73,8 @@ public final class OverlayController {
         /// Shows the overlay's magnifier on a point in `host`'s points while the selection's edge is dragged; nil
         /// hides it.
         public let showEdgeLoupe: (CGPoint?) -> Void
+        /// Finds the codes in the selection, for chips over them.
+        public let codes: CodeFinder?
     }
 
     /// Starts in-place annotation over the overlay; set by whoever owns the annotation interface.
@@ -147,6 +149,9 @@ public final class OverlayController {
     /// Snaps a selection's edges to the blocks of text on a frozen screen when its `isOn` says so as a session
     /// begins; set once by whoever has a text detector.
     public var textBlocks: TextBlockFinder?
+    /// Finds the QR codes and barcodes in a selection that stays on a frozen screen (in-place annotation, All-In-One's
+    /// frame), for chips over them; set once by whoever has a decoder.
+    public var codes: CodeFinder?
     /// A recording is about to be set up outside Record Screen (from All-In-One): whoever records sets
     /// `recordingChoices` and `onRecordingSetupChange` for it.
     public var onWillSetUpRecording: (() -> Void)?
@@ -731,6 +736,7 @@ public final class OverlayController {
         entry.panel.makeFirstResponder(setup)
         self.setup = setup
         setup.begin()
+        setup.refreshCodes()
     }
 
     /// Frames what is to be recorded on its display, with the recording bar under it.
@@ -781,6 +787,7 @@ public final class OverlayController {
             kind: sizing ? .sizing : .allInOne, ratio: sizing ? ratio : nil
         )
         setup.onShapeKept = { [weak self] shape in self?.onKeptShapeChange?(shape) }
+        setup.codeFinder = codes
         setup.onChoose = { [weak self, weak setup] choice, area in
             guard let self else { return }
             if sizing {
@@ -825,7 +832,8 @@ public final class OverlayController {
         keepOnly(entry)
         onAnnotate(AnnotationRequest(
             host: entry.view, display: entry.view.display, area: area, frame: frame,
-            showEdgeLoupe: { [weak view = entry.view] point in view?.showEdgeLoupe(at: point) }
+            showEdgeLoupe: { [weak view = entry.view] point in view?.showEdgeLoupe(at: point) },
+            codes: codes
         ))
     }
 

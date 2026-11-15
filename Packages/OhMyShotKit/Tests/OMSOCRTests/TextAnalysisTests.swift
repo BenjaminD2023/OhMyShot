@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import Foundation
 import Testing
 @testable import OMSOCR
@@ -99,5 +100,56 @@ struct TableFillTests {
     @Test func tablesWithoutBoxesStayAsRead() {
         let table = OCRTable(rows: [["a", "b"]])
         #expect(table.filled(from: [line("z", 0, 0, 10)]) == table)
+    }
+}
+
+/// The codes a selection's chips look for: found in one pass, boxes in the picture's pixels from the top left, even
+/// with the selection drawn tight around the code.
+struct SelectionCodeTests {
+    private func qr(_ message: String, side: CGFloat) throws -> CGImage {
+        let filter = try #require(CIFilter(name: "CIQRCodeGenerator"))
+        filter.setValue(message.data(using: .utf8), forKey: "inputMessage")
+        let output = try #require(filter.outputImage)
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: side / output.extent.width, y: side / output.extent.width))
+        return try #require(CIContext().createCGImage(scaled, from: scaled.extent))
+    }
+
+    /// A white page of `size` with rows of gray bars, as text, and `code` with its top-left corner at `origin` (from
+    /// the top left).
+    private func page(_ size: CGSize, code: CGImage?, at origin: CGPoint) throws -> CGImage {
+        let context = try #require(CGContext(
+            data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(origin: .zero, size: size))
+        context.setFillColor(CGColor(gray: 0.2, alpha: 1))
+        for row in stride(from: 20, to: Int(size.height) - 20, by: 24) {
+            context.fill(CGRect(x: 20, y: row, width: Int(size.width) / 3, height: 12))
+        }
+        if let code {
+            let rect = CGRect(x: origin.x, y: size.height - origin.y - CGFloat(code.height), width: CGFloat(code.width), height: CGFloat(code.height))
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fill(rect.insetBy(dx: -20, dy: -20))
+            context.draw(code, in: rect)
+        }
+        return try #require(context.makeImage())
+    }
+
+    @Test func aQRCodeOnAPageIsFoundWhereItLies() async throws {
+        let message = "https://example.com/ohmyshot"
+        let picture = try page(CGSize(width: 800, height: 600), code: try qr(message, side: 200), at: CGPoint(x: 500, y: 100))
+        let codes = try await VisionPipeline.selectionCodes(in: picture)
+        let code = try #require(codes.first)
+        #expect(codes.count == 1)
+        #expect(code.payload == message && code.kind == .qr && code.webURL?.host() == "example.com")
+        #expect(abs(code.box.minX - 500) < 12 && abs(code.box.minY - 100) < 12 && abs(code.box.width - 200) < 24)
+    }
+
+    @Test func aSelectionTightAroundACodeStillReadsAndAPageWithoutOneHasNone() async throws {
+        let tight = try qr("ticket 4821", side: 240)
+        #expect(try await VisionPipeline.selectionCodes(in: tight).map(\.payload) == ["ticket 4821"])
+        let empty = try page(CGSize(width: 800, height: 600), code: nil, at: .zero)
+        #expect(try await VisionPipeline.selectionCodes(in: empty).isEmpty)
     }
 }

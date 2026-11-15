@@ -30,6 +30,9 @@ public final class QuickAccessController {
         /// The file to hand to another app for a capture, when it is dragged out of its card or shared: the capture
         /// itself, or a copy in the format Settings choose.
         public var fileToHandOver: (QuickAccessItem) -> URL = { $0.fileURL }
+        /// The QR codes and barcodes in a screenshot, looked for once its card shows, which its menu then offers to
+        /// open or copy; none when Settings say not to look.
+        public var codes: (QuickAccessItem) async -> [FoundCode] = { _ in [] }
 
         /// Where the cards stand, how large they are, and when they close by themselves (Settings); read each
         /// time a card appears.
@@ -483,6 +486,7 @@ public final class QuickAccessController {
         let stack = CardStackView()
         stack.onCommand = { [weak self] command, item in self?.perform(command, on: item, keyed: false) }
         stack.fileToHandOver = { [weak self] item in self?.actions.fileToHandOver(item) ?? item.fileURL }
+        stack.findCodes = actions.codes
         let sharing = actions.sharing
         stack.uploadMenu = sharing.menu
         stack.hasLink = sharing.hasLink

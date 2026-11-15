@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import OMSCore
 import OMSDesign
 import Testing
 @testable import OMSAnnotate
@@ -212,5 +213,64 @@ struct InPlaceAnnotationTests {
         #expect(annotator.session.document.items.isEmpty)
         annotator.backOut()
         #expect(cancelled)
+    }
+
+    /// The codes in the selection get chips over them, in the view's points, once it is shown; a tool in hand puts them
+    /// away, as a mark drawn to point at one would be copied without it, and Settings saying no look for none.
+    @Test func chipsStandOverTheCodesInTheSelectionUntilAToolIsInHand() async throws {
+        let code = FoundCode(payload: "https://example.com", isMatrix: true, box: CGRect(x: 20, y: 10, width: 40, height: 40))
+        let annotator = view()
+        annotator.codeFinder = CodeFinder(isOn: { true }, find: { _ in [code] })
+        annotator.begin()
+        for _ in 0..<100 where annotator.codeChips.shownPayloads.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(annotator.codeChips.shownPayloads == ["https://example.com"])
+        // The selection's canvas starts at (160, 80) pixels at 2×: the code lies at (90, 45) points, 20 across, and
+        // its chip stands half over its top-right corner.
+        let chip = try #require(annotator.codeChips.debugChipFrames.first)
+        #expect(chip.midX == 110 && chip.midY == 45)
+        #expect(!annotator.codeChips.isHidden)
+        annotator.session.tool = .pen
+        #expect(annotator.codeChips.isHidden)
+        annotator.session.tool = .select
+        #expect(!annotator.codeChips.isHidden)
+
+        let off = view()
+        off.codeFinder = CodeFinder(isOn: { false }, find: { _ in [code] })
+        off.begin()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(off.codeChips.shownPayloads.isEmpty)
+    }
+
+    /// Q opens a code's card, which has the keyboard while it is open (Escape closes it, and the canvas has the keys
+    /// again); over marks a card offers to copy the code but not to open its page, which would end the capture.
+    @Test func aCodesCardHasTheKeysWhileOpenAndOffersNoLinkOverMarks() async throws {
+        let annotator = view()
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = annotator
+        defer { window.close() }
+        annotator.layoutSubtreeIfNeeded()
+        annotator.codeFinder = CodeFinder(isOn: { true }, find: { _ in
+            [FoundCode(payload: "https://example.com", isMatrix: true, box: CGRect(x: 20, y: 10, width: 40, height: 40))]
+        })
+        annotator.begin()
+        for _ in 0..<100 where annotator.codeChips.shownPayloads.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        annotator.simulateKey("q", keyCode: 12)
+        #expect(annotator.codeChips.isShowingCard && annotator.codeChips.debugCardOffersOpen)
+        #expect(window.firstResponder is NSButton)
+        annotator.simulateKey("\u{1b}", keyCode: 53)
+        #expect(!annotator.codeChips.isShowingCard)
+        #expect(window.firstResponder === annotator.canvas)
+
+        let mark = Annotation(shape: .rectangle(Box(rect: CGRect(x: 250, y: 140, width: 30, height: 30))), style: Style())
+        var document = annotator.session.document
+        document.items = [mark]
+        annotator.session.commit(document, actionName: "Add")
+        annotator.simulateKey("q", keyCode: 12)
+        #expect(annotator.codeChips.isShowingCard && !annotator.codeChips.debugCardOffersOpen)
     }
 }

@@ -229,6 +229,7 @@ final class CaptureCoordinator {
             )
         )
         view.frame = host.bounds
+        view.codeFinder = request.codes
         // Only the lens closure, not the request: that holds the whole frozen frame.
         let showEdgeLoupe = request.showEdgeLoupe
         view.onEdgeDrag = { [weak host, weak view] point in

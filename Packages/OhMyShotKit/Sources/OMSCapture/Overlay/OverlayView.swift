@@ -280,6 +280,11 @@ final class OverlayView: NSView {
         capturedFrame
     }
 
+    /// Whether the screen shows its frame, held still, rather than the live screen.
+    var isFrozen: Bool {
+        backdrop.contents != nil
+    }
+
     /// The color of the pixel at a point in global space, the one the magnifier centers on.
     func color(at globalPoint: CGPoint) -> ScreenColor? {
         let pixel = pixelCoordinate(at: local(globalPoint))

@@ -217,6 +217,13 @@ public final class SettingsStore {
         didSet { defaults.set(snapSelectionToText, forKey: Key.snapSelectionToText) }
     }
 
+    /// QR codes and barcodes are looked for: a chip over each one in a selection that stays on a frozen screen
+    /// (in-place annotation, All-In-One's frame), and an item for each in a screenshot's Quick Access card menu, to
+    /// copy what it says or open its web page. On by default: nothing shows unless there is a code.
+    public var showsCodesInSelection: Bool {
+        didSet { defaults.set(showsCodesInSelection, forKey: Key.showsCodesInSelection) }
+    }
+
     /// How long Self-Timer waits, in seconds, between choosing what to capture and capturing it.
     public var selfTimerDelay: Int {
         didSet { defaults.set(selfTimerDelay, forKey: Key.selfTimerDelay) }
@@ -499,6 +506,7 @@ public final class SettingsStore {
             .captureLoupeSize: Default.captureLoupeSize.rawValue,
             .areaShape: Default.areaShape,
             .snapSelectionToText: false,
+            .showsCodesInSelection: true,
             .allInOneRemembersArea: true,
             .windowShadow: true,
             .selfTimerDelay: Default.selfTimerDelay,
@@ -555,6 +563,7 @@ public final class SettingsStore {
         let shape = defaults.string(forKey: Key.areaShape) ?? Default.areaShape
         areaShape = AspectRatio.presets.dropFirst().contains { $0.label == shape } ? shape : Default.areaShape
         snapSelectionToText = defaults.bool(forKey: Key.snapSelectionToText)
+        showsCodesInSelection = defaults.bool(forKey: Key.showsCodesInSelection)
         let delay = defaults.integer(forKey: Key.selfTimerDelay)
         selfTimerDelay = Self.selfTimerDelays.contains(delay) ? delay : Default.selfTimerDelay
         pinCornerRadius = min(max(defaults.double(forKey: Key.pinCornerRadius), Self.pinCornerRadii.lowerBound), Self.pinCornerRadii.upperBound)
@@ -685,6 +694,7 @@ public final class SettingsStore {
         captureLoupeSize = fresh.captureLoupeSize
         areaShape = fresh.areaShape
         snapSelectionToText = fresh.snapSelectionToText
+        showsCodesInSelection = fresh.showsCodesInSelection
         selfTimerDelay = fresh.selfTimerDelay
         pinCornerRadius = fresh.pinCornerRadius
         pinShadow = fresh.pinShadow
@@ -786,6 +796,7 @@ public final class SettingsStore {
         case captureLoupeSize
         case areaShape
         case snapSelectionToText
+        case showsCodesInSelection
         case selfTimerDelay
         case pinCornerRadius
         case pinShadow

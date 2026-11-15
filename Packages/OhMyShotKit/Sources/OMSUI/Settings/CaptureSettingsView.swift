@@ -39,6 +39,9 @@ struct CaptureSettingsView: View {
                     Toggle(isOn: $settings.snapSelectionToText) {
                         Text("Snap the selection to text", bundle: .module)
                     }
+                    Toggle(isOn: $settings.showsCodesInSelection) {
+                        Text("Find QR codes and barcodes", bundle: .module)
+                    }
                     Toggle(isOn: $settings.allInOneRemembersArea) {
                         Text("All-In-One remembers the last area", bundle: .module)
                     }

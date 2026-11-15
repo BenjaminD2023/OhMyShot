@@ -1,5 +1,6 @@
 import AppKit
 import OMSCore
+import OMSDesign
 import Testing
 @testable import OMSCapture
 
@@ -320,4 +321,57 @@ struct AllInOneBarTests {
         bar.select(.text)
         #expect(bar.onChoices == [.area])
     }
+
+    /// The frame looks for codes in the area on a frozen screen, and puts a chip over each, in the frame's points; a
+    /// live screen, or Settings saying no, look for none.
+    @Test func aFrozenFrameShowsChipsOverTheCodesInItsArea() async throws {
+        // A 2× display 800 × 600 points, and an area on it 300 × 150 points.
+        let display = DisplayInfo(
+            id: 1, name: "Test", frame: CGRect(x: 0, y: 0, width: 800, height: 600), pixelSize: CGSize(width: 1600, height: 1200),
+            backingScale: 2, maximumPotentialEDR: 1
+        )
+        let area = CGRect(x: 100, y: 200, width: 300, height: 150)
+        let context = try #require(CGContext(
+            data: nil, width: 1600, height: 1200, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 1600, height: 1200))
+        let frame = CapturedFrame(image: try #require(context.makeImage()), hdrImage: nil, displayID: display.id, frame: display.frame)
+        let asked = Asked()
+        let finder = CodeFinder(isOn: { true }, find: { picture in
+            await asked.note(CGSize(width: picture.width, height: picture.height))
+            return [FoundCode(payload: "https://example.com", isMatrix: true, box: CGRect(x: 40, y: 20, width: 100, height: 100))]
+        })
+        for frozen in [true, false] {
+            let overlay = OverlayView(display: display)
+            defer { overlay.clear() }
+            overlay.show(frame, frozen: frozen)
+            overlay.enterAnnotation()
+            let view = AllInOneSetupView(display: display, area: area, offersUpload: true)
+            overlay.addSubview(view)
+            view.codeFinder = finder
+            view.refreshCodes()
+            for _ in 0..<100 where view.codeChips.shownPayloads.isEmpty && frozen {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            if frozen {
+                #expect(view.codeChips.shownPayloads == ["https://example.com"])
+                // The area, 300 × 150 points at 2×, is what was looked at; the box comes back in the frame's points:
+                // the area's top-left (100, 250 from the display's top) plus half the box's pixels.
+                #expect(await asked.sizes.last == CGSize(width: 600, height: 300))
+                let chip = try #require(view.codeChips.debugChipFrames.first)
+                #expect(chip.midX == 100 + 70 && chip.midY == 250 + 10)
+            } else {
+                #expect(view.codeChips.shownPayloads.isEmpty)
+            }
+        }
+        #expect(await asked.sizes.count >= 1)
+    }
+}
+
+/// The sizes of the pictures a finder was asked about.
+private actor Asked {
+    var sizes: [CGSize] = []
+    func note(_ size: CGSize) { sizes.append(size) }
 }

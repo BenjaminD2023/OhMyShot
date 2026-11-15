@@ -163,6 +163,12 @@ extension CompositionRoot {
             )
         }
         actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? item.fileURL }
+        actions.codes = { [weak self] item in
+            guard let self, settings.showsCodesInSelection, item.kind == .screenshot,
+                  let loaded = await Self.loadImage(item.fileURL) else { return [] }
+            let codes = (try? await VisionPipeline.selectionCodes(in: loaded.image)) ?? []
+            return codes.map { FoundCode(payload: $0.payload, isMatrix: $0.kind.isMatrix, box: $0.box) }
+        }
         actions.preferences = { [weak self] in self?.settings.quickAccessPreferences ?? QuickAccessPreferences() }
         actions.pictureChangeOffer = { [weak self] item in self?.pictureChanges.offer(for: item) ?? .unsupported }
         actions.changePicture = { [weak self] item, change in self?.pictureChanges.apply(change, to: item) }
