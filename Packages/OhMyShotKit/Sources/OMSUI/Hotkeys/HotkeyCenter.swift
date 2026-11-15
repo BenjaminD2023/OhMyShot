@@ -38,6 +38,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case pickColor
     /// Measure the frozen screen.
     case measure
+    /// Draw over the live screen, or stop drawing.
+    case drawOnScreen
     /// Choose an area, a window, or a display, and record it; pressed again while recording, stops.
     case recordScreen
     /// Saves the last 15 seconds of each display the replay keeps (macOS 27).
@@ -96,6 +98,7 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .translateArea: String(localized: "Translate Area", bundle: .module)
         case .pickColor: String(localized: "Pick Color", bundle: .module)
         case .measure: String(localized: "Measure", bundle: .module)
+        case .drawOnScreen: String(localized: "Draw on Screen", bundle: .module)
         case .recordScreen: String(localized: "Record Screen", bundle: .module)
         case .saveReplay: String(localized: "Save Last 15 Seconds", bundle: .module)
         case .openHistory: String(localized: "Open Capture History", bundle: .module)
@@ -196,7 +199,7 @@ public final class HotkeyCenter {
         case .scrollingCapture: profile == .development ? KeyboardShortcuts.Shortcut(.equal, modifiers: modifiers) : nil
         case .captureWindow, .capturePreviousArea, .selfTimer, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload,
              .captureFullscreenAndUpload, .captureTextJoined, .captureFormula, .openHistory, .copyLatestCapture, .annotateLatestCapture,
-             .openFromClipboard, .controlQuickAccess: nil
+             .openFromClipboard, .controlQuickAccess, .drawOnScreen: nil
         }
     }
 }

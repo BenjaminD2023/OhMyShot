@@ -98,6 +98,17 @@ final class CompositionRoot {
         return reader
     }()
     lazy var pins = PinController(settings: settings, actions: makePinActions())
+    /// Draw on Screen: its canvases are in captures and recordings, as pins are.
+    lazy var sketch: ScreenSketchController = {
+        let sketch = ScreenSketchController()
+        sketch.onCanvasesShown = { [weak self] in
+            guard let self else { return }
+            shareableContent.refresh()
+            // A recording under way takes the canvases in, as it took in what was on screen when it began.
+            Task { await self.recordings.includeWindowsShownSince() }
+        }
+        return sketch
+    }()
     /// The model packs the text reader reads with beside Vision, and the text reader itself.
     lazy var readerPacks: TextReaderPacks = {
         let packs = TextReaderPacks()
@@ -340,7 +351,7 @@ final class CompositionRoot {
             guard let self else { return Self.standardWindowIDs() }
             // The cover over the desktop icons too: a capture shows the desktop as it looks.
             let covers = settings.hidesDesktopIcons ? desktopIcons.windowIDs : []
-            return pins.capturedWindowIDs.union(Self.standardWindowIDs()).union(covers)
+            return pins.capturedWindowIDs.union(Self.standardWindowIDs()).union(covers).union(sketch.canvasWindowIDs)
         }
         pins.onChange = { [weak self] in self?.shareableContent.refresh() }
         annotations.onChange = { [weak self] entry, data in

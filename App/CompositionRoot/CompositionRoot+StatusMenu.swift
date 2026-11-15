@@ -96,6 +96,14 @@ extension CompositionRoot {
             toolEntries: [
                 .init(title: String(localized: "Pick Color"), systemImage: "eyedropper", shortcut: .pickColor) { [weak self] in self?.handle(.pickColor) },
                 .init(title: String(localized: "Measure"), systemImage: "ruler", shortcut: .measure) { [weak self] in self?.handle(.measure) },
+                .init(
+                    title: String(localized: "Draw on Screen"),
+                    systemImage: "pencil.and.scribble",
+                    shortcut: .drawOnScreen,
+                    currentTitle: { [weak self] in
+                        self?.sketch.isActive == true ? String(localized: "Stop Drawing on Screen") : String(localized: "Draw on Screen")
+                    }
+                ) { [weak self] in self?.handle(.drawOnScreen) },
                 .separator,
                 .init(
                     title: String(localized: "Hide Desktop Icons"),

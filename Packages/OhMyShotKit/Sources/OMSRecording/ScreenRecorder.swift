@@ -152,6 +152,12 @@ public final class ScreenRecorder {
 
     /// Stops and closes the movie. Throws `RecordingWriter.WriterError.noFrames` when nothing was recorded.
     @discardableResult
+    /// Changes what the stream takes in while it records, as when a window it must show (Draw on Screen's canvas)
+    /// opens after it began: the frames that follow show what `filter` says.
+    public func updateFilter(_ filter: SCContentFilter) async throws {
+        try await stream?.updateContentFilter(filter)
+    }
+
     public func stop() async throws -> RecordingWriter.Statistics {
         guard state == .recording || state == .paused else { return await writer.currentStatistics }
         state = .finishing
