@@ -20,8 +20,13 @@ nonisolated public enum Handle: String, Hashable, Sendable, CaseIterable {
 }
 
 nonisolated extension Annotation {
-    /// What the mark covers, in pixels.
+    /// What the mark covers, in pixels: for a turned mark, the upright box around it as it is turned.
     public func bounds(scale: CGFloat) -> CGRect {
+        if isTurned {
+            let upright = upright(scale: scale)
+            let frame = upright.bounds(scale: scale)
+            return Self.box(around: frame, turnedBy: angle, about: frame.middle)
+        }
         switch shape {
         case .text(let block):
             return CGRect(origin: block.origin, size: TextLayout(block, scale: scale).size)
@@ -41,6 +46,10 @@ nonisolated extension Annotation {
     /// Everything drawing may touch, its shadow included: a bubble's or a counter's tail too, which `bounds` leaves
     /// out, so the selection's frame, its handles, and alignment go by the plate or disc alone.
     public func drawingBounds(scale: CGFloat) -> CGRect {
+        if isTurned {
+            let upright = upright(scale: scale)
+            return Self.box(around: upright.drawingBounds(scale: scale), turnedBy: angle, about: upright.bounds(scale: scale).middle)
+        }
         var bounds = bounds(scale: scale)
         guard !bounds.isNull else { return bounds }
         if let tip = tip(scale: scale) { bounds = bounds.union(CGRect(origin: tip, size: .zero)) }
@@ -50,7 +59,11 @@ nonisolated extension Annotation {
 
     /// Where a bubble's tail or a counter's pointer ends, in pixels; nil for marks without one.
     func tip(scale: CGFloat) -> CGPoint? {
-        switch shape {
+        if isTurned {
+            let upright = upright(scale: scale)
+            return upright.tip(scale: scale).map { Self.turn($0, about: upright.bounds(scale: scale).middle, by: angle) }
+        }
+        return switch shape {
         case .text(let block) where block.look == .bubble: TextLayout(block, scale: scale).tip(of: block)
         case .counter(let counter): counter.tail
         default: nil
@@ -108,6 +121,11 @@ nonisolated extension Annotation {
     /// Whether `point` (pixels) is on the mark, within `tolerance` pixels. With `interior` false, marks
     /// that cover an area answer only near their edges.
     public func contains(_ point: CGPoint, tolerance: CGFloat, scale: CGFloat, interior: Bool = true) -> Bool {
+        if isTurned {
+            let upright = upright(scale: scale)
+            let local = Self.turn(point, about: upright.bounds(scale: scale).middle, by: -angle)
+            return upright.contains(local, tolerance: tolerance, scale: scale, interior: interior)
+        }
         let edgeOnly = !interior && coversArea
         switch shape {
         case .text, .counter:
@@ -133,6 +151,11 @@ nonisolated extension Annotation {
 
     /// Where the mark's handles are, in pixels.
     public func handles(scale: CGFloat) -> [(handle: Handle, point: CGPoint)] {
+        if isTurned {
+            let upright = upright(scale: scale)
+            let center = upright.bounds(scale: scale).middle
+            return upright.handles(scale: scale).map { ($0.handle, Self.turn($0.point, about: center, by: angle)) }
+        }
         switch shape {
         case .arrow(let arrow):
             return [(.start, arrow.start), (.end, arrow.end), (.bend, ArrowPath.middle(of: arrow))]
@@ -179,6 +202,19 @@ nonisolated extension Annotation {
     /// The mark with `handle` dragged to `point`. Apply it to the mark as it was when the drag began.
     /// `constrained` (Shift) snaps ends to 45° steps, straightens arrows, and keeps a box's proportions.
     public func moving(_ handle: Handle, to point: CGPoint, constrained: Bool, scale: CGFloat) -> Annotation {
+        if isTurned {
+            // Reshaped upright in its own frame, then turned again; the side across from the handle stays where it was
+            // on the picture, though the middle it turns about has moved.
+            let upright = upright(scale: scale)
+            let before = upright.bounds(scale: scale)
+            let local = Self.turn(point, about: before.middle, by: -angle)
+            let reshaped = upright.moving(handle, to: local, constrained: constrained, scale: scale)
+            let after = reshaped.bounds(scale: scale)
+            let anchor = handle.opposite
+            let was = Self.turn(anchor.point(on: before), about: before.middle, by: angle)
+            let now = Self.turn(anchor.point(on: after), about: after.middle, by: angle)
+            return Self.turned(reshaped, by: angle, scale: scale).translated(by: CGSize(width: was.x - now.x, height: was.y - now.y))
+        }
         var copy = self
         switch shape {
         case .arrow(var arrow):

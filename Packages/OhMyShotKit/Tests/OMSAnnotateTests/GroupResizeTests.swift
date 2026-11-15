@@ -178,6 +178,20 @@ struct GroupResizeTests {
         #expect(away.tail == CGPoint(x: 80 + (500 - 80) * 0.4, y: 80 + (300 - 80) * 0.4))
     }
 
+    /// A turned mark keeps its turn: its middle goes where the map takes it and its frame grows along its own sides.
+    @Test func aTurnedMarkKeepsItsTurnInAGroup() {
+        let turned = Annotation(shape: .rectangle(Box(rect: CGRect(x: 40, y: 40, width: 60, height: 20))), style: Style(lineWidth: 2), rotation: .pi / 6)
+        let other = Annotation(shape: .rectangle(Box(rect: CGRect(x: 160, y: 120, width: 40, height: 40))), style: Style(lineWidth: 2))
+        let box = [turned, other].map { $0.bounds(scale: 1) }.reduce(CGRect.null) { $0.union($1) }
+        let target = CGRect(x: box.minX, y: box.minY, width: box.width * 2, height: box.height * 2)
+        let scaled = AnnotationCanvasView.scaled([turned, other], from: box, to: target, scale: 1)
+        #expect(scaled[0].rotation == .pi / 6)
+        let before = turned.pivot(scale: 1), after = scaled[0].pivot(scale: 1)
+        #expect(abs(after.x - (box.minX + (before.x - box.minX) * 2)) < 0.01 && abs(after.y - (box.minY + (before.y - box.minY) * 2)) < 0.01)
+        guard case .rectangle(let frame) = scaled[0].shape else { Issue.record("Not a box"); return }
+        #expect(frame.rect.size == CGSize(width: 120, height: 40))
+    }
+
     @Test func theMapIsTheSameForEveryMark() {
         let marks = [
             Annotation(shape: .line(Line(start: CGPoint(x: 0, y: 0), end: CGPoint(x: 10, y: 10))), style: Style()),

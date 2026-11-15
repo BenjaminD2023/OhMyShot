@@ -81,6 +81,9 @@ struct AnnotationProjectTests {
         #expect(try version(of: document) == 3)
         document.items = [Annotation(shape: .counter(Counter(center: CGPoint(x: 20, y: 20), value: 1)), style: Style())]
         #expect(try version(of: document) == 1)
+        // A turned mark would be shown upright by a version that cannot turn it.
+        document.items = [Annotation(shape: .rectangle(Box(rect: CGRect(x: 10, y: 10, width: 30, height: 10))), style: Style(), rotation: 0.4)]
+        #expect(try version(of: document) == 3)
 
         // A newer version's project with a kind of mark unknown here.
         let data = try AnnotationProject(capture: swatch(4, 4, gray: 1), document: AnnotationDocument(pixelSize: CGSize(width: 4, height: 4), scale: 1)).data()

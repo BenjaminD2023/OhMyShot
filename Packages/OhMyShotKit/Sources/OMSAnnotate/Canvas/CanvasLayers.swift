@@ -246,6 +246,15 @@ nonisolated final class SelectionLayer: StillLayer {
         /// In view points.
         var box: CGRect?
         var handles: [CGPoint]
+        /// How far `box` is turned about its middle, in radians, clockwise.
+        var angle: CGFloat = 0
+        /// The rotation knob and the point on the box it stands above, in view points.
+        var knob: (base: CGPoint, point: CGPoint)?
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.box == rhs.box && lhs.handles == rhs.handles && lhs.angle == rhs.angle
+                && lhs.knob?.base == rhs.knob?.base && lhs.knob?.point == rhs.knob?.point
+        }
     }
 
     var outlines: [Outline] = [] {
@@ -331,11 +340,25 @@ nonisolated final class SelectionLayer: StillLayer {
         }
         for outline in outlines {
             if let box = outline.box {
+                context.saveGState()
                 context.setStrokeColor(accent)
                 context.setLineWidth(line)
+                if outline.angle != 0 {
+                    context.translateBy(x: box.midX, y: box.midY)
+                    context.rotate(by: outline.angle)
+                    context.translateBy(x: -box.midX, y: -box.midY)
+                }
                 context.stroke(box.insetBy(dx: -line / 2, dy: -line / 2))
+                context.restoreGState()
             }
-            for point in outline.handles {
+            var handles = outline.handles
+            if let knob = outline.knob {
+                context.setStrokeColor(accent)
+                context.setLineWidth(line)
+                context.strokeLineSegments(between: [knob.base, knob.point])
+                handles.append(knob.point)
+            }
+            for point in handles {
                 let size = Self.handleSize
                 let rect = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
                 context.saveGState()

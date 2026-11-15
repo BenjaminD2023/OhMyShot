@@ -24,6 +24,17 @@ nonisolated public enum AnnotationRenderer {
         let color = item.style.color.cgColor
         context.saveGState()
         defer { context.restoreGState() }
+        if item.isTurned {
+            // Upright in a frame turned about its middle. Shadows keep falling down the page: their offset is the
+            // page's, not the frame's.
+            let upright = item.upright(scale: scale)
+            let center = upright.bounds(scale: scale).middle
+            context.translateBy(x: center.x, y: center.y)
+            context.rotate(by: item.angle)
+            context.translateBy(x: -center.x, y: -center.y)
+            draw(upright, in: context, scale: scale, redacted: redacted, ground: ground, flippedBacking: flippedBacking)
+            return
+        }
         switch item.shape {
         case .arrow, .line, .rectangle, .ellipse, .pen:
             guard let path = MarkPaths.outline(of: item, scale: scale) else { return }

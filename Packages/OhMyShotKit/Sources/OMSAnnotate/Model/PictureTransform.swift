@@ -219,6 +219,10 @@ nonisolated extension Annotation {
     /// picture. `scale` is the document's scale before the operation.
     func mapped(by mapping: PictureMapping, scale: CGFloat) -> Annotation {
         var copy = self
+        // A turned mark keeps its turn, its upright frame carried by the map, so a turn of the picture (which swaps the
+        // frame's sides) turns it with the picture; a flip turns it the other way. A stretch of one side stretches the
+        // frame along its own sides.
+        if isTurned, mapping.reflects { copy.rotation = -angle }
         switch shape {
         case .arrow(var arrow):
             let control = ArrowPath.control(start: arrow.start, end: arrow.end, bend: arrow.bend)
@@ -270,7 +274,10 @@ nonisolated extension Annotation {
                 block.origin = mapping.point(block.origin)
                 block.width = block.width.map { $0 * mapping.affine.a }
             } else {
-                let frame = bounds(scale: scale)
+                // Its upright size: a turned block's box is larger than the block.
+                var upright = self
+                upright.rotation = nil
+                let frame = upright.bounds(scale: scale)
                 let middle = mapping.point(CGPoint(x: frame.midX, y: frame.midY))
                 block.origin = CGPoint(x: middle.x - frame.width / 2, y: middle.y - frame.height / 2)
             }

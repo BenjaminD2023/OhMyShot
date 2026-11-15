@@ -21,7 +21,9 @@ nonisolated public struct AnnotationProject: Sendable {
     /// kind of mark is named here, so a new one is placed in a format when it is added.
     static func version(for document: AnnotationDocument) -> Int {
         let usesNewest = document.watermark != nil || document.items.contains { item in
-            switch item.shape {
+            // A turned mark would be shown upright by a version that does not know turning.
+            if item.isTurned { return true }
+            return switch item.shape {
             case .text(let block): block.look == .bubble || block.tail != nil
             case .counter(let counter): counter.tail != nil
             case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight, .redaction, .spotlight, .image: false

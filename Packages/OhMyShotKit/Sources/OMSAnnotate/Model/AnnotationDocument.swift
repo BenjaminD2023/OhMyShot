@@ -71,11 +71,16 @@ nonisolated public struct Annotation: Identifiable, Codable, Sendable, Equatable
     public var id: UUID
     public var shape: Shape
     public var style: Style
+    /// How far the mark is turned about its middle, in radians, clockwise on the picture; nil while upright. Only
+    /// rectangles, ellipses, text, and images turn (`isRotatable`). Left out of the file while nil, so marks never turned
+    /// stay readable by earlier versions, which show a turned one upright.
+    public var rotation: CGFloat?
 
-    public init(id: UUID = UUID(), shape: Shape, style: Style) {
+    public init(id: UUID = UUID(), shape: Shape, style: Style, rotation: CGFloat? = nil) {
         self.id = id
         self.shape = shape
         self.style = style
+        self.rotation = rotation
     }
 }
 

@@ -68,6 +68,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case highlighting(id: Annotation.ID, points: [CGPoint], snapping: TextSnapping?)
         case moving(start: CGPoint, originals: [Annotation])
         case reshaping(handle: Handle, original: Annotation)
+        /// A mark turned by its knob: as it was, what it turns about, and the pointer's angle from there at the start.
+        case rotating(original: Annotation, pivot: CGPoint, start: CGFloat)
         /// Several marks resized together by a corner of the box around them, as it was when the drag began.
         case scaling(handle: Handle, originals: [Annotation], box: CGRect)
         case cropping(handle: Handle?, start: CGPoint, original: CGRect)
@@ -84,7 +86,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         /// once the drag ends.
         var editsMarks: Bool {
             switch self {
-            case .creating, .drawing, .highlighting, .moving, .reshaping, .scaling: true
+            case .creating, .drawing, .highlighting, .moving, .reshaping, .scaling, .rotating: true
             case .cropping, .panning, .marquee: false
             }
         }
@@ -95,6 +97,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let isNew: Bool
         let view: MarkTextView
         let undo = UndoManager()
+        /// Where a turned block's first corner was on the picture when editing began: the field is upright, and the
+        /// block grows from that corner, so it is put back there when editing ends.
+        var turnedCorner: CGPoint?
 
         init(id: Annotation.ID, isNew: Bool, view: MarkTextView) {
             self.id = id
@@ -894,9 +899,18 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func updateSelectionOutlines() {
         let scale = session.document.scale
         let single = session.selection.count == 1 && editing == nil
+        let knob = rotationKnob()
         // The text being typed shows its own field instead of a selection.
         var outlines = session.selectedItems.filter { $0.id != editing?.id }.map { item in
             let handles = single ? item.handles(scale: scale).map { viewPoint($0.point) } : []
+            if item.isTurned {
+                // Its own frame, turned, rather than the upright box around it.
+                let frame = viewRect(item.upright(scale: scale).bounds(scale: scale))
+                return SelectionLayer.Outline(
+                    box: frame, handles: handles, angle: item.angle,
+                    knob: knob.flatMap { $0.id == item.id ? ($0.base, $0.point) : nil }
+                )
+            }
             // A single arrow or line shows its handles alone; anything else, or several, a box too.
             switch item.shape {
             case .arrow, .line:
@@ -904,7 +918,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             default:
                 break
             }
-            return SelectionLayer.Outline(box: viewRect(item.bounds(scale: scale)).integral, handles: handles)
+            return SelectionLayer.Outline(
+                box: viewRect(item.bounds(scale: scale)).integral, handles: handles,
+                knob: knob.flatMap { $0.id == item.id ? ($0.base, $0.point) : nil }
+            )
         }
         // Several marks: a box around them all as well, its corners resizing them together.
         if let box = groupBox, editing == nil {
@@ -1051,6 +1068,25 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    /// How far above a mark its rotation knob stands, in view points.
+    static let knobReach: CGFloat = 22
+
+    /// The knob that turns the one selected mark, if it turns: where it is and the middle of the frame's top it stands
+    /// above, in view points, and the middle the mark turns about, in pixels.
+    private func rotationKnob() -> (id: Annotation.ID, point: CGPoint, base: CGPoint, pivot: CGPoint)? {
+        guard session.selection.count == 1, session.tool == .select, editing == nil,
+              let item = session.selectedItems.first, item.isRotatable else { return nil }
+        let scale = session.document.scale
+        let frame = item.upright(scale: scale).bounds(scale: scale)
+        guard !frame.isNull else { return nil }
+        let pivot = frame.middle
+        let center = viewPoint(pivot)
+        let top = viewPoint(CGPoint(x: frame.midX, y: frame.minY))
+        let base = Annotation.turn(top, about: center, by: item.angle)
+        let point = Annotation.turn(CGPoint(x: top.x, y: top.y - Self.knobReach), about: center, by: item.angle)
+        return (item.id, point, base, pivot)
+    }
+
     /// The box around the selected marks while there are several, in document pixels; nil otherwise.
     private var groupBox: CGRect? {
         guard session.selection.count >= 2, session.tool == .select else { return nil }
@@ -1192,6 +1228,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         // Double-clicking any existing text mark from any tool enters inline editing immediately.
         if event.clickCount == 2, let textItem = hitTextItem(at: point) {
             beginEditing(textItem.id, isNew: false)
+            return
+        }
+
+        if let knob = rotationKnob(), hypot(knob.point.x - location.x, knob.point.y - location.y) <= SelectionLayer.handleSize / 2 + 4,
+           let item = session.document.item(knob.id) {
+            session.beginLiveChange()
+            drag = .rotating(original: item, pivot: knob.pivot, start: atan2(point.y - knob.pivot.y, point.x - knob.pivot.x))
+            NSCursor.closedHand.set()
             return
         }
 
@@ -1353,6 +1397,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             guard let index = document.index(of: original.id) else { return }
             document.items[index] = original.moving(handle, to: point, constrained: shift, scale: document.scale)
             session.updateLive(document)
+        case .rotating(let original, let pivot, let start):
+            guard let index = document.index(of: original.id) else { return }
+            let turn = atan2(point.y - pivot.y, point.x - pivot.x) - start
+            let angle = Annotation.snappedAngle(original.angle + turn, constrained: shift)
+            document.items[index] = original.rotated(to: angle)
+            session.updateLive(document)
         case .scaling(let handle, let originals, let box):
             // Shift keeps the box's shape; a corner dragged past the opposite one stops short of it, as the marks
             // are not turned over.
@@ -1453,6 +1503,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case .scaling(_, let originals, _):
             session.fitCanvas(holding: originals.map(\.id))
             session.endLiveChange(actionName: String(localized: "Resize Marks", bundle: .module))
+        case .rotating(let original, _, _):
+            session.fitCanvas(holding: [original.id])
+            session.endLiveChange(actionName: String(localized: "Rotate", bundle: .module))
         case .reshaping(let handle, let original):
             session.fitCanvas(holding: [original.id])
             let name = switch handle {
@@ -1538,9 +1591,25 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         add(String(localized: "Duplicate", bundle: .module), #selector(duplicateSelection(_:)), "plus.square.on.square")
         add(String(localized: "Bring to Front", bundle: .module), #selector(bringToFront(_:)), "square.3.layers.3d.top.filled")
         add(String(localized: "Send to Back", bundle: .module), #selector(sendToBack(_:)), "square.3.layers.3d.bottom.filled")
+        if session.selectedItems.contains(where: \.isTurned) {
+            add(String(localized: "Straighten", bundle: .module), #selector(straightenSelection(_:)), "arrow.uturn.backward")
+        }
         menu.addItem(.separator())
         add(String(localized: "Delete", bundle: .module), #selector(delete(_:)), "trash")
         return menu
+    }
+
+    /// Turns the selected marks upright again.
+    @objc func straightenSelection(_ sender: Any?) {
+        var document = session.document
+        var changed = false
+        for id in session.selection {
+            guard let index = document.index(of: id), document.items[index].isTurned else { continue }
+            document.items[index] = document.items[index].rotated(to: 0)
+            changed = true
+        }
+        guard changed else { return }
+        session.commit(document, actionName: String(localized: "Straighten", bundle: .module))
     }
 
     // MARK: Combining
@@ -1688,8 +1757,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             } else {
                 cursor = .crosshair
             }
+        } else if let knob = rotationKnob(), hypot(knob.point.x - location.x, knob.point.y - location.y) <= SelectionLayer.handleSize / 2 + 4 {
+            cursor = .openHand
         } else if session.selection.count == 1, let item = session.selectedItems.first, let handle = handle(at: location, of: item) {
-            cursor = handle == .bend || handle == .tail || handle == .start || handle == .end ? .crosshair : Self.resizeCursor(for: handle)
+            cursor = handle == .bend || handle == .tail || handle == .start || handle == .end
+                ? .crosshair : Self.resizeCursor(for: handle.turned(by: item.angle))
         } else if let (handle, _) = groupHandle(at: location) {
             cursor = Self.resizeCursor(for: handle)
         } else if hitItem(at: documentPoint(location), pressing: true) != nil {
@@ -2054,6 +2126,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let view = MarkTextView(frame: .zero)
         view.delegate = self
         let editing = TextEditing(id: id, isNew: isNew, view: view)
+        if item.isTurned, case .text(let block) = item.shape {
+            editing.turnedCorner = Annotation.turn(block.origin, about: item.pivot(scale: session.document.scale), by: item.angle)
+        }
         self.editing = editing
         if case .text(let block) = item.shape {
             view.string = block.string
@@ -2214,6 +2289,20 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 session.endLiveChange(actionName: String(localized: "Delete", bundle: .module))
             }
         } else {
+            if let corner = editing.turnedCorner, let index = session.document.index(of: editing.id),
+               case .text(let block) = session.document.items[index].shape {
+                let item = session.document.items[index]
+                let now = Annotation.turn(block.origin, about: item.pivot(scale: session.document.scale), by: item.angle)
+                var document = session.document
+                var moved = item.translated(by: CGSize(width: corner.x - now.x, height: corner.y - now.y))
+                // A bubble's tip stays on what it points at.
+                if case .text(var placed) = moved.shape {
+                    placed.tail = block.tail
+                    moved.shape = .text(placed)
+                }
+                document.items[index] = moved
+                session.updateLive(document)
+            }
             session.fitCanvas(holding: [editing.id])
             session.endLiveChange(actionName: editing.isNew ? String(localized: "Add Text", bundle: .module) : String(localized: "Edit Text", bundle: .module))
             if session.tool == .text { session.putToolDown() }
