@@ -285,6 +285,40 @@
         }
       }
     },
+    "Allow OhMyShot in Privacy & Security › Accessibility to pick parts of windows" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permite OhMyShot en Privacidad y seguridad › Accesibilidad para elegir partes de las ventanas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autorisez OhMyShot dans Confidentialité et sécurité › Accessibilité pour choisir des parties des fenêtres"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウの一部を選ぶには、プライバシーとセキュリティ › アクセシビリティで OhMyShot を許可してください"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“隐私与安全性 › 辅助功能”中允许 OhMyShot，即可选择窗口中的部分"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「隱私權與安全性 › 輔助使用」中允許 OhMyShot，即可選擇視窗中的部分"
+          }
+        }
+      }
+    },
     "Annotate" : {
       "localizations" : {
         "es" : {

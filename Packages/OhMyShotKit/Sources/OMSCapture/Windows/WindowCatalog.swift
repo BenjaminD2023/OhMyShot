@@ -10,12 +10,16 @@ public struct WindowTarget: Equatable, Sendable {
     public let frame: CGRect
     public let ownerName: String
     public let title: String?
+    /// The process that owns the window, which window mode asks for the parts of it (`ElementChain`); nil when not
+    /// known.
+    public let pid: pid_t?
 
-    public init(id: CGWindowID, frame: CGRect, ownerName: String, title: String?) {
+    public init(id: CGWindowID, frame: CGRect, ownerName: String, title: String?, pid: pid_t? = nil) {
         self.id = id
         self.frame = frame
         self.ownerName = ownerName
         self.title = title
+        self.pid = pid
     }
 
     /// The display holding most of this window, independent of the pointer or the selector's host.
@@ -88,7 +92,8 @@ public enum WindowCatalog {
                 id: id,
                 frame: layout.flipped(cgFrame),
                 ownerName: info[kCGWindowOwnerName as String] as? String ?? "",
-                title: info[kCGWindowName as String] as? String
+                title: info[kCGWindowName as String] as? String,
+                pid: pid
             )
         }
     }

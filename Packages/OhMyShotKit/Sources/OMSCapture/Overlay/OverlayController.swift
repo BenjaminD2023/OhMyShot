@@ -341,6 +341,7 @@ public final class OverlayController {
                 allInOne: isAllInOne,
                 snapsToText: snapsToText
             )
+            entry.view.displayLayout = topology.layout
         }
         hasInput = false
         // Shown before the overlay takes input, which tells VoiceOver it is there; framed with its bar once the
