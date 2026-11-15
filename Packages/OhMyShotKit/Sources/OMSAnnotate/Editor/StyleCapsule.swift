@@ -1011,6 +1011,23 @@ final class StyleCapsule: NSView {
                 let small: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .bold), .foregroundColor: NSColor.black]
                 let size = ("A" as NSString).size(withAttributes: small)
                 ("A" as NSString).draw(at: CGPoint(x: (rect.width - size.width) / 2, y: (rect.height - size.height) / 2), withAttributes: small)
+            case .bubble:
+                // The label's box, raised, with a tail down to the left: outlined, as the label is.
+                let plate = CGRect(x: 2, y: 6, width: rect.width - 4, height: rect.height - 8.5)
+                let bubble = NSBezierPath(roundedRect: plate, xRadius: 4, yRadius: 4)
+                let tail = NSBezierPath()
+                tail.move(to: CGPoint(x: plate.minX + 4, y: plate.minY + 0.5))
+                tail.line(to: CGPoint(x: plate.minX + 3, y: 1.5))
+                tail.line(to: CGPoint(x: plate.minX + 9, y: plate.minY + 0.5))
+                bubble.lineWidth = 1.4
+                tail.lineWidth = 1.4
+                tail.lineJoinStyle = .round
+                NSColor.black.setStroke()
+                bubble.stroke()
+                tail.stroke()
+                let small: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 9.5, weight: .bold), .foregroundColor: NSColor.black]
+                let size = ("A" as NSString).size(withAttributes: small)
+                ("A" as NSString).draw(at: CGPoint(x: plate.midX - size.width / 2, y: plate.midY - size.height / 2), withAttributes: small)
             }
             return true
         }
@@ -1049,6 +1066,7 @@ final class StyleCapsule: NSView {
         case .plain: String(localized: "Plain Text", bundle: .module)
         case .outlined: String(localized: "Outlined Text", bundle: .module)
         case .label: String(localized: "Label", bundle: .module)
+        case .bubble: String(localized: "Speech Bubble", bundle: .module)
         }
     }
 

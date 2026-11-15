@@ -262,6 +262,9 @@ nonisolated extension Annotation {
             highlight.rects = highlight.rects.map(mapping.rect)
             copy.shape = .textHighlight(highlight)
         case .text(var block):
+            // A bubble's tip goes where the map takes it, so it still points at what it pointed at; one left to point
+            // down and to the left is pinned where it was first.
+            block.tail = (block.look == .bubble ? tip(scale: scale) : block.tail).map(mapping.point)
             if mapping.isResize {
                 // The block grows from its corner, and its wrapping width with it.
                 block.origin = mapping.point(block.origin)
@@ -274,6 +277,7 @@ nonisolated extension Annotation {
             copy.shape = .text(block)
         case .counter(var counter):
             counter.center = mapping.point(counter.center)
+            counter.tail = counter.tail.map(mapping.point)
             copy.shape = .counter(counter)
         case .redaction(var redaction):
             redaction.rect = mapping.rect(redaction.rect)

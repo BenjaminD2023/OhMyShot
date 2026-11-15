@@ -65,6 +65,11 @@ nonisolated public enum AnnotationRenderer {
                 context.addPath(CGPath(roundedRect: frame, cornerWidth: layout.cornerRadius, cornerHeight: layout.cornerRadius, transform: nil))
                 context.fillPath()
                 context.setFillColor(item.style.color.prefersDarkInk ? CGColor(gray: 0, alpha: 0.88) : CGColor(gray: 1, alpha: 1))
+            case .bubble:
+                context.setFillColor(color)
+                context.addPath(layout.bubblePath(of: block))
+                context.fillPath()
+                context.setFillColor(item.style.color.prefersDarkInk ? CGColor(gray: 0, alpha: 0.88) : CGColor(gray: 1, alpha: 1))
             }
             layout.drawLines(in: context, at: block.origin)
             context.endTransparencyLayer()
@@ -73,7 +78,8 @@ nonisolated public enum AnnotationRenderer {
             if item.style.shadow { applyShadow(to: context, scale: scale, flippedBacking: flippedBacking) }
             context.beginTransparencyLayer(auxiliaryInfo: nil)
             context.setFillColor(color)
-            context.fillEllipse(in: layout.rect(at: counter.center))
+            context.addPath(CalloutPaths.counter(center: counter.center, diameter: layout.diameter, tip: counter.tail))
+            context.fillPath()
             context.setFillColor(item.style.color.prefersDarkInk ? CGColor(gray: 0, alpha: 0.88) : CGColor(gray: 1, alpha: 1))
             layout.drawLabel(in: context, at: counter.center)
             context.endTransparencyLayer()

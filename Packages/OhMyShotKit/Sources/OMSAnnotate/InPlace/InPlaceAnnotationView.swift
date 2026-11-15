@@ -458,7 +458,7 @@ public final class InPlaceAnnotationView: NSView {
             case .bottom: NSCursor.frameResize(position: .bottom, directions: .all)
             case .bottomLeft: NSCursor.frameResize(position: .bottomLeft, directions: .all)
             case .left: NSCursor.frameResize(position: .left, directions: .all)
-            case .start, .end, .bend: .crosshair
+            case .start, .end, .bend, .tail: .crosshair
             }
         }
         if canvas.isSpaceHeld, selectionRect.contains(point) {

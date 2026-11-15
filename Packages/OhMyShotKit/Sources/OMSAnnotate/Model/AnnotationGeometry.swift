@@ -7,6 +7,8 @@ nonisolated public enum Handle: String, Hashable, Sendable, CaseIterable {
     case end
     /// The middle of an arrow: dragging it bends the arrow.
     case bend
+    /// A bubble's tip, or the end of a counter's pointer (on the disc's edge while it has none).
+    case tail
     case topLeft
     case top
     case topRight
@@ -36,12 +38,36 @@ nonisolated extension Annotation {
         }
     }
 
-    /// Everything drawing may touch, its shadow included.
+    /// Everything drawing may touch, its shadow included: a bubble's or a counter's tail too, which `bounds` leaves
+    /// out, so the selection's frame, its handles, and alignment go by the plate or disc alone.
     public func drawingBounds(scale: CGFloat) -> CGRect {
-        let bounds = bounds(scale: scale)
+        var bounds = bounds(scale: scale)
         guard !bounds.isNull else { return bounds }
+        if let tip = tip(scale: scale) { bounds = bounds.union(CGRect(origin: tip, size: .zero)) }
         let shadow = style.shadow && castsShadow ? (AnnotationRenderer.shadowBlur * 2 + AnnotationRenderer.shadowDrop) * scale : 0
         return bounds.insetBy(dx: -(shadow + 2), dy: -(shadow + 2))
+    }
+
+    /// Where a bubble's tail or a counter's pointer ends, in pixels; nil for marks without one.
+    func tip(scale: CGFloat) -> CGPoint? {
+        switch shape {
+        case .text(let block) where block.look == .bubble: TextLayout(block, scale: scale).tip(of: block)
+        case .counter(let counter): counter.tail
+        default: nil
+        }
+    }
+
+    /// A bubble's or a pointing counter's whole outline, tail included; nil for every other mark.
+    func calloutOutline(scale: CGFloat) -> CGPath? {
+        switch shape {
+        case .text(let block) where block.look == .bubble:
+            return TextLayout(block, scale: scale).bubblePath(of: block)
+        case .counter(let counter) where counter.tail != nil:
+            let diameter = CounterLayout(counter, lineWidth: style.lineWidth, scale: scale).diameter
+            return CalloutPaths.counter(center: counter.center, diameter: diameter, tip: counter.tail)
+        default:
+            return nil
+        }
     }
 
     /// Parts of the picture rather than marks over it: spots, drawn as one dimming, and combined
@@ -85,7 +111,10 @@ nonisolated extension Annotation {
         let edgeOnly = !interior && coversArea
         switch shape {
         case .text, .counter:
-            return bounds(scale: scale).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+            if bounds(scale: scale).insetBy(dx: -tolerance, dy: -tolerance).contains(point) { return true }
+            // On a bubble's tail or a counter's pointer.
+            guard let outline = calloutOutline(scale: scale) else { return false }
+            return outline.contains(point) || outline.copy(strokingWithWidth: tolerance * 2, lineCap: .round, lineJoin: .round, miterLimit: 10).contains(point)
         case .redaction, .spotlight, .image:
             let rect = bounds(scale: scale)
             let outer = rect.insetBy(dx: -tolerance, dy: -tolerance)
@@ -118,11 +147,17 @@ nonisolated extension Annotation {
         case .image(let image):
             // Corners only: an image stretched along one side is a distorted image.
             return Self.handles(of: image.rect).filter { [.topLeft, .topRight, .bottomRight, .bottomLeft].contains($0.handle) }
-        case .text:
+        case .text(let block):
             let frame = bounds(scale: scale)
-            return [(.right, CGPoint(x: frame.maxX, y: frame.midY))]
+            let width = (handle: Handle.right, point: CGPoint(x: frame.maxX, y: frame.midY))
+            guard block.look == .bubble, let tip = tip(scale: scale) else { return [width] }
+            return [width, (.tail, tip)]
+        case .counter(let counter):
+            // Pulled out of the disc's edge, a pointer; pushed back in, gone.
+            let diameter = CounterLayout(counter, lineWidth: style.lineWidth, scale: scale).diameter
+            return [(.tail, counter.tail ?? CalloutPaths.restingTip(center: counter.center, diameter: diameter))]
         // A highlight snapped to text is drawn again rather than reshaped: its ends belong to words.
-        case .pen, .highlighter, .textHighlight, .counter:
+        case .pen, .highlighter, .textHighlight:
             return []
         }
     }
@@ -186,11 +221,24 @@ nonisolated extension Annotation {
             image.rect = Geometry.resized(image.rect, dragging: handle, to: point, keepingAspect: !constrained)
             copy.shape = .image(image)
         case .text(var block):
+            if handle == .tail, block.look == .bubble {
+                let frame = bounds(scale: scale)
+                block.tail = constrained ? Geometry.snapped(point, from: CGPoint(x: frame.midX, y: frame.midY)) : point
+                copy.shape = .text(block)
+                break
+            }
             guard handle == .right else { break }
-            let inset = block.look == .label ? block.fontSize * scale * 0.4 : 0
+            let inset = block.look.hasPlate ? block.fontSize * scale * 0.4 : 0
             block.width = max(point.x - block.origin.x - inset * 2, block.fontSize * scale * 2) + inset * 2
             copy.shape = .text(block)
-        case .pen, .highlighter, .textHighlight, .counter:
+        case .counter(var counter):
+            guard handle == .tail else { break }
+            let diameter = CounterLayout(counter, lineWidth: style.lineWidth, scale: scale).diameter
+            let tip = constrained ? Geometry.snapped(point, from: counter.center) : point
+            // Back on the disc, the pointer goes.
+            counter.tail = hypot(tip.x - counter.center.x, tip.y - counter.center.y) <= diameter / 2 * 1.1 ? nil : tip
+            copy.shape = .counter(counter)
+        case .pen, .highlighter, .textHighlight:
             break
         }
         return copy
@@ -230,9 +278,11 @@ nonisolated extension Annotation {
             copy.shape = .textHighlight(highlight)
         case .text(var block):
             block.origin = move(block.origin)
+            block.tail = block.tail.map(move)
             copy.shape = .text(block)
         case .counter(var counter):
             counter.center = move(counter.center)
+            counter.tail = counter.tail.map(move)
             copy.shape = .counter(counter)
         case .redaction(var redaction):
             redaction.rect = move(redaction.rect)
@@ -279,12 +329,12 @@ nonisolated enum Geometry {
         let x: CGFloat? = switch handle {
         case .topLeft, .left, .bottomLeft: rect.minX
         case .topRight, .right, .bottomRight: rect.maxX
-        case .top, .bottom, .start, .end, .bend: nil
+        case .top, .bottom, .start, .end, .bend, .tail: nil
         }
         let y: CGFloat? = switch handle {
         case .topLeft, .top, .topRight: rect.minY
         case .bottomLeft, .bottom, .bottomRight: rect.maxY
-        case .left, .right, .start, .end, .bend: nil
+        case .left, .right, .start, .end, .bend, .tail: nil
         }
         return CGVector(dx: x.map { $0 - point.x } ?? 0, dy: y.map { $0 - point.y } ?? 0)
     }
@@ -304,11 +354,11 @@ nonisolated enum Geometry {
         }
         let movesX: Bool = switch handle {
         case .topLeft, .left, .bottomLeft, .topRight, .right, .bottomRight: true
-        case .top, .bottom, .start, .end, .bend: false
+        case .top, .bottom, .start, .end, .bend, .tail: false
         }
         let movesY: Bool = switch handle {
         case .topLeft, .top, .topRight, .bottomLeft, .bottom, .bottomRight: true
-        case .left, .right, .start, .end, .bend: false
+        case .left, .right, .start, .end, .bend, .tail: false
         }
         return CGPoint(
             x: movesX ? nearer(pointer.x, rect.minX, rect.maxX) : along(pointer.x, rect.minX, rect.maxX),
@@ -333,7 +383,7 @@ nonisolated enum Geometry {
         case .bottom: maxY = point.y
         case .bottomLeft: (minX, maxY) = (point.x, point.y)
         case .left: minX = point.x
-        case .start, .end, .bend: break
+        case .start, .end, .bend, .tail: break
         }
         let corners: Set<Handle> = [.topLeft, .topRight, .bottomRight, .bottomLeft]
         if keepingAspect, corners.contains(handle), rect.width > 0, rect.height > 0 {

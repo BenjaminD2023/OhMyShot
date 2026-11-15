@@ -71,7 +71,7 @@ nonisolated public enum CropRatio: Hashable, Sendable {
             let height = abs(point.y - fixed)
             let width = height * ratio
             return CGRect(x: rect.midX - width / 2, y: min(fixed, point.y), width: width, height: height)
-        case .start, .end, .bend:
+        case .start, .end, .bend, .tail:
             return rect
         }
     }

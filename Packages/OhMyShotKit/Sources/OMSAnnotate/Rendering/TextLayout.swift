@@ -24,7 +24,17 @@ nonisolated struct TextLayout {
         CGSize(width: textSize.width + inset.width * 2, height: textSize.height + inset.height * 2)
     }
 
-    var cornerRadius: CGFloat { look == .label ? CTFontGetSize(font) * 0.32 : 0 }
+    var cornerRadius: CGFloat { look.hasPlate ? CTFontGetSize(font) * 0.32 : 0 }
+
+    /// Where a bubble's tail ends: its own tip, or below and to the left of the plate.
+    func tip(of block: TextBlock) -> CGPoint {
+        block.tail ?? CalloutPaths.defaultTip(for: CGRect(origin: block.origin, size: size), lineHeight: lineHeight)
+    }
+
+    /// A bubble's plate and tail as one outline.
+    func bubblePath(of block: TextBlock) -> CGPath {
+        CalloutPaths.bubble(frame: CGRect(origin: block.origin, size: size), cornerRadius: cornerRadius, tip: tip(of: block))
+    }
 
     /// The width of the edge around outlined text.
     var outlineWidth: CGFloat { max(CTFontGetSize(font) * 0.16, 2) }
@@ -51,7 +61,7 @@ nonisolated struct TextLayout {
             NSAttributedString.Key(kCTFontAttributeName as String): font,
             NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
         ]
-        let wrapWidth = block.width.map { max($0 - (block.look == .label ? size * 0.8 : 0), size) }
+        let wrapWidth = block.width.map { max($0 - (block.look.hasPlate ? size * 0.8 : 0), size) }
         var lines: [CTLine] = []
         for paragraph in block.string.components(separatedBy: "\n") {
             let attributed = NSAttributedString(string: paragraph, attributes: attributes)
@@ -74,7 +84,7 @@ nonisolated struct TextLayout {
         inset = switch block.look {
         case .plain: .zero
         case .outlined: CGSize(width: ceil(max(size * 0.16, 2) / 2), height: ceil(max(size * 0.16, 2) / 2))
-        case .label: CGSize(width: (size * 0.4).rounded(), height: (size * 0.16).rounded())
+        case .label, .bubble: CGSize(width: (size * 0.4).rounded(), height: (size * 0.16).rounded())
         }
     }
 

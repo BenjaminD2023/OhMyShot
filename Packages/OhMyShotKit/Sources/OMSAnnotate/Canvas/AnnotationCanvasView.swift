@@ -1327,7 +1327,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.endLiveChange(actionName: String(localized: "Move", bundle: .module))
         case .reshaping(let handle, let original):
             session.fitCanvas(holding: [original.id])
-            session.endLiveChange(actionName: handle == .bend ? String(localized: "Bend Arrow", bundle: .module) : String(localized: "Resize", bundle: .module))
+            let name = switch handle {
+            case .bend: String(localized: "Bend Arrow", bundle: .module)
+            case .tail: String(localized: "Move Tail", bundle: .module)
+            default: String(localized: "Resize", bundle: .module)
+            }
+            session.endLiveChange(actionName: name)
         case .cropping:
             cropLayer.showsThirds = false
             if let cropRect, cropRect.width < 8 || cropRect.height < 8 {
@@ -1556,7 +1561,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 cursor = .crosshair
             }
         } else if session.selection.count == 1, let item = session.selectedItems.first, let handle = handle(at: location, of: item) {
-            cursor = handle == .bend || handle == .start || handle == .end ? .crosshair : Self.resizeCursor(for: handle)
+            cursor = handle == .bend || handle == .tail || handle == .start || handle == .end ? .crosshair : Self.resizeCursor(for: handle)
         } else if hitItem(at: documentPoint(location), pressing: true) != nil {
             cursor = .openHand
         } else if session.tool == .redact, session.redactionSuggestion(at: documentPoint(location)) != nil {
@@ -1586,7 +1591,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case .bottom: NSCursor.frameResize(position: .bottom, directions: .all)
         case .bottomLeft: NSCursor.frameResize(position: .bottomLeft, directions: .all)
         case .left: NSCursor.frameResize(position: .left, directions: .all)
-        case .start, .end, .bend: .crosshair
+        case .start, .end, .bend, .tail: .crosshair
         }
     }
 
@@ -1955,7 +1960,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             view.outlineColor = item.style.color.prefersDarkOutline ? CGColor(gray: 0, alpha: 1) : CGColor(gray: 1, alpha: 1)
             view.outlineFontSize = block.fontSize * scale
             view.outlineWrapWidth = block.width
-        case .label:
+        case .label, .bubble:
+            // A bubble is typed in on its plate; its tail shows again once typing ends.
             ink = item.style.color.prefersDarkInk ? NSColor(white: 0, alpha: 0.88) : .white
             view.labelFill = fill.cgColor
             view.labelCornerRadius = layout.cornerRadius
@@ -1970,7 +1976,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         // Selected text keeps its ink; elsewhere than on a label the selection is the system selection
         // color at the strength text selection uses here.
         let dark = effectiveAppearance.isDark
-        let wash = block.look == .label ? Self.labelSelectionWash(on: item.style.color) : NSColor.selectedTextBackgroundColor.withAlphaComponent(dark ? 0.45 : 0.35)
+        let wash = block.look.hasPlate ? Self.labelSelectionWash(on: item.style.color) : NSColor.selectedTextBackgroundColor.withAlphaComponent(dark ? 0.45 : 0.35)
         view.selectedTextAttributes = [.backgroundColor: wash, .foregroundColor: ink]
         view.textContainerInset = layout.inset
         view.textContainer?.lineFragmentPadding = 0
@@ -2006,7 +2012,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let layout = Self.fieldLayout(of: block, scale: scale)
         let view = editing.view
         // A little room after the last character for the caret, outside a label (whose padding has it).
-        let caret = block.width == nil && block.look != .label ? max(block.fontSize * scale * 0.6, 4 / zoom) : 0
+        let caret = block.width == nil && !block.look.hasPlate ? max(block.fontSize * scale * 0.6, 4 / zoom) : 0
         var size = CGSize(width: layout.size.width + caret, height: layout.size.height)
         // Should the field ever break a line where the mark's layout does not, its last line still shows.
         if let container = view.textContainer, let manager = view.layoutManager {

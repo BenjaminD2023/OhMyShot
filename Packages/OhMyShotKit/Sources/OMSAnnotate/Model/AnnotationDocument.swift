@@ -180,6 +180,11 @@ nonisolated public struct TextBlock: Codable, Sendable, Equatable {
         case outlined
         /// White (or black) text on a rounded label in the color.
         case label
+        /// The label with a tail pointing at something: a speech bubble, its tip at `tail`.
+        case bubble
+
+        /// Set on a plate of the color, with room around the text: a label or a bubble.
+        public var hasPlate: Bool { self == .label || self == .bubble }
     }
 
     /// The top left of the text, in pixels.
@@ -190,13 +195,17 @@ nonisolated public struct TextBlock: Codable, Sendable, Equatable {
     public var look: Look
     /// Lines wrap at this width, in pixels; nil sizes the block to its longest line.
     public var width: CGFloat?
+    /// A bubble's tip, in pixels; nil points it down and to the left of the bubble (`CalloutPaths.defaultTip`).
+    /// Left out of the file while nil, so text without a tail stays readable by earlier versions.
+    public var tail: CGPoint?
 
-    public init(origin: CGPoint, string: String, fontSize: CGFloat = 20, look: Look = .plain, width: CGFloat? = nil) {
+    public init(origin: CGPoint, string: String, fontSize: CGFloat = 20, look: Look = .plain, width: CGFloat? = nil, tail: CGPoint? = nil) {
         self.origin = origin
         self.string = string
         self.fontSize = fontSize
         self.look = look
         self.width = width
+        self.tail = tail
     }
 }
 
@@ -210,11 +219,14 @@ nonisolated public struct Counter: Codable, Sendable, Equatable {
     public var center: CGPoint
     public var value: Int
     public var numbering: Numbering
+    /// Where a pointer drawn out of the disc ends, in pixels; nil for the disc alone. Left out of the file while nil.
+    public var tail: CGPoint?
 
-    public init(center: CGPoint, value: Int, numbering: Numbering = .numbers) {
+    public init(center: CGPoint, value: Int, numbering: Numbering = .numbers, tail: CGPoint? = nil) {
         self.center = center
         self.value = value
         self.numbering = numbering
+        self.tail = tail
     }
 
     /// What the counter shows: 1, 2, 3; A, B, … Z, AA; I, II, III.
