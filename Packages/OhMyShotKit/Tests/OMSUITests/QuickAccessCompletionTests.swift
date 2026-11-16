@@ -39,6 +39,11 @@ struct QuickAccessCompletionTests {
             controller.add(capture)
             controller.perform(command, on: capture, keyed: false)
             for _ in 0..<20 { await Task.yield() }
+            if succeeds, command == .copy {
+                #expect(controller.item(capture.id) != nil)
+                #expect(closed.isEmpty)
+                try await Task.sleep(for: .seconds(1.1))
+            }
             #expect(controller.isEmpty == succeeds)
             #expect(closed.count == (succeeds ? 1 : 0))
             if succeeds, command == .save || command == .saveAs {
@@ -61,7 +66,83 @@ struct QuickAccessCompletionTests {
         let continuation = try #require(resume)
         continuation.resume(returning: true)
         for _ in 0..<20 { await Task.yield() }
+        #expect(controller.item(capture.id) != nil)
+        try await Task.sleep(for: .seconds(1.1))
         #expect(controller.isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    func copyConfirmsSuccessBeforeClosing(keyed: Bool) async throws {
+        var actions = actions(succeeds: true)
+        var resume: CheckedContinuation<Bool, Never>?
+        var copies = 0
+        actions.copy = { _ in
+            copies += 1
+            return await withCheckedContinuation { resume = $0 }
+        }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        card.setHovering(!keyed)
+        let originalTitle = card.copyButton.title
+        controller.perform(.copy, on: capture, keyed: keyed)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(card.copyButton.title == originalTitle)
+        let continuation = try #require(resume)
+        continuation.resume(returning: true)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(card.copyButton.title == String(localized: "Copied", bundle: .module))
+        #expect(card.copyButton.symbolName == "checkmark")
+        #expect(controller.item(capture.id) != nil)
+        controller.perform(.copy, on: capture, keyed: keyed)
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(copies == 1)
+        #expect(controller.item(capture.id) != nil)
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(controller.isEmpty)
+    }
+
+    @Test func failedCopyDoesNotConfirmAndCanBeRetried() async throws {
+        var actions = actions(succeeds: false)
+        var succeeds = false
+        actions.copy = { _ in succeeds }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        let originalTitle = card.copyButton.title
+        controller.copyLatest()
+        for _ in 0..<20 { await Task.yield() }
+        #expect(card.copyButton.title == originalTitle)
+        #expect(controller.item(capture.id) != nil)
+        succeeds = true
+        controller.copyLatest()
+        for _ in 0..<20 { await Task.yield() }
+        #expect(card.copyButton.symbolName == "checkmark")
+        try await Task.sleep(for: .seconds(1.1))
+        #expect(controller.isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    func oldCopyConfirmationDoesNotCloseRestoredCard(trashed: Bool) async throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        controller.copyLatest()
+        for _ in 0..<20 { await Task.yield() }
+        if trashed {
+            controller.perform(.moveToTrash, on: capture, keyed: false)
+            #expect(controller.undoTrash(capture.id))
+        } else {
+            controller.dismiss(capture.id)
+            controller.add(capture)
+        }
+        try await Task.sleep(for: .seconds(1.1))
+        #expect(controller.item(capture.id) != nil)
     }
 
     @Test func saveAllClosesSavedCardsAndKeepsFailures() async throws {

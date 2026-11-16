@@ -216,6 +216,8 @@ public final class QuickAccessController {
     /// Shows a card for `item`, or brings an existing card for it back to the bottom of the stack.
     public func add(_ item: QuickAccessItem) {
         if firstCaptureHint?.captureID != item.id { dismissFirstCaptureHint() }
+        completing[item.id] = nil
+        hold(.action, for: item.id, if: false)
         // Restored while its card waits to go to the Trash: it stays.
         if let index = trashing.firstIndex(where: { $0.id == item.id }) {
             trashing.remove(at: index).sender.cancel()
@@ -381,6 +383,7 @@ public final class QuickAccessController {
     public func remove(_ id: UUID) {
         clearHover(for: id)
         if firstCaptureHint?.captureID == id { dismissFirstCaptureHint() }
+        completing[id] = nil
         recentlyClosed.removeAll { $0.id == id }
         if let index = trashing.firstIndex(where: { $0.id == id }) { trashing.remove(at: index).sender.cancel() }
         guard items.contains(where: { $0.id == id }) else { return }
@@ -416,6 +419,7 @@ public final class QuickAccessController {
     private func close(_ item: QuickAccessItem) {
         clearHover(for: item.id)
         if firstCaptureHint?.captureID == item.id { dismissFirstCaptureHint() }
+        completing[item.id] = nil
         recentlyClosed.append(item)
         if recentlyClosed.count > 20 { recentlyClosed.removeFirst() }
         schedule.forget(item.id)
@@ -558,6 +562,7 @@ public final class QuickAccessController {
     /// the keyboard where it is.
     private func trash(_ item: QuickAccessItem) {
         guard items.contains(where: { $0.id == item.id }), !isTrashing(item.id) else { return }
+        completing[item.id] = nil
         let next = neighbor(of: item.id)
         let hadKeyboard = selectedID == item.id
         clearHover(for: item.id)
@@ -771,17 +776,25 @@ public final class QuickAccessController {
     }
 
     /// Keep the source alive while an action consumes it. Failure or cancellation leaves the card available.
-    private var completing: Set<UUID> = []
+    private var completing: [UUID: UUID] = [:]
 
-    private func complete(_ item: QuickAccessItem, action: @escaping () async -> Bool) {
-        Task { await finish(item, action: action) }
+    private func complete(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, action: @escaping () async -> Bool) {
+        Task { await finish(item, showsCopyConfirmation: showsCopyConfirmation, action: action) }
     }
 
-    private func finish(_ item: QuickAccessItem, action: () async -> Bool) async {
-        guard self.item(item.id) != nil, completing.insert(item.id).inserted else { return }
+    private func finish(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, action: () async -> Bool) async {
+        guard self.item(item.id) != nil, !isTrashing(item.id), completing[item.id] == nil else { return }
+        let completion = UUID()
+        completing[item.id] = completion
         hold(.action, for: item.id, if: true)
         let succeeded = await action()
-        completing.remove(item.id)
+        guard completing[item.id] == completion else { return }
+        if succeeded, showsCopyConfirmation {
+            stack?.showCopied(item.id)
+            try? await Task.sleep(for: .milliseconds(900))
+            guard completing[item.id] == completion else { return }
+        }
+        completing[item.id] = nil
         hold(.action, for: item.id, if: false)
         if succeeded { dismiss(item.id) }
     }
@@ -802,7 +815,7 @@ public final class QuickAccessController {
         switch command {
         case .copy:
             if keyed { endKeyboard() }
-            complete(item) { [self] in await actions.copy(item) }
+            complete(item, showsCopyConfirmation: true) { [self] in await actions.copy(item) }
         case .save:
             if keyed { endKeyboard() }
             complete(item) { [self] in
