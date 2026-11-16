@@ -21,6 +21,10 @@ public struct HistoryActions {
     public var pin: (HistoryItem) -> Void
     /// Prints a screenshot through the print panel, as a sheet on the window.
     public var print: (HistoryItem, NSWindow?) -> Void = { _, _ in }
+    /// Lays two or more screenshots out together in the Collage window, in the order given.
+    public var combine: ([HistoryItem]) -> Void = { _ in }
+    /// Asks where to save, then writes the screenshots as one PDF, a page each, in the order given.
+    public var exportPDF: ([HistoryItem], NSWindow?) -> Void = { _, _ in }
     /// Moves the capture's file to the Trash; its record, marks, and text leave the history with it.
     public var moveToTrash: (HistoryItem) -> Void
     /// The file to hand to another app when a capture is dragged out: a copy in the format Settings choose, or nil for

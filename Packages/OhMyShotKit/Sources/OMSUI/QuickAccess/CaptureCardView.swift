@@ -41,6 +41,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
             guard isSelected != oldValue else { return }
             selectionRing.isHidden = !isSelected
             setAccessibilitySelected(isSelected)
+            // Driven from the keyboard, the card may never be hovered: its codes are looked for as it takes the keys.
+            if isSelected { startLookingForCodes() }
         }
     }
 
@@ -139,6 +141,27 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     var isCountdownRingVisible: Bool { !countdownRing.isHidden }
     private var copiedReset: Task<Void, Never>?
     private var hoverGeneration = 0
+    /// The QR codes and barcodes in the picture, which the menu offers to open or copy: a code's chips over the
+    /// selection went with the overlay, and this is where the capture went. Looked for once, the first time the pointer
+    /// rests on the card (a menu comes after that), so a card nobody touches never decodes its picture.
+    private(set) var foundCodes: [FoundCode] = []
+    private var findCodes: (() async -> [FoundCode])?
+    private var codeLookup: Task<Void, Never>?
+
+    /// Keeps `find` to look for the codes in the picture with, the first time the pointer rests on the card.
+    func lookForCodes(_ find: @escaping () async -> [FoundCode]) {
+        findCodes = find
+    }
+
+    /// Looks for the codes now, once.
+    func startLookingForCodes() {
+        guard codeLookup == nil, let findCodes else { return }
+        codeLookup = Task { [weak self] in
+            let codes = await findCodes()
+            guard !Task.isCancelled else { return }
+            self?.foundCodes = codes
+        }
+    }
 
     init(item: QuickAccessItem, size: QuickAccessSize) {
         self.item = item
@@ -414,6 +437,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
 
     isolated deinit {
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        codeLookup?.cancel()
     }
 
     private func applyAppearance() {
@@ -589,6 +613,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         // A card waiting to go to the Trash offers only Undo.
         let hovering = hovering && !isTrashing
         guard hovering != isHovering else { return }
+        if hovering { startLookingForCodes() }
         hoverGeneration += 1
         let generation = hoverGeneration
         let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Theme.Motion.fade
@@ -787,6 +812,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         add(item.kind == .screenshot ? String(localized: "Preview", bundle: .module) : String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
         if item.kind == .screenshot {
             add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked), .recognizeText)
+            addCodeItems(to: menu)
             add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked), .pin)
             add(String(localized: "Print…", bundle: .module), "printer", #selector(printClicked), .print)
             addPictureItems(to: menu)
@@ -816,6 +842,43 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         if binding.modifiers.contains(.option) { mask.insert(.option) }
         if binding.modifiers.contains(.control) { mask.insert(.control) }
         menuItem.keyEquivalentModifierMask = mask
+    }
+
+    /// One item for each different code the picture shows, at most five: a web address opens, anything else is copied.
+    private func addCodeItems(to menu: NSMenu) {
+        var seen = Set<String>()
+        let codes = foundCodes.filter { seen.insert($0.payload).inserted }.prefix(5)
+        for code in codes {
+            let shown = Self.shortened(code.payload, to: 48)
+            let title = code.webURL != nil
+                ? String(localized: "Open Link “\(shown)”", bundle: .module)
+                : String(localized: "Copy Code “\(shown)”", bundle: .module)
+            let entry = NSMenuItem(title: title, action: #selector(codeClicked(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = code.payload
+            entry.image = NSImage(systemSymbolName: code.isMatrix ? "qrcode" : "barcode", accessibilityDescription: nil)
+            entry.toolTip = code.payload.count > 48 ? code.payload : nil
+            menu.addItem(entry)
+        }
+    }
+
+    private static func shortened(_ text: String, to length: Int) -> String {
+        let flat = text.replacingOccurrences(of: "\n", with: " ")
+        guard flat.count > length else { return flat }
+        let head = flat.prefix(length * 2 / 3), tail = flat.suffix(length - head.count - 1)
+        return "\(head)…\(tail)"
+    }
+
+    @objc private func codeClicked(_ sender: NSMenuItem) {
+        guard let payload = sender.representedObject as? String, let code = foundCodes.first(where: { $0.payload == payload }) else { return }
+        if let url = code.webURL {
+            NSWorkspace.shared.open(url)
+        } else {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(payload, forType: .string)
+            VoiceOver.announce(String(localized: "Copied", bundle: .module), from: self)
+        }
     }
 
     /// Transform: turn, flip, or scale the picture. Offered to a screenshot whose picture the card can change;

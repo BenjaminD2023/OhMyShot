@@ -70,6 +70,26 @@ struct HistorySelectionTests {
         #expect(model.trashRequest?.items.count == items.count)
     }
 
+    /// Combine into Collage and Export as PDF take the selection in the grid's order, whatever order it was clicked in;
+    /// a card's menu outside the selection takes that card alone; a recording among them turns both off.
+    @Test func collageAndPDFTakeTheSelectionInTheGridsOrder() throws {
+        let (model, items) = try model(count: 4)
+        model.click(items[3].id, modifiers: [])
+        model.click(items[0].id, modifiers: .command)
+        model.click(items[2].id, modifiers: .command)
+        #expect(model.collageItems(from: nil).map(\.id) == [items[0].id, items[2].id, items[3].id])
+        #expect(model.pdfItems(from: items[2]).map(\.id) == [items[0].id, items[2].id, items[3].id])
+        // A card outside the selection: that card alone, too few for a collage.
+        #expect(model.collageItems(from: items[1]).isEmpty)
+        #expect(model.pdfItems(from: items[1]).map(\.id) == [items[1].id])
+
+        let recording = HistoryItem(kind: .recording, pixelWidth: 10, pixelHeight: 10, appName: nil, fileName: "r.mov")
+        model.items = items + [recording]
+        model.selectAll()
+        #expect(model.collageItems(from: nil).isEmpty)
+        #expect(model.pdfItems(from: nil).isEmpty)
+    }
+
     @Test func oneSelectedCaptureGoesWithoutAsking() throws {
         var trashed: [UUID] = []
         let (model, items) = try model(count: 2) { trashed.append($0.id) }

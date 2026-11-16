@@ -98,6 +98,17 @@ final class CompositionRoot {
         return reader
     }()
     lazy var pins = PinController(settings: settings, actions: makePinActions())
+    /// Draw on Screen: its canvases are in captures and recordings, as pins are.
+    lazy var sketch: ScreenSketchController = {
+        let sketch = ScreenSketchController()
+        sketch.onCanvasesShown = { [weak self] in
+            guard let self else { return }
+            shareableContent.refresh()
+            // A recording under way takes the canvases in, as it took in what was on screen when it began.
+            Task { await self.recordings.includeWindowsShownSince() }
+        }
+        return sketch
+    }()
     /// The model packs the text reader reads with beside Vision, and the text reader itself.
     lazy var readerPacks: TextReaderPacks = {
         let packs = TextReaderPacks()
@@ -136,6 +147,8 @@ final class CompositionRoot {
     private let communityInvite = CommunityInvite()
     private var communityInviteWindow: CommunityInviteWindowController?
     var historyWindow: HistoryWindowController?
+    /// Combine into Collage's window, while it is open.
+    var collageWindow: CollageWindowController?
     private var observations: [Task<Void, Never>] = []
     /// Vision's text models, compiled again in the background once a cleaner or a macOS update takes them.
     private var textModelWarmup: TextModelWarmup?
@@ -189,6 +202,11 @@ final class CompositionRoot {
         // to snap to when Settings say so.
         overlay.textBlocks = TextBlockFinder(isOn: { [settings = self.settings] in settings.snapSelectionToText }, find: { await TextBlocks.find(in: $0) })
         overlay.colorCopyGesture = settings.colorCopyGesture
+        // The QR codes and barcodes in a selection that stays on a frozen screen, for chips over them.
+        overlay.codes = CodeFinder(isOn: { [settings = self.settings] in settings.showsCodesInSelection }, find: { picture in
+            let codes = (try? await VisionPipeline.selectionCodes(in: picture)) ?? []
+            return codes.map { FoundCode(payload: $0.payload, isMatrix: $0.kind.isMatrix, box: $0.box) }
+        })
         overlay.captureLoupeSize = settings.captureLoupeSize
         overlay.captureLoupeMagnification = settings.captureLoupeMagnification
         if #available(macOS 27, *) {
@@ -346,7 +364,7 @@ final class CompositionRoot {
             guard let self else { return Self.standardWindowIDs() }
             // The cover over the desktop icons too: a capture shows the desktop as it looks.
             let covers = settings.hidesDesktopIcons ? desktopIcons.windowIDs : []
-            return pins.capturedWindowIDs.union(Self.standardWindowIDs()).union(covers)
+            return pins.capturedWindowIDs.union(Self.standardWindowIDs()).union(covers).union(sketch.canvasWindowIDs)
         }
         pins.onChange = { [weak self] in self?.shareableContent.refresh() }
         annotations.onChange = { [weak self] entry, data in

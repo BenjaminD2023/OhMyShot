@@ -13,13 +13,23 @@ nonisolated public struct AnnotationProject: Sendable {
     public static let fileExtension = "ohmyshot"
     /// The newest format this version reads and writes. Format 2 adds what an earlier version would read
     /// wrongly or not at all: a capture turned, flipped, or resized, combined images turned with it, and
-    /// highlight boxes.
-    static let version = 2
+    /// highlight boxes. Format 3 adds speech bubbles, counters with a pointer, and watermarks.
+    static let version = 3
 
     /// The oldest format that holds `document`, so a project nothing new is in is still read by an earlier
     /// version, and one it would misread is refused there rather than opened wrong and written over. Every
     /// kind of mark is named here, so a new one is placed in a format when it is added.
     static func version(for document: AnnotationDocument) -> Int {
+        let usesNewest = document.watermark != nil || document.items.contains { item in
+            // A turned mark would be shown upright by a version that does not know turning.
+            if item.isTurned { return true }
+            return switch item.shape {
+            case .text(let block): block.look == .bubble || block.tail != nil
+            case .counter(let counter): counter.tail != nil
+            case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight, .redaction, .spotlight, .image: false
+            }
+        }
+        if usesNewest { return 3 }
         let usesNewer = document.transform != nil || document.items.contains { item in
             switch item.shape {
             case .highlightBox: true
@@ -57,6 +67,11 @@ nonisolated public struct AnnotationProject: Sendable {
         self.capture = capture
         self.document = document
         self.capturePNG = capturePNG
+    }
+
+    /// What every format starts with.
+    private struct Header: Decodable {
+        var version: Int
     }
 
     private struct Contents: Codable {
@@ -101,8 +116,11 @@ nonisolated public struct AnnotationProject: Sendable {
     }
 
     public static func read(_ data: Data, pictures store: PictureStore = .shared) throws -> AnnotationProject {
+        // The version first, alone: a newer project's marks may not decode here at all, and that is to be said as
+        // what it is rather than as a damaged file.
+        let header = try PropertyListDecoder().decode(Header.self, from: data)
+        guard header.version <= version else { throw ReadError.newerVersion }
         let contents = try PropertyListDecoder().decode(Contents.self, from: data)
-        guard contents.version <= version else { throw ReadError.newerVersion }
         guard
             let source = CGImageSourceCreateWithData(contents.capture as CFData, nil),
             let capture = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)

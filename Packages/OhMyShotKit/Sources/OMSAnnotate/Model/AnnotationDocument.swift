@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import OMSCore
 
 /// What the editor edits: a capture and the marks drawn over it, all in the capture's own pixels, with
 /// the origin at the top left and y growing downward, as the picture is stored.
@@ -29,6 +30,8 @@ nonisolated public struct AnnotationDocument: Codable, Sendable, Equatable {
     /// the document (marks, canvas) is in the pixels of the picture this makes. Left out of the file while
     /// nil, so documents made before it existed read as they were.
     public var transform: CaptureTransform?
+    /// Text tiled faintly across the canvas, over every mark; nil for none. Left out of the file while nil.
+    public var watermark: Watermark?
 
     public init(pixelSize: CGSize, scale: CGFloat, items: [Annotation] = [], backdrop: Backdrop? = nil) {
         self.pixelSize = pixelSize
@@ -42,7 +45,7 @@ nonisolated public struct AnnotationDocument: Codable, Sendable, Equatable {
     public var imageBounds: CGRect { CGRect(origin: .zero, size: pictureSize) }
 
     /// Nothing drawn, cropped, turned, or set behind the capture: it is what was taken.
-    public var isEmpty: Bool { items.isEmpty && canvas == imageBounds && backdrop == nil && transform == nil }
+    public var isEmpty: Bool { items.isEmpty && canvas == imageBounds && backdrop == nil && transform == nil && watermark == nil }
 
     public func index(of id: Annotation.ID) -> Int? {
         items.firstIndex { $0.id == id }
@@ -68,11 +71,16 @@ nonisolated public struct Annotation: Identifiable, Codable, Sendable, Equatable
     public var id: UUID
     public var shape: Shape
     public var style: Style
+    /// How far the mark is turned about its middle, in radians, clockwise on the picture; nil while upright. Only
+    /// rectangles, ellipses, text, and images turn (`isRotatable`). Left out of the file while nil, so marks never turned
+    /// stay readable by earlier versions, which show a turned one upright.
+    public var rotation: CGFloat?
 
-    public init(id: UUID = UUID(), shape: Shape, style: Style) {
+    public init(id: UUID = UUID(), shape: Shape, style: Style, rotation: CGFloat? = nil) {
         self.id = id
         self.shape = shape
         self.style = style
+        self.rotation = rotation
     }
 }
 
@@ -180,6 +188,11 @@ nonisolated public struct TextBlock: Codable, Sendable, Equatable {
         case outlined
         /// White (or black) text on a rounded label in the color.
         case label
+        /// The label with a tail pointing at something: a speech bubble, its tip at `tail`.
+        case bubble
+
+        /// Set on a plate of the color, with room around the text: a label or a bubble.
+        public var hasPlate: Bool { self == .label || self == .bubble }
     }
 
     /// The top left of the text, in pixels.
@@ -190,13 +203,17 @@ nonisolated public struct TextBlock: Codable, Sendable, Equatable {
     public var look: Look
     /// Lines wrap at this width, in pixels; nil sizes the block to its longest line.
     public var width: CGFloat?
+    /// A bubble's tip, in pixels; nil points it down and to the left of the bubble (`CalloutPaths.defaultTip`).
+    /// Left out of the file while nil, so text without a tail stays readable by earlier versions.
+    public var tail: CGPoint?
 
-    public init(origin: CGPoint, string: String, fontSize: CGFloat = 20, look: Look = .plain, width: CGFloat? = nil) {
+    public init(origin: CGPoint, string: String, fontSize: CGFloat = 20, look: Look = .plain, width: CGFloat? = nil, tail: CGPoint? = nil) {
         self.origin = origin
         self.string = string
         self.fontSize = fontSize
         self.look = look
         self.width = width
+        self.tail = tail
     }
 }
 
@@ -210,11 +227,14 @@ nonisolated public struct Counter: Codable, Sendable, Equatable {
     public var center: CGPoint
     public var value: Int
     public var numbering: Numbering
+    /// Where a pointer drawn out of the disc ends, in pixels; nil for the disc alone. Left out of the file while nil.
+    public var tail: CGPoint?
 
-    public init(center: CGPoint, value: Int, numbering: Numbering = .numbers) {
+    public init(center: CGPoint, value: Int, numbering: Numbering = .numbers, tail: CGPoint? = nil) {
         self.center = center
         self.value = value
         self.numbering = numbering
+        self.tail = tail
     }
 
     /// What the counter shows: 1, 2, 3; A, B, … Z, AA; I, II, III.

@@ -490,5 +490,42 @@ struct OverlayLoupeTests {
             #expect(view.color(at: point)?.hex == (index % 2 == 0 ? "#000000" : "#FFFFFF"))
         }
     }
+
+    /// Once the selection is handed over, dragging its edge on a frozen screen brings the enlarged lens back over the
+    /// frame, on the pixel just inside the edge, whatever lens Settings chose for aiming; a live screen has none, and
+    /// the lens goes, lowered again, when the drag ends.
+    @Test func anEdgeDraggedOnAFrozenScreenShowsTheLensOnItsPixelOverTheFrame() throws {
+        let point = CGPoint(x: 400.25, y: 300.25)
+        let fixture = try fixture(scale: 2, point: point)
+        let view = OverlayView(display: fixture.display)
+        defer { view.clear() }
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .annotate, captureLoupeMagnification: .four)
+        view.show(fixture.frame, frozen: true)
+        view.enterAnnotation()
+        #expect(view.debugPointerLayers.loupe == nil)
+
+        view.showEdgeLoupe(at: point)
+        let lens = try #require(view.debugPointerLayers.loupe)
+        #expect(!lens.contains(point), "The enlarged lens stands beside the edge, not over it")
+        #expect(view.debugPointerLayers.colorReading != nil)
+        #expect(view.debugLensRaised)
+        // The edge lens uses the saved 4× magnification: 37 physical pixels across the 150-pixel lens.
+        let image = view.debugLoupeImageGeometry
+        let width = CGFloat(fixture.frame.image.width), height = CGFloat(fixture.frame.image.height)
+        let expected = CGRect(x: (800 - 18) / width, y: (height - 599 - 1 - 18) / height, width: 37 / width, height: 37 / height)
+        #expect(abs(image.contentsRect.minX - expected.minX) < 1e-9 && abs(image.contentsRect.minY - expected.minY) < 1e-9)
+        #expect(abs(image.contentsRect.width - expected.width) < 1e-9)
+
+        view.showEdgeLoupe(at: nil)
+        #expect(view.debugPointerLayers.loupe == nil && view.debugPointerLayers.colorReading == nil)
+        #expect(!view.debugLensRaised)
+
+        // A live screen has no pixels to enlarge.
+        view.reset(pointer: fixture.global, mode: .area, windows: [], showsToolbar: false, purpose: .record)
+        view.show(fixture.frame, frozen: false)
+        view.enterAnnotation()
+        view.showEdgeLoupe(at: point)
+        #expect(view.debugPointerLayers.loupe == nil)
+    }
 }
 #endif

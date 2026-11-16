@@ -545,7 +545,7 @@ final class TextRecognitionModel {
         translationTask = Task { [weak self] in
             let probe = LatencyProbe("ocr.translate")
             do {
-                let units = TranslationUnits.group(lines)
+                let units = TranslationUnits.group(lines, image: image)
                 let outcome = try await translator.translate(units, to: target)
                 let rendering = outcome.translations.isEmpty ? nil : await TranslationOverlay.render(
                     image, lines: lines, units: units, translations: outcome.translations, language: outcome.target, scale: scale

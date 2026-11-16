@@ -34,6 +34,10 @@ extension CompositionRoot {
         case .controlQuickAccess:
             quickAccess.focusLatest()
             return
+        case .drawOnScreen:
+            // Drawn over the screen, not taken from it: no Screen Recording needed.
+            sketch.toggle()
+            return
         default:
             break
         }

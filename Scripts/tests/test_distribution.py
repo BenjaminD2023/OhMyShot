@@ -5,7 +5,6 @@ import importlib.util
 import io
 import json
 import plistlib
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -146,8 +145,11 @@ length="{len(self.archive) if length is None else length}" sparkle:edSignature="
         def verify(command, **kwargs):
             if command[:2] == ['xcrun', 'swiftc']:
                 # Compile once per suite; execute the real verifier for every signature check.
-                shutil.copyfile(self.verifier, command[-1])
-                Path(command[-1]).chmod(0o755)
+                # Rewriting a copied Mach-O can leave macOS's cached code signature invalid.
+                # Reuse the unchanged signed executable, including across repeated checks.
+                target = Path(command[-1])
+                target.unlink(missing_ok=True)
+                target.symlink_to(self.verifier)
                 return subprocess.CompletedProcess(command, 0)
             return run(command, **kwargs, capture_output=True)
 

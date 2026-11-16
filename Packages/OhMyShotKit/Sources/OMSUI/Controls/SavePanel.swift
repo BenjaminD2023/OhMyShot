@@ -21,6 +21,12 @@ public enum SavePanel {
         await onRunLoop { runForPicture(name: name, output: output, directory: directory) }
     }
 
+    /// Asks where to save a PDF of screenshots and how large its pages are, starting from `pageSize`.
+    /// - Returns: the place chosen and the page size, or nil when the person cancelled.
+    public static func askForPDF(name: String, pageSize: PDFExport.PageSize, directory: URL) async -> (url: URL, pageSize: PDFExport.PageSize)? {
+        await onRunLoop { runForPDF(name: name, pageSize: pageSize, directory: directory) }
+    }
+
     /// From the run loop, as a menu's action would run it: inside a task a modal panel would hold every other task on
     /// the main actor until it closed.
     private static func onRunLoop<T: Sendable>(_ body: @escaping @MainActor () -> T) async -> T {
@@ -61,6 +67,20 @@ public enum SavePanel {
         NSApp.activate()
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return (url, chosenOutput(for: url, options: options.output))
+    }
+
+    private static func runForPDF(name: String, pageSize: PDFExport.PageSize, directory: URL) -> (url: URL, pageSize: PDFExport.PageSize)? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = defaultFileName(name: name, type: .pdf)
+        panel.directoryURL = directory
+        panel.canCreateDirectories = true
+        let accessory = PDFPageSizeView(pageSize: pageSize)
+        accessory.setFrameSize(accessory.fittingSize)
+        panel.accessoryView = accessory
+        NSApp.activate()
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return (url, accessory.pageSize)
     }
 
     /// The name the panel starts with: `name` and the extension of `type`. A screenshot's is the one every other way of
@@ -223,5 +243,61 @@ final class PictureSaveOptionsView: NSView {
         options.output.convertsToSRGB = srgb.state == .on
         options.output.addsBorder = border.state == .on
         show()
+    }
+}
+
+/// The Save panel's choice of page size for a PDF of screenshots. AppKit, as the picture options are.
+final class PDFPageSizeView: NSView {
+    private let popUp = NSPopUpButton()
+
+    var pageSize: PDFExport.PageSize {
+        (popUp.selectedItem?.representedObject as? String).flatMap(PDFExport.PageSize.init(rawValue:)) ?? .picture
+    }
+
+    init(pageSize: PDFExport.PageSize) {
+        super.init(frame: .zero)
+        for size in PDFExport.PageSize.allCases {
+            popUp.addItem(withTitle: Self.title(of: size))
+            popUp.lastItem?.representedObject = size.rawValue
+        }
+        popUp.selectItem(at: PDFExport.PageSize.allCases.firstIndex(of: pageSize) ?? 0)
+        popUp.setAccessibilityLabel(String(localized: "Page Size", bundle: .module))
+        let note = NSTextField(wrappingLabelWithString: String(
+            localized: "One screenshot a page, in the order History shows them, written as Settings › Screenshots writes every copy.",
+            bundle: .module
+        ))
+        note.textColor = .secondaryLabelColor
+        note.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        note.preferredMaxLayoutWidth = 360
+        let grid = NSGridView(views: [
+            [NSTextField(labelWithString: String(localized: "Page Size:", bundle: .module)), popUp],
+            [NSGridCell.emptyContentView, note],
+        ])
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 1).xPlacement = .leading
+        grid.rowAlignment = .firstBaseline
+        grid.columnSpacing = 8
+        grid.rowSpacing = 6
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(grid)
+        NSLayoutConstraint.activate([
+            grid.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            grid.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
+            grid.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            grid.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    static func title(of size: PDFExport.PageSize) -> String {
+        switch size {
+        case .picture: String(localized: "Same as Each Screenshot", bundle: .module)
+        case .a4: String(localized: "A4", bundle: .module)
+        case .letter: String(localized: "US Letter", bundle: .module)
+        }
     }
 }

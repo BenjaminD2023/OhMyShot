@@ -296,6 +296,20 @@ Translation runs on the system's on-device models (the Translation framework): `
 
 **Drawing.** Every translated line is painted over with its background (the median of the pixels just outside its box) and the translation is set in its ink (the median of the inkiest half of the pixels that stand out), in the target language's system font. The size comes from the line's width: Vision's box is as wide as the text set in the system font to within 2% (measured on eight lines, Latin, Chinese, capitals, bold), while its height runs from 0.87 to 1.24 times the size and is sometimes half again as tall as the text; the width is measured again at the size the text had on screen, since the system font is about a tenth wider at text sizes than at display sizes. Sizes of neighbors in a column or row within 15% are made one, a unit a third larger than the body is set semibold (weight cannot be read from the pixels: bold Latin is wider, so it reads as larger instead; ink coverage told bold from regular by 1.04–1.26 against 0.92–0.99, too close), and lines are placed with their ink on their column's (the median of where the ink of its lines starts, translated or not, measured in the pixels: Vision's boxes start a little before the ink) and centered where their ink was. A translation that does not fit shrinks to 70% (a line on its own may first run on to the right, up to the first pixel that is not its background), then ends in an ellipsis; units cut short are counted.
 
+**Lists, alignment, and room (2026-11-16, after SnowAir's layout).** A list item starts a unit of its own however
+the line before it ends: a bullet read at its start (• · ● ▪ ◦ ※ ◆ ■ and the like, standing apart), or one seen in
+the pixels just left of its box (`Bullets.pixelBullet`: a speck about as wide as tall, under half a line, its middle
+between a quarter and 0.72 of the line down, so a period on the baseline of a column to the left is not one). Its
+text runs on into lines indented under it, up to three line heights past its left edge. A bullet read as text is
+taken off before translating and drawn again as "•  "; one only in the pixels lies outside the box and stays. Each
+line's alignment comes from its block (lines one under the next whose spans overlap): centered when most middles
+agree and both insets are alike, right aligned when right edges do, else left; centered and right-aligned
+translations keep their place. A translation into a language of words runs on to the right into the clear room
+beside it, no wider than it needs, then into the blank rows under it (from the box's top), and only then shrinks;
+Chinese, Japanese, and Korean keep their column and shrink, as before. Nothing is drawn below 12 pt (13 pt for CJK)
+on screen, unless four fifths of the page's lines are smaller already. The paragraph assembly that joins wrapped
+lines (`inferredWraps`) follows the same list rules; the benchmark does not join lines, so it does not see them.
+
 On the ten real screenshots (2000–4112 px wide; Chinese pages translated into English, English pages into Chinese, as Automatic chose): 3–53 units translated per page, no spurious download prompt, a terminal and a code editor left alone apart from their prose (3–6 units), 0–15 units shortened per page; translating took 0.1–0.7 s and drawing 0.02–0.6 s. Still open: short labels translated alone keep the wrong sense when a page has no other short text to batch them with; Chinese into English roughly doubles the length, so dense interfaces shrink and shorten; a flat background patch shows on photos and gradients; vertical text is left as it is.
 
 ## Annotation readings (`TextRecognition`, 2026-10-10)

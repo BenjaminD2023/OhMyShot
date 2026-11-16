@@ -36,8 +36,17 @@ public final class InPlaceAnnotationView: NSView {
     }
 
     public let session: AnnotationSession
+    /// While a corner or edge of the selection is dragged: the point (this view's points) of the pixel just inside
+    /// where the dragged edges meet, for a magnifier over the frozen screen; nil once the drag ends.
+    public var onEdgeDrag: ((CGPoint?) -> Void)?
+    /// Finds the QR codes and barcodes in the selection, for chips over them; set before `begin`.
+    public var codeFinder: CodeFinder?
     let canvas: AnnotationCanvasView
     private let chrome = SelectionChromeView()
+    let codeChips = CodeChipsView(wording: .standard)
+    private var codeScan: Task<Void, Never>?
+    /// The canvas (pixels) the chips were last looked for in, so only a change of selection looks again.
+    private var scannedCanvas: CGRect?
     let toolbar = InPlaceToolbar()
     private let capsule = StyleCapsule()
     private let actions: Actions
@@ -55,7 +64,8 @@ public final class InPlaceAnnotationView: NSView {
 
     private enum Adjustment {
         case moving(start: CGPoint, original: CGRect)
-        case resizing(handle: Handle, original: CGRect)
+        /// `grip` is how far the handle lay from the press, so the edge moves with the pointer.
+        case resizing(handle: Handle, original: CGRect, grip: CGVector)
         case selecting(start: CGPoint)
     }
 
@@ -80,9 +90,21 @@ public final class InPlaceAnnotationView: NSView {
         canvas.configureInPlace()
         addSubview(canvas)
         addSubview(chrome)
+        addSubview(codeChips)
         addSubview(capsule)
         addSubview(toolbar)
         capsule.alphaValue = 0
+        // A web page a code points to opens once the overlay has gone, which would cover it: offered only while
+        // nothing is drawn, as ending the capture would throw the marks away.
+        codeChips.onOpen = { [weak self] url in
+            self?.perform(.cancel)
+            NSWorkspace.shared.open(url)
+        }
+        codeChips.canOpenLinks = { [weak self] in self?.session.document.items.isEmpty ?? false }
+        codeChips.onCardClosed = { [weak self] in
+            guard let self else { return }
+            window?.makeFirstResponder(canvas)
+        }
 
         toolbar.onTool = { [weak self] tool in self?.choose(tool) }
         toolbar.onAction = { [weak self] action in self?.perform(action) }
@@ -91,6 +113,7 @@ public final class InPlaceAnnotationView: NSView {
         canvas.onCopy = { [weak self] in self?.perform(.copy) }
         canvas.onSave = { [weak self] in self?.perform(.save) }
         canvas.onViewportChange = { [weak self] in self?.placeAccessories() }
+        canvas.onRightClickAway = { [weak self] in self?.backOut() }
         canvas.cursorOverride = { [weak self] point in
             guard let self else { return nil }
             return cursor(at: convert(point, from: canvas), overCanvas: true)
@@ -118,6 +141,56 @@ public final class InPlaceAnnotationView: NSView {
     public func begin() {
         window?.makeFirstResponder(canvas)
         VoiceOver.announce(String(localized: "Mark up the selection. Press Return to copy it, or Escape to cancel.", bundle: .module), from: self)
+        refreshCodes()
+    }
+
+    // MARK: Codes
+
+    /// Looks for QR codes and barcodes in the selection when it is not the one last looked at, for chips over them,
+    /// when Settings want them. Chips for another selection go at once; the new ones come when the look is done.
+    private func refreshCodes() {
+        let document = session.document
+        let pixels = document.canvas.standardized.integral.intersection(document.imageBounds)
+        guard let finder = codeFinder, finder.isOn() else {
+            clearCodes()
+            scannedCanvas = nil
+            return
+        }
+        guard pixels != scannedCanvas else { return }
+        scannedCanvas = pixels
+        clearCodes()
+        guard !pixels.isNull, pixels.width >= 16, pixels.height >= 16, let picture = session.base.cropping(to: pixels) else { return }
+        let scale = document.scale
+        codeScan = Task { [weak self] in
+            let found = await finder.find(picture)
+            guard !Task.isCancelled, let self, self.scannedCanvas == pixels else { return }
+            let codes = found.map { code in
+                CodeChipsView.Code(
+                    box: CGRect(
+                        x: (pixels.minX + code.box.minX) / scale, y: (pixels.minY + code.box.minY) / scale,
+                        width: code.box.width / scale, height: code.box.height / scale
+                    ),
+                    isMatrix: code.isMatrix, payload: code.payload, link: code.webURL
+                )
+            }
+            self.codeChips.show(codes, in: self.selectionRect)
+            self.updateCodeChipsVisibility()
+            if !codes.isEmpty { VoiceOver.announce(CodeChipWording.found(codes.count), from: self, priority: .medium) }
+        }
+    }
+
+    private func clearCodes() {
+        codeScan?.cancel()
+        codeScan = nil
+        codeChips.clear()
+    }
+
+    /// The chips show only while the selection is as it is and nothing is being drawn or typed: a mark drawn to point
+    /// at a chip would be copied without it.
+    private func updateCodeChipsVisibility() {
+        let hidden = session.tool != .select || adjustment != nil || canvas.isDragging || canvas.isEditingText
+        if hidden { codeChips.dismissCard() }
+        codeChips.isHidden = hidden
     }
 
     // MARK: Geometry
@@ -147,6 +220,7 @@ public final class InPlaceAnnotationView: NSView {
             canvas.layoutSubtreeIfNeeded()
         }
         chrome.frame = bounds
+        codeChips.frame = bounds
         chrome.selection = rect
         let pixels = session.document.canvas.standardized
         chrome.reading = "\(Int(pixels.width)) × \(Int(pixels.height))"
@@ -212,6 +286,7 @@ public final class InPlaceAnnotationView: NSView {
         chrome.avoiding = showsCapsule ? targetToolbarFrame.union(targetCapsuleFrame) : targetToolbarFrame
         chrome.toolbarFrame = targetToolbarFrame
         toolbar.isHidden = adjustment != nil
+        updateCodeChipsVisibility()
         let visible = showsCapsule && adjustment == nil && !canvas.isDragging
         let anchor = "\(session.currentKind.rawValue)|\(session.selection.map(\.uuidString).joined())"
         let fades = visible && (capsule.alphaValue == 0 || anchor != capsuleAnchor)
@@ -237,6 +312,8 @@ public final class InPlaceAnnotationView: NSView {
         switch event {
         case .document:
             layoutSelection()
+            // The selection changed by Undo or Redo is looked at again; a drag looks once it ends.
+            if adjustment == nil { refreshCodes() }
             if !session.selection.isEmpty || capsule.countsStaleSuggestions(of: session) { refreshCapsule() }
         case .selection, .settings:
             refreshCapsule()
@@ -297,6 +374,7 @@ public final class InPlaceAnnotationView: NSView {
     private func finish(_ body: (Actions) -> Void) {
         guard !finished else { return }
         finished = true
+        clearCodes()
         canvas.endEditing()
         body(actions)
     }
@@ -330,6 +408,8 @@ public final class InPlaceAnnotationView: NSView {
     public override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
         if hit === toolbar || hit.isDescendant(of: toolbar) || hit === capsule || hit.isDescendant(of: capsule) { return hit }
+        // The code chips answer only over a chip or the card, or anywhere while a card is open, to close it.
+        if hit === codeChips || hit.isDescendant(of: codeChips) { return hit }
         let local = convert(point, from: superview)
         if canvas.isEditingText, hit !== self, hit.isDescendant(of: canvas) { return hit }
         if handle(at: local, toolInHand: session.tool != .select) != nil { return self }
@@ -378,7 +458,7 @@ public final class InPlaceAnnotationView: NSView {
             case .bottom: NSCursor.frameResize(position: .bottom, directions: .all)
             case .bottomLeft: NSCursor.frameResize(position: .bottomLeft, directions: .all)
             case .left: NSCursor.frameResize(position: .left, directions: .all)
-            case .start, .end, .bend: .crosshair
+            case .start, .end, .bend, .tail: .crosshair
             }
         }
         if canvas.isSpaceHeld, selectionRect.contains(point) {
@@ -420,7 +500,10 @@ public final class InPlaceAnnotationView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let rect = selectionRect
         if let handle = handle(at: point, toolInHand: session.tool != .select) {
-            begin(.resizing(handle: handle, original: rect))
+            // Held by the line as drawn, which steps in where the selection meets the display's edge.
+            let line = SelectionChromeView.drawnFrame(for: rect, in: bounds)
+            begin(.resizing(handle: handle, original: rect, grip: Geometry.grip(of: handle, on: line, pressedAt: point)))
+            showEdgeLoupe(for: handle, near: point)
         } else if rect.contains(point) {
             if event.clickCount == 2 {
                 perform(.copy)
@@ -440,6 +523,9 @@ public final class InPlaceAnnotationView: NSView {
         session.select([])
         session.beginLiveChange()
         self.adjustment = adjustment
+        // The chips are for the selection as it was; it is looked at again once the drag ends.
+        clearCodes()
+        scannedCanvas = nil
         chrome.showsThirds = true
         placeAccessories()
     }
@@ -455,8 +541,10 @@ public final class InPlaceAnnotationView: NSView {
             // Moved whole, kept on the display.
             rect.origin.x = min(max(rect.minX, limits.minX), limits.maxX - rect.width)
             rect.origin.y = min(max(rect.minY, limits.minY), limits.maxY - rect.height)
-        case .resizing(let handle, let original):
-            let clamped = CGPoint(x: min(max(point.x, limits.minX), limits.maxX), y: min(max(point.y, limits.minY), limits.maxY))
+        case .resizing(let handle, let original, let grip):
+            // The edge where the pointer took hold of it, then held to the display.
+            let held = CGPoint(x: point.x + grip.dx, y: point.y + grip.dy)
+            let clamped = CGPoint(x: min(max(held.x, limits.minX), limits.maxX), y: min(max(held.y, limits.minY), limits.maxY))
             rect = Geometry.resized(original, dragging: handle, to: clamped, keepingAspect: event.modifierFlags.contains(.shift))
         case .selecting(let start):
             let clamped = CGPoint(x: min(max(point.x, limits.minX), limits.maxX), y: min(max(point.y, limits.minY), limits.maxY))
@@ -467,31 +555,65 @@ public final class InPlaceAnnotationView: NSView {
         var document = session.document
         document.canvas = Self.pixels(rect, scale: document.scale, within: document.imageBounds)
         session.updateLive(document)
+        if case .resizing(let handle, _, _) = adjustment { showEdgeLoupe(for: handle, near: point) }
+    }
+
+    /// The magnifier on the pixel just inside where the dragged edges of the selection, as it is now, meet.
+    private func showEdgeLoupe(for handle: Handle, near pointer: CGPoint) {
+        let pixel = 1 / max(session.document.scale, 1)
+        onEdgeDrag?(Geometry.edgePoint(of: handle, on: selectionRect, near: pointer, pixel: pixel))
     }
 
     public override func mouseUp(with event: NSEvent) {
         guard let adjustment else { return }
         self.adjustment = nil
         chrome.showsThirds = false
+        onEdgeDrag?(nil)
         let name = switch adjustment {
         case .moving: String(localized: "Move Selection", bundle: .module)
         case .resizing: String(localized: "Resize Selection", bundle: .module)
         case .selecting: String(localized: "Select Area", bundle: .module)
         }
         session.endLiveChange(actionName: name)
+        refreshCodes()
         placeAccessories()
         updateCursor(event)
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
 
+    /// A right-click on the frame, outside it, or on the canvas away from the marks (marks keep their own menu).
+    public override func rightMouseDown(with event: NSEvent) {
+        backOut()
+    }
+
+    /// Backs out one step, as Escape does, but never throws marks away: a text being typed is finished, then the tool
+    /// in hand is put down, then the selected marks are let go, and only a selection with nothing drawn on it is
+    /// cancelled. With marks drawn the last step is Escape's, or the toolbar's.
+    func backOut() {
+        guard adjustment == nil, !finished else { return }
+        if canvas.isEditingText {
+            canvas.endEditing()
+        } else if session.tool != .select {
+            session.tool = .select
+        } else if !session.selection.isEmpty {
+            session.select([])
+        } else if session.document.items.isEmpty {
+            perform(.cancel)
+        }
+    }
+
     public override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 53:
-            // Reached once the canvas has nothing of its own to cancel: an adjustment in progress goes
-            // first, then the tool in hand is put down, and only then is the whole thing cancelled.
-            if adjustment != nil {
+            // Reached once the canvas has nothing of its own to cancel: a code's open card goes first, then
+            // an adjustment in progress, then the tool in hand is put down, and only then is the whole
+            // thing cancelled.
+            if codeChips.isShowingCard {
+                codeChips.dismissCard()
+            } else if adjustment != nil {
                 adjustment = nil
                 chrome.showsThirds = false
+                onEdgeDrag?(nil)
                 session.cancelLiveChange()
                 placeAccessories()
             } else if session.tool != .select {
@@ -502,6 +624,9 @@ public final class InPlaceAnnotationView: NSView {
         case 36, 76:
             perform(.copy)
         default:
+            // Q goes through the codes' cards, one after another: the keyboard's way to the chips.
+            if event.charactersIgnoringModifiers?.lowercased() == "q", event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+               !codeChips.isHidden, codeChips.openNextCard() { return }
             super.keyDown(with: event)
         }
     }
@@ -559,6 +684,8 @@ public final class InPlaceAnnotationView: NSView {
 
     /// Presses a toolbar action as its chip would.
     public func simulateAction(_ name: String) {
+        // Not a toolbar action: opens the first code's card, as its chip would, for a snapshot of it.
+        if name == "openCodeCard", let payload = codeChips.shownPayloads.first { return codeChips.debugOpenCard(for: payload) }
         guard let action = InPlaceToolbar.Action.allCases.first(where: { "\($0)" == name }) else { return }
         perform(action)
     }
@@ -569,7 +696,17 @@ public final class InPlaceAnnotationView: NSView {
             if case .textHighlight(let highlight) = item.shape { return "textHighlight(\(highlight.rects.map { NSStringFromRect($0) }.joined(separator: "|")))" }
             return AnnotationSession.tool(for: item).rawValue
         }.joined(separator: ",")
-        return "selection=\(NSStringFromRect(selectionRect)) canvas=\(NSStringFromRect(session.document.canvas)) tool=\(session.tool.rawValue) marks=[\(marks)] toolbar=\(NSStringFromRect(toolbar.frame)) capsule=\(capsule.alphaValue > 0 ? NSStringFromRect(capsule.frame) : "hidden") undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") canvasZoom=\(canvas.zoom) canvasPicture=\(NSStringFromRect(canvas.pictureFrame)) suggestions=\(session.isFindingRedactions ? "finding" : session.couldNotFindRedactions ? "failed" : "\(session.openRedactionSuggestions.count)") textlines=\(session.isFindingTextLines ? "finding" : session.couldNotFindTextLines ? "failed" : "\(session.textLines.count)")"
+        return "codes=[\(codeChips.isHidden ? "hidden" : codeChips.shownPayloads.joined(separator: "|"))] selection=\(NSStringFromRect(selectionRect)) canvas=\(NSStringFromRect(session.document.canvas)) tool=\(session.tool.rawValue) marks=[\(marks)] toolbar=\(NSStringFromRect(toolbar.frame)) capsule=\(capsule.alphaValue > 0 ? NSStringFromRect(capsule.frame) : "hidden") undo=\(session.undoManager.canUndo ? session.undoManager.undoActionName : "-") canvasZoom=\(canvas.zoom) canvasPicture=\(NSStringFromRect(canvas.pictureFrame)) suggestions=\(session.isFindingRedactions ? "finding" : session.couldNotFindRedactions ? "failed" : "\(session.openRedactionSuggestions.count)") textlines=\(session.isFindingTextLines ? "finding" : session.couldNotFindTextLines ? "failed" : "\(session.textLines.count)")"
     }
     #endif
+}
+
+extension CodeChipsView.Wording {
+    /// The words of the chips over a selection's codes, as Core says them for every place that shows them.
+    static var standard: Self {
+        Self(
+            qrCode: CodeChipWording.qrCode, barcode: CodeChipWording.barcode, codes: CodeChipWording.codes,
+            copy: CodeChipWording.copy, openLink: CodeChipWording.openLink, copied: CodeChipWording.copied
+        )
+    }
 }

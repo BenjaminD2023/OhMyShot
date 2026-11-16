@@ -51,6 +51,36 @@ struct AreaFrameTests {
         #expect(square == CGRect(x: 300, y: 300, width: 200, height: 200))
     }
 
+    /// A handle taken hold of a little way from its edge keeps that distance: the edge moves with the pointer instead
+    /// of jumping to it, and is held to the bounds where it lies, not where the pointer is.
+    @Test func aResizedEdgeStaysWhereItWasTakenHoldOf() {
+        // Pressed 4 pt inside the right edge and 3 pt below the top one.
+        let side = AreaFrame.grip(of: .right, on: rect, pressedAt: CGPoint(x: 496, y: 250))
+        #expect(side == CGVector(dx: 4, dy: 0))
+        let corner = AreaFrame.grip(of: .topRight, on: rect, pressedAt: CGPoint(x: 496, y: 103))
+        #expect(corner == CGVector(dx: 4, dy: -3))
+        let widened = AreaFrame.adjusted(.resizing(.right, original: rect, grip: side), to: CGPoint(x: 600, y: 999), in: bounds)
+        #expect(widened == CGRect(x: 100, y: 100, width: 504, height: 300))
+        let cornered = AreaFrame.adjusted(.resizing(.topRight, original: rect, grip: corner), to: CGPoint(x: 600, y: 53), in: bounds)
+        #expect(cornered == CGRect(x: 100, y: 50, width: 504, height: 350))
+        // Past the bounds, the edge stops at them.
+        let held = AreaFrame.adjusted(.resizing(.right, original: rect, grip: side), to: CGPoint(x: 998, y: 250), in: bounds)
+        #expect(held.maxX == bounds.maxX)
+    }
+
+    /// The magnifier centers on the pixel just inside where the dragged edges meet; along a side, across from the
+    /// pointer, kept inside.
+    @Test func theLensSitsJustInsideTheDraggedEdges() {
+        let pixel: CGFloat = 0.5
+        #expect(AreaFrame.edgePoint(of: .bottomRight, on: rect, near: CGPoint(x: 503, y: 398), pixel: pixel) == CGPoint(x: 499.75, y: 399.75))
+        #expect(AreaFrame.edgePoint(of: .topLeft, on: rect, near: CGPoint(x: 96, y: 101), pixel: pixel) == CGPoint(x: 100.25, y: 100.25))
+        #expect(AreaFrame.edgePoint(of: .left, on: rect, near: CGPoint(x: 90, y: 250), pixel: pixel) == CGPoint(x: 100.25, y: 250))
+        #expect(AreaFrame.edgePoint(of: .top, on: rect, near: CGPoint(x: 700, y: 90), pixel: pixel) == CGPoint(x: 499.75, y: 100.25))
+        // The right edge dragged past the left one is now the frame's left side, where the pointer is.
+        let flipped = CGRect(x: 40, y: 100, width: 60, height: 300)
+        #expect(AreaFrame.edgePoint(of: .right, on: flipped, near: CGPoint(x: 42, y: 250), pixel: pixel) == CGPoint(x: 40.25, y: 250))
+    }
+
     /// What is left of an area on the bounds, unless that is smaller than the smallest area.
     @Test func anAreaIsFittedToTheBoundsOrNotAtAll() {
         #expect(AreaFrame.fitted(CGRect(x: -50, y: 700, width: 200, height: 200), in: bounds) == CGRect(x: 0, y: 700, width: 150, height: 100))

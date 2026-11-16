@@ -119,6 +119,25 @@ final class HistoryModel {
         visibleItems.filter { selection.contains($0.id) }
     }
 
+    /// What a command from `item`'s menu acts on: every capture selected when `item` is one of them, else `item` alone;
+    /// from the main menu (no `item`), the selection.
+    func itemsActedOn(from item: HistoryItem?) -> [HistoryItem] {
+        guard let item, !selection.contains(item.id) else { return selectedItems }
+        return [item]
+    }
+
+    /// The captures Combine into Collage would lay out from `item`'s menu: two or more, all screenshots; else none.
+    func collageItems(from item: HistoryItem?) -> [HistoryItem] {
+        let items = itemsActedOn(from: item)
+        return items.count >= 2 && items.allSatisfy({ $0.kind == .screenshot }) ? items : []
+    }
+
+    /// The captures Export as PDF would write from `item`'s menu: screenshots only; else none.
+    func pdfItems(from item: HistoryItem?) -> [HistoryItem] {
+        let items = itemsActedOn(from: item)
+        return !items.isEmpty && items.allSatisfy({ $0.kind == .screenshot }) ? items : []
+    }
+
     /// The selected capture the keys act on alone (Space, Print): the one clicked or reached last, else the first.
     var focusedItem: HistoryItem? {
         let selected = selectedItems

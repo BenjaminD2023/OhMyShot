@@ -109,6 +109,17 @@ public final class SettingsStore {
         didSet { defaults.set(addsBorder, forKey: Key.addsBorder) }
     }
 
+    /// Every copy that leaves the app (saved, dragged out, uploaded, copied) carries `watermarkText` tiled across it.
+    /// The history keeps the capture as taken, and printing prints it so.
+    public var addsWatermark: Bool {
+        didSet { defaults.set(addsWatermark, forKey: Key.addsWatermark) }
+    }
+
+    /// The watermark's text, for every copy that leaves the app and the first one an editor adds to a picture.
+    public var watermarkText: String {
+        didSet { defaults.set(watermarkText, forKey: Key.watermarkText) }
+    }
+
     /// The pattern saved files are named from: `{date}`, `{time}`, `{app}`, `{window}`, and `{counter}`.
     public var fileNamePattern: String {
         didSet { defaults.set(fileNamePattern, forKey: Key.fileNamePattern) }
@@ -211,6 +222,13 @@ public final class SettingsStore {
     /// pulls edges as the pointer passes, which only a person who wants it should have to put up with.
     public var snapSelectionToText: Bool {
         didSet { defaults.set(snapSelectionToText, forKey: Key.snapSelectionToText) }
+    }
+
+    /// QR codes and barcodes are looked for: a chip over each one in a selection that stays on a frozen screen
+    /// (in-place annotation, All-In-One's frame), and an item for each in a screenshot's Quick Access card menu, to
+    /// copy what it says or open its web page. On by default: nothing shows unless there is a code.
+    public var showsCodesInSelection: Bool {
+        didSet { defaults.set(showsCodesInSelection, forKey: Key.showsCodesInSelection) }
     }
 
     /// How long Self-Timer waits, in seconds, between choosing what to capture and capturing it.
@@ -478,6 +496,8 @@ public final class SettingsStore {
             .savesRetinaAtOneX: false,
             .convertsToSRGB: false,
             .addsBorder: false,
+            .addsWatermark: false,
+            .watermarkText: "",
             .fileNamePattern: Default.fileNamePattern,
             .nextFileNumber: Default.nextFileNumber,
             .asksForFileName: false,
@@ -500,6 +520,7 @@ public final class SettingsStore {
             .captureLoupeSize: Default.captureLoupeSize.rawValue,
             .areaShape: Default.areaShape,
             .snapSelectionToText: false,
+            .showsCodesInSelection: true,
             .allInOneRemembersArea: true,
             .windowShadow: true,
             .selfTimerDelay: Default.selfTimerDelay,
@@ -555,6 +576,7 @@ public final class SettingsStore {
         let shape = defaults.string(forKey: Key.areaShape) ?? Default.areaShape
         areaShape = AspectRatio.presets.dropFirst().contains { $0.label == shape } ? shape : Default.areaShape
         snapSelectionToText = defaults.bool(forKey: Key.snapSelectionToText)
+        showsCodesInSelection = defaults.bool(forKey: Key.showsCodesInSelection)
         let delay = defaults.integer(forKey: Key.selfTimerDelay)
         selfTimerDelay = Self.selfTimerDelays.contains(delay) ? delay : Default.selfTimerDelay
         pinCornerRadius = min(max(defaults.double(forKey: Key.pinCornerRadius), Self.pinCornerRadii.lowerBound), Self.pinCornerRadii.upperBound)
@@ -615,6 +637,8 @@ public final class SettingsStore {
         savesRetinaAtOneX = defaults.bool(forKey: Key.savesRetinaAtOneX)
         convertsToSRGB = defaults.bool(forKey: Key.convertsToSRGB)
         addsBorder = defaults.bool(forKey: Key.addsBorder)
+        addsWatermark = defaults.bool(forKey: Key.addsWatermark)
+        watermarkText = defaults.string(forKey: Key.watermarkText) ?? ""
         fileNamePattern = defaults.string(forKey: Key.fileNamePattern) ?? Default.fileNamePattern
         nextFileNumber = max(defaults.integer(forKey: Key.nextFileNumber), Default.nextFileNumber)
         asksForFileName = defaults.bool(forKey: Key.asksForFileName)
@@ -668,6 +692,8 @@ public final class SettingsStore {
         savesRetinaAtOneX = fresh.savesRetinaAtOneX
         convertsToSRGB = fresh.convertsToSRGB
         addsBorder = fresh.addsBorder
+        addsWatermark = fresh.addsWatermark
+        watermarkText = fresh.watermarkText
         fileNamePattern = fresh.fileNamePattern
         asksForFileName = fresh.asksForFileName
         clipboardFormat = fresh.clipboardFormat
@@ -685,6 +711,7 @@ public final class SettingsStore {
         captureLoupeSize = fresh.captureLoupeSize
         areaShape = fresh.areaShape
         snapSelectionToText = fresh.snapSelectionToText
+        showsCodesInSelection = fresh.showsCodesInSelection
         selfTimerDelay = fresh.selfTimerDelay
         pinCornerRadius = fresh.pinCornerRadius
         pinShadow = fresh.pinShadow
@@ -785,6 +812,7 @@ public final class SettingsStore {
         case captureLoupeSize
         case areaShape
         case snapSelectionToText
+        case showsCodesInSelection
         case selfTimerDelay
         case pinCornerRadius
         case pinShadow
@@ -835,6 +863,8 @@ public final class SettingsStore {
         case savesRetinaAtOneX
         case convertsToSRGB
         case addsBorder
+        case addsWatermark
+        case watermarkText
         case fileNamePattern
         case nextFileNumber
         case asksForFileName

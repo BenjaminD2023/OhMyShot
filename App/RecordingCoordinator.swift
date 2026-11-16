@@ -481,6 +481,22 @@ final class RecordingCoordinator {
 
     /// Whether clicks are drawn as rings: shown, rings chosen in Settings, and not of a window, which is
     /// recorded alone and so keeps the system's circles.
+    /// Takes the windows put on screen since the recording began (Draw on Screen's canvases) into it, as the ones there
+    /// when it began were: the stream is given the filter it would be given now. A window recorded on its own, or a
+    /// Studio recording, which films the screen without what is shown over it, is left as it is.
+    func includeWindowsShownSince() async {
+        guard let session, session.plan.choices.output != .studio else { return }
+        if case .window = session.plan.target { return }
+        let shown = Set([keystrokes?.windowID, clickRings?.windowID, camera.windowID].compactMap(\.self))
+        do {
+            let source = try await capturer.recordingSource(for: session.plan.target, on: session.plan.display, including: shown)
+            try await session.recorder.updateFilter(source.filter)
+            Log.capture.notice("Recording takes in the windows shown since it began")
+        } catch {
+            Log.capture.error("Recording could not take in new windows: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func drawsClickRings(_ plan: Plan) -> Bool {
         guard plan.choices.showsClicks, settings.recordingClickStyle == .ring, plan.choices.output != .studio else { return false }
         if case .window = plan.target { return false }

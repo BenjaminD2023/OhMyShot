@@ -8,6 +8,30 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- While an edge or corner of a selection is dragged on a frozen screen (marking up in place, All-In-One, or a typed size), the magnifier shows the pixel just inside it, so the edge can be placed to the pixel.
+- Marking up in place, a right-click away from the marks backs out one step: a text being typed is finished, then the tool in hand is put down, then the selected marks are let go, and a selection with nothing drawn on it is cancelled. With marks drawn it stops there; Escape still cancels.
+- The scroll wheel over a selected counter steps its number up or down, never below the first; one gesture is one undo step.
+- QR codes and barcodes are found where a selection stays on a frozen screen (marking up in place, All-In-One's frame): a chip stands on each code, and opens a card with what it says, to copy, or to open when it is a web page (not once marks are drawn, as that would end the capture). Q goes through the cards from the keyboard. A screenshot's Quick Access card menu offers the same for the codes in it. Settings › Capture › Find QR codes and barcodes turns it off.
+- Translations drawn over the original are laid out more like the page: list items stay apart (a bullet read as text comes back in front of its translation), centered and right-aligned text keeps its alignment, a translation into English or another language of words runs on into the clear room beside and under it before shrinking, and nothing is shrunk below a readable 12 pt (13 pt for Chinese, Japanese, and Korean) unless the whole page is small print. Joining wrapped lines in Capture Text keeps list items apart too.
+- Text has a Speech Bubble style: a label with a tail whose tip can be dragged to what it points at. A counter can point too: drag the handle on its edge out to draw a pointer, and back onto the disc to take it away. Projects with either are written in format 3, and a project from a newer version is now refused as newer even when its marks are of a kind this version doesn't know.
+- Watermarks: Background › Adjust can tile a line of text faintly across a picture, over its marks, dark or light, at the opacity and size you choose. Settings › Screenshots › Add a watermark puts one on every copy that leaves the app (saved, dragged, uploaded, copied); the history keeps the capture as taken, and printing prints it so.
+- Choosing a window (Space, or Capture Window), the scroll wheel turned toward you goes into the part of the window under the pointer, one level at a time (a panel, a list, a button), and turned away comes back out; a click captures that part. It reads the window through Accessibility, only when the wheel turns, and says how to allow it when it is off. Apps that share nothing (Chrome, Electron) offer only the whole window.
+- Draw on Screen (Tools, or a shortcut you set) draws over the live screen: a laser pointer whose trail fades as you draw (after SnowAir's), the pen, arrows, rectangles, ellipses, and counters, in five colors, with Undo and Clear. Click Through (T) hands the pointer and keys to the apps underneath while the marks stay. The marks show in screenshots and in recordings, also when drawing starts after the recording did; not in a window recorded on its own or in Studio, which film the screen without what lies over it. Escape or Done takes it all away.
+- With several marks selected, a box around them all has corners that resize them together from the opposite corner, Shift keeping its shape: shapes, strokes, redactions, and images stretch with it, lines keep their width, and text and counters keep their size and move with the rest. One drag is one undo step.
+- Rectangles, ellipses, text (speech bubbles too), and combined images turn: a selected one has a knob above it to drag round, Shift taking 15° steps and a quarter turn catching the pointer as it passes. A turned mark keeps its handles on its own sides, is caught where it is drawn, and keeps a bubble pointing where it pointed; turning the picture turns boxes, ellipses, and images with it, while text keeps its angle, as it stays upright now. Straighten in its menu stands it upright again. Text being typed stands upright while it is typed. Projects with a turned mark are written in format 3.
+- Capture History can combine two or more selected screenshots into a collage (File › Combine into Collage…, or a card's menu): side by side, one under another, in a grid, or one beside the rest, at the width, spacing, margin, corners, and background you choose, previewed as you go. The collage joins the history as a new capture and opens in the editor. Export as PDF… writes the selected screenshots as one PDF, a page each in the order History shows them, each page the screenshot's size or A4 or US Letter; every page is written as Settings › Screenshots writes any copy, its watermark included.
+
+### Changed
+
+- Resizing a selection by its frame keeps the edge where the pointer took hold of it, instead of jumping it to the pointer.
+
+### Fixed
+
+- Allow QR code and barcode detection to finish its first native initialization instead of cancelling a successful cold read after two seconds.
+- Keep a replacement collage window alive when the previous window finishes closing.
+
 ## [0.8.0] - 2026-11-12
 
 Fork release: `v0.8.0-fork.10`, build 11.

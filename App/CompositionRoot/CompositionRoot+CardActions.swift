@@ -163,6 +163,12 @@ extension CompositionRoot {
             )
         }
         actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? item.fileURL }
+        actions.codes = { [weak self] item in
+            guard let self, settings.showsCodesInSelection, item.kind == .screenshot,
+                  let loaded = await Self.loadImage(item.fileURL) else { return [] }
+            let codes = (try? await VisionPipeline.selectionCodes(in: loaded.image)) ?? []
+            return codes.map { FoundCode(payload: $0.payload, isMatrix: $0.kind.isMatrix, box: $0.box) }
+        }
         actions.preferences = { [weak self] in self?.settings.quickAccessPreferences ?? QuickAccessPreferences() }
         actions.pictureChangeOffer = { [weak self] item in self?.pictureChanges.offer(for: item) ?? .unsupported }
         actions.changePicture = { [weak self] item, change in self?.pictureChanges.apply(change, to: item) }
@@ -242,6 +248,8 @@ extension CompositionRoot {
             guard let self, entry.kind == .screenshot else { return }
             printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale(of: entry, orElse: 2), from: window)
         }
+        historyActions.combine = { [weak self] entries in self?.combineIntoCollage(entries) }
+        historyActions.exportPDF = { [weak self] entries, _ in self?.exportPDF(entries) }
         historyActions.sharing.menu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }
         historyActions.sharing.upload = { [weak self] entry, destination in
             guard let self else { return }

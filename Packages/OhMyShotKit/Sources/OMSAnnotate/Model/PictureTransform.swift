@@ -219,6 +219,10 @@ nonisolated extension Annotation {
     /// picture. `scale` is the document's scale before the operation.
     func mapped(by mapping: PictureMapping, scale: CGFloat) -> Annotation {
         var copy = self
+        // A turned mark keeps its turn, its upright frame carried by the map, so a turn of the picture (which swaps the
+        // frame's sides) turns it with the picture; a flip turns it the other way. A stretch of one side stretches the
+        // frame along its own sides.
+        if isTurned, mapping.reflects { copy.rotation = -angle }
         switch shape {
         case .arrow(var arrow):
             let control = ArrowPath.control(start: arrow.start, end: arrow.end, bend: arrow.bend)
@@ -262,18 +266,25 @@ nonisolated extension Annotation {
             highlight.rects = highlight.rects.map(mapping.rect)
             copy.shape = .textHighlight(highlight)
         case .text(var block):
+            // A bubble's tip goes where the map takes it, so it still points at what it pointed at; one left to point
+            // down and to the left is pinned where it was first.
+            block.tail = (block.look == .bubble ? tip(scale: scale) : block.tail).map(mapping.point)
             if mapping.isResize {
                 // The block grows from its corner, and its wrapping width with it.
                 block.origin = mapping.point(block.origin)
                 block.width = block.width.map { $0 * mapping.affine.a }
             } else {
-                let frame = bounds(scale: scale)
+                // Its upright size: a turned block's box is larger than the block.
+                var upright = self
+                upright.rotation = nil
+                let frame = upright.bounds(scale: scale)
                 let middle = mapping.point(CGPoint(x: frame.midX, y: frame.midY))
                 block.origin = CGPoint(x: middle.x - frame.width / 2, y: middle.y - frame.height / 2)
             }
             copy.shape = .text(block)
         case .counter(var counter):
             counter.center = mapping.point(counter.center)
+            counter.tail = counter.tail.map(mapping.point)
             copy.shape = .counter(counter)
         case .redaction(var redaction):
             redaction.rect = mapping.rect(redaction.rect)

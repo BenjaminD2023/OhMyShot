@@ -1,4 +1,5 @@
 import CoreGraphics
+import OMSCore
 import Foundation
 
 /// Draws marks with Core Graphics. The canvas draws each mark through here on screen and exports draw
@@ -23,6 +24,17 @@ nonisolated public enum AnnotationRenderer {
         let color = item.style.color.cgColor
         context.saveGState()
         defer { context.restoreGState() }
+        if item.isTurned {
+            // Upright in a frame turned about its middle. Shadows keep falling down the page: their offset is the
+            // page's, not the frame's.
+            let upright = item.upright(scale: scale)
+            let center = upright.bounds(scale: scale).middle
+            context.translateBy(x: center.x, y: center.y)
+            context.rotate(by: item.angle)
+            context.translateBy(x: -center.x, y: -center.y)
+            draw(upright, in: context, scale: scale, redacted: redacted, ground: ground, flippedBacking: flippedBacking)
+            return
+        }
         switch item.shape {
         case .arrow, .line, .rectangle, .ellipse, .pen:
             guard let path = MarkPaths.outline(of: item, scale: scale) else { return }
@@ -65,6 +77,11 @@ nonisolated public enum AnnotationRenderer {
                 context.addPath(CGPath(roundedRect: frame, cornerWidth: layout.cornerRadius, cornerHeight: layout.cornerRadius, transform: nil))
                 context.fillPath()
                 context.setFillColor(item.style.color.prefersDarkInk ? CGColor(gray: 0, alpha: 0.88) : CGColor(gray: 1, alpha: 1))
+            case .bubble:
+                context.setFillColor(color)
+                context.addPath(layout.bubblePath(of: block))
+                context.fillPath()
+                context.setFillColor(item.style.color.prefersDarkInk ? CGColor(gray: 0, alpha: 0.88) : CGColor(gray: 1, alpha: 1))
             }
             layout.drawLines(in: context, at: block.origin)
             context.endTransparencyLayer()
@@ -73,7 +90,8 @@ nonisolated public enum AnnotationRenderer {
             if item.style.shadow { applyShadow(to: context, scale: scale, flippedBacking: flippedBacking) }
             context.beginTransparencyLayer(auxiliaryInfo: nil)
             context.setFillColor(color)
-            context.fillEllipse(in: layout.rect(at: counter.center))
+            context.addPath(CalloutPaths.counter(center: counter.center, diameter: layout.diameter, tip: counter.tail))
+            context.fillPath()
             context.setFillColor(item.style.color.prefersDarkInk ? CGColor(gray: 0, alpha: 0.88) : CGColor(gray: 1, alpha: 1))
             layout.drawLabel(in: context, at: counter.center)
             context.endTransparencyLayer()
@@ -184,6 +202,10 @@ nonisolated public enum AnnotationRenderer {
                 ground = HighlightGround.under(item, in: source?.image ?? base, origin: source?.origin ?? .zero, scale: document.scale)
             }
             draw(item, in: context, scale: document.scale, redacted: redacted, ground: ground)
+        }
+        // Over every mark, across the canvas, inside the card's corners on a background.
+        if let watermark = document.watermark {
+            WatermarkPainter.paint(watermark, in: canvas, cornerRadius: layout?.cornerRadius ?? 0, context: context)
         }
         return context.makeImage()
     }

@@ -122,6 +122,9 @@ struct HistoryView: View {
             // ⌘P prints one selected screenshot; a recording has nothing to print.
             .onCommand(Selector(("printCapture:")), perform: model.selectedItems.count == 1 && model.focusedItem?.kind == .screenshot
                 ? { model.focusedItem.map(model.print) } : nil)
+            // Combine into Collage wants two screenshots or more, Export as PDF one or more; neither takes a recording.
+            .onCommand(Selector(("combineIntoCollage:")), perform: model.collageItems(from: nil).isEmpty ? nil : { model.actions.combine(model.collageItems(from: nil)) })
+            .onCommand(Selector(("exportPDF:")), perform: model.pdfItems(from: nil).isEmpty ? nil : { model.actions.exportPDF(model.pdfItems(from: nil), model.window) })
             .onCommand(#selector(NSText.delete(_:)), perform: selectionCommand { _ in model.trashSelection() })
             .onCommand(#selector(NSText.selectAll(_:)), perform: model.visibleItems.isEmpty ? nil : { model.selectAll() })
             .onChange(of: model.focus) { _, focus in

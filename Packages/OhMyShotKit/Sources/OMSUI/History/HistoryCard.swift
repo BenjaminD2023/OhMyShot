@@ -278,6 +278,15 @@ struct HistoryCard: View {
             Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
             Button { model.print(item) } label: { Text("Print…", bundle: .module) }
         }
+        let collage = model.collageItems(from: item), pdf = model.pdfItems(from: item)
+        if !collage.isEmpty {
+            Button { model.actions.combine(collage) } label: { Text("Combine \(collage.count) into Collage…", bundle: .module) }
+        }
+        if !pdf.isEmpty {
+            Button { model.actions.exportPDF(pdf, model.window) } label: {
+                pdf.count == 1 ? Text("Export as PDF…", bundle: .module) : Text("Export \(pdf.count) as PDF…", bundle: .module)
+            }
+        }
         Button { model.actions.reveal(item) } label: { Text("Show in Finder", bundle: .module) }
         Divider()
         Button { Self.share(fileToHandOver, atPointer: true) } label: { Text("Share…", bundle: .module) }

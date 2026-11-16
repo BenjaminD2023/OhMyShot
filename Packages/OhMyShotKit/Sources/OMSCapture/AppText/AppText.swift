@@ -353,3 +353,61 @@ nonisolated final class SystemAppText: AppTextSource {
         return (value as! AXValue)
     }
 }
+
+/// A part of a window, as Accessibility says it lies: a button, a list, a panel.
+nonisolated public struct WindowElement: Equatable, Sendable {
+    /// In AppKit's global space.
+    public let frame: CGRect
+    /// What Accessibility calls it ("button", "text field"), for the reading; nil when it says nothing.
+    public let name: String?
+}
+
+/// The parts of a window under a point, read through Accessibility for window mode's scroll wheel, which goes into
+/// them and back out. Asked only when the wheel turns, never as the pointer moves: an app takes up to a tenth of a
+/// second to answer each question, which the pointer cannot wait for. Apps that share nothing unless told to turn
+/// their accessibility on (Chrome, Electron) give no parts, and are left as they are.
+nonisolated enum ElementChain {
+    /// The parts of window `window` (its frame in AppKit's global space) of app `pid` under `point` (AppKit's global
+    /// space), smallest first, up to and not including the window itself: each one's frame cut to the window, without
+    /// those smaller than 8 × 8 points, outside the window, or the same as the part inside them. Empty without the
+    /// Accessibility permission, or when the app does not answer within `budget`.
+    static func elements(at point: CGPoint, window: CGRect, pid: pid_t, layout: DisplayLayout, budget: Duration = .milliseconds(150)) -> [WindowElement] {
+        guard AppText.isAllowed else { return [] }
+        let deadline = ContinuousClock.now + budget
+        let source = SystemAppText(excluding: ProcessInfo.processInfo.processIdentifier, until: deadline)
+        let at = layout.flipped(CGRect(origin: point, size: .zero)).origin
+        let bounds = layout.flipped(window)
+        guard var element = source.element(at: at, in: pid) else { return [] }
+        var found: [(frame: CGRect, name: String?)] = []
+        for _ in 0..<40 where ContinuousClock.now < deadline {
+            let role = source.role(of: element)
+            if role == kAXWindowRole || role == kAXApplicationRole || role == kAXSheetRole { break }
+            if let frame = source.frame(of: element)?.intersection(bounds), !frame.isNull, frame.width >= 8, frame.height >= 8,
+               found.last.map({ $0.frame != frame }) ?? true {
+                found.append((frame, source.roleDescription(of: element)))
+            }
+            guard let parent = source.parent(of: element) else { break }
+            element = parent
+        }
+        // The window itself is the wheel's top step already.
+        return found.filter { $0.frame != bounds }.map { WindowElement(frame: layout.flipped($0.frame), name: $0.name) }
+    }
+}
+
+nonisolated extension SystemAppText {
+    func role(of element: AXUIElement) -> String? {
+        attribute(kAXRoleAttribute, of: element) as? String
+    }
+
+    func roleDescription(of element: AXUIElement) -> String? {
+        (attribute(kAXRoleDescriptionAttribute, of: element) as? String).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// What holds `element`; nil at the top.
+    func parent(of element: AXUIElement) -> AXUIElement? {
+        guard let value = attribute(kAXParentAttribute, of: element), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        let parent = value as! AXUIElement
+        AXUIElementSetMessagingTimeout(parent, Self.timeout)
+        return parent
+    }
+}

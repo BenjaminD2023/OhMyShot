@@ -219,19 +219,36 @@ public enum TextAssembler {
     /// (Vision's line recognizer never does). A line wraps when it reaches across nearly its whole
     /// paragraph, does not end a sentence, and the next line starts at the same left edge without extra
     /// space between them; an indented next line starts a new paragraph.
-    static func inferredWraps(_ lines: [OCRLine]) -> [Bool] {
+    ///
+    /// A list item (`items`, from `Bullets`: a bullet read at the line's start or seen just left of it) always starts
+    /// a paragraph of its own, and its text may run on into lines indented under it, past the bullet: up to three line
+    /// heights right of the item's left edge, never more than one left of the line before.
+    static func inferredWraps(_ lines: [OCRLine], items: [Bool]? = nil) -> [Bool] {
         guard lines.count > 1 else { return lines.map { _ in false } }
+        let items = items ?? Bullets.items(lines)
         let heights = lines.map(\.box.height).sorted()
         let lineHeight = heights[heights.count / 2]
         let enders: Set<Character> = ["。", "！", "？", ".", "!", "?", "：", ":", "；", ";", "…"]
         let closers: Set<Character> = ["”", "」", "』", "\"", "'", ")", "）"]
+        // The left edge of the list item a line belongs to, as the lines are gone through.
+        var itemLeft: CGFloat?
         return lines.indices.map { index in
-            guard index + 1 < lines.count else { return false }
+            if items[index] { itemLeft = lines[index].box.minX }
+            let wraps = wraps(index)
+            if !wraps { itemLeft = nil }
+            return wraps
+        }
+
+        func wraps(_ index: Int) -> Bool {
+            guard index + 1 < lines.count, !items[index + 1] else { return false }
             let line = lines[index]
             let next = lines[index + 1]
             let sameLeft = abs(next.box.minX - line.box.minX) < lineHeight * 0.8
+            let hanging = itemLeft.map { left in
+                next.box.minX > left - lineHeight * 0.8 && next.box.minX <= left + lineHeight * 3 && next.box.minX >= line.box.minX - lineHeight
+            } ?? false
             let gap = next.box.minY - line.box.maxY
-            guard sameLeft, gap >= -lineHeight * 0.3, gap < lineHeight * 0.9 else { return false }
+            guard sameLeft || hanging, gap >= -lineHeight * 0.3, gap < lineHeight * 0.9 else { return false }
             // The paragraph's right edge: the widest of the neighboring lines that share this left edge (a table's rows,
             // boxed across the whole table, aren't the paragraph's).
             let neighbors = (max(0, index - 3)..<min(lines.count, index + 4))

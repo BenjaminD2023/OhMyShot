@@ -949,7 +949,7 @@ final class TextCaptureCoordinator {
         do {
             let lines = try await pipeline.recognize(image).lines
             try Task.checkCancellation()
-            let units = TranslationUnits.group(lines)
+            let units = TranslationUnits.group(lines, image: image)
             let outcome = try await translator.translate(units, to: target)
             // Escape stopped it (the highlight has gone): nothing is laid over the area, nor the panel opened.
             try Task.checkCancellation()

@@ -36,6 +36,8 @@ public actor Translator {
         var translated: [NSRange] = []
         for index in units.indices {
             if index > 0 { output.append("\n") }
+            // A list item's bullet, taken off its text so it was not translated, comes back in front of it.
+            if units[index].bulleted { output.append(Bullets.drawnMark) }
             let piece = outcome.translations[index] ?? units[index].text
             if outcome.translations[index] != nil { translated.append(NSRange(location: output.length, length: (piece as NSString).length)) }
             output.append(piece)

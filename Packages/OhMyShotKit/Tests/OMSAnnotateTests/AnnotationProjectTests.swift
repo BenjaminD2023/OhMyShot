@@ -66,4 +66,38 @@ struct AnnotationProjectTests {
         let newer = try PropertyListSerialization.data(fromPropertyList: contents, format: .binary, options: 0)
         #expect(throws: AnnotationProject.ReadError.self) { try AnnotationProject.read(newer) }
     }
+
+    /// A bubble or a pointing counter needs format 3, and a project from a newer version whose marks this one
+    /// cannot even decode is still told apart from a damaged file.
+    @Test func bubblesAndPointersAreFormatThreeAndNewerMarksAreRefusedAsNewer() throws {
+        func version(of document: AnnotationDocument) throws -> Int? {
+            let data = try AnnotationProject(capture: swatch(8, 4, gray: 1), document: document).data()
+            return (try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])?["version"] as? Int
+        }
+        var document = AnnotationDocument(pixelSize: CGSize(width: 80, height: 40), scale: 1)
+        document.items = [Annotation(shape: .text(TextBlock(origin: .zero, string: "Hi", look: .bubble)), style: Style())]
+        #expect(try version(of: document) == 3)
+        document.items = [Annotation(shape: .counter(Counter(center: CGPoint(x: 20, y: 20), value: 1, tail: CGPoint(x: 60, y: 30))), style: Style())]
+        #expect(try version(of: document) == 3)
+        document.items = [Annotation(shape: .counter(Counter(center: CGPoint(x: 20, y: 20), value: 1)), style: Style())]
+        #expect(try version(of: document) == 1)
+        // A turned mark would be shown upright by a version that cannot turn it.
+        document.items = [Annotation(shape: .rectangle(Box(rect: CGRect(x: 10, y: 10, width: 30, height: 10))), style: Style(), rotation: 0.4)]
+        #expect(try version(of: document) == 3)
+
+        // A newer version's project with a kind of mark unknown here.
+        let data = try AnnotationProject(capture: swatch(4, 4, gray: 1), document: AnnotationDocument(pixelSize: CGSize(width: 4, height: 4), scale: 1)).data()
+        var contents = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        contents["version"] = 99
+        var marked = try #require(contents["document"] as? [String: Any])
+        marked["items"] = [["id": UUID().uuidString, "shape": ["hologram": ["_0": ["x": 1]]], "style": ["color": "x"]]]
+        contents["document"] = marked
+        let newer = try PropertyListSerialization.data(fromPropertyList: contents, format: .binary, options: 0)
+        #expect {
+            try AnnotationProject.read(newer)
+        } throws: { error in
+            if case AnnotationProject.ReadError.newerVersion = error { return true }
+            return false
+        }
+    }
 }

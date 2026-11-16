@@ -28,6 +28,24 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// Drawing in place over the capture overlay: the picture at the screen's own size under the frozen
     /// screen's pixels, no zoom, no window chrome, the drawing tools only. Set by `configureInPlace`.
     public private(set) var isInPlace = false
+    /// In place: a right-click on the canvas away from every mark, for the host to back out a step.
+    public var onRightClickAway: (() -> Void)?
+
+    /// A counter whose number the wheel is stepping: what is left of the travel toward the next step, the document
+    /// as the last step left it (any other change since starts a new undo step), and the moment a mouse wheel's
+    /// gesture ends without phases.
+    private struct CounterWheel {
+        let id: Annotation.ID
+        var residue: CGFloat = 0
+        var stepped: AnnotationDocument?
+        var idle: DispatchWorkItem?
+    }
+
+    private var counterWheel: CounterWheel?
+    /// Whether the momentum now arriving follows a gesture that stepped a counter.
+    private var counterWheelCoasts = false
+    /// Trackpad travel, in points, for one step of a counter's number.
+    static let counterWheelStep: CGFloat = 12
     /// Chooses the pointer for a point in this view ahead of the canvas, for a host whose own controls
     /// reach over it (the in-place selection's edges); nil leaves it to the canvas.
     public var cursorOverride: ((CGPoint) -> NSCursor?)?
@@ -50,6 +68,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case highlighting(id: Annotation.ID, points: [CGPoint], snapping: TextSnapping?)
         case moving(start: CGPoint, originals: [Annotation])
         case reshaping(handle: Handle, original: Annotation)
+        /// A mark turned by its knob: as it was, what it turns about, and the pointer's angle from there at the start.
+        case rotating(original: Annotation, pivot: CGPoint, start: CGFloat)
+        /// Several marks resized together by a corner of the box around them, as it was when the drag began.
+        case scaling(handle: Handle, originals: [Annotation], box: CGRect)
         case cropping(handle: Handle?, start: CGPoint, original: CGRect)
         case panning(start: CGPoint, originalFocus: CGPoint)
         case marquee(start: CGPoint, initialSelection: [Annotation.ID], additive: Bool)
@@ -64,7 +86,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         /// once the drag ends.
         var editsMarks: Bool {
             switch self {
-            case .creating, .drawing, .highlighting, .moving, .reshaping: true
+            case .creating, .drawing, .highlighting, .moving, .reshaping, .scaling, .rotating: true
             case .cropping, .panning, .marquee: false
             }
         }
@@ -75,6 +97,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let isNew: Bool
         let view: MarkTextView
         let undo = UndoManager()
+        /// Where a turned block's first corner was on the picture when editing began: the field is upright, and the
+        /// block grows from that corner, so it is put back there when editing ends.
+        var turnedCorner: CGPoint?
 
         init(id: Annotation.ID, isNew: Bool, view: MarkTextView) {
             self.id = id
@@ -104,6 +129,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var markLayers: [Annotation.ID: MarkLayer] = [:]
     private let selectionLayer = SelectionLayer()
     private let cropLayer = CropLayer()
+    /// The document's watermark, above every mark.
+    private let watermarkLayer = WatermarkLayer()
     /// The redaction tool's suggestions, outlined over the picture, each covered by a click.
     private lazy var suggestions = SuggestionOverlay(on: self)
 
@@ -165,6 +192,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         canvasLayer.masksToBounds = true
         canvasLayer.addSublayer(backdropLayer)
         canvasLayer.addSublayer(cardLayer)
+        watermarkLayer.zPosition = 10
+        watermarkLayer.isHidden = true
+        canvasLayer.addSublayer(watermarkLayer)
         pictureLayer.shadowColor = .black
         pictureLayer.shadowOpacity = 0.12
         pictureLayer.shadowRadius = 10
@@ -323,7 +353,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         let scale = window?.backingScaleFactor ?? 2
-        for layer in [pictureLayer, canvasLayer, cardLayer, keptLayer, imageLayer, spotlightLayer, selectionLayer, cropLayer] {
+        for layer in [pictureLayer, canvasLayer, cardLayer, keptLayer, imageLayer, spotlightLayer, selectionLayer, cropLayer, watermarkLayer] {
             layer.contentsScale = scale
         }
         // The background is soft (gradients, blurs, a shadow): drawn at one pixel per point, its backing
@@ -409,6 +439,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         for layer in markLayers.values {
             position(layer, frames: frames)
         }
+        updateWatermarkLayer(frames: frames)
         selectionLayer.frame = host.bounds
         cropLayer.frame = host.bounds
         cropLayer.pictureRect = canvasFrame
@@ -465,6 +496,26 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     /// Places a mark's layer over the part of the mark on screen. Images lie in the kept part of the
     /// capture, under the spotlight; other marks over everything.
+    /// The watermark over the part of the canvas on screen, or hidden without one.
+    private func updateWatermarkLayer(frames: Frames) {
+        guard let watermark = session.document.watermark, !watermark.isBlank else {
+            watermarkLayer.isHidden = true
+            watermarkLayer.watermark = nil
+            return
+        }
+        let shown = frames.shown
+        let canvas = session.document.canvas.standardized
+        let whole = CGRect(x: (canvas.minX - shown.minX) * zoom, y: (canvas.minY - shown.minY) * zoom, width: canvas.width * zoom, height: canvas.height * zoom)
+        let part = whole.intersection(visibleCanvasRect)
+        watermarkLayer.isHidden = part.isNull || part.isEmpty
+        guard !watermarkLayer.isHidden else { return }
+        watermarkLayer.frame = part
+        watermarkLayer.mapping = LayerMapping(origin: CGPoint(x: shown.minX + part.minX / zoom, y: shown.minY + part.minY / zoom), zoom: zoom)
+        watermarkLayer.canvas = canvas
+        watermarkLayer.cardCornerRadius = frames.backdrop == nil ? 0 : frames.cornerRadius
+        watermarkLayer.watermark = watermark
+    }
+
     private func position(_ layer: MarkLayer, frames: Frames) {
         // The document point at the parent layer's corner.
         let parent = layer.superlayer === keptLayer ? frames.picture.origin : frames.shown.origin
@@ -577,6 +628,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     public override func scrollWheel(with event: NSEvent) {
+        if renumberCounter(with: event) { return }
         guard !isInPlace else { return }
         if event.modifierFlags.contains(.command) {
             let factor = 1 + event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.01 : 0.1)
@@ -592,6 +644,85 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         updateViewport()
         // Clamped by the edges: keep the focus where the picture actually is.
         focus = documentPoint(CGPoint(x: freeArea.midX, y: freeArea.midY))
+    }
+
+    /// The wheel over a selected counter, in Select, steps its number: up (away from you, as the device moves) counts
+    /// up, down counts down, never below the first. A trackpad steps once per `counterWheelStep` points of travel and
+    /// a mouse wheel once per notch; the momentum after a flick steps nothing. One gesture's steps are one undo step,
+    /// which ends when the gesture does, or a moment after the last notch. True when the event was taken.
+    private func renumberCounter(with event: NSEvent) -> Bool {
+        guard !event.modifierFlags.contains(.command), session.tool == .select, drag == nil, !isEditingText else {
+            endCounterWheel()
+            return false
+        }
+        if event.momentumPhase != [] {
+            // A flick that stepped a counter coasts out swallowed, never a pan or more steps; others pass.
+            if counterWheel != nil {
+                endCounterWheel()
+                counterWheelCoasts = true
+            }
+            let swallowed = counterWheelCoasts
+            if event.momentumPhase == .ended || event.momentumPhase == .cancelled { counterWheelCoasts = false }
+            return swallowed
+        }
+        counterWheelCoasts = false
+        let point = documentPoint(convert(event.locationInWindow, from: nil))
+        guard let item = hitItem(at: point), session.selection.contains(item.id), case .counter = item.shape else {
+            endCounterWheel()
+            return false
+        }
+        // Another change under way (a drag of the selection's frame) is left to finish first.
+        if session.isInLiveChange { return true }
+        if counterWheel?.id != item.id {
+            endCounterWheel()
+            counterWheel = CounterWheel(id: item.id)
+        }
+        let travel = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
+        var steps = 0
+        if event.hasPreciseScrollingDeltas {
+            counterWheel?.residue += travel
+            let residue = counterWheel?.residue ?? 0
+            steps = Int((residue / Self.counterWheelStep).rounded(.towardZero))
+            counterWheel?.residue -= CGFloat(steps) * Self.counterWheelStep
+        } else if travel != 0 {
+            steps = travel > 0 ? 1 : -1
+        }
+        if steps != 0, let index = session.document.index(of: item.id), case .counter(var counter) = session.document.items[index].shape {
+            let value = max(1, counter.value + steps)
+            if value != counter.value {
+                counter.value = value
+                var document = session.document
+                document.items[index].shape = .counter(counter)
+                let name = String(localized: "Renumber Counter", bundle: .module)
+                // The gesture's first step is an undo step; the rest join it, as long as nothing else changed the
+                // document since (then they start another). Undo puts back the number before the gesture, and Redo
+                // the one it ended on.
+                if let stepped = counterWheel?.stepped, stepped == session.document, session.undoManager.undoActionName == name {
+                    session.updateLive(document)
+                } else {
+                    session.commit(document, actionName: name)
+                }
+                counterWheel?.stepped = session.document
+                VoiceOver.announce(counter.label, from: self)
+            }
+        }
+        if event.phase == .ended || event.phase == .cancelled {
+            endCounterWheel()
+        } else if !event.hasPreciseScrollingDeltas || event.phase == [] {
+            // A mouse wheel has no phases: its gesture ends when the notches stop.
+            counterWheel?.idle?.cancel()
+            let idle = DispatchWorkItem { [weak self] in self?.endCounterWheel() }
+            counterWheel?.idle = idle
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: idle)
+        }
+        return true
+    }
+
+    /// The wheel's gesture is over: the next notch, even on the same counter, is a new undo step.
+    private func endCounterWheel() {
+        guard let wheel = counterWheel else { return }
+        counterWheel = nil
+        wheel.idle?.cancel()
     }
 
     // MARK: Session
@@ -617,6 +748,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 updateViewport()
             } else {
                 updateSelectionOutlines()
+                // A watermark changes nothing of what is shown but itself.
+                if let laidOut { updateWatermarkLayer(frames: laidOut) }
             }
             CATransaction.commit()
             updateAccessibility()
@@ -766,9 +899,18 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func updateSelectionOutlines() {
         let scale = session.document.scale
         let single = session.selection.count == 1 && editing == nil
+        let knob = rotationKnob()
         // The text being typed shows its own field instead of a selection.
-        selectionLayer.outlines = session.selectedItems.filter { $0.id != editing?.id }.map { item in
+        var outlines = session.selectedItems.filter { $0.id != editing?.id }.map { item in
             let handles = single ? item.handles(scale: scale).map { viewPoint($0.point) } : []
+            if item.isTurned {
+                // Its own frame, turned, rather than the upright box around it.
+                let frame = viewRect(item.upright(scale: scale).bounds(scale: scale))
+                return SelectionLayer.Outline(
+                    box: frame, handles: handles, angle: item.angle,
+                    knob: knob.flatMap { $0.id == item.id ? ($0.base, $0.point) : nil }
+                )
+            }
             // A single arrow or line shows its handles alone; anything else, or several, a box too.
             switch item.shape {
             case .arrow, .line:
@@ -776,8 +918,18 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             default:
                 break
             }
-            return SelectionLayer.Outline(box: viewRect(item.bounds(scale: scale)).integral, handles: handles)
+            return SelectionLayer.Outline(
+                box: viewRect(item.bounds(scale: scale)).integral, handles: handles,
+                knob: knob.flatMap { $0.id == item.id ? ($0.base, $0.point) : nil }
+            )
         }
+        // Several marks: a box around them all as well, its corners resizing them together.
+        if let box = groupBox, editing == nil {
+            outlines.append(SelectionLayer.Outline(
+                box: viewRect(box).integral, handles: Self.groupHandles(of: box).map { viewPoint($0.point) }
+            ))
+        }
+        selectionLayer.outlines = outlines
     }
 
     private func toolChanged() {
@@ -916,6 +1068,91 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    /// How far above a mark its rotation knob stands, in view points.
+    static let knobReach: CGFloat = 22
+
+    /// The knob that turns the one selected mark, if it turns: where it is and the middle of the frame's top it stands
+    /// above, in view points, and the middle the mark turns about, in pixels.
+    private func rotationKnob() -> (id: Annotation.ID, point: CGPoint, base: CGPoint, pivot: CGPoint)? {
+        guard session.selection.count == 1, session.tool == .select, editing == nil,
+              let item = session.selectedItems.first, item.isRotatable else { return nil }
+        let scale = session.document.scale
+        let frame = item.upright(scale: scale).bounds(scale: scale)
+        guard !frame.isNull else { return nil }
+        let pivot = frame.middle
+        let center = viewPoint(pivot)
+        let top = viewPoint(CGPoint(x: frame.midX, y: frame.minY))
+        let base = Annotation.turn(top, about: center, by: item.angle)
+        let point = Annotation.turn(CGPoint(x: top.x, y: top.y - Self.knobReach), about: center, by: item.angle)
+        return (item.id, point, base, pivot)
+    }
+
+    /// The box around the selected marks while there are several, in document pixels; nil otherwise.
+    private var groupBox: CGRect? {
+        guard session.selection.count >= 2, session.tool == .select else { return nil }
+        let scale = session.document.scale
+        let box = session.selectedItems.map { $0.bounds(scale: scale) }.filter { !$0.isNull }.reduce(CGRect.null) { $0.union($1) }
+        return box.isNull || box.width < 1 || box.height < 1 ? nil : box
+    }
+
+    private static func groupHandles(of box: CGRect) -> [(handle: Handle, point: CGPoint)] {
+        [
+            (.topLeft, CGPoint(x: box.minX, y: box.minY)), (.topRight, CGPoint(x: box.maxX, y: box.minY)),
+            (.bottomRight, CGPoint(x: box.maxX, y: box.maxY)), (.bottomLeft, CGPoint(x: box.minX, y: box.maxY)),
+        ]
+    }
+
+    /// The corner of the box around several selected marks under `viewPoint`.
+    private func groupHandle(at viewPoint: CGPoint) -> (handle: Handle, box: CGRect)? {
+        guard let box = groupBox else { return nil }
+        let reach = SelectionLayer.handleSize / 2 + 4
+        return Self.groupHandles(of: box).first { candidate in
+            let point = self.viewPoint(candidate.point)
+            return hypot(point.x - viewPoint.x, point.y - viewPoint.y) <= reach
+        }.map { ($0.handle, box) }
+    }
+
+    /// Several marks scaled from `box` to `target` (document pixels): each carried by the same map, as a picture's
+    /// resize carries them. Shapes, strokes, redactions and images stretch with the box, lines keeping their width;
+    /// text and counters keep their size and move with the rest, by their middles, so a block's wrapping is kept too.
+    /// A tail left to point its own way still does; one pointed somewhere goes where the map takes that place, unless
+    /// that is on the mark itself, when it keeps its place beside the mark.
+    static func scaled(_ marks: [Annotation], from box: CGRect, to target: CGRect, scale: CGFloat) -> [Annotation] {
+        let a = target.width / box.width, d = target.height / box.height
+        let mapping = PictureMapping(
+            affine: CGAffineTransform(a: a, b: 0, c: 0, d: d, tx: target.minX - box.minX * a, ty: target.minY - box.minY * d),
+            operation: .resize(to: target.size), lengthFactor: sqrt(a * d)
+        )
+        return marks.map { mark in
+            var moved = mark.mapped(by: mapping, scale: scale)
+            let frame = mark.bounds(scale: scale)
+            let middle = mapping.point(CGPoint(x: frame.midX, y: frame.midY))
+            let dx = middle.x - frame.midX, dy = middle.y - frame.midY
+            func carried(_ tip: CGPoint?) -> CGPoint? {
+                guard let tip else { return nil }
+                let mapped = mapping.point(tip)
+                return moved.bounds(scale: scale).contains(mapped) ? CGPoint(x: tip.x + dx, y: tip.y + dy) : mapped
+            }
+            switch (moved.shape, mark.shape) {
+            case (.text(var block), .text(let before)):
+                block.width = before.width
+                block.origin = CGPoint(x: before.origin.x + dx, y: before.origin.y + dy)
+                block.tail = nil
+                moved.shape = .text(block)
+                block.tail = carried(before.tail)
+                moved.shape = .text(block)
+            case (.counter(var counter), .counter(let before)):
+                counter.tail = nil
+                moved.shape = .counter(counter)
+                counter.tail = carried(before.tail)
+                moved.shape = .counter(counter)
+            default:
+                break
+            }
+            return moved
+        }
+    }
+
     private func handle(at viewPoint: CGPoint, of item: Annotation) -> Handle? {
         let reach = SelectionLayer.handleSize / 2 + 4
         let scale = session.document.scale
@@ -948,6 +1185,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     // MARK: Pointer
 
     public override func mouseDown(with event: NSEvent) {
+        // A press ends the wheel's gesture on a counter: notches after it are a new undo step.
+        endCounterWheel()
         if editing != nil {
             endEditing()
         }
@@ -992,9 +1231,23 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return
         }
 
+        if let knob = rotationKnob(), hypot(knob.point.x - location.x, knob.point.y - location.y) <= SelectionLayer.handleSize / 2 + 4,
+           let item = session.document.item(knob.id) {
+            session.beginLiveChange()
+            drag = .rotating(original: item, pivot: knob.pivot, start: atan2(point.y - knob.pivot.y, point.x - knob.pivot.x))
+            NSCursor.closedHand.set()
+            return
+        }
+
         if session.selection.count == 1, let item = session.selectedItems.first, let handle = handle(at: location, of: item) {
             session.beginLiveChange()
             drag = .reshaping(handle: handle, original: item)
+            return
+        }
+
+        if let (handle, box) = groupHandle(at: location) {
+            session.beginLiveChange()
+            drag = .scaling(handle: handle, originals: session.selectedItems, box: box)
             return
         }
 
@@ -1144,6 +1397,28 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             guard let index = document.index(of: original.id) else { return }
             document.items[index] = original.moving(handle, to: point, constrained: shift, scale: document.scale)
             session.updateLive(document)
+        case .rotating(let original, let pivot, let start):
+            guard let index = document.index(of: original.id) else { return }
+            let turn = atan2(point.y - pivot.y, point.x - pivot.x) - start
+            let angle = Annotation.snappedAngle(original.angle + turn, constrained: shift)
+            document.items[index] = original.rotated(to: angle)
+            session.updateLive(document)
+        case .scaling(let handle, let originals, let box):
+            // Shift keeps the box's shape; a corner dragged past the opposite one stops short of it, as the marks
+            // are not turned over.
+            let least: CGFloat = 4
+            let left = handle == .topLeft || handle == .bottomLeft, up = handle == .topLeft || handle == .topRight
+            let held = CGPoint(
+                x: left ? min(point.x, box.maxX - least) : max(point.x, box.minX + least),
+                y: up ? min(point.y, box.maxY - least) : max(point.y, box.minY + least)
+            )
+            let target = Geometry.resized(box, dragging: handle, to: held, keepingAspect: shift)
+            guard target.width >= least, target.height >= least else { return }
+            for mark in Self.scaled(originals, from: box, to: target, scale: document.scale) {
+                guard let index = document.index(of: mark.id) else { continue }
+                document.items[index] = mark
+            }
+            session.updateLive(document)
         case .cropping(let handle, let start, let original):
             var rect: CGRect
             if let handle {
@@ -1225,9 +1500,20 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             // canvas follows it back.
             session.fitCanvas(holding: originals.map(\.id))
             session.endLiveChange(actionName: String(localized: "Move", bundle: .module))
+        case .scaling(_, let originals, _):
+            session.fitCanvas(holding: originals.map(\.id))
+            session.endLiveChange(actionName: String(localized: "Resize Marks", bundle: .module))
+        case .rotating(let original, _, _):
+            session.fitCanvas(holding: [original.id])
+            session.endLiveChange(actionName: String(localized: "Rotate", bundle: .module))
         case .reshaping(let handle, let original):
             session.fitCanvas(holding: [original.id])
-            session.endLiveChange(actionName: handle == .bend ? String(localized: "Bend Arrow", bundle: .module) : String(localized: "Resize", bundle: .module))
+            let name = switch handle {
+            case .bend: String(localized: "Bend Arrow", bundle: .module)
+            case .tail: String(localized: "Move Tail", bundle: .module)
+            default: String(localized: "Resize", bundle: .module)
+            }
+            session.endLiveChange(actionName: name)
         case .cropping:
             cropLayer.showsThirds = false
             if let cropRect, cropRect.width < 8 || cropRect.height < 8 {
@@ -1274,10 +1560,23 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     public override func rightMouseDown(with event: NSEvent) {
         let point = documentPoint(convert(event.locationInWindow, from: nil))
-        if let item = hitItem(at: point), !session.selection.contains(item.id) {
+        let item = hitItem(at: point)
+        if let item, !session.selection.contains(item.id) {
             session.select([item.id])
         }
-        super.rightMouseDown(with: event)
+        guard isInPlace else { return super.rightMouseDown(with: event) }
+        // In place, a right-click away from the marks backs out a step, as its host decides.
+        guard item != nil else {
+            onRightClickAway?()
+            return
+        }
+        // The overlay's panel floats above the pop-up menu level; it steps just below while the menu is open, or
+        // the menu would open under it.
+        guard let menu = menu(for: event), let window else { return }
+        let level = window.level
+        if level >= .popUpMenu { window.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1) }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+        window.level = level
     }
 
     public override func menu(for event: NSEvent) -> NSMenu? {
@@ -1292,9 +1591,25 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         add(String(localized: "Duplicate", bundle: .module), #selector(duplicateSelection(_:)), "plus.square.on.square")
         add(String(localized: "Bring to Front", bundle: .module), #selector(bringToFront(_:)), "square.3.layers.3d.top.filled")
         add(String(localized: "Send to Back", bundle: .module), #selector(sendToBack(_:)), "square.3.layers.3d.bottom.filled")
+        if session.selectedItems.contains(where: \.isTurned) {
+            add(String(localized: "Straighten", bundle: .module), #selector(straightenSelection(_:)), "arrow.uturn.backward")
+        }
         menu.addItem(.separator())
         add(String(localized: "Delete", bundle: .module), #selector(delete(_:)), "trash")
         return menu
+    }
+
+    /// Turns the selected marks upright again.
+    @objc func straightenSelection(_ sender: Any?) {
+        var document = session.document
+        var changed = false
+        for id in session.selection {
+            guard let index = document.index(of: id), document.items[index].isTurned else { continue }
+            document.items[index] = document.items[index].rotated(to: 0)
+            changed = true
+        }
+        guard changed else { return }
+        session.commit(document, actionName: String(localized: "Straighten", bundle: .module))
     }
 
     // MARK: Combining
@@ -1442,8 +1757,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             } else {
                 cursor = .crosshair
             }
+        } else if let knob = rotationKnob(), hypot(knob.point.x - location.x, knob.point.y - location.y) <= SelectionLayer.handleSize / 2 + 4 {
+            cursor = .openHand
         } else if session.selection.count == 1, let item = session.selectedItems.first, let handle = handle(at: location, of: item) {
-            cursor = handle == .bend || handle == .start || handle == .end ? .crosshair : Self.resizeCursor(for: handle)
+            cursor = handle == .bend || handle == .tail || handle == .start || handle == .end
+                ? .crosshair : Self.resizeCursor(for: handle.turned(by: item.angle))
+        } else if let (handle, _) = groupHandle(at: location) {
+            cursor = Self.resizeCursor(for: handle)
         } else if hitItem(at: documentPoint(location), pressing: true) != nil {
             cursor = .openHand
         } else if session.tool == .redact, session.redactionSuggestion(at: documentPoint(location)) != nil {
@@ -1473,13 +1793,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case .bottom: NSCursor.frameResize(position: .bottom, directions: .all)
         case .bottomLeft: NSCursor.frameResize(position: .bottomLeft, directions: .all)
         case .left: NSCursor.frameResize(position: .left, directions: .all)
-        case .start, .end, .bend: .crosshair
+        case .start, .end, .bend, .tail: .crosshair
         }
     }
 
     // MARK: Keyboard
 
     public override func keyDown(with event: NSEvent) {
+        endCounterWheel()
         if !handleKey(event) {
             super.keyDown(with: event)
         }
@@ -1805,6 +2126,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let view = MarkTextView(frame: .zero)
         view.delegate = self
         let editing = TextEditing(id: id, isNew: isNew, view: view)
+        if item.isTurned, case .text(let block) = item.shape {
+            editing.turnedCorner = Annotation.turn(block.origin, about: item.pivot(scale: session.document.scale), by: item.angle)
+        }
         self.editing = editing
         if case .text(let block) = item.shape {
             view.string = block.string
@@ -1841,7 +2165,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             view.outlineColor = item.style.color.prefersDarkOutline ? CGColor(gray: 0, alpha: 1) : CGColor(gray: 1, alpha: 1)
             view.outlineFontSize = block.fontSize * scale
             view.outlineWrapWidth = block.width
-        case .label:
+        case .label, .bubble:
+            // A bubble is typed in on its plate; its tail shows again once typing ends.
             ink = item.style.color.prefersDarkInk ? NSColor(white: 0, alpha: 0.88) : .white
             view.labelFill = fill.cgColor
             view.labelCornerRadius = layout.cornerRadius
@@ -1856,7 +2181,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         // Selected text keeps its ink; elsewhere than on a label the selection is the system selection
         // color at the strength text selection uses here.
         let dark = effectiveAppearance.isDark
-        let wash = block.look == .label ? Self.labelSelectionWash(on: item.style.color) : NSColor.selectedTextBackgroundColor.withAlphaComponent(dark ? 0.45 : 0.35)
+        let wash = block.look.hasPlate ? Self.labelSelectionWash(on: item.style.color) : NSColor.selectedTextBackgroundColor.withAlphaComponent(dark ? 0.45 : 0.35)
         view.selectedTextAttributes = [.backgroundColor: wash, .foregroundColor: ink]
         view.textContainerInset = layout.inset
         view.textContainer?.lineFragmentPadding = 0
@@ -1892,7 +2217,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let layout = Self.fieldLayout(of: block, scale: scale)
         let view = editing.view
         // A little room after the last character for the caret, outside a label (whose padding has it).
-        let caret = block.width == nil && block.look != .label ? max(block.fontSize * scale * 0.6, 4 / zoom) : 0
+        let caret = block.width == nil && !block.look.hasPlate ? max(block.fontSize * scale * 0.6, 4 / zoom) : 0
         var size = CGSize(width: layout.size.width + caret, height: layout.size.height)
         // Should the field ever break a line where the mark's layout does not, its last line still shows.
         if let container = view.textContainer, let manager = view.layoutManager {
@@ -1964,6 +2289,20 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 session.endLiveChange(actionName: String(localized: "Delete", bundle: .module))
             }
         } else {
+            if let corner = editing.turnedCorner, let index = session.document.index(of: editing.id),
+               case .text(let block) = session.document.items[index].shape {
+                let item = session.document.items[index]
+                let now = Annotation.turn(block.origin, about: item.pivot(scale: session.document.scale), by: item.angle)
+                var document = session.document
+                var moved = item.translated(by: CGSize(width: corner.x - now.x, height: corner.y - now.y))
+                // A bubble's tip stays on what it points at.
+                if case .text(var placed) = moved.shape {
+                    placed.tail = block.tail
+                    moved.shape = .text(placed)
+                }
+                document.items[index] = moved
+                session.updateLive(document)
+            }
             session.fitCanvas(holding: [editing.id])
             session.endLiveChange(actionName: editing.isNew ? String(localized: "Add Text", bundle: .module) : String(localized: "Edit Text", bundle: .module))
             if session.tool == .text { session.putToolDown() }

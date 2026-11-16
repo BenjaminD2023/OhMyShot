@@ -83,8 +83,33 @@ final class OverlayView: NSView {
 
     private(set) var mode: Mode = .area
     private var windows: [WindowTarget] = []
-    private(set) var hoveredWindow: WindowTarget?
+    private(set) var hoveredWindow: WindowTarget? {
+        didSet { if hoveredWindow != oldValue { leaveElements() } }
+    }
     private(set) var selectedWindows: [WindowTarget] = []
+    /// Every display, for turning points between AppKit's space and the one Accessibility uses.
+    var displayLayout = DisplayLayout(displays: [])
+
+    /// Window mode's scroll wheel goes into the hovered window and back out: how far in it is (0, the window itself),
+    /// the parts under the pointer it steps through (smallest first, read once the wheel first turns in), and what is
+    /// left of a trackpad's travel toward the next step.
+    private var elementDepth = 0
+    private var elementChain: [WindowElement] = []
+    private var elementLookup: Task<Void, Never>?
+    private var wheelTravel: CGFloat = 0
+    /// Trackpad travel, in points, for one step in or out.
+    static let wheelStep: CGFloat = 24
+    /// Reads the parts of a window under a point (`ElementChain`), off the main thread; tests put in their own.
+    var readElements: @Sendable (CGPoint, CGRect, pid_t, DisplayLayout) -> [WindowElement] = { point, window, pid, layout in
+        ElementChain.elements(at: point, window: window, pid: pid, layout: layout)
+    }
+    /// Whether Accessibility lets OhMyShot read other apps' windows; tests say.
+    var canReadElements: () -> Bool = { AppText.isAllowed }
+    /// The part of the hovered window the wheel has gone into; nil at the window itself.
+    var pickedElement: WindowElement? {
+        guard elementDepth > 0, elementDepth <= elementChain.count else { return nil }
+        return elementChain[elementChain.count - elementDepth]
+    }
     /// The controller's selection, of which this display draws its part.
     private var selection: SelectionModel
     /// Whether this display shows the selection's size: only one does.
@@ -259,9 +284,11 @@ final class OverlayView: NSView {
         withoutAnimation {
             layoutLoupe()
             applyAppearance()
-            // The panels are reused: the edges in-place annotation hid come back with a new session.
+            // The panels are reused: the edges in-place annotation hid come back with a new session, and a lens
+            // raised over its frame while an edge was dragged goes back under the bar.
             border.isHidden = false
             snapEdges.isHidden = false
+            for layer in [loupeShadow, loupe, loupeRim, loupePill.layer] { layer.zPosition = 0 }
             backdrop.contents = nil
             loupeImage.contents = nil
             updateSelectionLayers()
@@ -316,6 +343,11 @@ final class OverlayView: NSView {
         capturedFrame
     }
 
+    /// Whether the screen shows its frame, held still, rather than the live screen.
+    var isFrozen: Bool {
+        backdrop.contents != nil
+    }
+
     /// The color of the pixel at a point in global space, the one the magnifier centers on.
     func color(at globalPoint: CGPoint) -> ScreenColor? {
         let pixel = pixelCoordinate(at: local(globalPoint))
@@ -346,6 +378,8 @@ final class OverlayView: NSView {
     var debugToolbarFrame: CGRect { toolbar.frame }
     var debugToolbarIsHidden: Bool { toolbar.isHidden }
     func debugMoveToolbar(by delta: CGVector) { moveToolbar(by: delta, pointerInWindow: .zero) }
+    /// What the size reading under the selection says.
+    var debugSizeReading: String { sizePill.text }
 
     var debugLoupeCenterColors: (stroke: CGColor?, outline: CGColor?, outlineVisible: Bool) {
         (loupeCenter.strokeColor, loupeCenterOutline.strokeColor, !loupeCenterOutline.isHidden)
@@ -362,6 +396,11 @@ final class OverlayView: NSView {
     var debugLoupePixelGeometry: (center: CGRect, grid: CGPath?, stroke: CGFloat, outline: CGFloat, gridStroke: CGFloat, gridOutline: CGFloat) {
         (loupeCenter.path?.boundingBoxOfPath ?? .zero, loupeGrid.path, loupeCenter.lineWidth, loupeCenterOutline.lineWidth,
          loupeGrid.lineWidth, loupeGridOutline.lineWidth)
+    }
+
+    /// Whether the lens is raised over what was handed over, as it is while an edge is dragged.
+    var debugLensRaised: Bool {
+        [loupeShadow, loupe, loupeRim, loupePill.layer].allSatisfy { $0.zPosition > 0 }
     }
 
     /// Drags the ruler's box over `rect` (global space) and lets go, for scripted checks.
@@ -419,6 +458,131 @@ final class OverlayView: NSView {
         let here = mode == .window || display.frame.contains(globalPointer)
         withoutAnimation { updatePointer(here ? local(globalPointer) : nil) }
     }
+
+    /// Shows the magnifier on `point` (this view's points) while a corner or edge of a selection that was handed
+    /// over (in-place annotation, a set-up frame) is dragged, so the edge can be placed to the pixel; nil hides it.
+    /// `point` is the pixel just inside the selection where the dragged edges meet, which the lens centers on. Only a
+    /// frozen screen has pixels to enlarge; on a live one the lens stays hidden.
+    func showEdgeLoupe(at point: CGPoint?) {
+        let layers: [CALayer] = [loupeShadow, loupe, loupeRim, loupePill.layer]
+        withoutAnimation {
+            guard let point, isAnnotating, let frame = capturedFrame, backdrop.contents != nil else {
+                for layer in layers {
+                    layer.isHidden = true
+                    layer.zPosition = 0
+                }
+                return
+            }
+            let center = magnifiedLensCenter(for: point)
+            for layer in [loupe, loupeRim, loupeShadow] { layer.position = center }
+            // Always enlarged and opaque: the actual-size picker's see-through lens is for aiming before a press.
+            // The next session's appearance puts back what Settings chose.
+            loupeImage.opacity = 1
+            loupe.backgroundColor = .white
+            loupeShadow.fillColor = .white
+            loupeShadow.shadowOpacity = 0.28
+            let pixel = pixelCoordinate(at: point)
+            loupeImage.contentsRect = Self.contentsRect(around: pixel, in: frame.image, pixelsAcross: loupePixelsAcross)
+            let color = frame.color(atPixel: pixel.x, pixel.y)
+            updateLoupeCenter(for: color)
+            loupePill.swatch = color?.cgColor
+            let value = color.map { $0.string(in: colorFormat) }
+            loupePill.text = value.map { "\(pixel.x), \(pixel.y)   \($0)" } ?? "\(pixel.x), \(pixel.y)"
+            let pillSize = loupePill.layer.bounds.size
+            loupePill.layer.frame.origin = CGPoint(x: center.x - pillSize.width / 2, y: center.y - loupeDiameter / 2 - pillSize.height - 8)
+            // Above the frame and the dimming that what was handed over draws over the screen, as its views lie
+            // over this view's own layers.
+            for layer in layers {
+                layer.isHidden = false
+                layer.zPosition = 1
+            }
+        }
+    }
+
+    /// Where the magnified lens goes for a target at `point`: below and to the right of it, on the other side where
+    /// the display's edge would cut it off.
+    private func magnifiedLensCenter(for point: CGPoint) -> CGPoint {
+        let diameter = loupeDiameter
+        let offset = Theme.Loupe.offset
+        var center = CGPoint(x: point.x + offset + diameter / 2, y: point.y - offset - diameter / 2)
+        if center.x + diameter / 2 > bounds.maxX - 6 { center.x = point.x - offset - diameter / 2 }
+        if center.y - diameter / 2 - 32 < bounds.minY + 6 { center.y = point.y + offset + diameter / 2 }
+        return center
+    }
+
+    // MARK: Parts of a window
+
+    /// In window mode, the wheel turned toward you goes into the part of the hovered window under the pointer, one
+    /// level at a time (a panel, then the list in it, then a button), and turned away comes back out to the window. A
+    /// click then takes that part as an area. The parts are read through Accessibility on the first turn in, for the
+    /// window and point at hand; with the permission off the reading says how to give it.
+    override func scrollWheel(with event: NSEvent) {
+        guard mode == .window, !isAnnotating, purpose.takesPicture, selectedWindows.isEmpty, let window = hoveredWindow, let pid = window.pid else {
+            return super.scrollWheel(with: event)
+        }
+        // Up (away from you, as the device moves) is out; a flick's momentum steps nothing.
+        let travel = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
+        var steps = 0
+        if event.hasPreciseScrollingDeltas {
+            guard event.momentumPhase == [] else { return }
+            wheelTravel += travel
+            steps = Int((wheelTravel / Self.wheelStep).rounded(.towardZero))
+            wheelTravel -= CGFloat(steps) * Self.wheelStep
+        } else if travel != 0 {
+            steps = travel > 0 ? 1 : -1
+        }
+        let inward = -steps
+        guard inward != 0 else { return }
+        guard canReadElements() else {
+            showsElementHint = true
+            withoutAnimation { updateSelectionLayers() }
+            return
+        }
+        if inward > 0, elementChain.isEmpty {
+            lookUpElements(in: window, pid: pid, going: inward)
+            return
+        }
+        stepElements(by: inward)
+    }
+
+    /// Reads the parts of `window` under the pointer off the main thread, then goes `going` steps in.
+    private func lookUpElements(in window: WindowTarget, pid: pid_t, going inward: Int) {
+        guard elementLookup == nil, let pointer else { return }
+        let point = global(pointer)
+        let layout = displayLayout
+        let read = readElements
+        elementLookup = Task { [weak self] in
+            let chain = await Task.detached(priority: .userInitiated) {
+                read(point, window.frame, pid, layout)
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            elementLookup = nil
+            guard hoveredWindow == window else { return }
+            elementChain = chain
+            stepElements(by: inward)
+        }
+    }
+
+    private func stepElements(by steps: Int) {
+        let depth = min(max(elementDepth + steps, 0), elementChain.count)
+        guard depth != elementDepth else { return }
+        elementDepth = depth
+        withoutAnimation { updateSelectionLayers() }
+        announceValue()
+    }
+
+    /// Back to the window itself, the parts read for another window or point forgotten.
+    private func leaveElements() {
+        elementLookup?.cancel()
+        elementLookup = nil
+        elementChain = []
+        elementDepth = 0
+        wheelTravel = 0
+        showsElementHint = false
+    }
+
+    /// The reading says how to let the wheel go into windows: the Accessibility permission is off.
+    private var showsElementHint = false
 
     /// Draws the controller's selection: the part of it on this display, the size reading if this
     /// display has it. The All-In-One bar steps out of the way while a region is being dragged.
@@ -647,6 +811,11 @@ final class OverlayView: NSView {
                 } else {
                     delegate?.overlayView(self, didSelectWindows: targets, modifiers: event.modifierFlags)
                 }
+                return
+            }
+            // A part of the window the wheel went into is taken as an area.
+            if let element = pickedElement {
+                delegate?.overlayView(self, didSelect: element.frame, modifiers: event.modifierFlags)
                 return
             }
             if let hoveredWindow { delegate?.overlayView(self, didSelectWindow: hoveredWindow, modifiers: event.modifierFlags) }
@@ -1025,7 +1194,8 @@ final class OverlayView: NSView {
             activeWindows.append(hoveredWindow)
         }
         let windowBounds = activeWindows.dropFirst().reduce(activeWindows.first?.frame) { $0?.union($1.frame) }
-        let target = mode == .window ? windowBounds?.intersection(display.frame) : selection.rect
+        let element = mode == .window ? pickedElement : nil
+        let target = mode == .window ? (element?.frame ?? windowBounds)?.intersection(display.frame) : selection.rect
         guard let globalRect = target, !globalRect.isNull, !globalRect.isEmpty else {
             room.path = roomPath
             outline.path = nil
@@ -1046,7 +1216,13 @@ final class OverlayView: NSView {
         snapEdges.path = mode == .area ? Self.path(of: selection.snappedEdges, in: drawn) : nil
 
         let text: String
-        if mode == .window, let windowBounds {
+        if mode == .window, let element {
+            let scale = display.pixelsPerPoint
+            let size = "\(Int((element.frame.width * scale).rounded())) × \(Int((element.frame.height * scale).rounded()))"
+            text = element.name.map { "\($0)  ·  \(size)" } ?? size
+        } else if mode == .window, showsElementHint {
+            text = String(localized: "Allow OhMyShot in Privacy & Security › Accessibility to pick parts of windows", bundle: .module)
+        } else if mode == .window, let windowBounds {
             let scale = display.pixelsPerPoint
             let width = Int((windowBounds.width * scale).rounded())
             let height = Int((windowBounds.height * scale).rounded())
@@ -1128,6 +1304,15 @@ final class OverlayView: NSView {
             if hovered != hoveredWindow {
                 hoveredWindow = hovered
                 updateSelectionLayers()
+            } else if let point, !elementChain.isEmpty {
+                // Out of the part the wheel went into (or, at the window, out of the smallest part read), the parts
+                // read are for somewhere else: back to the window, read again on the next turn in.
+                let here = global(point)
+                let held = pickedElement?.frame ?? elementChain[0].frame
+                if !held.contains(here) {
+                    leaveElements()
+                    updateSelectionLayers()
+                }
             }
             pointerLayers.forEach { $0.isHidden = true }
             return
@@ -1161,12 +1346,7 @@ final class OverlayView: NSView {
         // away to keep it on screen would make its center cell point at the wrong location.
         let diameter = loupeDiameter
         let offset = Theme.Loupe.offset
-        var center = point
-        if !usesCenteredPicker {
-            center = CGPoint(x: point.x + offset + diameter / 2, y: point.y - offset - diameter / 2)
-            if center.x + diameter / 2 > bounds.maxX - 6 { center.x = point.x - offset - diameter / 2 }
-            if center.y - diameter / 2 - 32 < bounds.minY + 6 { center.y = point.y + offset + diameter / 2 }
-        }
+        let center = usesCenteredPicker ? point : magnifiedLensCenter(for: point)
         for layer in [loupe, loupeRim, loupeShadow] { layer.position = center }
 
         let pixel = pixelCoordinate(at: point)
