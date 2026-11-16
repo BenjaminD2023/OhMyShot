@@ -1,5 +1,19 @@
 # Release notes
 
+## [0.9.0]
+
+### Nouveautés
+
+- Dessinez sur l’écran avec un pointeur laser qui s’efface, le passage des clics, Annuler et Effacer.
+- Détectez les codes QR et codes-barres dans les sélections figées et Quick Access, puis copiez leur contenu ou ouvrez leur page web.
+- Ajoutez des filigranes, des bulles et des compteurs avec pointeur. Redimensionnez plusieurs annotations ensemble et faites-les pivoter.
+- Combinez les captures de l’historique en collage ou exportez-les dans un PDF de plusieurs pages.
+
+### Améliorations
+
+- Amélioration de la disposition des traductions, des listes, de la sélection des parties de fenêtres et du réglage des bords.
+- Correction du remplacement de la fenêtre de collage. Les fonctions du fork et les préférences enregistrées sont conservées.
+
 ## [0.8.0]
 
 ### Nouveautés

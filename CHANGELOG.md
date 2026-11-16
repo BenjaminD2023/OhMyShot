@@ -8,6 +8,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-16
+
+Fork release: `v0.9.0-fork.11`, build 12.
+
 ### Added
 
 - While an edge or corner of a selection is dragged on a frozen screen (marking up in place, All-In-One, or a typed size), the magnifier shows the pixel just inside it, so the edge can be placed to the pixel.

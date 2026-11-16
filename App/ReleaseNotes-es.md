@@ -1,5 +1,19 @@
 # Release notes
 
+## [0.9.0]
+
+### Novedades
+
+- Dibuja en la pantalla con un puntero láser que se desvanece, paso de clics, Deshacer y Borrar.
+- Detecta códigos QR y de barras en selecciones congeladas y Quick Access; copia su contenido o abre su página web.
+- Añade marcas de agua, bocadillos y contadores con puntero. Cambia el tamaño de varias anotaciones juntas y gíralas.
+- Combina capturas del historial en un collage o expórtalas a un PDF de varias páginas.
+
+### Mejoras
+
+- Mejora la distribución de traducciones, las listas, la selección de partes de ventanas y el ajuste de bordes.
+- Corrige la sustitución de la ventana de collage. Se conservan las funciones del fork y las preferencias guardadas.
+
 ## [0.8.0]
 
 ### Novedades
