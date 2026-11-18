@@ -349,6 +349,9 @@ final class SketchPanel: NSPanel {
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
+        // Said outright: a clear window left to the default hands a click on its clear pixels to the app underneath, so
+        // nothing reached the canvas until Click Through had been turned on and off again.
+        ignoresMouseEvents = false
         acceptsMouseMovedEvents = true
         animationBehavior = .none
         setAccessibilityLabel(String(localized: "Drawing Canvas", bundle: .module))

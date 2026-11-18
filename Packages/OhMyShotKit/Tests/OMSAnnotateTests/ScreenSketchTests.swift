@@ -48,6 +48,23 @@ struct ScreenSketchTests {
         #expect(controller.tool == .arrow)
     }
 
+    /// A canvas is clear all over, yet a click anywhere on it is its own, not the app's underneath: the window server
+    /// would hand clicks on clear pixels through unless the panel says it takes them. A small canvas, for a moment.
+    @Test func aClickOnTheClearCanvasIsTheCanvasesOwn() async throws {
+        _ = NSApplication.shared
+        let screen = try #require(NSScreen.screens.first)
+        let frame = CGRect(x: screen.frame.minX + 120, y: screen.frame.minY + 120, width: 60, height: 60)
+        let panel = SketchPanel(frame: frame)
+        panel.contentView = SketchView(frame: CGRect(origin: .zero, size: frame.size), controller: makeController())
+        panel.orderFrontRegardless()
+        defer {
+            panel.orderOut(nil)
+            panel.close()
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(NSWindow.windowNumber(at: CGPoint(x: frame.midX, y: frame.midY), belowWindowWithWindowNumber: 0) == panel.windowNumber)
+    }
+
     /// The pen, arrow, box, oval, and counter show the editor's own symbols and names; the laser has its own.
     @Test func theToolsAreTheEditorsOwn() {
         #expect(ScreenSketchController.Tool.pen.symbol == AnnotationTool.pen.symbol)
