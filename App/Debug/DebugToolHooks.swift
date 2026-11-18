@@ -17,11 +17,27 @@ import OSLog
 import ScreenCaptureKit
 import UniformTypeIdentifiers
 
-/// Endpoints for pins, Measure, and Pick Color.
+/// Endpoints for pins, Measure, Pick Color, and Draw on Screen.
 extension DebugHooks {
     /// Returns true when `hook` was one of these.
     func handleToolHook(_ hook: String, _ url: URL) -> Bool {
         switch hook {
+        case "sketch-bar-render":
+            // Draw on Screen's toolbar alone behind the desktop picture, captured without showing anything:
+            // mode=light|dark, tool=laser|pen|arrow|rectangle|ellipse|counter, color=0-4 for the ink chosen,
+            // through=1 for Click Through on, undo=1 for Undo lit. Writes
+            // sketch-bar-<mode>-<tool>[-through][-undo].png.
+            let dark = Self.parameter("mode", in: url) == "dark"
+            let tool = Self.parameter("tool", in: url).flatMap(ScreenSketchController.Tool.init(rawValue:)) ?? .laser
+            let through = Self.intParameter("through", in: url) == 1
+            let undo = Self.intParameter("undo", in: url) == 1
+            let window = ScreenSketchController.debugToolbarWindow(
+                dark: dark, tool: tool, colorIndex: Self.intParameter("color", in: url) ?? 0, clicksThrough: through, canUndo: undo
+            )
+            Task {
+                await captureHiddenWindow(window, name: "sketch-bar-\(dark ? "dark" : "light")-\(tool.rawValue)\(through ? "-through" : "")\(undo ? "-undo" : "")")
+                window.orderOut(nil)
+            }
         case "pin-demo":
             // Pins the drawn page, never anything from the screen or the clipboard: centered on the pointer's
             // display, or with x, y over that point in display points from its top-left corner, at 1:1.

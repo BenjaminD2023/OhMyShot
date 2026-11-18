@@ -8,6 +8,15 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Draw on Screen now supports Redo (Shift-Command-Z) and updates its canvases when displays are connected or rearranged. Its toolbar uses glass chips with tool names and keyboard hints.
+
+### Fixed
+
+- Draw on Screen handles keypad tool shortcuts and Forward Delete, redraws laser trails efficiently, and receives clicks on its transparent canvas.
+- Quick Access confirms a successful copy before dismissing its card.
+
 ## [0.9.0] - 2026-11-16
 
 Fork release: `v0.9.0-fork.11`, build 12.

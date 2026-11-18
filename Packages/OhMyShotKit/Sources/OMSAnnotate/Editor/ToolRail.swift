@@ -262,6 +262,9 @@ final class ToolRail: NSView {
 final class RailChip: HoverTagButton {
     var onHover: ((Bool) -> Void)?
     private(set) var isHovered = false
+    /// Whether the chip answers the pointer in a window that is not key, its hover and its first click, for a toolbar
+    /// that never takes the keyboard.
+    var answersInInactiveWindow = false
 
     /// No padding around the frame, as a button otherwise keeps for its bezel: the layer's fill covers
     /// the frame, and it must be the square the constraints give, for a round chip.
@@ -275,7 +278,12 @@ final class RailChip: HoverTagButton {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self))
+        let active: NSTrackingArea.Options = answersInInactiveWindow ? .activeAlways : .activeInKeyWindow
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, active, .inVisibleRect], owner: self))
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        answersInInactiveWindow || super.acceptsFirstMouse(for: event)
     }
 
     override func mouseEntered(with event: NSEvent) {
