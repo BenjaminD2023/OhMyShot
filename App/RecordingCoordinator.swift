@@ -479,8 +479,6 @@ final class RecordingCoordinator {
         camera.show(camera: plan.choices.cameraID, style: plan.choices.cameraStyle, in: Self.area(of: plan))
     }
 
-    /// Whether clicks are drawn as rings: shown, rings chosen in Settings, and not of a window, which is
-    /// recorded alone and so keeps the system's circles.
     /// Takes the windows put on screen since the recording began (Draw on Screen's canvases) into it, as the ones there
     /// when it began were: the stream is given the filter it would be given now. A window recorded on its own, or a
     /// Studio recording, which films the screen without what is shown over it, is left as it is.
@@ -497,6 +495,8 @@ final class RecordingCoordinator {
         }
     }
 
+    /// Whether clicks are drawn as rings: shown, rings chosen in Settings, and not of a window, which is
+    /// recorded alone and so keeps the system's circles.
     private func drawsClickRings(_ plan: Plan) -> Bool {
         guard plan.choices.showsClicks, settings.recordingClickStyle == .ring, plan.choices.output != .studio else { return false }
         if case .window = plan.target { return false }

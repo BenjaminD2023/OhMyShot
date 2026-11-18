@@ -839,7 +839,8 @@ final class StyleCapsule: NSView {
     private static let inkChip: CGFloat = 24
     private static let inkInset: CGFloat = 4
 
-    private static func dot(_ color: RGBA, selected: Bool) -> NSImage {
+    /// An ink's dot, ringed when it is the chosen one: Draw on Screen's toolbar shows its inks the same way.
+    static func dot(_ color: RGBA, selected: Bool) -> NSImage {
         let image = NSImage(size: CGSize(width: inkChip, height: inkChip), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             let disc = rect.insetBy(dx: inkInset, dy: inkInset)
