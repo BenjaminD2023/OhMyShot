@@ -161,6 +161,15 @@ Release builds check for updates with [Sparkle](https://sparkle-project.org) abo
 Updates), using signed appcasts attached to this repository's GitHub releases; Debug builds never check. How releases
 are made, signed, and notarized is in [Docs/release.md](Docs/release.md).
 
+### Optional usage data
+
+Settings › General › Usage Data is off by default. If enabled, OhMyShot sends the UTC date,
+a random ID that changes each UTC day, the app version, macOS major version, and daily counts
+of successful screenshots, recordings, and text recognitions to `www.ohmyshot.org`. Reports
+exclude captures, recognized text, file and window names, and persistent device identifiers.
+When the app runs, it retries unsent counts from the last seven UTC days and drops older reports. Turning the setting off stops sending
+and clears the local report file. Debug builds leave the reporting service inactive.
+
 ## Documentation
 
 | Document | What it covers |

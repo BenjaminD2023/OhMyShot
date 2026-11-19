@@ -17,6 +17,7 @@ final class CompositionRoot {
     // Read legacy installation markers before start() installs this launch's default shortcuts.
     private let onboardingProgress = OnboardingProgress()
     let settings = SettingsStore()
+    private let usageTelemetry = UsageTelemetry.production()
     let permissions = PermissionCenter()
     let displays = DisplayTopology()
     let history = HistoryStore.standard()
@@ -40,6 +41,7 @@ final class CompositionRoot {
     }()
     lazy var textCapture: TextCaptureCoordinator = {
         let coordinator = TextCaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay)
+        coordinator.onTextRecognized = { [weak self] in self?.usageTelemetry?.record(.textRecognition) }
         coordinator.cardsInTheWay = { [weak self] in self?.quickAccess.cardsFrame }
         coordinator.readers = { [weak self] in self?.readerPacks.installed }
         coordinator.cloud = { [weak self] in self?.panelCloud() }
@@ -183,6 +185,10 @@ final class CompositionRoot {
     }
 
     func start() {
+        settings.onUsageDataChange = { [weak usageTelemetry] enabled in
+            usageTelemetry?.setEnabled(enabled)
+        }
+        usageTelemetry?.setEnabled(settings.sendsUsageData)
         // As Finder draws it, at the largest size anything of the app shows it (About, alerts): AppKit keeps a
         // snapshot of it at this size.
         let icon = AppActivation.appIcon
@@ -281,7 +287,11 @@ final class CompositionRoot {
             self?.didCapture(item)
         }
         // Card or not, a screenshot or a recording kept counts toward the invitation to the Discord.
-        captures.onKept = { [weak self] _ in self?.communityInvite.captureKept() }
+        captures.onKept = { [weak self] _ in
+            self?.usageTelemetry?.record(.screenshot)
+            self?.communityInvite.captureKept()
+        }
+        recordings.onRecordingCompleted = { [weak self] in self?.usageTelemetry?.record(.recording) }
         recordings.onKept = { [weak self] _ in self?.communityInvite.captureKept() }
         recordings.copiedToClipboard = { [weak self] id in self?.retention.recordingCopied(id) }
         // A recording copied from its card, History, or its window goes to the clipboard as a reference to its file too.
@@ -410,6 +420,7 @@ final class CompositionRoot {
 
     /// Keeps edits still open in the editor before the app quits.
     func prepareForTermination() {
+        usageTelemetry?.stop()
         onboardingWindow?.preserveProgress()
         quickAccess.dismissFirstCaptureHint()
         annotations.keepAll()

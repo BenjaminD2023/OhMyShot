@@ -54,6 +54,7 @@ final class RecordingCoordinator {
     var onRecorded: ((QuickAccessItem) -> Void)?
     /// Every recording kept in the history, a Studio recording too, which has no card yet.
     var onKept: ((HistoryItem) -> Void)?
+    var onRecordingCompleted: (() -> Void)?
     /// A recording was kept and Settings says to upload it.
     var uploadKept: ((HistoryItem) -> Void)?
     /// A recording's file was just put on the clipboard, which refers to the file in the history and holds nothing else.
@@ -648,6 +649,7 @@ final class RecordingCoordinator {
                 saveStudioProject(telemetry, project: project, camera: draft.cameraURL, for: entry)
                 drafts.remove(draft)
                 studioDisplays[entry.id] = displayID
+                if plan != nil { onRecordingCompleted?() }
                 onKept?(entry)
                 probe.end()
                 VoiceOver.announce(String(localized: "Recording stopped. Opening Studio."))
@@ -656,7 +658,7 @@ final class RecordingCoordinator {
             }
             let entry = try await deliver(
                 file, startedAt: draft.info?.startedAt ?? .now, appName: draft.info?.appName ?? plan?.appName,
-                pixelsPerPoint: draft.info?.pixelsPerPoint, displayID: displayID
+                pixelsPerPoint: draft.info?.pixelsPerPoint, displayID: displayID, countsAsRecording: plan != nil
             )
             drafts.remove(draft)
             probe.end()
@@ -700,7 +702,7 @@ final class RecordingCoordinator {
         try await deliver(
             KeptFile(url: movie.url, pixelWidth: movie.pixelWidth, pixelHeight: movie.pixelHeight, duration: movie.duration, byteCount: movie.byteCount),
             startedAt: savedAt.addingTimeInterval(-movie.duration), appName: NSWorkspace.shared.frontmostApplication?.localizedName,
-            pixelsPerPoint: pixelsPerPoint, displayID: displayID
+            pixelsPerPoint: pixelsPerPoint, displayID: displayID, countsAsRecording: true
         )
     }
 
@@ -713,13 +715,15 @@ final class RecordingCoordinator {
     /// Moves a made file into the history and hands it on as a capture is: copied, saved when Settings
     /// says so, and given a card.
     private func deliver(
-        _ file: KeptFile, startedAt: Date, appName: String?, pixelsPerPoint: Double?, displayID: CGDirectDisplayID
+        _ file: KeptFile, startedAt: Date, appName: String?, pixelsPerPoint: Double?, displayID: CGDirectDisplayID,
+        countsAsRecording: Bool = false
     ) async throws -> HistoryItem {
         let name = fileName(startedAt: startedAt, appName: appName)
         let entry = try history.add(
             movingFileAt: file.url, name: name, kind: .recording, pixelWidth: file.pixelWidth, pixelHeight: file.pixelHeight,
             appName: appName, duration: file.duration, pixelsPerPoint: pixelsPerPoint
         )
+        if countsAsRecording { onRecordingCompleted?() }
         await present(entry, displayID: displayID)
         onKept?(entry)
         return entry

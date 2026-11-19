@@ -46,6 +46,9 @@ extension SettingsTab {
                 SettingsSearchRow(String(localized: "Keep captures", bundle: .module), terms: [
                     String(localized: "Open Capture History", bundle: .module),
                 ]),
+                SettingsSearchRow(String(localized: "Usage Data", bundle: .module), terms: [
+                    String(localized: "Send optional usage data", bundle: .module),
+                ]),
                 SettingsSearchRow(String(localized: "Reset", bundle: .module), terms: [
                     String(localized: "Reset to Default Settings…", bundle: .module),
                 ]),

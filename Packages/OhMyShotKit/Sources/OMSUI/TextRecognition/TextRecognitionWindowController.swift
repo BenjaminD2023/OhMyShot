@@ -77,6 +77,11 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
 
     public var onClose: (() -> Void)?
 
+    public var onTextRecognized: (() -> Void)? {
+        get { model.onTextRecognized }
+        set { model.onTextRecognized = newValue }
+    }
+
     private let model: TextRecognitionModel
     private var windowLease: ActiveResources.Lease?
 

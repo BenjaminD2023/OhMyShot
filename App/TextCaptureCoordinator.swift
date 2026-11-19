@@ -124,6 +124,8 @@ final class TextCaptureCoordinator {
         Log.capture.notice("Escape stopped the reading behind the highlight")
     }
 
+    var onTextRecognized: (() -> Void)?
+
     /// Where Quick Access's cards stand, for the result card to keep clear of in the bottom-left corner.
     var cardsInTheWay: () -> CGRect? {
         get { hud.cardsInTheWay }
@@ -298,7 +300,9 @@ final class TextCaptureCoordinator {
         do {
             let lines = try await pipeline.recognize(image).lines
             let text = TextAssembler.assemble(lines, options: .init(joinsWrappedLines: joinLines))
-            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            if !Task.isCancelled { onTextRecognized?() }
+            return text
         } catch {
             Log.capture.error("Recognizing a shortcut's picture failed: \(String(describing: error), privacy: .public)")
             return nil
@@ -377,6 +381,7 @@ final class TextCaptureCoordinator {
             case .success(let cloudText)?:
                 let text = cloudText.text
                 if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    onTextRecognized?()
                     formulas?.cancel()
                     probe.end()
                     last = nil
@@ -451,6 +456,7 @@ final class TextCaptureCoordinator {
             done?(nil)
             return
         }
+        onTextRecognized?()
         // After a wait for the cloud model, something copied meanwhile stays on the clipboard.
         if cloud != nil, copiesToClipboard, NSPasteboard.general.changeCount != clipboard {
             last = nil
@@ -683,6 +689,7 @@ final class TextCaptureCoordinator {
             done?(nil)
             return
         }
+        onTextRecognized?()
         if copiesToClipboard { copy(formula.latex) }
         highlight.finish(copied: formula.latex, announces: !showsCard, formula: true)
         Log.capture.notice("Capture Formula \(copiesToClipboard ? "copied" : "read", privacy: .public) \(formula.latex.count, privacy: .public) characters of LaTeX in \(String(describing: ContinuousClock.now - started), privacy: .public)")
@@ -792,6 +799,7 @@ final class TextCaptureCoordinator {
                 return
             }
             probe.end()
+            onTextRecognized?()
             let (text, translated) = Translator.text(of: units, outcome)
             let sources = ListFormatter.localizedString(byJoining: outcome.sources.map { Translator.name(of: $0) })
             lens.show(
@@ -919,6 +927,7 @@ final class TextCaptureCoordinator {
 
     private func makePanel() -> TextRecognitionWindowController {
         let controller = TextRecognitionWindowController(settings: settings, translator: translator, cloud: cloud?())
+        controller.onTextRecognized = { [weak self] in self?.onTextRecognized?() }
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
             self?.panel = nil
             // Nothing translates until the next panel: the system's models need not stay loaded.
