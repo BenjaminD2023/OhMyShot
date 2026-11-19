@@ -42,16 +42,17 @@ actual ZIP again; the CI publish job repeats the ZIP check immediately before cr
 or legacy GitHub updater stops publication. `python3 -B -m unittest discover -s Scripts/tests -p 'test_release_updater.py'`
 exercises valid packages, the legacy feed, missing/weakened signature settings and mismatched artifacts.
 
-The website's `/download` and both installation guides must use the website archive route, including when release
-lookup fails. A GitHub redirect is a failure, even if it works on the maintainer's connection. The published 0.1.0
+The website's `/download` and both installation guides must use the website's own download route, including when
+release lookup fails. A GitHub redirect is a failure, even if it works on the maintainer's connection. The published 0.1.0
 archive still has a GitHub `SUFeedURL`; changing the website cannot change that installed binary. Publish a higher
 version/build containing the website updater before mainland promotion. Users of 0.1.0 who cannot reach GitHub need
 one manual download from the website to migrate; do not overwrite the signed 0.1.0 asset in place.
 
 Run `python3 Scripts/check-distribution.py` on a mainland Mac with VPN/TUN disabled. It checks both home pages,
-refuses external download redirects, downloads the complete browser and updater archives, compares them, checks
-range responses, verifies the signed feed and archive against `Config/Info.plist`'s public key, and inspects the
-updater settings inside the actual downloaded app. It needs Xcode's Swift compiler and Python 3, no private key or
+refuses external download redirects, downloads the website's disk image and the complete updater archive, checks
+range responses, verifies the signed feed and archive against `Config/Info.plist`'s public key, checks that the
+image is notarized and stapled and holds the archive's very app, and inspects the updater settings inside both
+downloaded apps. It needs Xcode's Swift compiler and Python 3, no private key or
 Keychain access. Results and files go to `build/distribution-check/` (or `--output <directory>`). A legacy app or
 external redirect makes it exit nonzero. HTTP proxies are bypassed; a system VPN/TUN must be disabled separately.
 
@@ -75,10 +76,13 @@ all three expectations. Success requires:
 
 - The website's signed latest feed names the expected version and build (a different newer release also fails).
 - The feed and its complete archive pass Ed25519 verification against the repository's public key.
-- `/download` and the website's Sparkle archive route return complete, byte-identical ZIPs whose SHA-256 matches the
-  original signed build artifact. Every redirect stays on the HTTPS website hosts.
-- Both downloaded ZIPs pass the shared release-updater policy, including identity, version/build, feed, public key,
-  signature enforcement, and disabled unsigned-feed recovery. Byte-range responses also match the verified archive.
+- The website's Sparkle archive route returns the complete ZIP whose SHA-256 matches the original signed build
+  artifact. `/download` returns that version's `OhMyShot-<version>.dmg`, stapled and accepted by Gatekeeper as
+  notarized, whose app has the same main executable (and so the same code signature) as the ZIP's. Every redirect
+  stays on the HTTPS website hosts.
+- The apps in the ZIP and the disk image pass the shared release-updater policy, including identity, version/build,
+  feed, public key, signature enforcement, and disabled unsigned-feed recovery. Byte-range responses also match the
+  verified archive.
 
 The workflow retries up to three times, 20 seconds apart, for publication/cache propagation, preserving each
 attempt's JSON report, log, and signed feed as a run artifact. A verification failure happens **after** publication;
@@ -232,8 +236,9 @@ run's or `build/Build/Products/Release/OhMyShot.app`. The image opens as a windo
 folder (DESIGN.md, Installer Disk Image). Since 0.2.0, `Scripts/release.sh` makes it of the app it has just stapled,
 into `build/release/<version>/` beside the app rather than in `archives/` (where `generate_appcast` would take it for
 a second update of the version), and notarizes and staples it; the release workflow publishes it with the zip. The
-feed, the website's `/download`, and `Scripts/check-distribution.py` still carry the zip, which Sparkle updates from
-and which stays whatever becomes of the image.
+feed carries the zip, which Sparkle updates from and which stays whatever becomes of the image. The website's
+`/download` and its download buttons serve the image, and `Scripts/check-distribution.py` checks that it is the
+release's, notarized, and holds the zip's app.
 
 - `Tools/dmg/installer.swift` draws the window's picture (`.background/background.tiff`, at 1× and 2× in one file) and
   writes the `.DS_Store` that lays the window out, from the same numbers. Finder is never scripted, so the script needs
@@ -282,7 +287,7 @@ It runs four jobs, each after the one before:
 | Preflight | Linux, seconds | `Scripts/release.sh --check` (nothing uncommitted, the tag, the section in CHANGELOG.md, the feed's build number, and gh when publishing), and that the secrets are set |
 | Build, sign, and notarize | a Mac (The runner, below) | `Scripts/release.sh`, from CI's compilation cache, keeping `build/release/<version>/` as the run's artifact |
 | Publish | Linux | `gh release create` with the artifact's zip, disk image, appcast, and notes, then checks that the feed lists the build and serves that very zip |
-| Verify public distribution | macOS, public key only | Reusable `verify-release.yml`: pins both website downloads and the signed feed to the version, build, and original ZIP hash; retains reports and can be rerun independently |
+| Verify public distribution | macOS, public key only | Reusable `verify-release.yml`: pins the website's disk image, its Sparkle archive, and the signed feed to the version, build, and original ZIP hash; retains reports and can be rerun independently |
 
 So a release that can't be made stops before a Mac is involved: the two runs that failed on 2026-11-04 (the secrets not
 yet set, then a tag on another commit) each took a minute on the Mac, and would stop in Preflight now. Only Publish can

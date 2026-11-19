@@ -63,6 +63,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: result), encoding:
 ''')
         cls.signer = folder / 'sign'
         cls.verifier = folder / 'verify'
+        cls.images = {}
         for source, target in [(source, cls.signer), (ROOT / 'Scripts/verify-ed25519.swift', cls.verifier)]:
             subprocess.run(['xcrun', 'swiftc', str(source), '-o', str(target)], check=True, capture_output=True)
 
@@ -74,12 +75,15 @@ print(String(data: try JSONSerialization.data(withJSONObject: result), encoding:
         self.output = self.root / 'output'
         self.info = plistlib.loads((ROOT / 'Config/Info.plist').read_bytes())
         self.info.update(CFBundleIdentifier='io.github.fzlzjerry.ohmyshot',
-                         CFBundleShortVersionString='0.2.0', CFBundleVersion='2',
+                         CFBundleShortVersionString='0.2.0', CFBundleVersion='2', CFBundleExecutable='OhMyShot',
                          SUFeedURL=checker.release_updater.WEBSITE_FEED,
                          SUPublicEDKey=self.sign(b'')['key'])
         (self.root / 'Config/Info.plist').write_bytes(plistlib.dumps(self.info))
+        self.executable = b'signed executable'
         self.archive = self.make_zip()
-        self.browser = self.archive
+        self.browser = self.make_image()
+        self.download_path = '/updates/download/v0.2.0/OhMyShot-0.2.0.dmg'
+        self.notarized = True
         self.feed = self.make_feed()
         self.expected_hash = hashlib.sha256(self.archive).hexdigest()
         self.download_status = 200
@@ -95,8 +99,23 @@ print(String(data: try JSONSerialization.data(withJSONObject: result), encoding:
         data = io.BytesIO()
         with zipfile.ZipFile(data, 'w') as archive:
             archive.writestr('OhMyShot.app/Contents/Info.plist', plistlib.dumps(self.info))
+            archive.writestr('OhMyShot.app/Contents/MacOS/OhMyShot', self.executable)
             archive.writestr('fixture-padding', b'x' * 2048)
         return data.getvalue()
+
+    def make_image(self):
+        key = plistlib.dumps(self.info) + self.executable
+        if key not in self.images:
+            folder = Path(tempfile.mkdtemp(dir=self.root))
+            contents = folder / 'OhMyShot.app/Contents'
+            (contents / 'MacOS').mkdir(parents=True)
+            (contents / 'Info.plist').write_bytes(plistlib.dumps(self.info))
+            (contents / 'MacOS/OhMyShot').write_bytes(self.executable)
+            image = folder.with_suffix('.dmg')
+            subprocess.run(['hdiutil', 'create', '-quiet', '-fs', 'HFS+', '-format', 'UDZO', '-volname', 'OhMyShot',
+                            '-srcfolder', str(folder), str(image)], check=True)
+            self.images[key] = image.read_bytes()
+        return self.images[key]
 
     def make_feed(self, version='0.2.0', build='2', length=None, archive_signature=None):
         archive_signature = archive_signature or self.sign(self.archive)['signature']
@@ -117,11 +136,12 @@ length="{len(self.archive) if length is None else length}" sparkle:edSignature="
         path = checker.urlsplit(url).path
         headers, status = {}, 200
         if path in ['/', '/zh/']:
-            data = b'<a href="/download">Download</a>'
+            data = f'<a href="{path.rstrip("/")}/download/?start=1">Download</a>'.encode()
         elif path == '/cdn-cgi/trace':
             data = b'loc=US\ncolo=SJC\nwarp=off\n'
         elif path == '/download':
             data, status = self.browser, self.download_status
+            url = f'https://www.ohmyshot.org{self.download_path}' # Where the website's redirect ends.
         elif path == '/updates/appcast':
             data = self.feed
         elif path == '/updates/download/v0.2.0/OhMyShot-0.2.0.zip':
@@ -149,7 +169,12 @@ length="{len(self.archive) if length is None else length}" sparkle:edSignature="
                 shutil.copyfile(self.verifier, command[-1])
                 Path(command[-1]).chmod(0o755)
                 return subprocess.CompletedProcess(command, 0)
-            return run(command, **kwargs, capture_output=True)
+            if command[:2] == ['xcrun', 'stapler'] or command[0] == 'spctl':
+                # Fixture images are unsigned; notarization stands in for Apple's answer.
+                if not self.notarized:
+                    raise subprocess.CalledProcessError(65, command)
+                return subprocess.CompletedProcess(command, 0, '', 'accepted\nsource=Notarized Developer ID')
+            return run(command, **{**kwargs, 'capture_output': True})
 
         with patch.object(checker, 'ROOT', self.root), patch.object(checker.release_updater, 'ROOT', self.root), \
              patch.object(checker.urllib.request, 'build_opener') as factory, \
@@ -182,9 +207,25 @@ length="{len(self.archive) if length is None else length}" sparkle:edSignature="
                 self.feed = self.make_feed(version=version, build=build)
                 self.assert_failure('Expected latest')
 
-    def test_rejects_browser_and_update_archive_mismatch(self):
-        self.browser += b'different bytes'
-        self.assert_failure('Website download and signed update archive differ')
+    def test_rejects_disk_image_holding_another_app(self):
+        self.executable = b'another executable'
+        self.browser = self.make_image()
+        self.assert_failure('Website disk image and signed update archive hold different apps')
+
+    def test_rejects_disk_image_without_notarization(self):
+        self.notarized = False
+        self.assert_failure('stapler')
+
+    def test_rejects_stale_or_zip_website_download(self):
+        for path in ['/updates/download/v0.1.0/OhMyShot-0.1.0.dmg', '/updates/download/v0.2.0/OhMyShot-0.2.0.zip']:
+            with self.subTest(path=path):
+                self.download_path = path
+                self.assert_failure('Website download is not OhMyShot-0.2.0.dmg')
+
+    def test_rejects_weakened_updater_in_the_disk_image(self):
+        self.info['SUFeedURL'] = 'https://github.com/legacy/appcast.xml'
+        self.browser = self.make_image()
+        self.assert_failure('SUFeedURL')
 
     def test_rejects_matching_archives_from_the_wrong_build_artifact(self):
         self.expected_hash = '0' * 64
@@ -216,7 +257,7 @@ length="{len(self.archive) if length is None else length}" sparkle:edSignature="
             with self.subTest(key=key):
                 original = self.info[key]
                 self.info[key] = value
-                self.archive = self.browser = self.make_zip()
+                self.archive = self.make_zip()
                 self.feed = self.make_feed()
                 self.expected_hash = hashlib.sha256(self.archive).hexdigest()
                 self.assert_failure(key)
@@ -228,5 +269,6 @@ length="{len(self.archive) if length is None else length}" sparkle:edSignature="
 
     def test_retry_does_not_reuse_a_previous_passing_report(self):
         self.assertEqual(self.run_check()[0], 0)
-        self.browser += b'stale download'
-        self.assert_failure('Website download and signed update archive differ')
+        self.executable = b'stale executable'
+        self.browser = self.make_image()
+        self.assert_failure('Website disk image and signed update archive hold different apps')
