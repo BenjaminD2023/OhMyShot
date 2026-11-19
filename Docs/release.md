@@ -49,16 +49,17 @@ actual ZIP again; the CI publish job repeats the ZIP check immediately before cr
 or legacy GitHub updater stops publication. `python3 -B -m unittest discover -s Scripts/tests -p 'test_release_updater.py'`
 exercises valid packages, the legacy feed, missing/weakened signature settings and mismatched artifacts.
 
-The website's `/download` and both installation guides must use the website archive route, including when release
-lookup fails. A GitHub redirect is a failure, even if it works on the maintainer's connection. The published 0.1.0
+The website's `/download` and both installation guides must use the website's own download route, including when
+release lookup fails. A GitHub redirect is a failure, even if it works on the maintainer's connection. The published 0.1.0
 archive still has a GitHub `SUFeedURL`; changing the website cannot change that installed binary. Publish a higher
 version/build containing the website updater before mainland promotion. Users of 0.1.0 who cannot reach GitHub need
 one manual download from the website to migrate; do not overwrite the signed 0.1.0 asset in place.
 
 Run `python3 Scripts/check-distribution.py` on a mainland Mac with VPN/TUN disabled. It checks both home pages,
-refuses external download redirects, downloads the complete browser and updater archives, compares them, checks
-range responses, verifies the signed feed and archive against `Config/Info.plist`'s public key, and inspects the
-updater settings inside the actual downloaded app. It needs Xcode's Swift compiler and Python 3, no private key or
+refuses external download redirects, downloads the website's disk image and the complete updater archive, checks
+range responses, verifies the signed feed and archive against `Config/Info.plist`'s public key, checks that the
+image is notarized and stapled and holds the archive's very app, and inspects the updater settings inside both
+downloaded apps. It needs Xcode's Swift compiler and Python 3, no private key or
 Keychain access. Results and files go to `build/distribution-check/` (or `--output <directory>`). A legacy app or
 external redirect makes it exit nonzero. HTTP proxies are bypassed; a system VPN/TUN must be disabled separately.
 
@@ -82,10 +83,13 @@ all three expectations. Success requires:
 
 - The website's signed latest feed names the expected version and build (a different newer release also fails).
 - The feed and its complete archive pass Ed25519 verification against the repository's public key.
-- `/download` and the website's Sparkle archive route return complete, byte-identical ZIPs whose SHA-256 matches the
-  original signed build artifact. Every redirect stays on the HTTPS website hosts.
-- Both downloaded ZIPs pass the shared release-updater policy, including identity, version/build, feed, public key,
-  signature enforcement, and disabled unsigned-feed recovery. Byte-range responses also match the verified archive.
+- The website's Sparkle archive route returns the complete ZIP whose SHA-256 matches the original signed build
+  artifact. `/download` returns that version's `OhMyShot-<version>.dmg`, stapled and accepted by Gatekeeper as
+  notarized, whose app has the same main executable (and so the same code signature) as the ZIP's. Every redirect
+  stays on the HTTPS website hosts.
+- The apps in the ZIP and the disk image pass the shared release-updater policy, including identity, version/build,
+  feed, public key, signature enforcement, and disabled unsigned-feed recovery. Byte-range responses also match the
+  verified archive.
 
 The workflow retries up to three times, 20 seconds apart, for publication/cache propagation, preserving each
 attempt's JSON report, log, and signed feed as a run artifact. A verification failure happens **after** publication;
@@ -206,13 +210,17 @@ allowed included, and a version outside a package's requirements stopped the bui
      times) when an upload is cut off, and waits out Apple's queue however long it is, asking once a minute and again
      after a failed asking: notarytool's own `--wait` stops at the first network error. A new team's first
      notarization took 18 hours, and 0.1.0's, the day after, 16; later ones are minutes as a rule,
-   - zips it to `build/release/<version>/archives/OhMyShot-<version>.zip`, and writes the release notes and the signed
-     appcast beside it, keeping the versions the feed had.
+   - zips it to `build/release/<version>/archives/OhMyShot-<version>.zip`,
+   - puts it in the installer disk image, `build/release/<version>/OhMyShot-<version>.dmg` (The installer disk image,
+     below), and notarizes and staples that too,
+   - and writes the release notes and the signed appcast beside the zip, keeping the versions the feed had. The appcast
+     is written to `appcast.xml` by name: `generate_appcast` otherwise names it after the app's `SUFeedURL`, which
+     since the website updater ends in `appcast`, and 0.2.0's first run stopped there.
 5. Try the zip on a Mac (or a user account) that has an older release: Check for Updates… should offer it, install it,
    and relaunch, with Screen Recording still allowed.
-6. Publish with the `gh release create …` line the script prints last. The release gets the zip and `appcast.xml`, so
-   the feed URL (the latest release's `appcast.xml`) moves to it. A release marked as a pre-release isn't "latest", so
-   its appcast isn't the feed.
+6. Publish with the `gh release create …` line the script prints last. The release gets the zip, the disk image, and
+   `appcast.xml`, so the feed URL (the latest release's `appcast.xml`) moves to it. A release marked as a pre-release
+   isn't "latest", so its appcast isn't the feed.
 
 `Scripts/release.sh --dry-run` does step 4 with this Mac's Apple Development identity and without a timestamp, and
 doesn't notarize, into `build/release/<version>-dry-run/`; without a `## [<version>]` section its notes are Unreleased's.
@@ -232,9 +240,12 @@ its build and the notices' check, signing nothing: the release workflow's prefli
 `Scripts/make-dmg.sh` makes `OhMyShot-<version>.dmg` from an app that is already built and signed: a release's
 (`build/release/<version>/OhMyShot.app`, with no arguments), or any other given as its first argument, such as a dry
 run's or `build/Build/Products/Release/OhMyShot.app`. The image opens as a window with the app beside the Applications
-folder (DESIGN.md, Installer Disk Image). It is not part of `Scripts/release.sh` or the release workflow, and nothing
-publishes it: the release, the feed, the website's `/download`, and `Scripts/check-distribution.py` all still carry
-the zip, which Sparkle updates from and which stays whatever becomes of the image.
+folder (DESIGN.md, Installer Disk Image). Since 0.2.0, `Scripts/release.sh` makes it of the app it has just stapled,
+into `build/release/<version>/` beside the app rather than in `archives/` (where `generate_appcast` would take it for
+a second update of the version), and notarizes and staples it; the release workflow publishes it with the zip. The
+feed carries the zip, which Sparkle updates from and which stays whatever becomes of the image. The website's
+`/download` and its download buttons serve the image, and `Scripts/check-distribution.py` checks that it is the
+release's, notarized, and holds the zip's app.
 
 - `Tools/dmg/installer.swift` draws the window's picture (`.background/background.tiff`, at 1× and 2× in one file) and
   writes the `.DS_Store` that lays the window out, from the same numbers. Finder is never scripted, so the script needs
@@ -248,9 +259,11 @@ the zip, which Sparkle updates from and which stays whatever becomes of the imag
 - It signs the image with the Developer ID Application certificate when there is one (`SIGNING_KEYCHAIN` as for a
   release) and says so when there is none. Then it reads back what it made: the image's checksums, the signature of
   the app inside, the link to Applications, and the window's three files.
-- It does not notarize. A stapled app inside passes Gatekeeper on its own, but an image for the public should be
-  notarized and stapled too: `xcrun notarytool submit <dmg> --keychain-profile OhMyShot --wait`, then
-  `xcrun stapler staple <dmg>`. That was not tried here: the Mac the script was written on has no Developer ID.
+- It does not notarize; `Scripts/release.sh` does, as it does the app, then staples the image and checks that it reads
+  as notarized. By hand: `xcrun notarytool submit <dmg> --keychain-profile OhMyShot --wait`, then
+  `xcrun stapler staple <dmg>`. 0.2.0's image, made after its release from the published zip's app, was accepted in
+  under a minute on 2026-11-19, and `spctl --assess --type open --context context:primary-signature` took it as
+  "Notarized Developer ID".
 
 After changing the picture or the layout, open the image and look at the window in Light and in Dark: Finder draws
 the names in black in both, which is why the ground under them is light. A Finder with View › Show Path Bar on covers
@@ -280,8 +293,8 @@ It runs four jobs, each after the one before:
 | --- | --- | --- |
 | Preflight | Linux, seconds | `Scripts/release.sh --check` (nothing uncommitted, the tag, the section in CHANGELOG.md, the feed's build number, and gh when publishing), and that the secrets are set |
 | Build, sign, and notarize | a Mac (The runner, below) | `Scripts/release.sh`, from CI's compilation cache, keeping `build/release/<version>/` as the run's artifact |
-| Publish | Linux | `gh release create` with the artifact's zip, appcast, and notes, then checks that the feed lists the build and serves that very zip |
-| Verify public distribution | macOS, public key only | Reusable `verify-release.yml`: pins both website downloads and the signed feed to the version, build, and original ZIP hash; retains reports and can be rerun independently |
+| Publish | Linux | `gh release create` with the artifact's zip, disk image, appcast, and notes, then checks that the feed lists the build and serves that very zip |
+| Verify public distribution | macOS, public key only | Reusable `verify-release.yml`: pins the website's disk image, its Sparkle archive, and the signed feed to the version, build, and original ZIP hash; retains reports and can be rerun independently |
 
 So a release that can't be made stops before a Mac is involved: the two runs that failed on 2026-11-04 (the secrets not
 yet set, then a tag on another commit) each took a minute on the Mac, and would stop in Preflight now. Only Publish can
@@ -308,8 +321,8 @@ when the appcast leaves the zip unsigned, as `generate_appcast` does (with only 
 the one `SUPublicEDKey` names.
 
 The run keeps `build/release/<version>/` as the artifact `OhMyShot-<version>`, without the unzipped app (an artifact
-loses its links and permissions; the zip has it): the zip, the appcast, the notes, `build.log`, `notarization.txt`, and
-`notarization-log.json` when Apple refused it. Its keychain and key files are deleted when it ends, however it ends.
+loses its links and permissions; the zip has it): the zip, the disk image, the appcast, the notes, `build.log`,
+`notarization.txt` and `notarization-dmg.txt`, and their `-log.json` when Apple refused one. Its keychain and key files are deleted when it ends, however it ends.
 A hosted job stops after six hours (`timeout-minutes: 360`, the most GitHub allows). When Apple's queue is longer, the
 submission still ends at Apple, but the app it was made of goes with the job: re-run it, which builds and submits again.
 

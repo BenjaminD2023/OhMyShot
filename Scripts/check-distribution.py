@@ -15,6 +15,7 @@ import sys
 import time
 import urllib.request
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
@@ -36,9 +37,12 @@ def sha256(path):
 
 
 class FirstPartyRedirect(urllib.request.HTTPRedirectHandler):
+    # The website moves ohmyshot.org to www with a 308, which macOS's Python 3.9 doesn't follow on its own.
+    http_error_308 = urllib.request.HTTPRedirectHandler.http_error_302
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         check_url(newurl)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        return super().redirect_request(req, fp, 307 if code == 308 else code, msg, headers, newurl)
 
 
 def check_url(url):
@@ -105,7 +109,8 @@ def main(argv=None):
     for path in ['https://ohmyshot.org/', '/', '/zh/']:
         def page(path=path):
             data, _, status = get(path)
-            if status != 200 or b'href="/download"' not in data:
+            link = b'href="/zh/download/' if path == '/zh/' else b'href="/download/'
+            if status != 200 or link not in data:
                 raise ValueError('Page is missing its download link')
             return {'status': status, 'bytes': len(data)}
         record(path, page)
@@ -114,10 +119,10 @@ def main(argv=None):
         for line in get('/cdn-cgi/trace')[0].decode().splitlines()
         if line.startswith(('loc=', 'colo=', 'warp='))
     })
-    browser_zip = args.output / 'website-download.zip'
-    browser_result = record('website download (no external redirects)', lambda: get('/download', browser_zip))
+    browser_image = args.output / 'website-download.dmg'
+    browser_result = record('website download (no external redirects)', lambda: get('/download', browser_image))
     if browser_result:
-        browser_result['sha256'] = sha256(browser_zip)
+        browser_result['sha256'] = sha256(browser_image)
     verifier = args.output / 'verify-ed25519'
     feed_file = args.output / 'appcast.xml'
     archive = args.output / 'update.zip'
@@ -154,15 +159,10 @@ def main(argv=None):
         subprocess.run([str(verifier), public_key, enclosure.get(SPARKLE + 'edSignature'), str(archive)], check=True)
         result.update(version=version, build=build, sha256=sha256(archive))
         report['release'] = result
-        if not browser_result:
-            raise ValueError('Website download failed; cannot establish archive parity')
-        if browser_result['sha256'] != result['sha256']:
-            raise ValueError('Website download and signed update archive differ; retry if a release just changed')
         if args.sha256 and result['sha256'] != args.sha256:
-            raise ValueError('Public archives do not match the original signed release ZIP SHA-256')
-        # One policy for local build, publish, and both publicly downloaded artifacts.
-        for artifact in (browser_zip, archive):
-            release_updater.check_artifact(artifact, version, build, expected_feed=WEBSITE_FEED)
+            raise ValueError('Public update archive does not match the original signed release ZIP SHA-256')
+        # One policy for local build, publish, and both publicly downloaded apps.
+        release_updater.check_artifact(archive, version, build, expected_feed=WEBSITE_FEED)
         result['installed_feed'] = WEBSITE_FEED
         return result
 
@@ -174,6 +174,34 @@ def main(argv=None):
                 raise ValueError('Byte-range response differs from the verified archive')
             return '206, first 1024 bytes match the verified archive'
         record('resumable download', byte_range)
+
+        # The website hands out the release's disk image: notarized, stapled, and holding the very app
+        # whose signed update archive was verified above.
+        def disk_image():
+            if not browser_result:
+                raise ValueError('Website download failed; cannot check its disk image')
+            name = f"OhMyShot-{release['version']}.dmg"
+            if urlsplit(browser_result['url']).path != f"/updates/download/v{release['version']}/{name}":
+                raise ValueError(f'Website download is not {name}; retry if a release just changed')
+            subprocess.run(['xcrun', 'stapler', 'validate', str(browser_image)], check=True, capture_output=True)
+            gatekeeper = subprocess.run(['spctl', '--assess', '--type', 'open', '--context', 'context:primary-signature',
+                                         '-v', str(browser_image)], check=True, capture_output=True, text=True)
+            mount = args.output / 'website-image'
+            subprocess.run(['hdiutil', 'attach', '-readonly', '-nobrowse', '-noautoopen', '-mountpoint', str(mount),
+                            str(browser_image)], check=True, capture_output=True)
+            try:
+                app = mount / 'OhMyShot.app'
+                info = release_updater.check_artifact(app, release['version'], release['build'], expected_feed=WEBSITE_FEED)
+                executable = f"Contents/MacOS/{info['CFBundleExecutable']}"
+                with zipfile.ZipFile(archive) as update_archive:
+                    same = update_archive.read(f'OhMyShot.app/{executable}') == (app / executable).read_bytes()
+            finally:
+                subprocess.run(['hdiutil', 'detach', str(mount)], check=True, capture_output=True)
+            if not same:
+                raise ValueError('Website disk image and signed update archive hold different apps')
+            browser_result['gatekeeper'] = gatekeeper.stderr.strip()
+            return browser_result
+        record('website disk image', disk_image)
     report['passed'] = all(check['passed'] for check in report['checks'])
     (args.output / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     print(f"Report: {args.output / 'report.json'}")

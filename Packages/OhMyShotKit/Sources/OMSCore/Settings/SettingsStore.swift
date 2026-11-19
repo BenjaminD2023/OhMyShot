@@ -15,6 +15,16 @@ public final class SettingsStore {
         didSet { defaults.set(playSounds, forKey: Key.playSounds) }
     }
 
+    /// Whether this app may send daily usage counts.
+    public var sendsUsageData: Bool {
+        didSet {
+            defaults.set(sendsUsageData, forKey: Key.sendsUsageData)
+            if sendsUsageData != oldValue { onUsageDataChange?(sendsUsageData) }
+        }
+    }
+
+    @ObservationIgnored public var onUsageDataChange: ((Bool) -> Void)?
+
     /// Whether other apps may send `ohmyshot://` commands at all.
     public var automationEnabled: Bool {
         didSet { defaults.set(automationEnabled, forKey: Key.automationEnabled) }
@@ -486,6 +496,7 @@ public final class SettingsStore {
         let registered: [Key: Any] = [
             .showMenuBarIcon: true,
             .playSounds: true,
+            .sendsUsageData: false,
             .automationEnabled: true,
             .copyAfterCapture: true,
             .uploadAfterCapture: false,
@@ -564,6 +575,7 @@ public final class SettingsStore {
         defaults.register(defaults: Dictionary(uniqueKeysWithValues: registered.map { ($0.key.rawValue, $0.value) }))
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
         playSounds = defaults.bool(forKey: Key.playSounds)
+        sendsUsageData = defaults.bool(forKey: Key.sendsUsageData)
         automationEnabled = defaults.bool(forKey: Key.automationEnabled)
         approvedAutomationCallers = defaults.stringArray(forKey: Key.approvedAutomationCallers) ?? []
         exportDirectory = defaults.string(forKey: Key.exportDirectory).map { URL(filePath: $0, directoryHint: .isDirectory) }
@@ -676,6 +688,7 @@ public final class SettingsStore {
         let fresh = SettingsStore(defaults: defaults)
         showMenuBarIcon = fresh.showMenuBarIcon
         playSounds = fresh.playSounds
+        sendsUsageData = fresh.sendsUsageData
         automationEnabled = fresh.automationEnabled
         copyAfterCapture = fresh.copyAfterCapture
         uploadAfterCapture = fresh.uploadAfterCapture
@@ -802,6 +815,7 @@ public final class SettingsStore {
     fileprivate enum Key: String, CaseIterable {
         case showMenuBarIcon
         case playSounds
+        case sendsUsageData
         case automationEnabled
         case approvedAutomationCallers
         case exportDirectory

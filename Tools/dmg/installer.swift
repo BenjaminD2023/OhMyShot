@@ -5,8 +5,8 @@
 // Usage: swift Tools/dmg/installer.swift <folder> <volume name> <app's file name>
 //
 // Writes <folder>/.background/background.tiff (the picture at 1x and 2x in one file) and <folder>/.DS_Store. Both are
-// the same bytes every run: the grain comes from a fixed seed, and nothing in the .DS_Store depends on this Mac or on
-// the time. Finder is never asked to arrange anything, so this runs without a window server too.
+// the same bytes every run on one version of macOS (the pointer in the picture is the system's own cursor): the grain
+// comes from a fixed seed, and nothing in the .DS_Store depends on this Mac or on the time. Finder is never asked to arrange anything, so this runs without a window server too.
 import AppKit
 import ImageIO
 
@@ -16,7 +16,7 @@ enum Layout {
     /// What the window shows under its title bar. The picture is exactly this large and ends in white on every side,
     /// which is what Finder shows past a picture's edge: a window made larger, or one with a shorter title bar, shows
     /// more white and no seam.
-    static let content = CGSize(width: 660, height: 400)
+    static let content = CGSize(width: 740, height: 400)
     /// Finder's title bar since macOS 26.
     static let titleBar: CGFloat = 32
     /// Where the window opens, from the screen's bottom left: clear of the Dock and the menu bar on a 13-inch display.
@@ -24,10 +24,17 @@ enum Layout {
     static let iconSize: CGFloat = 128
     static let labelSize: CGFloat = 13
     /// The centers of the two icons; Finder puts each name 83 pt under its icon's center.
-    static let app = CGPoint(x: 170, y: 184)
-    static let applications = CGPoint(x: 490, y: 184)
+    static let app = CGPoint(x: 160, y: 184)
+    static let applications = CGPoint(x: 460, y: 184)
     /// The selection drawn around Applications, as the capture overlay frames a chosen area: the icon and its name.
     static let selection = CGRect(x: applications.x - 88, y: applications.y - 84, width: 176, height: 188)
+    /// The corner of the selection being dragged, to place it to the pixel.
+    static let corner = CGPoint(x: selection.maxX, y: selection.maxY)
+    /// The magnifier on that corner, where OverlayView puts it: 22 pt to the right, and above the corner rather than
+    /// under it, where the window's foot would cut off the lens and its reading.
+    static let loupe = CGRect(x: corner.x + 22, y: corner.y - 22 - 120, width: 120, height: 120)
+    /// Captured pixels across the lens, 8 pt each.
+    static let loupePixels = 15
     /// The arrow mark from the app to the selection, its middle lifted off the straight line.
     static let arrowStart = CGPoint(x: app.x + 80, y: app.y + 4)
     static let arrowEnd = CGPoint(x: selection.minX - 18, y: app.y + 4)
@@ -56,6 +63,8 @@ func gray(_ white: CGFloat, _ alpha: CGFloat) -> CGColor {
 let oceanBlue = rgb(0x5E9CF5), oceanTeal = rgb(0x37CDBE)
 /// The default mark ink.
 let markRed = rgb(0xFF3B30)
+/// The user's accent as it comes, blue: it frames the magnifier's center cell.
+let accentBlue = rgb(0x007AFF)
 
 // MARK: - The ground: Ocean as a glow on white
 
@@ -96,7 +105,12 @@ func ground(_ x: Double, _ y: Double) -> RGB {
     let falloff = 1 - u * u * u * (u * (6 * u - 15) + 10)
     // Blue toward the app, teal past Applications, turning a little down the window as the icon's ground does.
     let along = smoothstep(Double(Layout.app.x) + 60, Double(Layout.content.width) - 30, x + (y - Double(Layout.app.y)) * 0.4)
-    return mix(RGB(r: 1, g: 1, b: 1), mix(oceanBlue, oceanTeal, along), (0.3 + 0.36 * near) * falloff)
+    let lit = mix(RGB(r: 1, g: 1, b: 1), mix(oceanBlue, oceanTeal, along), (0.3 + 0.36 * near) * falloff)
+    // The room's dimming, black at 0.26, everywhere but the selection and the beam: the beam is what the lens sees,
+    // as clear of the dimming as the area it chose.
+    if s.contains(CGPoint(x: x, y: y)) { return lit }
+    let dim = 0.26 * (1 - falloff)
+    return RGB(r: lit.r * (1 - dim), g: lit.g * (1 - dim), b: lit.b * (1 - dim))
 }
 
 /// A fixed-seed generator, so the grain is the same bytes every run.
@@ -200,26 +214,76 @@ func arrow(_ curve: Curve, width: CGFloat) -> (body: CGPath, head: CGPath) {
 /// The size a capture of the selection would have on a Retina display, as the reading capsule words it.
 let reading = "\(Int(Layout.selection.width) * 2) × \(Int(Layout.selection.height) * 2)"
 
-func picture(scale: Int) -> CGImage {
+/// The pixel the magnifier centers on, counted from the top left of a Retina display: the one just inside the corner
+/// being dragged, as AreaFrame.edgePoint finds it.
+let target = (x: Int(Layout.corner.x) * 2 - 1, y: Int(Layout.corner.y) * 2 - 1)
+
+/// A context of the content at `scale` pixels to the point, opaque and in sRGB.
+func canvas(scale: Int) -> CGContext {
     let width = Int(Layout.content.width) * scale, height = Int(Layout.content.height) * scale
-    let context = CGContext(
+    return CGContext(
         data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: sRGB,
         bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
-    context.draw(groundImage(scale: scale), in: CGRect(x: 0, y: 0, width: width, height: height))
-    // Points from the top left from here on, as Finder counts them.
-    context.translateBy(x: 0, y: CGFloat(height))
-    context.scaleBy(x: CGFloat(scale), y: -CGFloat(scale))
-    /// A shadow in the design system's words (a layer's radius, a drop in points); Core Graphics counts both in
-    /// pixels, its blur twice a layer's radius, and y upward.
-    func shadow(opacity: CGFloat, radius: CGFloat, drop: CGFloat) {
-        context.setShadow(offset: CGSize(width: 0, height: -drop * CGFloat(scale)), blur: radius * 2 * CGFloat(scale), color: gray(0, opacity))
-    }
+}
 
-    // The selection, as SelectionChromeView draws one that can be resized. What it holds is clear of the glow, as a
-    // chosen area is clear of the room's dimming.
+/// Puts `image` under everything else, then turns the context to points from the top left, as Finder counts them.
+func start(_ context: CGContext, with image: CGImage, scale: Int) {
+    context.draw(image, in: CGRect(x: 0, y: 0, width: context.width, height: context.height))
+    context.translateBy(x: 0, y: CGFloat(context.height))
+    context.scaleBy(x: CGFloat(scale), y: -CGFloat(scale))
+}
+
+/// A shadow in the design system's words (a layer's radius, a drop in points); Core Graphics counts both in pixels,
+/// its blur twice a layer's radius, and y upward.
+func shadow(_ context: CGContext, scale: Int, opacity: CGFloat, radius: CGFloat, drop: CGFloat) {
+    context.setShadow(offset: CGSize(width: 0, height: -drop * CGFloat(scale)), blur: radius * 2 * CGFloat(scale), color: gray(0, opacity))
+}
+
+/// The reading capsule (ReadingCapsule.swift) saying `string`, with a swatch of `swatch` before it when there is one,
+/// where `place` puts it for its size: white at 0.96 with the 0.5 pt hairline and the floating reading shadow.
+func drawReading(_ context: CGContext, scale: Int, _ string: String, swatch: CGColor? = nil, place: (CGSize) -> CGPoint) {
+    let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+    let rounded = font.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 12) } ?? font
+    let text = NSAttributedString(string: string, attributes: [.font: rounded, .foregroundColor: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.85)])
+    let textHeight = ceil(rounded.ascender - rounded.descender)
+    let swatchWidth: CGFloat = swatch == nil ? 0 : 16
+    let size = CGSize(width: ceil(text.size().width) + 22 + swatchWidth, height: textHeight + 9)
+    let capsule = CGRect(origin: place(size), size: size).integral
+    let capsulePath = CGPath(roundedRect: capsule, cornerWidth: capsule.height / 2, cornerHeight: capsule.height / 2, transform: nil)
+    context.saveGState()
+    shadow(context, scale: scale, opacity: 0.18, radius: 8, drop: 2)
+    context.addPath(capsulePath)
+    context.setFillColor(gray(1, 0.96))
+    context.fillPath()
+    context.restoreGState()
+    context.addPath(CGPath(roundedRect: capsule.insetBy(dx: 0.25, dy: 0.25), cornerWidth: capsule.height / 2 - 0.25, cornerHeight: capsule.height / 2 - 0.25, transform: nil))
+    context.setLineWidth(0.5)
+    context.setStrokeColor(gray(0, 0.08))
+    context.strokePath()
+    if let swatch {
+        let dot = CGRect(x: capsule.minX + 10, y: capsule.minY + (capsule.height - 10) / 2, width: 10, height: 10)
+        context.addEllipse(in: dot)
+        context.setFillColor(swatch)
+        context.fillPath()
+        context.addEllipse(in: dot.insetBy(dx: 0.5, dy: 0.5))
+        context.setLineWidth(1)
+        context.setStrokeColor(gray(0, 0.3))
+        context.strokePath()
+    }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+    text.draw(at: CGPoint(x: capsule.minX + 11 + swatchWidth, y: capsule.minY + (capsule.height - textHeight) / 2 - 0.5))
+    NSGraphicsContext.restoreGraphicsState()
+}
+
+/// What the window shows but the magnifier and the pointer, as a frozen screen shows under the capture overlay: the
+/// ground, the room's dimming around the selection, the selection with its reading, and the arrow mark.
+func scene(scale: Int) -> CGImage {
+    let context = canvas(scale: scale)
+    start(context, with: groundImage(scale: scale), scale: scale)
+
+    // The selection, as SelectionChromeView draws one that can be resized.
     let frame = Layout.selection
-    context.setFillColor(gray(1, 0.5))
-    context.fill(frame)
     let edge = CGPath(rect: frame.insetBy(dx: -0.75, dy: -0.75), transform: nil)
     let arm: CGFloat = 18
     let arms = CGMutablePath()
@@ -238,33 +302,13 @@ func picture(scale: Int) -> CGImage {
         context.strokePath()
     }
 
-    // The size reading above the selection's top-left corner: the reading capsule, with the floating reading shadow.
-    let font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-    let rounded = font.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 12) } ?? font
-    let text = NSAttributedString(string: reading, attributes: [.font: rounded, .foregroundColor: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.85)])
-    let textHeight = ceil(rounded.ascender - rounded.descender)
-    let capsuleSize = CGSize(width: ceil(text.size().width) + 22, height: textHeight + 9)
-    let capsule = CGRect(origin: CGPoint(x: frame.minX, y: frame.minY - capsuleSize.height - 10), size: capsuleSize).integral
-    let capsulePath = CGPath(roundedRect: capsule, cornerWidth: capsule.height / 2, cornerHeight: capsule.height / 2, transform: nil)
-    context.saveGState()
-    shadow(opacity: 0.18, radius: 8, drop: 2)
-    context.addPath(capsulePath)
-    context.setFillColor(gray(1, 0.96))
-    context.fillPath()
-    context.restoreGState()
-    context.addPath(CGPath(roundedRect: capsule.insetBy(dx: 0.25, dy: 0.25), cornerWidth: capsule.height / 2 - 0.25, cornerHeight: capsule.height / 2 - 0.25, transform: nil))
-    context.setLineWidth(0.5)
-    context.setStrokeColor(gray(0, 0.08))
-    context.strokePath()
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-    text.draw(at: CGPoint(x: capsule.midX - text.size().width / 2, y: capsule.minY + (capsule.height - textHeight) / 2 - 0.5))
-    NSGraphicsContext.restoreGraphicsState()
+    // The size reading above the selection's top-left corner.
+    drawReading(context, scale: scale, reading) { CGPoint(x: frame.minX, y: frame.minY - $0.height - 10) }
 
     // The arrow from the app to the selection: the editor's default mark, red with the mark shadow.
     let mark = arrow(Curve(start: Layout.arrowStart, end: Layout.arrowEnd, bend: Layout.arrowBend), width: Layout.arrowWidth)
     context.saveGState()
-    shadow(opacity: 0.3, radius: 1.5, drop: 1)
+    shadow(context, scale: scale, opacity: 0.3, radius: 1.5, drop: 1)
     context.beginTransparencyLayer(auxiliaryInfo: nil)
     context.addPath(mark.body)
     context.setLineWidth(Layout.arrowWidth)
@@ -275,6 +319,75 @@ func picture(scale: Int) -> CGImage {
     context.fillPath()
     context.endTransparencyLayer()
     context.restoreGState()
+
+    return context.makeImage()!
+}
+
+/// The whole picture: the scene at `scale`, the magnifier over the corner being dragged, enlarging the Retina scene
+/// `retina` as the overlay's enlarges the captured screen, and the pointer that drags it.
+func picture(scale: Int, retina: CGImage) -> CGImage {
+    let context = canvas(scale: scale)
+    start(context, with: scene(scale: scale), scale: scale)
+
+    // The magnifier (OverlayView.showEdgeLoupe): the 15 pixels across around the target at 8 pt each, a faint grid,
+    // the target's cell framed in the accent, the 3 pt white rim, and the lens shadow.
+    let lens = Layout.loupe
+    let circle = CGPath(ellipseIn: lens, transform: nil)
+    context.saveGState()
+    shadow(context, scale: scale, opacity: 0.28, radius: 12, drop: 4)
+    context.addPath(circle)
+    context.setFillColor(gray(1, 1))
+    context.fillPath()
+    context.restoreGState()
+    context.saveGState()
+    context.addPath(circle)
+    context.clip()
+    let half = Layout.loupePixels / 2
+    let pixels = retina.cropping(to: CGRect(x: target.x - half, y: target.y - half, width: Layout.loupePixels, height: Layout.loupePixels))!
+    context.interpolationQuality = .none
+    context.saveGState()
+    context.translateBy(x: lens.minX, y: lens.maxY)
+    context.scaleBy(x: 1, y: -1)
+    context.draw(pixels, in: CGRect(origin: .zero, size: lens.size))
+    context.restoreGState()
+    let cell = lens.width / CGFloat(Layout.loupePixels)
+    let grid = CGMutablePath()
+    for index in 1..<Layout.loupePixels {
+        let offset = CGFloat(index) * cell
+        grid.addLines(between: [CGPoint(x: lens.minX + offset, y: lens.minY), CGPoint(x: lens.minX + offset, y: lens.maxY)])
+        grid.addLines(between: [CGPoint(x: lens.minX, y: lens.minY + offset), CGPoint(x: lens.maxX, y: lens.minY + offset)])
+    }
+    context.addPath(grid)
+    context.setLineWidth(1 / CGFloat(scale))
+    context.setStrokeColor(gray(0, 0.08))
+    context.strokePath()
+    context.addPath(CGPath(roundedRect: CGRect(x: lens.midX - cell / 2, y: lens.midY - cell / 2, width: cell, height: cell), cornerWidth: 1.5, cornerHeight: 1.5, transform: nil))
+    context.setLineWidth(1.5)
+    context.setStrokeColor(color(accentBlue))
+    context.strokePath()
+    context.restoreGState()
+    context.addPath(CGPath(ellipseIn: lens.insetBy(dx: -1.5, dy: -1.5), transform: nil))
+    context.setLineWidth(3)
+    context.setStrokeColor(gray(1, 1))
+    context.strokePath()
+
+    // Its reading 8 pt under it, the target's place and color, kept clear of the selection's corner.
+    let bytes = CFDataGetBytePtr(retina.dataProvider!.data)!
+    let at = target.y * retina.bytesPerRow + target.x * 4
+    let sample = RGB(r: Double(bytes[at]) / 255, g: Double(bytes[at + 1]) / 255, b: Double(bytes[at + 2]) / 255)
+    let hex = String(format: "#%02X%02X%02X", bytes[at], bytes[at + 1], bytes[at + 2])
+    drawReading(context, scale: scale, "\(target.x), \(target.y)   \(hex)", swatch: color(sample)) { size in
+        CGPoint(x: min(max(lens.midX - size.width / 2, Layout.corner.x + 10), Layout.content.width - 6 - size.width), y: lens.maxY + 8)
+    }
+
+    // The pointer holding the corner: the system's cursor for resizing from the bottom right, its hot spot on it.
+    let cursor = NSCursor.frameResize(position: .bottomRight, directions: .all)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+    cursor.image.draw(
+        in: CGRect(origin: CGPoint(x: Layout.corner.x - cursor.hotSpot.x, y: Layout.corner.y - cursor.hotSpot.y), size: cursor.image.size),
+        from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    NSGraphicsContext.restoreGraphicsState()
 
     return context.makeImage()!
 }
@@ -470,8 +583,9 @@ do {
     guard let destination = CGImageDestinationCreateWithURL(tiff as CFURL, "public.tiff" as CFString, 2, nil) else {
         fail("can't write \(tiff.path)")
     }
+    let retina = scene(scale: 2)
     for scale in [1, 2] {
-        CGImageDestinationAddImage(destination, picture(scale: scale), [
+        CGImageDestinationAddImage(destination, picture(scale: scale, retina: retina), [
             kCGImagePropertyDPIWidth: 72 * scale, kCGImagePropertyDPIHeight: 72 * scale,
             kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFCompression: 5], // LZW
         ] as CFDictionary)

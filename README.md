@@ -153,6 +153,15 @@ macOS ties Screen Recording permission to the app's code signature; a stable sig
 
 Release builds check this fork for signed updates with [Sparkle](https://sparkle-project.org) about once a day (Settings › General › Updates); Debug builds never check. See [Docs/releasing.md](Docs/releasing.md) for packaging and signing. Fork builds use Apple Development signing and are not Apple-notarized.
 
+### Optional usage data
+
+Settings › General › Usage Data is off by default. If enabled, OhMyShot sends the UTC date,
+a random ID that changes each UTC day, the app version, macOS major version, and daily counts
+of successful screenshots, recordings, and text recognitions to `www.ohmyshot.org`. Reports
+exclude captures, recognized text, file and window names, and persistent device identifiers.
+When the app runs, it retries unsent counts from the last seven UTC days and drops older reports. Turning the setting off stops sending
+and clears the local report file. Debug builds leave the reporting service inactive.
+
 ## Documentation
 
 | Document | What it covers |

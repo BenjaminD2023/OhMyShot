@@ -10,6 +10,8 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
+- Optional daily usage counts, disabled by default, with a setting to opt in or clear queued reports.
+
 - Draw on Screen now supports Redo (Shift-Command-Z) and updates its canvases when displays are connected or rearranged. Its toolbar uses glass chips with tool names and keyboard hints.
 
 ### Fixed
@@ -35,10 +37,13 @@ Fork release: `v0.9.0-fork.11`, build 12.
 - With several marks selected, a box around them all has corners that resize them together from the opposite corner, Shift keeping its shape: shapes, strokes, redactions, and images stretch with it, lines keep their width, and text and counters keep their size and move with the rest. One drag is one undo step.
 - Rectangles, ellipses, text (speech bubbles too), and combined images turn: a selected one has a knob above it to drag round, Shift taking 15° steps and a quarter turn catching the pointer as it passes. A turned mark keeps its handles on its own sides, is caught where it is drawn, and keeps a bubble pointing where it pointed; turning the picture turns boxes, ellipses, and images with it, while text keeps its angle, as it stays upright now. Straighten in its menu stands it upright again. Text being typed stands upright while it is typed. Projects with a turned mark are written in format 3.
 - Capture History can combine two or more selected screenshots into a collage (File › Combine into Collage…, or a card's menu): side by side, one under another, in a grid, or one beside the rest, at the width, spacing, margin, corners, and background you choose, previewed as you go. The collage joins the history as a new capture and opens in the editor. Export as PDF… writes the selected screenshots as one PDF, a page each in the order History shows them, each page the screenshot's size or A4 or US Letter; every page is written as Settings › Screenshots writes any copy, its watermark included.
+- A mark drawn, moved, or changed past the picture's edge in the editor grows the canvas to hold it, with 20 pt of room around it in the edge's most common color (up to 6,000 pt a side), and the canvas shrinks back once nothing reaches past. A crop, Lock Canvas, and marking up in place keep the canvas as it is. ([4b4d6ed]; by [@bobbyhuang-dev])
+- Settings › General › Usage Data, off by default, sends each day's counts of screenshots, recordings, and text recognitions to www.ohmyshot.org, with the app's version, the macOS version, and a random ID that changes every day. No captures, recognized text, file or window names, or lasting identifiers are sent, and turning it off stops sending and deletes the unsent counts. ([ae00fad]; by [@bobbyhuang-dev]; coauthored by Claude Opus 5.5)
 
 ### Changed
 
 - Resizing a selection by its frame keeps the edge where the pointer took hold of it, instead of jumping it to the pointer.
+- A Quick Access card closes once its Copy, Save, Save As…, Pin, or Print has worked, a copy showing Copied first; one that fails leaves the card in place to try again, and Save All closes only the cards it saved. ([e341378], [f5d8041]; by [@bobbyhuang-dev], [@fzlzjerry])
 
 ### Fixed
 

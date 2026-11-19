@@ -5,9 +5,9 @@
 #
 # Preflight makes the checks that need no Mac (Scripts/release.sh --check) and the secrets', so a release that can't be
 # made stops within seconds. The Mac builds from the compilation cache CI keeps for main (.github/workflows/ci.yml), so
-# it compiles only what changed since main's last build, and keeps the zip and appcast as the run's artifact. Publish,
-# the one job that can write to the repository, releases them and checks that the feed moved. Docs/release.md
-# ("Releasing from CI") lists the secrets, how to choose the runner, and the times.
+# it compiles only what changed since main's last build, and keeps the zip, the disk image, and the appcast as the run's
+# artifact. Publish, the one job that can write to the repository, releases them and checks that the feed moved.
+# Docs/release.md ("Releasing from CI") lists the secrets, how to choose the runner, and the times.
 name: Release
 
 on:
@@ -245,10 +245,10 @@ jobs:
           digest=$(sha256sum "dist/archives/OhMyShot-$VERSION.zip" | cut -d' ' -f1)
           echo "sha256=$digest" >> "$GITHUB_OUTPUT"
 
-      # The zip and the appcast go to the release; the feed is the latest release's appcast.xml.
+      # The zip, the disk image, and the appcast go to the release; the feed is the latest release's appcast.xml.
       - name: Publish the GitHub release
         run: |
-          gh release create "v$VERSION" "dist/archives/OhMyShot-$VERSION.zip" dist/archives/appcast.xml \
+          gh release create "v$VERSION" "dist/archives/OhMyShot-$VERSION.zip" "dist/OhMyShot-$VERSION.dmg" dist/archives/appcast.xml \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "OhMyShot $VERSION" \
             --notes-file dist/release-notes.md
 
@@ -275,6 +275,7 @@ jobs:
             echo "| File | Size | SHA-256 |"
             echo "| --- | ---: | --- |"
             echo "| OhMyShot-$VERSION.zip | $(du -h "dist/archives/OhMyShot-$VERSION.zip" | cut -f1) | \`$made\` |"
+            echo "| OhMyShot-$VERSION.dmg | $(du -h "dist/OhMyShot-$VERSION.dmg" | cut -f1) | \`$(sha256sum "dist/OhMyShot-$VERSION.dmg" | cut -d' ' -f1)\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   verify-distribution:

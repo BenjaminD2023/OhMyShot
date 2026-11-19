@@ -9140,6 +9140,46 @@
         }
       }
     },
+    "Daily counts of screenshots, recordings, and text recognitions go to OhMyShot with the app version, macOS major version, and a random ID that changes each UTC day. Captured content and recognized text stay out of these reports. Turning this off clears reports waiting to send." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daily counts of screenshots, recordings, and text recognitions go to OhMyShot with the app version, macOS major version, and a random ID that changes each UTC day. Captured content and recognized text stay out of these reports. Turning this off clears reports waiting to send."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se envía a OhMyShot el recuento diario de capturas de pantalla, grabaciones y reconocimientos de texto, junto con la versión de la app, la versión principal de macOS y un ID aleatorio que cambia cada día UTC. Los informes excluyen el contenido capturado y el texto reconocido. Al desactivar esta opción se borran los informes pendientes de envío."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot reçoit les nombres quotidiens de captures d’écran, d’enregistrements et de reconnaissances de texte, la version de l’app, la version majeure de macOS et un identifiant aléatoire qui change chaque jour UTC. Les rapports excluent le contenu capturé et le texte reconnu. Désactiver cette option efface les rapports en attente d’envoi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スクリーンショット、画面収録、テキスト認識の日ごとの回数を、アプリのバージョン、macOS のメジャーバージョン、UTC の日付ごとに変わるランダム ID とともに OhMyShot に送信します。キャプチャした内容や認識したテキストはレポートに含まれません。オフにすると送信待ちのレポートが消去されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 会收到每日的截图、录屏和文字识别次数，以及应用版本、macOS 主版本和每天按 UTC 日期更换的随机 ID。报告不包含捕捉内容或识别出的文字。关闭此选项会清除待发送的报告。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 會收到每日的螢幕截圖、錄影和文字辨識次數，以及 App 版本、macOS 主要版本和每天依 UTC 日期更換的隨機 ID。報告不包含擷取內容或辨識出的文字。關閉此選項會清除等待傳送的報告。"
+          }
+        }
+      }
+    },
     "Dark Gray" : {
       "localizations" : {
         "es" : {
@@ -24176,6 +24216,46 @@
         }
       }
     },
+    "Send optional usage data" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send optional usage data"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviar datos de uso opcionales"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoyer des données d’utilisation facultatives"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任意の使用状況データを送信"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送可选的使用数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "傳送選用的使用資料"
+          }
+        }
+      }
+    },
     "Send this picture to %@ and read it with %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -30049,6 +30129,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上傳一張小型測試影像到此目的地。影像會留在該處。"
+          }
+        }
+      }
+    },
+    "Usage Data" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usage Data"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datos de uso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Données d’utilisation"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用状況データ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用資料"
           }
         }
       }

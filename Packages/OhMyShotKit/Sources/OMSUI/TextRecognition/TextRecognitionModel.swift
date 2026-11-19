@@ -73,6 +73,9 @@ final class TextRecognitionModel {
         let perform: () -> Void
     }
 
+    @ObservationIgnored var onTextRecognized: (() -> Void)?
+    @ObservationIgnored private var reportedReading = false
+
     private(set) var image: CGImage?
     private(set) var scale: CGFloat = 1
     private(set) var phase: Phase = .loading
@@ -192,6 +195,7 @@ final class TextRecognitionModel {
                 codes = result.codes
                 regenerate()
                 let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                if hasText || !visionTables.isEmpty { reportReading() }
                 phase = hasText || !codes.isEmpty || !visionTables.isEmpty || source == .cloud ? .ready : .empty
                 if translates, phase == .ready { translate() }
                 Log.capture.notice("OCR panel read \(self.lines.count, privacy: .public) lines, \(self.visionTables.count, privacy: .public) tables, \(self.codes.count, privacy: .public) codes, \(self.items.count, privacy: .public) links and contacts")
@@ -250,6 +254,7 @@ final class TextRecognitionModel {
     }
 
     private func clearResults() {
+        reportedReading = false
         translationTask?.cancel()
         translation = nil
         isTranslating = false
@@ -382,6 +387,7 @@ final class TextRecognitionModel {
             Log.capture.notice("OCR panel put \(found.formulas.count, privacy: .public) formulas and \(taken, privacy: .public) of \(found.tables.count, privacy: .public) tables into its text, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
             lines = merged
             if !edited { regenerate() }
+            if !lines.isEmpty || !visionTables.isEmpty { reportReading() }
             if phase == .empty, !lines.isEmpty { phase = .ready }
             if translates, phase == .ready { translate() }
             switch (found.formulas.isEmpty, taken == 0) {
@@ -477,10 +483,18 @@ final class TextRecognitionModel {
             announce(String(localized: "\(model.name) found no text", bundle: .module))
             return
         }
+        reportReading()
         // Vision found nothing, but the model did.
         if phase == .empty { phase = .ready }
         if source != before { sourceChanged() }
         announce(String(localized: "Read by \(model.name)", bundle: .module))
+    }
+
+    /// Device, cloud, and model-pack results for one image are one recognition.
+    private func reportReading() {
+        guard !reportedReading else { return }
+        reportedReading = true
+        onTextRecognized?()
     }
 
     /// The text side changed hands: the other reading's text, undoably; edits to the one shown give way.

@@ -163,6 +163,13 @@ Development 团队（免费的个人团队即可）。
 正式版通过 [Sparkle](https://sparkle-project.org) 大约每天检查一次更新（「设置 › 通用 › 更新」），读取附在本仓库
 GitHub Releases 上的签名 appcast；Debug 版从不检查更新。本 fork 的打包、签名和发布流程见 [Docs/releasing.md](Docs/releasing.md)，不代表已通过 Apple 公证。
 
+### 可选的使用数据
+
+「设置 › 通用 › 使用数据」默认关闭。开启后，OhMyShot 会向 `www.ohmyshot.org` 发送 UTC 日期、每天按 UTC 日期更换的随机 ID、
+应用版本、macOS 主版本，以及每日成功完成的截图、录屏和文字识别次数。报告不包含捕捉内容、识别出的文字、文件名、
+窗口标题或持久的设备标识符。应用运行时会重试最近七个 UTC 日内未发送的报告，并清除更早的报告。关闭此设置会停止发送并清除本地报告文件。
+Debug 版不会启用报告服务。
+
 ## 文档
 
 以下文档均为英文。

@@ -137,6 +137,19 @@ struct GeneralSettingsView: View {
 
             SettingsDivider()
 
+            SettingsRow(String(localized: "Usage Data", bundle: .module), help: [
+                HelpTopic(
+                    String(localized: "Send optional usage data", bundle: .module),
+                    Text("Daily counts of screenshots, recordings, and text recognitions go to OhMyShot with the app version, macOS major version, and a random ID that changes each UTC day. Captured content and recognized text stay out of these reports. Turning this off clears reports waiting to send.", bundle: .module)
+                )
+            ]) {
+                Toggle(isOn: $settings.sendsUsageData) {
+                    Text("Send optional usage data", bundle: .module)
+                }
+            }
+
+            SettingsDivider()
+
             SettingsRow(String(localized: "Reset", bundle: .module)) {
                 Button {
                     confirmsReset = true
