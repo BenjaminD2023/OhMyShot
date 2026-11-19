@@ -32,6 +32,13 @@ class DistributionInputTests(unittest.TestCase):
         checker.check_url('https://ohmyshot.org/download')
         checker.check_url('https://www.ohmyshot.org/updates/appcast')
 
+    def test_follows_the_websites_permanent_redirect_to_www(self):
+        redirect = checker.FirstPartyRedirect()
+        self.assertTrue(callable(redirect.http_error_308))
+        follow = redirect.redirect_request(urllib.request.Request('https://ohmyshot.org/'), None, 308, '', {},
+                                           'https://www.ohmyshot.org/')
+        self.assertEqual(follow.full_url, 'https://www.ohmyshot.org/')
+
     def test_invalid_or_partial_expectations_stop_before_network_access(self):
         for args in [['--version', '0.2.0'], ['--build', '2'], ['--sha256', 'a' * 64],
                      ['--version', 'v0.2.0', '--build', '2', '--sha256', 'a' * 64],
