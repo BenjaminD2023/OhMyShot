@@ -360,6 +360,7 @@ fi
   --link "https://github.com/$REPO" \
   --embed-release-notes \
   --maximum-deltas 0 \
+  -o "$OUT/archives/appcast.xml" \
   "$OUT/archives"
 grep -q "<sparkle:version>$BUILD</sparkle:version>" "$OUT/archives/appcast.xml" || fail "the appcast doesn't list build $BUILD"
 grep -q "sparkle-signatures:" "$OUT/archives/appcast.xml" || fail "the appcast isn't signed"
