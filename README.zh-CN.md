@@ -123,8 +123,8 @@ OhMyShot 还会出现在其他 App 的分享菜单中（用来标注或贴图；
 
 ### 安装
 
-从[最新版本](https://github.com/MMFoundation/OhMyShot/releases/latest)下载 `OhMyShot-<版本号>.zip`，解压后把 OhMyShot
-移到「应用程序」文件夹。发布的版本都用 Developer ID 签名并经过 Apple 公证，之后会自动更新（「设置 › 通用 › 更新」）。
+从[最新版本](https://github.com/MMFoundation/OhMyShot/releases/latest)下载 `OhMyShot-<版本号>.dmg`，打开后把 OhMyShot
+拖到「应用程序」文件夹。发布的版本都用 Developer ID 签名并经过 Apple 公证，之后会自动更新（「设置 › 通用 › 更新」）。
 
 ### 环境要求
 

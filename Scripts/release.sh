@@ -1,14 +1,15 @@
 #!/bin/sh
 # Makes a release of the version in Config/Base.xcconfig, and publishes nothing unless asked: build/release/<version>/
-# ends up with OhMyShot-<version>.zip (signed with Developer ID, notarized, stapled) and the appcast.xml that lists it,
-# signed with the Sparkle key in the login keychain. The last lines print the `gh release create` that would publish
-# them. Docs/release.md has the whole procedure.
+# ends up with OhMyShot-<version>.zip (signed with Developer ID, notarized, stapled), the appcast.xml that lists it,
+# signed with the Sparkle key in the login keychain, and OhMyShot-<version>.dmg, the same app in the installer disk
+# image (Scripts/make-dmg.sh), signed and notarized in its turn. The last lines print the `gh release create` that
+# would publish them. Docs/release.md has the whole procedure.
 #
 # Usage: Scripts/release.sh               a release
 #        Scripts/release.sh --publish     a release, then that `gh release create` itself
-#        Scripts/release.sh --dry-run     everything that needs no Developer ID: the archive, the zip, the notes and an
-#                                         appcast, signed with this Mac's own identity and not notarized, into
-#                                         build/release/<version>-dry-run/. Never publish what it makes.
+#        Scripts/release.sh --dry-run     everything that needs no Developer ID: the archive, the zip, the disk image,
+#                                         the notes and an appcast, signed with this Mac's own identity and not
+#                                         notarized, into build/release/<version>-dry-run/. Never publish what it makes.
 #        Scripts/release.sh --check       only the checks a release makes first that need no Mac (the version, its
 #                                         tag, the notes, the feed; with --publish, gh too), as the release
 #                                         workflow's preflight runs them on Linux. Builds nothing.
@@ -293,14 +294,12 @@ find "$APP" \( -name "*.app" -o -name "*.appex" -o -name "*.xpc" -o -name "*.fra
   done || BAD=1
 [ $BAD = 0 ] || exit 1
 
-ZIP="$OUT/archives/OhMyShot-$VERSION.zip"
-if [ $DRY_RUN = 0 ]; then
-  echo "Notarizing..."
-  ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/notarize.zip"
+# Notarizes the file $1, keeping Apple's answer in $OUT/$2.txt, and its reasons in $OUT/$2-log.json when it refuses.
+notarize() {
   # The upload, again when it's cut off midway (it has timed out), which leaves Apple a submission that never ends.
   SUBMISSION=
   for try in 1 2 3; do
-    if notarytool submit "$OUT/notarize.zip" > "$OUT/submission.txt" 2>&1; then
+    if notarytool submit "$1" > "$OUT/submission.txt" 2>&1; then
       SUBMISSION=$(sed -n 's/^ *id: //p' "$OUT/submission.txt" | head -1)
       break
     fi
@@ -308,7 +307,7 @@ if [ $DRY_RUN = 0 ]; then
     echo "The upload failed (try $try of 3)." >&2
     [ $try = 3 ] || sleep 60
   done
-  [ -n "$SUBMISSION" ] || fail "couldn't upload the app to the notary service: $OUT/submission.txt"
+  [ -n "$SUBMISSION" ] || fail "couldn't upload $1 to the notary service: $OUT/submission.txt"
   echo "Submitted as $SUBMISSION. Waiting for Apple (minutes as a rule, hours at times)..."
   # Asked once a minute, and again when an asking fails: notarytool's own --wait gives up at the first network error
   # (a TLS one has ended it), though the submission goes on.
@@ -321,13 +320,22 @@ if [ $DRY_RUN = 0 ]; then
     WAITED=$((WAITED + 1))
     [ $((WAITED % 15)) != 0 ] || echo "  ${STATUS:-no answer} after $WAITED minutes"
   done
-  notarytool info "$SUBMISSION" | tee "$OUT/notarization.txt"
+  notarytool info "$SUBMISSION" | tee "$OUT/$2.txt"
   if [ "$STATUS" != Accepted ]; then
     # Apple's reasons, fetched while the credentials are at hand (in CI they aren't, afterwards).
-    notarytool log "$SUBMISSION" "$OUT/notarization-log.json" || true
-    fail "notarization didn't accept it ($STATUS): $OUT/notarization-log.json says why"
+    notarytool log "$SUBMISSION" "$OUT/$2-log.json" || true
+    fail "notarization didn't accept $1 ($STATUS): $OUT/$2-log.json says why"
   fi
-  rm "$OUT/notarize.zip" "$OUT/submission.txt"
+  rm "$OUT/submission.txt"
+}
+
+ZIP="$OUT/archives/OhMyShot-$VERSION.zip"
+DMG="$OUT/OhMyShot-$VERSION.dmg"
+if [ $DRY_RUN = 0 ]; then
+  echo "Notarizing..."
+  ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/notarize.zip"
+  notarize "$OUT/notarize.zip" notarization
+  rm "$OUT/notarize.zip"
   xcrun stapler staple "$APP"
   xcrun stapler validate "$APP"
   # Asks for the notarization itself rather than Gatekeeper's verdict, which says nothing on a Mac where Gatekeeper
@@ -337,6 +345,18 @@ fi
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 python3 -I Scripts/check-release-updater.py "$ZIP" --version "$VERSION" --build "$BUILD" \
   || fail "the release archive does not have the required website updater"
+
+# The disk image people download (DESIGN.md, Installer Disk Image), of the app just stapled. Sparkle keeps to the zip,
+# and the image stays out of archives/, where generate_appcast would take it for a second update of this version.
+Scripts/make-dmg.sh "$APP" "$DMG"
+if [ $DRY_RUN = 0 ]; then
+  echo "Notarizing the disk image..."
+  notarize "$DMG" notarization-dmg
+  xcrun stapler staple "$DMG"
+  xcrun stapler validate "$DMG"
+  codesign --verify --strict --check-notarization -R="notarized" "$DMG" \
+    || fail "the disk image doesn't read as notarized"
+fi
 
 # The release notes: the version's section of CHANGELOG.md, with the link definitions its references use.
 NOTES="$OUT/archives/OhMyShot-$VERSION.md"
@@ -370,14 +390,16 @@ grep -q "OhMyShot-$VERSION\.zip\"[^>]*sparkle:edSignature=" "$OUT/archives/appca
   || fail "the appcast doesn't sign the zip: the Sparkle key isn't the one SUPublicEDKey in Config/Info.plist names"
 
 echo
-echo "Made $(du -h "$ZIP" | cut -f1 | tr -d ' ') $ZIP ($(du -sh "$APP" | cut -f1 | tr -d ' ') unzipped) and $OUT/archives/appcast.xml."
+echo "Made $(du -h "$ZIP" | cut -f1 | tr -d ' ') $ZIP ($(du -sh "$APP" | cut -f1 | tr -d ' ') unzipped)," \
+  "$(du -h "$DMG" | cut -f1 | tr -d ' ') $DMG, and $OUT/archives/appcast.xml."
 if [ $DRY_RUN = 1 ]; then
   echo "A dry run: signed with this Mac's identity and not notarized. Don't publish it."
 elif [ $PUBLISH = 1 ]; then
   echo "Publishing $TAG..."
-  gh release create "$TAG" "$ZIP" "$OUT/archives/appcast.xml" --repo "$REPO" --target "$(git rev-parse HEAD)" \
+  gh release create "$TAG" "$ZIP" "$DMG" "$OUT/archives/appcast.xml" --repo "$REPO" --target "$(git rev-parse HEAD)" \
     --title "OhMyShot $VERSION" --notes-file "$OUT/release-notes.md"
 else
-  echo "To publish it (the zip and the appcast go to the release; the feed is the latest release's appcast.xml):"
-  echo "  gh release create $TAG '$ZIP' '$OUT/archives/appcast.xml' --repo $REPO --target $(git rev-parse HEAD) --title 'OhMyShot $VERSION' --notes-file '$OUT/release-notes.md'"
+  echo "To publish it (the zip, the disk image, and the appcast go to the release; the feed is the latest release's" \
+    "appcast.xml):"
+  echo "  gh release create $TAG '$ZIP' '$DMG' '$OUT/archives/appcast.xml' --repo $REPO --target $(git rev-parse HEAD) --title 'OhMyShot $VERSION' --notes-file '$OUT/release-notes.md'"
 fi

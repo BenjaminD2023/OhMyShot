@@ -120,8 +120,8 @@ log, with methods, dates, and caveats, is in [Docs/perf.md](Docs/perf.md); measu
 
 ### Install
 
-Download `OhMyShot-<version>.zip` from the [latest release](https://github.com/MMFoundation/OhMyShot/releases/latest),
-unzip it, and move OhMyShot to Applications. Releases are signed with a Developer ID and notarized by Apple, and the
+Download `OhMyShot-<version>.dmg` from the [latest release](https://github.com/MMFoundation/OhMyShot/releases/latest),
+open it, and drag OhMyShot onto Applications. Releases are signed with a Developer ID and notarized by Apple, and the
 app keeps itself up to date from then on (Settings › General › Updates).
 
 ### Requirements
