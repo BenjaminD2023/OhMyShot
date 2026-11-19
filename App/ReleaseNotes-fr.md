@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-19
+
 ### Restez à jour
 
 - **Des mises à jour depuis notre site.** Les informations de mise à jour et les fichiers sont transmis par le site d’OhMyShot, avec GitHub en secours.
