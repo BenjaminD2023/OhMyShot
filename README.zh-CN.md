@@ -1,6 +1,13 @@
 <!-- The Chinese translation of README.md. Change both in the same commit; README.md is authoritative.
      Feature names follow the app's own zh-Hans strings (快速访问, 截图历史, 贴图, 截取文字, 多合一…). -->
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Tools/logo/preview/icon-dark.svg">
+    <img src="Tools/logo/preview/icon-light.svg" width="128" height="128" alt="">
+  </picture>
+</p>
+
 <h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="Tools/logo/preview/wordmark-dark.svg">
@@ -13,11 +20,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/github/v/release/MMFoundation/OhMyShot?label=%E7%89%88%E6%9C%AC&color=f5a623" alt="最新版本"></a>
-  <img src="https://img.shields.io/badge/macOS_26%2B-Apple_%E8%8A%AF%E7%89%87-111111?logo=apple&logoColor=white" alt="macOS 26 或更高版本，Apple 芯片">
-  <img src="https://img.shields.io/badge/Swift_6-SwiftUI_%2B_AppKit-F05138?logo=swift&logoColor=white" alt="Swift 6、SwiftUI 与 AppKit">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/MMFoundation/OhMyShot?color=blue" alt="许可证：GPL-3.0"></a>
-  <a href="#contributing"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="欢迎提交 PR"></a>
+  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD_macOS_%E7%89%88-3D7FEA?style=flat-square&logo=apple&logoColor=white" width="182" alt="下载 macOS 版 OhMyShot"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/github/v/release/MMFoundation/OhMyShot?style=flat-square&label=%E7%89%88%E6%9C%AC&color=3D7FEA" alt="最新版本"></a>
+  <img src="https://img.shields.io/badge/macOS_26%2B-Apple_%E8%8A%AF%E7%89%87-1D1D1F?style=flat-square&logo=apple&logoColor=white" alt="macOS 26 或更高版本，Apple 芯片">
+  <img src="https://img.shields.io/badge/Swift_6-SwiftUI_%2B_AppKit-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6、SwiftUI 与 AppKit">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/MMFoundation/OhMyShot?style=flat-square&color=37CDBE" alt="许可证：GPL-3.0"></a>
+  <a href="#contributing"><img src="https://img.shields.io/badge/PRs-welcome-37CDBE?style=flat-square" alt="欢迎提交 PR"></a>
+  <a href="https://mmfoundation.dev/discord"><img src="https://img.shields.io/badge/Discord-%E5%8A%A0%E5%85%A5%E6%88%91%E4%BB%AC-5865F2?style=flat-square&logo=discord&logoColor=white" alt="加入 MMFoundation 的 Discord"></a>
 </p>
 
 <p align="center">
@@ -33,17 +45,14 @@
   <a href="CHANGELOG.md">更新日志</a>
 </p>
 
-<!-- 有了截图或动图之后放在这里：
 <p align="center">
-  <img src="Docs/assets/hero.png" width="860" alt="OhMyShot 的截图界面和快速访问卡片">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Docs/assets/capture-launcher-dark.png">
+    <img src="Docs/assets/capture-launcher-light.png" width="420" alt="OhMyShot 的截图启动器：每种截图方式和每个工具各是一块磁贴，并标出各自的快捷键">
+  </picture>
+  <br>
+  <sub>单击菜单栏图标，即可打开截图启动器。</sub>
 </p>
--->
-
-> [!NOTE]
-> **刚刚起步。** 0.1.0 是第一个版本。OhMyShot 在 macOS 27 beta、Apple 芯片的 Mac 上开发和测试（一台 6K 带鱼屏外接显示器加内建 XDR 屏幕）。
-> 它可以为 macOS 26 构建，但尚未在 macOS 26 上实际运行过。
->
-> 本文是 [README.md](README.md) 的中文翻译，两者不一致时以英文版为准。
 
 <a id="why-ohmyshot"></a>
 
@@ -80,18 +89,64 @@
 
 ## 功能
 
-| | 功能 | 说明 |
-| :---: | --- | --- |
-| 📸 | **截图** | 区域、窗口（可带或不带阴影，可加背景）、全屏、上次区域，以及定时截图。区域可以跨显示器，选择时屏幕会冻结。「多合一」在一条工具栏里完成以上所有设置。 |
-| 🗂️ | **快速访问与截图历史** | 每次截图都会出现一张卡片，可以复制、保存、标注、贴图、上传或直接拖出；截图历史可以按图中文字搜索。 |
-| ✏️ | **标注** | 在编辑器里标注，或直接在冻结的选区上绘制：箭头、形状、文字、自动对齐文字的荧光笔、步骤编号、模糊和像素化（会根据识别出的文字给出打码建议）、裁剪、背景、拼图，以及可再次打开的项目文件。 |
-| 🔤 | [**文字识别**](Docs/ocr.md) | 「截取文字」复制区域内的文字；「识别的文字」窗口把文字和原图并排显示，能识别表格、链接、条码和二维码，并可翻译，译文也可以直接覆盖在原图上。可选模型包能对中文做二次识别，把公式转成 LaTeX，并读取表格和图表。 |
-| 📌 | [**贴图、取色与测量**](Docs/measurement-snapping.md) | 把图片、文字和颜色置顶贴在屏幕上；屏幕取色器，以及能自动吸附边缘的像素标尺。 |
-| 🎬 | **录屏与 Studio** | 录制屏幕、窗口或区域，导出 MP4 或 GIF，可录系统声音、麦克风、摄像头，并显示点击和按键。Studio 用于录制后的剪辑，能自动跟随光标缩放。在 macOS 27 上开启 Replay 后，随时可以保存最近 15 秒。 |
-| 📜 | **滚动截图** | 手动滚动或交给「自动滚动」，拼成一张长图。 |
-| ☁️ | **分享** | 上传到你自己的 S3 兼容存储、WebDAV 或自定义 HTTP 接口；也支持打印、邮件和系统分享菜单。 |
-| ⚙️ | [**自动化**](Docs/automation.md) | 兼容 CleanShot X 的 URL 命令（`ohmyshot://`），支持快捷指令和聚焦搜索，并提供 Raycast 扩展。 |
-| 🌐 | [**多语言**](Docs/localization.md) | 英文、简体中文、繁体中文、日文、西班牙文和法文。 |
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📸 截图</h3>
+      区域、窗口（可带或不带阴影，可加背景）、全屏、上次区域，以及定时截图。区域可以跨显示器，选择时屏幕会冻结。
+      「多合一」在一条工具栏里完成以上所有设置。
+    </td>
+    <td width="50%" valign="top">
+      <h3>🗂️ 快速访问与截图历史</h3>
+      每次截图都会出现一张卡片，可以复制、保存、标注、贴图、上传或直接拖出；截图历史可以按图中文字搜索。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>✏️ 标注</h3>
+      在编辑器里标注，或直接在冻结的选区上绘制：箭头、形状、文字、自动对齐文字的荧光笔、步骤编号、模糊和像素化（会根据识别出的文字给出打码建议）、裁剪、背景、拼图，以及可再次打开的项目文件。
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔤 文字识别</h3>
+      「截取文字」复制区域内的文字；「识别的文字」窗口把文字和原图并排显示，能识别表格、链接、条码和二维码，并可翻译，译文也可以直接覆盖在原图上。可选模型包能对中文做二次识别，把公式转成 LaTeX，并读取表格和图表。
+      <a href="Docs/ocr.md">工作原理 →</a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🎬 录屏与 Studio</h3>
+      录制屏幕、窗口或区域，导出 MP4 或 GIF，可录系统声音、麦克风、摄像头，并显示点击和按键。
+      Studio 用于录制后的剪辑，能自动跟随光标缩放。在 macOS 27 上开启 Replay 后，随时可以保存最近 15 秒。
+    </td>
+    <td width="50%" valign="top">
+      <h3>📌 贴图、取色与测量</h3>
+      把图片、文字和颜色置顶贴在屏幕上；屏幕取色器，以及能自动吸附边缘的像素标尺。
+      <a href="Docs/measurement-snapping.md">边缘吸附 →</a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📜 滚动截图</h3>
+      手动滚动或交给「自动滚动」，拼成一张长图。
+    </td>
+    <td width="50%" valign="top">
+      <h3>☁️ 分享</h3>
+      上传到你自己的 S3 兼容存储、WebDAV 或自定义 HTTP 接口；也支持打印、邮件和系统分享菜单。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>⚙️ 自动化</h3>
+      兼容 CleanShot X 的 URL 命令（<code>ohmyshot://</code>），支持快捷指令和聚焦搜索，并提供 Raycast 扩展。
+      <a href="Docs/automation.md">URL 命令 →</a>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🌐 多语言</h3>
+      英文、简体中文、繁体中文、日文、西班牙文和法文。
+      <a href="Docs/localization.md">参与翻译 →</a>
+    </td>
+  </tr>
+</table>
 
 OhMyShot 还会出现在其他 App 的分享菜单中（用来标注或贴图；在「系统设置 › 通用 › 登录项与扩展 › 共享」中开启），
 以及访达中图片的「打开方式」里。
@@ -100,7 +155,8 @@ OhMyShot 还会出现在其他 App 的分享菜单中（用来标注或贴图；
 
 ## 功耗预算
 
-每个里程碑都以实测数据为准。以下是最新结果，测于上文那台 Mac，均为 Debug 构建：
+每个里程碑都以实测数据为准。以下是最新结果，测于一台运行 macOS 27 beta 的 Apple 芯片 Mac（外接 6K 带鱼屏，加内建 XDR 屏幕），
+均为 Debug 构建：
 
 | 指标 | 目标 | 实测 |
 | --- | --- | --- |
@@ -123,8 +179,11 @@ OhMyShot 还会出现在其他 App 的分享菜单中（用来标注或贴图；
 
 ### 安装
 
-从[最新版本](https://github.com/MMFoundation/OhMyShot/releases/latest)下载 `OhMyShot-<版本号>.dmg`，打开后把 OhMyShot
-拖到「应用程序」文件夹。发布的版本都用 Developer ID 签名并经过 Apple 公证，之后会自动更新（「设置 › 通用 › 更新」）。
+1. 从[最新版本](https://github.com/MMFoundation/OhMyShot/releases/latest)下载 `OhMyShot-<版本号>.dmg`。
+2. 打开后把 OhMyShot 拖到「应用程序」文件夹。
+3. 打开 OhMyShot，新手引导会带你开启屏幕录制权限，并完成第一次截图。
+
+发布的版本都用 Developer ID 签名并经过 Apple 公证，之后会自动更新（「设置 › 通用 › 更新」）。
 
 ### 环境要求
 
@@ -249,4 +308,13 @@ OhMyShot 使用了 [Sparkle](https://sparkle-project.org)、
 OhMyShot 是自由软件，以 [GNU 通用公共许可证 第 3 版](LICENSE)发布。
 Copyright © 2026 OhMyShot contributors.
 
-OhMyShot 是 [MMFoundation](https://mmfoundation.dev/zh/) 的项目。
+<br>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Tools/logo/preview/icon-dark.svg">
+    <img src="Tools/logo/preview/icon-light.svg" width="48" height="48" alt="">
+  </picture>
+  <br>
+  <sub>OhMyShot 是 <a href="https://mmfoundation.dev/zh/">MMFoundation</a> 的项目&ensp;·&ensp;<a href="#top">回到顶部 ↑</a></sub>
+</p>

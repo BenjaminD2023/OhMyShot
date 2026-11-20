@@ -1,7 +1,15 @@
-<!-- The wordmark is Tools/logo/make_wordmark.py's output: outlined paths, so it renders on GitHub without fonts.
+<!-- The icon is Tools/logo/make_icon.py's preview and the wordmark Tools/logo/make_wordmark.py's output: outlined
+     paths, so both render on GitHub without fonts.
      The English line under it is also the repository description and OhMyShot's card on the MMFoundation profile
      (MMFoundation/.github, profile/README.md and README.zh-CN.md): change them together. Other pages link to
      #build-and-run, so keep that heading. README.zh-CN.md is the Chinese translation: change it in the same commit. -->
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Tools/logo/preview/icon-dark.svg">
+    <img src="Tools/logo/preview/icon-light.svg" width="128" height="128" alt="">
+  </picture>
+</p>
 
 <h1 align="center">
   <picture>
@@ -19,11 +27,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/github/v/release/MMFoundation/OhMyShot?label=release&color=f5a623" alt="Latest release"></a>
-  <img src="https://img.shields.io/badge/macOS_26%2B-Apple_silicon-111111?logo=apple&logoColor=white" alt="macOS 26 or later on Apple silicon">
-  <img src="https://img.shields.io/badge/Swift_6-SwiftUI_%2B_AppKit-F05138?logo=swift&logoColor=white" alt="Swift 6, SwiftUI and AppKit">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/MMFoundation/OhMyShot?color=blue" alt="License: GPL-3.0"></a>
-  <a href="#contributing"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="Pull requests welcome"></a>
+  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/badge/Download_for_macOS-3D7FEA?style=flat-square&logo=apple&logoColor=white" width="246" alt="Download OhMyShot for macOS"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/github/v/release/MMFoundation/OhMyShot?style=flat-square&label=release&color=3D7FEA" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS_26%2B-Apple_silicon-1D1D1F?style=flat-square&logo=apple&logoColor=white" alt="macOS 26 or later on Apple silicon">
+  <img src="https://img.shields.io/badge/Swift_6-SwiftUI_%2B_AppKit-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6, SwiftUI and AppKit">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/MMFoundation/OhMyShot?style=flat-square&color=37CDBE" alt="License: GPL-3.0"></a>
+  <a href="#contributing"><img src="https://img.shields.io/badge/PRs-welcome-37CDBE?style=flat-square" alt="Pull requests welcome"></a>
+  <a href="https://mmfoundation.dev/discord"><img src="https://img.shields.io/badge/Discord-join_us-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Join MMFoundation's Discord"></a>
 </p>
 
 <p align="center">
@@ -39,15 +52,17 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
-<!-- A screenshot or short demo of the capture flow goes here once there is one:
+<!-- Rendered by a Debug build (ohmyshot-dev://debug/updates-menu?render=1&mode=light, and mode=dark) and cropped to the
+     tiles, which leaves out the build's name and its Debug row; the shortcuts are that Mac's. Render both again when the
+     launcher changes. README.zh-CN.md uses the same pictures. -->
 <p align="center">
-  <img src="Docs/assets/hero.png" width="860" alt="OhMyShot's capture overlay and a Quick Access card">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Docs/assets/capture-launcher-dark.png">
+    <img src="Docs/assets/capture-launcher-light.png" width="420" alt="OhMyShot's capture launcher: a tile for each way to capture, then the tools, each with its shortcut">
+  </picture>
+  <br>
+  <sub>One click on the menu bar icon opens the capture launcher.</sub>
 </p>
--->
-
-> [!NOTE]
-> **Early days.** 0.1.0 is the first release. OhMyShot is developed and tested on macOS 27 beta on Apple silicon (a
-> 6K ultrawide beside a built-in XDR display). It builds for macOS 26 but has not been run there.
 
 ## Why OhMyShot
 
@@ -80,25 +95,77 @@
 
 ## Features
 
-| | Feature | What it does |
-| :---: | --- | --- |
-| 📸 | **Screenshots** | Area, window (with or without its shadow, on a background), full display, the previous area, and a self-timer. Areas can cross displays, and the screen freezes while you choose. All-In-One sets up any of them from one bar. |
-| 🗂️ | **Quick Access and Capture History** | A card for each capture to copy, save, mark up, pin, upload, or drag out, and a history you can search by the text in the pictures. |
-| ✏️ | **Annotation** | An editor, or drawing straight on the frozen selection: arrows, shapes, text, a highlighter that snaps to text, counters, blur and pixelation (with redaction suggestions from the text it reads), crops, backgrounds, combined images, and project files you can open again. |
-| 🔤 | [**Text from pixels**](Docs/ocr.md) | Capture Text copies the text in an area; the Recognized Text window shows it beside the picture with tables, links, and codes, and translates it, also over the original. Optional model packs read Chinese a second time, formulas as LaTeX, and tables and charts. |
-| 📌 | [**Pins, color, and measuring**](Docs/measurement-snapping.md) | Always-on-top pictures, text, and colors; a screen color picker and a pixel ruler that snaps to edges. |
-| 🎬 | **Recording and Studio** | Screen, window, or area to MP4 or GIF, with system audio, microphone, camera, clicks, and keys. Studio edits a recording afterwards, with automatic zooms that follow the cursor. On macOS 27, with Replay on, the last 15 seconds can be saved at any time. |
-| 📜 | **Scrolling capture** | Scroll by hand or let Auto-scroll do it, into one long picture. |
-| ☁️ | **Sharing** | Uploads to your own S3-compatible, WebDAV, or custom HTTP storage; printing, email, and the Share menu. |
-| ⚙️ | [**Automation**](Docs/automation.md) | CleanShot X–compatible URL commands under `ohmyshot://`, actions in Shortcuts and Spotlight, and a Raycast extension. |
-| 🌐 | [**Languages**](Docs/localization.md) | English, Simplified and Traditional Chinese, Japanese, Spanish, and French. |
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📸 Screenshots</h3>
+      Area, window (with or without its shadow, on a background), full display, the previous area, and a self-timer.
+      Areas can cross displays, and the screen freezes while you choose. All-In-One sets up any of them from one bar.
+    </td>
+    <td width="50%" valign="top">
+      <h3>🗂️ Quick Access and Capture History</h3>
+      A card for each capture to copy, save, mark up, pin, upload, or drag out, and a history you can search by the
+      text in the pictures.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>✏️ Annotation</h3>
+      An editor, or drawing straight on the frozen selection: arrows, shapes, text, a highlighter that snaps to text,
+      counters, blur and pixelation (with redaction suggestions from the text it reads), crops, backgrounds, combined
+      images, and project files you can open again.
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔤 Text from pixels</h3>
+      Capture Text copies the text in an area; the Recognized Text window shows it beside the picture with tables, links,
+      and codes, and translates it, also over the original. Optional model packs read Chinese a second time, formulas as
+      LaTeX, and tables and charts. <a href="Docs/ocr.md">How it works →</a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🎬 Recording and Studio</h3>
+      Screen, window, or area to MP4 or GIF, with system audio, microphone, camera, clicks, and keys. Studio edits a
+      recording afterwards, with automatic zooms that follow the cursor. On macOS 27, with Replay on, the last 15 seconds
+      can be saved at any time.
+    </td>
+    <td width="50%" valign="top">
+      <h3>📌 Pins, color, and measuring</h3>
+      Always-on-top pictures, text, and colors; a screen color picker and a pixel ruler that snaps to edges.
+      <a href="Docs/measurement-snapping.md">Edge snapping →</a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📜 Scrolling capture</h3>
+      Scroll by hand or let Auto-scroll do it, into one long picture.
+    </td>
+    <td width="50%" valign="top">
+      <h3>☁️ Sharing</h3>
+      Uploads to your own S3-compatible, WebDAV, or custom HTTP storage; printing, email, and the Share menu.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>⚙️ Automation</h3>
+      CleanShot X–compatible URL commands under <code>ohmyshot://</code>, actions in Shortcuts and Spotlight, and a
+      Raycast extension. <a href="Docs/automation.md">URL commands →</a>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🌐 Languages</h3>
+      English, Simplified and Traditional Chinese, Japanese, Spanish, and French.
+      <a href="Docs/localization.md">Add a translation →</a>
+    </td>
+  </tr>
+</table>
 
 OhMyShot also appears in other apps' Share menu (to mark up or pin a picture; switch it on in System Settings ›
 General › Login Items & Extensions › Sharing) and in Finder's Open With for images.
 
 ## Power budget
 
-Every milestone is gated on measured numbers. The latest, on the Mac above with Debug builds:
+Every milestone is gated on measured numbers. The latest, with Debug builds on an Apple silicon Mac running macOS 27 beta
+(a 6K ultrawide beside a built-in XDR display):
 
 | Metric | Target | Measured |
 | --- | --- | --- |
@@ -120,9 +187,12 @@ log, with methods, dates, and caveats, is in [Docs/perf.md](Docs/perf.md); measu
 
 ### Install
 
-Download `OhMyShot-<version>.dmg` from the [latest release](https://github.com/MMFoundation/OhMyShot/releases/latest),
-open it, and drag OhMyShot onto Applications. Releases are signed with a Developer ID and notarized by Apple, and the
-app keeps itself up to date from then on (Settings › General › Updates).
+1. Download `OhMyShot-<version>.dmg` from the [latest release](https://github.com/MMFoundation/OhMyShot/releases/latest).
+2. Open it and drag OhMyShot onto Applications.
+3. Open OhMyShot. A getting-started guide walks you through allowing Screen Recording and your first capture.
+
+Releases are signed with a Developer ID and notarized by Apple, and the app keeps itself up to date from then on
+(Settings › General › Updates).
 
 ### Requirements
 
@@ -244,4 +314,13 @@ OhMyShot is built with [Sparkle](https://sparkle-project.org),
 OhMyShot is free software, licensed under the [GNU General Public License v3.0](LICENSE).
 Copyright © 2026 OhMyShot contributors.
 
-OhMyShot is a project of [MMFoundation](https://mmfoundation.dev/).
+<br>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Tools/logo/preview/icon-dark.svg">
+    <img src="Tools/logo/preview/icon-light.svg" width="48" height="48" alt="">
+  </picture>
+  <br>
+  <sub>OhMyShot is a project of <a href="https://mmfoundation.dev/">MMFoundation</a>&ensp;·&ensp;<a href="#top">Back to top ↑</a></sub>
+</p>
