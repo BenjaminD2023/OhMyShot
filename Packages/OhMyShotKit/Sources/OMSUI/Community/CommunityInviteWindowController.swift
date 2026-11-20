@@ -3,10 +3,10 @@ import Foundation
 import OMSCore
 import SwiftUI
 
-/// The invitation to MMFoundation's Discord, shown once ever (`CommunityInvite` decides when). It looks like the
-/// onboarding window: a plain window, never modal, with Not Now and Join Discord. Join Discord opens the organization's
-/// Discord in the browser; it, Not Now, Escape, and the close button all close the window, and each spends the
-/// invitation as much as the others.
+/// The invitation to star OhMyShot on GitHub or join MMFoundation's Discord, shown once ever (`CommunityInvite` decides
+/// when). It looks like the onboarding window: a plain window, never modal, with Not Now, Join Discord, and Star on
+/// GitHub. Star on GitHub opens the app's repository and Join Discord the organization's Discord, in the browser; they,
+/// Not Now, Escape, and the close button all close the window, and each spends the invitation as much as the others.
 public final class CommunityInviteWindowController: NSWindowController, NSWindowDelegate {
     public var onClose: (() -> Void)?
 
@@ -29,6 +29,10 @@ public final class CommunityInviteWindowController: NSWindowController, NSWindow
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         super.init(window: window)
         let controller = NSHostingController(rootView: CommunityInviteView(
+            star: { [weak self] in
+                NSWorkspace.shared.open(CommunityInvite.github)
+                self?.close()
+            },
             join: { [weak self] in
                 NSWorkspace.shared.open(CommunityInvite.discord)
                 self?.close()
@@ -83,24 +87,22 @@ private final class CommunityInviteWindow: NSWindow {
 }
 
 struct CommunityInviteView: View {
+    let star: () -> Void
     let join: () -> Void
     let close: () -> Void
 
     var body: some View {
         VStack(spacing: 16) {
-            Image("DiscordMark", bundle: .module)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 56, height: 44)
-                .foregroundStyle(.tint)
+            Image(nsImage: AppActivation.appIcon).resizable().interpolation(.high)
+                .frame(width: 64, height: 64)
                 .accessibilityHidden(true)
 
             VStack(spacing: 6) {
-                Text("Join Us on Discord", bundle: .module)
+                Text("Enjoying OhMyShot?", bundle: .module)
                     .font(.title2.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                Text("Ask questions, share ideas, and hear what’s coming from MMFoundation, the people who make OhMyShot.", bundle: .module)
+                Text("A star on GitHub helps more people find OhMyShot. On Discord, ask questions, share ideas, and hear what’s coming from MMFoundation, the people who make it.", bundle: .module)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -116,9 +118,14 @@ struct CommunityInviteView: View {
                     Text("Join Discord", bundle: .module)
                         .frame(maxWidth: .infinity)
                 }
+                .help(Text(verbatim: CommunityInvite.discord.absoluteString))
+                Button(action: star) {
+                    Text("Star on GitHub", bundle: .module)
+                        .frame(maxWidth: .infinity)
+                }
                 .buttonStyle(.glassProminent)
                 .keyboardShortcut(.defaultAction)
-                .help(Text(verbatim: CommunityInvite.discord.absoluteString))
+                .help(Text(verbatim: CommunityInvite.github.absoluteString))
             }
             .controlSize(.large)
             .padding(.top, 8)

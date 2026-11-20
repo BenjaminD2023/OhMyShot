@@ -31,6 +31,25 @@ struct CommunityInviteTests {
         }
     }
 
+    /// The Discord-only invitation of earlier versions never asked for a star, so having seen it doesn't spend this one.
+    @Test func whoeverSawTheDiscordOnlyInvitationIsAskedOnceMore() throws {
+        let (defaults, cleanUp) = try makeDefaults()
+        defer { cleanUp() }
+        let before = CommunityInvite(defaults: defaults)
+        before.launched()
+        before.launched()
+        keep(10, onEachOf: 3, in: before)
+        defaults.set(true, forKey: "communityInviteShown")
+
+        let invite = CommunityInvite(defaults: defaults)
+        invite.launched()
+        #expect(invite.mayAppear(busy: false))
+        invite.shown()
+        let next = CommunityInvite(defaults: defaults)
+        next.launched()
+        #expect(!next.mayAppear(busy: false))
+    }
+
     @Test func aNewInstallIsNotInvited() throws {
         let (defaults, cleanUp) = try makeDefaults()
         defer { cleanUp() }

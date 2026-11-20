@@ -145,7 +145,8 @@ final class CompositionRoot {
     private var onboardingWindow: OnboardingWindowController?
     private var onboardingCapture: UUID?
     private var onboardingApplication: NSRunningApplication?
-    /// The invitation to MMFoundation's Discord: counted as captures are kept, shown once, at a later launch.
+    /// The invitation to star OhMyShot on GitHub or join MMFoundation's Discord: counted as captures are kept, shown
+    /// once, at a later launch.
     private let communityInvite = CommunityInvite()
     private var communityInviteWindow: CommunityInviteWindowController?
     var historyWindow: HistoryWindowController?
@@ -286,7 +287,7 @@ final class CompositionRoot {
         recordings.onRecorded = { [weak self] item in
             self?.didCapture(item)
         }
-        // Card or not, a screenshot or a recording kept counts toward the invitation to the Discord.
+        // Card or not, a screenshot or a recording kept counts toward the community invitation.
         captures.onKept = { [weak self] _ in
             self?.usageTelemetry?.record(.screenshot)
             self?.communityInvite.captureKept()
@@ -607,13 +608,13 @@ final class CompositionRoot {
         controller.show()
     }
 
-    /// At launch, the invitation to MMFoundation's Discord, once, when `CommunityInvite` says it may appear. Never as a
-    /// capture is kept, though that is when it becomes due: the capture is on the clipboard on its way somewhere, and a
-    /// window coming forward would take the keys it is pasted with.
+    /// At launch, the community invitation (GitHub and Discord), once, when `CommunityInvite` says it may appear.
+    /// Never as a capture is kept, though that is when it becomes due: the capture is on the clipboard on its way
+    /// somewhere, and a window coming forward would take the keys it is pasted with.
     private func offerCommunityInvite() {
         guard communityInvite.mayAppear(busy: isBusyForCommunityInvite) else { return }
         communityInvite.shown()
-        Log.app.notice("Showing the invitation to the Discord")
+        Log.app.notice("Showing the community invitation")
         let controller = CommunityInviteWindowController()
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self, weak controller] in
             if self?.communityInviteWindow === controller { self?.communityInviteWindow = nil }

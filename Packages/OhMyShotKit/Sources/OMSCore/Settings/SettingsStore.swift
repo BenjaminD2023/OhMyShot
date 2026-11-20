@@ -495,7 +495,7 @@ public final class SettingsStore {
         let registered: [Key: Any] = [
             .showMenuBarIcon: true,
             .playSounds: true,
-            .sendsUsageData: false,
+            .sendsUsageData: true,
             .checksForUpdates: true,
             .automationEnabled: true,
             .copyAfterCapture: true,
@@ -675,11 +675,12 @@ public final class SettingsStore {
     /// Puts every choice back as a new install has it, as Settings › General › Reset does. What the app keeps rather
     /// than chooses stays: the next `{counter}` number (a file saved under a number already taken would replace
     /// it), the area All-In-One last took, whether the desktop icons are hidden (a cover window shows that, which the
-    /// menu bar's toggle shows and hides together with it), and the apps allowed to send commands, which the
-    /// Automation pane manages one by one. Shortcuts, destinations, the cloud model, and the language are kept
-    /// elsewhere and stay too.
+    /// menu bar's toggle shows and hides together with it), the apps allowed to send commands, which the
+    /// Automation pane manages one by one, and whether usage data is sent, so a reset never turns it back on for
+    /// someone who turned it off. Shortcuts, destinations, the cloud model, and the language are kept elsewhere and
+    /// stay too.
     public func resetToDefaults() {
-        let kept: Set<Key> = [.nextFileNumber, .allInOneArea, .hidesDesktopIcons, .approvedAutomationCallers]
+        let kept: Set<Key> = [.nextFileNumber, .allInOneArea, .hidesDesktopIcons, .approvedAutomationCallers, .sendsUsageData]
         for key in Key.allCases where !kept.contains(key) {
             defaults.removeObject(forKey: key)
         }

@@ -233,7 +233,7 @@ are made, signed, and notarized is in [Docs/release.md](Docs/release.md).
 
 ### Optional usage data
 
-Settings › General › Usage Data is off by default. If enabled, OhMyShot sends the UTC date,
+Settings › General › Usage Data is on by default and can be turned off there at any time; Reset to Default Settings keeps that choice. While it is on, OhMyShot sends the UTC date,
 a random ID that changes each UTC day, the app version, macOS major version, and daily counts
 of successful screenshots, recordings, and text recognitions to `www.ohmyshot.org`. Reports
 exclude captures, recognized text, file and window names, and persistent device identifiers.

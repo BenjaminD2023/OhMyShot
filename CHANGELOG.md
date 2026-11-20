@@ -13,6 +13,11 @@ Each entry links its implementation commits or merged pull request and credits v
 
 - Rounded Corners and Shadow, as iShot gives every screenshot: Settings › Screenshots › Background (or the editor's Background Presets) rounds an area's or a display's corners by 15 pt and lays a soft shadow evenly around it on clear room just wide enough to hold it. It needs no preset saved first; a window screenshot keeps its own corners and shadow, and JPEG fills the clear room with white.
 
+### Changed
+
+- Settings › General › Usage Data is now on by default, also on a Mac where it was never turned on or off. It sends the same daily counts as before (screenshots, recordings, and text recognitions, with the app's version, the macOS version, and a random ID that changes every day); turning it off still stops sending and deletes the unsent counts, and Reset to Default Settings now keeps whichever choice was made.
+- The one-time invitation that comes after using OhMyShot for a while now also asks for a star on GitHub: Star on GitHub, the default, opens OhMyShot's repository, beside Join Discord. Anyone who already saw the Discord-only invitation is asked once more.
+
 ### Fixed
 
 - A small capture on a Transparent background no longer has its shadow cut off in a gray box at the picture's edge: the clear room around it now reaches as far as the shadow does. A background's shadow also lines up with its card exactly, where it used to fall a few pixels short of it on one side.
