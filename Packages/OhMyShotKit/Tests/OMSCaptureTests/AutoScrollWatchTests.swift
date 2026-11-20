@@ -236,4 +236,61 @@ struct AutoScrollWatchTests {
         }
         #expect(second - first >= 1.15, "stopped at \(first), then \(second)")
     }
+
+    @Test func aSmallFastAreaAndATallSlowAreaStillStop() {
+        func simulate(extent: Double, speed: Double) -> (quiet: Int, stoppedAt: Double?) {
+            var watch = AutoScrollWatch(extent: extent)
+            let velocity = AutoScrollMotion.velocity(multiplier: speed, extent: extent)
+            var quiet = 0
+            for look in 0...240 {
+                let verdict = watch.look(AutoScrollWatch.Sample(
+                    time: .milliseconds(250 * look), pushed: velocity * Double(look) / 4, settled: Int(extent), views: look, busy: .zero
+                ))
+                switch verdict {
+                case .quiet:
+                    quiet += 1
+                case .stopped:
+                    return (quiet, Double(look) / 4)
+                case .going, .behind:
+                    break
+                }
+            }
+            return (quiet, nil)
+        }
+
+        // Small viewport at 2× reaches 40% in 0.5 s (< 0.75 s): must look back to a sample at least 0.75 s old.
+        let smallFast = simulate(extent: 120, speed: 2)
+        #expect(smallFast.quiet == 1, "\(smallFast)")
+        #expect(smallFast.stoppedAt.map { $0 >= 1.5 && $0 <= 2.0 } == true, "\(smallFast)")
+
+        // Typical viewport at 1× stops in 2.75 s as before.
+        let typical = simulate(extent: 800, speed: 1)
+        #expect(typical.quiet == 1, "\(typical)")
+        #expect(typical.stoppedAt == 2.75, "\(typical)")
+
+        // Tall viewport at 0.25× takes 15 s to push 40% (> 10 s memory): history must stay long enough to reach it.
+        let tallSlow = simulate(extent: 3000, speed: 0.25)
+        #expect(tallSlow.quiet == 1, "\(tallSlow)")
+        #expect(tallSlow.stoppedAt.map { $0 >= 30 && $0 <= 31 } == true, "\(tallSlow)")
+    }
+
+    @Test func aTallSlowAreaThatScrollsBeforeEndingStillStops() {
+        let extent = 3000.0
+        let velocity = AutoScrollMotion.velocity(multiplier: 0.25, extent: extent)
+        var watch = AutoScrollWatch(extent: extent)
+        var settled = 0
+        var stoppedAt: Double?
+        for look in 0...240 {
+            let time = Double(look) / 4
+            if time <= 12 { settled = Int(velocity * time) }
+            let verdict = watch.look(AutoScrollWatch.Sample(
+                time: .milliseconds(250 * look), pushed: velocity * time, settled: settled, views: look, busy: .zero
+            ))
+            if case .stopped = verdict {
+                stoppedAt = time
+                break
+            }
+        }
+        #expect(stoppedAt.map { $0 > 40 && $0 <= 45 } == true, "\(String(describing: stoppedAt))")
+    }
 }

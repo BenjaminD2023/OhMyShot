@@ -100,6 +100,23 @@ public final class TelemetryRecorder {
         }
     }
 
+    /// An immutable copy of what has been written down so far, without stopping the recorder. Order samples and
+    /// clicks off the main actor with `ordered(_:)` before encoding a draft checkpoint.
+    public func snapshot() -> StudioTelemetry {
+        if let pointerTap { take(pointerTap.drain()) }
+        return telemetry
+    }
+
+    /// Orders samples and clicks as `stop()` does, safe to run off the main actor.
+    nonisolated public static func ordered(_ telemetry: StudioTelemetry) -> StudioTelemetry {
+        var copy = telemetry
+        copy.samples = inOrder(copy.samples)
+        copy.clicks = copy.clicks.enumerated()
+            .sorted { ($0.element.time, $0.offset) < ($1.element.time, $1.offset) }
+            .map(\.element)
+        return copy
+    }
+
     /// Stops and hands over what was written down, in host-clock seconds and in time order.
     @discardableResult
     public func stop() -> StudioTelemetry {
@@ -117,10 +134,7 @@ public final class TelemetryRecorder {
         keyMonitor?.stop()
         keyMonitor = nil
         // Events can arrive after a reading the timer took later, and the two monitors' out of turn.
-        telemetry.samples = Self.inOrder(telemetry.samples)
-        telemetry.clicks = telemetry.clicks.enumerated()
-            .sorted { ($0.element.time, $0.offset) < ($1.element.time, $1.offset) }
-            .map(\.element)
+        telemetry = Self.ordered(telemetry)
         held = [:]
         return telemetry
     }
@@ -198,7 +212,7 @@ public final class TelemetryRecorder {
 
     /// `samples` in time order, each the same as the one before it left out, as at rest; of two at the same
     /// time, the one written down last stands.
-    static func inOrder(_ samples: [StudioTelemetry.Sample]) -> [StudioTelemetry.Sample] {
+    nonisolated static func inOrder(_ samples: [StudioTelemetry.Sample]) -> [StudioTelemetry.Sample] {
         var result: [StudioTelemetry.Sample] = []
         result.reserveCapacity(samples.count)
         for (_, sample) in samples.enumerated().sorted(by: { ($0.element.time, $0.offset) < ($1.element.time, $1.offset) }) {

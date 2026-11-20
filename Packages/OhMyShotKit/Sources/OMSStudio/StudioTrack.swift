@@ -119,6 +119,8 @@ nonisolated public struct StudioTrack: Sendable {
         let typing = project.cursor.hidesWhileTyping ? telemetry.keys.filter(\.isTyping).map(\.time).sorted() : []
         var typingIndex = 0
         var lastTyped = -Double.infinity
+        let events = AutoZoom.events(in: telemetry)
+        let handovers = Self.samePlaceHandovers(for: zooms, events: events, samples: samples, width: width, height: height)
 
         for frameIndex in 0..<count {
             if frameIndex.isMultiple(of: 512) { try checkCancellation() }
@@ -183,15 +185,18 @@ nonisolated public struct StudioTrack: Sendable {
             }
             activeZooms.removeAll { $0.end < time }
             steady.append(activeZooms.contains { zoom in
-                time >= zoom.start + Self.transitionLength(zoom) && time <= zoom.end - Self.transitionLength(zoom)
+                let length = Self.transitionLength(zoom)
+                let edge = handovers[zoom.id] ?? (before: 1, after: 1)
+                return time >= zoom.start + (edge.before >= zoom.scale ? 0 : length)
+                    && time <= zoom.end - (edge.after >= zoom.scale ? 0 : length)
             })
             frames.append(Frame(
-                zoom: Self.zoom(at: time, zooms: activeZooms), centerX: width / 2, centerY: height / 2, cursorX: drawn.x, cursorY: drawn.y,
+                zoom: Self.zoom(at: time, zooms: activeZooms, handovers: handovers), centerX: width / 2, centerY: height / 2, cursorX: drawn.x, cursorY: drawn.y,
                 cursor: cursor.cursor, cursorOpacity: opacity
             ))
         }
         try StudioFraming.place(
-            &frames, steady: steady, zooms: zooms, events: AutoZoom.events(in: telemetry), width: width, height: height, rate: rate,
+            &frames, steady: steady, zooms: zooms, events: events, width: width, height: height, rate: rate,
             checkCancellation: checkCancellation
         )
         try checkCancellation()
@@ -261,15 +266,63 @@ nonisolated public struct StudioTrack: Sendable {
         return result
     }
 
+    /// For each zoom that meets another end to end (`a.end == b.start`) on the same place, the scale at which
+    /// they hand over without pulling back to 1× (the gentler of the two). Distant abutting zooms keep 1× so
+    /// the camera pulls back instead of whipping across the recording.
+    static func samePlaceHandovers(
+        for zooms: [StudioProject.Zoom], events: [AutoZoom.Event], samples: [StudioTelemetry.Sample],
+        width: Double, height: Double
+    ) -> [UUID: (before: Double, after: Double)] {
+        guard zooms.count > 1, width > 0, height > 0 else { return [:] }
+        var edges: [UUID: (before: Double, after: Double)] = [:]
+        func focusBounds(of zoom: StudioProject.Zoom, atEnd: Bool) -> (minX: Double, maxX: Double, minY: Double, maxY: Double) {
+            let inside = events.filter { $0.time >= zoom.start && $0.time <= zoom.end }
+            if let event = atEnd ? inside.last : inside.first {
+                return (event.x, event.x, event.y, event.y)
+            }
+            let start = AutoZoom.pointer(at: zoom.start, in: samples)
+            let end = AutoZoom.pointer(at: zoom.end, in: samples)
+            var minX = min(start.x, end.x), maxX = max(start.x, end.x)
+            var minY = min(start.y, end.y), maxY = max(start.y, end.y)
+            for sample in samples where sample.time > zoom.start && sample.time < zoom.end {
+                minX = min(minX, sample.x); maxX = max(maxX, sample.x)
+                minY = min(minY, sample.y); maxY = max(maxY, sample.y)
+            }
+            return (minX, maxX, minY, maxY)
+        }
+        for first in zooms where first.scale > 1 {
+            for second in zooms where second.id != first.id && second.scale > 1 && abs(first.end - second.start) < 1e-6 {
+                let shared = min(first.scale, second.scale)
+                let a = focusBounds(of: first, atEnd: true)
+                let b = focusBounds(of: second, atEnd: false)
+                let spanX = max(a.maxX, b.maxX) - min(a.minX, b.minX)
+                let spanY = max(a.maxY, b.maxY) - min(a.minY, b.minY)
+                guard spanX + AutoZoom.margin * 2 <= width / shared + 1e-9,
+                      spanY + AutoZoom.margin * 2 <= height / shared + 1e-9 else { continue }
+                var firstEdge = edges[first.id] ?? (before: 1, after: 1)
+                firstEdge.after = max(firstEdge.after, shared)
+                edges[first.id] = firstEdge
+                var secondEdge = edges[second.id] ?? (before: 1, after: 1)
+                secondEdge.before = max(secondEdge.before, shared)
+                edges[second.id] = secondEdge
+            }
+        }
+        return edges
+    }
+
     /// How much the picture is zoomed at `time`: easing in at each zoom's start and out at its end, evenly in
     /// scale (its logarithm eased), so each moment of the ease enlarges the picture by the same proportion
     /// rather than rushing at first and crawling at the end.
-    static func zoom(at time: Double, zooms: [StudioProject.Zoom]) -> Double {
+    static func zoom(
+        at time: Double, zooms: [StudioProject.Zoom], handovers: [UUID: (before: Double, after: Double)] = [:]
+    ) -> Double {
         var level = 1.0
         for zoom in zooms where time >= zoom.start && time <= zoom.end && zoom.scale > 1 {
             let length = transitionLength(zoom)
-            let progress = min(1, (time - zoom.start) / length, (zoom.end - time) / length)
-            level = max(level, exp(log(zoom.scale) * easeInOut(max(0, progress))))
+            let edge = handovers[zoom.id] ?? (before: 1, after: 1)
+            let coming = log(edge.before) + (log(zoom.scale) - log(edge.before)) * easeInOut(max(0, min(1, (time - zoom.start) / length)))
+            let going = log(edge.after) + (log(zoom.scale) - log(edge.after)) * easeInOut(max(0, min(1, (zoom.end - time) / length)))
+            level = max(level, exp(min(coming, going)))
         }
         return level
     }

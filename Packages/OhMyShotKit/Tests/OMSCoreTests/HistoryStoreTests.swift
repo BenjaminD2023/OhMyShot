@@ -241,6 +241,26 @@ struct HistoryStoreTests {
         #expect(throws: CocoaError.self) { try store.studioSource(for: item) }
     }
 
+    @Test func invalidatingAStudioExportClearsItsProjectWhileKeepingTheMovieMarker() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "mp4", kind: .recording, pixelWidth: 1600, pixelHeight: 1000, appName: nil, duration: 4)
+        // No export yet: invalidating is a no-op and does not fabricate a movie marker.
+        store.invalidateStudioMovieExport(of: item)
+        #expect(!store.hasStudioMovie(item))
+
+        let exported = FileManager.default.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString).mp4")
+        try Data([2]).write(to: exported)
+        let movie = try store.replaceStudioMovie(of: item, withFileAt: exported, pixelWidth: 1600, pixelHeight: 1000, duration: 4, project: Data([7]))
+        #expect(store.hasStudioMovie(movie))
+        #expect(store.studioMovieProject(of: movie) == Data([7]))
+
+        store.invalidateStudioMovieExport(of: movie)
+        #expect(store.hasStudioMovie(movie))
+        #expect(store.studioMovieProject(of: movie) == nil)
+        #expect(FileManager.default.contents(atPath: try store.studioSource(for: movie).path(percentEncoded: false)) == Data([1]))
+    }
+
     @Test func aScreenshotKeepsItsScaleItsWindowTitleAndHowItWasNamed() throws {
         let store = makeStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }

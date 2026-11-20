@@ -24,6 +24,10 @@ Each entry links its implementation commits or merged pull request and credits v
 ### Fixed
 
 - A small capture on a Transparent background no longer has its shadow cut off in a gray box at the picture's edge: the clear room around it now reaches as far as the shadow does. A background's shadow also lines up with its card exactly, where it used to fall a few pixels short of it on one side.
+- A recording whose file stops being written (a full disk, an encoder error) stops at once and says up to when it was kept. Recording doesn't start with less than 500 MB free and stops early when space runs low.
+- Studio keeps a recording's draft until its pointer, clicks, keys, and camera are all saved, and says which were not. A recording recovered after a crash or a forced quit opens in Studio with them.
+- Studio's automatic zooms: shortcuts no longer count as typing, and typing with no click near it places no zoom; a zoom placed by hand no longer removes the automatic zooms on either side of it; a drag too wide to frame places none; the camera no longer leaves a place before its last click there; and two zooms on the same place hand over without pulling back to the whole recording.
+- Auto-scroll stops at the end of a page at every speed and view height.
 - In Measure and Pick Color, Command-C, Return, and C now act where the crosshair is after it moves onto another display without a click; they used to read the display the session began on, and copied nothing. (by [@fzlzjerry])
 
 ## [0.2.0] - 2026-11-19

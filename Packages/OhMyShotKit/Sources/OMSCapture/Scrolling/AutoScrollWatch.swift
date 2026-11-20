@@ -63,8 +63,9 @@ nonisolated public struct AutoScrollWatch: Sendable {
     static let least: Duration = .milliseconds(750)
     /// Of what was pushed, less than this got is the content stopping.
     static let little = 0.15
-    /// Looks further back than this are forgotten.
+    /// Looks further back than this are forgotten once newer ones already span `reach`; none are kept past `maxMemory`.
     static let memory: Duration = .seconds(10)
+    static let maxMemory: Duration = .seconds(60)
     /// Of the area's length, how far a blank stretch is pushed through before it is taken for the content's end.
     static let blankPatience = 3.0
     /// Views taking this long on average, or one this long so far, and the capture is behind; and how many looks in a
@@ -92,8 +93,15 @@ nonisolated public struct AutoScrollWatch: Sendable {
         if blankFrom != nil, !sample.isInBlank { samples.removeAll() }
         blankFrom = sample.isInBlank ? blankFrom ?? sample.pushed : nil
         samples.append(sample)
-        samples.removeAll { sample.time - $0.time > Self.memory }
-        guard let since = samples.last(where: { sample.pushed - $0.pushed >= extent * Self.reach }), sample.time - since.time >= Self.least else {
+        samples.removeAll { sample.time - $0.time > Self.maxMemory }
+        if let oldestNeeded = samples.lastIndex(where: {
+            sample.time - $0.time > Self.memory && sample.pushed - $0.pushed >= extent * Self.reach
+        }) {
+            samples.removeFirst(oldestNeeded)
+        }
+        guard let since = samples.last(where: {
+            sample.pushed - $0.pushed >= extent * Self.reach && sample.time - $0.time >= Self.least
+        }) else {
             return .going
         }
         let pushed = sample.pushed - since.pushed

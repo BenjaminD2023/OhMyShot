@@ -48,13 +48,43 @@ public final class ScreenRecorder {
         case finished
     }
 
+    private enum Target {
+        case request(Request)
+        case headless(format: RecordingFormat, audio: RecordingAudio)
+
+        var format: RecordingFormat {
+            switch self {
+            case .request(let request): request.format
+            case .headless(let format, _): format
+            }
+        }
+
+        var audio: RecordingAudio {
+            switch self {
+            case .request(let request): request.audio
+            case .headless(_, let audio): audio
+            }
+        }
+    }
+
     public private(set) var state: State = .idle
-    public let request: Request
+    public var request: Request {
+        guard case .request(let request) = target else {
+            preconditionFailure("ScreenRecorder was created without a ScreenCaptureKit Request")
+        }
+        return request
+    }
     /// The stream stopped on its own (a display went away, Screen Recording was turned off, or the system's
     /// own control stopped it): the recording so far should be finished and kept.
     public var onStreamStopped: ((any Error) -> Void)?
+    /// The movie writer failed while recording (disk full, encoder error, etc.): the session should stop
+    /// immediately and salvage what was written up to the last committed fragment.
+    public var onWriterFailed: ((RecordingWriter.Failure) -> Void)?
+    /// Fired once when the first video frame lands in the movie, with its host-clock timestamp.
+    public var onFirstFrame: ((CMTime) -> Void)?
 
-    private let writer: RecordingWriter
+    private let target: Target
+    let writer: RecordingWriter
     private let queue = DispatchSerialQueue(label: "OhMyShot.recording", qos: .userInitiated)
     private let output: StreamOutput
     private var stream: SCStream?
@@ -63,11 +93,28 @@ public final class ScreenRecorder {
     private var startedAt: ContinuousClock.Instant?
     private var pausedFor: Duration = .zero
     private var pausedSince: ContinuousClock.Instant?
+    private var pendingWriterFailure: RecordingWriter.Failure?
 
     public init(_ request: Request) throws {
-        self.request = request
+        self.target = .request(request)
         writer = try RecordingWriter(url: request.movieURL, format: request.format, audio: request.audio, queue: queue)
         output = StreamOutput(writer: writer)
+    }
+
+    init(movieURL: URL, format: RecordingFormat, audio: RecordingAudio) throws {
+        self.target = .headless(format: format, audio: audio)
+        writer = try RecordingWriter(url: movieURL, format: format, audio: audio, queue: queue)
+        output = StreamOutput(writer: writer)
+    }
+
+    var hasPendingWriterFailure: Bool {
+        pendingWriterFailure != nil
+    }
+
+    /// Returns and clears any writer failure that arrived while `start()` was awaiting capture startup.
+    public func takePendingWriterFailure() -> RecordingWriter.Failure? {
+        defer { pendingWriterFailure = nil }
+        return pendingWriterFailure
     }
 
     /// The stream's settings for a request.
@@ -100,28 +147,44 @@ public final class ScreenRecorder {
 
     /// Starts recording. Throws when the stream cannot start; nothing is left behind then.
     public func start() async throws {
+        let request = self.request
+        try await start {
+            let stream = SCStream(filter: request.filter, configuration: Self.configuration(for: request), delegate: self.output)
+            try stream.addStreamOutput(self.output, type: .screen, sampleHandlerQueue: self.queue)
+            if request.audio.system { try stream.addStreamOutput(self.output, type: .audio, sampleHandlerQueue: self.queue) }
+            if request.audio.microphone != nil { try stream.addStreamOutput(self.output, type: .microphone, sampleHandlerQueue: self.queue) }
+            try await stream.startCapture()
+            self.stream = stream
+        }
+    }
+
+    func start(beginCapture: () async throws -> Void) async throws {
         guard state == .idle else { return }
-        let stream = SCStream(filter: request.filter, configuration: Self.configuration(for: request), delegate: output)
         output.onStop = { [weak self] error in
             Task { @MainActor in self?.streamStopped(error) }
         }
+        await writer.setCallbacks(
+            onFirstFrame: { [weak self] time in
+                Task { @MainActor in self?.onFirstFrame?(time) }
+            },
+            onFailure: { [weak self] failure in
+                Task { @MainActor in self?.writerFailed(failure) }
+            }
+        )
         do {
-            try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: queue)
-            if request.audio.system { try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: queue) }
-            if request.audio.microphone != nil { try stream.addStreamOutput(output, type: .microphone, sampleHandlerQueue: queue) }
-            try await stream.startCapture()
+            try await beginCapture()
         } catch {
+            pendingWriterFailure = nil
             await writer.cancel()
             throw error
         }
-        self.stream = stream
         state = .recording
         startedAt = .now
-        output.watchAudio(microphone: request.audio.microphone != nil, systemAudio: request.audio.system, from: Self.hostTime().seconds)
+        output.watchAudio(microphone: target.audio.microphone != nil, systemAudio: target.audio.system, from: Self.hostTime().seconds)
         leases = [ActiveResources.shared.acquire(.captureStream), ActiveResources.shared.acquire(.activity)]
         // Kept from App Nap and idle sleep while recording; the display may still sleep.
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated], reason: "Recording the screen")
-        Log.recording.notice("Recording \(self.request.format.width, privacy: .public)x\(self.request.format.height, privacy: .public) \(self.request.format.codec.rawValue, privacy: .public) at \(self.request.format.framesPerSecond, privacy: .public) fps")
+        Log.recording.notice("Recording \(self.target.format.width, privacy: .public)x\(self.target.format.height, privacy: .public) \(self.target.format.codec.rawValue, privacy: .public) at \(self.target.format.framesPerSecond, privacy: .public) fps")
     }
 
     /// How long the recording has run, pauses left out.
@@ -165,11 +228,24 @@ public final class ScreenRecorder {
         stream = nil
         // Taken once the stream has stopped, so no frame comes after the end.
         let end = Self.hostTime()
-        defer { release() }
+        defer {
+            state = .finished
+            release()
+        }
         let statistics = try await writer.finish(at: end)
-        state = .finished
         Log.recording.notice("Recording finished: \(statistics.duration.seconds, format: .fixed(precision: 2), privacy: .public) s, \(statistics.framesWritten, privacy: .public) frames written, \(statistics.framesDropped, privacy: .public) dropped, \(statistics.audioBuffersWritten + statistics.microphoneBuffersWritten, privacy: .public) audio buffers")
         return statistics
+    }
+
+    /// The writer's statistics as recorded so far, including the first frame's host time and pauses.
+    public func currentStatistics() async -> RecordingWriter.Statistics {
+        await writer.currentStatistics
+    }
+
+    /// Checks for an asynchronous writer failure when no new samples are arriving (such as a still screen).
+    public func checkWriterHealth() async {
+        guard state == .recording || state == .paused else { return }
+        await writer.checkHealth()
     }
 
     /// Stops and throws the movie away.
@@ -197,7 +273,20 @@ public final class ScreenRecorder {
         onStreamStopped?(error)
     }
 
+    private func writerFailed(_ failure: RecordingWriter.Failure) {
+        guard state == .recording || state == .paused else {
+            if state == .idle {
+                Log.recording.error("The recording writer failed while starting after \(failure.writtenDuration.seconds, format: .fixed(precision: 2), privacy: .public) s: \(failure.message, privacy: .public)")
+                pendingWriterFailure = failure
+            }
+            return
+        }
+        Log.recording.error("The recording writer failed after \(failure.writtenDuration.seconds, format: .fixed(precision: 2), privacy: .public) s: \(failure.message, privacy: .public)")
+        onWriterFailed?(failure)
+    }
+
     private func release() {
+        pendingWriterFailure = nil
         leases.removeAll()
         if let activity { ProcessInfo.processInfo.endActivity(activity) }
         activity = nil
@@ -206,7 +295,7 @@ public final class ScreenRecorder {
     /// How loud the microphone has been since this was last read, from 0 to 1 on a meter's scale; nil when
     /// the microphone isn't recorded.
     public func takeMicrophoneLevel() -> Double? {
-        guard request.audio.microphone != nil else { return nil }
+        guard target.audio.microphone != nil else { return nil }
         return AudioLevel.meterValue(rms: output.takeMicrophoneLevel())
     }
 
