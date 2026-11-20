@@ -315,6 +315,15 @@ struct AllInOneBarTests {
         #expect(bar.onChoices == [.area])
     }
 
+    /// Measure follows Record among All-In-One's modes, which Capture Area's bar leaves out.
+    @Test func measureFollowsRecordAmongTheModes() {
+        let bar = AllInOneBar()
+        bar.showModes(true)
+        #expect(bar.shownChoices == [.area, .window, .fullscreen, .text, .scroll, .record, .measure, .cancel])
+        bar.showModes(false)
+        #expect(bar.shownChoices == [.area, .window, .fullscreen, .cancel])
+    }
+
     @Test func aPurposeIsNeverHowAnAreaIsChosen() {
         let bar = AllInOneBar()
         bar.select(.area)

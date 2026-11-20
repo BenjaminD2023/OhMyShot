@@ -83,6 +83,7 @@ final class CaptureCoordinator {
         guard !overlay.isActive else { return followUp.finish(nil) }
         cancelSelfTimer()
         previousArea = rect
+        lastArea = rect
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         Task { await captureArea(rect, appName: app, windowTitle: title, followUp: followUp) }
@@ -100,8 +101,12 @@ final class CaptureCoordinator {
     private func configureCaptureOverlay() {
         overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
-        overlay.lastArea = previousArea ?? settings.allInOneArea?.area(in: displays.layout)
+        overlay.lastArea = lastArea ?? settings.allInOneArea?.area(in: displays.layout)
     }
+
+    /// The area last taken since OhMyShot opened, in Capture Area (or by the URL API's `capture-area`) or in All-In-One
+    /// whatever it was for: what L brings back, ahead of an area Settings keep for All-In-One.
+    private var lastArea: CGRect?
 
     // MARK: All-In-One
 
@@ -134,6 +139,7 @@ final class CaptureCoordinator {
         configureCaptureOverlay()
         overlay.begin(mode: .area, options: options, choosing: start) { [weak self] outcome in
             guard let self else { return }
+            if let area = outcome.takenArea { lastArea = area }
             switch outcome {
             case .allInOne(let choice, let rect, let display, let frozen):
                 remember(rect, on: display)
@@ -141,10 +147,12 @@ final class CaptureCoordinator {
                 case .screenshot(let action):
                     previousArea = rect
                     let followUp = CaptureFollowUp(action: action)
+                    let window = overlay.window(framing: rect)
+                    let appName = window?.ownerName ?? app, windowTitle = window.map(\.title) ?? title
                     if let frozen {
-                        Task { await self.deliver(frozen, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                        Task { await self.deliver(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
                     } else {
-                        Task { await self.captureArea(rect, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                        Task { await self.captureArea(rect, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
                     }
                 case .text: allInOneText?(rect, frozen)
                 case .scroll: allInOneScroll?(rect)
@@ -155,8 +163,12 @@ final class CaptureCoordinator {
             case .windows(let targets, let modifiers):
                 Task { await self.captureWindows(targets, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
             case .record(let target, let display, let choices):
-                if case .area(let rect) = target { remember(rect, on: display) }
-                onRecord?(target, display, choices, app)
+                var appName = app
+                if case .area(let rect) = target {
+                    remember(rect, on: display)
+                    appName = overlay.window(framing: rect)?.ownerName ?? app
+                }
+                onRecord?(target, display, choices, appName)
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
             case .cancelled:
@@ -455,6 +467,7 @@ final class CaptureCoordinator {
         configureCaptureOverlay()
         overlay.begin(mode: mode, choosing: area) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
+            if let area = outcome.takenArea { lastArea = area }
             switch outcome {
             case .region(let rect, _, _, let frozen?):
                 // The screen was held still: the selection is kept as it was seen.

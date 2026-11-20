@@ -3174,36 +3174,36 @@
         }
       }
     },
-    "All-In-One opens with the area it last took, framed to adjust or take again." : {
+    "All-In-One opens with the area it last took, framed to adjust or take again. Without it, All-In-One opens with nothing chosen, and L brings back the last area you took since OhMyShot opened." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Todo en uno se abre con la última área que capturó, enmarcada para ajustarla o volver a capturarla."
+            "value" : "Todo en uno se abre con la última área que capturó, enmarcada para ajustarla o volver a capturarla. Sin esto, Todo en uno se abre sin nada elegido, y L recupera la última área que capturaste desde que se abrió OhMyShot."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tout-en-un s’ouvre avec la dernière zone capturée, encadrée pour l’ajuster ou la reprendre."
+            "value" : "Tout-en-un s’ouvre avec la dernière zone capturée, encadrée pour l’ajuster ou la reprendre. Sans cela, Tout-en-un s’ouvre sans rien de sélectionné, et L rappelle la dernière zone que vous avez capturée depuis l’ouverture d’OhMyShot."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "オールインワンを開くと、前回キャプチャした範囲が枠で表示され、調整したりもう一度キャプチャしたりできます。"
+            "value" : "オールインワンを開くと、前回キャプチャした範囲が枠で表示され、調整したりもう一度キャプチャしたりできます。オフのときは何も選択されていない状態で開き、OhMyShotを開いてから最後にキャプチャした範囲をLキーで呼び戻せます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "多合一打开时会框出上次截取的区域，可调整或再次截取。"
+            "value" : "多合一打开时会框出上次截取的区域，可调整或再次截取。不勾选时，多合一打开时不选中任何区域，按 L 可找回 OhMyShot 打开以来最后截取的区域。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「多合一」打開時會框出上次擷取的區域，供你調整或重新擷取。"
+            "value" : "「多合一」打開時會框出上次擷取的區域，供你調整或重新擷取。不勾選時，「多合一」打開時不會選取任何區域，按 L 可找回 OhMyShot 開啟以來最後擷取的區域。"
           }
         }
       }

@@ -251,36 +251,36 @@
         }
       }
     },
-    "All-In-One. Drag over an area, then choose what to do with it." : {
+    "All-In-One. Click a window or drag over an area, then choose what to do with it." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Todo en uno. Arrastra sobre un área y elige qué hacer con ella."
+            "value" : "Todo en uno. Haz clic en una ventana o arrastra sobre un área y elige qué hacer con ella."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tout-en-un. Faites glisser le pointeur sur une zone, puis choisissez quoi en faire."
+            "value" : "Tout-en-un. Cliquez sur une fenêtre ou faites glisser le pointeur sur une zone, puis choisissez quoi en faire."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "オールインワン。範囲をドラッグして選択し、その範囲に対する操作を選んでください。"
+            "value" : "オールインワン。ウインドウをクリックするか範囲をドラッグして選択し、その範囲に対する操作を選んでください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "多合一。拖移选择一个区域，然后选择要对它执行的操作。"
+            "value" : "多合一。点按一个窗口或拖移选择一个区域，然后选择要对它执行的操作。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "多合一。拖移選取一個區域，然後選擇要對它做什麼。"
+            "value" : "多合一。按一下一個視窗或拖移選取一個區域，然後選擇要對它做什麼。"
           }
         }
       }
@@ -1645,36 +1645,36 @@
         }
       }
     },
-    "Capture. Drag over an area, then choose what to do with it." : {
+    "Capture. Click a window or drag over an area, then choose what to do with it." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Capturar. Arrastra sobre un área y elige qué hacer con ella."
+            "value" : "Capturar. Haz clic en una ventana o arrastra sobre un área y elige qué hacer con ella."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Capture. Faites glisser le pointeur sur une zone, puis choisissez quoi en faire."
+            "value" : "Capture. Cliquez sur une fenêtre ou faites glisser le pointeur sur une zone, puis choisissez quoi en faire."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キャプチャ。範囲をドラッグして選択し、その範囲に対する操作を選んでください。"
+            "value" : "キャプチャ。ウインドウをクリックするか範囲をドラッグして選択し、その範囲に対する操作を選んでください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "截图。拖移选择一个区域，然后选择要对它执行的操作。"
+            "value" : "截图。点按一个窗口或拖移选择一个区域，然后选择要对它执行的操作。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "擷取。拖移選取一個區域，然後選擇要對它做什麼。"
+            "value" : "擷取。按一下一個視窗或拖移選取一個區域，然後選擇要對它做什麼。"
           }
         }
       }
@@ -1845,6 +1845,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "再按一次「取消」即可丟棄這張圖。"
+          }
+        }
+      }
+    },
+    "Click a window or drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, R to record, or M to measure. Press Escape to cancel." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en una ventana o arrastra sobre un área y elige qué hacer con ella. Pulsa W o Espacio para capturar una ventana, F para toda la pantalla, O para copiar texto, S para una captura con desplazamiento, R para grabar o M para medir. Pulsa Escape para cancelar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez sur une fenêtre ou faites glisser le pointeur sur une zone, puis choisissez quoi en faire. Appuyez sur W ou Espace pour capturer une fenêtre, F pour tout l’écran, O pour copier du texte, S pour une capture défilante, R pour enregistrer ou M pour mesurer. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウをクリックするか範囲をドラッグして選択し、その範囲に対する操作を選んでください。Wキーまたはスペースバーでウインドウのキャプチャ、Fキーで画面全体、Oキーでテキストのコピー、Sキーでスクロールキャプチャ、Rキーで収録、Mキーで計測します。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点按一个窗口或拖移选择一个区域，然后选择要对它执行的操作。按下 W 或空格键截取窗口，按 F 截取整个屏幕，按 O 拷贝文字，按 S 进行滚动截图，按 R 进行录制，按 M 进行测量。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按一下一個視窗或拖移選取一個區域，然後選擇要對它做什麼。按 W 或空白鍵擷取視窗、F 擷取整個螢幕、O 拷貝文字、S 進行捲動擷取、R 錄製，或 M 測量。按 Esc 鍵取消。"
           }
         }
       }
@@ -2355,40 +2389,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拖移選取要錄製的區域，或按一下以錄製整個螢幕。按空白鍵可改為選擇視窗。按 Esc 鍵取消。"
-          }
-        }
-      }
-    },
-    "Drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, or R to record. Press Escape to cancel." : {
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Arrastra sobre un área y elige qué hacer con ella. Pulsa W o Espacio para capturar una ventana, F para toda la pantalla, O para copiar texto, S para una captura con desplazamiento o R para grabar. Pulsa Escape para cancelar."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Faites glisser le pointeur sur une zone, puis choisissez quoi en faire. Appuyez sur W ou Espace pour capturer une fenêtre, F pour tout l’écran, O pour copier du texte, S pour une capture défilante ou R pour enregistrer. Appuyez sur Échap pour annuler."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "範囲をドラッグして選択し、その範囲に対する操作を選んでください。Wキーまたはスペースバーでウインドウのキャプチャ、Fキーで画面全体、Oキーでテキストのコピー、Sキーでスクロールキャプチャ、Rキーで収録します。キャンセルするにはescキーを押します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖移选择一个区域，然后选择要对它执行的操作。按下 W 或空格键截取窗口，按 F 截取整个屏幕，按 O 拷贝文字，按 S 进行滚动截图，按 R 进行录制。按下 Esc 键取消。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拖移選取一個區域，然後選擇要對它做什麼。按 W 或空白鍵擷取視窗、F 擷取整個螢幕、O 拷貝文字、S 進行捲動擷取，或 R 錄製。按 Esc 鍵取消。"
           }
         }
       }
@@ -3311,6 +3311,40 @@
         }
       }
     },
+    "Measure" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mesurer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "計測"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "測量"
+          }
+        }
+      }
+    },
     "Medium" : {
       "localizations" : {
         "es" : {
@@ -3919,6 +3953,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "釘選"
+          }
+        }
+      }
+    },
+    "Point at something to measure it (M)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Señala algo para medirlo (M)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pointer un élément pour le mesurer (M)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポイントして計測（M）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指向某个对象进行测量（M）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將指標指向物件以測量（M）"
           }
         }
       }

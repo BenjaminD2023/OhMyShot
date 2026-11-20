@@ -40,6 +40,7 @@ struct OverlayKeyTests {
         func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) { heard.append("unit") }
         func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance) { heard.append("tolerance \(tolerance.rawValue)") }
         func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice) { heard.append("mode \(choice)") }
+        func overlayViewDidRequestMeasure(_ view: OverlayView) { heard.append("measure") }
     }
 
     /// Takes the keys the overlay passes on, so none reaches the end of the chain and beeps.
@@ -139,11 +140,12 @@ struct OverlayKeyTests {
         #expect(window.heard.isEmpty && window.passedOn)
     }
 
-    /// All-In-One's letters choose a mode before an area: O text, S scrolling, R recording; W a window, F the screen.
+    /// All-In-One's letters choose a mode before an area: O text, S scrolling, R recording; W a window, F the screen; M
+    /// turns the overlay into Measure.
     @Test func allInOneLettersChooseWhatTheNextAreaIsFor() throws {
         let cases: [(UInt16, String, [String])] = [
             (31, "o", ["mode text"]), (1, "s", ["mode scroll"]), (15, "r", ["mode record"]),
-            (13, "w", ["windowPicker"]), (3, "f", ["select"]),
+            (13, "w", ["windowPicker"]), (3, "f", ["select"]), (46, "m", ["measure"]),
             // A: a plain capture of an area, letting go of what the next area was for.
             (0, "a", ["mode screenshot(nil)"]),
         ]
@@ -155,10 +157,42 @@ struct OverlayKeyTests {
 
     /// Other All-In-One purpose letters are passed on by Capture Area.
     @Test func captureAreaPassesTheOtherModeLettersOn() throws {
-        for (code, letter) in [(UInt16(31), "o"), (1, "s"), (15, "r"), (3, "f")] {
+        for (code, letter) in [(UInt16(31), "o"), (1, "s"), (15, "r"), (3, "f"), (46, "m")] {
             let result = try press(code, characters: letter, in: .screenshot)
             #expect(result.heard.isEmpty && result.passedOn, "\(letter): \(result.heard)")
         }
+    }
+
+    /// Every letter on All-In-One's bar is its own and none is L's or C's, which recall the last area and take a color
+    /// there; M, which takes no area, is no key of the framed area's either, where the bar's other mode letters stay.
+    @Test func allInOneLettersNeverCollide() {
+        let letters = AllInOneBar.Choice.allCases.compactMap(\.key)
+        #expect(Set(letters).count == letters.count)
+        #expect(Set(letters).isDisjoint(with: ["l", "c"]))
+        #expect(AllInOneBar.Choice(key: "m") == .measure && AllInOneBar.Choice.measure.purpose == nil)
+        #expect(AllInOneSetupView.choice(for: "m") == nil)
+        #expect(["o", "s", "r"].map(AllInOneSetupView.choice(for:)) == [.text, .scroll, .record])
+    }
+
+    /// Once All-In-One turns into Measure, the keys are Measure's: T sets the tolerance and Tab the unit, while M and
+    /// All-In-One's other letters are passed on.
+    @Test func turnedToMeasureTheKeysAreMeasures() throws {
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        let passedOn = PassedOn()
+        view.delegate = recorder
+        view.nextResponder = passedOn
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot, allInOne: true)
+        view.turnToMeasure(pointer: CGPoint(x: 400, y: 300), colorFormat: .hex, unit: .points, tolerance: .medium, snapsToContent: true)
+        for (code, character) in [(UInt16(17), "t"), (48, "\t"), (46, "m"), (31, "o"), (15, "r")] {
+            let event = try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: character,
+                charactersIgnoringModifiers: character, isARepeat: false, keyCode: code
+            ))
+            view.keyDown(with: event)
+        }
+        #expect(recorder.heard == ["tolerance high", "unit"])
+        #expect(passedOn.keys == [46, 31, 15])
     }
 
     @Test func pickingAColorTheArrowsMoveAndReturnPicks() throws {

@@ -3,8 +3,9 @@ import OMSCapture
 import OMSCore
 import OMSUI
 
-/// Measure: the frozen screen with the ruler. ⌘C copies the measurement and Return copies it and closes;
-/// Tab switches units, T cycles edge tolerance; both are remembered. C takes the color under the crosshair.
+/// Measure: the frozen screen with the ruler, on its own or turned to from All-In-One (M). ⌘C copies the measurement
+/// and Return copies it and closes; Tab switches units, T cycles edge tolerance; both are remembered. C takes the color
+/// under the crosshair.
 final class MeasureCoordinator {
     private let settings: SettingsStore
     private let overlay: OverlayController
@@ -21,15 +22,7 @@ final class MeasureCoordinator {
     /// - Parameter copiesToClipboard: false for scripted checks, which never touch the clipboard.
     func measure(copiesToClipboard: Bool = true) {
         guard !overlay.isActive else { return }
-        overlay.measureUnit = settings.measureUnit
-        overlay.measureTolerance = settings.measureTolerance
-        overlay.measureSnapsToContent = settings.measureSnapsToContent
-        overlay.colorFormat = settings.colorFormat
-        overlay.onMeasureUnitChange = { [weak self] unit in self?.settings.measureUnit = unit }
-        overlay.onMeasureToleranceChange = { [weak self] tolerance in self?.settings.measureTolerance = tolerance }
-        overlay.onCopyMeasurement = { [weak self] text, point, closing in
-            self?.copy(text, toClipboard: copiesToClipboard, closingAt: closing ? point : nil)
-        }
+        configureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: .area, purpose: .measure) { [weak self] outcome in
             guard let self else { return }
             overlay.onMeasureUnitChange = nil
@@ -38,6 +31,20 @@ final class MeasureCoordinator {
             if case .color(let color, let point, _, let modifiers, let keyboard) = outcome {
                 colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard, copiesToClipboard: copiesToClipboard)
             }
+        }
+    }
+
+    /// The ruler as Settings have it, and what remembers a change to it and copies its measurement: for Measure, and for
+    /// All-In-One turning into Measure in its own session (whose end hands any color taken on, as a capture's does).
+    func configureOverlay(copiesToClipboard: Bool = true) {
+        overlay.measureUnit = settings.measureUnit
+        overlay.measureTolerance = settings.measureTolerance
+        overlay.measureSnapsToContent = settings.measureSnapsToContent
+        overlay.colorFormat = settings.colorFormat
+        overlay.onMeasureUnitChange = { [weak self] unit in self?.settings.measureUnit = unit }
+        overlay.onMeasureToleranceChange = { [weak self] tolerance in self?.settings.measureTolerance = tolerance }
+        overlay.onCopyMeasurement = { [weak self] text, point, closing in
+            self?.copy(text, toClipboard: copiesToClipboard, closingAt: closing ? point : nil)
         }
     }
 

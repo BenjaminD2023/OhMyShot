@@ -44,6 +44,8 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance)
     /// All-In-One's bar or keys chose what the next area is for: its text, a scrolling capture, or a recording.
     func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice)
+    /// All-In-One's Measure (M): the overlay turns into Measure, on the screen as it is held.
+    func overlayViewDidRequestMeasure(_ view: OverlayView)
 }
 
 extension OverlayViewDelegate {
@@ -80,6 +82,9 @@ final class OverlayView: NSView {
         didSet { if hoveredWindow != oldValue { leaveElements() } }
     }
     private(set) var selectedWindows: [WindowTarget] = []
+    /// The window All-In-One highlights under the pointer before anything is chosen, when it is on this display: drawn
+    /// as window mode draws its window, until a drag makes a selection.
+    private(set) var highlightedWindow: OverlayController.HoveredWindow?
     /// Every display, for turning points between AppKit's space and the one Accessibility uses.
     var displayLayout = DisplayLayout(displays: [])
 
@@ -182,8 +187,8 @@ final class OverlayView: NSView {
     /// `showsPointer` is false for a frozen screen until the overlay takes input: the system arrow is
     /// still showing then, and a crosshair under it would double it.
     /// `allInOne` adds All-In-One's modes to the bar and its letter keys: A, W, and F for an area, a window, or the
-    /// screen; O, S, and R for text, a scrolling capture, or a recording. Only a screenshot is All-In-One, which
-    /// `OverlayController.begin` sees to once for every display.
+    /// screen; O, S, and R for text, a scrolling capture, or a recording; M to measure. Only a screenshot is All-In-One,
+    /// which `OverlayController.begin` sees to once for every display.
     func reset(
         pointer globalPointer: CGPoint, mode: Mode, windows: [WindowTarget], showsToolbar: Bool, showsPointer: Bool = true,
         purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex,
@@ -195,6 +200,7 @@ final class OverlayView: NSView {
         self.windows = windows
         hoveredWindow = nil
         selectedWindows = []
+        highlightedWindow = nil
         selection.reset()
         hasStartedAreaSelection = false
         showsReading = false
@@ -236,7 +242,7 @@ final class OverlayView: NSView {
         let help = switch purpose {
         case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .annotate: String(localized: "Drag over an area to mark it up. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to choose a window instead. Press Escape to cancel.", bundle: .module)
-        case .screenshot where isAllInOne: String(localized: "Drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, or R to record. Press Escape to cancel.", bundle: .module)
+        case .screenshot where isAllInOne: String(localized: "Click a window or drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, R to record, or M to measure. Press Escape to cancel.", bundle: .module)
         case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.", bundle: .module)
         case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
         case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
@@ -271,12 +277,28 @@ final class OverlayView: NSView {
         }
     }
 
+    /// Turns this display's overlay into Measure where it stands (All-In-One's M): the frame it holds stays, and holds
+    /// still even if the screen showed live, since the ruler reads that frame; the bar goes, as Measure has none, and the
+    /// ruler takes the pointer at `globalPointer`.
+    func turnToMeasure(
+        pointer globalPointer: CGPoint, colorFormat: ColorFormat, unit: MeasureUnit, tolerance: MeasureTolerance, snapsToContent: Bool
+    ) {
+        let frame = capturedFrame
+        reset(
+            pointer: globalPointer, mode: .area, windows: [], showsToolbar: false, purpose: .measure, colorFormat: colorFormat,
+            captureLoupeStyle: captureLoupeStyle, captureLoupeSize: captureLoupeSize, measureUnit: unit, measureTolerance: tolerance,
+            measureSnapsToContent: snapsToContent
+        )
+        if let frame { show(frame, frozen: true) }
+    }
+
     /// Switches between dragging a region and clicking a window, keeping the pointer where it is.
     func switchMode(to mode: Mode, windows: [WindowTarget]) {
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
         selectedWindows = []
+        highlightedWindow = nil
         selection.reset()
         toolbar.select(mode == .area ? .area : .window)
         withoutAnimation {
@@ -289,6 +311,7 @@ final class OverlayView: NSView {
     /// interface in-place annotation put over it.
     func clear() {
         capturedFrame = nil
+        highlightedWindow = nil
         measure?.clear()
         isAnnotating = false
         for subview in subviews where subview !== toolbar {
@@ -819,7 +842,7 @@ final class OverlayView: NSView {
             } else if character == "u", purpose == .measure, let measure {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
             } else if isAllInOne, !event.modifierFlags.contains(.command), let choice = character.flatMap(AllInOneBar.Choice.init(key:)) {
-                // All-In-One's letters, before an area is chosen: A, W, and F, O, S, and R, as the bar has them.
+                // All-In-One's letters, before an area is chosen: A, W, and F, O, S, R, and M, as the bar has them.
                 toolbarChose(choice)
             } else if character == "l", !event.modifierFlags.contains(.command), mode == .area, !isDraggingSelection,
                       purpose.takesPicture {
@@ -861,6 +884,13 @@ final class OverlayView: NSView {
         layoutToolbar()
     }
 
+    /// Highlights All-In-One's window under the pointer on this display, or nil for none.
+    func highlight(_ window: OverlayController.HoveredWindow?) {
+        guard window != highlightedWindow else { return }
+        highlightedWindow = window
+        withoutAnimation { updateSelectionLayers() }
+    }
+
     /// Shows the screen as it is now instead of as it was frozen, for a recording set up from a frozen All-In-One.
     func showLive() {
         withoutAnimation { backdrop.contents = nil }
@@ -887,6 +917,8 @@ final class OverlayView: NSView {
             }
         case .fullscreen:
             delegate?.overlayView(self, didSelect: display.frame, modifiers: [])
+        case .measure:
+            delegate?.overlayViewDidRequestMeasure(self)
         case .cancel:
             delegate?.overlayViewDidCancel(self)
         default:
@@ -1033,7 +1065,9 @@ final class OverlayView: NSView {
         }
         let windowBounds = activeWindows.dropFirst().reduce(activeWindows.first?.frame) { $0?.union($1.frame) }
         let element = mode == .window ? pickedElement : nil
-        let target = mode == .window ? (element?.frame ?? windowBounds)?.intersection(display.frame) : selection.rect
+        // All-In-One's window under the pointer stands for the selection until a drag makes one.
+        let highlighted = mode == .area && selection.isTooSmall ? highlightedWindow : nil
+        let target = mode == .window ? (element?.frame ?? windowBounds)?.intersection(display.frame) : highlighted?.area ?? selection.rect
         guard let globalRect = target, !globalRect.isNull, !globalRect.isEmpty else {
             room.path = roomPath
             outline.path = nil
@@ -1051,7 +1085,7 @@ final class OverlayView: NSView {
         let drawn = purpose == .text ? rect.integral.insetBy(dx: inset, dy: inset) : rect
         border.path = purpose == .text ? CGPath(rect: drawn, transform: nil) : edge
         outline.path = edge
-        snapEdges.path = mode == .area ? Self.path(of: selection.snappedEdges, in: drawn) : nil
+        snapEdges.path = mode == .area && highlighted == nil ? Self.path(of: selection.snappedEdges, in: drawn) : nil
 
         let text: String
         if mode == .window, let element {
@@ -1071,12 +1105,15 @@ final class OverlayView: NSView {
             } else {
                 text = "\(width) × \(height)"
             }
+        } else if let highlighted {
+            let size = AreaFrame.pixelReading(highlighted.area.size, pixelsPerPoint: display.pixelsPerPoint)
+            text = highlighted.window.ownerName.isEmpty ? size : "\(highlighted.window.ownerName)  ·  \(size)"
         } else {
             let size = selection.pixelSize
             text = "\(size.width) × \(size.height)"
         }
         sizePill.text = text
-        sizePill.layer.isHidden = purpose == .text || (mode == .area && !showsReading)
+        sizePill.layer.isHidden = purpose == .text || (mode == .area && !showsReading && highlighted == nil)
         // Text mode has no readings; a hovered window is named, without its size.
         setAccessibilityValue(purpose == .text ? (mode == .window ? hoveredWindow?.ownerName : nil) : text)
         // Centered under the selection; tucked inside when there is no room below, and lifted above the
