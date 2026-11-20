@@ -24,6 +24,7 @@ Each entry links its implementation commits or merged pull request and credits v
 ### Fixed
 
 - A small capture on a Transparent background no longer has its shadow cut off in a gray box at the picture's edge: the clear room around it now reaches as far as the shadow does. A background's shadow also lines up with its card exactly, where it used to fall a few pixels short of it on one side.
+- Capture Text reads a row of separate pieces (a terminal's `ls -l`, a settings list, a table's row) as one line; braces in code read as `1`, `子`, or `J` come back as braces; a dense ultrawide screen read in bands no longer drops or repeats lines; the explanations around a few lines of code are translated; and the words beside a formula stay when reading them again comes back empty.
 - A capture that can't be moved to the Trash is no longer deleted for good instead: it stays in Capture History and Quick Access with its original, marks, and text, and the card or History says why.
 - Replacing a recording with an edit, or with a movie exported from Studio, keeps the last one until the new one is in place, so a replacement that fails loses nothing.
 - With Keep Captures set to Never, a card pushed out of Quick Access by newer ones can still be brought back with Restore Recently Closed; only a card you close yourself is deleted at once.

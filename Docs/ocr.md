@@ -16,7 +16,9 @@ it; real screenshots stay outside the repository. Categories: Simplified Chinese
 Traditional Chinese, Japanese, Korean, one image mixing all of them, English UI text (also with one
 Chinese file name), Chinese written without spaces around Latin and digits, highlighted code
 on a dark background (with and without a Chinese comment, 2- and 4-space indentation), tables, vertical
-Chinese, chat bubbles with emoji, a dark settings list, the same two lines from 9 to 30 px tall, and a tall page of 150 lines (read in bands).
+Chinese, chat bubbles with emoji, a dark settings list, the same two lines from 9 to 30 px tall, a tall page of 150 lines (read in bands),
+rows of fields that are a line each (a terminal's `ll` and `ls` listings, a settings list of labels and values), and text
+side by side that is not (captions under two rows of pictures, two columns of prose in English and in Chinese).
 
 Metrics, per case and engine:
 
@@ -25,14 +27,24 @@ Metrics, per case and engine:
 - **Raw CER**: the same with only NFC, line endings, and trailing spaces normalized: what a paste would
   contain. The gap to content CER is formatting (spacing, punctuation width, line breaks) that
   post-processing can fix.
-- **Line order**: lines found and kept in reading order.
-- **Code indentation**, **table shape**, and **table cells**, where they apply.
+- **Line order**: each line of the truth is paired with the output line that reads it, the closest pairs first and no
+  line in two pairs; the score is the longest run of pairs in the truth's order, over the line count of the longer of
+  the two texts. Lines lost, repeated, split, and shuffled all lower it (› The scorer, rows, and the review's fixes).
+- **Code indentation** (on the same pairs), **table shape**, and **table cells**, where they apply. A table's text is a
+  row a line, its cells a space apart. An engine that reads no tables shows N/A for them: L1's quick reading
+  (`recognize`) never does, and `panel`, the OCR panel's reading (`analyze`), is the engine scored on tables.
 - **Time** per image, with the first call (model loading) reported apart.
 
 Options: `--engine`, `--case`, `--real DIR` (real screenshots: `NAME.png` with its truth in `NAME.txt`,
 kept outside the repository), `--save DIR` (images, outputs, and per-line boxes, directions, and
 confidences), `--json PATH`, `--write-baseline`, `--list`. Baselines live in `Tools/ocr-bench/baselines`,
-one per engine and major macOS version; a run reports cases that got worse than the baseline.
+one per engine and major macOS version; a run reports cases that got worse than the baseline. Write them without
+`--real`, which would put the real screenshots' scores in the file.
+
+Every run first checks the scorer against the cases it is about to score (`SelfCheck`): the truth read back must score
+full marks, and a line lost, a line repeated, two neighbours swapped, and the second half read first must each lose
+line order; in code, a line indented two spaces too far must lose indentation and nothing else. A scorer that fails
+stops the run.
 
 ## What Vision does (macOS 27.2, M3 Max, 2026-10-08)
 
@@ -108,7 +120,9 @@ overlapping pieces first and each piece goes through all of this: see Large sele
 7. **Lone brackets**: neither Vision's recognizer nor its text detector reports a line holding a single
    glyph, so closing braces vanish. Scanning the listing's pixels finds unread rows one or two
    characters wide; each becomes the closer of the bracket left open on the line above that starts in
-   the same column. Nothing is guessed when no open bracket lines up.
+   the same column. Nothing is guessed when no open bracket lines up, or when the code closes that
+   bracket itself further down; a bracket in a string or a comment opens nothing ("//" starts a comment
+   except in a listing written as Python is, which divides with it).
 8. **Spaces from pixels**: where Chinese meets Latin letters or digits, the empty pixel columns at that
    spot decide. macOS layout itself leaves 0.07–0.25 em there when nobody typed a space (0.25–0.29 em in
    Japanese), and a typed space leaves 0.32–0.50 em, so a space is added above 0.3 em and one of
@@ -1930,3 +1944,138 @@ times the download; nothing here makes it worth a second Swift port. Not measure
 SGLang on CUDA, mlx-vlm with DASH kernels on Metal, and whole screens cut into pages as the tall page was (pages
 took that page from 55.9% to 0.0%, so the screens' failures may be gundam mode's; at 57 s for the page, past Capture
 Text's 10 s, it wouldn't change this).
+
+## The scorer, rows, and the review's fixes (2026-11-20)
+
+A review of the OCR code (main f7eabd3) found the benchmark's line order measuring the wrong thing, L1 returning a row
+of fields as a line a field, and a handful of smaller losses. This is what changed, measured on an M3 Max with macOS
+27.3 (26C5035r). The baselines in the repository were recorded on 27.2, and Vision's own readings have moved since (›
+Vision on 27.3, below), so every "before" here is main run again on this machine with the new scorer, not the old file.
+
+**The scorer.** Line order matched each line of the truth to its closest output line on its own, then counted the
+matches that came in order. Two lines of the truth that read alike (a closing brace, a row of a template) both took
+the first copy, so the truth of `code-swift` read back perfectly scored 0.90, and a line read twice or a row read as
+four lines cost nothing, since only the truth's lines were counted. Now each truth line is paired with one output line
+and no line is in two pairs (the closest pairs first, at most 0.4 content error; equally close ones by how near their
+places in the two texts are), the pairs are free to cross, and the score is the longest run of pairs in order over the
+line count of the longer text. Code indentation is counted on the same pairs. An alignment that keeps order from the
+start was tried and dropped: where lines are alike it pairs each with its neighbour's copy and finds a page read right
+column first in perfect order. The scorer is checked against every case before a run (`SelfCheck`, › The benchmark);
+the old matching fails that check on `zh-en-chat` (a line repeated still scores 1) and on `code-swift` (its own truth
+scores 0.90).
+
+**The corpus.** A table's text was a cell a line, which gave full marks to a paste of four columns as sixteen lines of a
+word each; it is a row a line now, the cells a space apart: what L1 makes of the pieces of a row, with no table to
+tell it they are cells. Tabs are what the VLM pack writes when it has read the table (› The VLM pack), and the cells
+are scored apart, against the table. Only an engine that reads tables is scored on them: `panel`, new, is
+`VisionPipeline.analyze`, what the OCR panel shows (2 of 2 shapes, cells 1.00; `documents` 2 of 2 and 0.87); L1's quick
+reading and the two text engines show N/A where they showed 0 of 2. Six cases are new. `rows-terminal-ll`,
+`rows-terminal-ls`, and `rows-settings` are rows of fields (the first two keep the terminal's own runs of spaces in
+their truth). `side-gallery` (captions under two rows of three pictures), `side-columns-en`, and `side-columns-zh` (two
+columns of prose whose lines share rows) are text side by side that must not become rows.
+
+**Vision on 27.3.** The same engines on the same cases, content CER, 27.2's baseline against this machine: `text-zh-en`
+is worse on `ui-icons` (25.9% → 33.3%), `code-swift-plain` (3.6% → 5.1%), `en-zh-word` (0.0% → 1.5%), `code-swift` and
+`code-gutter` (+0.7 each); `text-auto` and `documents` are worse on `ui-icons` (24.1% → 31.5%), `table-zh` (4.2% → 8.3%),
+and `small-30px` (0.0% → 2.3%), `documents` on `code-yaml` (0.0% → 18.5%), and both now read `code-swift` (83.9% → 2.8%).
+L1 as main has it, 27.2's baseline against this machine: `code-swift` 0.7% → 1.7%, `code-swift-plain` 1.1% → 0.7%,
+`ui-icons` 5.6% → 0.0%, `zh-doc` 3.5% → 2.6%, a mean of 0.79% → 0.59% over its 28 cases. All five baselines (`panel` is
+new) were written again on 27.3 with the new scorer; their line order is not comparable with the old files'.
+
+**Rows of fields.** Outside code, the pieces Vision returns on one row are one line, a space apart
+(`TextAssembler.rowPieces`): the columns of `ls -l`, a setting's label and its value. One space whatever the gap: spaces
+counted from the gap put a window's width of them between a label and its value, and telling a table from a list by
+the gap did not hold on the real screenshots. A table's row (`TableMerge`), a formula, and vertical text are left
+alone. So that captions under a row of pictures stay lines of their own, pieces are joined only where text is stacked
+as lines are (another line within three line heights above or below) or where the row is all the text there is. Two
+columns of a few lines each come row by row as well (`ReadingOrder` looks for columns from five lines up), and their
+lines are not one line: two pieces that both read as running text (four words or more, or eight characters of Chinese
+or Japanese: `isRunningText`), further apart than a line is tall, stay lines of their own where a row within three line
+heights is apart at the same place, as the rows of two blocks of text are. One such row with no other like it is a
+label and its value ("Allow accessories to connect", "Ask for New Accessories") and stays one line. The
+lines keep their own boxes: the panel's line ranges (`TextAssembler.assembly`) still give each field its own range in
+the joined line, and `TranslationUnits` still makes each field a unit (tests for both). In `ReadingOrder`, a gap
+between two groups of lines is no column gap when the lines on each side sit on each other's rows (four in five on
+both sides, at least four lines a side), one side holds several lines a row, and one side is mostly single words:
+read as columns, `ls -l` gave every permission and then every name. Without the several-lines-a-row condition a list
+beside a page of prose was read line about; with three lines a side instead of four, a side note broke its paragraph.
+And the strokes the Chinese model makes of ASCII ("-rw-r--r--" read as "ーIW-KーーKーー") no longer count as Chinese
+when L1 decides which model reads a page (`VisionPipeline.cjkCount`).
+
+**Lone brackets** (`VisionPipeline.withBrackets`). A line read as "子" in the column of the line that left a "{" open,
+or as "J" where a "[" is open (what the Chinese model makes of "}" and "]" alone on a line), becomes that bracket's
+closer, as a glyph nothing read already did. Those two only: any other character alone on its line is the code's own,
+a variable or an element of a list. A bracket in a string or a comment opens nothing (`codeBrackets`: after
+`let x = "{";`, a line reading `x` stays). "//" starts a comment unless the listing is written as Python is
+(`isPythonLike`: a comment on "#", `def` or `elif`, a block opened on ":"), where it divides: the "}" after
+`size // page_size` closes its dictionary. A "#!" line tells by its interpreter (`#!/usr/bin/env node` starts a script
+with "//" comments), and a line that opens a block tells nothing where it reads as prose, three words or more of
+lowercase letters alone before its colon ("with the default settings:", and `for item in items:` too; `with open(path)
+as f:` and `except ValueError:` are code). Nothing is put where the code closes the bracket itself further down
+(under `let values = [`, a line reading `1` is an element when the `]` follows): counted as the closer, the row would
+leave a closer of the code with nothing to close. Where every closer still finds a bracket, the row is the one the
+code lacks: after `const handlers = { submit: () => {`, the unread "}" before `};`. An opening brace read as "1", "l", or
+"I" at the end of its line is put back when the next line is indented under it and the block closes in its column.
+`0 if done else 1`, `let l = 1`, and a continuation line ("+ offset") are left alone (tests).
+
+**Wide screens** (› Large selections in bands). Three things kept `BandedReadingTests`' dense 5120-wide screen (30
+long lines, most of them across a column cut) from reading whole: on main 31 lines came back, 78 characters off the
+3,834 drawn, where the test allows 38. (1) A line a cut went through that the column past the cut read no part of had no
+second piece to join; it is read again with the stretch of its row past the cut (`PieceMerge.loneCuts`, the stretches
+stacked in strips as the cut lines are), and gives way to that reading when it reaches a quarter of the line's height
+past the cut, is longer, and holds the line's own reading but for the two characters at the cut and one in ten besides
+(`PieceMerge.completes`). Measured from the line's own box, by a line's height, a letter or two past the cut was never
+far enough; and two readings of one line differ by a letter now and then ("moring" for "morning"), so a reading that
+had to hold the other exactly left a line of the dense screen cut. The three characters at the end no cut touched are
+held as they are, though: a reading that goes on past the cut and has lost the line's number there is no gain. A line
+no cut is near is not read again (its edges' difference passed for a stretch wider than the line, by rounding). (2) A fragment of a line that was read whole as well ("21. The quiet l" over the line) is
+dropped, whichever came first (`PieceMerge.isFragment`). (3) Vision turns a long line over now and then: reads it
+upside down, as letters of a sort ("Tan caon a n ae n en cao"), its corners in that order and its confidence the
+lowest it gives. Such a reading of eight characters or more is left out (`VisionPipeline.isTurnedOver`), and the line
+is then a gap like any other, read again alone. Shorter ones stay: without that limit a real terminal screenshot lost
+half a point (`real-terminal-ll`, content 6.6% → 7.1%), and with it at 4, 8, or 16 characters all 46 cases score as
+before (the turned lines of the dense screen hold 18 or more). A line that is upside down in the picture comes back
+with more confidence and is still read (test). Leaving out every line of confidence 0.3 or less had been tried and
+cost `code-swift` 12 points. The dense screen now reads 30 of 30 lines and 3,827 of 3,834 characters.
+
+**Translation of a tutorial.** A page was code when two lines in five read as code, and then none of it was translated:
+two lines of `let` kept the three sentences explaining them as they were. Now only the lines are code
+(`TranslationUnits.codeLines`): on such a page, every line but its sentences (`isSentence`: it starts on a word, holds
+no operator, and has four words that are three in four of its tokens, or five characters of Chinese or Japanese) and
+the lines a sentence wraps onto. A statement can be all words as well, so in a script with capitals a sentence starts
+on one or on a name with one inside ("macOS", "iPhone"), or ends on a period or a mark like it ("the cache is cleared
+when the app restarts."), which a command rarely does; its first word is no keyword (`SELECT`) or cmdlet
+(`Write-Host`), and it calls nothing: `echo Welcome to your home directory` and `raise ValueError("This option is not
+available in this mode")` stay code. A capital after a hyphen makes a cmdlet only with one of PowerShell's verbs before
+it (the approved ones, and `ForEach`, `Sort`, `Tee`, `Where`), a parameter (`-Path`), a quote, or a variable on the line: "Wi-Fi is required to pair the device." is a sentence.
+The verbs are English words, so a verb alone makes none where the line ends as a sentence does ("Open-Source libraries
+are listed in the appendix."; `Format-Table Name, Length, Mode` ends on no period), and a name of more than two parts
+is none at all ("Step-By-Step").
+What only the listing makes code stays code: `break`, a string, a `#` comment, `total = count if ready else zero`. Not
+handled: a sentence inside a listing (a docstring's text) is translated too, and one that names a call ("Call
+read(url) to load the image.") or starts on an acronym ("JSON is…") is left as code.
+
+**Formulas among text.** Where the text beside a formula came back empty from its second reading, the row was made of
+what was read: the formula alone, the words Vision had read right gone. An empty reading of a crop that holds a
+letter's width of ink (three tenths of the line's height in columns with ink) is now a piece that couldn't be read
+(`FormulaMerge.readings`), and its row stays as Vision read it, formula and all; a blank crop, or one holding a period,
+is empty as before. Not measured with the formula pack: `OMS_FORMULA_PACK` was not set for these runs.
+
+L1, `ocr-bench --engine l1 --real DIR`, main against this change, both with the new scorer:
+
+| | Content CER | Raw CER | Line order | Code indentation |
+| --- | --- | --- | --- | --- |
+| The 28 cases main had | 0.59% → 0.54% | 2.16% → 0.98% | 0.918 → 1.000 | 0.919 → 1.000 |
+| Real screenshots, 12 regions | 5.70% → 5.70% | 10.50% → 8.03% | 0.584 → 0.922 | — |
+| Rows of fields, 3 | 22.49% → 1.81% | 38.51% → 16.65% | 0.146 → 1.000 | — |
+| Side by side, 3 | 0.94% → 0.94% | 0.88% → 0.88% | 1.000 → 1.000 | — |
+
+No case is worse on any of the four, real or drawn; 16 are better and 30 the same. By case: `rows-terminal-ll` content
+67.5% → 5.4% (the Latin model reads it now), `table-zh` and `table-en` raw 16.1% and 13.6% → 0.0%, `code-gutter`
+content 1.5% → 0.4% and `code-swift` 1.7% → 1.4% (brackets), `real-terminal-ll` raw 17.9% → 6.6% and line order 0.00 →
+1.00, `real-linuxdo-thread` line order 0.32 → 0.86, `real-wechat-chats` 0.59 → 1.00. Time is unchanged (p50 328 → 327
+ms, the tall page 4.1 s). What remains: `rows-terminal-ls` raw 36.5% with its content at 0.0%, the terminal's runs of
+spaces between columns, which one space does not give back; and the real regions still below 0.9 in line order
+(`real-linuxdo-sidebar` 0.74, `real-linuxdo-thread` 0.86, the two VS Code regions and `real-x-tweet` 0.88,
+`real-x-sidebar` 0.89). OMSOCRTests: 341 tests in 45 suites pass, `BandedReadingTests` among them (on main, 318 with
+the dense screen's two expectations failing).

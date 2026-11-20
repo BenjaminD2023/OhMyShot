@@ -6,22 +6,22 @@
       "lineOrder" : 1
     },
     "code-gutter" : {
-      "cerContent" : 0.014598540145985401,
-      "cerRaw" : 0.025787965616045846,
-      "indentation" : 0.7777777777777778,
-      "lineOrder" : 0.7777777777777778
+      "cerContent" : 0.0036496350364963502,
+      "cerRaw" : 0.0028653295128939827,
+      "indentation" : 1,
+      "lineOrder" : 1
     },
     "code-swift" : {
-      "cerContent" : 0.006993006993006993,
-      "cerRaw" : 0.005509641873278237,
-      "indentation" : 0.9,
-      "lineOrder" : 0.9
+      "cerContent" : 0.013986013986013986,
+      "cerRaw" : 0.011019283746556474,
+      "indentation" : 1,
+      "lineOrder" : 1
     },
     "code-swift-plain" : {
-      "cerContent" : 0.010948905109489052,
-      "cerRaw" : 0.011461318051575931,
-      "indentation" : 0.8888888888888888,
-      "lineOrder" : 0.8888888888888888
+      "cerContent" : 0.0072992700729927005,
+      "cerRaw" : 0.0057306590257879654,
+      "indentation" : 1,
+      "lineOrder" : 1
     },
     "code-yaml" : {
       "cerContent" : 0,
@@ -56,7 +56,37 @@
     },
     "multilingual" : {
       "cerContent" : 0.00909090909090909,
-      "cerRaw" : 0.016,
+      "cerRaw" : 0.008,
+      "lineOrder" : 1
+    },
+    "rows-settings" : {
+      "cerContent" : 0,
+      "cerRaw" : 0,
+      "lineOrder" : 1
+    },
+    "rows-terminal-ll" : {
+      "cerContent" : 0.05420054200542006,
+      "cerRaw" : 0.1346938775510204,
+      "lineOrder" : 1
+    },
+    "rows-terminal-ls" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.36486486486486486,
+      "lineOrder" : 1
+    },
+    "side-columns-en" : {
+      "cerContent" : 0.00202020202020202,
+      "cerRaw" : 0.0016474464579901153,
+      "lineOrder" : 1
+    },
+    "side-columns-zh" : {
+      "cerContent" : 0.02631578947368421,
+      "cerRaw" : 0.024875621890547265,
+      "lineOrder" : 1
+    },
+    "side-gallery" : {
+      "cerContent" : 0,
+      "cerRaw" : 0,
       "lineOrder" : 1
     },
     "small-11px" : {
@@ -97,26 +127,22 @@
     "table-en" : {
       "cerContent" : 0,
       "cerRaw" : 0,
-      "lineOrder" : 1,
-      "tableCells" : 0,
-      "tableShape" : false
+      "lineOrder" : 1
     },
     "table-zh" : {
       "cerContent" : 0,
       "cerRaw" : 0,
-      "lineOrder" : 1,
-      "tableCells" : 0,
-      "tableShape" : false
+      "lineOrder" : 1
     },
     "tall-page" : {
-      "cerContent" : 0.011690746663725599,
+      "cerContent" : 0.011801036726590934,
       "cerRaw" : 0.010447485207100591,
-      "lineOrder" : 0.9
+      "lineOrder" : 1
     },
     "ui-icons" : {
-      "cerContent" : 0.05555555555555555,
-      "cerRaw" : 0.0625,
-      "lineOrder" : 0.9090909090909091
+      "cerContent" : 0,
+      "cerRaw" : 0,
+      "lineOrder" : 1
     },
     "vertical-zh" : {
       "cerContent" : 0,
@@ -124,13 +150,13 @@
       "lineOrder" : 1
     },
     "zh-doc" : {
-      "cerContent" : 0.034782608695652174,
-      "cerRaw" : 0.03305785123966942,
+      "cerContent" : 0.02608695652173913,
+      "cerRaw" : 0.024793388429752067,
       "lineOrder" : 1
     },
     "zh-en-chat" : {
       "cerContent" : 0.011627906976744186,
-      "cerRaw" : 0.009615384615384616,
+      "cerRaw" : 0.019230769230769232,
       "lineOrder" : 1
     },
     "zh-en-lines" : {
@@ -150,5 +176,5 @@
     }
   },
   "engine" : "l1",
-  "macOS" : "27.2.0"
+  "macOS" : "27.3.0"
 }

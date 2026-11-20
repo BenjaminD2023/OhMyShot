@@ -116,4 +116,94 @@ struct TextAssemblerTests {
         let text = assembly.text as NSString
         #expect(text.substring(with: assembly.lineRanges[2]) == "[String: Any] = [:]")
     }
+
+    @Test func theFieldsOfARowAreOneLineASpaceApart() {
+        // A terminal's listing as Vision returns it: a piece for each field or two, whatever the gap between them.
+        let lines = [
+            line("drwxr-xr-x", x: 0, y: 0), line("12 morgan", x: 130, y: 0), line("staff", x: 250, y: 0), line("384 Nov 12 09:41 Assets", x: 340, y: 0),
+            line("-rw-r--r--", x: 0, y: 30), line("1 morgan", x: 140, y: 30), line("staff", x: 250, y: 30), line("2167 Nov 12 09:38 Package.swift", x: 330, y: 30),
+        ]
+        #expect(TextAssembler.assemble(lines) == """
+        drwxr-xr-x 12 morgan staff 384 Nov 12 09:41 Assets
+        -rw-r--r-- 1 morgan staff 2167 Nov 12 09:38 Package.swift
+        """)
+    }
+
+    @Test func aLabelAndItsValueAcrossTheWindowAreOneLine() {
+        let lines = [
+            line("Wi-Fi", x: 0, y: 0), line("Connected", x: 800, y: 0),
+            line("蓝牙耳机", x: 0, y: 60), line("已连接", x: 830, y: 60),
+            line("Display", x: 0, y: 120), line("Built-in Liquid Retina XDR", x: 640, y: 120),
+        ]
+        #expect(TextAssembler.assemble(lines) == "Wi-Fi Connected\n蓝牙耳机 已连接\nDisplay Built-in Liquid Retina XDR")
+    }
+
+    @Test func aLabelAndAValueThatBothReadAsTextAreOneLine() {
+        // One row of Settings captured alone: four words either side of the window, and no row near it apart at the
+        // same place, as the rows of two blocks of text are.
+        let row = [line("Allow accessories to connect", x: 0, y: 0), line("Ask for New Accessories", x: 620, y: 0)]
+        #expect(row.allSatisfy { TextAssembler.isRunningText($0.text) })
+        #expect(TextAssembler.assemble(ReadingOrder.sorted(row)) == "Allow accessories to connect Ask for New Accessories")
+        // Under another row of its pane, whose value is a word.
+        let pane = [line("Wi-Fi", x: 0, y: 0), line("Connected", x: 760, y: 0), line("Allow accessories to connect", x: 0, y: 60), line("Ask for New Accessories", x: 620, y: 60)]
+        #expect(TextAssembler.assemble(ReadingOrder.sorted(pane)) == "Wi-Fi Connected\nAllow accessories to connect Ask for New Accessories")
+    }
+
+    @Test func twoColumnsOfAFewLinesAreNotJoinedRowByRow() {
+        // Four lines are too few for `ReadingOrder` to look for columns, so they come row by row: each column's line is
+        // still a line of its own.
+        let english = [
+            line("The harbor wakes before the town does.", x: 0, y: 0), line("Inland the road climbs through orchards", x: 480, y: 0),
+            line("Gulls argue over the first catch while", x: 0, y: 30), line("planted in rows as straight as rulers.", x: 480, y: 30),
+        ]
+        let chinese = [
+            line("清晨的港口比小镇醒得更早。海鸥为", x: 0, y: 0, characterWidth: 20), line("往内陆走，公路穿过一片果园，果树", x: 400, y: 0, characterWidth: 20),
+            line("第一网鱼争个不停，渡船的水手在码", x: 0, y: 30, characterWidth: 20), line("一行一行排得像尺子一样直。采摘的", x: 400, y: 30, characterWidth: 20),
+        ]
+        for lines in [english, chinese] {
+            let text = TextAssembler.assemble(ReadingOrder.sorted(lines))
+            #expect(text.components(separatedBy: "\n").sorted() == lines.map(\.text).sorted())
+        }
+        // One line that Vision returned in two pieces a space apart is one line still.
+        let split = [line("Quick Access keeps every capture", x: 0, y: 0), line("one click away from the menu bar", x: 330, y: 0), line("so you can copy or annotate it.", x: 0, y: 30)]
+        #expect(TextAssembler.assemble(ReadingOrder.sorted(split)) == "Quick Access keeps every capture one click away from the menu bar\nso you can copy or annotate it.")
+    }
+
+    @Test func captionsUnderARowOfPicturesStayLinesOfTheirOwn() {
+        // Two rows of three pictures: the captions of a row share a baseline, with a picture's height between the rows.
+        let captions = ["Harbor at dawn", "果园小路", "Lighthouse", "Cider press", "海关码头", "Ferry crew"]
+        let lines = captions.enumerated().map { index, caption in line(caption, x: CGFloat(index % 3) * 380, y: CGFloat(index / 3) * 300) }
+        #expect(TextAssembler.assemble(lines) == captions.joined(separator: "\n"))
+        // A page of text beside them is no line above or below them.
+        let page = (0..<12).map { line("A line of the page beside the pictures", x: 1200, y: CGFloat($0) * 30) }
+        #expect(TextAssembler.assemble(lines + page).hasPrefix(captions.joined(separator: "\n") + "\n"))
+    }
+
+    @Test func aRowCapturedAloneIsOneLine() {
+        let lines = [line("-rw-r--r--"), line("1 morgan", x: 140), line("staff", x: 250), line("1069 Sep 19 11:50 LICENSE", x: 330)]
+        #expect(TextAssembler.assemble(lines) == "-rw-r--r-- 1 morgan staff 1069 Sep 19 11:50 LICENSE")
+    }
+
+    @Test func aTableRowAFormulaAndVerticalTextAreNotJoinedToTheirRow() {
+        let label = line("Figure 2"), below = line("A note under them", y: 30)
+        var row = line("North 1,240", x: 200)
+        row.isTableRow = true
+        #expect(TextAssembler.assemble([label, row, below]) == "Figure 2\nNorth 1,240\nA note under them")
+        var formula = line("$$E = mc^2$$", x: 200)
+        formula.math = .display
+        #expect(TextAssembler.assemble([label, formula, below]) == "Figure 2\n$$E = mc^2$$\nA note under them")
+        let vertical = OCRLine(text: "春风吹过", box: CGRect(x: 200, y: -30, width: 20, height: 80), confidence: 1, direction: .topToBottom)
+        #expect(TextAssembler.assemble([label, vertical, below]) == "Figure 2\n春风吹过\nA note under them")
+    }
+
+    @Test func fieldsJoinedOnARowKeepRangesOfTheirOwn() {
+        // The OCR panel selects a line's text when its box is clicked and marks the boxes a selection touches, by
+        // these ranges: a field joined to its row is still selected alone.
+        let lines = [line("Wi-Fi", x: 0, y: 0), line("Connected", x: 800, y: 0), line("Bluetooth", x: 0, y: 60), line("On", x: 870, y: 60)]
+        for options in [TextAssembler.Options(), TextAssembler.Options(joinsWrappedLines: true)] {
+            let assembly = TextAssembler.assembly(lines, options: options)
+            #expect(assembly.text == "Wi-Fi Connected\nBluetooth On")
+            #expect(assembly.lineRanges.map { (assembly.text as NSString).substring(with: $0) } == lines.map(\.text))
+        }
+    }
 }

@@ -20,6 +20,10 @@ enum Category: String, CaseIterable, Codable, Sendable {
     case dark
     /// Labels beside icons, as an app's sidebar draws them.
     case ui
+    /// Rows whose pieces sit apart: a terminal listing, a settings list. A row is one line.
+    case rows
+    /// Pieces side by side that are not one line: captions under a row of pictures, two columns of prose.
+    case sideBySide = "side-by-side"
     /// A real screenshot from `--real`.
     case real
 }
@@ -68,7 +72,7 @@ enum Corpus {
 
     static var all: [BenchCase] {
         [zhEnChat, zhNoSpace, zhDoc, zhEnLines, zhHant, ja, ko, multilingual, enUI, enWithChinese, codeSwift, codeSwiftPlain, codeYAML, codeGutter, tableZh, tableEn, verticalZh, chat, darkUI, uiIcons]
-            + smallText + [tallPage]
+            + smallText + [tallPage, terminalLL, terminalLS, settingsRows, gallery, columnsEn, columnsZh]
     }
 
     // MARK: Text blocks
@@ -392,6 +396,142 @@ enum Corpus {
         ("收到，我带水和零食 🍎", true),
     ]
 
+    // MARK: Rows of pieces
+
+    /// `ls -l`: Vision reads the fields of a row apart, and a reading that keeps them apart gives the
+    /// listing back a field a line.
+    static let terminalLL = terminalCase("rows-terminal-ll", [
+        "total 96",
+        "drwxr-xr-x  12 morgan  staff    384 Nov 12 09:41 Assets",
+        "-rw-r--r--   1 morgan  staff   2167 Nov 12 09:38 Package.swift",
+        "-rw-r--r--   1 morgan  staff  11391 Oct 30 18:02 README.md",
+        "drwxr-xr-x   5 morgan  staff    160 Oct 28 14:15 Sources",
+        "drwxr-xr-x   4 morgan  staff    128 Oct 28 14:15 Tests",
+        "-rwxr-xr-x   1 morgan  staff    512 Nov  3 21:07 build.sh",
+        "-rw-r--r--   1 morgan  staff   1069 Sep 19 11:50 LICENSE",
+        "lrwxr-xr-x   1 morgan  staff     27 Nov  5 08:30 latest -> builds/2026-11-05",
+    ])
+
+    /// `ls`: names in columns, a row of them one line. The truth keeps the terminal's runs of spaces, so a
+    /// reading that puts one space between the names still pays for the rest in raw CER.
+    static let terminalLS = terminalCase("rows-terminal-ls", [
+        "Applications    Documents       Movies          Public",
+        "Desktop         Downloads       Music           Sites",
+        "Developer       Library         Pictures        notes.txt",
+        "Archive.zip     Makefile        Projects        todo.md",
+    ])
+
+    private static func terminalCase(_ id: String, _ lines: [String]) -> BenchCase {
+        BenchCase(id: id, category: .rows, truth: Truth(lines: lines)) {
+            let strings = lines.map { NSAttributedString($0, font: Fonts.mono(12), color: .hex(0xD8DEE9)) }
+            return stack(strings, background: .hex(0x1F1F24), gap: 5, padding: 20)
+        }
+    }
+
+    /// A settings list: a label at the left of each row and its value at the right, the width of the
+    /// window between them.
+    static let settingsRows = BenchCase(
+        id: "rows-settings",
+        category: .rows,
+        truth: Truth(lines: settings.map { "\($0.label) \($0.value)" })
+    ) {
+        let font = Fonts.ui(13, language: "zh-Hans")
+        let rowHeight: CGFloat = 32
+        let width: CGFloat = 460
+        let canvas = Canvas(width: width, height: rowHeight * CGFloat(settings.count) + 24, background: .hex(0xFFFFFF))
+        for (row, setting) in settings.enumerated() {
+            let top = 12 + CGFloat(row) * rowHeight + 8
+            canvas.draw(NSAttributedString(setting.label, font: font, color: .hex(0x1D1D1F)), x: 20, top: top)
+            let value = NSAttributedString(setting.value, font: font, color: .hex(0x6E6E73))
+            canvas.draw(value, x: width - 20 - Canvas.measure(value).width, top: top)
+        }
+        return canvas.image()
+    }
+
+    private static let settings: [(label: String, value: String)] = [
+        ("Wi-Fi", "Connected"),
+        ("Bluetooth", "On"),
+        ("蓝牙耳机", "已连接"),
+        ("Software Update", "macOS 26.4"),
+        ("存储空间", "512 GB 可用"),
+        ("Display", "Built-in Liquid Retina XDR"),
+    ]
+
+    // MARK: Side by side
+
+    /// Pictures in a grid with a caption under each. The captions of a row share a baseline and are not a
+    /// line: each belongs to its picture.
+    static let gallery = BenchCase(id: "side-gallery", category: .sideBySide, truth: Truth(lines: galleryCaptions)) {
+        let font = Fonts.ui(13, language: "zh-Hans")
+        let picture = CGSize(width: 150, height: 100)
+        let pitch = CGSize(width: 190, height: 150)
+        let colors: [UInt32] = [0x7DA7D9, 0xE8B86D, 0x8FC1A9, 0xD98C8C, 0xA79AD6, 0x9DB4C0]
+        let canvas = Canvas(width: pitch.width * 3 + 20, height: pitch.height * 2 + 20, background: .hex(0xFFFFFF))
+        for (index, caption) in galleryCaptions.enumerated() {
+            let origin = CGPoint(x: 30 + CGFloat(index % 3) * pitch.width, y: 20 + CGFloat(index / 3) * pitch.height)
+            canvas.fill(CGRect(origin: origin, size: picture), radius: 8, color: .hex(colors[index]))
+            let text = NSAttributedString(caption, font: font, color: .hex(0x1D1D1F))
+            canvas.draw(text, x: origin.x + (picture.width - Canvas.measure(text).width) / 2, top: origin.y + picture.height + 8)
+        }
+        return canvas.image()
+    }
+
+    private static let galleryCaptions = ["Harbor at dawn", "果园小路", "Lighthouse", "Cider press", "海关码头", "Ferry crew"]
+
+    /// Two columns of prose whose lines share baselines: the left column is read to its end before the
+    /// right one starts, and no line of one is joined to the line beside it.
+    static let columnsEn = columnsCase("side-columns-en", language: "en", left: [
+        "The harbor wakes before the town does.",
+        "Gulls argue over the first catch while",
+        "the ferry crew coils rope on the pier.",
+        "By seven the fog has thinned enough to",
+        "show the lighthouse on the far point.",
+        "A bakery van idles beside the customs",
+        "shed, and the smell of bread reaches",
+        "the water before the sun gets there.",
+    ], right: [
+        "Inland the road climbs through orchards",
+        "planted in rows as straight as rulers.",
+        "Pickers start early to beat the heat,",
+        "filling crates that a tractor collects",
+        "at noon. The apples go to the press at",
+        "the edge of the village, where cider",
+        "has been made the same way for longer",
+        "than anyone alive can remember.",
+    ])
+
+    static let columnsZh = columnsCase("side-columns-zh", language: "zh-Hans", left: [
+        "清晨的港口比小镇醒得更早。海鸥为",
+        "第一网鱼争个不停，渡船的水手在码",
+        "头上盘着缆绳。七点一过，雾散得差",
+        "不多了，远处岬角上的灯塔露了出来。",
+        "面包店的货车停在海关棚屋旁边，面",
+        "包的香味比阳光更早飘到水面上。",
+    ], right: [
+        "往内陆走，公路穿过一片果园，果树",
+        "一行一行排得像尺子一样直。采摘的",
+        "人趁着凉快早早开工，装满的筐子中",
+        "午由拖拉机收走。苹果送到村口的榨",
+        "汁坊，那里酿苹果酒的办法，比村里",
+        "任何一位老人的记忆都要久远。",
+    ])
+
+    private static func columnsCase(_ id: String, language: String, left: [String], right: [String]) -> BenchCase {
+        BenchCase(id: id, category: .sideBySide, truth: Truth(lines: left + right)) {
+            let font = Fonts.ui(13, language: language)
+            let columns = [left, right].map { $0.map { NSAttributedString($0, font: font, color: .hex(0x1D1D1F)) } }
+            let columnWidth = ceil(columns.joined().map { Canvas.measure($0).width }.max() ?? 0)
+            let pitch: CGFloat = 22
+            let canvas = Canvas(width: columnWidth * 2 + 88, height: pitch * CGFloat(max(left.count, right.count)) + 44, background: .hex(0xFFFFFF))
+            for (column, strings) in columns.enumerated() {
+                for (row, string) in strings.enumerated() {
+                    canvas.draw(string, x: 24 + CGFloat(column) * (columnWidth + 40), top: 24 + CGFloat(row) * pitch)
+                }
+            }
+            return canvas.image()
+        }
+    }
+
     // MARK: Builders
 
     private static func textCase(_ id: String, _ category: Category, language: String, _ lines: [String]) -> BenchCase {
@@ -419,8 +559,13 @@ enum Corpus {
         return canvas.image()
     }
 
+    /// The text of a table is a row a line, its cells a space apart: what L1 makes of pieces that share a
+    /// row (`TextAssembler`), and what a table pasted as text should be. A cell a line, which this truth once
+    /// was, gave full marks to a paste of four columns as sixteen lines of a word each. One space and not a
+    /// tab, as the quick reading has no table to tell it the pieces are cells; the cells themselves are scored
+    /// apart, against `table`.
     private static func tableCase(_ id: String, language: String, _ rows: [[String]]) -> BenchCase {
-        BenchCase(id: id, category: .table, truth: Truth(lines: rows.flatMap(\.self), table: rows)) {
+        BenchCase(id: id, category: .table, truth: Truth(lines: rows.map { $0.joined(separator: " ") }, table: rows)) {
             let font = Fonts.ui(13, language: language)
             let header = Fonts.ui(13, language: language, bold: true)
             let ink = CGColor.hex(0x1D1D1F)

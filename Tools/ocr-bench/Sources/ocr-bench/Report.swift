@@ -15,6 +15,8 @@ struct CaseRun: Codable, Sendable {
 /// One engine on the whole corpus.
 struct EngineRun: Codable, Sendable {
     var engine: String
+    /// Whether the engine's results carry tables; one that reads none is not scored on them.
+    var readsTables: Bool
     var warmupMilliseconds: Double?
     var cases: [CaseRun]
 }
@@ -60,7 +62,13 @@ enum Report {
             let indents = run.cases.compactMap { $0.score?.indentation }
             let shapes = run.cases.compactMap { $0.score?.tableShape }
             let cells = run.cases.compactMap { $0.score?.tableCells }
-            out.append("| \(run.engine) | \(indents.isEmpty ? "—" : ratio(mean(indents))) | \(shapes.isEmpty ? "—" : "\(shapes.filter { $0 }.count)/\(shapes.count)") | \(cells.isEmpty ? "—" : ratio(mean(cells))) |")
+            let shape = !run.readsTables ? "N/A" : shapes.isEmpty ? "—" : "\(shapes.filter { $0 }.count)/\(shapes.count)"
+            let cell = !run.readsTables ? "N/A" : cells.isEmpty ? "—" : ratio(mean(cells))
+            out.append("| \(run.engine) | \(indents.isEmpty ? "—" : ratio(mean(indents))) | \(shape) | \(cell) |")
+        }
+        if runs.contains(where: { !$0.readsTables }) {
+            out.append("")
+            out.append("N/A: the engine reads no tables. The app shows them in the OCR panel, which \"panel\" measures.")
         }
         out.append("")
 

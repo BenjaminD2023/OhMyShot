@@ -10,18 +10,20 @@ struct Score: Codable, Sendable {
     /// misrecognition only. The gap to `cerRaw` is formatting work (spacing, punctuation width, line
     /// breaks) that post-processing can fix.
     var cerContent: Double
-    /// Lines found and kept in order, from 0 to 1.
+    /// Lines found once and kept in order, from 0 to 1.
     var lineOrder: Double
     /// Code lines whose leading spaces match, from 0 to 1.
     var indentation: Double?
-    /// Whether a table came back with the expected rows and columns.
+    /// Whether a table came back with the expected rows and columns. Nil for an engine that reads no tables.
     var tableShape: Bool?
-    /// Table cells read exactly (content-normalized), from 0 to 1.
+    /// Table cells read exactly (content-normalized), from 0 to 1. Nil for an engine that reads no tables.
     var tableCells: Double?
 }
 
 enum Metrics {
-    static func score(_ result: OCRResult, against truth: Truth, category: Category) -> Score {
+    /// `readsTables` is false for an engine whose results never carry tables: it is not scored on them, where
+    /// an engine that reads tables and found none scores zero.
+    static func score(_ result: OCRResult, against truth: Truth, category: Category, readsTables: Bool) -> Score {
         let truthLines = truth.lines
         let outputLines = result.text.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         var score = Score(
@@ -32,7 +34,7 @@ enum Metrics {
         if category == .code {
             score.indentation = indentation(outputLines, against: truthLines)
         }
-        if let table = truth.table {
+        if readsTables, let table = truth.table {
             if let found = result.tables.first {
                 score.tableShape = found.rows.count == table.count && zip(found.rows, table).allSatisfy { $0.count == $1.count }
                 score.tableCells = cellAccuracy(found.rows, against: table)
@@ -66,33 +68,53 @@ enum Metrics {
         return previous[b.count]
     }
 
-    /// Each truth line is matched to the closest output line (content error rate at most 0.4); the score
-    /// is the longest run of matches that keeps the truth's order, over the number of truth lines. Lost
-    /// lines and shuffled lines both lower it.
+    /// Truth lines are paired with output lines one to one (`pairs`); the score is the longest run of pairs
+    /// that keeps the truth's order, over the lines of the longer text. Lost, repeated, and shuffled lines
+    /// all lower it.
     static func lineOrder(_ output: [String], against truth: [String]) -> Double {
-        guard !truth.isEmpty else { return 1 }
-        let candidates = output.map(Normalize.content)
-        let matched: [Int] = truth.compactMap { line in
-            let target = Normalize.content(line)
-            let best = candidates.indices.min { errorRate(candidates[$0], against: target) < errorRate(candidates[$1], against: target) }
-            guard let best, errorRate(candidates[best], against: target) <= 0.4 else { return nil }
-            return best
-        }
-        return Double(longestIncreasingRun(matched)) / Double(truth.count)
+        guard !truth.isEmpty else { return output.isEmpty ? 1 : 0 }
+        let kept = longestIncreasingRun(pairs(output, against: truth).map(\.output))
+        return Double(kept) / Double(max(truth.count, output.count))
     }
 
-    /// The share of truth lines whose matched output line starts with the same number of spaces.
+    /// The share of truth lines whose paired output line starts with the same number of spaces.
     static func indentation(_ output: [String], against truth: [String]) -> Double {
         guard !truth.isEmpty else { return 1 }
-        let candidates = output.map(Normalize.content)
-        let correct = truth.filter { line in
-            let target = Normalize.content(line)
-            guard let best = candidates.indices.min(by: { errorRate(candidates[$0], against: target) < errorRate(candidates[$1], against: target) }),
-                  errorRate(candidates[best], against: target) <= 0.4
-            else { return false }
-            return leadingSpaces(output[best]) == leadingSpaces(line)
-        }
+        let correct = pairs(output, against: truth).filter { leadingSpaces(output[$0.output]) == leadingSpaces(truth[$0.truth]) }
         return Double(correct.count) / Double(truth.count)
+    }
+
+    /// Each truth line with the output line that reads it, in the truth's order: the closest pairs first
+    /// (content error rate at most 0.4), equally close ones by how near their places in the two texts are,
+    /// and no line in two pairs. So a line the truth repeats (a closing brace, a row of a template) pairs
+    /// with its own copy: matching every truth line to its closest output line on its own gave them all the
+    /// first copy, and a perfect reading of code then scored as lines lost.
+    ///
+    /// The pairs are free to cross, and the order is scored afterwards. Pairs kept in order from the start
+    /// (an alignment) could not tell a page read right column first from one read well: where the lines are
+    /// alike, as a template's are, it pairs each with its neighbour's copy and finds nothing out of order.
+    static func pairs(_ output: [String], against truth: [String]) -> [(truth: Int, output: Int)] {
+        let candidates = output.map(Normalize.content)
+        let targets = truth.map(Normalize.content)
+        var close: [(cost: Double, apart: Double, truth: Int, output: Int)] = []
+        for (row, target) in targets.enumerated() {
+            for (column, candidate) in candidates.enumerated() {
+                let cost = errorRate(candidate, against: target)
+                guard cost <= 0.4 else { continue }
+                let apart = abs(Double(row) / Double(targets.count) - Double(column) / Double(candidates.count))
+                close.append((cost, apart, row, column))
+            }
+        }
+        close.sort { ($0.cost, $0.apart, $0.truth, $0.output) < ($1.cost, $1.apart, $1.truth, $1.output) }
+        var pairedTruth: Set<Int> = []
+        var pairedOutput: Set<Int> = []
+        var pairs: [(truth: Int, output: Int)] = []
+        for pair in close where !pairedTruth.contains(pair.truth) && !pairedOutput.contains(pair.output) {
+            pairedTruth.insert(pair.truth)
+            pairedOutput.insert(pair.output)
+            pairs.append((pair.truth, pair.output))
+        }
+        return pairs.sorted { $0.truth < $1.truth }
     }
 
     static func cellAccuracy(_ output: [[String]], against truth: [[String]]) -> Double {

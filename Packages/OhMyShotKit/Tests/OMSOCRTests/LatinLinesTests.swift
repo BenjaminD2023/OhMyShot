@@ -15,6 +15,13 @@ struct LatinLineTests {
         #expect(Script.isLatinLine("1 TB"))
     }
 
+    @Test func strokesReadFromDashesAreNoSignOfChinese() {
+        // "-rw-r--r--" as the Chinese model reads it.
+        #expect(VisionPipeline.cjkCount(Array("ーIW-KーーKーー")) == 0)
+        #expect(VisionPipeline.cjkCount(Array("Last file: 设计稿.png")) == 3)
+        #expect(VisionPipeline.cjkCount(Array("十一月的工作日")) == 4)
+    }
+
     @Test func labelLinesAreProseButYAMLStaysCode() {
         for prose in ["Docs: https://example.com/docs", "Mail: hello@example.com", "Phone: +1 (555) 010-0199", "Release: October 15, 2026 at 2:30 PM"] {
             #expect(!TextAssembler.isCodeLike(prose), "\(prose)")

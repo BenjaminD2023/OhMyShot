@@ -39,8 +39,8 @@ public enum TextAssembler {
         guard !lines.isEmpty else { return Assembly() }
         let isCode = isCodeListing(lines)
         // In code, a piece on the same row as the line before continues it: Vision sometimes returns one
-        // line of code as two pieces side by side.
-        let continuations: [Int?] = isCode ? rowContinuations(lines) : lines.map { _ in nil }
+        // line of code as two pieces side by side. Elsewhere the pieces are the fields of a row (`rowPieces`).
+        let continuations: [Int?] = isCode ? rowContinuations(lines) : rowPieces(lines)
         let starts = lines.indices.filter { continuations[$0] == nil }
         var indents = Array(repeating: 0, count: lines.count)
         if isCode {
@@ -77,6 +77,67 @@ public enum TextAssembler {
                   box.minX >= previous.maxX - characterWidth else { return nil }
             return max(1, Int(((box.minX - previous.maxX) / characterWidth).rounded()))
         }
+    }
+
+    /// Outside code, a space for each line that continues the row of the line before, or nil when it starts a row.
+    /// Vision returns a row field by field (the columns of `ls -l`, a table's cells, a setting's label and its
+    /// value), and a field a line loses which fields belonged together. One space whatever the gap: spaces counted
+    /// from the gap put a window's width of them between a label and its value. A table's row and a formula are
+    /// whole already, and vertical text has no rows.
+    ///
+    /// Captions under a row of pictures share a row as well, and each belongs to its picture. There the text above
+    /// and below is a picture away, so pieces are joined only where text is stacked as lines are, another line
+    /// within three line heights above or below them, or where the row is all the text there is (one row of a
+    /// listing, captured alone).
+    ///
+    /// Two columns of a few lines each come here row by row as well (`ReadingOrder` looks for columns from five lines
+    /// up), and the lines of two columns are not one line. Pieces that both read as running text (`isRunningText`),
+    /// further apart than a line is tall, stay apart where a row within three line heights is apart at the same
+    /// place: two blocks of text. One such row with no other like it is a label and its value ("Allow accessories to
+    /// connect", "Ask for New Accessories"), and one line. Closer, two pieces are one line Vision returned in two.
+    static func rowPieces(_ lines: [OCRLine]) -> [Int?] {
+        let continuations = rowContinuations(lines)
+        let isOneRow = continuations.dropFirst().allSatisfy { $0 != nil }
+        // Where a piece and the one before it both read as running text, further apart than a line is tall: the row
+        // they make and the gap between them.
+        let breaks: [(row: CGRect, gap: ClosedRange<CGFloat>)?] = lines.indices.map { index in
+            guard continuations[index] != nil else { return nil }
+            let line = lines[index].box, previous = lines[index - 1].box
+            let row = previous.union(line)
+            guard line.minX - previous.maxX > row.height, isRunningText(lines[index - 1].text), isRunningText(lines[index].text) else { return nil }
+            return (row, previous.maxX...line.minX)
+        }
+        return lines.indices.map { index in
+            guard continuations[index] != nil else { return nil }
+            let line = lines[index], previous = lines[index - 1]
+            guard !line.isTableRow, !previous.isTableRow, line.math == nil, previous.math == nil,
+                  !ReadingOrder.isVertical(line), !ReadingOrder.isVertical(previous) else { return nil }
+            let row = previous.box.union(line.box)
+            let isBetweenBlocks = breaks[index].map { apart in
+                breaks.indices.contains { other in
+                    guard other != index, let its = breaks[other] else { return false }
+                    return max(its.row.minY - row.maxY, row.minY - its.row.maxY) < row.height * 3 && its.gap.overlaps(apart.gap)
+                }
+            } ?? false
+            if isBetweenBlocks { return nil }
+            let isStacked = lines.contains { other in
+                let gap = max(other.box.minY - row.maxY, row.minY - other.box.maxY)
+                return gap > -row.height / 2 && gap < row.height * 3 && other.box.maxX > row.minX && other.box.minX < row.maxX
+            }
+            return isOneRow || isStacked ? 1 : nil
+        }
+    }
+
+    /// Whether a piece of a row reads as running text rather than as a field or two: four words or more that are three
+    /// in four of what it holds, or eight characters of Chinese or Japanese. "384 Nov 12 09:41 Assets" holds two words,
+    /// and "Built-in Liquid Retina XDR" three.
+    static func isRunningText(_ text: String) -> Bool {
+        let tokens = text.split(whereSeparator: \.isWhitespace)
+        let words = tokens.count { token in
+            let word = token.trimmingCharacters(in: .punctuationCharacters)
+            return !word.isEmpty && word.allSatisfy(\.isLetter)
+        }
+        return words >= 4 && words * 4 >= tokens.count * 3 || text.count(where: Script.isCJK) >= 8
     }
 
     private static func medianCharacterWidth(_ lines: [OCRLine]) -> CGFloat? {
