@@ -35,10 +35,30 @@ public final class BackdropPresets {
         all = defaults.data(forKey: Self.presetsKey).flatMap { try? JSONDecoder().decode([BackdropPreset].self, from: $0) } ?? []
     }
 
+    /// The background there without saving one, as iShot gives every screenshot: the capture's corners rounded
+    /// and a soft shadow lying even all round it, on clear room just wide enough to hold the shadow.
+    public static let roundedShadow = BackdropPreset(
+        id: UUID(uuidString: "6F0B3C52-1E7A-4D19-9C8B-2A5E7D4F1B30")!,
+        name: String(localized: "Rounded Corners and Shadow", bundle: .module),
+        backdrop: Backdrop(fill: .clear, padding: 0, cornerRadius: 15, shadow: 0.5, shadowStyle: .even)
+    )
+
+    /// What can be set on a capture or on every new screenshot: Rounded Corners and Shadow, then the saved ones.
+    public var choices: [BackdropPreset] {
+        [Self.roundedShadow] + all
+    }
+
     /// The preset set on every new screenshot.
     public var automatic: BackdropPreset? {
         guard let id = defaults.string(forKey: Self.automaticKey).flatMap(UUID.init(uuidString:)) else { return nil }
-        return all.first { $0.id == id }
+        return choices.first { $0.id == id }
+    }
+
+    /// The preset set on window screenshots that take the screenshots' background: none for Rounded Corners and
+    /// Shadow, as a window keeps corners and a shadow of its own.
+    public var automaticForWindows: BackdropPreset? {
+        guard let automatic, automatic.id != Self.roundedShadow.id else { return nil }
+        return automatic
     }
 
     /// The last picture chosen for a background, by its name in the picture store, offered again beside the

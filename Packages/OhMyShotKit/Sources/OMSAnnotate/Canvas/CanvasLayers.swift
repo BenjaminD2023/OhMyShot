@@ -95,8 +95,7 @@ nonisolated final class BackdropLayer: StillLayer {
     struct Content: Equatable {
         var fill: Backdrop.Fill
         var layout: BackdropLayout
-        var shadow: CGFloat
-        var scale: CGFloat
+        var shadow: CardShadow?
     }
 
     var content: Content? {
@@ -137,7 +136,7 @@ nonisolated final class BackdropLayer: StillLayer {
         prepareDocumentSpace(context, mapping: mapping)
         if content.fill == .clear { drawChecker(over: content.layout.output, in: context) }
         BackdropPainter.paint(content.fill, in: content.layout.output, context: context, blur: blur, resolution: mapping.zoom * contentsScale)
-        BackdropPainter.drawCardShadow(content.layout, strength: content.shadow, scale: content.scale, context: context)
+        BackdropPainter.drawCardShadow(content.layout, shadow: content.shadow, context: context)
     }
 
     /// The quiet checkerboard that shows where a clear background's room is, as image editors show

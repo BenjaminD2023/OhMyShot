@@ -19852,7 +19852,42 @@
         }
       }
     },
+    "Puts each new screenshot on a background. Rounded corners and shadow rounds an area’s or a display’s corners and lays a soft shadow around it on clear room, which JPEG fills with white; a window keeps its own. Save others as presets with the editor’s Background tool." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coloca cada nueva captura sobre un fondo. “Esquinas redondeadas y sombra” redondea las esquinas de un área o de una pantalla y le pone alrededor una sombra suave sobre un margen transparente, que JPEG rellena de blanco; una ventana conserva las suyas. Guarda otros fondos como preajustes con la herramienta Fondo del editor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Place chaque nouvelle capture d’écran sur un arrière-plan. « Coins arrondis et ombre » arrondit les coins d’une zone ou d’un écran et pose autour une ombre douce sur une marge transparente, que JPEG remplit de blanc ; une fenêtre garde les siens. Enregistrez d’autres arrière-plans comme préréglages avec l’outil Arrière-plan de l’éditeur."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいスクリーンショットごとに背景を付けます。「角丸と影」は、領域やディスプレイ全体のスクリーンショットの角を丸め、その周りの透明な余白にやわらかい影を付けます（JPEGでは透明部分が白で塗られます）。ウインドウは自身の角と影を保ちます。ほかの背景は、エディタの背景ツールでプリセットとして保存できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为每张新截图添加背景。“圆角与阴影”会为区域或整个显示器的截图加上圆角，并在透明边距上围绕它铺一圈柔和阴影（JPEG 会把透明处填成白色）；窗口截图保留自身的圆角和阴影。可使用编辑器的“背景”工具将其他背景存储为预设。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為每張新截圖加上背景。「圓角與陰影」會為區域或整個顯示器的截圖加上圓角，並在透明邊距上環繞它鋪一圈柔和陰影（JPEG 會將透明處填成白色）；視窗截圖保留自身的圓角和陰影。可使用編輯器的「背景」工具將其他背景儲存為預設組合。"
+          }
+        }
+      }
+    },
     "Puts each new screenshot on a background. Save one as a preset with the editor’s Background tool." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -22416,6 +22451,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向右旋轉"
+          }
+        }
+      }
+    },
+    "Rounded corners and shadow" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esquinas redondeadas y sombra"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coins arrondis et ombre"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "角丸と影"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圆角与阴影"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圓角與陰影"
           }
         }
       }

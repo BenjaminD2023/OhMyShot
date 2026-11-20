@@ -696,7 +696,12 @@ final class CompositionRoot {
                 delete: { [weak self] in self?.uploads.deleteFromStorage($0) }
             ),
             backgrounds: SettingsDependencies.Backgrounds(
-                presets: { BackdropPresets.shared.all.map { SettingsDependencies.Backgrounds.Choice(id: $0.id, name: $0.name) } },
+                presets: {
+                    BackdropPresets.shared.choices.map { preset in
+                        let name = preset.id == BackdropPresets.roundedShadow.id ? String(localized: "Rounded corners and shadow") : preset.name
+                        return SettingsDependencies.Backgrounds.Choice(id: preset.id, name: name)
+                    }
+                },
                 automatic: { BackdropPresets.shared.automatic?.id },
                 setAutomatic: { BackdropPresets.shared.setAutomatic($0) }
             ),

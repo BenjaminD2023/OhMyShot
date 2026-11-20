@@ -9,6 +9,14 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Rounded Corners and Shadow, as iShot gives every screenshot: Settings › Screenshots › Background (or the editor's Background Presets) rounds an area's or a display's corners by 15 pt and lays a soft shadow evenly around it on clear room just wide enough to hold it. It needs no preset saved first; a window screenshot keeps its own corners and shadow, and JPEG fills the clear room with white.
+
+### Fixed
+
+- A small capture on a Transparent background no longer has its shadow cut off in a gray box at the picture's edge: the clear room around it now reaches as far as the shadow does. A background's shadow also lines up with its card exactly, where it used to fall a few pixels short of it on one side.
+
 ## [0.2.0] - 2026-11-19
 
 ### Stay up to date

@@ -281,7 +281,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             let card = layout.isBare ? layout.picture : layout.card
             return Frames(
                 shown: layout.output, card: card, picture: layout.picture, dimmed: card, cornerRadius: layout.cornerRadius, matte: layout.matte,
-                backdrop: BackdropLayer.Content(fill: backdrop.fill, layout: layout, shadow: backdrop.shadow, scale: document.scale)
+                backdrop: BackdropLayer.Content(fill: backdrop.fill, layout: layout, shadow: CardShadow(backdrop, scale: document.scale))
             )
         }
         // Canvas reaching past the capture (combined images beside it) is filled as exports fill it.

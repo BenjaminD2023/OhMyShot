@@ -41,13 +41,13 @@ nonisolated enum BackdropPainter {
     }
 
     /// The soft shadow under the card, without the card: the card is drawn over it, and a card with clear
-    /// room in it must not show the shadow through. `strength` runs from 0 to 1; sizes are in the
-    /// context's user space (the document's pixels, y down).
+    /// room in it must not show the shadow through. Sizes are in the context's user space (the document's
+    /// pixels, y down).
     ///
     /// The shadow is the card's shape blurred at a fraction of its size and drawn back up: a blur that
     /// wide hides the difference, and a 6K picture's shadow costs milliseconds instead of a large blur.
-    static func drawCardShadow(_ layout: BackdropLayout, strength: CGFloat, scale: CGFloat, context: CGContext) {
-        guard !layout.isBare, strength > 0, let shadow = shadowMask(for: layout, strength: strength, scale: scale) else { return }
+    static func drawCardShadow(_ layout: BackdropLayout, shadow cardShadow: CardShadow?, context: CGContext) {
+        guard !layout.isBare, let cardShadow, let shadow = shadowMask(for: layout, shadow: cardShadow) else { return }
         let path = CGPath(roundedRect: layout.card, cornerWidth: layout.cornerRadius, cornerHeight: layout.cornerRadius, transform: nil)
         context.saveGState()
         // Everywhere but the card itself.
@@ -58,24 +58,23 @@ nonisolated enum BackdropPainter {
         context.translateBy(x: 0, y: shadow.rect.minY + shadow.rect.maxY)
         context.scaleBy(x: 1, y: -1)
         context.clip(to: shadow.rect, mask: shadow.mask)
-        context.setFillColor(CGColor(gray: 0, alpha: shadow.opacity))
+        context.setFillColor(CGColor(gray: 0, alpha: cardShadow.opacity))
         context.fill(shadow.rect)
         context.restoreGState()
     }
 
-    /// The shadow's mask and where it goes. A short drop and a wide blur at every strength, deepening
-    /// together: never a hard edge.
-    static func shadowMask(for layout: BackdropLayout, strength: CGFloat, scale: CGFloat) -> (mask: CGImage, rect: CGRect, opacity: CGFloat)? {
-        let blur = (8 + 32 * strength) * scale
-        let drop = (2 + 10 * strength) * scale
-        let opacity = 0.14 + 0.30 * strength
+    /// The shadow's mask and where it goes.
+    static func shadowMask(for layout: BackdropLayout, shadow: CardShadow) -> (mask: CGImage, rect: CGRect)? {
+        let blur = shadow.blur
         // Three box passes as wide as the blur spread like a Gaussian of half its width; reduced so the
         // boxes are about 6 pixels.
         let reduction = max(blur / 6, 1)
-        let margin = blur * 1.5
-        let rect = layout.card.offsetBy(dx: 0, dy: drop).insetBy(dx: -margin, dy: -margin)
-        let width = max(Int((rect.width / reduction).rounded(.up)), 1)
-        let height = max(Int((rect.height / reduction).rounded(.up)), 1)
+        let bounds = shadow.bounds(of: layout.card)
+        let width = max(Int((bounds.width / reduction).rounded(.up)), 1)
+        let height = max(Int((bounds.height / reduction).rounded(.up)), 1)
+        // Whole pixels of the mask, so it is drawn back up at the scale it was made at and the shadow stays where
+        // the card is: the room added past the shadow's reach is clear.
+        let rect = CGRect(x: bounds.minX, y: bounds.minY, width: CGFloat(width) * reduction, height: CGFloat(height) * reduction)
         let rowBytes = (width + 15) & ~15
         var bytes = [UInt8](repeating: 0, count: rowBytes * height)
         var scratch = [UInt8](repeating: 0, count: rowBytes * height)
@@ -84,9 +83,11 @@ nonisolated enum BackdropPainter {
                 data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: rowBytes,
                 space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
             ) else { return false }
+            // Where the card's shadow falls, y up as the mask is drawn back.
+            let cast = layout.card.offsetBy(dx: 0, dy: shadow.drop)
             let card = CGRect(
-                x: margin / reduction, y: margin / reduction,
-                width: layout.card.width / reduction, height: layout.card.height / reduction
+                x: (cast.minX - rect.minX) / reduction, y: (rect.maxY - cast.maxY) / reduction,
+                width: cast.width / reduction, height: cast.height / reduction
             )
             let radius = min(layout.cornerRadius / reduction, min(card.width, card.height) / 2)
             context.setFillColor(CGColor(gray: 1, alpha: 1))
@@ -115,7 +116,7 @@ nonisolated enum BackdropPainter {
                 provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent
             )
         else { return nil }
-        return (mask, rect, opacity)
+        return (mask, rect)
     }
 
     /// The capture's canvas, small and blurred until only its colors are left, for a `.blur` fill. A

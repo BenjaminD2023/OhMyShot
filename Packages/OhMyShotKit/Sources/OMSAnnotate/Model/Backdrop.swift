@@ -35,6 +35,14 @@ nonisolated public struct Backdrop: Codable, Sendable, Equatable {
         public static let presets: [Ratio] = [Ratio(1, 1), Ratio(4, 3), Ratio(3, 2), Ratio(16, 10), Ratio(16, 9), Ratio(4, 5), Ratio(9, 16)]
     }
 
+    /// How the shadow lies around the capture.
+    public enum ShadowStyle: String, Codable, Sendable {
+        /// Lit from above: the shadow falls below the capture, deeper and wider there than above it.
+        case falling
+        /// Lit from the front: the shadow lies close and even all round the capture, as iShot draws it.
+        case even
+    }
+
     /// Where the capture sits when the picture's shape leaves more room on one side than the other.
     public enum Alignment: String, Codable, Sendable, CaseIterable {
         case topLeft, top, topRight
@@ -69,13 +77,15 @@ nonisolated public struct Backdrop: Codable, Sendable, Equatable {
     public var cornerRadius: CGFloat
     /// The capture's shadow, from 0 (none) to 1 (deepest).
     public var shadow: CGFloat
+    /// How the shadow lies around the capture; nil for `falling`, as backgrounds kept before there was a choice.
+    public var shadowStyle: ShadowStyle?
     /// The finished picture's shape; nil keeps even room all round.
     public var ratio: Ratio?
     public var alignment: Alignment
 
     public init(
         fill: Fill = .gradient(.sky), padding: CGFloat = 0.08, inset: CGFloat = 0, balanced: Bool = false,
-        cornerRadius: CGFloat = 12, shadow: CGFloat = 0.5, ratio: Ratio? = nil, alignment: Alignment = .center
+        cornerRadius: CGFloat = 12, shadow: CGFloat = 0.5, shadowStyle: ShadowStyle? = nil, ratio: Ratio? = nil, alignment: Alignment = .center
     ) {
         self.fill = fill
         self.padding = padding
@@ -83,6 +93,7 @@ nonisolated public struct Backdrop: Codable, Sendable, Equatable {
         self.balanced = balanced
         self.cornerRadius = cornerRadius
         self.shadow = shadow
+        self.shadowStyle = shadowStyle
         self.ratio = ratio
         self.alignment = alignment
     }
@@ -125,6 +136,36 @@ nonisolated public struct BackdropLayout: Equatable, Sendable {
     public var cornerRadius: CGFloat
     /// No card is drawn: a window captured with its shadow keeps its own corners and shadow.
     public var isBare: Bool
+}
+
+/// The soft shadow under a background's card, in the document's pixels: a blur at least 4 points wide at every
+/// strength, deepening with it, never a hard edge.
+nonisolated struct CardShadow: Equatable, Sendable {
+    /// How wide each of the three box blurs that spread the card's shape is: together they spread it like a
+    /// Gaussian of half this width.
+    var blur: CGFloat
+    var drop: CGFloat
+    var opacity: CGFloat
+
+    /// The shadow of `backdrop` at `scale` pixels per point; nil when it has none.
+    init?(_ backdrop: Backdrop, scale: CGFloat) {
+        let strength = backdrop.shadow
+        guard strength > 0 else { return nil }
+        switch backdrop.shadowStyle ?? .falling {
+        case .falling:
+            blur = (8 + 32 * strength) * scale
+            drop = (2 + 10 * strength) * scale
+        case .even:
+            blur = (4 + 24 * strength) * scale
+            drop = 0
+        }
+        opacity = 0.14 + 0.30 * strength
+    }
+
+    /// As far as the shadow of `card` reaches: three boxes as wide as the blur spread it one and a half widths.
+    func bounds(of card: CGRect) -> CGRect {
+        card.offsetBy(dx: 0, dy: drop).insetBy(dx: -blur * 1.5, dy: -blur * 1.5)
+    }
 }
 
 nonisolated extension AnnotationDocument {
@@ -187,6 +228,9 @@ nonisolated extension AnnotationDocument {
         }
         let padding = (min(max(backdrop.padding, 0), Backdrop.paddingRange.upperBound) * measure).rounded()
         var output = card.insetBy(dx: -padding, dy: -padding)
+        if backdrop.fill == .clear, !isBare, let shadow = CardShadow(backdrop, scale: scale) {
+            output = output.union(shadow.bounds(of: card)).integral
+        }
         if let ratio = backdrop.ratio {
             // Only ever grows: the room the shape adds goes to the sides the alignment leaves open.
             let unit = backdrop.alignment.unit

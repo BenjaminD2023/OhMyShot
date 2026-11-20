@@ -522,11 +522,12 @@ final class CaptureCoordinator {
         }
     }
 
-    /// What a window screenshot is put on: Settings' choice for windows, flipped by Shift as it was clicked. The
-    /// desktop picture is taken around the window as the display shows it now and kept with the pictures backgrounds
-    /// use, so the capture can be marked up and kept the same later.
+    /// What a window screenshot is put on: Settings' choice for windows, flipped by Shift as it was clicked. Rounded
+    /// Corners and Shadow is not put on a window, which keeps its own corners and shadow. The desktop picture is taken
+    /// around the window as the display shows it now and kept with the pictures backgrounds use, so the capture can be
+    /// marked up and kept the same later.
     private func windowBackground(for frame: CapturedFrame, shiftHeld: Bool) async -> CaptureBackground {
-        let resolved = settings.windowBackground.resolved(automaticPreset: BackdropPresets.shared.automatic != nil, shiftHeld: shiftHeld)
+        let resolved = settings.windowBackground.resolved(automaticPreset: BackdropPresets.shared.automaticForWindows != nil, shiftHeld: shiftHeld)
         switch resolved {
         case .none: return .none
         case .preset: return .automatic

@@ -2,7 +2,8 @@ import Foundation
 
 /// What a window screenshot is put on.
 public enum WindowBackground: String, CaseIterable, Codable, Sendable {
-    /// The background every new screenshot gets (Settings › Screenshots › Background), or none.
+    /// The background every new screenshot gets (Settings › Screenshots › Background), or none when there is none or it
+    /// is Rounded Corners and Shadow: a window has corners and a shadow of its own.
     case asScreenshots
     /// None: the window alone, its corners clear, with its shadow when that is captured.
     case transparent

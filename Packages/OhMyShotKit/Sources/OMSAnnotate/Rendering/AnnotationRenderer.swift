@@ -177,7 +177,7 @@ nonisolated public enum AnnotationRenderer {
         if let layout, let backdrop = document.backdrop {
             let blur = backdrop.fill == .blur ? BackdropPainter.blurredCapture(base, canvas: canvas) : nil
             BackdropPainter.paint(backdrop.fill, in: output, context: context, blur: blur)
-            BackdropPainter.drawCardShadow(layout, strength: backdrop.shadow, scale: document.scale, context: context)
+            BackdropPainter.drawCardShadow(layout, shadow: CardShadow(backdrop, scale: document.scale), context: context)
             drawCard(layout, base: base, document: document, space: space, in: context)
         } else {
             if document.canvasReachesPastCapture, let matte = document.canvasMatte(edges: EdgeAnalysis.of(base, canvas: canvas)) {

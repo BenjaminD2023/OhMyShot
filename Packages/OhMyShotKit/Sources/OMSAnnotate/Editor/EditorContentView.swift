@@ -179,14 +179,14 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         let presets = BackdropPresets.shared
         let menu = NSMenu()
         let current = session.document.backdrop
-        for preset in presets.all {
+        for preset in presets.choices {
             let item = NSMenuItem(title: preset.name, action: #selector(applyPreset(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = preset.id
             item.state = preset.backdrop == current ? .on : .off
             menu.addItem(item)
         }
-        if !presets.all.isEmpty { menu.addItem(.separator()) }
+        menu.addItem(.separator())
         let save = NSMenuItem(title: String(localized: "Save as Preset…", bundle: .module), action: #selector(savePreset(_:)), keyEquivalent: "")
         save.target = self
         save.isEnabled = current != nil
@@ -202,29 +202,29 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             }
             delete.submenu = deleteMenu
             menu.addItem(delete)
-            menu.addItem(.separator())
-            let automatic = NSMenuItem(title: String(localized: "Use for New Screenshots", bundle: .module), action: nil, keyEquivalent: "")
-            let automaticMenu = NSMenu()
-            let none = NSMenuItem(title: String(localized: "None", bundle: .module), action: #selector(setAutomaticPreset(_:)), keyEquivalent: "")
-            none.target = self
-            none.state = presets.automatic == nil ? .on : .off
-            automaticMenu.addItem(none)
-            automaticMenu.addItem(.separator())
-            for preset in presets.all {
-                let item = NSMenuItem(title: preset.name, action: #selector(setAutomaticPreset(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = preset.id
-                item.state = presets.automatic?.id == preset.id ? .on : .off
-                automaticMenu.addItem(item)
-            }
-            automatic.submenu = automaticMenu
-            menu.addItem(automatic)
         }
+        menu.addItem(.separator())
+        let automatic = NSMenuItem(title: String(localized: "Use for New Screenshots", bundle: .module), action: nil, keyEquivalent: "")
+        let automaticMenu = NSMenu()
+        let none = NSMenuItem(title: String(localized: "None", bundle: .module), action: #selector(setAutomaticPreset(_:)), keyEquivalent: "")
+        none.target = self
+        none.state = presets.automatic == nil ? .on : .off
+        automaticMenu.addItem(none)
+        automaticMenu.addItem(.separator())
+        for preset in presets.choices {
+            let item = NSMenuItem(title: preset.name, action: #selector(setAutomaticPreset(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = preset.id
+            item.state = presets.automatic?.id == preset.id ? .on : .off
+            automaticMenu.addItem(item)
+        }
+        automatic.submenu = automaticMenu
+        menu.addItem(automatic)
         menu.popUp(positioning: nil, at: CGPoint(x: 0, y: chip.isFlipped ? chip.bounds.maxY + 4 : -4), in: chip)
     }
 
     @objc private func applyPreset(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? UUID, let preset = BackdropPresets.shared.all.first(where: { $0.id == id }) else { return }
+        guard let id = sender.representedObject as? UUID, let preset = BackdropPresets.shared.choices.first(where: { $0.id == id }) else { return }
         session.setBackdrop(preset.backdrop, actionName: String(localized: "Background", bundle: .module))
     }
 
