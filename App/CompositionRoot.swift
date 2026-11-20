@@ -27,7 +27,7 @@ final class CompositionRoot {
     /// Saves, copies, and hands over captures in the format Settings choose.
     lazy var files = ScreenshotFiles(settings: settings, history: history)
     lazy var captures = CaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, files: files)
-    lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions())
+    lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions(), history: history)
     /// Uploads to the user's own storage; idle unless one is in flight.
     lazy var uploads: UploadCoordinator = {
         let uploads = UploadCoordinator(settings: settings, quickAccess: quickAccess)
@@ -158,11 +158,15 @@ final class CompositionRoot {
     /// How long captures stay: as Keep Captures says, and with history off, as long as something holds them.
     lazy var retention = CaptureRetention(
         settings: settings, history: history,
-        cards: { [weak self] in self?.quickAccess.itemIDs ?? [] },
+        cards: { [weak self] retention in self?.quickAccess.heldCaptureIDs(for: retention) ?? [] },
         editors: { [weak self] in self?.annotations.openCaptureIDs ?? [] },
         recordingWindows: { [weak self] in self?.recordings.openRecordingIDs ?? [] },
         uploads: { [weak self] in self?.uploads.uploadingIDs ?? [] },
-        historyChanged: { [weak self] in self?.historyWindow?.reload() }
+        historyChanged: { [weak self] removed in
+            guard let self else { return }
+            for id in removed { quickAccess.remove(id) }
+            historyWindow?.reload()
+        }
     )
     /// What the Shortcuts actions run.
     private(set) lazy var shortcuts = ShortcutActions(
@@ -420,12 +424,10 @@ final class CompositionRoot {
         Task { @MainActor [weak self] in self?.offerCommunityInvite() }
     }
 
-    /// Keeps edits still open in the editor before the app quits.
     func prepareForTermination() {
         usageTelemetry?.stop()
         onboardingWindow?.preserveProgress()
         quickAccess.dismissFirstCaptureHint()
-        annotations.keepAll()
         // A card waiting under Undo goes to the Trash as it would have a moment later.
         quickAccess.finishTrashingNow()
         textReader.stop()

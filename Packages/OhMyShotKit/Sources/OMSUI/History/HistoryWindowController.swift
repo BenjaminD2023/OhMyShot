@@ -26,7 +26,8 @@ public struct HistoryActions {
     /// Asks where to save, then writes the screenshots as one PDF, a page each, in the order given.
     public var exportPDF: ([HistoryItem], NSWindow?) -> Void = { _, _ in }
     /// Moves the capture's file to the Trash; its record, marks, and text leave the history with it.
-    public var moveToTrash: (HistoryItem) -> Void
+    public var moveToTrash: (HistoryItem) throws -> Void
+    public var isBeingEdited: (HistoryItem) -> Bool = { _ in false }
     /// The file to hand to another app when a capture is dragged out: a copy in the format Settings choose, or nil for
     /// the capture's own file.
     public var fileToHandOver: (HistoryItem) -> URL? = { _ in nil }
@@ -61,7 +62,7 @@ public struct HistoryActions {
         reveal: @escaping (HistoryItem) -> Void,
         recognizeText: @escaping (HistoryItem) -> Void,
         pin: @escaping (HistoryItem) -> Void,
-        moveToTrash: @escaping (HistoryItem) -> Void
+        moveToTrash: @escaping (HistoryItem) throws -> Void
     ) {
         self.restore = restore
         self.copy = copy

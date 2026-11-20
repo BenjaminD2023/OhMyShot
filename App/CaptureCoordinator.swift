@@ -560,7 +560,7 @@ final class CaptureCoordinator {
         let captured = CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: frame)
         guard let backdrop = await wallpaperBackdrop(around: captured) else { return nil }
         let scale = displays.layout.display(id: displayID)?.pixelsPerPoint ?? 2
-        guard let composed = await composed(image, scale: scale, marks: nil, background: .backdrop(backdrop)),
+        guard let composed = try? await composed(image, scale: scale, marks: nil, background: .backdrop(backdrop)),
               let document = try? JSONDecoder().decode(AnnotationDocument.self, from: composed.document) else { return nil }
         Log.capture.notice("debug window-on-wallpaper: background \(String(describing: document.backdrop?.fill), privacy: .public), \(composed.image.width, privacy: .public)x\(composed.image.height, privacy: .public)")
         // The piece of the wallpaper it stored is in no capture's marks: the next sweep takes it.
@@ -647,9 +647,8 @@ final class CaptureCoordinator {
             var shown = (image: frame.image, png: png)
             var document: Data?
             let scale = pixelsPerPoint ?? (frame.frame.width > 0 ? CGFloat(frame.image.width) / frame.frame.width : 1)
-            if let composed = await composed(frame.image, scale: scale, marks: marks, background: background),
-               let composedPNG = try? await ImageExporter.encode(composed.image, as: .png) {
-                shown = (composed.image, composedPNG)
+            if let composed = try await composed(frame.image, scale: scale, marks: marks, background: background) {
+                shown = (composed.image, try await ImageExporter.encode(composed.image, as: .png))
                 document = composed.document
             }
             let copies = switch copying {
@@ -743,17 +742,14 @@ final class CaptureCoordinator {
 
     /// The capture as it is kept: with marks drawn in place and the background chosen for every new
     /// screenshot set under them, and the document that recreates it; nil when it is kept as captured.
-    private func composed(_ image: CGImage, scale: CGFloat, marks: AnnotationDocument?, background: CaptureBackground = .automatic) async -> (image: CGImage, document: Data)? {
-        var document = marks ?? AnnotationDocument(pixelSize: CGSize(width: image.width, height: image.height), scale: scale)
-        if document.backdrop == nil {
-            switch background {
-            case .automatic: document.backdrop = BackdropPresets.shared.automatic?.backdrop
-            case .none: break
-            case .backdrop(let backdrop): document.backdrop = backdrop
-            }
+    private func composed(_ image: CGImage, scale: CGFloat, marks: AnnotationDocument?, background: CaptureBackground) async throws -> (image: CGImage, document: Data)? {
+        let document = marks ?? AnnotationDocument(pixelSize: CGSize(width: image.width, height: image.height), scale: scale)
+        let backdrop: Backdrop? = switch background {
+        case .automatic: BackdropPresets.shared.automatic?.backdrop
+        case .none: nil
+        case .backdrop(let backdrop): backdrop
         }
-        guard !document.isEmpty, let rendered = await AnnotationRenderer.render(document, base: image), let data = try? JSONEncoder().encode(document) else { return nil }
-        return (rendered, data)
+        return try await CaptureRendition.render(marks: document, adding: backdrop, to: image)
     }
 }
 

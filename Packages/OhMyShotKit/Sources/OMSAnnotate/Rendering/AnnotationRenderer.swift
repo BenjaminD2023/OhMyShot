@@ -21,6 +21,13 @@ nonisolated public enum AnnotationRenderer {
         _ item: Annotation, in context: CGContext, scale: CGFloat, redacted: (image: CGImage, rect: CGRect)? = nil,
         ground: HighlightGround = .light, flippedBacking: Bool = false
     ) {
+        draw(item, in: context, scale: scale, coverage: redacted.map { .filtered($0.image, $0.rect) }, ground: ground, flippedBacking: flippedBacking)
+    }
+
+    static func draw(
+        _ item: Annotation, in context: CGContext, scale: CGFloat, coverage: Redactor.Coverage?,
+        ground: HighlightGround, flippedBacking: Bool = false, underlay: BackdropPainter.Underlay? = nil
+    ) {
         let color = item.style.color.cgColor
         context.saveGState()
         defer { context.restoreGState() }
@@ -32,7 +39,7 @@ nonisolated public enum AnnotationRenderer {
             context.translateBy(x: center.x, y: center.y)
             context.rotate(by: item.angle)
             context.translateBy(x: -center.x, y: -center.y)
-            draw(upright, in: context, scale: scale, redacted: redacted, ground: ground, flippedBacking: flippedBacking)
+            draw(upright, in: context, scale: scale, coverage: coverage, ground: ground, flippedBacking: flippedBacking, underlay: underlay)
             return
         }
         switch item.shape {
@@ -101,9 +108,24 @@ nonisolated public enum AnnotationRenderer {
                 context.setFillColor(color)
                 context.fill(redaction.rect.standardized)
             case .blur, .pixelate:
-                guard let redacted else { return }
-                context.interpolationQuality = redaction.method == .pixelate ? .none : .high
-                drawImage(redacted.image, in: redacted.rect, context: context)
+                switch coverage {
+                case let .filtered(image, rect):
+                    context.clip(to: rect)
+                    if let underlay {
+                        context.clear(rect)
+                        underlay.paint(in: context)
+                        underlay.clipToPicture(in: context)
+                    } else {
+                        context.setBlendMode(.copy)
+                    }
+                    context.interpolationQuality = redaction.method == .pixelate ? .none : .high
+                    drawImage(image, in: rect, context: context)
+                case .opaque(let rect):
+                    context.setFillColor(CGColor(gray: 0, alpha: 1))
+                    context.fill(rect)
+                case nil:
+                    break
+                }
             }
         case .spotlight:
             return
@@ -157,51 +179,84 @@ nonisolated public enum AnnotationRenderer {
     /// `render`, on the caller's thread. `base` is the capture as it was taken: the picture is made from it
     /// and the document's turns and size.
     public static func flatten(_ document: AnnotationDocument, base: CGImage) -> CGImage? {
+        flatten(document, base: base, redactionFilter: Redactor.apply)
+    }
+
+    typealias Composite = (AnnotationDocument, CGImage, CGRect) -> CGImage?
+
+    static func bitmapDimensions(for size: CGSize) -> (width: Int, height: Int)? {
+        let maxSide = 262_144
+        let maxBytes = 1 << 30
+        guard let width = Int(exactly: size.width), let height = Int(exactly: size.height),
+              (1...maxSide).contains(width), (1...maxSide).contains(height),
+              width * height * 4 <= maxBytes else { return nil }
+        return (width, height)
+    }
+
+    private static func bitmapContext(for size: CGSize, space: CGColorSpace) -> CGContext? {
+        guard let (width, height) = bitmapDimensions(for: size) else { return nil }
+        return CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        )
+    }
+
+    static func flatten(
+        _ document: AnnotationDocument, base: CGImage,
+        redactionFilter: Redactor.Filter = Redactor.apply, composite: Composite = combinedPicture
+    ) -> CGImage? {
         guard let base = document.picture(from: base) else { return nil }
         let canvas = document.canvas.standardized.integral
-        let layout = document.backdrop == nil ? nil : document.backdropLayout(edges: EdgeAnalysis.of(base, canvas: canvas))
+        let needsEdges = document.backdrop != nil || document.canvasReachesPastCapture
+        let edges = needsEdges ? EdgeAnalysis.of(base, canvas: canvas) : nil
+        let layout = edges.flatMap { document.backdropLayout(edges: $0) }
         let output = (layout?.output ?? canvas).integral
-        let width = Int(output.width)
-        let height = Int(output.height)
-        guard width > 0, height > 0 else { return nil }
         let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        ) else { return nil }
+        guard let context = bitmapContext(for: output.size, space: space) else { return nil }
         context.interpolationQuality = .high
         // y down, with the picture's corner at the origin.
-        context.translateBy(x: 0, y: CGFloat(height))
+        context.translateBy(x: 0, y: output.height)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: -output.minX, y: -output.minY)
-        if let layout, let backdrop = document.backdrop {
-            let blur = backdrop.fill == .blur ? BackdropPainter.blurredCapture(base, canvas: canvas) : nil
-            BackdropPainter.paint(backdrop.fill, in: output, context: context, blur: blur)
-            BackdropPainter.drawCardShadow(layout, shadow: CardShadow(backdrop, scale: document.scale), context: context)
-            drawCard(layout, base: base, document: document, space: space, in: context)
-        } else {
-            if document.canvasReachesPastCapture, let matte = document.canvasMatte(edges: EdgeAnalysis.of(base, canvas: canvas)) {
-                context.setFillColor(matte.cgColor(in: space))
-                context.fill(canvas)
-            }
-            drawPicture(document, base: base, in: context)
-            drawSpotlight(document.spots, canvas: canvas, in: context)
+        let surface = layout.flatMap { layout in
+            document.backdrop.map { BackdropPainter.Surface(fill: $0.fill, layout: layout, shadow: CardShadow($0, scale: document.scale)) }
         }
+        let matte = layout?.matte ?? edges.flatMap { document.canvasMatte(edges: $0) }
+        let underlay = BackdropPainter.Underlay(
+            surface: surface, blur: surface?.fill == .blur ? BackdropPainter.blurredCapture(base, canvas: canvas) : nil,
+            matte: matte?.cgColor(in: space), canvas: canvas
+        )
+        underlay.paint(in: context)
+        context.saveGState()
+        underlay.clipToPicture(in: context)
+        drawPicture(document, base: base, in: context)
+        context.restoreGState()
+        context.saveGState()
+        if let layout, !layout.isBare {
+            context.addPath(CGPath(roundedRect: layout.card, cornerWidth: layout.cornerRadius, cornerHeight: layout.cornerRadius, transform: nil))
+            context.clip()
+        }
+        drawSpotlight(document.spots, canvas: layout?.card ?? canvas, in: context)
+        context.restoreGState()
         // Blurs and pixelations show what lies under them, and highlights take to it, images included.
         let readsPicture = document.items.contains { item in
             if case .redaction(let redaction) = item.shape { return redaction.method != .solid }
             return item.multiplies
         }
-        let source = readsPicture ? redactionSource(document, base: base) : nil
+        let combined = readsPicture ? redactionSource(document, base: base, composite: composite) : nil
+        let source = combined ?? Redactor.Source(base: base)
         for item in document.items where !item.isPicturePart {
-            var redacted: (image: CGImage, rect: CGRect)?
+            var coverage: Redactor.Coverage?
             var ground = HighlightGround.light
             if case .redaction(let redaction) = item.shape {
-                redacted = Redactor.image(for: redaction, id: item.id, base: source?.image ?? base, origin: source?.origin ?? .zero, scale: document.scale)
+                coverage = Redactor.coverage(
+                    for: redaction, id: item.id, source: source, scale: document.scale, filter: redactionFilter
+                )
             } else if item.multiplies {
-                ground = HighlightGround.under(item, in: source?.image ?? base, origin: source?.origin ?? .zero, scale: document.scale)
+                let picture = source.picture ?? (base, .zero)
+                ground = HighlightGround.under(item, in: picture.image, origin: picture.origin, scale: document.scale)
             }
-            draw(item, in: context, scale: document.scale, redacted: redacted, ground: ground)
+            draw(item, in: context, scale: document.scale, coverage: coverage, ground: ground, underlay: surface == nil && matte == nil ? nil : underlay)
         }
         // Over every mark, across the canvas, inside the card's corners on a background.
         if let watermark = document.watermark {
@@ -220,43 +275,23 @@ nonisolated public enum AnnotationRenderer {
     }
 
     /// The capture with the images combined into it, for blurring and pixelating what lies under a
-    /// redaction, and where its top-left corner is in the document; nil when nothing is combined. `base` is
-    /// the picture.
-    static func redactionSource(_ document: AnnotationDocument, base: CGImage) -> (image: CGImage, origin: CGPoint)? {
+    /// redaction. Nil means no composition is needed. A failed composition still carries its bounds.
+    static func redactionSource(_ document: AnnotationDocument, base: CGImage, composite: Composite = combinedPicture) -> Redactor.Source? {
         let images = document.items.filter { if case .image = $0.shape { true } else { false } }
         guard !images.isEmpty else { return nil }
         let area = images.reduce(document.imageBounds) { $0.union($1.bounds(scale: document.scale)) }.integral
+        return Redactor.Source(bounds: area, image: composite(document, base, area))
+    }
+
+    private static func combinedPicture(_ document: AnnotationDocument, base: CGImage, area: CGRect) -> CGImage? {
         let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let context = CGContext(
-            data: nil, width: Int(area.width), height: Int(area.height), bitsPerComponent: 8, bytesPerRow: 0, space: space,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        ) else { return nil }
+        guard let context = bitmapContext(for: area.size, space: space) else { return nil }
         context.interpolationQuality = .high
         context.translateBy(x: 0, y: area.height)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: -area.minX, y: -area.minY)
         drawPicture(document, base: base, in: context)
-        return context.makeImage().map { ($0, area.origin) }
-    }
-
-    /// The capture on its card: the card's room in the capture's edge color, the kept part of the
-    /// capture, and the spotlight over the card, all within the card's rounded corners.
-    static func drawCard(_ layout: BackdropLayout, base: CGImage, document: AnnotationDocument, space: CGColorSpace, in context: CGContext) {
-        context.saveGState()
-        if !layout.isBare {
-            context.addPath(CGPath(roundedRect: layout.card, cornerWidth: layout.cornerRadius, cornerHeight: layout.cornerRadius, transform: nil))
-            context.clip()
-            if let matte = layout.matte {
-                context.setFillColor(matte.cgColor(in: space))
-                context.fill(layout.card)
-            }
-        }
-        context.saveGState()
-        context.clip(to: layout.picture)
-        drawPicture(document, base: base, in: context)
-        context.restoreGState()
-        drawSpotlight(document.spots, canvas: layout.isBare ? layout.picture : layout.card, in: context)
-        context.restoreGState()
+        return context.makeImage()
     }
 
     /// Draws an image upright into `rect` of a y-down user space.
@@ -287,18 +322,12 @@ nonisolated public enum AnnotationRenderer {
 
     /// `base` held as `orientation` says and scaled to `size` pixels, or nil when no such picture can be made.
     static func picture(from base: CGImage, orientation: Orientation, size: CGSize) -> CGImage? {
-        let width = Int(size.width)
-        let height = Int(size.height)
-        guard width > 0, height > 0 else { return nil }
         let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        ) else { return nil }
+        guard let context = bitmapContext(for: size, space: space) else { return nil }
         let held = orientation.size(of: CGSize(width: base.width, height: base.height))
         // Turning and flipping move whole pixels; only a change of size blends them.
         context.interpolationQuality = held == size ? .none : .high
-        context.translateBy(x: 0, y: CGFloat(height))
+        context.translateBy(x: 0, y: size.height)
         context.scaleBy(x: 1, y: -1)
         drawImage(base, in: CGRect(origin: .zero, size: size), orientation: orientation, context: context)
         return context.makeImage()

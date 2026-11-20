@@ -71,7 +71,9 @@ struct HistoryTextTests {
         try read("one", of: deleted, in: store)
         try read("two", of: trashed, in: store)
         store.delete(deleted)
-        store.moveToTrash(trashed)
+        try store.moveToTrash(trashed) { url in
+            try FileManager.default.moveItem(at: url, to: store.directory.appending(path: "test-trash"))
+        }
         for item in [deleted, trashed] {
             #expect(!FileManager.default.fileExists(atPath: store.textURL(for: item).path(percentEncoded: false)))
         }

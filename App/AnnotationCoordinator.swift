@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import ImageIO
 import OMSAnnotate
 import OMSCore
 import OSLog
@@ -52,39 +51,62 @@ final class AnnotationCoordinator {
         onEditing?(id, true)
         let history = history
         Task { [weak self] in
-            guard let loaded = await Self.load(entry, from: history) else {
-                self?.opening.remove(id)
-                self?.onEditing?(id, false)
+            guard let self else { return }
+            defer {
+                opening.remove(id)
+                if editors[id] == nil { onEditing?(id, false) }
+            }
+            guard let loaded = await AnnotationCaptureSource.load(entry, from: history) else {
                 Log.capture.error("Could not read \(entry.fileName, privacy: .public) to annotate it")
-                NSSound.beep()
+                NSApp.activate()
+                NSAlert(error: CocoaError(.fileReadCorruptFile)).runModal()
                 return
             }
-            guard let self else { return }
-            opening.remove(id)
-            let editor = AnnotationEditorWindowController(
-                image: loaded.image,
-                scale: loaded.document?.scale ?? entry.pixelsPerPoint.map { CGFloat($0) } ?? scale,
-                document: loaded.document,
-                title: (entry.fileName as NSString).deletingPathExtension,
-                fileURL: history.fileURL(for: entry),
-                actions: Self.editorActions(
-                    keep: { [weak self] document, png, image in self?.keep(id, document: document, png: png, image: image) },
-                    save: { [weak self] file in
-                        guard let self, let entry = self.history.item(id: id) else { return nil }
-                        return await self.saveCopy?(entry, file)
-                    },
-                    coordinator: self, name: (entry.fileName as NSString).deletingPathExtension, scale: { [weak self] in self?.history.item(id: id)?.pixelsPerPoint },
-                    entry: { [weak self] in self?.history.item(id: id) }
-                )
-            )
-            editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
-                self?.editors[id] = nil
-                self?.onEditing?(id, false)
-                MemoryRelief.endEventWait()
+            if loaded.requiresFlattenedCopy {
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = String(localized: "The saved marks couldn’t be opened.")
+                alert.informativeText = String(localized: "You can edit a copy of the picture as it appears in History. Its existing marks can’t be changed. The original capture will be left alone.")
+                alert.addButton(withTitle: String(localized: "Edit a Flattened Copy"))
+                alert.addButton(withTitle: String(localized: "Cancel"))
+                NSApp.activate()
+                guard alert.runModal() == .alertFirstButtonReturn else { return }
             }
-            editors[id] = editor
-            editor.show()
+            do {
+                let item = try await loaded.itemForEditing(entry, in: history)
+                if item.id != id { onEditing?(item.id, true) }
+                showEditor(for: item, source: loaded, scale: scale)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
         }
+    }
+
+    private func showEditor(for entry: HistoryItem, source loaded: AnnotationCaptureSource, scale: CGFloat) {
+        let id = entry.id
+        let editor = AnnotationEditorWindowController(
+            image: loaded.image,
+            scale: loaded.document?.scale ?? entry.pixelsPerPoint.map { CGFloat($0) } ?? scale,
+            document: loaded.document,
+            title: (entry.fileName as NSString).deletingPathExtension,
+            fileURL: history.fileURL(for: entry),
+            actions: Self.editorActions(
+                keep: { [weak self] document, png, image in self?.keep(id, document: document, png: png, image: image) },
+                save: { [weak self] file in
+                    guard let self, let entry = self.history.item(id: id) else { return nil }
+                    return await self.saveCopy?(entry, file)
+                },
+                coordinator: self, name: (entry.fileName as NSString).deletingPathExtension, scale: { [weak self] in self?.history.item(id: id)?.pixelsPerPoint },
+                entry: { [weak self] in self?.history.item(id: id) }
+            )
+        )
+        editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
+            self?.editors[id] = nil
+            self?.onEditing?(id, false)
+            MemoryRelief.endEventWait()
+        }
+        editors[id] = editor
+        editor.show()
     }
 
     /// The editor's actions: keeping and saving as given, and dragging out and copying as the file settings say.
@@ -111,10 +133,11 @@ final class AnnotationCoordinator {
     /// Whether an editor is open or on its way, a project's too.
     var isEditing: Bool { !editors.isEmpty || !opening.isEmpty || !projectEditors.isEmpty }
 
-    /// Keeps every open editor's edits, for quitting.
-    func keepAll() {
-        editors.values.forEach { $0.keepNow() }
-        projectEditors.values.forEach { $0.keepNow() }
+    func closeBeforeQuitting() async -> Bool {
+        while let editor = editors.values.first(where: { !$0.didClose }) ?? projectEditors.values.first(where: { !$0.didClose }) {
+            guard await editor.closeBeforeQuitting() else { return false }
+        }
+        return true
     }
 
     /// Opens a project file in the editor, or brings its editor forward. Edits are kept in the project
@@ -154,10 +177,10 @@ final class AnnotationCoordinator {
                 actions: Self.editorActions(
                     keep: { document, png, _ in
                         do {
-                            try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG).write(to: file)
-                            try png.write(to: picture, options: .atomic)
+                            let preview = try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG)
+                                .keep(at: file, preview: png, previewURL: picture)
                             Log.capture.notice("Kept the marks in the project \(file.lastPathComponent, privacy: .public): \(document.items.count, privacy: .public) mark(s)")
-                            return picture
+                            return preview
                         } catch {
                             Log.capture.error("Keeping the project failed: \(error.localizedDescription, privacy: .public)")
                             return nil
@@ -226,19 +249,4 @@ final class AnnotationCoordinator {
         }
     }
 
-    /// The capture as it was taken and any marks made on it before, read off the main actor.
-    @concurrent
-    private static func load(_ entry: HistoryItem, from history: HistoryStore) async -> (image: CGImage, document: AnnotationDocument?)? {
-        let marked = history.hasOriginal(entry)
-        let url = marked ? history.originalURL(for: entry) : history.fileURL(for: entry)
-        guard
-            let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-            let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
-        else { return nil }
-        var document: AnnotationDocument?
-        if marked, let data = try? Data(contentsOf: history.annotationsURL(for: entry)) {
-            document = try? JSONDecoder().decode(AnnotationDocument.self, from: data)
-        }
-        return (image, document)
-    }
 }

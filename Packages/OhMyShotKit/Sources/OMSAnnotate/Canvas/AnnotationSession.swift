@@ -125,7 +125,7 @@ public final class AnnotationSession {
     @ObservationIgnored private var pictureCache: (transform: CaptureTransform?, image: CGImage)?
     @ObservationIgnored private var edgeCache: (canvas: CGRect, picture: CGImage, edges: EdgeAnalysis)?
     @ObservationIgnored private var blurCache: (canvas: CGRect, picture: CGImage, image: CGImage?)?
-    @ObservationIgnored private var redactionCache: (images: [Annotation], picture: CGImage, source: (image: CGImage, origin: CGPoint)?)?
+    @ObservationIgnored private var redactionCache: (images: [Annotation], picture: CGImage, source: Redactor.Source?)?
     /// How the capture was turned and sized when the readings were made; a different one makes them stale.
     @ObservationIgnored private var readingsTransform: CaptureTransform?
 
@@ -393,6 +393,10 @@ public final class AnnotationSession {
     /// What blurs and pixelations show: the capture with the images combined into it, and where its
     /// corner is in the document; nil while nothing is combined. Made again only when an image changes.
     public var redactionSource: (image: CGImage, origin: CGPoint)? {
+        combinedRedactionSource?.picture
+    }
+
+    var combinedRedactionSource: Redactor.Source? {
         let images = document.items.filter { if case .image = $0.shape { true } else { false } }
         let picture = self.picture
         if let redactionCache, redactionCache.images == images, redactionCache.picture === picture { return redactionCache.source }

@@ -176,13 +176,46 @@ public final class HistoryStore: Sendable {
     /// recording as it was made beside it the first time. Returns the record with the new size and length.
     @discardableResult
     public func replaceRecording(of item: HistoryItem, withFileAt edited: URL, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval) throws -> HistoryItem {
-        if hasOriginal(item) {
-            try FileManager.default.removeItem(at: fileURL(for: item))
-        } else {
-            try FileManager.default.moveItem(at: fileURL(for: item), to: originalURL(for: item))
+        try replaceMovie(of: item, with: edited, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration, studioMarker: nil)
+    }
+
+    /// Stages the incoming movie on the history's volume, then prepares its sidecars. The final rename is the
+    /// only operation that changes the visible movie, so even a failed commit leaves the previous movie in place.
+    func replaceMovie(
+        of item: HistoryItem, with movie: URL, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval,
+        studioMarker: (url: URL, data: Data)?
+    ) throws -> HistoryItem {
+        let manager = FileManager.default, destination = fileURL(for: item)
+        guard movie.standardizedFileURL != destination.standardizedFileURL,
+              try movie.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+        else { throw CocoaError(.fileReadUnknown) }
+        var revised = item
+        var undo: [(url: URL, prior: Data?)] = []
+        do {
+            try AtomicFileCopy.perform(from: movie, to: destination, copy: { source, staging in
+                try manager.moveItem(at: source, to: staging)
+                if let marker = studioMarker {
+                    let prior = manager.fileExists(atPath: marker.url.path(percentEncoded: false)) ? try Data(contentsOf: marker.url) : nil
+                    try marker.data.write(to: marker.url, options: .atomic)
+                    undo.append((marker.url, prior))
+                } else if !hasOriginal(item) {
+                    let original = originalURL(for: item)
+                    try manager.copyItem(at: destination, to: original)
+                    undo.append((original, nil))
+                }
+                let record = sidecarURL(forFileName: item.fileName)
+                let prior = try Data(contentsOf: record)
+                revised = try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration)
+                if revised != item { undo.append((record, prior)) }
+            })
+        } catch {
+            for (url, prior) in undo.reversed() {
+                if let prior { try prior.write(to: url, options: .atomic) }
+                else { try manager.removeItem(at: url) }
+            }
+            throw error
         }
-        try FileManager.default.moveItem(at: edited, to: fileURL(for: item))
-        return try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration)
+        return revised
     }
 
     /// Puts a recording back as it was made. Returns the record with its size and length then; unchanged
@@ -239,15 +272,10 @@ public final class HistoryStore: Sendable {
         isTemplateNamed: Bool? = nil,
         date: Date = .now
     ) throws -> HistoryItem {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let item = HistoryItem(
-            kind: kind, createdAt: date, pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: appName,
-            fileName: availableFileName(name, fileExtension: source.pathExtension), duration: duration, pixelsPerPoint: pixelsPerPoint,
-            windowTitle: windowTitle, isTemplateNamed: isTemplateNamed
-        )
-        try FileManager.default.moveItem(at: source, to: fileURL(for: item))
-        try writeRecord(item)
-        return item
+        try add(
+            name: name, fileExtension: source.pathExtension, kind: kind, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
+            appName: appName, duration: duration, pixelsPerPoint: pixelsPerPoint, windowTitle: windowTitle, isTemplateNamed: isTemplateNamed, date: date
+        ) { try FileManager.default.moveItem(at: source, to: $0) }
     }
 
     /// Copies a picture or a recording of the user's into the history under its own name, leaving the file where it
@@ -273,15 +301,10 @@ public final class HistoryStore: Sendable {
             size = found
             if kind == .recording { duration = Self.gifDuration(of: picture) }
         }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let item = HistoryItem(
-            kind: kind, createdAt: date, pixelWidth: size.width, pixelHeight: size.height, appName: nil,
-            fileName: availableFileName(source.deletingPathExtension().lastPathComponent, fileExtension: source.pathExtension.lowercased()),
-            duration: duration
-        )
-        try FileManager.default.copyItem(at: source, to: fileURL(for: item))
-        try writeRecord(item)
-        return item
+        return try add(
+            name: source.deletingPathExtension().lastPathComponent, fileExtension: source.pathExtension.lowercased(), kind: kind,
+            pixelWidth: size.width, pixelHeight: size.height, appName: nil, duration: duration, date: date
+        ) { try FileManager.default.copyItem(at: source, to: $0) }
     }
 
     /// A picture's first image's size in pixels, turned upright as it is shown.
@@ -305,14 +328,6 @@ public final class HistoryStore: Sendable {
         }
     }
 
-    /// `name.fileExtension`, or `name (2).fileExtension` and so on when that is taken. A slash in the name (a file a
-    /// shortcut hands over may carry one) is a dash, as in any file name the app makes: the name checked is the name
-    /// written, in the history's own folder, never another capture's file in it.
-    private func availableFileName(_ name: String, fileExtension: String) -> String {
-        let name = name.replacingOccurrences(of: "/", with: "-")
-        return ImageExporter.availableURL(in: directory, name: name, fileExtension: fileExtension).lastPathComponent
-    }
-
     /// Stores encoded image data under `name` (made unique) and returns its record. The file keeps a
     /// readable name, so dragging it out or revealing it shows the same name a saved copy would have.
     public func add(
@@ -329,25 +344,48 @@ public final class HistoryStore: Sendable {
         isTemplateNamed: Bool? = nil,
         date: Date = .now
     ) throws -> HistoryItem {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let id = UUID()
-        let fileName = availableFileName(name, fileExtension: fileExtension)
-        let item = HistoryItem(
-            id: id,
-            kind: kind,
-            createdAt: date,
-            pixelWidth: pixelWidth,
-            pixelHeight: pixelHeight,
-            appName: appName,
-            fileName: fileName,
-            duration: duration,
-            pixelsPerPoint: pixelsPerPoint,
-            windowTitle: windowTitle,
-            isTemplateNamed: isTemplateNamed
-        )
-        try data.write(to: fileURL(for: item), options: .atomic)
-        try writeRecord(item)
-        return item
+        try add(
+            name: name, fileExtension: fileExtension, kind: kind, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
+            appName: appName, duration: duration, pixelsPerPoint: pixelsPerPoint, windowTitle: windowTitle, isTemplateNamed: isTemplateNamed, date: date
+        ) { try data.write(to: $0, options: .atomic) }
+    }
+
+    /// An empty sidecar claims a name exclusively, but isn't a readable record until its capture has been written.
+    private func add(
+        name: String, fileExtension: String, kind: HistoryItem.Kind, pixelWidth: Int, pixelHeight: Int, appName: String?,
+        duration: TimeInterval?, pixelsPerPoint: Double? = nil, windowTitle: String? = nil, isTemplateNamed: Bool? = nil,
+        date: Date, writeFile: (URL) throws -> Void
+    ) throws -> HistoryItem {
+        let manager = FileManager.default
+        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let base = name.replacingOccurrences(of: "/", with: "-")
+        let ext = fileExtension.replacingOccurrences(of: "/", with: "-")
+        var number = 0
+        while true {
+            number += 1
+            let stem = number == 1 ? base : "\(base) (\(number))"
+            let fileName = "\(stem).\(ext)"
+            let url = directory.appending(path: fileName)
+            guard !manager.fileExists(atPath: url.path(percentEncoded: false)) else { continue }
+            let record = sidecarURL(forFileName: fileName)
+            do {
+                try Data().write(to: record, options: .withoutOverwriting)
+            } catch let error as CocoaError where error.code == .fileWriteFileExists {
+                continue
+            }
+            let item = HistoryItem(
+                kind: kind, createdAt: date, pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: appName, fileName: fileName,
+                duration: duration, pixelsPerPoint: pixelsPerPoint, windowTitle: windowTitle, isTemplateNamed: isTemplateNamed
+            )
+            do {
+                try writeFile(url)
+                try writeRecord(item)
+                return item
+            } catch {
+                try? manager.removeItem(at: record)
+                throw error
+            }
+        }
     }
 
     /// Every item, newest first.
@@ -428,13 +466,11 @@ public final class HistoryStore: Sendable {
     }
 
     /// Moves the capture to the Trash, where it can still be recovered, and forgets it.
-    public func moveToTrash(_ item: HistoryItem) {
+    public func moveToTrash(
+        _ item: HistoryItem, trash: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
+    ) throws {
+        try trash(fileURL(for: item))
         fileNames.withLock { $0[item.id] = nil }
-        do {
-            try FileManager.default.trashItem(at: fileURL(for: item), resultingItemURL: nil)
-        } catch {
-            try? FileManager.default.removeItem(at: fileURL(for: item))
-        }
         try? FileManager.default.removeItem(at: sidecarURL(forFileName: item.fileName))
         // The Trash keeps the picture as it was last shown; the original, the marks, and its text go with the record.
         removeExtras(of: item)

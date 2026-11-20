@@ -62,6 +62,65 @@ func makeBase(width: Int = 200, height: Int = 100) -> CGImage {
 }
 
 struct AnnotationRenderingTests {
+    @Test func aBackdropCannotExpandOutputBeyondThePixelBudget() {
+        let base = makeBase(width: 64, height: 40)
+        var document = AnnotationDocument(pixelSize: CGSize(width: 64, height: 40), scale: 1)
+        document.backdrop = Backdrop(fill: .color(.black), padding: 0, shadow: 0, ratio: .init(10_000, 1))
+        #expect(AnnotationRenderer.flatten(document, base: base) == nil)
+    }
+
+    @Test func outputTooWideForAnIntegerDoesNotRender() {
+        let base = makeBase(width: 64, height: 40)
+        var document = AnnotationDocument(pixelSize: CGSize(width: 64, height: 40), scale: 1)
+        document.canvas = CGRect(x: 0, y: 0, width: 1e30, height: 40)
+        #expect(AnnotationRenderer.flatten(document, base: base) == nil)
+    }
+
+    @Test func anUnresizedLongCaptureCanStillExportAtItsNativeSize() throws {
+        let width = AnnotationDocument.maxPictureSide + 1
+        let base = makeBase(width: width, height: 2)
+        let document = AnnotationDocument(pixelSize: CGSize(width: width, height: 2), scale: 1)
+        let image = try #require(AnnotationRenderer.flatten(document, base: base))
+        #expect(image.width == width && image.height == 2)
+    }
+
+    @Suite(.serialized) struct LargeOutputs {
+        @Test(arguments: [PictureOperation.rotateRight, .flipHorizontally])
+        func aRotatedOrFlippedScrollingCaptureFlattens(operation: PictureOperation) throws {
+            let base = makeBase(width: 800, height: 18_000)
+            let original = AnnotationDocument(pixelSize: CGSize(width: 800, height: 18_000), scale: 1)
+            let turned = try #require(original.applying(operation))
+            let output = try #require(AnnotationRenderer.flatten(turned, base: base))
+            let expected = operation == .rotateRight ? CGSize(width: 18_000, height: 800) : original.pixelSize
+            #expect(CGSize(width: output.width, height: output.height) == expected)
+        }
+
+        @Test func aPaddedScrollingCaptureFlattens() throws {
+            let base = makeBase(width: 1_400, height: 20_000)
+            let backdrop = Backdrop(fill: .color(.black), padding: 0.02, cornerRadius: 0, shadow: 0)
+            let document = AnnotationDocument(pixelSize: CGSize(width: 1_400, height: 20_000), scale: 1, backdrop: backdrop)
+            let output = try #require(AnnotationRenderer.flatten(document, base: base))
+            #expect(output.width == 1_612 && output.height == 20_212)
+        }
+
+        @Test func aPortraitBackdropOnALargeAreaKeepsItsSolidRedaction() async throws {
+            let base = makeBase(width: 6_016, height: 3_384)
+            let size = CGSize(width: base.width, height: base.height)
+            let rect = CGRect(x: size.width / 2 - 4, y: size.height / 2 - 4, width: 8, height: 8)
+            let mark = Annotation(shape: .redaction(Redaction(rect: rect, method: .solid)), style: Style(color: .black))
+            let backdrop = Backdrop(fill: .color(.white), padding: 0.25, cornerRadius: 0, shadow: 0, ratio: .init(9, 16))
+            let document = AnnotationDocument(pixelSize: size, scale: 1, items: [mark])
+            let composed = try #require(await CaptureRendition.render(marks: document, adding: backdrop, to: base))
+            #expect(try JSONDecoder().decode(AnnotationDocument.self, from: composed.document).backdrop == backdrop)
+            let output = composed.image
+            #expect(output.width == 8_272 && output.height == 14_706)
+            let sample = try #require(output.cropping(to: CGRect(x: output.width / 2, y: output.height / 2, width: 6, height: 1)))
+            let pixels = Pixels(sample)
+            #expect(pixels[0, 0] == (0, 0, 0, 255))
+            #expect(pixels[5, 0] == (255, 255, 255, 255))
+        }
+    }
+
     private func render(_ items: [Annotation], scale: CGFloat = 1, canvas: CGRect? = nil, base: CGImage = makeBase()) -> Pixels {
         var document = AnnotationDocument(pixelSize: CGSize(width: base.width, height: base.height), scale: scale, items: items)
         if let canvas { document.canvas = canvas }

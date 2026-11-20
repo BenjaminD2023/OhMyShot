@@ -41,6 +41,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     private let actions: Actions
     private var fileURL: URL
     private var windowLease: ActiveResources.Lease?
+    private var closing: Task<Bool, Never>?
+    public private(set) var didClose = false
     /// The Image Size sheet, while it is down.
     private var imageSizeSheet: NSWindow?
 
@@ -284,27 +286,68 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     // MARK: Window
 
-    public func windowWillClose(_ notification: Notification) {
+    public func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard closing == nil else { return false }
         content.canvas.endEditing()
-        content.releaseColorPanel()
-        if session.hasUnkeptChanges {
-            // Kept after the window has gone; this task holds the controller until then.
-            Task {
-                _ = await self.exportAndKeep()
-                self.finishClosing()
-            }
-        } else {
-            finishClosing()
-        }
+        guard session.hasUnkeptChanges else { return true }
+        _ = startClosing()
+        return false
     }
 
-    private func finishClosing() {
+    public func closeBeforeQuitting() async -> Bool {
+        if didClose { return true }
+        return await startClosing().value
+    }
+
+    private func startClosing() -> Task<Bool, Never> {
+        if let closing { return closing }
+        let task = Task { () -> Bool in
+            defer { closing = nil }
+            guard let window, window.attachedSheet == nil else { return false }
+            let mayClose = await EditorCloseRecovery.mayClose {
+                self.content.canvas.endEditing()
+                guard await self.exportAndKeep() != nil else { return .failed }
+                self.content.canvas.endEditing()
+                return self.session.hasUnkeptChanges ? .changedWhileKeeping : .kept
+            } choose: {
+                guard window.attachedSheet == nil else { return .keepEditing }
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = String(localized: "Your edits couldn’t be saved.", bundle: .module)
+                alert.informativeText = String(localized: "Try again, save an editable project, or discard these edits.", bundle: .module)
+                alert.addButton(withTitle: String(localized: "Retry", bundle: .module))
+                alert.addButton(withTitle: String(localized: "Save a Copy as Project…", bundle: .module))
+                alert.addButton(withTitle: String(localized: "Discard Edits", bundle: .module)).hasDestructiveAction = true
+                alert.addButton(withTitle: String(localized: "Keep Editing", bundle: .module)).keyEquivalent = "\u{1b}"
+                AppActivation.bringForward(window)
+                switch await alert.beginSheetModal(for: window) {
+                case .alertFirstButtonReturn: return .retry
+                case .alertSecondButtonReturn: return .saveProject
+                case .alertThirdButtonReturn: return .discard
+                default: return .keepEditing
+                }
+            } saveProject: {
+                guard let saved = await self.saveProjectCopy() else { return false }
+                self.content.canvas.endEditing()
+                return self.session.document == saved
+            }
+            guard mayClose, window.attachedSheet == nil else { return false }
+            window.close()
+            return true
+        }
+        closing = task
+        return task
+    }
+
+    public func windowWillClose(_ notification: Notification) {
+        didClose = true
+        content.releaseColorPanel()
         windowLease?.end()
         windowLease = nil
         onClose?()
     }
 
-    /// Keeps the edits at once, on this thread: for quitting with the editor open.
+    /// Keeps the edits at once, on this thread, before handing out a drag.
     public func keepNow() {
         content.canvas.endEditing()
         let document = session.document
@@ -379,28 +422,26 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// Saves a copy of the capture as it was taken and every mark as a project file, which the editor
     /// opens again with the marks editable. The window goes on editing what it edited before.
     func saveProject() {
-        guard let window else { return }
+        Task { _ = await saveProjectCopy() }
+    }
+
+    private func saveProjectCopy() async -> AnnotationDocument? {
+        guard let window, window.attachedSheet == nil else { return nil }
         content.canvas.endEditing()
         let panel = NSSavePanel()
         panel.allowedContentTypes = [AnnotationProject.contentType]
         panel.nameFieldStringValue = (window.title as NSString).appendingPathExtension(AnnotationProject.fileExtension) ?? window.title
         panel.message = String(localized: "A project opens again with every mark still editable.", bundle: .module)
         let project = AnnotationProject(capture: session.base, document: session.document)
-        panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            Task {
-                do {
-                    try await Self.write(project, to: url)
-                    self?.model.flashSaved()
-                    if let canvas = self?.content.canvas {
-                        VoiceOver.announce(String(localized: "Saved", bundle: .module), from: canvas)
-                    }
-                } catch {
-                    NSSound.beep()
-                    let alert = NSAlert(error: error)
-                    alert.beginSheetModal(for: window, completionHandler: nil)
-                }
-            }
+        guard await panel.beginSheetModal(for: window) == .OK, let url = panel.url else { return nil }
+        do {
+            try await Self.write(project, to: url)
+            model.flashSaved()
+            VoiceOver.announce(String(localized: "Saved", bundle: .module), from: content.canvas)
+            return project.document
+        } catch {
+            _ = await NSAlert(error: error).beginSheetModal(for: window)
+            return nil
         }
     }
 
@@ -504,6 +545,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     }
 
     private func keep(_ rendered: RenderedCapture) -> URL? {
+        guard !didClose else { return nil }
         guard session.hasUnkeptChanges else { return fileURL }
         guard let url = actions.keep(rendered.document, rendered.png, rendered.image) else { return nil }
         fileURL = url

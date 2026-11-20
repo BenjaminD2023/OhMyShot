@@ -82,6 +82,11 @@ struct HistoryView: View {
         }
         .quickLookPreview($model.previewURL)
         .confirmingTrash($model.trashRequest) { items in model.moveToTrash(items) }
+        .alert(Text("Couldn’t Move to Trash", bundle: .module), isPresented: Binding(
+            get: { model.trashFailure != nil }, set: { if !$0 { model.trashFailure = nil } }
+        )) {} message: {
+            Text(verbatim: model.trashFailure ?? "")
+        }
         .confirmingRetentionChange($model.retentionRequest) { retention in
             model.settings.historyRetention = retention
         }

@@ -24,6 +24,13 @@ Each entry links its implementation commits or merged pull request and credits v
 ### Fixed
 
 - A small capture on a Transparent background no longer has its shadow cut off in a gray box at the picture's edge: the clear room around it now reaches as far as the shadow does. A background's shadow also lines up with its card exactly, where it used to fall a few pixels short of it on one side.
+- A capture that can't be moved to the Trash is no longer deleted for good instead: it stays in Capture History and Quick Access with its original, marks, and text, and the card or History says why.
+- Replacing a recording with an edit, or with a movie exported from Studio, keeps the last one until the new one is in place, so a replacement that fails loses nothing.
+- With Keep Captures set to Never, a card pushed out of Quick Access by newer ones can still be brought back with Restore Recently Closed; only a card you close yourself is deleted at once.
+- The editor stays open until its edits are saved. When saving fails it offers Retry, Save a Copy as Project…, and Discard Edits, and quitting waits for the same choice. A capture open in the editor can't be moved to the Trash from its card or from History.
+- Marking up in place, Escape with marks drawn asks for a second Escape before throwing them away.
+- Blur and Pixelate are stronger on larger areas. For anything that must stay secret, use a solid fill and share the flattened image, not the editable project. If a redaction can't be rendered, its area is covered in solid black. If saved marks can't be read, the editor offers a flattened copy rather than the unmarked original.
+- Copying a recording no longer starts a clipboard check every 3 seconds unless Keep Captures is Never, and Capture Text no longer holds on to the last picture it read.
 - A recording whose file stops being written (a full disk, an encoder error) stops at once and says up to when it was kept. Recording doesn't start with less than 500 MB free and stops early when space runs low.
 - Studio keeps a recording's draft until its pointer, clicks, keys, and camera are all saved, and says which were not. A recording recovered after a crash or a forced quit opens in Studio with them.
 - Studio's automatic zooms: shortcuts no longer count as typing, and typing with no click near it places no zoom; a zoom placed by hand no longer removes the automatic zooms on either side of it; a drag too wide to frame places none; the camera no longer leaves a place before its last click there; and two zooms on the same place hand over without pulling back to the whole recording.

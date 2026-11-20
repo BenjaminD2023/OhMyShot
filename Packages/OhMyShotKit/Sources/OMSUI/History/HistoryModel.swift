@@ -32,6 +32,7 @@ final class HistoryModel {
     var focus: UUID?
     /// Captures waiting for the user to confirm they go to the Trash.
     var trashRequest: TrashRequest?
+    var trashFailure: String?
     /// What is typed in the search field.
     var query = "" {
         didSet { if query != oldValue { search() } }
@@ -468,7 +469,20 @@ final class HistoryModel {
     /// Moves captures to the Trash, one at a time through the actions, so cards showing them close too. When the
     /// selection goes with them it moves on to the capture after them, as in Finder.
     func moveToTrash(_ gone: [HistoryItem]) {
-        let ids = Set(gone.map(\.id))
+        var ids: Set<UUID> = []
+        for item in gone {
+            guard !actions.isBeingEdited(item) else {
+                trashFailure = String(localized: "Close the capture’s editor first.", bundle: .module)
+                continue
+            }
+            do {
+                try actions.moveToTrash(item)
+                ids.insert(item.id)
+            } catch {
+                trashFailure = error.localizedDescription
+            }
+        }
+        guard !ids.isEmpty else { return }
         let visible = visibleItems
         if !selection.isDisjoint(with: ids), selection.isSubset(of: ids), let index = visible.firstIndex(where: { ids.contains($0.id) }) {
             let rest = visible.filter { !ids.contains($0.id) }
@@ -477,8 +491,8 @@ final class HistoryModel {
             focus = next
         } else {
             selection.subtract(ids)
+            if let focus, ids.contains(focus) { self.focus = visible.first { selection.contains($0.id) }?.id }
         }
-        gone.forEach(actions.moveToTrash)
         reload()
     }
 

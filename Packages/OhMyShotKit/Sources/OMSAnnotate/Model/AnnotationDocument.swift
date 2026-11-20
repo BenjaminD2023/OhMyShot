@@ -272,11 +272,11 @@ nonisolated public struct Counter: Codable, Sendable, Equatable {
 
 nonisolated public struct Redaction: Codable, Sendable, Equatable {
     public enum Method: String, Codable, Sendable, CaseIterable {
-        /// Covered with the color (black by default): nothing of what was there survives.
+        /// Covered with the selected color (black by default).
         case solid
-        /// Blurred past reading.
+        /// Blurs detail under the mark.
         case blur
-        /// Large blocks, each nudged by a little noise so the original cannot be worked back out.
+        /// Large blocks, each nudged by noise seeded from the mark.
         case pixelate
     }
 

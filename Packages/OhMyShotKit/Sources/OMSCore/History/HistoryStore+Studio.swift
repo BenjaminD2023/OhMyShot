@@ -44,10 +44,10 @@ extension HistoryStore {
         of item: HistoryItem, withFileAt exported: URL, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval, project: Data
     ) throws -> HistoryItem {
         _ = try studioSource(for: item)
-        try FileManager.default.removeItem(at: fileURL(for: item))
-        try FileManager.default.moveItem(at: exported, to: fileURL(for: item))
-        try project.write(to: studioMovieMarkerURL(for: item), options: .atomic)
-        return try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration)
+        return try replaceMovie(
+            of: item, with: exported, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration,
+            studioMarker: (studioMovieMarkerURL(for: item), project)
+        )
     }
 
     /// The settings the movie in the history was made with, when one exported from Studio is there: the

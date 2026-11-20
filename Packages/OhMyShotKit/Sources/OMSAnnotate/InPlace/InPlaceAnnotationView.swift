@@ -52,6 +52,8 @@ public final class InPlaceAnnotationView: NSView {
     private let actions: Actions
     private var adjustment: Adjustment?
     private var finished = false
+    private var discard = InPlaceDiscardConfirmation()
+    private var discardHint: Task<Void, Never>?
     enum PlacementZone: Equatable {
         case below
         case above
@@ -223,7 +225,7 @@ public final class InPlaceAnnotationView: NSView {
         codeChips.frame = bounds
         chrome.selection = rect
         let pixels = session.document.canvas.standardized
-        chrome.reading = "\(Int(pixels.width)) × \(Int(pixels.height))"
+        if discard.deadline == nil { chrome.reading = "\(Int(pixels.width)) × \(Int(pixels.height))" }
         setAccessibilityValue(String(localized: "\(Int(pixels.width)) × \(Int(pixels.height)) pixels", bundle: .module))
         placeAccessories()
     }
@@ -310,6 +312,10 @@ public final class InPlaceAnnotationView: NSView {
 
     private func sessionChanged(_ event: AnnotationSession.Event) {
         switch event {
+        case .document, .selection, .settings, .tool: clearDiscardHint()
+        case .history, .suggestions, .textLines: break
+        }
+        switch event {
         case .document:
             layoutSelection()
             // The selection changed by Undo or Redo is looked at again; a drag looks once it ends.
@@ -347,13 +353,26 @@ public final class InPlaceAnnotationView: NSView {
     }
 
     private func perform(_ action: InPlaceToolbar.Action) {
+        if action != .cancel { clearDiscardHint() }
         switch action {
         case .undo:
             canvas.undo(nil)
         case .redo:
             canvas.redo(nil)
         case .cancel:
-            finish { $0.cancel() }
+            canvas.endEditing()
+            if discard.mayDiscard(hasMarks: !session.document.items.isEmpty) {
+                finish { $0.cancel() }
+            } else if let deadline = discard.deadline {
+                let hint = String(localized: "Press Esc again or click Cancel to discard your marks.", bundle: .module)
+                chrome.reading = hint
+                VoiceOver.announce(hint, from: self)
+                discardHint?.cancel()
+                discardHint = Task { [weak self] in
+                    do { try await Task.sleep(until: deadline, clock: .continuous) } catch { return }
+                    self?.clearDiscardHint()
+                }
+            }
         case .copy:
             finish(with: \.copy)
         case .save:
@@ -361,6 +380,15 @@ public final class InPlaceAnnotationView: NSView {
         case .openInEditor:
             finish(with: \.openInEditor)
         }
+    }
+
+    private func clearDiscardHint() {
+        guard discard.deadline != nil || discardHint != nil else { return }
+        discard = InPlaceDiscardConfirmation()
+        discardHint?.cancel()
+        discardHint = nil
+        let pixels = session.document.canvas.standardized
+        chrome.reading = "\(Int(pixels.width)) × \(Int(pixels.height))"
     }
 
     private func finish(with action: KeyPath<Actions, (Result) -> Void>) {
@@ -374,6 +402,7 @@ public final class InPlaceAnnotationView: NSView {
     private func finish(_ body: (Actions) -> Void) {
         guard !finished else { return }
         finished = true
+        clearDiscardHint()
         clearCodes()
         canvas.endEditing()
         body(actions)
@@ -591,6 +620,7 @@ public final class InPlaceAnnotationView: NSView {
     /// cancelled. With marks drawn the last step is Escape's, or the toolbar's.
     func backOut() {
         guard adjustment == nil, !finished else { return }
+        clearDiscardHint()
         if canvas.isEditingText {
             canvas.endEditing()
         } else if session.tool != .select {
@@ -603,8 +633,10 @@ public final class InPlaceAnnotationView: NSView {
     }
 
     public override func keyDown(with event: NSEvent) {
+        if event.keyCode != 53 { clearDiscardHint() }
         switch event.keyCode {
         case 53:
+            guard !event.isARepeat else { return }
             // Reached once the canvas has nothing of its own to cancel: a code's open card goes first, then
             // an adjustment in progress, then the tool in hand is put down, and only then is the whole
             // thing cancelled.

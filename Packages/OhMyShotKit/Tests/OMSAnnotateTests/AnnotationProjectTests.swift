@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import OMSCore
 import Testing
 @testable import OMSAnnotate
 
@@ -14,6 +15,29 @@ struct AnnotationProjectTests {
         context.setFillColor(CGColor(gray: gray, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         return context.makeImage()!
+    }
+
+    @Test func aFailedPreviewWriteLeavesTheProjectUnchangedUntilRetry() throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "Capture.ohmyshot")
+        let store = PictureStore(directory: folder.appending(path: "pictures"))
+        let capture = swatch(8, 4, gray: 1)
+        var project = AnnotationProject(capture: capture, document: AnnotationDocument(pixelSize: CGSize(width: 8, height: 4), scale: 1))
+        try project.write(to: file, pictures: store)
+        let original = try Data(contentsOf: file)
+        project.document.items = [Annotation(shape: .redaction(Redaction(rect: CGRect(x: 1, y: 1, width: 2, height: 2))), style: Style(color: .black))]
+        let png = try ImageExporter.encoded(#require(AnnotationRenderer.flatten(project.document, base: capture)), as: .png)
+        let blockedPreview = file.appending(path: "Preview.png")
+        #expect(throws: (any Error).self) {
+            try project.keep(at: file, preview: png, previewURL: blockedPreview, pictures: store)
+        }
+        #expect(try Data(contentsOf: file) == original)
+
+        let preview = folder.appending(path: "Preview.png")
+        let exported = try project.keep(at: file, preview: png, previewURL: preview, pictures: store)
+        #expect(try Data(contentsOf: exported) == png)
+        #expect(try AnnotationProject.read(from: file, pictures: store).document == project.document)
     }
 
     @Test func projectsCarryTheCaptureTheMarksAndTheirPictures() throws {
