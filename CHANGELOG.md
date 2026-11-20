@@ -9,6 +9,33 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-21
+
+### Choose a window, or measure, in All-In-One
+
+- **Click a window to capture it.** All-In-One highlights the window under the pointer, and a click frames it for any kind of capture. A drag still chooses a free area.
+- **Measure from the bar.** Press M to measure on the frozen screen without starting over.
+- **A clean start.** All-In-One opens with nothing chosen, and L brings back the last area.
+
+### Screenshots that look finished
+
+- **Rounded corners and a soft shadow**, as iShot gives every screenshot. Turn them on in Settings › Screenshots › Background.
+
+### Text read the way it looks
+
+- **Rows stay whole.** Capture Text reads a terminal listing, a settings list, or a table row as one line, and keeps braces in code as braces.
+- **Ultrawide screens read cleanly.** A dense ultrawide screen no longer loses or repeats lines.
+
+### Your work, kept safe
+
+- **Nothing lost when something fails.** A capture that can't go to the Trash stays in Capture History, replacing a recording keeps the old one until the new one is in place, and the editor stays open until its edits are saved.
+- **Recordings that stop cleanly.** When the disk fills or the file can't be written, a recording stops at once and says up to when it was kept. Studio keeps a recording's draft until everything in it is saved.
+- **Stronger redactions.** Blur and Pixelate are stronger on larger areas.
+
+### Usage data
+
+- **Usage Data is now on by default.** It sends only each day's counts of screenshots, recordings, and text recognitions, with the app and macOS versions and a random ID that changes every day. No captures, recognized text, or file names are sent. Turn it off in Settings › General › Usage Data, which also deletes the unsent counts.
+
 ### Added
 
 - Rounded Corners and Shadow, as iShot gives every screenshot: Settings › Screenshots › Background (or the editor's Background Presets) rounds an area's or a display's corners by 15 pt and lays a soft shadow evenly around it on clear room just wide enough to hold it. It needs no preset saved first; a window screenshot keeps its own corners and shadow, and JPEG fills the clear room with white.
