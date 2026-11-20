@@ -314,6 +314,10 @@ OhMyShot is built with [Sparkle](https://sparkle-project.org),
 OhMyShot is free software, licensed under the [GNU General Public License v3.0](LICENSE).
 Copyright © 2026 OhMyShot contributors.
 
+## Friend Link
+
+- [linux.do](https://linux.do) —— Where possible begins
+
 <br>
 
 <p align="center">
