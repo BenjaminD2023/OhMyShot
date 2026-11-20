@@ -308,6 +308,10 @@ OhMyShot 使用了 [Sparkle](https://sparkle-project.org)、
 OhMyShot 是自由软件，以 [GNU 通用公共许可证 第 3 版](LICENSE)发布。
 Copyright © 2026 OhMyShot contributors.
 
+## 友情链接
+
+- [linux.do](https://linux.do) —— Where possible begins
+
 <br>
 
 <p align="center">
