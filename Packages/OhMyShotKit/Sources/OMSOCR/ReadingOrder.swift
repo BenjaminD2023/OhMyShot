@@ -156,6 +156,19 @@ public enum ReadingOrder {
             }.count
         }
         guard max(proseCount(left), proseCount(right)) >= 2 else { return false }
+        // A listing's columns are the fields of its rows, not columns of text: read one at a time, `ls -l` gave
+        // every permission and then every name. There nearly every line on each side sits on the row of a line
+        // on the other, a row holds several lines on one side at least, and one side is mostly single words
+        // (permissions, sizes, names). Two columns of prose share rows too when their lines are as tall, and both
+        // are mostly prose; a list beside a page of prose has a line a row on each side.
+        if min(left.count, right.count) >= 4 {
+            func onSharedRows(_ column: [OCRLine], _ other: [OCRLine]) -> Double {
+                Double(column.filter { line in other.contains { verticalOverlap(line.box, $0.box) > 0.8 } }.count) / Double(column.count)
+            }
+            let holdsFields = [left, right].contains { $0.count * 2 >= rowGroups($0).count * 3 }
+            let prose = min(Double(proseCount(left)) / Double(left.count), Double(proseCount(right)) / Double(right.count))
+            if holdsFields, prose < 0.5, onSharedRows(left, right) >= 0.8, onSharedRows(right, left) >= 0.8 { return false }
+        }
         let a = coverage(left), b = coverage(right)
         var first = 0, second = 0, shared: CGFloat = 0
         while first < a.count, second < b.count {

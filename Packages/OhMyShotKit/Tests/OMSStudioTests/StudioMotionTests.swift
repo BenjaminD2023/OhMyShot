@@ -43,7 +43,8 @@ struct StudioMotionTests {
 
     @Test func aSingleKeyPlacesNoZoomButTypingDoes() {
         #expect(AutoZoom.zooms(for: moving(for: 8, keys: [3]), duration: 8).isEmpty)
-        let typing = AutoZoom.zooms(for: moving(for: 8, keys: [3, 3.3]), duration: 8)
+        #expect(AutoZoom.zooms(for: moving(for: 8, keys: [3, 3.3]), duration: 8).isEmpty)
+        let typing = AutoZoom.zooms(for: moving(for: 8, clicks: clicks(at: [2.8]), keys: [3, 3.3]), duration: 8)
         #expect(typing.map(\.scale) == [AutoZoom.standardScale], "\(typing)")
     }
 
@@ -54,7 +55,7 @@ struct StudioMotionTests {
         #expect(scales(clicks: [3, 3.4]) == [AutoZoom.lightScale])
         #expect(scales(clicks: [3, 3.4, 3.8]) == [AutoZoom.lightScale])
         #expect(scales(clicks: [3, 3.4, 3.8, 4.2]) == [AutoZoom.standardScale])
-        #expect(scales(keys: [3, 3.4]) == [AutoZoom.standardScale])
+        #expect(scales(keys: [3, 3.4]).isEmpty)
         // A click and a key: typing is in it.
         #expect(scales(clicks: [3], keys: [3.4]) == [AutoZoom.standardScale])
     }
@@ -118,9 +119,13 @@ struct StudioMotionTests {
     }
 
     @Test func typingZoomsWhereThePointerIs() {
-        let zooms = AutoZoom.zooms(for: moving(for: 8, keys: [3, 3.2, 3.4, 3.6]), duration: 8)
+        // Typing after a click anchors to the click's place rather than chasing a moved-away cursor.
+        let zooms = AutoZoom.zooms(for: moving(for: 8, clicks: [(2.8, 400, 300)], keys: [3, 3.2, 3.4, 3.6]), duration: 8)
         #expect(zooms.count == 1)
-        #expect(abs(zooms[0].start - 2.4) < 1e-9)
+        #expect(abs(zooms[0].start - (2.8 - AutoZoom.leadIn)) < 1e-9)
+        #expect(zooms[0].scale == AutoZoom.standardScale)
+        // Typing with no nearby click places no zoom.
+        #expect(AutoZoom.zooms(for: moving(for: 8, keys: [3, 3.2, 3.4, 3.6]), duration: 8).isEmpty)
     }
 
     @Test func zoomsEaseInAndOut() {

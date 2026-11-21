@@ -5,39 +5,75 @@ import Foundation
 /// Blurs or pixelates part of a capture for a redaction. Only the capture is processed, never other
 /// marks, and the result is the same every time for the same mark, so the screen and the export agree.
 nonisolated enum Redactor {
-    /// The redacted pixels for `rect` (in the document's pixels), the size of `rect` clipped to the
-    /// picture under it, or nil when the rect misses it or the method draws no picture (solid).
-    /// `base` is what lies under redactions: the capture, or the capture with images combined into it
-    /// (`AnnotationRenderer.redactionSource`), whose top-left corner is at `origin` in the document.
-    static func image(for redaction: Redaction, id: UUID, base: CGImage, origin: CGPoint = .zero, scale: CGFloat) -> (image: CGImage, rect: CGRect)? {
-        let bounds = CGRect(x: origin.x, y: origin.y, width: CGFloat(base.width), height: CGFloat(base.height))
-        let rect = redaction.rect.standardized.integral.intersection(bounds)
+    typealias Filter = (Redaction.Method, CGRect, CGImage, CGFloat, UUID) -> CGImage?
+
+    struct Source {
+        let bounds: CGRect
+        let image: CGImage?
+
+        var picture: (image: CGImage, origin: CGPoint)? {
+            image.map { ($0, bounds.origin) }
+        }
+
+        init(base: CGImage) {
+            self.init(bounds: CGRect(x: 0, y: 0, width: base.width, height: base.height), image: base)
+        }
+
+        init(bounds: CGRect, image: CGImage?) {
+            self.bounds = bounds
+            self.image = image
+        }
+    }
+
+    enum Coverage {
+        case filtered(CGImage, CGRect)
+        case opaque(CGRect)
+    }
+
+    /// What to draw over the clipped rect in document pixels. A failed filter yields an opaque
+    /// cover; nil means that there is no area to filter or that the mark itself draws a solid fill.
+    /// The source retains its document bounds even if the combined image could not be made.
+    static func coverage(
+        for redaction: Redaction, id: UUID, source: Source, scale: CGFloat, filter: Filter = apply
+    ) -> Coverage? {
+        guard redaction.method != .solid else { return nil }
+        let rect = redaction.rect.standardized.integral.intersection(source.bounds)
         guard !rect.isNull, rect.width >= 1, rect.height >= 1 else { return nil }
         // In the source's own pixels.
-        let local = rect.offsetBy(dx: -origin.x, dy: -origin.y)
-        switch redaction.method {
-        case .solid:
-            return nil
-        case .blur:
-            return blurred(local, of: base, scale: scale).map { ($0, rect) }
-        case .pixelate:
-            return pixelated(local, of: base, scale: scale, seed: id).map { ($0, rect) }
+        let local = rect.offsetBy(dx: -source.bounds.minX, dy: -source.bounds.minY)
+        guard let image = source.image, let pixels = filter(redaction.method, local, image, scale, id) else { return .opaque(rect) }
+        return .filtered(pixels, rect)
+    }
+
+    static func apply(_ method: Redaction.Method, to rect: CGRect, of base: CGImage, scale: CGFloat, seed: UUID) -> CGImage? {
+        switch method {
+        case .solid: nil
+        case .blur: blurred(rect, of: base, scale: scale)
+        case .pixelate: pixelated(rect, of: base, scale: scale, seed: seed)
         }
     }
 
     /// The side of a pixelation block: never under 12 px, larger for large areas.
     static func blockSize(for rect: CGRect, scale: CGFloat) -> Int {
-        max(12, Int((6 * scale).rounded()), Int((max(rect.width, rect.height) / 28).rounded()))
+        max(12, Int(max(lineRadius(for: rect, scale: scale), max(rect.width, rect.height) / 28).rounded()))
     }
 
-    /// A Gaussian-like blur (three box passes) strong enough that text under it cannot be read. Pixels
-    /// around the rect take part, so its edges blend; at the capture's edges the last pixels repeat.
+    /// Allow room around a line: keep the 6 pt UI radius for selections up to 24 pt high,
+    /// then increase it by half a pixel for each extra pixel on the short side.
+    private static func lineRadius(for rect: CGRect, scale: CGFloat) -> CGFloat {
+        max(6 * scale, min(rect.width, rect.height) / 2 - 6 * scale)
+    }
+
+    /// Three box passes approximate a Gaussian. The short side estimates the height of a covered line;
+    /// large selections get a proportionally wider blur on a smaller working bitmap.
     private static func blurred(_ rect: CGRect, of base: CGImage, scale: CGFloat) -> CGImage? {
-        let sigma = min(max(6 * scale, min(rect.width, rect.height) * 0.08), 48)
-        let box = Int(sigma * 2) | 1
+        let sigma = lineRadius(for: rect, scale: scale)
+        let stride = max(1, Int(sigma / 12))
+        let box = Int(sigma * 2 / CGFloat(stride)) | 1
         let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
-        let source = rect.insetBy(dx: -CGFloat(box * 2), dy: -CGFloat(box * 2)).intersection(bounds).integral
-        guard var buffer = Bitmap(base, crop: source) else { return nil }
+        let padding = CGFloat((box / 2) * 3 * stride)
+        let source = rect.insetBy(dx: -padding, dy: -padding).intersection(bounds).integral
+        guard var buffer = Bitmap(base, crop: source, downsampleBy: stride) else { return nil }
         var scratch = Bitmap(width: buffer.width, height: buffer.height, colorSpace: buffer.colorSpace)
         for _ in 0..<3 {
             let error = buffer.withBuffer { input in
@@ -49,7 +85,8 @@ nonisolated enum Redactor {
             swap(&buffer, &scratch)
         }
         let inner = CGRect(x: rect.minX - source.minX, y: rect.minY - source.minY, width: rect.width, height: rect.height)
-        return buffer.makeImage()?.cropping(to: inner)
+        let transform = CGAffineTransform(scaleX: CGFloat(buffer.width) / source.width, y: CGFloat(buffer.height) / source.height)
+        return buffer.makeImage(interpolate: stride > 1)?.cropping(to: inner.applying(transform).integral)
     }
 
     /// Averages blocks anchored at the rect's corner, then moves each block's color by a little seeded
@@ -126,15 +163,16 @@ nonisolated struct Bitmap {
     }
 
     /// The `crop` of `image` (in its pixels, top-left origin).
-    init?(_ image: CGImage, crop: CGRect) {
+    init?(_ image: CGImage, crop: CGRect, downsampleBy stride: Int = 1) {
         guard let cropped = image.cropping(to: crop) else { return nil }
         let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        self.init(width: cropped.width, height: cropped.height, colorSpace: space)
+        self.init(width: (cropped.width - 1) / stride + 1, height: (cropped.height - 1) / stride + 1, colorSpace: space)
         let drawn = bytes.withUnsafeMutableBytes { raw -> Bool in
             guard let context = CGContext(
                 data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: rowBytes,
                 space: colorSpace, bitmapInfo: Self.bitmapInfo
             ) else { return false }
+            if stride > 1 { context.interpolationQuality = .high }
             context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
@@ -151,11 +189,11 @@ nonisolated struct Bitmap {
         }
     }
 
-    func makeImage() -> CGImage? {
+    func makeImage(interpolate: Bool = false) -> CGImage? {
         guard let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
         return CGImage(
             width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: rowBytes, space: colorSpace,
-            bitmapInfo: CGBitmapInfo(rawValue: Self.bitmapInfo), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+            bitmapInfo: CGBitmapInfo(rawValue: Self.bitmapInfo), provider: provider, decode: nil, shouldInterpolate: interpolate, intent: .defaultIntent
         )
     }
 }

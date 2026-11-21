@@ -30,15 +30,7 @@ final class MeasureCoordinator {
         let windowTitle: String? = if settings.fileNamePattern.contains(FilenameTemplate.Token.window.placeholder), let source {
             WindowCatalog.frontWindowTitle(ofProcess: source.processIdentifier)
         } else { nil }
-        overlay.measureUnit = settings.measureUnit
-        overlay.measureTolerance = settings.measureTolerance
-        overlay.measureSnapsToContent = settings.measureSnapsToContent
-        overlay.colorFormat = settings.colorFormat
-        overlay.onMeasureUnitChange = { [weak self] unit in self?.settings.measureUnit = unit }
-        overlay.onMeasureToleranceChange = { [weak self] tolerance in self?.settings.measureTolerance = tolerance }
-        overlay.onCopyMeasurement = { [weak self] text, point, closing in
-            self?.copy(text, toClipboard: copiesToClipboard, closingAt: closing ? point : nil)
-        }
+        configureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: .area, purpose: .measure) { [weak self] outcome in
             guard let self else { return }
             overlay.onMeasureUnitChange = nil
@@ -50,6 +42,20 @@ final class MeasureCoordinator {
             if case .color(let color, let point, _, let modifiers, let keyboard) = outcome {
                 colorPicker.deliver(color, at: point, modifiers: modifiers, keyboard: keyboard, copiesToClipboard: copiesToClipboard)
             }
+        }
+    }
+
+    /// The ruler as Settings have it, and what remembers a change to it and copies its measurement: for Measure, and for
+    /// All-In-One turning into Measure in its own session (whose end hands any color taken on, as a capture's does).
+    func configureOverlay(copiesToClipboard: Bool = true) {
+        overlay.measureUnit = settings.measureUnit
+        overlay.measureTolerance = settings.measureTolerance
+        overlay.measureSnapsToContent = settings.measureSnapsToContent
+        overlay.colorFormat = settings.colorFormat
+        overlay.onMeasureUnitChange = { [weak self] unit in self?.settings.measureUnit = unit }
+        overlay.onMeasureToleranceChange = { [weak self] tolerance in self?.settings.measureTolerance = tolerance }
+        overlay.onCopyMeasurement = { [weak self] text, point, closing in
+            self?.copy(text, toClipboard: copiesToClipboard, closingAt: closing ? point : nil)
         }
     }
 

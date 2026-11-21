@@ -61,6 +61,47 @@ struct FormulaMergeTests {
         #expect(made[0].math == .inline)
     }
 
+    @Test func aRowWithAPieceThatCouldNotBeReadStaysAsItWas() {
+        let lines = [
+            line("The energy E = mc2 holds at rest", 100, 100, 640),
+            line("and the momentum p = mv follows.", 100, 160, 640),
+        ]
+        let formulas = [formula("E=mc^{2}", 300, 100, 150, 40), formula("p=mv", 420, 160, 110, 40)]
+        let plan = FormulaMerge.plan(lines, formulas: formulas)
+        #expect(plan.pieces.map(\.box.minX) == [100, 450, 100, 530])
+        // Both sides of the first formula came back empty with their ink on the picture: the line Vision read is kept,
+        // words and all, where it used to become the formula alone.
+        let kept = ReadingOrder.sorted(FormulaMerge.lines(lines, formulas: formulas, plan: plan, pieces: [nil, nil, "and the momentum", "follows."]))
+        #expect(kept.map(\.text) == ["The energy E = mc2 holds at rest", "and the momentum $p=mv$ follows."])
+        #expect(kept.map(\.math) == [nil, .inline])
+        // One side is enough.
+        let half = ReadingOrder.sorted(FormulaMerge.lines(lines, formulas: formulas, plan: plan, pieces: ["The energy", nil, "and the momentum", "follows."]))
+        #expect(half.map(\.text) == ["The energy E = mc2 holds at rest", "and the momentum $p=mv$ follows."])
+        // Empty because blank, the pieces leave the formula a line of its own, as before.
+        let blank = ReadingOrder.sorted(FormulaMerge.lines(lines, formulas: formulas, plan: plan, pieces: ["", "", "and the momentum", "follows."]))
+        #expect(blank.map(\.text) == ["$E=mc^{2}$", "and the momentum $p=mv$ follows."])
+    }
+
+    @Test func nothingReadWhereThereIsInkIsAPieceThatCouldNotBeRead() {
+        let lines = [line("The energy E = mc2 holds at rest", 100, 100, 640), line("x = 1 .", 800, 200, 200)]
+        let formulas = [formula("E=mc^{2}", 300, 100, 150, 40), formula("x=1", 800, 200, 150, 40)]
+        let plan = FormulaMerge.plan(lines, formulas: formulas)
+        #expect(plan.pieces.map(\.box.minX) == [100, 450, 950])
+        let crops: [CGRect?] = [CGRect(x: 96, y: 90, width: 200, height: 60), CGRect(x: 454, y: 90, width: 290, height: 60), CGRect(x: 954, y: 190, width: 50, height: 60)]
+        // The columns with ink: words left of the first formula, nothing right of it, and a period after the second.
+        let inked = [110..<280, 962..<966]
+        let ink = { (rect: CGRect) -> InkProfile? in
+            let start = Int(rect.minX)
+            return InkProfile(originX: start, ink: (start..<Int(rect.maxX.rounded(.up))).map { x in inked.contains { $0.contains(x) } })
+        }
+        // Words that came back as nothing couldn't be read; a blank crop and a period (4 columns of a 40-pixel line) are
+        // empty as they are.
+        #expect(FormulaMerge.readings(["", "", ""], crops: crops, plan: plan, ink: ink) == [nil, "", ""])
+        #expect(FormulaMerge.readings(["The energy", "", "."], crops: crops, plan: plan, ink: ink) == ["The energy", "", "."])
+        // A piece too narrow to cut out (no crop) is empty, and takes none of the texts.
+        #expect(FormulaMerge.readings(["", "."], crops: [crops[0], nil, crops[2]], plan: plan, ink: ink) == [nil, "", "."])
+    }
+
     @Test func aPieceIsCutAtTheBlankColumnsNearestTheFormula() {
         // A line 40 tall, a formula from 100 to 200 whose ink runs to 203; the comma after it at 206–210, a space, then
         // words from 220. Before it, words to 92, then a space, then the formula's ink from 98 (its box cut it close).

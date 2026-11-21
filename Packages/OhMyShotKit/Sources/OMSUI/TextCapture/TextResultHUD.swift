@@ -2,6 +2,34 @@ import AppKit
 import OMSCore
 import OMSDesign
 
+/// A reading in progress and the last published result have separate lifetimes. Escape stops only the reading.
+public final class TextSelectionSession {
+    public let resultCard = TextResultHUD()
+    private var reading: Task<Void, Never>?
+
+    public init() {}
+
+    public func run(_ operation: @escaping @MainActor () async -> Void) async {
+        reading?.cancel()
+        let task = Task { await operation() }
+        reading = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if reading == task { reading = nil }
+    }
+
+    @discardableResult
+    public func cancel() -> Bool {
+        guard let reading else { return false }
+        reading.cancel()
+        self.reading = nil
+        return true
+    }
+}
+
 /// One result's lifetime. Pure timestamps keep hover/reuse/expiry behavior testable without waiting.
 struct TextResultLifetime {
     private(set) var generation: UInt = 0
@@ -65,8 +93,15 @@ public final class TextResultHUD {
     public var onToggleJoin: (() -> Void)?
     /// Copy was pressed on a card whose text wasn't copied.
     public var onCopy: (() -> Void)?
-    /// Open in Panel was pressed to inspect the capture in the Recognized Text window.
-    public var onOpenInPanel: (() -> Void)?
+    /// The current card's action owns its picture only while Open in Panel is offered.
+    public private(set) var onOpenInPanel: (() -> Void)?
+
+    public func setPanelAction(_ action: (() -> Void)?, showsResult: Bool) {
+        onOpenInPanel = showsResult ? action : nil
+        guard let card, let panel, card.canOpenInPanel != (onOpenInPanel != nil) else { return }
+        card.canOpenInPanel = onOpenInPanel != nil
+        place(panel)
+    }
 
     private var panel: TextResultPanel?
     private var card: TextResultCard?
@@ -109,6 +144,7 @@ public final class TextResultHUD {
         self.position = position
         let isNew = panel == nil
         let panel = self.panel ?? makePanel()
+        card?.canOpenInPanel = onOpenInPanel != nil
         card?.show(state, note: note)
         place(panel)
         if isNew {
@@ -128,6 +164,7 @@ public final class TextResultHUD {
         dismissal?.cancel()
         dismissal = nil
         lifetime.stop()
+        onOpenInPanel = nil
         guard let panel else { return }
         self.panel = nil
         card = nil
@@ -148,6 +185,12 @@ public final class TextResultHUD {
         }
     }
 
+    func openResultInPanel() {
+        let open = onOpenInPanel
+        dismiss()
+        open?()
+    }
+
     private func makePanel() -> TextResultPanel {
         let card = TextResultCard()
         // A fading old panel must never act on the next result's card.
@@ -161,9 +204,7 @@ public final class TextResultHUD {
         }
         card.onOpenInPanel = { [weak self, weak card] in
             guard let self, let card, self.card === card else { return }
-            let open = onOpenInPanel
-            dismiss()
-            open?()
+            openResultInPanel()
         }
         card.onClose = { [weak self, weak card] in
             guard let self, let card, self.card === card else { return }
@@ -334,6 +375,12 @@ final class TextResultCard: NSView {
     private let note = NSTextField(wrappingLabelWithString: "")
     let joinButton = CardButton(style: .chip, title: "", symbolName: "arrow.right.to.line")
     let openInPanelButton = CardButton(style: .chip, title: String(localized: "Open in Panel", bundle: .module), symbolName: "arrow.up.forward.square")
+    var canOpenInPanel = true {
+        didSet {
+            openInPanelButton.isHidden = !canOpenInPanel || !Self.isCopied(state)
+            needsLayout = true
+        }
+    }
     private let closeButton = CardButton(style: .chipIcon, title: String(localized: "Close", bundle: .module), symbolName: "xmark")
     private var state: TextResultHUD.State = .empty
     private var noteText: String?
@@ -469,7 +516,7 @@ final class TextResultCard: NSView {
             .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold).applying(.init(paletteColors: Self.symbolColors(for: state))))
         preview.isHidden = !Self.isCopied(state)
         joinButton.isHidden = joinButton.isHidden || !Self.isCopied(state)
-        openInPanelButton.isHidden = !Self.isCopied(state)
+        openInPanelButton.isHidden = !canOpenInPanel || !Self.isCopied(state)
         detail.isHidden = state != .empty && state != .noFormula
         setAccessibilityLabel([title.stringValue, count.stringValue, noteText ?? ""].filter { !$0.isEmpty }.joined(separator: ", "))
         needsLayout = true

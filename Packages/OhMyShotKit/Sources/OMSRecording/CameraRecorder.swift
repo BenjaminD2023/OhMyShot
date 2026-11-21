@@ -30,10 +30,13 @@ public final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBuffe
 
     /// Creates the movie at `url` (a `.mov`) for frames of `width` × `height` pixels. `clock` is the capture
     /// session's synchronization clock.
-    public init(url: URL, width: Int, height: Int, clock: CMClock?) throws {
+    public init(
+        url: URL, width: Int, height: Int, clock: CMClock?,
+        onFirstFrame: (@Sendable (CMTime) -> Void)? = nil
+    ) throws {
         self.url = url
         let format = RecordingFormat.choose(width: width, height: height, framesPerSecond: Self.framesPerSecond, quality: Self.quality)
-        writer = try RecordingWriter(url: url, format: format, audio: .none, queue: queue)
+        writer = try RecordingWriter(url: url, format: format, audio: .none, queue: queue, onFirstFrame: onFirstFrame)
         self.clock = clock.flatMap { CFEqual($0, CMClockGetHostTimeClock()) ? nil : $0 }
         super.init()
         // 4:2:0, as the encoder takes it, and as Studio's compositor reads it.

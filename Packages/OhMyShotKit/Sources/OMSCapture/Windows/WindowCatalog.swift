@@ -4,7 +4,7 @@ import OMSCore
 import ScreenCaptureKit
 
 /// A window that can be captured on its own.
-public struct WindowTarget: Equatable, Sendable {
+nonisolated public struct WindowTarget: Equatable, Sendable {
     public let id: CGWindowID
     /// The window's frame in AppKit's global space.
     public let frame: CGRect
@@ -77,7 +77,8 @@ public enum WindowCatalog {
         }
     }
 
-    public static func snapshot(layout: DisplayLayout, excludingPID: pid_t? = nil) -> [WindowTarget] {
+    /// Read on any thread: All-In-One reads it off the main one.
+    nonisolated public static func snapshot(layout: DisplayLayout, excludingPID: pid_t? = nil) -> [WindowTarget] {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }
         return list.compactMap { info in
@@ -120,7 +121,7 @@ public enum WindowCatalog {
     /// Whether a window list's entry is a standard window: on layer 0 (panels over the screen, the menu bar, and the
     /// Dock sit higher), not see-through, and more than a sliver. The windows to choose from and the window an area is
     /// named after are both these, so a window that can be chosen names what is taken in it.
-    static func isStandard(_ info: [String: Any]) -> Bool {
+    nonisolated static func isStandard(_ info: [String: Any]) -> Bool {
         guard
             (info[kCGWindowLayer as String] as? Int) == 0,
             (info[kCGWindowAlpha as String] as? CGFloat ?? 1) > 0.01,

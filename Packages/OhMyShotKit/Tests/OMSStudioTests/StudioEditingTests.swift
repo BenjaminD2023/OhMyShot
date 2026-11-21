@@ -20,10 +20,13 @@ struct StudioEditingTests {
         let presses = (0..<6).map { StudioTelemetry.Key.unrecorded(time: 3 + Double($0) * 0.2, isRepeat: false) }
         #expect(StudioRenderer.captions(for: presses, mode: .all).isEmpty)
         let telemetry = StudioTelemetry(
-            width: 1600, height: 1000, pixelsPerPoint: 2, samples: [.init(time: 0, x: 800, y: 500, cursor: 0)], keys: presses,
+            width: 1600, height: 1000, pixelsPerPoint: 2, samples: [.init(time: 0, x: 800, y: 500, cursor: 0)],
+            clicks: [.init(time: 2.8, x: 800, y: 500, button: .primary)], keys: presses,
             keystrokeMode: .shortcuts
         )
-        #expect(AutoZoom.zooms(for: telemetry, duration: 8).count == 1)
+        let zooms = AutoZoom.zooms(for: telemetry, duration: 8)
+        #expect(zooms.count == 1)
+        #expect(zooms[0].scale == AutoZoom.standardScale)
     }
 
     @Test func aProjectSavedBeforeASettingTakesItsDefault() throws {

@@ -18,7 +18,7 @@ struct ScreenshotsSettingsView: View {
                 HelpTopic(String(localized: "After screenshot", bundle: .module), hasDestination
                     ? Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below. Upload sends it to your default destination.", bundle: .module)
                     : Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below.", bundle: .module)),
-                HelpTopic(String(localized: "Background", bundle: .module), Text("Puts each new screenshot on a background. Save one as a preset with the editor’s Background tool.", bundle: .module)),
+                HelpTopic(String(localized: "Background", bundle: .module), Text("Puts each new screenshot on a background. Rounded corners and shadow rounds an area’s or a display’s corners and lays a soft shadow around it on clear room, which JPEG fills with white; a window keeps its own. Save others as presets with the editor’s Background tool.", bundle: .module)),
             ]) {
                 AfterCaptureChoices(
                     settings: settings, kind: .screenshot, hasDestination: hasDestination,

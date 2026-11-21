@@ -1,6 +1,7 @@
 import AppKit
 import CoreText
 import Foundation
+import Observation
 import OMSCapture
 import OMSCore
 import OMSOCR
@@ -36,8 +37,6 @@ final class TextCaptureCoordinator {
     private let translator = Translator()
     private let highlight = TextSelectionHighlight()
     private let lens = TranslationLens()
-    private let hud = TextResultHUD()
-    private var selectionReading: Task<Void, Never>?
     /// Keep the compatibility choice after the current isolated recognizer stops answering.
     /// This is process state, not a saved preference; a relaunch tries the current recognizer again.
     private var usesCompatibilityTextReader = false
@@ -53,6 +52,8 @@ final class TextCaptureCoordinator {
     private var recoveryPreparation: Task<Void, Never>?
     private var recoveryLastUsed: ContinuousClock.Instant?
     private var elementPreparation: Task<Void, Never>?
+    private let selection = TextSelectionSession()
+    private var hud: TextResultHUD { selection.resultCard }
     private var panel: TextRecognitionWindowController?
     /// The last recognition, so the card can switch between kept and joined line breaks.
     private var last: Recognition?
@@ -87,8 +88,7 @@ final class TextCaptureCoordinator {
     private var waitingForCloud: Task<CloudReading, any Error>?
     /// Text read but left off the clipboard, which changed while the cloud model read it; the card's Copy puts it there.
     private var uncopied: (text: String, note: String?, selection: CGRect)?
-    /// The latest image read by Capture Text or Capture Formula, so the result card's Open in Panel can show it.
-    private var lastCapturedImage: (image: CGImage, scale: CGFloat, source: String, place: AppTextPlace?)?
+    private let resultSetting: Task<Void, Never>
 
     private struct Recognition {
         let lines: [OCRLine]
@@ -104,36 +104,23 @@ final class TextCaptureCoordinator {
         self.displays = displays
         self.capturer = capturer
         self.overlay = overlay
+        resultSetting = Task { [weak hud = selection.resultCard] in
+            for await shows in Observations({ settings.showTextResult }) where !shows {
+                hud?.setPanelAction(nil, showsResult: false)
+            }
+        }
         hud.onToggleJoin = { [weak self] in self?.toggleJoin() }
         hud.onCopy = { [weak self] in self?.copyUncopied() }
-        hud.onOpenInPanel = { [weak self] in
-            guard let self, let captured = self.lastCapturedImage else { return }
-            self.openPanel(image: captured.image, scale: captured.scale, source: captured.source, place: captured.place)
-        }
         highlight.onCancel = { [weak self] in self?.cancelReading() }
     }
 
-    /// Runs `reading`, one the highlight shows, as `selectionReading`, so Escape reaches it whoever started it; one still
-    /// running is let go, as a newer reading replaces an older one anyway. The caller's own cancellation stops it too.
-    private func asSelectionReading(_ reading: @escaping () async -> Void) async {
-        selectionReading?.cancel()
-        let task = Task { await reading() }
-        selectionReading = task
-        await withTaskCancellationHandler {
-            await task.value
-        } onCancel: {
-            task.cancel()
-        }
-        if selectionReading == task { selectionReading = nil }
-    }
+    deinit { resultSetting.cancel() }
 
     /// Escape while the highlight showed (it has gone, without a sound): the reading stops, and nothing is copied or
     /// shown. A wait on Vision ends at once, a run of the text reader is ended, and the cloud model is no longer waited
     /// for; each reading's `done` is told nil, as for any reading cancelled.
     private func cancelReading() {
-        guard let reading = selectionReading else { return }
-        reading.cancel()
-        selectionReading = nil
+        guard selection.cancel() else { return }
         waitingForCloud?.cancel()
         waitingForCloud = nil
         Log.capture.notice("Escape stopped the reading behind the highlight")
@@ -187,7 +174,7 @@ final class TextCaptureCoordinator {
     }
 
     func stop() {
-        selectionReading?.cancel()
+        selection.cancel()
         waitingForCloud?.cancel()
         readerPreparation?.cancel()
         recoveryPreparation?.cancel()
@@ -221,9 +208,15 @@ final class TextCaptureCoordinator {
 
     /// Shows a result card by `selection`. The Close text card choice applies to a card the user asked for (Show the
     /// copied text); one shown only to say something (a note, or text left off the clipboard) keeps its own time.
-    private func presentCard(_ state: TextResultHUD.State, near selection: CGRect, note: String? = nil) {
+    private func presentCard(_ state: TextResultHUD.State, near selection: CGRect, note: String? = nil, openInPanel: (() -> Void)? = nil) {
+        hud.setPanelAction(openInPanel, showsResult: settings.showTextResult)
         hud.show(state, near: selection, position: settings.textResultPosition,
                  closeAfter: settings.showTextResult ? settings.textResultCloseAfter : nil, note: note)
+    }
+
+    private func panelAction(for image: CGImage, near selection: CGRect, place: AppTextPlace? = nil) -> () -> Void {
+        let scale = selection.width > 0 ? CGFloat(image.width) / selection.width : 1
+        return { [weak self] in self?.openPanel(image: image, scale: scale, source: String(localized: "Screen Area"), place: place) }
     }
 
     /// Shows the overlay for text. `joinLines` joins the lines of each paragraph. `done` is told the text copied, or
@@ -231,7 +224,7 @@ final class TextCaptureCoordinator {
     /// keeps the reading on this Mac, for the URL API and Shortcuts.
     func captureText(joinLines: Bool, allowsCloud: Bool = true, done: ((String?) -> Void)? = nil) {
         guard !overlay.isActive else { done?(nil); return }
-        selectionReading?.cancel()
+        selection.cancel()
         waitingForCloud?.cancel()
         highlight.hide()
         prepareCaptureText()
@@ -284,7 +277,7 @@ final class TextCaptureCoordinator {
         done: ((String?) -> Void)? = nil
     ) async {
         guard !Task.isCancelled else { done?(nil); return }
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             guard !Task.isCancelled else { done?(nil); return }
             highlight.show(rect)
             do {
@@ -305,7 +298,7 @@ final class TextCaptureCoordinator {
 
     private func recognize(window target: WindowTarget, joinLines: Bool, allowsCloud: Bool, done: ((String?) -> Void)? = nil) async {
         guard !Task.isCancelled else { done?(nil); return }
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             guard !Task.isCancelled else { done?(nil); return }
             highlight.show(target.frame)
             do {
@@ -402,9 +395,8 @@ final class TextCaptureCoordinator {
         done: ((String?) -> Void)? = nil
     ) async {
         guard !Task.isCancelled else { done?(nil); return }
-        let capturedScale = selection.width > 0 ? CGFloat(image.width) / selection.width : 1
-        lastCapturedImage = (image, capturedScale, String(localized: "Screen Area"), place)
-        let showsCard = settings.showTextResult
+        var showsCard: Bool { settings.showTextResult }
+        var openInPanel: (() -> Void)? { showsCard ? panelAction(for: image, near: selection, place: place) : nil }
         let probe = LatencyProbe("ocr.recognize")
         defer { probe.end() }
         let localDeadline = ContinuousClock.now + .seconds(60)
@@ -479,13 +471,13 @@ final class TextCaptureCoordinator {
                     let readBy = String(localized: "Read by \(cloud.model.displayName)")
                     Log.capture.notice("Capture Text read \(text.count, privacy: .public) characters with the cloud model, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
                     if copiesToClipboard, NSPasteboard.general.changeCount != clipboard {
-                        keepUncopied(text, note: readBy, near: selection)
+                        keepUncopied(text, note: readBy, near: selection, openInPanel: openInPanel)
                         done?(nil)
                         return
                     }
                     if copiesToClipboard { copy(text) }
                     highlight.finish(copied: text, announces: !showsCard)
-                    if showsCard { presentCard(.copied(text: text, joined: joinLines, canJoin: false), near: selection, note: readBy) }
+                    if showsCard { presentCard(.copied(text: text, joined: joinLines, canJoin: false), near: selection, note: readBy, openInPanel: openInPanel) }
                     done?(text)
                     return
                 }
@@ -562,7 +554,7 @@ final class TextCaptureCoordinator {
         // After a wait for the cloud model, something copied meanwhile stays on the clipboard.
         if cloud != nil, copiesToClipboard, NSPasteboard.general.changeCount != clipboard {
             last = nil
-            keepUncopied(text, note: note, near: selection)
+            keepUncopied(text, note: note, near: selection, openInPanel: openInPanel)
             done?(nil)
             return
         }
@@ -574,7 +566,7 @@ final class TextCaptureCoordinator {
         // The cloud model's failure is said even with the card off: Capture Text would otherwise read differently
         // without a word.
         if showsCard || note != nil {
-            presentCard(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, note: recognition.note)
+            presentCard(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, note: recognition.note, openInPanel: openInPanel)
         }
         done?(text)
     }
@@ -708,10 +700,10 @@ final class TextCaptureCoordinator {
 
     /// Shows text read but not copied, because the clipboard changed while the cloud model read it: the card, with Copy,
     /// shows even while it is off.
-    private func keepUncopied(_ text: String, note: String?, near selection: CGRect) {
+    private func keepUncopied(_ text: String, note: String?, near selection: CGRect, openInPanel: (() -> Void)?) {
         uncopied = (text, note, selection)
         highlight.finish(copied: text, announces: false)
-        presentCard(.notCopied(text: text), near: selection, note: String(localized: "You copied something else while it was read."))
+        presentCard(.notCopied(text: text), near: selection, note: String(localized: "You copied something else while it was read."), openInPanel: openInPanel)
         Log.capture.notice("Capture Text left \(text.count, privacy: .public) characters off the clipboard, which changed meanwhile")
     }
 
@@ -720,7 +712,7 @@ final class TextCaptureCoordinator {
         guard let uncopied else { return }
         copy(uncopied.text)
         self.uncopied = nil
-        presentCard(.copied(text: uncopied.text, joined: false, canJoin: false), near: uncopied.selection, note: uncopied.note)
+        presentCard(.copied(text: uncopied.text, joined: false, canJoin: false), near: uncopied.selection, note: uncopied.note, openInPanel: hud.onOpenInPanel)
     }
 
     /// The card's switch: copies the text again with the other line-break choice.
@@ -730,7 +722,7 @@ final class TextCaptureCoordinator {
         let text = assemble(recognition)
         if recognition.copiesToClipboard { copy(text) }
         last = recognition
-        presentCard(.copied(text: text, joined: recognition.joined, canJoin: true), near: recognition.selection, note: recognition.note)
+        presentCard(.copied(text: text, joined: recognition.joined, canJoin: true), near: recognition.selection, note: recognition.note, openInPanel: hud.onOpenInPanel)
     }
 
     private func assemble(_ recognition: Recognition) -> String {
@@ -804,7 +796,7 @@ final class TextCaptureCoordinator {
     /// pixels (a formula drawn at 2x reads better than at 1x: Docs/ocr.md › L3 spike). Also the URL API's
     /// `capture-formula` with an area. `copiesToClipboard` false leaves the clipboard alone, for scripted checks.
     func readFormula(region rect: CGRect, frozen: CapturedFrame? = nil, copiesToClipboard: Bool = true, done: ((String?) -> Void)? = nil) async {
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             highlight.show(rect)
             do {
                 let frame = try await capture(rect, frozen: frozen)
@@ -820,7 +812,7 @@ final class TextCaptureCoordinator {
     }
 
     private func readFormula(window target: WindowTarget, done: ((String?) -> Void)?) async {
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             highlight.show(target.frame)
             do {
                 let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
@@ -848,9 +840,8 @@ final class TextCaptureCoordinator {
     }
 
     private func readFormula(_ image: CGImage, selection: CGRect, copiesToClipboard: Bool, done: ((String?) -> Void)?) async {
-        let capturedScale = selection.width > 0 ? CGFloat(image.width) / selection.width : 1
-        lastCapturedImage = (image, capturedScale, String(localized: "Screen Area"), nil)
-        let showsCard = settings.showTextResult
+        guard !Task.isCancelled else { done?(nil); return }
+        var showsCard: Bool { settings.showTextResult }
         guard let reader = readers?(), let pack = reader.formula else {
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
             if showsCard { presentCard(.noFormula, near: selection) }
@@ -874,7 +865,7 @@ final class TextCaptureCoordinator {
         if copiesToClipboard { copy(formula.latex) }
         highlight.finish(copied: formula.latex, announces: !showsCard, formula: true)
         Log.capture.notice("Capture Formula \(copiesToClipboard ? "copied" : "read", privacy: .public) \(formula.latex.count, privacy: .public) characters of LaTeX in \(String(describing: ContinuousClock.now - started), privacy: .public)")
-        if showsCard { presentCard(.copiedFormula(latex: formula.latex), near: selection) }
+        if showsCard { presentCard(.copiedFormula(latex: formula.latex), near: selection, openInPanel: panelAction(for: image, near: selection)) }
         done?(formula.latex)
     }
 
@@ -912,7 +903,7 @@ final class TextCaptureCoordinator {
     }
 
     private func translate(region rect: CGRect, frozen: CapturedFrame?, inPanel: Bool) async {
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             do {
                 let frame = try await capture(rect, frozen: frozen)
                 try Task.checkCancellation()
@@ -926,7 +917,7 @@ final class TextCaptureCoordinator {
     }
 
     private func translate(window target: WindowTarget, inPanel: Bool) async {
-        await asSelectionReading { [self] in
+        await selection.run { [self] in
             do {
                 let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
                 try Task.checkCancellation()

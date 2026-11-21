@@ -7,6 +7,8 @@ struct LineStrip {
     let image: CGImage
     /// Each row's span in `image`, in pixels from the top, in the order the crops were given.
     let rows: [Range<CGFloat>]
+    /// Where each row was cut from the source.
+    private let origins: [CGPoint]
 
     private static let margin = 16
 
@@ -59,6 +61,7 @@ struct LineStrip {
         guard let made = context.makeImage() else { return nil }
         image = made
         self.rows = rows
+        origins = crops.map(\.origin)
     }
 
     /// How to split `crops` over strips no taller than `height` pixels each, as ranges of the crops in order (a
@@ -84,6 +87,11 @@ struct LineStrip {
     /// The row an observation in the strip belongs to: the one holding its vertical middle.
     func row(of box: CGRect) -> Int? {
         rows.firstIndex { $0.contains(box.midY) }
+    }
+
+    /// Where a box read in `row` of the strip lies in the source.
+    func sourceBox(of box: CGRect, row: Int) -> CGRect {
+        box.offsetBy(dx: origins[row].x - CGFloat(Self.margin), dy: origins[row].y - rows[row].lowerBound)
     }
 
     /// Where to cut each of `indices`' lines: the box padded a quarter of its height above and below and

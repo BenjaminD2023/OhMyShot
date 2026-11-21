@@ -113,7 +113,6 @@ nonisolated enum StudioFraming {
             let length = min(max(0.4 + 0.25 * distance, 0.4), 0.9)
             let arrive = shots[next].first - arriveEarly
             var leave = max(arrive - length, shots[next - 1].last)
-            if arrive - leave < quickestMove { leave = arrive - quickestMove }
             leave = max(leave, moves.last?.to ?? -.infinity)
             moves.append(Move(from: leave, to: max(arrive, leave + quickestMove)))
         }

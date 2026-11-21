@@ -1907,6 +1907,40 @@
         }
       }
     },
+    "A star on GitHub helps more people find OhMyShot. On Discord, ask questions, share ideas, and hear what’s coming from MMFoundation, the people who make it." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una estrella en GitHub ayuda a que más gente encuentre OhMyShot. En Discord, haz preguntas, comparte ideas y entérate de lo que prepara MMFoundation, la gente que lo hace."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une étoile sur GitHub aide d’autres personnes à découvrir OhMyShot. Sur Discord, posez vos questions, partagez vos idées et découvrez ce que prépare MMFoundation, l’équipe qui le crée."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHubでスターを付けると、より多くの人がOhMyShotを見つけやすくなります。Discordでは、質問したりアイデアを共有したり、OhMyShotを作っているMMFoundationからこれからの予定を聞いたりできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 上点个 Star，能让更多人发现 OhMyShot。在 Discord 上，你可以提问、分享想法，并了解 OhMyShot 的开发者 MMFoundation 接下来的计划。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 上按個星星，能讓更多人發現 OhMyShot。在 Discord 上，你可以提問、分享想法，並了解 OhMyShot 的開發者 MMFoundation 接下來的計畫。"
+          }
+        }
+      }
+    },
     "A wide-gamut display captures in Display P3. Converting makes colors look the same in apps that ignore color profiles." : {
       "localizations" : {
         "es" : {
@@ -3208,36 +3242,36 @@
         }
       }
     },
-    "All-In-One opens with the area it last took, framed to adjust or take again." : {
+    "All-In-One opens with the area it last took, framed to adjust or take again. Without it, All-In-One opens with nothing chosen, and L brings back the last area you took since OhMyShot opened." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Todo en uno se abre con la última área que capturó, enmarcada para ajustarla o volver a capturarla."
+            "value" : "Todo en uno se abre con la última área que capturó, enmarcada para ajustarla o volver a capturarla. Sin esto, Todo en uno se abre sin nada elegido, y L recupera la última área que capturaste desde que se abrió OhMyShot."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tout-en-un s’ouvre avec la dernière zone capturée, encadrée pour l’ajuster ou la reprendre."
+            "value" : "Tout-en-un s’ouvre avec la dernière zone capturée, encadrée pour l’ajuster ou la reprendre. Sans cela, Tout-en-un s’ouvre sans rien de sélectionné, et L rappelle la dernière zone que vous avez capturée depuis l’ouverture d’OhMyShot."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "オールインワンを開くと、前回キャプチャした範囲が枠で表示され、調整したりもう一度キャプチャしたりできます。"
+            "value" : "オールインワンを開くと、前回キャプチャした範囲が枠で表示され、調整したりもう一度キャプチャしたりできます。オフのときは何も選択されていない状態で開き、OhMyShotを開いてから最後にキャプチャした範囲をLキーで呼び戻せます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "多合一打开时会框出上次截取的区域，可调整或再次截取。"
+            "value" : "多合一打开时会框出上次截取的区域，可调整或再次截取。不勾选时，多合一打开时不选中任何区域，按 L 可找回 OhMyShot 打开以来最后截取的区域。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「多合一」打開時會框出上次擷取的區域，供你調整或重新擷取。"
+            "value" : "「多合一」打開時會框出上次擷取的區域，供你調整或重新擷取。不勾選時，「多合一」打開時不會選取任何區域，按 L 可找回 OhMyShot 開啟以來最後擷取的區域。"
           }
         }
       }
@@ -8902,6 +8936,40 @@
         }
       }
     },
+    "Couldn’t Move to Trash" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido trasladar a la papelera"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de placer la capture dans la corbeille"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ゴミ箱に入れられませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法移到废纸篓"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法移到垃圾桶"
+          }
+        }
+      }
+    },
     "Couldn’t open this file" : {
       "localizations" : {
         "es" : {
@@ -10383,6 +10451,40 @@
         }
       }
     },
+    "Enjoying OhMyShot?" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Te gusta OhMyShot?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot vous plaît ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShotを気に入っていただけましたか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "喜欢 OhMyShot 吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "喜歡 OhMyShot 嗎？"
+          }
+        }
+      }
+    },
     "Error text" : {
       "localizations" : {
         "es" : {
@@ -10413,6 +10515,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "錯誤文字"
+          }
+        }
+      }
+    },
+    "Every choice in Settings goes back to how it was when OhMyShot was installed. Your shortcuts, upload destinations, cloud reading, language, usage data choice, approved apps, and capture history stay as they are." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada opción de Ajustes vuelve a como estaba al instalar OhMyShot. Tus atajos, destinos de subida, lectura en la nube, idioma, elección sobre los datos de uso, apps aprobadas e historial de capturas se mantienen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque choix des Réglages revient à son état lors de l’installation d’OhMyShot. Vos raccourcis, destinations d’envoi, la lecture dans le cloud, la langue, le choix concernant les données d’utilisation, les apps approuvées et l’historique des captures restent inchangés."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定のすべての項目が OhMyShot をインストールしたときの状態に戻ります。ショートカット、アップロード先、クラウド読み取り、言語、使用状況データの設定、承認済みのアプリ、キャプチャ履歴はそのまま残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置中的每一项都会回到 OhMyShot 刚安装时的样子。你的快捷键、上传目标、云端读取、语言、使用数据设置、已批准的 App 和截图历史保持不变。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定中的每一項都會回到 OhMyShot 剛安裝時的樣子。你的快速鍵、上傳目的地、雲端讀取、語言、使用資料設定、已核准的 App 和擷取記錄保持不變。"
           }
         }
       }
@@ -20294,7 +20430,42 @@
         }
       }
     },
+    "Puts each new screenshot on a background. Rounded corners and shadow rounds an area’s or a display’s corners and lays a soft shadow around it on clear room, which JPEG fills with white; a window keeps its own. Save others as presets with the editor’s Background tool." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coloca cada nueva captura sobre un fondo. “Esquinas redondeadas y sombra” redondea las esquinas de un área o de una pantalla y le pone alrededor una sombra suave sobre un margen transparente, que JPEG rellena de blanco; una ventana conserva las suyas. Guarda otros fondos como preajustes con la herramienta Fondo del editor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Place chaque nouvelle capture d’écran sur un arrière-plan. « Coins arrondis et ombre » arrondit les coins d’une zone ou d’un écran et pose autour une ombre douce sur une marge transparente, que JPEG remplit de blanc ; une fenêtre garde les siens. Enregistrez d’autres arrière-plans comme préréglages avec l’outil Arrière-plan de l’éditeur."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいスクリーンショットごとに背景を付けます。「角丸と影」は、領域やディスプレイ全体のスクリーンショットの角を丸め、その周りの透明な余白にやわらかい影を付けます（JPEGでは透明部分が白で塗られます）。ウインドウは自身の角と影を保ちます。ほかの背景は、エディタの背景ツールでプリセットとして保存できます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为每张新截图添加背景。“圆角与阴影”会为区域或整个显示器的截图加上圆角，并在透明边距上围绕它铺一圈柔和阴影（JPEG 会把透明处填成白色）；窗口截图保留自身的圆角和阴影。可使用编辑器的“背景”工具将其他背景存储为预设。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "為每張新截圖加上背景。「圓角與陰影」會為區域或整個顯示器的截圖加上圓角，並在透明邊距上環繞它鋪一圈柔和陰影（JPEG 會將透明處填成白色）；視窗截圖保留自身的圓角和陰影。可使用編輯器的「背景」工具將其他背景儲存為預設組合。"
+          }
+        }
+      }
+    },
     "Puts each new screenshot on a background. Save one as a preset with the editor’s Background tool." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -22858,6 +23029,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向右旋轉"
+          }
+        }
+      }
+    },
+    "Rounded corners and shadow" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esquinas redondeadas y sombra"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coins arrondis et ombre"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "角丸と影"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圆角与阴影"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圓角與陰影"
           }
         }
       }
@@ -26248,6 +26453,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "間距"
+          }
+        }
+      }
+    },
+    "Star on GitHub" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dar una estrella en GitHub"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter une étoile sur GitHub"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHubでスターを付ける"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 上点 Star"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 上按星星"
           }
         }
       }

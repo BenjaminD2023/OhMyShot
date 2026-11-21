@@ -161,6 +161,46 @@ struct QuickAccessCompletionTests {
         controller.dismissAll()
     }
 
+    @Test func trashFailureLeavesTheCardAvailableForRetry() throws {
+        var actions = actions(succeeds: true)
+        var attempts = 0
+        actions.moveToTrash = { _ in
+            attempts += 1
+            if attempts == 1 { throw CocoaError(.fileWriteNoPermission) }
+        }
+        let controller = QuickAccessController(actions: actions), capture = try item()
+        var notices: [String] = []
+        controller.showTrashFailure = { notices.append($0) }
+        controller.insertIntoStack(capture)
+        controller.perform(.moveToTrash, on: capture, keyed: false)
+        controller.finishTrashingNow()
+        #expect(controller.itemIDs == [capture.id])
+        #expect(notices.count == 1)
+        controller.perform(.moveToTrash, on: capture, keyed: false)
+        controller.finishTrashingNow()
+        #expect(controller.isEmpty)
+        #expect(attempts == 2)
+    }
+
+    @Test func anEditorOpenedDuringTrashUndoProtectsTheCapture() throws {
+        var actions = actions(succeeds: true)
+        var editing = false
+        actions.isBeingEdited = { _ in editing }
+        var attempts = 0
+        actions.moveToTrash = { _ in attempts += 1 }
+        let controller = QuickAccessController(actions: actions), capture = try item()
+        var notices: [String] = []
+        controller.showTrashFailure = { notices.append($0) }
+        controller.insertIntoStack(capture)
+        controller.perform(.moveToTrash, on: capture, keyed: false)
+        editing = true
+        controller.finishTrashingNow()
+        controller.perform(.moveToTrash, on: capture, keyed: false)
+        #expect(!controller.undoTrash())
+        #expect(controller.itemIDs == [capture.id])
+        #expect(attempts == 0 && notices.count == 2)
+    }
+
     @Test func copyLinkNeedsALinkAndEditingKeepsTheCard() throws {
         var actions = actions(succeeds: true)
         var hasLink = false

@@ -46,6 +46,19 @@ public actor RecordingWriter {
         case writerFailed(String)
     }
 
+    /// Reported once when writing fails mid-recording so the session stops immediately instead of
+    /// silently dropping every later frame.
+    public struct Failure: Equatable, Sendable {
+        public let message: String
+        /// How much of the movie had been written before the failure, pauses left out.
+        public let writtenDuration: CMTime
+
+        public init(message: String, writtenDuration: CMTime) {
+            self.message = message
+            self.writtenDuration = writtenDuration
+        }
+    }
+
     private struct Pause {
         let start: CMTime
         var end: CMTime?
@@ -73,13 +86,23 @@ public actor RecordingWriter {
     private var audioEnds: [Track: CMTime] = [:]
     private var statistics = Statistics()
     private var isFinished = false
+    private var hasReportedFailure = false
+    private var reportedFailure: Failure?
+    private var onFirstFrame: (@Sendable (CMTime) -> Void)?
+    private var onFailure: (@Sendable (Failure) -> Void)?
 
     /// Creates the movie at `url` (a `.mov`; anything there already is replaced). Samples are then appended
     /// on `queue`, the queue the stream delivers them on.
-    public init(url: URL, format: RecordingFormat, audio: RecordingAudio, queue: DispatchSerialQueue) throws {
+    public init(
+        url: URL, format: RecordingFormat, audio: RecordingAudio, queue: DispatchSerialQueue,
+        onFirstFrame: (@Sendable (CMTime) -> Void)? = nil,
+        onFailure: (@Sendable (Failure) -> Void)? = nil
+    ) throws {
         self.url = url
         self.format = format
         self.queue = queue
+        self.onFirstFrame = onFirstFrame
+        self.onFailure = onFailure
         try? FileManager.default.removeItem(at: url)
         writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         writer.movieFragmentInterval = CMTime(seconds: 2, preferredTimescale: 600)
@@ -118,6 +141,23 @@ public actor RecordingWriter {
         statistics
     }
 
+    public func setCallbacks(
+        onFirstFrame: (@Sendable (CMTime) -> Void)? = nil,
+        onFailure: (@Sendable (Failure) -> Void)? = nil
+    ) {
+        self.onFirstFrame = onFirstFrame
+        self.onFailure = onFailure
+    }
+
+    /// Checks whether `AVAssetWriter` transitioned to `.failed` asynchronously (such as while flushing a
+    /// fragment on a still screen) and fires `onFailure` once if so.
+    public func checkHealth() {
+        guard !isFinished, !hasReportedFailure else { return }
+        if writer.status == .failed {
+            reportFailure()
+        }
+    }
+
     /// Whether the encoder would take a frame now, for tests that feed frames faster than a stream would.
     var isReadyForFrame: Bool {
         video.isReadyForMoreMediaData
@@ -128,7 +168,12 @@ public actor RecordingWriter {
     /// Appends a frame that has new content. Frames during a pause are held back, the newest written when
     /// recording resumes.
     public func appendFrame(_ sample: CMSampleBuffer) {
-        guard !isFinished, writer.status == .writing else { return }
+        guard !isFinished, !hasReportedFailure else { return }
+        if writer.status == .failed {
+            reportFailure()
+            return
+        }
+        guard writer.status == .writing else { return }
         let time = sample.presentationTimeStamp
         guard time.isValid else { return }
         if isPaused, time >= pauses[pauses.count - 1].start {
@@ -139,6 +184,7 @@ public actor RecordingWriter {
         if start == nil {
             writer.startSession(atSourceTime: time)
             start = time
+            statistics.start = time
         }
         guard let output = movieTime(of: time) else {
             // Taken during a pause that has ended since: the frame held back then stands for it.
@@ -151,7 +197,12 @@ public actor RecordingWriter {
     /// Appends audio to its track. Only whole buffers between pauses are kept, so the track never overlaps
     /// itself once a pause is cut out; audio before the first frame is left out.
     public func appendAudio(_ sample: CMSampleBuffer, to track: Track) {
-        guard !isFinished, writer.status == .writing, let input = input(for: track) else { return }
+        guard !isFinished, !hasReportedFailure, let input = input(for: track) else { return }
+        if writer.status == .failed {
+            reportFailure()
+            return
+        }
+        guard writer.status == .writing else { return }
         let time = sample.presentationTimeStamp
         let duration = sample.duration
         guard let start, time.isValid, time >= start, duration.isValid,
@@ -179,6 +230,7 @@ public actor RecordingWriter {
             }
         } else {
             Log.recording.error("Appending audio failed: \(String(describing: self.writer.error), privacy: .public)")
+            reportFailure(writer.error.map { "\($0)" } ?? "appending audio failed")
         }
     }
 
@@ -206,6 +258,7 @@ public actor RecordingWriter {
             return
         }
         pauses[pauses.count - 1].end = end
+        statistics.pauses = pauses.compactMap { entry in entry.end.map { CMTimeRange(start: entry.start, end: $0) } }
         if let held, let output = movieTime(of: end) {
             write(held, at: output)
         }
@@ -220,7 +273,7 @@ public actor RecordingWriter {
         guard !isFinished else { return statistics }
         isFinished = true
         guard let start, let last = lastFrame else {
-            writer.cancelWriting()
+            if writer.status == .writing { writer.cancelWriting() }
             try? FileManager.default.removeItem(at: url)
             throw WriterError.noFrames
         }
@@ -229,6 +282,14 @@ public actor RecordingWriter {
         // At least a frame's length after the last frame, which shows for that long.
         let interval = format.frameInterval
         let end = max(endSource - completed, last.time + interval)
+        statistics.start = start
+        statistics.pauses = pauses.compactMap { pause in pause.end.map { CMTimeRange(start: pause.start, end: $0) } }
+        guard !hasReportedFailure, writer.status == .writing else {
+            statistics.duration = max(.zero, last.time - start + interval)
+            throw WriterError.writerFailed(
+                reportedFailure?.message ?? writer.error.map { "\($0)" } ?? "status \(writer.status.rawValue)"
+            )
+        }
         // The last frame again for the final frame's length, so the video reaches the end.
         let repeatTime = end - interval
         if repeatTime > last.time, video.isReadyForMoreMediaData,
@@ -241,8 +302,6 @@ public actor RecordingWriter {
         microphone?.markAsFinished()
         await writer.finishWriting()
         statistics.duration = end - start
-        statistics.start = start
-        statistics.pauses = pauses.compactMap { pause in pause.end.map { CMTimeRange(start: pause.start, end: $0) } }
         guard writer.status == .completed else {
             throw WriterError.writerFailed(writer.error.map { "\($0)" } ?? "status \(writer.status.rawValue)")
         }
@@ -253,7 +312,7 @@ public actor RecordingWriter {
     public func cancel() {
         guard !isFinished else { return }
         isFinished = true
-        writer.cancelWriting()
+        if writer.status == .writing { writer.cancelWriting() }
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -278,11 +337,32 @@ public actor RecordingWriter {
         }
         guard let retimed = time == sample.presentationTimeStamp ? sample : Self.retimed(sample, to: time) else { return }
         if video.append(retimed) {
+            let wasFirst = lastFrame == nil
             lastFrame = (sample, time)
             statistics.framesWritten += 1
+            if let start {
+                statistics.duration = max(.zero, time - start + format.frameInterval)
+                if wasFirst { onFirstFrame?(start) }
+            }
         } else {
             Log.recording.error("Appending a frame failed: \(String(describing: self.writer.error), privacy: .public)")
+            reportFailure(writer.error.map { "\($0)" } ?? "appending a video frame failed")
         }
+    }
+
+    private func reportFailure(_ detail: String? = nil) {
+        guard !hasReportedFailure, !isFinished else { return }
+        hasReportedFailure = true
+        let message = detail ?? writer.error.map { "\($0)" } ?? "status \(writer.status.rawValue)"
+        let written: CMTime = if let start, let last = lastFrame?.time {
+            max(.zero, last - start + format.frameInterval)
+        } else {
+            .zero
+        }
+        let failure = Failure(message: message, writtenDuration: written)
+        reportedFailure = failure
+        Log.recording.error("Recording writer failed after \(written.seconds, format: .fixed(precision: 2), privacy: .public) s: \(message, privacy: .public)")
+        onFailure?(failure)
     }
 
     /// The time a sample taken at `time` (host clock) has in the movie: earlier by every pause that ended

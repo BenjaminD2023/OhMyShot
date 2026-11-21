@@ -23,6 +23,19 @@ struct TranslationUnitTests {
         #expect(units.map(\.skip) == [nil, nil, .figures])
     }
 
+    @Test func theFieldsOfARowStayUnitsOfTheirOwn() {
+        // A settings list: the text has a row a line (`TextAssembler.rowPieces`), and the overlay still draws each
+        // label and each value in its own box.
+        let fields = [("General", 20.0, 0.0), ("Open at login", 620.0, 0.0), ("Appearance", 20.0, 60.0), ("Match the system", 600.0, 60.0)]
+        let lines = fields.map { OCRLine(text: $0.0, box: CGRect(x: $0.1, y: $0.2, width: Double($0.0.count) * 10, height: 20), confidence: 1) }
+        #expect(TextAssembler.assemble(lines) == "General Open at login\nAppearance Match the system")
+        let units = TranslationUnits.group(lines)
+        #expect(units.map(\.lines) == [[0], [1], [2], [3]])
+        #expect(units.map(\.text) == fields.map(\.0))
+        #expect(units.map(\.box) == lines.map(\.box))
+        #expect(units.allSatisfy { $0.skip == nil })
+    }
+
     @Test func figuresWithAnAbbreviationAreLeftAlone() {
         for figures in ["12:30", "$20", "5 GB", "100 GB", "iOS 26", "2:30 PM", "Q4 2026", "1080p"] {
             #expect(TranslationUnits.isFigures(figures), "\(figures)")
@@ -71,6 +84,125 @@ struct TranslationUnitTests {
         #expect(TranslationUnits.group(code).allSatisfy { $0.skip == .code })
         let vertical = OCRLine(text: "竖排文字", box: CGRect(x: 0, y: 0, width: 20, height: 80), confidence: 1)
         #expect(TranslationUnits.group([vertical])[0].skip == .vertical)
+    }
+
+    @Test func theSentencesAroundAListingsCodeAreTranslated() {
+        // A tutorial: its two lines of code make the page a listing (two lines in five), and the three sentences
+        // explaining them are still translated.
+        let lines = [
+            line("let image = try await read(url)", y: 0),
+            line("let text = try await recognize(image)", y: 24),
+            line("The first line reads the picture from disk.", y: 72),
+            line("The second line hands it to the recognizer.", y: 96),
+            line("Both calls throw when the file is missing.", y: 120),
+        ]
+        #expect(TextAssembler.isCodeListing(lines))
+        let units = TranslationUnits.group(lines)
+        #expect(units.map(\.lines) == [[0], [1], [2], [3], [4]])
+        #expect(units.map(\.skip) == [.code, .code, nil, nil, nil])
+    }
+
+    @Test func aParagraphBetweenTwoPiecesOfCodeIsOneUnit() {
+        // The paragraph wraps as on any page, its last words ("is missing.") no sentence alone; the code keeps its lines.
+        let lines = [
+            line("let image = try await read(url)", y: 0, wraps: nil),
+            line("guard let image else { return }", y: 24, wraps: nil),
+            line("The reader returns the picture, or nothing when the file", y: 72, wraps: nil),
+            line("is missing.", y: 96, width: 110, wraps: nil),
+            line("let text = try await recognize(image)", y: 144, wraps: nil),
+            line("然后把读到的文字交给翻译。", y: 192, width: 260, wraps: nil),
+        ]
+        #expect(TextAssembler.isCodeListing(lines))
+        let units = TranslationUnits.group(lines)
+        #expect(units.map(\.lines) == [[0], [1], [2, 3], [4], [5]])
+        #expect(units[2].text == "The reader returns the picture, or nothing when the file is missing.")
+        #expect(units.map(\.skip) == [.code, .code, nil, .code, nil])
+    }
+
+    @Test func whatOnlyAListingMakesCodeStaysCode() {
+        // Lines that read as no code alone, and are no sentences either: each stays with the listing.
+        let listing = ["func mean(_ values: [Double]) -> Double {", "    # the sum of the values over their count", "    total = count if ready else zero",
+                       "    print(\"Hello to you all\")", "    break", "    return total / Double(values.count)", "}"]
+            .enumerated().map { line($1, y: CGFloat($0) * 24) }
+        #expect(TranslationUnits.group(listing).allSatisfy { $0.skip == .code })
+        for sentence in ["The first line reads the picture from disk.", "Step 2: wait for the reply, then read it.",
+                         "然后把读到的文字交给翻译。", "调用 read(url) 读取这张图片。"] {
+            #expect(TranslationUnits.isSentence(sentence), "\(sentence)")
+        }
+        for code in ["total = count if ready else zero", "print(\"Hello to you all\")", "# the sum of the values over their count", "\"\"\"",
+                     "break", "x + y", "\"Hello to you all, and welcome\"", "print(\"你好世界欢迎回来\")", "名字 = 读取到的文字内容"] {
+            #expect(!TranslationUnits.isSentence(code), "\(code)")
+        }
+    }
+
+    @Test func aStatementRaisingAnErrorIsNotASentence() {
+        // Python: the message is words, and the line is a statement of the listing, though it reads as no code alone.
+        let lines = ["def check(option, mode):", "    if mode == \"strict\":", "        raise ValueError(\"This option is not available in this mode\")",
+                     "    return option"].enumerated().map { line($1, y: CGFloat($0) * 24) }
+        #expect(TextAssembler.isCodeListing(lines))
+        #expect(!TextAssembler.isCodeLike(lines[2].text))
+        #expect(TranslationUnits.group(lines).map(\.skip) == [.code, .code, .code, .code])
+    }
+
+    @Test func aCommandPrintingWordsIsNotASentence() {
+        // A shell script: `echo`, then five words.
+        let lines = ["greet() {", "    echo Welcome to your home directory", "    return 0", "}"].enumerated().map { line($1, y: CGFloat($0) * 24) }
+        #expect(TextAssembler.isCodeListing(lines))
+        #expect(TranslationUnits.group(lines).map(\.skip) == [.code, .code, .code, .code])
+        // A sentence starts on a capital, and calls nothing: a command, a keyword and a cmdlet start no sentence.
+        for statement in ["echo Welcome to your home directory", "SELECT name FROM users WHERE active", "Write-Host Welcome to your home directory",
+                          "raise ValueError(\"This option is not available in this mode\")", "Call read(url) to load the image."] {
+            #expect(!TranslationUnits.isSentence(statement), "\(statement)")
+        }
+        for sentence in ["Welcome to your home directory.", "JavaScript runs the script in the browser.", "A reply comes back in a second."] {
+            #expect(TranslationUnits.isSentence(sentence), "\(sentence)")
+        }
+    }
+
+    @Test func proseThatStartsOnANameOrInLowercaseIsStillASentence() {
+        // Above two lines of Swift: a name with a capital after its hyphen, a name that starts in lowercase, and a
+        // sentence nobody capitalized, which ends as one.
+        for sentence in ["Wi-Fi is required to pair the device.", "macOS 会自动保存这张截图。", "the cache is cleared when the app restarts."] {
+            let lines = [line(sentence, y: 0), line("let image = try await read(url)", y: 48), line("let text = try await recognize(image)", y: 72)]
+            #expect(TextAssembler.isCodeListing(lines))
+            #expect(TranslationUnits.group(lines).map(\.skip) == [nil, .code, .code], "\(sentence)")
+        }
+        for sentence in ["iPhone users see the same prompt on the lock screen", "Wi-Fi isn't needed once the device is paired"] {
+            #expect(TranslationUnits.isSentence(sentence), "\(sentence)")
+        }
+        // A cmdlet has one of PowerShell's verbs, a parameter, a quote or a variable to it; a command ends on no period.
+        for command in ["Write-Host Welcome to your home directory", "Greet-Guest Welcome to your home -Name guest",
+                        "Print-Banner 'Welcome' to your home directory", "Print-Banner Welcome to your home $user",
+                        "echo Welcome to your home directory", "SELECT name FROM users WHERE active."] {
+            #expect(!TranslationUnits.isSentence(command), "\(command)")
+        }
+    }
+
+    @Test func aCmdletOnAnyOfPowerShellsVerbsIsNotASentence() {
+        // The second line of a pipeline: a cmdlet and three words a comma apart, with no parameter, quote or variable.
+        let lines = ["function Show-Files($root) {", "    Get-ChildItem -Path $root |", "        Format-Table Name, Length, Mode", "}"]
+            .enumerated().map { line($1, y: CGFloat($0) * 24) }
+        #expect(TextAssembler.isCodeListing(lines))
+        #expect(TranslationUnits.group(lines).map(\.skip) == [.code, .code, .code, .code])
+        for command in ["Format-Table Name, Length, Mode", "Sort-Object Name, Length, Mode", "ConvertTo-Json the whole list here"] {
+            #expect(!TranslationUnits.isSentence(command), "\(command)")
+        }
+    }
+
+    @Test func aCompoundThatStartsOnOneOfPowerShellsVerbsIsStillProse() {
+        // "Open" and "Pop" are verbs of PowerShell's, and words of English: above two lines of Swift, a line that ends
+        // as a sentence does is one.
+        for sentence in ["Open-Source libraries are listed in the appendix.", "Pop-Up windows close on Escape."] {
+            let lines = [line(sentence, y: 0), line("let image = try await read(url)", y: 48), line("let text = try await recognize(image)", y: 72)]
+            #expect(TextAssembler.isCodeListing(lines))
+            #expect(TranslationUnits.group(lines).map(\.skip) == [nil, .code, .code], "\(sentence)")
+        }
+        // A cmdlet's name is a verb and one word, whatever the line ends on.
+        #expect(TranslationUnits.isSentence("Step-By-Step guides are listed in the appendix"))
+        // A command ends on no period, and one that does still holds a parameter.
+        for command in ["Format-Table Name, Length, Mode", "Get-Greeting -Name guest for the new user."] {
+            #expect(!TranslationUnits.isSentence(command), "\(command)")
+        }
     }
 
     @Test func aTablesRowsAreLeftAsTheyAreOnTheImage() {

@@ -436,7 +436,8 @@ public final class SettingsStore {
         didSet { defaults.set(windowBackground.rawValue, forKey: Key.windowBackground) }
     }
 
-    /// All-In-One opens with the area it last captured, framed to adjust or take again.
+    /// All-In-One opens with the area it last captured, framed to adjust or take again. Off by default: All-In-One opens
+    /// with nothing chosen.
     public var allInOneRemembersArea: Bool {
         didSet {
             defaults.set(allInOneRemembersArea, forKey: Key.allInOneRemembersArea)
@@ -532,7 +533,7 @@ public final class SettingsStore {
             .areaShape: Default.areaShape,
             .snapSelectionToText: false,
             .showsCodesInSelection: true,
-            .allInOneRemembersArea: true,
+            .allInOneRemembersArea: false,
             .windowShadow: true,
             .selfTimerDelay: Default.selfTimerDelay,
             .pinCornerRadius: 12.0,
@@ -629,10 +630,16 @@ public final class SettingsStore {
         recordingGIFFrameRate = Self.recordingGIFFrameRates.contains(gifFrameRate) ? gifFrameRate : Default.recordingGIFFrameRate
         replaySound = defaults.string(forKey: Key.replaySound).flatMap(ReplaySound.init(rawValue:)) ?? Default.replaySound
         hidesDesktopIcons = defaults.bool(forKey: Key.hidesDesktopIcons)
-        allInOneRemembersArea = defaults.bool(forKey: Key.allInOneRemembersArea)
+        let remembersArea = defaults.bool(forKey: Key.allInOneRemembersArea)
+        allInOneRemembersArea = remembersArea
         windowShadow = defaults.bool(forKey: Key.windowShadow)
         windowBackground = defaults.string(forKey: Key.windowBackground).flatMap(WindowBackground.init(rawValue:)) ?? .asScreenshots
-        allInOneArea = defaults.data(forKey: Key.allInOneArea).flatMap { try? JSONDecoder().decode(RememberedArea.self, from: $0) }
+        // Only while it is remembered: an area kept before (when remembering was on by default, too) would otherwise come
+        // back with L long after it was taken.
+        allInOneArea = remembersArea
+            ? defaults.data(forKey: Key.allInOneArea).flatMap { try? JSONDecoder().decode(RememberedArea.self, from: $0) }
+            : nil
+        if !remembersArea { defaults.removeObject(forKey: Key.allInOneArea) }
         quickAccessCorner = defaults.string(forKey: Key.quickAccessCorner).flatMap(QuickAccessCorner.init(rawValue:)) ?? Default.quickAccessCorner
         quickAccessSize = defaults.string(forKey: Key.quickAccessSize).flatMap(QuickAccessSize.init(rawValue:)) ?? Default.quickAccessSize
         quickAccessOnPointerDisplay = defaults.bool(forKey: Key.quickAccessOnPointerDisplay)
@@ -680,7 +687,7 @@ public final class SettingsStore {
     /// Automation pane manages one by one. Shortcuts, destinations, the cloud model, and the language are kept
     /// elsewhere and stay too.
     public func resetToDefaults() {
-        let kept: Set<Key> = [.nextFileNumber, .allInOneArea, .hidesDesktopIcons, .approvedAutomationCallers, .historyRetention]
+        let kept: Set<Key> = [.nextFileNumber, .allInOneArea, .hidesDesktopIcons, .approvedAutomationCallers, .historyRetention, .sendsUsageData]
         for key in Key.allCases where !kept.contains(key) {
             defaults.removeObject(forKey: key)
         }

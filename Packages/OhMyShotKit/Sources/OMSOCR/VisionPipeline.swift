@@ -60,6 +60,15 @@ public struct VisionPipeline: OCREngine {
 
     private static let english = [Locale.Language(identifier: "en-US")]
 
+    /// The characters that show a page holds Chinese or Japanese. Not those of a stroke or two, which the Chinese
+    /// model makes of ASCII dashes, bars and letters ("-rw-r--r--" read as "ーIW-KーーKーー"): counted, they kept a
+    /// terminal's listing from the Latin model.
+    static func cjkCount(_ characters: [Character]) -> Int {
+        characters.filter { Script.isCJK($0) && !strokes.contains($0) }.count
+    }
+
+    private static let strokes: Set<Character> = ["ー", "一", "丨", "エ", "工", "二", "十", "卜", "ト", "口", "ロ"]
+
     /// Runs off the caller's actor: besides Vision's requests, the pipeline scans pixels.
     ///
     /// A large image is read in overlapping pieces (`PictureText.pieces`), one after another, and the pieces'
@@ -112,8 +121,9 @@ public struct VisionPipeline: OCREngine {
         guard pieces.count > 1 else { return try await readPiece(image) }
         let merged = try await readPieces(pieces, size: size) { image.cropping(to: $0) }
         let joined = try await joinedAcrossColumns(merged, pieces: pieces, in: image)
+        let completed = try await completedAtCuts(joined, pieces: pieces, in: image)
         // A gutter of line numbers is found only with three numbers in view: a piece with fewer left its own.
-        return LineNumbers.removed(from: joined)
+        return LineNumbers.removed(from: completed)
     }
 
     /// The lines of `pieces` of a picture of `size`, each read as a picture of its own (`part` gives it; none when it
@@ -147,13 +157,7 @@ public struct VisionPipeline: OCREngine {
             in: CGSize(width: image.width, height: image.height)
         )
         let latin = groups.allSatisfy { group in group.allSatisfy { !Script.containsCJK(lines[$0].text) } }
-        var found = [Int: [OCRLine]]()
-        for batch in LineStrip.batches(of: crops) {
-            guard let strip = LineStrip(source: image, crops: Array(crops[batch])) else { continue }
-            for read in try await readLines(in: strip.image, languages: latin ? Self.english : options.primaryLanguages) {
-                if let row = strip.row(of: read.box) { found[batch.lowerBound + row, default: []].append(read) }
-            }
-        }
+        let found = try await readStrips(of: crops, in: image, languages: latin ? Self.english : options.primaryLanguages)
         var replaced = Set<Int>()
         var whole: [OCRLine] = []
         for (row, group) in groups.enumerated() {
@@ -169,6 +173,52 @@ public struct VisionPipeline: OCREngine {
         }
         options.trace?("  column cuts: \(replaced.count) pieces of \(whole.count) lines read whole, \(groups.count - whole.count) left cut")
         return lines.indices.filter { !replaced.contains($0) }.map { lines[$0] } + whole
+    }
+
+    /// A line a column cut went through that the column beyond the cut read no part of has no second piece to
+    /// be joined to (`PieceMerge.loneCuts`). It is read again with the stretch of its row past the cut, and gives way
+    /// to that reading when it is the line read on past the cut (`PieceMerge.completes`).
+    private func completedAtCuts(_ lines: [OCRLine], pieces: [CGRect], in image: CGImage) async throws -> [OCRLine] {
+        let cuts = PieceMerge.loneCuts(in: lines, pieces: pieces)
+        guard !cuts.isEmpty else { return lines }
+        let first = lines.count
+        let crops = LineStrip.crops(
+            for: Array(first..<(first + cuts.count)),
+            of: lines + cuts.map { OCRLine(text: "", box: $0.stretch, confidence: 1) },
+            in: CGSize(width: image.width, height: image.height)
+        )
+        let latin = cuts.allSatisfy { !Script.containsCJK(lines[$0.line].text) }
+        let found = try await readStrips(of: crops, in: image, languages: latin ? Self.english : options.primaryLanguages)
+        var lines = lines
+        var completed = 0
+        for (row, cut) in cuts.enumerated() {
+            guard let read = found[row]?.sorted(by: { $0.box.minX < $1.box.minX }), let start = read.first else { continue }
+            let line = lines[cut.line]
+            let text = read.map(\.text).joined(separator: " ")
+            let box = read.dropFirst().reduce(start.box) { $0.union($1.box) }
+            guard PieceMerge.completes(line, text: text, box: box, before: cut.before, after: cut.after) else { continue }
+            lines[cut.line] = OCRLine(
+                text: text, box: line.box.union(box), confidence: read.map(\.confidence).min() ?? line.confidence,
+                direction: line.direction, wrapsToNextLine: line.wrapsToNextLine
+            )
+            completed += 1
+        }
+        options.trace?("  lone cuts: \(completed) of \(cuts.count) lines read on past the cut")
+        return lines
+    }
+
+    /// What is read in each of `crops`, stacked in strips (a few, when the crops are many), in the picture's pixels.
+    private func readStrips(of crops: [CGRect], in image: CGImage, languages: [Locale.Language]) async throws -> [Int: [OCRLine]] {
+        var found = [Int: [OCRLine]]()
+        for batch in LineStrip.batches(of: crops) {
+            guard let strip = LineStrip(source: image, crops: Array(crops[batch])) else { continue }
+            for var read in try await readLines(in: strip.image, languages: languages) {
+                guard let row = strip.row(of: read.box) else { continue }
+                read.box = strip.sourceBox(of: read.box, row: row)
+                found[batch.lowerBound + row, default: []].append(read)
+            }
+        }
+        return found
     }
 
     /// The lines of an image read as one piece: both models, the gaps between them, and the repairs.
@@ -194,7 +244,7 @@ public struct VisionPipeline: OCREngine {
         // model: English UI, code. It cannot be the first pass: next to CJK its text detection misses
         // whole lines.
         let all = lines.flatMap(\.text).filter { !$0.isWhitespace }
-        let cjk = all.filter(Script.isCJK).count
+        let cjk = Self.cjkCount(all)
         var fallbacks = options.fallbackLanguages
         var readByLatinModel = false
         options.trace?("  decision: \(cjk) CJK of \(all.count) characters; Latin page read \(characterCount(latin)) against \(characterCount(lines))")
@@ -264,7 +314,12 @@ public struct VisionPipeline: OCREngine {
             }
         }
         return observations.compactMap { observation -> OCRLine? in
-            guard let candidate = observation.topCandidates(1).first else { return nil }
+            guard let candidate = observation.topCandidates(1).first,
+                  !Self.isTurnedOver(
+                      candidate.string, topLeft: observation.topLeft, topRight: observation.topRight, bottomLeft: observation.bottomLeft,
+                      confidence: candidate.confidence
+                  )
+            else { return nil }
             var box = place(observation.boundingBox)
             // Slices of the candidate's string keep its indices, so Vision's glyph boxes still apply.
             var kept = candidate.string[...]
@@ -288,6 +343,19 @@ public struct VisionPipeline: OCREngine {
                 wrapsToNextLine: observation.shouldWrapToNextLine
             )
         }
+    }
+
+    /// Whether Vision turned a line over: read it upside down (its top left corner right of its top right and below its
+    /// bottom left, in Vision's coordinates) and with its least confidence. Among the long lines of a dense wide screen
+    /// it reads one so now and then, as letters of a sort ("Tan caon a n ae n en cao" for "26. The hidden orchard
+    /// crosses"). Left out, the line is a gap like any other, read again alone (`fillGaps`). Text that is upside down in
+    /// the picture reads with more confidence, and stays; so does a reading of a few characters, too short to tell from a
+    /// mark that reads the same either way up: leaving those out too cost a real terminal screenshot half a point of its
+    /// text, and the turned lines of the dense screen are 18 characters or longer.
+    static func isTurnedOver(
+        _ text: String, topLeft: NormalizedPoint, topRight: NormalizedPoint, bottomLeft: NormalizedPoint, confidence: Float
+    ) -> Bool {
+        topLeft.x > topRight.x && topLeft.y < bottomLeft.y && confidence < 0.5 && text.count { !$0.isWhitespace } >= 8
     }
 
     // MARK: Gaps
@@ -368,8 +436,7 @@ public struct VisionPipeline: OCREngine {
 
     /// Vision never returns a line holding a single glyph, and its text detector skips such lines too, so
     /// the closing brackets of code, alone on their lines, go missing in every pass. The pixels still show
-    /// them; in a code listing, each such glyph becomes the closer of the bracket left open on the line
-    /// above it that starts in the same column. Nothing is guessed where no open bracket lines up.
+    /// them (`LoneGlyphs`), and the listing's own brackets say what each is (`withBrackets`).
     private func inferLoneBrackets(in lines: [OCRLine], image: CGImage) -> [OCRLine] {
         let ordered = ReadingOrder.sorted(lines)
         guard TextAssembler.isCodeListing(ordered) else { return lines }
@@ -377,40 +444,182 @@ public struct VisionPipeline: OCREngine {
         guard !widths.isEmpty else { return lines }
         let characterWidth = widths[widths.count / 2]
         let glyphs = LoneGlyphs.find(in: image, around: ordered, characterWidth: characterWidth)
-        guard !glyphs.isEmpty else { return lines }
+        return Self.withBrackets(lines, glyphs: glyphs, characterWidth: characterWidth)
+    }
 
-        enum Event {
-            case line(OCRLine)
+    /// The lines of a code listing with the brackets Vision lost or misread, told by the listing's layout: a block
+    /// closes in the column where the line that opened it starts.
+    ///
+    /// - A row holding a lone glyph nothing read (`glyphs`) becomes the closer of the bracket left open on the line
+    ///   above it that starts in the same column.
+    /// - So does a line read as "子" where a "{" is open in its column, or as "J" where a "[" is: what the Chinese
+    ///   model makes of "}" and "]" alone on a line. Any other character alone on its line is the code's own (a
+    ///   variable, an element of a list), whatever is open above it.
+    /// - An opening brace read as "1", "l" or "I" at the end of its line ("else 1", ") l") is put back when the next
+    ///   line is indented under it and the block closes in its column. "0 if done else 1" ends a statement and no
+    ///   block: no line is indented under it, or nothing closes in its column.
+    ///
+    /// Nothing is guessed where no open bracket lines up, nor where a bracket of the code closes that one further
+    /// down: a line under `let values = [` is an element when the "]" comes after it. A bracket in a string or a
+    /// comment opens nothing (`codeBrackets`), and "//" starts a comment except where the listing is written as
+    /// Python is (`isPythonLike`), which divides with it.
+    static func withBrackets(_ lines: [OCRLine], glyphs: [CGRect], characterWidth: CGFloat) -> [OCRLine] {
+        enum Row {
+            case line(Int)
             case glyph(CGRect)
-            var top: CGFloat {
-                switch self {
-                case .line(let line): line.box.minY
-                case .glyph(let rectangle): rectangle.minY
+        }
+        typealias Open = (bracket: Character, x: CGFloat)
+        let pairs: [Character: Character] = ["{": "}", "[": "]", "(": ")"]
+        // What the Chinese model makes of a closer alone on its line.
+        let misread: [Character: Character] = ["子": "}", "J": "]"]
+        let slashesComment = !isPythonLike(lines.map(\.text))
+        var lines = lines
+        let rows = (lines.indices.map { (box: lines[$0].box, row: Row.line($0)) } + glyphs.map { (box: $0, row: Row.glyph($0)) })
+            .sorted { $0.box.minY < $1.box.minY }
+        func isAligned(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < characterWidth * 0.6 }
+        // The closer a line of one character is a misreading of.
+        func misreadCloser(_ line: OCRLine) -> Character? {
+            let text = TextAssembler.asCode(line.text).filter { !$0.isWhitespace }
+            return text.count == 1 ? text.first.flatMap { misread[$0] } : nil
+        }
+
+        for (position, entry) in rows.enumerated() {
+            guard case .line(let index) = entry.row, position + 1 < rows.count,
+                  lines[index].text.range(of: #"\S [1lI]$"#, options: .regularExpression) != nil,
+                  rows[position + 1].box.minX > entry.box.minX + characterWidth * 1.5,
+                  let end = rows[(position + 1)...].first(where: { $0.box.minX < entry.box.minX + characterWidth * 0.6 }),
+                  isAligned(end.box.minX, entry.box.minX) else { continue }
+            let closes = switch end.row {
+            case .glyph: true
+            case .line(let closing): misreadCloser(lines[closing]) == "}" || TextAssembler.asCode(lines[closing].text).first == "}"
+            }
+            if closes { lines[index].text = String(lines[index].text.dropLast()) + "{" }
+        }
+
+        // Takes the brackets of a line on and off `open`, and gives how many of its closers found nothing to close.
+        // A closer that starts its line closes the bracket opened in its column, when one is; any other, the innermost
+        // of its kind.
+        @discardableResult
+        func take(_ index: Int, from open: inout [Open]) -> Int {
+            let x = lines[index].box.minX
+            var unmatched = 0
+            for bracket in codeBrackets(TextAssembler.asCode(lines[index].text), slashesComment: slashesComment) {
+                if pairs[bracket.character] != nil {
+                    open.append((bracket.character, x))
+                    continue
+                }
+                let isItsKind = { (opened: Open) in pairs[opened.bracket] == bracket.character }
+                let inItsColumn = bracket.startsLine ? open.lastIndex { isItsKind($0) && isAligned($0.x, x) } : nil
+                if let opener = inItsColumn ?? open.lastIndex(where: isItsKind) {
+                    open.removeSubrange(opener...)
+                } else {
+                    unmatched += 1
                 }
             }
+            return unmatched
         }
-        let pairs: [Character: Character] = ["{": "}", "[": "]", "(": ")"]
-        let closers = Set(pairs.values)
-        var open: [(bracket: Character, x: CGFloat)] = []
+        // Whether the code closes `open[opener]` itself on a row after `position`. Counted as closed here, by this
+        // row, it then leaves a closer of the code with nothing to close. Where every closer further down still finds
+        // a bracket (two opened on one line, and one "}" read after this row), this row is the closer the code lacks.
+        func isClosedLater(_ opener: Int, of open: [Open], after position: Int) -> Bool {
+            func unmatched(_ open: [Open]) -> Int {
+                var open = open
+                return rows[(position + 1)...].reduce(0) { count, entry in
+                    guard case .line(let index) = entry.row else { return count }
+                    return count + take(index, from: &open)
+                }
+            }
+            return unmatched(Array(open[..<opener])) > unmatched(open)
+        }
+
+        var open: [Open] = []
         var inferred: [OCRLine] = []
-        for event in (ordered.map(Event.line) + glyphs.map(Event.glyph)).sorted(by: { $0.top < $1.top }) {
-            switch event {
-            case .line(let line):
-                for character in TextAssembler.asCode(line.text) {
-                    if pairs[character] != nil {
-                        open.append((character, line.box.minX))
-                    } else if closers.contains(character), let index = open.lastIndex(where: { pairs[$0.bracket] == character }) {
-                        open.removeSubrange(index...)
-                    }
+        for (position, entry) in rows.enumerated() {
+            // The bracket left open in this row's column, of the kind `closer` closes, that the code doesn't close itself.
+            func opener(for closer: Character?) -> Int? {
+                let index = open.lastIndex { isAligned($0.x, entry.box.minX) && (closer == nil || pairs[$0.bracket] == closer) }
+                return index.flatMap { isClosedLater($0, of: open, after: position) ? nil : $0 }
+            }
+            switch entry.row {
+            case .line(let index):
+                if let closer = misreadCloser(lines[index]), let opener = opener(for: closer) {
+                    open.removeSubrange(opener...)
+                    lines[index].text = String(closer)
+                } else {
+                    take(index, from: &open)
                 }
             case .glyph(let rectangle):
-                guard let index = open.lastIndex(where: { abs($0.x - rectangle.minX) < characterWidth * 0.6 }),
-                      let closer = pairs[open[index].bracket] else { continue }
-                open.removeSubrange(index...)
+                guard let opener = opener(for: nil), let closer = pairs[open[opener].bracket] else { continue }
+                open.removeSubrange(opener...)
                 inferred.append(OCRLine(text: String(closer), box: rectangle, confidence: 0.3, direction: .leftToRight))
             }
         }
         return lines + inferred
+    }
+
+    /// The brackets of a line of code, left to right, and whether each starts the line. Those in a string (between two
+    /// of the same quote; a quote with no partner on the line is an apostrophe or a lifetime) and those after `# `, or
+    /// after `//` where that starts a comment (`slashesComment`), are text, and open nothing.
+    static func codeBrackets(_ text: String, slashesComment: Bool = true) -> [(character: Character, startsLine: Bool)] {
+        let characters = Array(text)
+        func endOfString(from start: Int) -> Int? {
+            var index = start + 1
+            while index < characters.count {
+                if characters[index] == "\\" {
+                    index += 2
+                } else if characters[index] == characters[start] {
+                    return index
+                } else {
+                    index += 1
+                }
+            }
+            return nil
+        }
+        var brackets: [(character: Character, startsLine: Bool)] = []
+        var index = 0
+        var startsLine = true
+        while index < characters.count {
+            let character = characters[index]
+            let next = index + 1 < characters.count ? characters[index + 1] : nil
+            if slashesComment, character == "/", next == "/" { break }
+            if character == "#", next?.isWhitespace ?? true, index == 0 || characters[index - 1].isWhitespace { break }
+            if "\"'`".contains(character), let end = endOfString(from: index) {
+                index = end + 1
+                startsLine = false
+                continue
+            }
+            if "{}[]()".contains(character) { brackets.append((character, startsLine)) }
+            if !character.isWhitespace { startsLine = false }
+            index += 1
+        }
+        return brackets
+    }
+
+    /// Whether a listing is written as Python is, where "//" divides (`size // page_size`) and starts no comment: a
+    /// line is a comment on "#", starts on `def` or `elif`, or opens a block on ":" (`if ready:`, `else:`; a `case`
+    /// or a label of another language starts on none of these words).
+    ///
+    /// A line on "#!" tells by its interpreter: `#!/usr/bin/env node` starts a script whose comments are on "//". And
+    /// a line that opens a block tells nothing where it reads as prose, three words or more of lowercase letters alone
+    /// before its colon: a sentence of the page starts on such a word and ends on a colon too ("with the default
+    /// settings:"). Code is shorter (`else:`, `except ValueError:`) or holds more than such words, a call, an
+    /// operator, a name with a capital (`with open(path) as f:`). `for item in items:` reads as prose too, and what
+    /// tells then is another line of the listing.
+    static func isPythonLike(_ lines: [String]) -> Bool {
+        lines.contains { text in
+            let line = text.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("#!") {
+                // The interpreter is the last part of the path, or the word after `env`.
+                let words = line.dropFirst(2).split(separator: " ").map { $0.split(separator: "/").last ?? $0 }
+                let interpreter = words.first == "env" ? words.dropFirst().first { !$0.hasPrefix("-") } : words.first
+                return interpreter?.hasPrefix("python") ?? false
+            }
+            if line.range(of: #"^(#( |$)|(def|elif) )"#, options: .regularExpression) != nil { return true }
+            guard line.range(of: #"^(if|for|while|with|class|else|try|except|finally|async)\b.*:$"#, options: .regularExpression) != nil
+            else { return false }
+            let words = line.dropLast().split(whereSeparator: \.isWhitespace)
+            return words.count < 3 || !words.allSatisfy { $0.allSatisfy(\.isLowercase) }
+        }
     }
 
     // MARK: Latin lines on a CJK page
@@ -818,7 +1027,7 @@ extension VisionPipeline {
 extension VisionPipeline {
     /// `lines` (of `image`) with `formulas` in them, in reading order (`FormulaMerge`): what Vision made of each formula
     /// gives way to its LaTeX, and the text beside a formula is read again without it. The lines as they were when the
-    /// pieces can't be read.
+    /// pieces can't be read, and a row as it was when one of its pieces can't (`FormulaMerge.readings`).
     @concurrent
     public func lines(_ lines: [OCRLine], with formulas: [FormulaMerge.Formula], in image: CGImage) async -> [OCRLine] {
         let plan = FormulaMerge.plan(lines, formulas: formulas)
@@ -829,8 +1038,10 @@ extension VisionPipeline {
             let read = try await withTimeout(options.overallTimeout) {
                 try await self.read(crops: crops.compactMap(\.self), in: image, latin: plan.latin)
             }
-            var texts = read.makeIterator()
-            let pieces = crops.map { $0 == nil ? "" : texts.next() ?? "" }
+            let pieces = FormulaMerge.readings(read, crops: crops, plan: plan) { InkProfile(image: image, box: $0) }
+            if let trace = options.trace, pieces.contains(where: { $0 == nil }) {
+                trace("formulas: \(pieces.count { $0 == nil }) of \(pieces.count) pieces hold ink and read as nothing; their rows stay as they were")
+            }
             return ReadingOrder.sorted(FormulaMerge.lines(lines, formulas: formulas, plan: plan, pieces: pieces))
         } catch {
             options.trace?("formulas: the pieces beside them couldn't be read: \(error)")

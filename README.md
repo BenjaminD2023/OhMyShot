@@ -1,7 +1,15 @@
-<!-- The wordmark is Tools/logo/make_wordmark.py's output: outlined paths, so it renders on GitHub without fonts.
+<!-- The icon is Tools/logo/make_icon.py's preview and the wordmark Tools/logo/make_wordmark.py's output: outlined
+     paths, so both render on GitHub without fonts.
      The English line under it is also the repository description and OhMyShot's card on the MMFoundation profile
      (MMFoundation/.github, profile/README.md and README.zh-CN.md): change them together. Other pages link to
      #build-and-run, so keep that heading. README.zh-CN.md is the Chinese translation: change it in the same commit. -->
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Tools/logo/preview/icon-dark.svg">
+    <img src="Tools/logo/preview/icon-light.svg" width="128" height="128" alt="">
+  </picture>
+</p>
 
 <h1 align="center">
   <picture>
@@ -74,18 +82,69 @@ Download the Apple silicon build from [Releases](https://github.com/BenjaminD202
 
 ## Features
 
-| | Feature | What it does |
-| :---: | --- | --- |
-| 📸 | **Screenshots** | Area, window (with or without its shadow, on a background), full display, the previous area, and a self-timer. Areas can cross displays, and the screen freezes while you choose. All-In-One sets up any of them from one bar. |
-| 🗂️ | **Quick Access and Capture History** | A card for each capture to copy, save, mark up, pin, upload, or drag out, and a history you can search by the text in the pictures. |
-| ✏️ | **Annotation** | An editor, or drawing straight on the frozen selection: arrows, shapes, text, a highlighter that snaps to text, counters, blur and pixelation (with redaction suggestions from the text it reads), crops, backgrounds, combined images, and project files you can open again. |
-| 🔤 | [**Text from pixels**](Docs/ocr.md) | Capture Text copies the text in an area; the Recognized Text window shows it beside the picture with tables, links, and codes, and translates it, also over the original. Optional model packs read Chinese a second time, formulas as LaTeX, and tables and charts. |
-| 📌 | [**Pins, color, and measuring**](Docs/measurement-snapping.md) | Always-on-top pictures, text, and colors; a screen color picker and a pixel ruler that snaps to edges. |
-| 🎬 | **Recording and Studio** | Screen, window, or area to MP4 or GIF, with system audio, microphone, camera, clicks, and keys. Studio edits a recording afterwards, with automatic zooms that follow the cursor. On macOS 27, with Replay on, the last 15 seconds can be saved at any time. |
-| 📜 | **Scrolling capture** | Scroll by hand or let Auto-scroll do it, into one long picture. |
-| ☁️ | **Sharing** | Uploads to your own S3-compatible, WebDAV, or custom HTTP storage; printing, email, and the Share menu. |
-| ⚙️ | [**Automation**](Docs/automation.md) | CleanShot X–compatible URL commands under `ohmyshot://`, actions in Shortcuts and Spotlight, and a Raycast extension. |
-| 🌐 | [**Languages**](Docs/localization.md) | English, Simplified and Traditional Chinese, Japanese, Spanish, and French. |
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📸 Screenshots</h3>
+      Area, window (with or without its shadow, on a background), full display, the previous area, and a self-timer.
+      Areas can cross displays, and the screen freezes while you choose. All-In-One sets up any of them from one bar.
+    </td>
+    <td width="50%" valign="top">
+      <h3>🗂️ Quick Access and Capture History</h3>
+      A card for each capture to copy, save, mark up, pin, upload, or drag out, and a history you can search by the
+      text in the pictures.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>✏️ Annotation</h3>
+      An editor, or drawing straight on the frozen selection: arrows, shapes, text, a highlighter that snaps to text,
+      counters, blur and pixelation (with redaction suggestions from the text it reads), crops, backgrounds, combined
+      images, and project files you can open again.
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔤 Text from pixels</h3>
+      Capture Text copies the text in an area; the Recognized Text window shows it beside the picture with tables, links,
+      and codes, and translates it, also over the original. Optional model packs read Chinese a second time, formulas as
+      LaTeX, and tables and charts. <a href="Docs/ocr.md">How it works →</a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🎬 Recording and Studio</h3>
+      Screen, window, or area to MP4 or GIF, with system audio, microphone, camera, clicks, and keys. Studio edits a
+      recording afterwards, with automatic zooms that follow the cursor. On macOS 27, with Replay on, the last 15 seconds
+      can be saved at any time.
+    </td>
+    <td width="50%" valign="top">
+      <h3>📌 Pins, color, and measuring</h3>
+      Always-on-top pictures, text, and colors; a screen color picker and a pixel ruler that snaps to edges.
+      <a href="Docs/measurement-snapping.md">Edge snapping →</a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📜 Scrolling capture</h3>
+      Scroll by hand or let Auto-scroll do it, into one long picture.
+    </td>
+    <td width="50%" valign="top">
+      <h3>☁️ Sharing</h3>
+      Uploads to your own S3-compatible, WebDAV, or custom HTTP storage; printing, email, and the Share menu.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>⚙️ Automation</h3>
+      CleanShot X–compatible URL commands under <code>ohmyshot://</code>, actions in Shortcuts and Spotlight, and a
+      Raycast extension. <a href="Docs/automation.md">URL commands →</a>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🌐 Languages</h3>
+      English, Simplified and Traditional Chinese, Japanese, Spanish, and French.
+      <a href="Docs/localization.md">Add a translation →</a>
+    </td>
+  </tr>
+</table>
 
 OhMyShot also appears in other apps' Share menu (to mark up or pin a picture; switch it on in System Settings ›
 General › Login Items & Extensions › Sharing) and in Finder's Open With for images.
@@ -155,7 +214,7 @@ Release builds check this fork for signed updates with [Sparkle](https://sparkle
 
 ### Optional usage data
 
-Settings › General › Usage Data is off by default. If enabled, OhMyShot sends the UTC date,
+Settings › General › Usage Data is off by default and can be enabled there at any time; Reset to Default Settings keeps that choice. While it is on, OhMyShot sends the UTC date,
 a random ID that changes each UTC day, the app version, macOS major version, and daily counts
 of successful screenshots, recordings, and text recognitions to `www.ohmyshot.org`. Reports
 exclude captures, recognized text, file and window names, and persistent device identifiers.
@@ -236,4 +295,17 @@ OhMyShot is built with [Sparkle](https://sparkle-project.org),
 OhMyShot is free software, licensed under the [GNU General Public License v3.0](LICENSE).
 Copyright © 2026 OhMyShot contributors.
 
-OhMyShot is a project of [MMFoundation](https://mmfoundation.dev/).
+## Friend Link
+
+- [linux.do](https://linux.do) —— Where possible begins
+
+<br>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Tools/logo/preview/icon-dark.svg">
+    <img src="Tools/logo/preview/icon-light.svg" width="48" height="48" alt="">
+  </picture>
+  <br>
+  <sub>OhMyShot is a project of <a href="https://mmfoundation.dev/">MMFoundation</a>&ensp;·&ensp;<a href="#top">Back to top ↑</a></sub>
+</p>

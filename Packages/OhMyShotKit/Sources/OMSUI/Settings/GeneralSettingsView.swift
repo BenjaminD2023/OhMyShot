@@ -177,7 +177,7 @@ struct GeneralSettingsView: View {
                 Text("Reset", bundle: .module)
             }
         } message: {
-            Text("Every choice in Settings goes back to how it was when OhMyShot was installed. Your shortcuts, upload destinations, cloud reading, language, approved apps, and capture history stay as they are.", bundle: .module)
+            Text("Every choice in Settings goes back to how it was when OhMyShot was installed. Your shortcuts, upload destinations, cloud reading, language, usage data choice, approved apps, and capture history stay as they are.", bundle: .module)
         }
     }
 

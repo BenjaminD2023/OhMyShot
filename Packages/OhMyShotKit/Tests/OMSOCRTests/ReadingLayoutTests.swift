@@ -68,6 +68,39 @@ struct ReadingLayoutTests {
         #expect(ReadingOrder.sorted(marked) == ReadingOrder.sorted(marked, layout: .rows))
     }
 
+    /// `ls -l` as Vision returned it: the permissions a line each, the rest of a row in three to five pieces, some
+    /// of them three words or more ("384 Nov 12 09:41 Assets").
+    private var listing: [OCRLine] {
+        let rows: [[(text: String, x: Double, y: Double, width: Double, height: Double)]] = [
+            [("drwxr-xr-x", 37, 83, 153, 23), ("12 morgan", 215, 85, 138, 25), ("staff", 379, 81, 78, 26), ("384 Nov 12 09:41 Assets", 513, 83, 343, 25)],
+            [("-rw-r--r--", 41, 125, 149, 17), ("morgan", 255, 125, 98, 24), ("staff", 379, 121, 80, 24), ("2167 Nov 12 09:38 Package.swift", 493, 115, 469, 31)],
+            [("-rw-r--r--", 39, 163, 151, 19), ("1", 229, 159, 19, 23), ("morgan", 259, 163, 94, 24), ("staff", 379, 159, 78, 24),
+             ("11391 Oct 30", 481, 159, 183, 23), ("18:02 README.md", 673, 159, 229, 25)],
+            [("drwxr-xr-x", 37, 199, 153, 21), ("5", 231, 197, 17, 23), ("morgan", 259, 201, 94, 24), ("staff", 379, 197, 80, 24),
+             ("160 Oct 28", 513, 197, 151, 23), ("14:15 Sources", 669, 197, 201, 23)],
+            [("drwxr-xr-x", 37, 237, 154, 24), ("4", 231, 237, 17, 21), ("morgan", 257, 239, 96, 24), ("staff", 379, 236, 80, 24),
+             ("128 Oct 28", 513, 237, 151, 21), ("14:15 Tests", 669, 234, 174, 28)],
+            [("-rwxr-xr-x", 37, 277, 153, 19), ("1", 229, 275, 19, 21), ("morgan", 259, 277, 94, 24), ("staff", 380, 273, 79, 23),
+             ("512 Nov", 513, 273, 105, 23), ("3 21:07 build.sh", 645, 270, 242, 31)],
+        ]
+        return rows.flatMap { $0.map { line($0.text, x: $0.x, y: $0.y, width: $0.width, height: $0.height, direction: nil) } }
+    }
+
+    @Test func aListingsFieldsReadRowByRow() {
+        let lines = listing
+        #expect(ReadingOrder.sorted(lines.sorted { $0.box.minX < $1.box.minX }) == lines)
+        #expect(ReadingOrder.sorted(Array(lines.reversed())) == lines)
+    }
+
+    @Test func aListBesideAPageOfProseIsStillAColumnOfItsOwn() {
+        let list = (0..<8).map { line("Chapter\($0).md", x: 0, y: Double($0 * 26), width: 120) }
+        let page = column("Page", x: 200, count: 8)
+        #expect(ReadingOrder.sorted(page + list) == list + page)
+        // Even where a line of the page came back in two pieces.
+        let split = [line("Page paragraph", x: 200, y: 0, width: 150), line("line 0", x: 370, y: 0, width: 110)]
+        #expect(ReadingOrder.sorted(split + page.dropFirst() + list) == list + split + page.dropFirst())
+    }
+
     @Test func evenParagraphShapedContentInsideATableCellUsesRows() {
         let left = column("Cell left", x: 0), right = column("Cell right", x: 400)
         let lines = left + right

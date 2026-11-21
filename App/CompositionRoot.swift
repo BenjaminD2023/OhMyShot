@@ -27,7 +27,7 @@ final class CompositionRoot {
     /// Saves, copies, and hands over captures in the format Settings choose.
     lazy var files = ScreenshotFiles(settings: settings, history: history)
     lazy var captures = CaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, files: files)
-    lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions())
+    lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions(), history: history)
     /// Uploads to the user's own storage; idle unless one is in flight.
     lazy var uploads: UploadCoordinator = {
         let uploads = UploadCoordinator(settings: settings, quickAccess: quickAccess)
@@ -145,7 +145,8 @@ final class CompositionRoot {
     private var onboardingWindow: OnboardingWindowController?
     private var onboardingCapture: UUID?
     private var onboardingApplication: NSRunningApplication?
-    /// The invitation to MMFoundation's Discord: counted as captures are kept, shown once, at a later launch.
+    /// The invitation to star OhMyShot on GitHub or join MMFoundation's Discord: counted as captures are kept, shown
+    /// once, at a later launch.
     private let communityInvite = CommunityInvite()
     private var communityInviteWindow: CommunityInviteWindowController?
     var historyWindow: HistoryWindowController?
@@ -157,11 +158,15 @@ final class CompositionRoot {
     /// How long captures stay: as Keep Captures says, and with history off, as long as something holds them.
     lazy var retention = CaptureRetention(
         settings: settings, history: history,
-        cards: { [weak self] in self?.quickAccess.itemIDs ?? [] },
+        cards: { [weak self] retention in self?.quickAccess.heldCaptureIDs(for: retention) ?? [] },
         editors: { [weak self] in self?.annotations.openCaptureIDs ?? [] },
         recordingWindows: { [weak self] in self?.recordings.openRecordingIDs ?? [] },
         uploads: { [weak self] in self?.uploads.uploadingIDs ?? [] },
-        historyChanged: { [weak self] in self?.historyWindow?.reload() }
+        historyChanged: { [weak self] removed in
+            guard let self else { return }
+            for id in removed { quickAccess.remove(id) }
+            historyWindow?.reload()
+        }
     )
     /// What the Shortcuts actions run.
     private(set) lazy var shortcuts = ShortcutActions(
@@ -293,7 +298,7 @@ final class CompositionRoot {
         recordings.onRecorded = { [weak self] item in
             self?.didCapture(item)
         }
-        // Card or not, a screenshot or a recording kept counts toward the invitation to the Discord.
+        // Card or not, a screenshot or a recording kept counts toward the community invitation.
         captures.onKept = { [weak self] _ in
             self?.usageTelemetry?.record(.screenshot)
             self?.communityInvite.captureKept()
@@ -352,6 +357,7 @@ final class CompositionRoot {
             // The gesture's modifiers choose this action; Option must not open the color card here.
             self?.colorPicker.deliver(color, at: point, modifiers: [])
         }
+        captures.onWillMeasure = { [weak self] copies in self?.measurer.configureOverlay(copiesToClipboard: copies) }
         colorPicker.pin = { [weak self] color in
             guard let pinned = PinColor(color.cgColor) else { return NSSound.beep() }
             self?.pins.pin(color: pinned)
@@ -435,12 +441,10 @@ final class CompositionRoot {
         Task { @MainActor [weak self] in self?.offerCommunityInvite() }
     }
 
-    /// Keeps edits still open in the editor before the app quits.
     func prepareForTermination() {
         usageTelemetry?.stop()
         onboardingWindow?.preserveProgress()
         quickAccess.dismissFirstCaptureHint()
-        annotations.keepAll()
         // A card waiting under Undo goes to the Trash as it would have a moment later.
         quickAccess.finishTrashingNow()
         textReader.stop()
@@ -625,13 +629,13 @@ final class CompositionRoot {
         controller.show()
     }
 
-    /// At launch, the invitation to MMFoundation's Discord, once, when `CommunityInvite` says it may appear. Never as a
-    /// capture is kept, though that is when it becomes due: the capture is on the clipboard on its way somewhere, and a
-    /// window coming forward would take the keys it is pasted with.
+    /// At launch, the community invitation (GitHub and Discord), once, when `CommunityInvite` says it may appear.
+    /// Never as a capture is kept, though that is when it becomes due: the capture is on the clipboard on its way
+    /// somewhere, and a window coming forward would take the keys it is pasted with.
     private func offerCommunityInvite() {
         guard communityInvite.mayAppear(busy: isBusyForCommunityInvite) else { return }
         communityInvite.shown()
-        Log.app.notice("Showing the invitation to the Discord")
+        Log.app.notice("Showing the community invitation")
         let controller = CommunityInviteWindowController()
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self, weak controller] in
             if self?.communityInviteWindow === controller { self?.communityInviteWindow = nil }
@@ -705,7 +709,12 @@ final class CompositionRoot {
                 delete: { [weak self] in self?.uploads.deleteFromStorage($0) }
             ),
             backgrounds: SettingsDependencies.Backgrounds(
-                presets: { BackdropPresets.shared.all.map { SettingsDependencies.Backgrounds.Choice(id: $0.id, name: $0.name) } },
+                presets: {
+                    BackdropPresets.shared.choices.map { preset in
+                        let name = preset.id == BackdropPresets.roundedShadow.id ? String(localized: "Rounded corners and shadow") : preset.name
+                        return SettingsDependencies.Backgrounds.Choice(id: preset.id, name: name)
+                    }
+                },
                 automatic: { BackdropPresets.shared.automatic?.id },
                 setAutomatic: { BackdropPresets.shared.setAutomatic($0) }
             ),

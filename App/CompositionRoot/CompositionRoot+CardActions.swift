@@ -84,22 +84,21 @@ extension CompositionRoot {
     /// its History thumbnail follow. `savedCopyIsStale`: the copy saved from the card is of the picture as it was,
     /// so the card offers Save again.
     func pictureChanged(_ entry: HistoryItem, data: Data, savedCopyIsStale: Bool = false) {
+        let previous = pictureUpdates
+        let thumbnail = quickAccess.pictureChanged(entry, savedCopyIsStale: savedCopyIsStale) {
+            await previous?.value
+            guard !Task.isCancelled else { return nil }
+            return await HistoryStore.cardThumbnail(of: data, maxPixels: QuickAccessItem.thumbnailPixels)
+        }
         // One after another: a big picture's thumbnail takes longer than a small one's, and an earlier change's
         // must not come in over a later one's.
-        let previous = pictureUpdates
         pictureUpdates = Task {
             await previous?.value
             if quickAccess.item(entry.id) != nil {
                 // Its card hands over the new picture when dragged: converted meanwhile, off the main actor.
                 files.prepareHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
             }
-            if let card = quickAccess.item(entry.id),
-               let thumbnail = await HistoryStore.cardThumbnail(of: data, maxPixels: QuickAccessItem.thumbnailPixels) {
-                quickAccess.update(QuickAccessItem(
-                    entry, fileURL: history.fileURL(for: entry), thumbnail: thumbnail, displayID: card.displayID,
-                    savedURL: savedCopyIsStale ? nil : card.savedURL
-                ), keepsSaved: !savedCopyIsStale)
-            }
+            await thumbnail?.value
             historyWindow?.reload(changed: [entry.id])
             readTextSoon()
         }
@@ -135,15 +134,19 @@ extension CompositionRoot {
                 return true
             },
             moveToTrash: { [weak self] item in
-                guard let self else { return }
+                guard let self, let entry = history.item(id: item.id) else { throw CocoaError(.fileNoSuchFile) }
+                try history.moveToTrash(entry)
                 uploads.cancel(captureID: item.id)
                 // As in CleanShot, the capture goes as a whole: the copy this card saved goes to the Trash
                 // with it. Both can be put back from the Trash.
                 if let saved = item.savedURL {
-                    try? FileManager.default.trashItem(at: saved, resultingItemURL: nil)
-                }
-                if let entry = history.item(id: item.id) {
-                    history.moveToTrash(entry)
+                    do {
+                        try FileManager.default.trashItem(at: saved, resultingItemURL: nil)
+                    } catch let error as CocoaError where error.code == .fileNoSuchFile {
+                        // The user already removed the copy.
+                    } catch {
+                        NSApp.presentError(error)
+                    }
                 }
                 historyWindow?.reload()
                 retention.sweepWallpaperPictures()
@@ -238,12 +241,14 @@ extension CompositionRoot {
                 pin(fileAt: history.fileURL(for: entry), origin: .capture(entry.id), fallbackScale: scale(of: entry, orElse: 2))
             },
             moveToTrash: { [weak self] entry in
-                self?.uploads.cancel(captureID: entry.id)
-                self?.quickAccess.remove(entry.id)
-                self?.history.moveToTrash(entry)
-                self?.retention.sweepWallpaperPictures()
+                guard let self else { throw CocoaError(.fileNoSuchFile) }
+                try history.moveToTrash(entry)
+                uploads.cancel(captureID: entry.id)
+                quickAccess.remove(entry.id)
+                retention.sweepWallpaperPictures()
             }
         )
+        historyActions.isBeingEdited = { [weak self] entry in self?.annotations.openCaptureIDs.contains(entry.id) ?? false }
         historyActions.print = { [weak self] entry, window in
             guard let self, entry.kind == .screenshot else { return }
             printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale(of: entry, orElse: 2), from: window)
@@ -282,18 +287,15 @@ extension CompositionRoot {
     /// A recording was edited or put back as it was made: its card shows it as it is now.
     func recordingChanged(_ entry: HistoryItem) {
         historyWindow?.reload()
-        guard let card = quickAccess.item(entry.id) else { return }
-        Task {
-            let url = history.fileURL(for: entry)
-            guard let thumbnail = await HistoryStore.cardThumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels) else { return }
-            quickAccess.update(QuickAccessItem(entry, fileURL: url, thumbnail: thumbnail, displayID: card.displayID, savedURL: card.savedURL))
+        let url = history.fileURL(for: entry)
+        quickAccess.pictureChanged(entry, savedCopyIsStale: false) {
+            await HistoryStore.cardThumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels)
         }
     }
 
     /// Brings a history item back as a Quick Access card.
     func restore(_ entry: HistoryItem) async {
-        guard let item = await quickAccessItem(for: entry) else { return }
-        quickAccess.add(item)
+        quickAccess.restore(entry, on: displays.layout.pointerDisplay?.id ?? 0)
     }
 
     func quickAccessItem(for entry: HistoryItem) async -> QuickAccessItem? {

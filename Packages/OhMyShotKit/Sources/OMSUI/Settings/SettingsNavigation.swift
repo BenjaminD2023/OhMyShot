@@ -88,7 +88,9 @@ extension SettingsTab {
                     String(localized: "Upload", bundle: .module),
                 ]),
                 SettingsSearchRow(String(localized: "Save to", bundle: .module)),
-                SettingsSearchRow(String(localized: "Background", bundle: .module)),
+                SettingsSearchRow(String(localized: "Background", bundle: .module), terms: [
+                    String(localized: "Rounded corners and shadow", bundle: .module),
+                ]),
                 SettingsSearchRow(String(localized: "Format", bundle: .module), terms: [
                     String(localized: "Quality", bundle: .module),
                     "PNG",

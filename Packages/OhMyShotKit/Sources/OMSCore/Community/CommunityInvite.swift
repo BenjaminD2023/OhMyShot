@@ -1,7 +1,7 @@
 import Foundation
 
-/// The invitation to MMFoundation's Discord, the community of the organization that makes OhMyShot: once ever, and
-/// only to someone who has been using the app for a while.
+/// The invitation to star OhMyShot on GitHub or join MMFoundation's Discord, the community of the organization that
+/// makes it: once ever, and only to someone who has been using the app for a while.
 ///
 /// It may appear at a launch once captures have been kept on several days, never at the first launch. Kept captures
 /// are counted as they are kept and launches as they happen, a few numbers in the defaults: nothing runs in between,
@@ -12,6 +12,8 @@ public final class CommunityInvite {
     /// The organization's Discord. The website answers it with a redirect to the server's current invite, so a new
     /// invite never needs a new version of the app.
     public static let discord = URL(string: "https://mmfoundation.dev/discord")!
+    /// OhMyShot's repository, where a star helps more people find the app.
+    public static let github = URL(string: "https://github.com/MMFoundation/OhMyShot")!
 
     /// Captures kept, screenshots and recordings alike, before the invitation may appear.
     public static let capturesNeeded = 10
@@ -77,6 +79,8 @@ public final class CommunityInvite {
         static let captures = "communityInviteCaptures"
         static let days = "communityInviteDays"
         static let lastCapture = "communityInviteLastCapture"
-        static let shown = "communityInviteShown"
+        /// Spent by this invitation, which also asks for a star on GitHub. The Discord-only one that came before it
+        /// was spent under `communityInviteShown`, so whoever saw only that one is asked once more.
+        static let shown = "communityInviteStarShown"
     }
 }

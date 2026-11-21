@@ -175,4 +175,70 @@ struct RecordingWriterTests {
         // With audio beside it, the video still reaches the end although its only frame came first.
         #expect(abs(timing.video.upperBound - timing.video.lowerBound - 2) < 0.05)
     }
+
+    @Test func aWriterFailureReportsOnceWithWrittenDurationAndFailsFinish() async throws {
+        final class Recorder: @unchecked Sendable {
+            private let lock = NSLock()
+            var firstFrames: [CMTime] = []
+            var failures: [RecordingWriter.Failure] = []
+            func recordFirstFrame(_ time: CMTime) { lock.withLock { firstFrames.append(time) } }
+            func recordFailure(_ failure: RecordingWriter.Failure) { lock.withLock { failures.append(failure) } }
+            func snapshot() -> ([CMTime], [RecordingWriter.Failure]) { lock.withLock { (firstFrames, failures) } }
+        }
+        let url = TestMedia.temporaryMovie()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let recorder = Recorder()
+        let format = RecordingFormat.choose(width: 320, height: 240, framesPerSecond: 30)
+        let writer = try RecordingWriter(
+            url: url, format: format, audio: RecordingAudio(system: true, microphone: nil),
+            queue: DispatchSerialQueue(label: "test.recording.failure"),
+            onFirstFrame: { recorder.recordFirstFrame($0) },
+            onFailure: { recorder.recordFailure($0) }
+        )
+        for index in 0..<10 {
+            try await TestMedia.append(TestMedia.frame(at: Double(index) / 30), to: writer)
+        }
+        // Feeding a DepthFloat32 video frame to an H.264 writer causes AVAssetWriterInput.append to fail
+        // and transition AVAssetWriter to .failed without throwing an Objective-C exception.
+        var badPixels: CVPixelBuffer?
+        CVPixelBufferCreate(nil, 320, 240, kCVPixelFormatType_DepthFloat32, nil, &badPixels)
+        var badDescription: CMVideoFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: badPixels!, formatDescriptionOut: &badDescription)
+        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: TestMedia.time(0.5), decodeTimeStamp: .invalid)
+        var badSample: CMSampleBuffer?
+        CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: nil, imageBuffer: badPixels!, formatDescription: badDescription!, sampleTiming: &timing, sampleBufferOut: &badSample
+        )
+        try await TestMedia.append(badSample!, to: writer)
+        // AVAssetWriter may transition to .failed synchronously on append or asynchronously while encoding.
+        var deadline = 0
+        while recorder.snapshot().1.isEmpty, deadline < 200 {
+            await writer.checkHealth()
+            if !recorder.snapshot().1.isEmpty { break }
+            try await Task.sleep(for: .milliseconds(10))
+            deadline += 1
+        }
+        // Subsequent frames, audio, and health checks must not trigger duplicate failure notifications.
+        for index in 16..<22 {
+            await writer.appendFrame(TestMedia.frame(at: Double(index) / 30))
+            await writer.appendAudio(TestMedia.audio(at: Double(index) / 30), to: .systemAudio)
+            await writer.checkHealth()
+        }
+
+        let (recordedFirstFrames, recordedFailures) = recorder.snapshot()
+        #expect(recordedFirstFrames.count == 1)
+        #expect(abs(recordedFirstFrames[0].seconds - TestMedia.origin) < 0.001)
+        #expect(recordedFailures.count == 1)
+        #expect((recordedFailures.first?.writtenDuration.seconds ?? 0) > 0.25)
+
+        do {
+            _ = try await writer.finish(at: TestMedia.time(2))
+            Issue.record("Expected finish(at:) to throw writerFailed after a mid-recording failure")
+        } catch RecordingWriter.WriterError.writerFailed {
+            // Expected.
+        }
+        let stats = await writer.currentStatistics
+        #expect(stats.start != nil)
+        #expect(stats.framesWritten >= 10)
+    }
 }

@@ -6,8 +6,8 @@ import OMSUI
 import OSLog
 
 /// `debug/about-render`: Settings › About behind the wallpaper, and its Acknowledgments sheet, captured into the debug
-/// snapshots; `debug/settings-render`, any pane the same way. Nothing is shown. `debug/community-invite`: the invitation
-/// to the Discord, shown, or captured the same way.
+/// snapshots; `debug/settings-render`, any pane the same way. Nothing is shown. `debug/community-invite`: the community
+/// invitation, shown, or captured the same way.
 @MainActor
 struct DebugAboutHooks {
     /// A Settings window of the hooks' own, not the one the user may have open.
@@ -114,7 +114,7 @@ struct DebugAboutHooks {
         }
     }
 
-    /// The invitation to the Discord, whatever `CommunityInvite` says and without spending it: shown as it comes at a
+    /// The community invitation, whatever `CommunityInvite` says and without spending it: shown as it comes at a
     /// launch, or with render=1 behind the wallpaper in the appearance asked for, captured as <name>.png
     /// (community-invite-<light|dark>), and closed.
     private func showInvite(render: Bool, dark: Bool, name: String?) {

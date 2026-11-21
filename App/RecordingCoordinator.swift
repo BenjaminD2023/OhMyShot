@@ -91,10 +91,18 @@ final class RecordingCoordinator {
         let startedAt: Date
         /// For a Studio recording: what the pointer and the keyboard do meanwhile.
         let telemetry: TelemetryRecorder?
+        /// Writes periodic Studio telemetry checkpoints off the main actor.
+        let checkpointer: StudioDraftCheckpointer?
         /// For a Studio recording with the camera: the camera, in a movie of its own.
         let camera: CameraRecorder?
         /// The camera's bubble showed when a Studio recording began: if no movie of it comes, Studio says so.
         let cameraWanted: Bool
+    }
+
+    /// Why a recording stopped early on its own (writer error or low disk space).
+    private enum Interruption {
+        case writerFailed(stoppedAt: Duration, writtenDuration: Duration)
+        case lowDiskSpace(stoppedAt: Duration)
     }
 
     /// The keys pressed, shown over what is recorded while it records.
@@ -108,6 +116,13 @@ final class RecordingCoordinator {
     /// bubble (host seconds), the first the state it began in, and the bubble's look then.
     private var cameraFills: [(time: Double, fills: Bool)] = []
     private var cameraBubble = StudioProject.Camera()
+    /// Host-clock timestamps captured while recording so incremental telemetry checkpoints stay aligned to
+    /// the movie and its pauses even if the app crashes before stopping.
+    private var movieStartHostTime: Double?
+    private var cameraStartHostTime: Double?
+    private var recordingPauses: [StudioDraftTelemetry.Pause] = []
+    /// Counts one-second ticks of the active recording for periodic telemetry checkpoints and disk checks.
+    private var tickCount = 0
 
     /// Where Record Screen is: nothing under way, a countdown, a recording starting, or one recording.
     private enum Phase {
@@ -246,6 +261,11 @@ final class RecordingCoordinator {
 
     /// Asks for the microphone if it is wanted, then counts down (or not) and starts.
     private func prepare(_ plan: Plan) {
+        guard ensureDiskSpaceToStart() else {
+            camera.hide()
+            showStatusAfterRecording()
+            return
+        }
         phase = .countingDown(plan)
         microphoneDenied = false
         Task { [weak self] in
@@ -319,11 +339,28 @@ final class RecordingCoordinator {
                 width: source.pixelWidth, height: source.pixelHeight,
                 framesPerSecond: settings.recordingFramesPerSecond, prefersHEVC: settings.recordingPrefersHEVC
             )
+            guard ensureDiskSpaceToStart() else {
+                phase = .idle
+                outline.hide()
+                keystrokes?.hide()
+                keystrokes = nil
+                clickRings?.hide()
+                clickRings = nil
+                camera.hide()
+                showStatusAfterRecording()
+                return
+            }
             let created = try drafts.create(.init(
                 startedAt: .now, appName: plan.appName, output: plan.choices.output,
                 pixelsPerPoint: source.frame.width > 0 ? Double(source.pixelWidth) / source.frame.width : nil
             ))
             draft = created
+            movieStartHostTime = nil
+            cameraStartHostTime = nil
+            recordingPauses = []
+            cameraFills = []
+            cameraBubble = StudioProject.Camera()
+            tickCount = 0
             // Studio draws the cursor and the clicks again from what the pointer did, so neither is in the picture.
             let recorder = try ScreenRecorder(ScreenRecorder.Request(
                 filter: source.filter, sourceRect: source.sourceRect, format: format,
@@ -333,8 +370,15 @@ final class RecordingCoordinator {
                 movieURL: created.movieURL
             ))
             recorder.onStreamStopped = { [weak self] error in self?.streamStopped(error) }
+            recorder.onWriterFailed = { [weak self] failure in self?.writerFailed(failure) }
+            recorder.onFirstFrame = { [weak self] time in
+                guard let self else { return }
+                self.movieStartHostTime = time.seconds
+                self.checkpointTelemetry()
+            }
             // The pointer is written down from before the first frame, so the movie begins with its place.
             let telemetry = studio ? TelemetryRecorder() : nil
+            let checkpointer = studio ? StudioDraftCheckpointer() : nil
             // Keys as Settings › Recording › Keystrokes chose: under Shortcuts only, no typing is written down. They
             // are written down with Show Keystrokes off too, for Studio to show afterwards, unless Settings says not
             // or a window is recorded on its own.
@@ -356,15 +400,21 @@ final class RecordingCoordinator {
                 try await recorder.start()
             } catch {
                 telemetry?.stop()
+                await checkpointer?.cancel()
                 await endCameraRecording(cameraRecorder)
                 throw error
             }
             probe.end()
             let stops = if case .starting(_, stops: true) = phase { true } else { false }
             phase = .recording(Session(
-                plan: plan, draft: created, recorder: recorder, source: source, startedAt: .now, telemetry: telemetry, camera: cameraRecorder,
-                cameraWanted: cameraWanted
+                plan: plan, draft: created, recorder: recorder, source: source, startedAt: .now, telemetry: telemetry,
+                checkpointer: checkpointer, camera: cameraRecorder, cameraWanted: cameraWanted
             ))
+            if let failure = recorder.takePendingWriterFailure() {
+                writerFailed(failure)
+                return
+            }
+            checkpointTelemetry()
             // Stop came while it started: kept as a recording stopped now is.
             if stops { return stop() }
             showChrome(for: plan, source: source)
@@ -403,7 +453,13 @@ final class RecordingCoordinator {
         guard camera.isShowing, let dimensions = camera.cameraDimensions, dimensions.width > 0, dimensions.height > 0 else { return nil }
         do {
             let recorder = try CameraRecorder(
-                url: draft.cameraURL, width: Int(dimensions.width), height: Int(dimensions.height), clock: camera.cameraClock
+                url: draft.cameraURL, width: Int(dimensions.width), height: Int(dimensions.height), clock: camera.cameraClock,
+                onFirstFrame: { [weak self] time in
+                    Task { @MainActor [weak self] in
+                        self?.cameraStartHostTime = time.seconds
+                        self?.checkpointTelemetry()
+                    }
+                }
             )
             guard await camera.attach(recorder.output) else {
                 Log.recording.error("The camera's frames couldn't be taken; recording without it")
@@ -420,7 +476,10 @@ final class RecordingCoordinator {
                 corner: bottom ? (left ? .bottomLeft : .bottomRight) : (left ? .topLeft : .topRight), mirrored: style.mirrored
             )
             cameraFills = [(Self.hostSeconds(), camera.isFilling)]
-            camera.onFillChange = { [weak self] fills in self?.cameraFills.append((Self.hostSeconds(), fills)) }
+            camera.onFillChange = { [weak self] fills in
+                self?.cameraFills.append((Self.hostSeconds(), fills))
+                self?.checkpointTelemetry()
+            }
             return recorder
         } catch {
             Log.recording.error("The camera couldn't be recorded: \(String(describing: error), privacy: .public)")
@@ -521,27 +580,42 @@ final class RecordingCoordinator {
 
     func pause() {
         guard let session, session.recorder.state == .recording else { return }
+        let now = CMClockGetTime(CMClockGetHostTimeClock())
         session.recorder.pause()
-        session.camera?.pause(at: CMClockGetTime(CMClockGetHostTimeClock()))
+        session.camera?.pause(at: now)
+        recordingPauses.append(.init(start: now.seconds))
+        checkpointTelemetry()
         tick()
         VoiceOver.announce(String(localized: "Recording paused."))
     }
 
     func resume() {
         guard let session, session.recorder.state == .paused else { return }
+        let now = CMClockGetTime(CMClockGetHostTimeClock())
         session.recorder.resume()
-        session.camera?.resume(at: CMClockGetTime(CMClockGetHostTimeClock()))
+        session.camera?.resume(at: now)
+        if !recordingPauses.isEmpty {
+            let last = recordingPauses.count - 1
+            recordingPauses[last].end = max(now.seconds, recordingPauses[last].start)
+        }
+        checkpointTelemetry()
         tick()
         VoiceOver.announce(String(localized: "Recording resumed."))
     }
 
     /// Throws the recording so far away and records the same thing again, after the countdown.
+    /// Checks startup disk space before discarding so a refused replacement never loses the current recording.
     func restart() {
         guard let session else { return }
-        phase = .idle
-        endChrome()
-        discard(session)
-        prepare(session.plan)
+        switch drafts.restartDecision() {
+        case .restart:
+            phase = .idle
+            endChrome()
+            discard(session)
+            prepare(session.plan)
+        case .keepCurrent(let available, let required):
+            presentInsufficientDiskSpaceToStart(available: available, required: required)
+        }
     }
 
     /// Stops and throws the recording away.
@@ -556,6 +630,7 @@ final class RecordingCoordinator {
     private func discard(_ session: Session) {
         session.telemetry?.stop()
         Task {
+            await session.checkpointer?.cancel()
             await endCameraRecording(session.camera)
             await session.recorder.cancel()
             drafts.remove(session.draft)
@@ -564,6 +639,10 @@ final class RecordingCoordinator {
 
     /// Stops, then finishes and keeps the recording; one still starting, as soon as it has started.
     func stop() {
+        stop(interruption: nil)
+    }
+
+    private func stop(interruption: Interruption?) {
         if case .starting(let plan, _) = phase { phase = .starting(plan, stops: true) }
         guard let session else { return }
         phase = .idle
@@ -571,6 +650,11 @@ final class RecordingCoordinator {
         if makesGIF { makingGIFs += 1 }
         endChrome()
         finishing += 1
+        let movieStartSnapshot = movieStartHostTime
+        let cameraStartSnapshot = cameraStartHostTime
+        let pausesSnapshot = recordingPauses
+        let fillsSnapshot = cameraFills.map { StudioDraftTelemetry.CameraFillChange(time: $0.time, fills: $0.fills) }
+        let bubbleSnapshot = cameraBubble
         Task {
             defer {
                 if makesGIF { madeGIF() }
@@ -590,16 +674,71 @@ final class RecordingCoordinator {
                 let telemetry = raw.map { raw in
                     raw.retimed(start: statistics.start?.seconds ?? 0, pauses: statistics.pauses.map { $0.start.seconds...$0.end.seconds })
                 }
-                await keep(session.draft, plan: session.plan, displayID: session.plan.display.id, writer: statistics, telemetry: telemetry)
+                if let telemetry, let checkpointer = session.checkpointer {
+                    let finalDraft = StudioDraftTelemetry(
+                        telemetry: telemetry, isRetimed: true,
+                        movieStart: statistics.start?.seconds ?? movieStartSnapshot,
+                        pauses: statistics.pauses.map { .init(start: $0.start.seconds, end: $0.end.seconds) },
+                        cameraStart: cameraStartSnapshot, cameraFills: fillsSnapshot, cameraBubble: bubbleSnapshot,
+                        cameraWanted: session.cameraWanted, showsClicks: session.plan.choices.showsClicks,
+                        showsKeystrokes: session.plan.choices.showsKeystrokes
+                    )
+                    try? await checkpointer.saveFinal(finalDraft, to: session.draft.telemetryURL)
+                }
+                await keep(
+                    session.draft, plan: session.plan, displayID: session.plan.display.id, writer: statistics,
+                    telemetry: telemetry, interruption: interruption
+                )
             } catch RecordingWriter.WriterError.noFrames {
                 Log.recording.notice("Nothing was recorded")
+                await session.checkpointer?.cancel()
                 await endCameraRecording(session.camera)
                 drafts.remove(session.draft)
+                if let interruption { presentInterruptionNoFrames(interruption) }
             } catch {
                 // The movie may still be readable up to its last fragment.
                 Log.recording.error("Stopping the recording failed: \(String(describing: error), privacy: .public)")
-                await endCameraRecording(session.camera)
-                await keep(session.draft, plan: session.plan, displayID: session.plan.display.id, writer: nil)
+                let partial = await session.recorder.currentStatistics()
+                var salvagedTelemetry: StudioTelemetry?
+                if var raw {
+                    if let recorder = session.camera {
+                        if partial.start != nil {
+                            raw.camera = await finishCamera(recorder, screen: partial)
+                        } else {
+                            await endCameraRecording(recorder)
+                        }
+                    }
+                    if session.cameraWanted, raw.camera == nil {
+                        raw.cameraFailed = true
+                    }
+                    let partialPauses = partial.pauses.isEmpty
+                        ? pausesSnapshot
+                        : partial.pauses.map { StudioDraftTelemetry.Pause(start: $0.start.seconds, end: $0.end.seconds) }
+                    let hasCamera = raw.camera != nil && FileManager.default.fileExists(atPath: session.draft.cameraURL.path(percentEncoded: false))
+                    let draftTelemetry = StudioDraftTelemetry(
+                        telemetry: raw, isRetimed: false,
+                        movieStart: partial.start?.seconds ?? movieStartSnapshot,
+                        pauses: partialPauses,
+                        cameraStart: raw.camera?.start ?? cameraStartSnapshot,
+                        cameraFills: fillsSnapshot, cameraBubble: bubbleSnapshot,
+                        cameraWanted: session.cameraWanted, showsClicks: session.plan.choices.showsClicks,
+                        showsKeystrokes: session.plan.choices.showsKeystrokes
+                    )
+                    let retimed = draftTelemetry.resolvedTelemetry(movieDuration: partial.duration.seconds, hasCameraFile: hasCamera)
+                    salvagedTelemetry = retimed
+                    if let checkpointer = session.checkpointer {
+                        var persisted = draftTelemetry
+                        persisted.telemetry = retimed
+                        persisted.isRetimed = true
+                        try? await checkpointer.saveFinal(persisted, to: session.draft.telemetryURL)
+                    }
+                } else {
+                    await endCameraRecording(session.camera)
+                }
+                await keep(
+                    session.draft, plan: session.plan, displayID: session.plan.display.id, writer: nil,
+                    telemetry: salvagedTelemetry, interruption: interruption
+                )
             }
         }
     }
@@ -610,6 +749,31 @@ final class RecordingCoordinator {
         guard session != nil else { return }
         Log.recording.notice("Recording stopped by the system; keeping what was recorded")
         stop()
+    }
+
+    /// The movie writer failed while recording (e.g. disk full or encoder error): stop at once and salvage
+    /// everything committed so far, then tell the user visibly when it stopped and up to where was kept.
+    private func writerFailed(_ failure: RecordingWriter.Failure) {
+        guard let session else { return }
+        let stoppedAt = session.recorder.elapsed
+        let written = Duration.seconds(max(0, failure.writtenDuration.seconds))
+        Log.recording.error("Recording writer failed at \(RecordingControlBar.format(stoppedAt), privacy: .public) (written \(RecordingControlBar.format(written), privacy: .public)): \(failure.message, privacy: .public)")
+        stop(interruption: .writerFailed(stoppedAt: stoppedAt, writtenDuration: written))
+    }
+
+    /// Writes a non-blocking Studio telemetry checkpoint to the active draft off the main actor.
+    private func checkpointTelemetry() {
+        guard let session, let telemetry = session.telemetry, let checkpointer = session.checkpointer else { return }
+        let snapshot = StudioDraftTelemetry(
+            telemetry: telemetry.snapshot(), isRetimed: false,
+            movieStart: movieStartHostTime, pauses: recordingPauses,
+            cameraStart: cameraStartHostTime,
+            cameraFills: cameraFills.map { .init(time: $0.time, fills: $0.fills) },
+            cameraBubble: cameraBubble, cameraWanted: session.cameraWanted,
+            showsClicks: session.plan.choices.showsClicks, showsKeystrokes: session.plan.choices.showsKeystrokes
+        )
+        let url = session.draft.telemetryURL
+        Task { await checkpointer.checkpoint(snapshot, to: url) }
     }
 
     // MARK: Keeping
@@ -624,36 +788,80 @@ final class RecordingCoordinator {
     }
 
     /// Finishes a draft into an MP4, or makes it into a GIF, and keeps it: history, clipboard, card. A draft
-    /// that cannot be finished stays in the drafts folder, where the next launch tries again.
+    /// that cannot be finished — or whose Studio sidecar assets only partly saved — stays in the drafts folder,
+    /// where the next launch tries again.
     private func keep(
         _ draft: RecordingDrafts.Draft, plan: Plan?, displayID: CGDirectDisplayID, writer: RecordingWriter.Statistics?,
-        telemetry: StudioTelemetry? = nil
+        telemetry: StudioTelemetry? = nil, interruption: Interruption? = nil
     ) async {
         let probe = LatencyProbe("recording.keep")
         let output = draft.info?.output ?? .video
         let destination = draft.movieURL.deletingPathExtension().appendingPathExtension(output == .gif ? "gif" : "mp4")
         do {
             let file = try await makeFile(of: draft, as: output, at: destination)
-            if let telemetry {
+            var resolvedTelemetry = telemetry
+            var recoveredDraftTelemetry: StudioDraftTelemetry?
+            if resolvedTelemetry == nil, output == .studio,
+               let data = try? Data(contentsOf: draft.telemetryURL),
+               let savedDraft = try? JSONDecoder().decode(StudioDraftTelemetry.self, from: data) {
+                let hasCamera = await RecordingDrafts.hasReadableVideo(at: draft.cameraURL)
+                resolvedTelemetry = savedDraft.resolvedTelemetry(movieDuration: file.duration, hasCameraFile: hasCamera)
+                recoveredDraftTelemetry = savedDraft
+            }
+            if let resolvedTelemetry {
                 // Studio: no card or clipboard yet; they come with the first movie exported from its window.
                 let entry = try history.add(
                     movingFileAt: file.url, name: fileName(startedAt: draft.info?.startedAt ?? .now, appName: draft.info?.appName ?? plan?.appName),
                     kind: .recording, pixelWidth: file.pixelWidth, pixelHeight: file.pixelHeight, appName: draft.info?.appName ?? plan?.appName,
                     duration: file.duration, pixelsPerPoint: draft.info?.pixelsPerPoint
                 )
-                var project = StudioProject(zooms: AutoZoom.zooms(for: telemetry, duration: file.duration))
-                project.cursor.showsClicks = plan?.choices.showsClicks ?? true
-                project.showsKeys = plan?.choices.showsKeystrokes ?? true
-                project.keystrokeMode = telemetry.keystrokeMode ?? .all
-                project.camera = telemetry.camera?.bubble ?? StudioProject.Camera()
-                saveStudioProject(telemetry, project: project, camera: draft.cameraURL, for: entry)
-                drafts.remove(draft)
+                let keptMovie = RecordingDrafts.Info.KeptMovie.measure(at: history.fileURL(for: entry))
+                var keptDraft = draft
+                do {
+                    keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id, keptMovie: keptMovie)
+                } catch {
+                    Log.recording.error("Recording kept history id on draft \(draft.id.uuidString, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+                }
+                var project = StudioProject(zooms: AutoZoom.zooms(for: resolvedTelemetry, duration: file.duration))
+                project.cursor.showsClicks = plan?.choices.showsClicks ?? recoveredDraftTelemetry?.showsClicks ?? true
+                project.showsKeys = plan?.choices.showsKeystrokes ?? recoveredDraftTelemetry?.showsKeystrokes ?? true
+                project.keystrokeMode = resolvedTelemetry.keystrokeMode ?? .all
+                project.camera = resolvedTelemetry.camera?.bubble ?? StudioProject.Camera()
+                let saveResult = saveStudioProject(resolvedTelemetry, project: project, camera: keptDraft.cameraURL, for: entry)
+                if saveResult.isComplete {
+                    drafts.remove(keptDraft)
+                } else {
+                    let hasRetimedDraft: Bool = {
+                        guard let data = try? Data(contentsOf: keptDraft.telemetryURL),
+                              let existing = try? JSONDecoder().decode(StudioDraftTelemetry.self, from: data)
+                        else { return false }
+                        return existing.isRetimed
+                    }()
+                    if !hasRetimedDraft {
+                        let fallback = StudioDraftTelemetry(
+                            telemetry: resolvedTelemetry, isRetimed: true,
+                            cameraBubble: project.camera,
+                            cameraWanted: saveResult.expectedCamera || resolvedTelemetry.cameraFailed == true,
+                            showsClicks: project.cursor.showsClicks, showsKeystrokes: project.showsKeys
+                        )
+                        try? JSONEncoder().encode(fallback).write(to: keptDraft.telemetryURL, options: .atomic)
+                    }
+                    Log.recording.error("Studio project only partly saved (camera \(saveResult.savedCamera, privacy: .public)/\(saveResult.expectedCamera, privacy: .public), telemetry \(saveResult.savedTelemetry, privacy: .public), project \(saveResult.savedProject, privacy: .public)); keeping draft \(keptDraft.id.uuidString, privacy: .public) for recovery into history \(entry.id.uuidString, privacy: .public)")
+                }
                 studioDisplays[entry.id] = displayID
                 if plan != nil { onRecordingCompleted?() }
                 onKept?(entry)
                 probe.end()
-                VoiceOver.announce(String(localized: "Recording stopped. Opening Studio."))
-                await openStudio(entry)
+                if let interruption {
+                    presentInterruptionKept(interruption, keptDuration: file.duration)
+                }
+                if !saveResult.isComplete {
+                    presentPartialStudioSaveAlert(saveResult)
+                }
+                if saveResult.savedTelemetry {
+                    VoiceOver.announce(String(localized: "Recording stopped. Opening Studio."))
+                    await openStudio(entry)
+                }
                 return
             }
             let entry = try await deliver(
@@ -663,37 +871,145 @@ final class RecordingCoordinator {
             drafts.remove(draft)
             probe.end()
             Log.recording.notice("Kept a recording of \(file.duration, format: .fixed(precision: 2), privacy: .public) s, \(file.pixelWidth, privacy: .public)x\(file.pixelHeight, privacy: .public), \(file.byteCount, privacy: .public) bytes as \(entry.fileName, privacy: .public)\(writer.map { ", \($0.framesWritten) frames written, \($0.framesDropped) dropped" } ?? "", privacy: .public)")
-            VoiceOver.announce(output == .gif ? String(localized: "GIF made.") : String(localized: "Recording stopped."))
+            if let interruption {
+                presentInterruptionKept(interruption, keptDuration: file.duration)
+            } else {
+                VoiceOver.announce(output == .gif ? String(localized: "GIF made.") : String(localized: "Recording stopped."))
+            }
         } catch {
             try? FileManager.default.removeItem(at: destination)
             Log.recording.error("Keeping the recording failed: \(String(describing: error), privacy: .public)")
-            NSSound.beep()
-            VoiceOver.announce(String(localized: "The recording couldn’t be kept. OhMyShot will try again next time it starts."))
+            if let interruption {
+                presentInterruptionKeepFailed(interruption)
+            } else if plan != nil {
+                presentWarning(
+                    title: String(localized: "Recording Couldn’t Be Kept"),
+                    message: String(localized: "The recording couldn’t be kept. OhMyShot will try again next time it starts.")
+                )
+            } else {
+                NSSound.beep()
+                VoiceOver.announce(String(localized: "The recording couldn’t be kept. OhMyShot will try again next time it starts."))
+            }
         }
     }
 
     /// Keeps what the pointer did beside a Studio recording, in its project folder, for the Studio window,
-    /// and the camera's movie when there is one.
-    private func saveStudioProject(_ telemetry: StudioTelemetry, project: StudioProject, camera: URL? = nil, for entry: HistoryItem) {
+    /// and the camera's movie when there is one. Returns per-asset outcomes so the caller keeps the draft
+    /// intact whenever any asset fails to save.
+    private func saveStudioProject(
+        _ telemetry: StudioTelemetry, project: StudioProject, camera: URL? = nil, for entry: HistoryItem
+    ) -> StudioProjectSaveResult {
         let folder = history.studioURL(for: entry)
-        var telemetry = telemetry
-        do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            if telemetry.camera != nil, let camera {
-                do {
-                    try FileManager.default.moveItem(at: camera, to: folder.appending(path: StudioFiles.camera))
-                } catch {
-                    Log.recording.error("Keeping the camera's movie failed: \(String(describing: error), privacy: .public)")
-                    telemetry.camera = nil
-                    telemetry.cameraFailed = true
-                }
-            }
-            try JSONEncoder().encode(telemetry).write(to: folder.appending(path: StudioFiles.telemetry), options: .atomic)
-            try JSONEncoder().encode(project).write(to: folder.appending(path: StudioFiles.project), options: .atomic)
+        let result = StudioProjectStorage.save(telemetry: telemetry, project: project, cameraURL: camera, to: folder)
+        if result.isComplete {
             Log.recording.notice("Kept a Studio project: \(telemetry.samples.count, privacy: .public) pointer readings, \(telemetry.cursors.count, privacy: .public) cursor(s), \(telemetry.clicks.count, privacy: .public) click(s), \(telemetry.keys.count, privacy: .public) key(s)\(telemetry.camera.map { String(format: ", the camera from %.2f s, filling %d time(s)", $0.start, $0.fills.count) } ?? "", privacy: .public)")
-        } catch {
-            Log.recording.error("Keeping the Studio project failed: \(String(describing: error), privacy: .public)")
+        } else {
+            Log.recording.error("Keeping the Studio project failed: \(result.errorDescription ?? "unknown error", privacy: .public)")
         }
+        return result
+    }
+
+    // MARK: Disk space and interruption alerts
+
+    private func ensureDiskSpaceToStart() -> Bool {
+        guard case .insufficient(let available, let required) = drafts.checkDiskSpace(requiring: RecordingDrafts.minimumFreeBytesToStart) else {
+            return true
+        }
+        presentInsufficientDiskSpaceToStart(available: available, required: required)
+        return false
+    }
+
+    private func presentInsufficientDiskSpaceToStart(available: Int64, required: Int64) {
+        Log.recording.error("Not enough disk space to start recording: \(available, privacy: .public) bytes available, \(required, privacy: .public) required")
+        let availableText = ByteCountFormatter.string(fromByteCount: available, countStyle: .file)
+        let requiredText = ByteCountFormatter.string(fromByteCount: required, countStyle: .file)
+        presentWarning(
+            title: String(localized: "Not Enough Disk Space to Record"),
+            message: String(localized: "Recording needs at least \(requiredText) of free disk space, and only \(availableText) is available. Free up space and try again.")
+        )
+    }
+
+    private func presentInterruptionKept(_ interruption: Interruption, keptDuration: TimeInterval) {
+        let keptTime = RecordingControlBar.format(.seconds(max(0, keptDuration)))
+        switch interruption {
+        case .writerFailed(let stoppedAt, _):
+            let stoppedTime = RecordingControlBar.format(stoppedAt)
+            presentWarning(
+                title: String(localized: "Recording Stopped Unexpectedly"),
+                message: String(localized: "Writing the recording failed at \(stoppedTime). The recording up to \(keptTime) was kept.")
+            )
+        case .lowDiskSpace(let stoppedAt):
+            let stoppedTime = RecordingControlBar.format(stoppedAt)
+            presentWarning(
+                title: String(localized: "Recording Stopped — Disk Space Low"),
+                message: String(localized: "Recording stopped at \(stoppedTime) because disk space ran low. The recording up to \(keptTime) was kept.")
+            )
+        }
+    }
+
+    private func presentInterruptionNoFrames(_ interruption: Interruption) {
+        switch interruption {
+        case .writerFailed(let stoppedAt, _):
+            let stoppedTime = RecordingControlBar.format(stoppedAt)
+            presentWarning(
+                title: String(localized: "Recording Stopped Unexpectedly"),
+                message: String(localized: "Writing the recording failed at \(stoppedTime) before any frames were saved.")
+            )
+        case .lowDiskSpace(let stoppedAt):
+            let stoppedTime = RecordingControlBar.format(stoppedAt)
+            presentWarning(
+                title: String(localized: "Recording Stopped — Disk Space Low"),
+                message: String(localized: "Recording stopped at \(stoppedTime) because disk space ran low before any frames were saved.")
+            )
+        }
+    }
+
+    private func presentInterruptionKeepFailed(_ interruption: Interruption) {
+        switch interruption {
+        case .writerFailed(let stoppedAt, _):
+            let stoppedTime = RecordingControlBar.format(stoppedAt)
+            presentWarning(
+                title: String(localized: "Recording Stopped Unexpectedly"),
+                message: String(localized: "Writing the recording failed at \(stoppedTime), and the recording couldn’t be finished yet. OhMyShot kept the draft and will try again next time it starts.")
+            )
+        case .lowDiskSpace(let stoppedAt):
+            let stoppedTime = RecordingControlBar.format(stoppedAt)
+            presentWarning(
+                title: String(localized: "Recording Stopped — Disk Space Low"),
+                message: String(localized: "Recording stopped at \(stoppedTime) because disk space ran low, and the recording couldn’t be finished yet. Free up space — OhMyShot kept the draft and will try again next time it starts.")
+            )
+        }
+    }
+
+    private func presentPartialStudioSaveAlert(_ result: StudioProjectSaveResult) {
+        var kept = [String(localized: "screen recording")]
+        var missing: [String] = []
+        if result.expectedCamera {
+            if result.savedCamera { kept.append(String(localized: "camera video")) }
+            else { missing.append(String(localized: "camera video")) }
+        }
+        if result.savedTelemetry { kept.append(String(localized: "pointer and zoom data")) }
+        else { missing.append(String(localized: "pointer and zoom data")) }
+        if result.savedProject { kept.append(String(localized: "Studio project settings")) }
+        else { missing.append(String(localized: "Studio project settings")) }
+        let keptList = ListFormatter.localizedString(byJoining: kept)
+        let missingList = ListFormatter.localizedString(byJoining: missing)
+        presentWarning(
+            title: String(localized: "Studio Recording Partially Saved"),
+            message: String(localized: "Kept: \(keptList)\nNot saved: \(missingList)\n\nOhMyShot kept the recording draft and will try again next time it starts.")
+        )
+    }
+
+    private func presentWarning(title: String, message: String) {
+        NSSound.beep()
+        VoiceOver.announce("\(title) \(message)")
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: String(localized: "OK"))
+        alert.runModal()
     }
 
     /// Keeps a clip saved from the replay as a stopped recording is kept: history, clipboard, card. Named for
@@ -765,7 +1081,8 @@ final class RecordingCoordinator {
     }
 
     /// Finishes what a crash or a forced quit left in the drafts folder: each is kept like a stopped
-    /// recording. One that cannot be read is removed once it is a week old.
+    /// recording. A partial Studio draft whose movie is already in History retries only its missing Studio
+    /// assets into that entry. A leftover movie verified as unreadable is removed once it is a week old.
     func recoverLeftovers() {
         let leftovers = drafts.leftovers(excluding: Set([session?.draft.id].compactMap(\.self)))
         guard !leftovers.isEmpty else { return }
@@ -773,7 +1090,10 @@ final class RecordingCoordinator {
         let displayID = displays.layout.primary?.id ?? 0
         Task {
             for draft in leftovers {
-                let modified = (try? draft.movieURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                if let historyID = draft.info?.keptHistoryID {
+                    await recoverPartialStudioDraft(draft, historyID: historyID)
+                    continue
+                }
                 let makesGIF = draft.info?.output == .gif
                 if makesGIF {
                     makingGIFs += 1
@@ -781,10 +1101,35 @@ final class RecordingCoordinator {
                 }
                 await keep(draft, plan: nil, displayID: displayID, writer: nil)
                 if makesGIF { madeGIF() }
-                if FileManager.default.fileExists(atPath: draft.movieURL.path(percentEncoded: false)), modified < .now.addingTimeInterval(-7 * 86_400) {
-                    drafts.remove(draft)
+                if await drafts.pruneIfExpiredAndUnreadable(draft) {
+                    Log.recording.notice("Removed unreadable draft \(draft.id.uuidString, privacy: .public) older than a week")
                 }
             }
+        }
+    }
+
+    private func recoverPartialStudioDraft(_ draft: RecordingDrafts.Draft, historyID: UUID) async {
+        let outcome = await StudioProjectStorage.recoverMissingAssets(
+            forHistoryID: historyID,
+            telemetryURL: draft.telemetryURL,
+            cameraURL: draft.cameraURL,
+            in: history,
+            expectedMovieByteCount: draft.info?.keptMovie?.byteCount,
+            expectedMovieModifiedAt: draft.info?.keptMovie?.modifiedAt,
+            hasReadableVideo: RecordingDrafts.hasReadableVideo(at:)
+        )
+        switch outcome {
+        case .completed:
+            drafts.remove(draft)
+            Log.recording.notice("Finished recovering Studio assets for history \(historyID.uuidString, privacy: .public)")
+        case .incomplete(let result):
+            Log.recording.error("Recovering Studio assets for history \(historyID.uuidString, privacy: .public) still incomplete: \(result.errorDescription ?? "unknown error", privacy: .public)")
+        case .movieReplaced:
+            drafts.remove(draft)
+            Log.recording.notice("Dropped Studio draft \(draft.id.uuidString, privacy: .public) for history \(historyID.uuidString, privacy: .public) because the kept movie was replaced")
+        case .discarded:
+            drafts.remove(draft)
+            Log.recording.notice("Removed orphaned Studio draft \(draft.id.uuidString, privacy: .public) for history \(historyID.uuidString, privacy: .public)")
         }
     }
 
@@ -1112,7 +1457,7 @@ final class RecordingCoordinator {
             debugStudioDemoID = entry.id
             var project = StudioProject(zooms: AutoZoom.zooms(for: telemetry, duration: duration))
             project.camera = telemetry.camera?.bubble ?? StudioProject.Camera()
-            saveStudioProject(telemetry, project: project, camera: camera, for: entry)
+            _ = saveStudioProject(telemetry, project: project, camera: camera, for: entry)
             await openStudio(entry, shows: false)
             guard let controller = studioWindows[entry.id] else { return nil }
             controller.window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -1314,6 +1659,17 @@ final class RecordingCoordinator {
         let paused = session.recorder.state == .paused
         controls.update(elapsed: elapsed, paused: paused)
         report(.recording(time: RecordingControlBar.format(elapsed), paused: paused))
+        tickCount += 1
+        let recorder = session.recorder
+        Task { await recorder.checkWriterHealth() }
+        if !paused, tickCount.isMultiple(of: 2) {
+            checkpointTelemetry()
+        }
+        if !paused, tickCount.isMultiple(of: 5),
+           case .insufficient(let available, let required) = drafts.checkDiskSpace(requiring: RecordingDrafts.minimumFreeBytesWhileRecording) {
+            Log.recording.error("Disk space ran low during recording at \(RecordingControlBar.format(elapsed), privacy: .public): \(available, privacy: .public) bytes available, \(required, privacy: .public) required")
+            stop(interruption: .lowDiskSpace(stoppedAt: elapsed))
+        }
     }
 
     /// The part of the screen a plan records, in global points: the area, the window's frame, the display.

@@ -109,13 +109,30 @@ public enum FormulaMerge {
         return Plan(pieces: pieces, latin: latin, kept: lines.indices.filter { !taken.contains($0) }, rows: rows)
     }
 
+    /// The text read in each piece's crop (`texts`, one for each crop that is not nil), or nil for a piece that couldn't be
+    /// read: nothing came back from a crop holding a letter's width of ink (three tenths of the line's height in columns
+    /// with ink, `ink` giving the columns of a part of the picture), as when Vision passes over a short word alone in its
+    /// strip. A crop with less was blank: the line's box ran past its text, or held a period, which `lines` takes from the
+    /// line's own reading.
+    static func readings(_ texts: [String], crops: [CGRect?], plan: Plan, ink: (CGRect) -> InkProfile?) -> [String?] {
+        var texts = texts.makeIterator()
+        return zip(crops, plan.pieces).map { crop, piece in
+            guard let crop else { return "" }
+            let text = texts.next() ?? ""
+            guard text.allSatisfy(\.isWhitespace), let columns = ink(crop)?.ink else { return text }
+            return CGFloat(columns.count(where: \.self)) >= piece.box.height * 0.3 ? nil : text
+        }
+    }
+
     /// `lines` with the formulas in them, as `plan` has it, `pieces` the text read again in its pieces; not in reading
-    /// order. A piece's text is the line's own where it matches (`aligned`).
-    public static func lines(_ lines: [OCRLine], formulas: [Formula], plan: Plan, pieces read: [String]) -> [OCRLine] {
+    /// order. A piece's text is the line's own where it matches (`aligned`). A row with a piece that couldn't be read (nil,
+    /// `readings`) stays as it was, Vision's reading of the formula and all: made of what was read, it would lose the words
+    /// beside the formula, which were read right.
+    public static func lines(_ lines: [OCRLine], formulas: [Formula], plan: Plan, pieces read: [String?]) -> [OCRLine] {
         var cursors: [Int: Int] = [:]
         let pieces = plan.pieces.indices.map { index -> String in
             let piece = plan.pieces[index]
-            let again = read.indices.contains(index) ? read[index].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            let again = read.indices.contains(index) ? (read[index] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) : ""
             let line = Array(lines[piece.line].text), cursor = cursors[piece.line] ?? 0
             guard let match = aligned(again, in: String(line), from: cursor) else {
                 // Read alone, a piece that starts on a comma lost the space after it.
@@ -132,6 +149,11 @@ public enum FormulaMerge {
         }
         var merged = plan.kept.map { lines[$0] }
         for row in plan.rows {
+            let unread = row.parts.contains { if case .piece(let p) = $0 { read.indices.contains(p) && read[p] == nil } else { false } }
+            if unread {
+                merged += row.lines.map { lines[$0] }
+                continue
+            }
             let hasText = row.parts.contains { if case .piece(let p) = $0 { !text(of: p, in: pieces).isEmpty } else { false } }
             let alone = !hasText && row.parts.count { if case .formula = $0 { true } else { false } } == 1
             let parts: [(text: String, isFormula: Bool)] = row.parts.map { part in

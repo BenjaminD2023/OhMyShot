@@ -19,6 +19,31 @@ struct HistoryStoreTests {
         #expect(FileManager.default.contents(atPath: store.fileURL(for: older).path(percentEncoded: false)) == Data([1]))
     }
 
+    @Test func concurrentCapturesWithTheSameNameKeepTheirOwnFilesAndRecords() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let items = try await withThrowingTaskGroup(of: (HistoryItem, UInt8).self) { group in
+            for byte: UInt8 in 0..<16 {
+                group.addTask {
+                    let item = try store.add(
+                        data: Data(repeating: byte, count: 128 * 1024), name: "Capture", fileExtension: "png",
+                        kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil
+                    )
+                    return (item, byte)
+                }
+            }
+            var result: [(HistoryItem, UInt8)] = []
+            for try await pair in group { result.append(pair) }
+            return result
+        }
+        #expect(Set(items.map { $0.0.fileName }).count == items.count)
+        #expect(Set(store.items().map(\.id)) == Set(items.map { $0.0.id }))
+        for (item, byte) in items {
+            #expect(store.item(id: item.id)?.fileName == item.fileName)
+            #expect(try Data(contentsOf: store.fileURL(for: item)) == Data(repeating: byte, count: 128 * 1024))
+        }
+    }
+
     /// A name with a slash in it (a shortcut's file may carry one) never takes another capture's file.
     @Test func aNameWithASlashKeepsItsOwnFile() throws {
         let store = makeStore()
@@ -52,6 +77,29 @@ struct HistoryStoreTests {
         #expect(FileManager.default.fileExists(atPath: source.path(percentEncoded: false)))
         #expect(FileManager.default.contents(atPath: store.fileURL(for: item).path(percentEncoded: false)) == FileManager.default.contents(atPath: source.path(percentEncoded: false)))
         #expect(store.items().map(\.id) == [item.id])
+    }
+
+    @Test func copyingAndMovingSkipANameAlreadyClaimedByAnotherCapture() async throws {
+        let store = makeStore(), manager = FileManager.default
+        try manager.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: store.directory) }
+        let claim = store.directory.appending(path: "Capture.png.json")
+        try Data().write(to: claim)
+        let input = store.directory.appending(path: "input")
+        try manager.createDirectory(at: input, withIntermediateDirectories: false)
+        let source = input.appending(path: "Capture.png")
+        let context = try #require(CGContext(
+            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let data = try ImageExporter.encoded(#require(context.makeImage()), as: .png)
+        try data.write(to: source)
+        let copied = try await store.add(copyOf: source)
+        let moved = try store.add(movingFileAt: source, name: "Capture", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        #expect(copied.fileName == "Capture (2).png")
+        #expect(moved.fileName == "Capture (3).png")
+        #expect(try Data(contentsOf: claim).isEmpty)
+        #expect(Set(store.items().map(\.id)) == [copied.id, moved.id])
     }
 
     /// A photo kept on its side, to be turned upright as it is shown (EXIF orientation 6), has its shown size in the
@@ -170,6 +218,73 @@ struct HistoryStoreTests {
         #expect(left.isEmpty)
     }
 
+    @Test func aFailedTrashKeepsTheCaptureAndAllItsSidecars() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        let marked = try store.replaceImage(of: item, with: Data([2]), pixelWidth: 1, pixelHeight: 1, annotations: Data([3]))
+        try store.setText("indexed", of: marked, readFrom: #require(store.stamp(of: marked)))
+        let project = store.studioURL(for: marked)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: false)
+        let asset = project.appending(path: "kept")
+        try Data([4]).write(to: asset)
+        let savedRecord = try #require(store.item(id: marked.id))
+        #expect(throws: CocoaError.self) {
+            try store.moveToTrash(marked) { url in
+                #expect(url == store.fileURL(for: marked))
+                throw CocoaError(.fileWriteNoPermission)
+            }
+        }
+        #expect(store.item(id: marked.id) == savedRecord)
+        #expect(try Data(contentsOf: store.fileURL(for: marked)) == Data([2]))
+        #expect(try Data(contentsOf: store.originalURL(for: marked)) == Data([1]))
+        #expect(try Data(contentsOf: store.annotationsURL(for: marked)) == Data([3]))
+        #expect(store.text(of: marked) == "indexed")
+        #expect(try Data(contentsOf: asset) == Data([4]))
+    }
+
+    @Test(arguments: [false, true])
+    func anUnavailableReplacementLeavesTheLastKeptMovieIntact(studio: Bool) throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "mp4", kind: .recording, pixelWidth: 10, pixelHeight: 10, appName: nil)
+        let incoming = store.directory.appending(path: "edit.mp4")
+        func replace(_ entry: HistoryItem, duration: Int) throws -> HistoryItem {
+            if studio {
+                return try store.replaceStudioMovie(of: entry, withFileAt: incoming, pixelWidth: 5, pixelHeight: 5, duration: Double(duration), project: Data([UInt8(duration)]))
+            }
+            return try store.replaceRecording(of: entry, withFileAt: incoming, pixelWidth: 5, pixelHeight: 5, duration: Double(duration))
+        }
+        #expect(throws: (any Error).self) { try replace(item, duration: 9) }
+        #expect(try Data(contentsOf: store.fileURL(for: item)) == Data([1]))
+        try Data([2]).write(to: incoming)
+        let prior = try replace(item, duration: 8)
+        let savedRecord = try #require(store.item(id: item.id))
+        #expect(throws: (any Error).self) { try replace(prior, duration: 7) }
+        #expect(store.item(id: item.id) == savedRecord)
+        #expect(try Data(contentsOf: store.fileURL(for: item)) == Data([2]))
+        #expect(try Data(contentsOf: studio ? store.studioSourceURL(for: item) : store.originalURL(for: item)) == Data([1]))
+        if studio { #expect(store.studioMovieProject(of: item) == Data([8])) }
+    }
+
+    @Test func aSidecarFailureLeavesThePreviousMovieAndStudioSettingsIntact() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "mp4", kind: .recording, pixelWidth: 10, pixelHeight: 10, appName: nil)
+        let incoming = store.directory.appending(path: "edit.mp4")
+        try Data([2]).write(to: incoming)
+        let previous = try store.replaceStudioMovie(of: item, withFileAt: incoming, pixelWidth: 5, pixelHeight: 5, duration: 8, project: Data([8]))
+        let record = store.directory.appending(path: item.fileName + ".json")
+        try FileManager.default.removeItem(at: record)
+        try FileManager.default.createDirectory(at: record, withIntermediateDirectories: false)
+        try Data([3]).write(to: incoming)
+        #expect(throws: (any Error).self) {
+            try store.replaceStudioMovie(of: previous, withFileAt: incoming, pixelWidth: 4, pixelHeight: 4, duration: 7, project: Data([7]))
+        }
+        #expect(try Data(contentsOf: store.fileURL(for: item)) == Data([2]))
+        #expect(store.studioMovieProject(of: item) == Data([8]))
+    }
+
     @Test func restoringTheOriginalForgetsTheMarks() throws {
         let store = makeStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }
@@ -239,6 +354,26 @@ struct HistoryStoreTests {
         try store.replaceStudioMovie(of: item, withFileAt: exported, pixelWidth: 10, pixelHeight: 10, duration: 1, project: Data())
         try FileManager.default.removeItem(at: store.studioSourceURL(for: item))
         #expect(throws: CocoaError.self) { try store.studioSource(for: item) }
+    }
+
+    @Test func invalidatingAStudioExportClearsItsProjectWhileKeepingTheMovieMarker() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "mp4", kind: .recording, pixelWidth: 1600, pixelHeight: 1000, appName: nil, duration: 4)
+        // No export yet: invalidating is a no-op and does not fabricate a movie marker.
+        store.invalidateStudioMovieExport(of: item)
+        #expect(!store.hasStudioMovie(item))
+
+        let exported = FileManager.default.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString).mp4")
+        try Data([2]).write(to: exported)
+        let movie = try store.replaceStudioMovie(of: item, withFileAt: exported, pixelWidth: 1600, pixelHeight: 1000, duration: 4, project: Data([7]))
+        #expect(store.hasStudioMovie(movie))
+        #expect(store.studioMovieProject(of: movie) == Data([7]))
+
+        store.invalidateStudioMovieExport(of: movie)
+        #expect(store.hasStudioMovie(movie))
+        #expect(store.studioMovieProject(of: movie) == nil)
+        #expect(FileManager.default.contents(atPath: try store.studioSource(for: movie).path(percentEncoded: false)) == Data([1]))
     }
 
     @Test func aScreenshotKeepsItsScaleItsWindowTitleAndHowItWasNamed() throws {

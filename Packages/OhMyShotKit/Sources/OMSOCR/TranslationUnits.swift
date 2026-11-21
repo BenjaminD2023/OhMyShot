@@ -46,13 +46,15 @@ public enum TranslationUnits {
     /// (`Bullets`), its bullet seen in `image`, the picture the lines were read from, when given.
     public static func group(_ lines: [OCRLine], image: CGImage? = nil) -> [TranslationUnit] {
         guard !lines.isEmpty else { return [] }
-        let isCode = TextAssembler.isCodeListing(lines)
         let technical = isTechnical(lines.map(\.text))
         let items = image.flatMap { image in Pixels.reading(image) { Bullets.items(lines, in: $0) } } ?? Bullets.items(lines)
-        let wraps = isCode ? lines.map { _ in false } : zip(lines.indices, TextAssembler.inferredWraps(lines, items: items)).map { index, guess in
+        let carries = zip(lines.indices, TextAssembler.inferredWraps(lines, items: items)).map { index, guess in
             // Whatever an engine says, a list item never carries on the line before it.
             index + 1 < lines.count && items[index + 1] ? false : lines[index].wrapsToNextLine ?? guess
         }
+        let inCode = codeLines(lines, carries: carries)
+        // Code keeps its lines.
+        let wraps = lines.indices.map { carries[$0] && !inCode[$0] && !($0 + 1 < lines.count && inCode[$0 + 1]) }
         var units: [TranslationUnit] = []
         var current: [Int] = []
         for index in lines.indices {
@@ -65,7 +67,7 @@ public enum TranslationUnits {
                 line.math != nil ? TextAssembler.withMath(line.text) : TextAssembler.isCodeLike(line.text) ? TextAssembler.asCode(line.text) : TextAssembler.asProse(line.text)
             }
             // A bullet read as text is not translated: it is drawn again in front of the translation.
-            let bulleted = !isCode && members[0].math == nil && Bullets.strippingMark(from: texts[0]) != nil
+            let bulleted = !inCode[current[0]] && members[0].math == nil && Bullets.strippingMark(from: texts[0]) != nil
             if bulleted, let rest = Bullets.strippingMark(from: texts[0]) { texts[0] = rest }
             let text = TextAssembler.joinWrapped(texts, wraps: members.dropLast().map { _ in true } + [false])
             let box = members.dropFirst().reduce(members[0].box) { $0.union($1.box) }
@@ -73,7 +75,8 @@ public enum TranslationUnits {
             let hasMath = members.contains { $0.math != nil }
             let prose = hasMath ? text.replacing(TextAssembler.mathSpan, with: " ") : text
             units.append(TranslationUnit(
-                lines: current, text: text, box: box, skip: skip(prose, members: members, isCode: isCode, technical: technical), hasMath: hasMath,
+                lines: current, text: text, box: box, skip: skip(prose, members: members, isCode: inCode[current[0]], technical: technical),
+                hasMath: hasMath,
                 bulleted: bulleted
             ))
             current = []
@@ -93,6 +96,88 @@ public enum TranslationUnits {
         // Names of files, commands, and handles.
         if isCommandLike(text, technical: technical) { return .code }
         return nil
+    }
+
+    // MARK: Sentences in code listings
+
+    /// Which of `lines` are code. None on a page that is no listing: there a line of code is told on its own (`skip`).
+    /// On a listing (`TextAssembler.isCodeListing`, two lines in five that read as code), every line but its sentences and
+    /// the lines they run on into (`carries`): a tutorial's two lines of `let` no longer leave the sentences explaining
+    /// them untranslated, while what only the listing makes code (`break`, a string, a `#` comment) stays with it.
+    static func codeLines(_ lines: [OCRLine], carries: [Bool]) -> [Bool] {
+        guard TextAssembler.isCodeListing(lines) else { return lines.map { _ in false } }
+        let texts = lines.map(TextAssembler.withoutMath)
+        var isCode = texts.map { TextAssembler.isCodeLike($0) || !isSentence($0) }
+        // The end of a sentence, on the line it wraps onto, is no sentence alone ("is missing.").
+        for index in lines.indices.dropFirst() where !isCode[index - 1] && carries[index - 1] && !TextAssembler.isCodeLike(texts[index]) {
+            isCode[index] = false
+        }
+        return isCode
+    }
+
+    /// A sentence rather than a line of code: it starts on a word (no quote before it), none of its tokens is an operator
+    /// ("=", "->"), and it holds five characters of Chinese or Japanese, or four words that are three in four of its
+    /// tokens. A statement can be all that: `echo Welcome to your home directory`, `raise ValueError("This option is
+    /// not available")`. So in a script that has capitals:
+    ///
+    /// - It starts as a sentence does, on a capital ("The") or on a name with one inside ("macOS", "iPhone"), or it
+    ///   ends as one does, on a period or a mark like it ("the cache is cleared when the app restarts."): a command
+    ///   rarely ends so.
+    /// - Its first word is no keyword in capitals ("SELECT") and no cmdlet ("Write-Host", `isCmdlet`).
+    /// - It calls nothing ("name(").
+    static func isSentence(_ text: String) -> Bool {
+        let marks = CharacterSet(charactersIn: ".,:;!?…'\"“”‘’，。：；！？、")
+        let isWord = { (token: Substring) in
+            let word = token.trimmingCharacters(in: marks)
+            return !word.isEmpty && word.allSatisfy { $0.isLetter || "'’-".contains($0) }
+        }
+        let tokens = text.split(whereSeparator: \.isWhitespace)
+        guard let first = tokens.first, let initial = first.first, initial.isLetter, isWord(first),
+              tokens.allSatisfy({ token in token.contains { $0.isLetter || $0.isNumber } || token.allSatisfy { "-–—&".contains($0) } })
+        else { return false }
+        if initial.isCased {
+            let word = first.trimmingCharacters(in: marks)
+            let startsAsOne = initial.isUppercase || word.dropFirst().contains(where: \.isUppercase)
+            let endsAsOne = tokens.last?.last.map(sentenceEnds.contains) ?? false
+            guard startsAsOne || endsAsOne, word.count == 1 || word.contains(where: \.isLowercase), !isCmdlet(word, in: tokens),
+                  text.range(of: #"\w\("#, options: .regularExpression) == nil else { return false }
+        }
+        if text.count(where: Script.isCJK) >= 5 { return true }
+        let words = tokens.count(where: isWord)
+        return words >= 4 && words * 4 >= tokens.count * 3
+    }
+
+    /// PowerShell's approved verbs (what `Get-Verb` lists), and the four its own cmdlets start on besides (`ForEach-Object`,
+    /// `Sort-Object`, `Tee-Object`, `Where-Object`): a cmdlet is named verb-noun ("Write-Host", "Format-Table").
+    private static let cmdletVerbs: Set<Substring> = [
+        "Add", "Approve", "Assert", "Backup", "Block", "Build", "Checkpoint", "Clear", "Close", "Compare", "Complete", "Compress", "Confirm",
+        "Connect", "Convert", "ConvertFrom", "ConvertTo", "Copy", "Debug", "Deny", "Deploy", "Disable", "Disconnect", "Dismount", "Edit", "Enable",
+        "Enter", "Exit", "Expand", "Export", "Find", "ForEach", "Format", "Get", "Grant", "Group", "Hide", "Import", "Initialize", "Install",
+        "Invoke", "Join", "Limit", "Lock", "Measure", "Merge", "Mount", "Move", "New", "Open", "Optimize", "Out", "Ping", "Pop", "Protect",
+        "Publish", "Push", "Read", "Receive", "Redo", "Register", "Remove", "Rename", "Repair", "Request", "Reset", "Resize", "Resolve", "Restart",
+        "Restore", "Resume", "Revoke", "Save", "Search", "Select", "Send", "Set", "Show", "Skip", "Sort", "Split", "Start", "Step", "Stop",
+        "Submit", "Suspend", "Switch", "Sync", "Tee", "Test", "Trace", "Unblock", "Undo", "Uninstall", "Unlock", "Unprotect", "Unpublish",
+        "Unregister", "Update", "Use", "Wait", "Watch", "Where", "Write",
+    ]
+
+    /// What a sentence ends on.
+    private static let sentenceEnds = ".!?。！？"
+
+    /// Whether the first word of a line is a cmdlet: a verb, a hyphen, and one word that starts on a capital
+    /// ("Step-By-Step" is none). That is not enough, a name is written so too ("Wi-Fi is required to pair the
+    /// device."): the line is a command besides. It holds a parameter ("-Path"), a quote, or a variable ("$name"); or
+    /// the verb is one of PowerShell's and the line ends as no sentence does. Those verbs are English words, and
+    /// "Open-Source libraries are listed in the appendix." is prose, where `Format-Table Name, Length, Mode` ends on
+    /// no period.
+    static func isCmdlet(_ word: String, in tokens: [Substring]) -> Bool {
+        guard word.range(of: #"^[^-]+-\p{Lu}[^-]*$"#, options: .regularExpression) != nil else { return false }
+        let holdsArguments = tokens.dropFirst().contains { token in
+            guard let first = token.first else { return false }
+            return "\"'".contains(first) || first == "-" && token.dropFirst().first?.isLetter == true
+                || token.range(of: #"\$[\p{L}_{(]"#, options: .regularExpression) != nil
+        }
+        let endsAsSentence = tokens.last?.last.map(sentenceEnds.contains) ?? false
+        return holdsArguments || cmdletVerbs.contains(word.prefix { $0 != "-" }) && !endsAsSentence
     }
 
     // MARK: Code outside code listings

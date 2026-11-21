@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage.CIFilterBuiltins
 import OMSCore
 import OMSDesign
 import QuartzCore
@@ -42,9 +43,20 @@ nonisolated final class MarkLayer: StillLayer {
     var mapping = LayerMapping(origin: .zero, zoom: 1) {
         didSet { if mapping != oldValue { setNeedsDisplay() } }
     }
-    /// A blur or pixelation's picture, made from the capture.
-    var redacted: (image: CGImage, rect: CGRect)? {
-        didSet { setNeedsDisplay() }
+    /// What to draw for a blur or pixelation, including the opaque cover on a render failure.
+    var coverage: Redactor.Coverage? {
+        didSet {
+            blendIntoPicture()
+            setNeedsDisplay()
+        }
+    }
+    /// A filtered layer replaces its entire frame, so it must not include the usual drawing margin.
+    var documentDrawingBounds: CGRect {
+        if case .filtered(_, let rect) = coverage { return rect }
+        return mark.drawingBounds(scale: scale)
+    }
+    var underlay: BackdropPainter.Underlay? {
+        didSet { if underlay != oldValue { setNeedsDisplay() } }
     }
     /// What a highlight lies on: light ground takes it multiplied, dark ground screened.
     var ground = HighlightGround.light {
@@ -67,16 +79,24 @@ nonisolated final class MarkLayer: StillLayer {
         mark = other.mark
         scale = other.scale
         mapping = other.mapping
-        redacted = other.redacted
+        coverage = other.coverage
+        underlay = other.underlay
         ground = other.ground
         super.init(layer: layer)
     }
 
-    /// A highlight blends into what is under it, as the export's multiply or screen does. A highlighter's
-    /// mark stays one: while drawn it may turn from a stroke to a highlight snapped to text and back.
+    /// The white mask selects the filtered source even when its pixels are clear. Clip the composite
+    /// to the layer's frame; layers above it still draw normally, as in the flattened export.
     private func blendIntoPicture() {
-        guard mark.multiplies else { return }
-        compositingFilter = ground == .dark ? "screenBlendMode" : "multiplyBlendMode"
+        if case .filtered = coverage {
+            masksToBounds = true
+            let blend = CIFilter.blendWithAlphaMask()
+            blend.maskImage = CIImage(color: .white)
+            compositingFilter = blend
+        } else {
+            masksToBounds = false
+            compositingFilter = mark.multiplies ? (ground == .dark ? "screenBlendMode" : "multiplyBlendMode") : nil
+        }
     }
 
     @available(*, unavailable)
@@ -86,20 +106,13 @@ nonisolated final class MarkLayer: StillLayer {
 
     override func draw(in context: CGContext) {
         let flipped = prepareDocumentSpace(context, mapping: mapping)
-        AnnotationRenderer.draw(mark, in: context, scale: scale, redacted: redacted, ground: ground, flippedBacking: flipped)
+        AnnotationRenderer.draw(mark, in: context, scale: scale, coverage: coverage, ground: ground, flippedBacking: flipped, underlay: underlay)
     }
 }
 
 /// The background behind the capture and the capture's shadow on it, drawn by the renderer exports use.
 nonisolated final class BackdropLayer: StillLayer {
-    struct Content: Equatable {
-        var fill: Backdrop.Fill
-        var layout: BackdropLayout
-        var shadow: CGFloat
-        var scale: CGFloat
-    }
-
-    var content: Content? {
+    var content: BackdropPainter.Surface? {
         didSet { if content != oldValue { setNeedsDisplay() } }
     }
     /// The blurred capture a blur fill shows.
@@ -112,6 +125,9 @@ nonisolated final class BackdropLayer: StillLayer {
     /// The two squares of the checkerboard a clear background shows on screen, never in an export.
     var checker = Theme.Checkerboard.colors(dark: false, increasedContrast: false) {
         didSet { setNeedsDisplay() }
+    }
+    var preview: BackdropPainter.Underlay.Preview {
+        .init(resolution: mapping.zoom * contentsScale, zoom: mapping.zoom, light: checker.light, dark: checker.dark)
     }
     override init() {
         super.init()
@@ -135,36 +151,7 @@ nonisolated final class BackdropLayer: StillLayer {
     override func draw(in context: CGContext) {
         guard let content else { return }
         prepareDocumentSpace(context, mapping: mapping)
-        if content.fill == .clear { drawChecker(over: content.layout.output, in: context) }
-        BackdropPainter.paint(content.fill, in: content.layout.output, context: context, blur: blur, resolution: mapping.zoom * contentsScale)
-        BackdropPainter.drawCardShadow(content.layout, strength: content.shadow, scale: content.scale, context: context)
-    }
-
-    /// The quiet checkerboard that shows where a clear background's room is, as image editors show
-    /// transparency: squares a fixed size on screen, anchored at the picture's corner.
-    private func drawChecker(over output: CGRect, in context: CGContext) {
-        let side = Theme.Checkerboard.square / max(mapping.zoom, 0.0001)
-        // Only the part of the picture this layer shows.
-        let shown = CGRect(x: mapping.origin.x, y: mapping.origin.y, width: bounds.width / mapping.zoom, height: bounds.height / mapping.zoom).intersection(output)
-        guard !shown.isNull else { return }
-        context.saveGState()
-        context.setFillColor(checker.light)
-        context.fill(shown)
-        let firstColumn = Int(((shown.minX - output.minX) / side).rounded(.down))
-        let firstRow = Int(((shown.minY - output.minY) / side).rounded(.down))
-        let columns = Int((shown.width / side).rounded(.up)) + 1
-        let rows = Int((shown.height / side).rounded(.up)) + 1
-        let squares = CGMutablePath()
-        for row in firstRow..<(firstRow + rows) {
-            for column in firstColumn..<(firstColumn + columns) where (row + column).isMultiple(of: 2) {
-                squares.addRect(CGRect(x: output.minX + CGFloat(column) * side, y: output.minY + CGFloat(row) * side, width: side, height: side))
-            }
-        }
-        context.clip(to: shown)
-        context.setFillColor(checker.dark)
-        context.addPath(squares)
-        context.fillPath()
-        context.restoreGState()
+        BackdropPainter.Underlay(surface: content, blur: blur, matte: nil, canvas: content.layout.picture, preview: preview).paint(in: context)
     }
 }
 

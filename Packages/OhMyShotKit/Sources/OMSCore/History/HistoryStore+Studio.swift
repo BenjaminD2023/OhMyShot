@@ -44,16 +44,31 @@ extension HistoryStore {
         of item: HistoryItem, withFileAt exported: URL, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval, project: Data
     ) throws -> HistoryItem {
         _ = try studioSource(for: item)
-        try FileManager.default.removeItem(at: fileURL(for: item))
-        try FileManager.default.moveItem(at: exported, to: fileURL(for: item))
-        try project.write(to: studioMovieMarkerURL(for: item), options: .atomic)
-        return try updated(item, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration)
+        return try replaceMovie(
+            of: item, with: exported, pixelWidth: pixelWidth, pixelHeight: pixelHeight, duration: duration,
+            studioMarker: (studioMovieMarkerURL(for: item), project)
+        )
     }
 
     /// The settings the movie in the history was made with, when one exported from Studio is there: the
     /// Studio window compares them with the project's to know whether the movie is still its own.
+    /// Returns nil when no export exists or the previous export was invalidated.
     public func studioMovieProject(of item: HistoryItem) -> Data? {
-        try? Data(contentsOf: studioMovieMarkerURL(for: item))
+        guard let data = try? Data(contentsOf: studioMovieMarkerURL(for: item)), !data.isEmpty else { return nil }
+        return data
+    }
+
+    /// Marks an existing Studio export stale so the next Studio open re-exports it (for example after launch
+    /// recovery attaches a missing camera or telemetry), while keeping the marker file so History still knows
+    /// `fileURL(for:)` holds an exported movie rather than the raw recording.
+    public func invalidateStudioMovieExport(of item: HistoryItem) {
+        let marker = studioMovieMarkerURL(for: item)
+        guard FileManager.default.fileExists(atPath: marker.path(percentEncoded: false)) else { return }
+        do {
+            try Data().write(to: marker, options: .atomic)
+        } catch {
+            try? Data().write(to: marker)
+        }
     }
 
     /// In the project, there once a movie exported from Studio has taken the recording's place: the settings

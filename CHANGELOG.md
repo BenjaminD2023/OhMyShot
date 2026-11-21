@@ -8,6 +8,56 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Choose a window, or measure, in All-In-One
+
+- **Click a window to capture it.** All-In-One highlights the window under the pointer, and a click frames it for any kind of capture. A drag still chooses a free area.
+- **Measure from the bar.** Press M to measure on the frozen screen without starting over.
+- **A clean start.** All-In-One opens with nothing chosen, and L brings back the last area.
+
+### Screenshots that look finished
+
+- **Rounded corners and a soft shadow**, as iShot gives every screenshot. Turn them on in Settings › Screenshots › Background.
+
+### Text read the way it looks
+
+- **Rows stay whole.** Capture Text reads a terminal listing, a settings list, or a table row as one line, and keeps braces in code as braces.
+- **Ultrawide screens read cleanly.** A dense ultrawide screen no longer loses or repeats lines.
+
+### Your work, kept safe
+
+- **Nothing lost when something fails.** A capture that can't go to the Trash stays in Capture History, replacing a recording keeps the old one until the new one is in place, and the editor stays open until its edits are saved.
+- **Recordings that stop cleanly.** When the disk fills or the file can't be written, a recording stops at once and says up to when it was kept. Studio keeps a recording's draft until everything in it is saved.
+- **Stronger redactions.** Blur and Pixelate are stronger on larger areas.
+
+### Added
+
+- Rounded Corners and Shadow, as iShot gives every screenshot: Settings › Screenshots › Background (or the editor's Background Presets) rounds an area's or a display's corners by 15 pt and lays a soft shadow evenly around it on clear room just wide enough to hold it. It needs no preset saved first; a window screenshot keeps its own corners and shadow, and JPEG fills the clear room with white.
+- All-In-One highlights the window under the pointer until something is chosen, and a click frames it, cut to the display it was clicked on, to take every way an area is taken (or as the area for Text, Scrolling, or Record chosen first), named after that window rather than the app in front. A drag still chooses a free area. (by [@fzlzjerry])
+- All-In-One's bar has Measure after Record (M): the overlay turns into Measure in place, on the screen as it was frozen, without closing and opening again. (by [@fzlzjerry])
+
+### Changed
+
+- All-In-One opens with nothing chosen instead of framing the area it last took, which read as reusing it: Settings › Capture › Selecting › All-In-One remembers the last area is off by default now, and L brings back the last area taken since OhMyShot opened, whatever it was for. Turning it on brings the old behavior back, and a choice already made there is kept. (by [@fzlzjerry])
+- The one-time invitation that comes after using OhMyShot for a while now also asks for a star on GitHub: Star on GitHub, the default, opens OhMyShot's repository, beside Join Discord. Anyone who already saw the Discord-only invitation is asked once more.
+
+### Fixed
+
+- A small capture on a Transparent background no longer has its shadow cut off in a gray box at the picture's edge: the clear room around it now reaches as far as the shadow does. A background's shadow also lines up with its card exactly, where it used to fall a few pixels short of it on one side.
+- Capture Text reads a row of separate pieces (a terminal's `ls -l`, a settings list, a table's row) as one line; braces in code read as `1`, `子`, or `J` come back as braces; a dense ultrawide screen read in bands no longer drops or repeats lines; the explanations around a few lines of code are translated; and the words beside a formula stay when reading them again comes back empty.
+- A capture that can't be moved to the Trash is no longer deleted for good instead: it stays in Capture History and Quick Access with its original, marks, and text, and the card or History says why.
+- Replacing a recording with an edit, or with a movie exported from Studio, keeps the last one until the new one is in place, so a replacement that fails loses nothing.
+- With Keep Captures set to Never, a card pushed out of Quick Access by newer ones can still be brought back with Restore Recently Closed; only a card you close yourself is deleted at once.
+- The editor stays open until its edits are saved. When saving fails it offers Retry, Save a Copy as Project…, and Discard Edits, and quitting waits for the same choice. A capture open in the editor can't be moved to the Trash from its card or from History.
+- Marking up in place, Escape with marks drawn asks for a second Escape before throwing them away.
+- Blur and Pixelate are stronger on larger areas. For anything that must stay secret, use a solid fill and share the flattened image, not the editable project. If a redaction can't be rendered, its area is covered in solid black. If saved marks can't be read, the editor offers a flattened copy rather than the unmarked original.
+- Copying a recording no longer starts a clipboard check every 3 seconds unless Keep Captures is Never, and Capture Text no longer holds on to the last picture it read.
+- A recording whose file stops being written (a full disk, an encoder error) stops at once and says up to when it was kept. Recording doesn't start with less than 500 MB free and stops early when space runs low.
+- Studio keeps a recording's draft until its pointer, clicks, keys, and camera are all saved, and says which were not. A recording recovered after a crash or a forced quit opens in Studio with them.
+- Studio's automatic zooms: shortcuts no longer count as typing, and typing with no click near it places no zoom; a zoom placed by hand no longer removes the automatic zooms on either side of it; a drag too wide to frame places none; the camera no longer leaves a place before its last click there; and two zooms on the same place hand over without pulling back to the whole recording.
+- Auto-scroll stops at the end of a page at every speed and view height.
+- In Measure and Pick Color, Command-C, Return, and C now act where the crosshair is after it moves onto another display without a click; they used to read the display the session began on, and copied nothing. (by [@fzlzjerry])
+
+
 ### Added
 
 - Optional daily usage counts, disabled by default, with a setting to opt in or clear queued reports.

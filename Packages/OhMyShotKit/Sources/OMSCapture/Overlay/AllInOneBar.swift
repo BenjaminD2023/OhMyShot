@@ -16,6 +16,8 @@ final class AllInOneBar: NSView {
         case text
         case scroll
         case record
+        /// Measure: the overlay turns into Measure at once, on the screen as it is held; it takes no area.
+        case measure
         case cancel
 
         /// The letter that chooses it in All-In-One (Escape cancels). Text, scrolling, and recording keep their
@@ -28,6 +30,7 @@ final class AllInOneBar: NSView {
             case .text: "o"
             case .scroll: "s"
             case .record: "r"
+            case .measure: "m"
             case .cancel: nil
             }
         }
@@ -44,7 +47,7 @@ final class AllInOneBar: NSView {
             case .text: .text
             case .scroll: .scroll
             case .record: .record
-            case .area, .window, .fullscreen, .cancel: nil
+            case .area, .window, .fullscreen, .measure, .cancel: nil
             }
         }
 
@@ -117,7 +120,7 @@ final class AllInOneBar: NSView {
         stack.addArrangedSubview(modesDivider)
         stack.setCustomSpacing(8, after: buttons[.fullscreen]!)
         stack.setCustomSpacing(8, after: modesDivider)
-        for choice in [Choice.text, .scroll, .record] {
+        for choice in [Choice.text, .scroll, .record, .measure] {
             stack.addArrangedSubview(makeButton(choice))
         }
         let divider = NSBox()
@@ -125,7 +128,7 @@ final class AllInOneBar: NSView {
         divider.translatesAutoresizingMaskIntoConstraints = false
         divider.heightAnchor.constraint(equalToConstant: 20).isActive = true
         stack.addArrangedSubview(divider)
-        stack.setCustomSpacing(8, after: buttons[.record]!)
+        stack.setCustomSpacing(8, after: buttons[.measure]!)
         stack.setCustomSpacing(8, after: divider)
         stack.addArrangedSubview(makeButton(.cancel))
         hideButton = BarButton(
@@ -198,10 +201,11 @@ final class AllInOneBar: NSView {
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
 
-    /// Shows All-In-One's modes beside area, window, and screen; Capture Area's bar has only those three.
+    /// Shows All-In-One's modes (text, scrolling, recording, and measuring) beside area, window, and screen; Capture
+    /// Area's bar has only those three.
     func showModes(_ shows: Bool) {
         stack.rearrange(in: stack.frame) {
-            for choice in [Choice.text, .scroll, .record] { buttons[choice]?.isHidden = !shows }
+            for choice in [Choice.text, .scroll, .record, .measure] { buttons[choice]?.isHidden = !shows }
             modesDivider.isHidden = !shows
         }
         needsLayout = true
@@ -232,6 +236,11 @@ final class AllInOneBar: NSView {
     /// The chips shown as on, for tests.
     var onChoices: Set<Choice> {
         Set(buttons.filter { $0.value.state == .on }.map(\.key))
+    }
+
+    /// The chips showing, in their order on the bar, for tests.
+    var shownChoices: [Choice] {
+        stack.arrangedSubviews.filter { !$0.isHidden }.compactMap { view in buttons.first { $0.value === view }?.key }
     }
 
     private func restyle() {
@@ -294,6 +303,8 @@ final class AllInOneBar: NSView {
             ("arrow.up.and.down.text.horizontal", String(localized: "Scrolling", bundle: .module), String(localized: "Drag over the part that scrolls to capture all of it (S)", bundle: .module))
         case .record:
             ("record.circle", String(localized: "Record", bundle: .module), String(localized: "Drag over an area to record it (R)", bundle: .module))
+        case .measure:
+            ("ruler", String(localized: "Measure", bundle: .module), String(localized: "Point at something to measure it (M)", bundle: .module))
         case .cancel:
             ("xmark", String(localized: "Cancel", bundle: .module), String(localized: "Cancel (Esc)", bundle: .module))
         }
@@ -325,7 +336,7 @@ final class AllInOneBar: NSView {
         switch choice {
         case .cancel:
             button.widthAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
-        case .text, .scroll, .record:
+        case .text, .scroll, .record, .measure:
             // As wide as their labels plus the chips' padding, so the gaps on both sides of the separator match.
             button.widthAnchor.constraint(equalToConstant: ceil(button.intrinsicContentSize.width) + 22).isActive = true
         case .area, .window, .fullscreen:

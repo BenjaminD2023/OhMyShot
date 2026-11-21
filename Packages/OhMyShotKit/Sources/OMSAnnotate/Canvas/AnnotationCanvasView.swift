@@ -267,7 +267,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         /// The card's corners, in pixels.
         var cornerRadius: CGFloat
         var matte: RGBA?
-        var backdrop: BackdropLayer.Content?
+        var backdrop: BackdropPainter.Surface?
     }
 
     private var frames: Frames {
@@ -281,7 +281,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             let card = layout.isBare ? layout.picture : layout.card
             return Frames(
                 shown: layout.output, card: card, picture: layout.picture, dimmed: card, cornerRadius: layout.cornerRadius, matte: layout.matte,
-                backdrop: BackdropLayer.Content(fill: backdrop.fill, layout: layout, shadow: backdrop.shadow, scale: document.scale)
+                backdrop: BackdropPainter.Surface(fill: backdrop.fill, layout: layout, shadow: CardShadow(backdrop, scale: document.scale))
             )
         }
         // Canvas reaching past the capture (combined images beside it) is filled as exports fill it.
@@ -517,9 +517,17 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     private func position(_ layer: MarkLayer, frames: Frames) {
+        if case .filtered = layer.coverage, frames.backdrop != nil || frames.matte != nil {
+            layer.underlay = BackdropPainter.Underlay(
+                surface: frames.backdrop, blur: frames.backdrop?.fill == .blur ? session.blurredCapture : nil,
+                matte: frames.matte?.cgColor(in: baseColorSpace), canvas: frames.card, preview: backdropLayer.preview
+            )
+        } else {
+            layer.underlay = nil
+        }
         // The document point at the parent layer's corner.
         let parent = layer.superlayer === keptLayer ? frames.picture.origin : frames.shown.origin
-        let bounds = layer.mark.drawingBounds(scale: session.document.scale)
+        let bounds = layer.documentDrawingBounds
         guard !bounds.isNull, bounds.width > 0, bounds.height > 0 else {
             layer.frame = .zero
             return
@@ -867,12 +875,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     private func updateRedaction(_ layer: MarkLayer) {
         guard case .redaction(let redaction) = layer.mark.shape, redaction.method != .solid else {
-            layer.redacted = nil
+            layer.coverage = nil
             return
         }
-        let source = session.redactionSource
-        layer.redacted = Redactor.image(
-            for: redaction, id: layer.mark.id, base: source?.image ?? session.picture, origin: source?.origin ?? .zero, scale: session.document.scale
+        let source = session.combinedRedactionSource ?? Redactor.Source(base: session.picture)
+        layer.coverage = Redactor.coverage(
+            for: redaction, id: layer.mark.id, source: source, scale: session.document.scale
         )
     }
 
@@ -891,7 +899,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         guard images != redactionImages, !session.isInLiveChange else { return }
         redactionImages = images
         for layer in markLayers.values {
-            if case .redaction = layer.mark.shape { updateRedaction(layer) }
+            if case .redaction = layer.mark.shape {
+                updateRedaction(layer)
+                position(layer, frames: frames)
+            }
             updateGround(layer)
         }
     }
@@ -2337,6 +2348,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             selectionLayer.accent = NSColor.controlAccentColor.cgColor
             suggestions.applyAppearance(increasedContrast: contrast)
             backdropLayer.checker = Theme.Checkerboard.colors(dark: dark, increasedContrast: contrast)
+            for layer in markLayers.values where layer.underlay?.surface?.fill == .clear {
+                layer.underlay?.preview = backdropLayer.preview
+            }
         }
         selectionLayer.increasedContrast = contrast
         cropLayer.increasedContrast = contrast

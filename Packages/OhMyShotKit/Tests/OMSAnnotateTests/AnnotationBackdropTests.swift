@@ -36,6 +36,19 @@ struct AnnotationBackdropTests {
         return (bytes[0], bytes[1], bytes[2], bytes[3])
     }
 
+    /// The most opaque pixel of the picture's outermost ring.
+    private func outerRingAlpha(_ image: CGImage) -> UInt8 {
+        let width = image.width, height = image.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let context = CGContext(
+            data: &bytes, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let ring = (0..<width).flatMap { [($0, 0), ($0, height - 1)] } + (0..<height).flatMap { [(0, $0), (width - 1, $0)] }
+        return ring.map { bytes[($0.1 * width + $0.0) * 4 + 3] }.max() ?? 0
+    }
+
     private let opaqueEdge = EdgeAnalysis(opaque: true, edgeColor: nil, content: nil)
 
     @Test func paddingIsMeasuredAgainstTheCapturesSize() throws {
@@ -126,6 +139,57 @@ struct AnnotationBackdropTests {
         #expect(pixel(clear, 2, 2).alpha == 0)
     }
 
+    @Test func clearRoomHoldsTheWholeShadowOfASmallCapture() throws {
+        // 210 × 80 pt at 2×: a tenth of its size is narrower than the shadow, which used to stop in a line.
+        let image = page(width: 420, height: 160, content: nil)
+        var document = AnnotationDocument(pixelSize: CGSize(width: 420, height: 160), scale: 2)
+        document.backdrop = Backdrop(fill: .clear, padding: 0.08, shadow: 0.5)
+        let layout = try #require(document.backdropLayout(edges: opaqueEdge))
+        // Falling 14 px with a 48 px blur, the shadow reaches 72 px out, 58 above and 86 below.
+        #expect(layout.output == CGRect(x: -72, y: -58, width: 564, height: 304))
+        #expect(outerRingAlpha(try #require(AnnotationRenderer.flatten(document, base: image))) == 0)
+        // Room wider than the shadow stays as it was.
+        document = AnnotationDocument(pixelSize: CGSize(width: 3000, height: 2000), scale: 2)
+        document.backdrop = Backdrop(fill: .clear, padding: 0.08, shadow: 0.5)
+        #expect(try #require(document.backdropLayout(edges: opaqueEdge)).output == CGRect(x: -196, y: -196, width: 3392, height: 2392))
+        // A filled background keeps its room: the shadow lies on the fill, cut by the picture's edge or not.
+        document = AnnotationDocument(pixelSize: CGSize(width: 420, height: 160), scale: 2)
+        document.backdrop = Backdrop(padding: 0.08, shadow: 0.5)
+        #expect(try #require(document.backdropLayout(edges: opaqueEdge)).output == CGRect(x: -21, y: -21, width: 462, height: 202))
+    }
+
+    @Test func roundedCornersAndShadowLiesEvenAllRound() throws {
+        let image = page(width: 400, height: 300, content: nil)
+        var document = AnnotationDocument(pixelSize: CGSize(width: 400, height: 300), scale: 2)
+        document.backdrop = BackdropPresets.roundedShadow.backdrop
+        let layout = try #require(document.backdropLayout(edges: EdgeAnalysis.of(image, canvas: document.canvas)))
+        // A 32 px blur reaches 48 px out on every side, and no farther.
+        #expect(layout.output == CGRect(x: -48, y: -48, width: 496, height: 396))
+        #expect(layout.card == document.imageBounds && layout.cornerRadius == 30)
+        let output = try #require(AnnotationRenderer.flatten(document, base: image))
+        #expect(outerRingAlpha(output) == 0)
+        // The capture's corner is cut away, and the shadow is as deep above it as below it.
+        #expect(pixel(output, 48, 48).alpha < 128)
+        let above = pixel(output, 248, 44).alpha
+        let below = pixel(output, 248, 351).alpha
+        #expect(above > 0 && above == below)
+        // A window keeps its own corners and shadow.
+        let window = try #require(document.backdropLayout(edges: EdgeAnalysis(opaque: false, edgeColor: nil, content: nil)))
+        #expect(window.isBare && window.output == document.imageBounds)
+    }
+
+    @Test func aBackgroundKeptBeforeShadowStylesFallsAsItDid() throws {
+        let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(Backdrop())) as? [String: Any])
+        #expect(json["shadowStyle"] == nil)
+        let falling = try #require(CardShadow(Backdrop(), scale: 2))
+        #expect(falling.blur == 48 && falling.drop == 14)
+        let even = try #require(CardShadow(Backdrop(shadow: 0.5, shadowStyle: .even), scale: 2))
+        #expect(even.blur == 32 && even.drop == 0 && even.opacity == falling.opacity)
+        #expect(CardShadow(Backdrop(shadow: 0), scale: 2) == nil)
+        let rounded = BackdropPresets.roundedShadow.backdrop
+        #expect(try JSONDecoder().decode(Backdrop.self, from: JSONEncoder().encode(rounded)) == rounded)
+    }
+
     @Test func marksReachOntoTheBackground() throws {
         let image = page(width: 100, height: 100, content: nil)
         var document = AnnotationDocument(pixelSize: CGSize(width: 100, height: 100), scale: 1)
@@ -166,6 +230,30 @@ struct AnnotationBackdropTests {
         #expect(session.undoManager.undoActionName == "Padding")
         session.undo()
         #expect(session.document.backdrop == nil)
+    }
+
+    @Test func roundedCornersAndShadowIsThereWithoutSavingIt() {
+        let scratch = ScratchDefaults()
+        let defaults = scratch.make()
+        let presets = BackdropPresets(defaults: defaults)
+        #expect(presets.all.isEmpty && presets.choices == [BackdropPresets.roundedShadow])
+        presets.setAutomatic(BackdropPresets.roundedShadow.id)
+        #expect(BackdropPresets(defaults: defaults).automatic == BackdropPresets.roundedShadow)
+        let saved = presets.add(name: "Sky", backdrop: Backdrop())
+        #expect(presets.choices == [BackdropPresets.roundedShadow, saved])
+        presets.remove(saved.id)
+        #expect(presets.automatic == BackdropPresets.roundedShadow)
+    }
+
+    @Test func aWindowIsNotGivenRoundedCornersAndShadow() {
+        let scratch = ScratchDefaults()
+        let presets = BackdropPresets(defaults: scratch.make())
+        #expect(presets.automaticForWindows == nil)
+        presets.setAutomatic(BackdropPresets.roundedShadow.id)
+        #expect(presets.automatic == BackdropPresets.roundedShadow && presets.automaticForWindows == nil)
+        let saved = presets.add(name: "Sky", backdrop: Backdrop())
+        presets.setAutomatic(saved.id)
+        #expect(presets.automaticForWindows == saved)
     }
 
     @Test func theLastBackgroundPictureIsKeptAmongThePresetsPictures() {

@@ -2945,6 +2945,40 @@
         }
       }
     },
+    "Edit a Flattened Copy" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar una copia acoplada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier une copie aplatie"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "注釈を統合したコピーを編集"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑已合并标注的副本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯已合併標註的副本"
+          }
+        }
+      }
+    },
     "Email address" : {
       "localizations" : {
         "es" : {
@@ -3903,6 +3937,46 @@
         }
       }
     },
+    "Kept: %@\nNot saved: %@\n\nOhMyShot kept the recording draft and will try again next time it starts." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Kept: %1$@\nNot saved: %2$@\n\nOhMyShot kept the recording draft and will try again next time it starts."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conservado: %1$@\nNo guardado: %2$@\n\nOhMyShot ha conservado el borrador de la grabación y lo volverá a intentar la próxima vez que se abra."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conservé : %1$@\nNon enregistré : %2$@\n\nOhMyShot a conservé le brouillon de l’enregistrement et réessaiera à son prochain démarrage."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済み：%1$@\n未保存：%2$@\n\nOhMyShotは収録の下書きを保持しており、次回起動時にもう一度試します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保留：%1$@\n未保存：%2$@\n\nOhMyShot 已保留录制草稿，将在下次启动时重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保留：%1$@\n未儲存：%2$@\n\nOhMyShot 已保留錄製草稿，下次啟動時會再試一次。"
+          }
+        }
+      }
+    },
     "Key or token" : {
       "localizations" : {
         "es" : {
@@ -4559,6 +4633,40 @@
         }
       }
     },
+    "Not Enough Disk Space to Record" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay suficiente espacio en disco para grabar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espace disque insuffisant pour enregistrer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収録に十分なディスク空き容量がありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "磁盘空间不足，无法录制"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "磁碟空間不足，無法錄製"
+          }
+        }
+      }
+    },
     "Nothing changed on %@ in the last 15 seconds." : {
       "localizations" : {
         "es" : {
@@ -4657,6 +4765,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "目前沒有保留任何內容。請在選單列的「保留最後 15 秒」中選擇一個顯示器。"
+          }
+        }
+      }
+    },
+    "OK" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aceptar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好"
           }
         }
       }
@@ -5960,6 +6102,108 @@
         }
       }
     },
+    "Recording Couldn’t Be Kept" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido conservar la grabación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de conserver l’enregistrement"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収録を保存できませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法保留该录制"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法保留該錄製"
+          }
+        }
+      }
+    },
+    "Recording Stopped Unexpectedly" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La grabación se detuvo inesperadamente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’enregistrement s’est arrêté de manière inattendue"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収録が予期せず停止しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录制意外停止"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錄製意外停止"
+          }
+        }
+      }
+    },
+    "Recording Stopped — Disk Space Low" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grabación detenida: poco espacio en disco"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement arrêté — Espace disque faible"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収録を停止しました — ディスク空き容量不足"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录制已停止 — 磁盘空间不足"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錄製已停止 — 磁碟空間不足"
+          }
+        }
+      }
+    },
     "Recording cancelled." : {
       "localizations" : {
         "es" : {
@@ -6102,6 +6346,46 @@
         }
       }
     },
+    "Recording needs at least %@ of free disk space, and only %@ is available. Free up space and try again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Recording needs at least %1$@ of free disk space, and only %2$@ is available. Free up space and try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La grabación necesita al menos %1$@ de espacio libre en disco, y solo hay %2$@ disponibles. Libera espacio e inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’enregistrement nécessite au moins %1$@ d’espace disque disponible, mais il ne reste que %2$@. Libérez de l’espace et réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収録には少なくとも%1$@の空き容量が必要ですが、現在%2$@しかありません。空き容量を増やしてからもう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录制至少需要 %1$@ 可用磁盘空间，当前仅剩 %2$@。请释放空间后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錄製至少需要 %1$@ 可用磁碟空間，目前僅剩 %2$@。請釋放空間後再試。"
+          }
+        }
+      }
+    },
     "Recording paused." : {
       "localizations" : {
         "es" : {
@@ -6166,6 +6450,114 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已繼續錄製。"
+          }
+        }
+      }
+    },
+    "Recording stopped at %@ because disk space ran low before any frames were saved." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La grabación se detuvo en %@ por falta de espacio en disco antes de guardar ningún fotograma."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’enregistrement s’est arrêté à %@ faute d’espace disque avant qu’aucune image ne soit enregistrée."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスクの空き容量が少なくなったため、フレームが保存される前の%@で収録を停止しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "因磁盘空间不足，录制在 %@ 停止，尚未保存任何画面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "因磁碟空間不足，錄製在 %@ 停止，尚未儲存任何畫面。"
+          }
+        }
+      }
+    },
+    "Recording stopped at %@ because disk space ran low, and the recording couldn’t be finished yet. Free up space — OhMyShot kept the draft and will try again next time it starts." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La grabación se detuvo en %@ por falta de espacio en disco y aún no se ha podido finalizar. Libera espacio: OhMyShot ha conservado el borrador y lo volverá a intentar la próxima vez que se abra."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’enregistrement s’est arrêté à %@ faute d’espace disque et n’a pas encore pu être finalisé. Libérez de l’espace — OhMyShot a conservé le brouillon et réessaiera à son prochain démarrage."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスクの空き容量が少なくなったため%@で収録を停止し、まだ完了できませんでした。空き容量を増やしてください。OhMyShotは下書きを保持しており、次回起動時にもう一度試します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "因磁盘空间不足，录制已在 %@ 停止，且暂无法完成保存。请释放空间 — OhMyShot 已保留草稿，将在下次启动时重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "因磁碟空間不足，錄製已在 %@ 停止，且暫時無法完成儲存。請釋放空間 — OhMyShot 已保留草稿，下次啟動時會再試一次。"
+          }
+        }
+      }
+    },
+    "Recording stopped at %@ because disk space ran low. The recording up to %@ was kept." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Recording stopped at %1$@ because disk space ran low. The recording up to %2$@ was kept."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La grabación se detuvo en %1$@ por falta de espacio en disco. Se ha conservado la grabación hasta %2$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’enregistrement s’est arrêté à %1$@ faute d’espace disque suffisant. L’enregistrement jusqu’à %2$@ a été conservé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスクの空き容量が少なくなったため、%1$@で収録を停止しました。%2$@までの収録は保存されました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "因磁盘空间不足，录制已在 %1$@ 停止。已保留至 %2$@ 的内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "因磁碟空間不足，錄製已在 %1$@ 停止。已保留至 %2$@ 的內容。"
           }
         }
       }
@@ -6507,6 +6899,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向右旋轉"
+          }
+        }
+      }
+    },
+    "Rounded corners and shadow" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esquinas redondeadas y sombra"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coins arrondis et ombre"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "角丸と影"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圆角与阴影"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "圓角與陰影"
           }
         }
       }
@@ -7260,6 +7686,40 @@
         }
       }
     },
+    "Studio Recording Partially Saved" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grabación de Studio guardada parcialmente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement Studio partiellement enregistré"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スタジオ収録の一部のみ保存されました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Studio 录制仅部分保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Studio 錄製僅部分儲存"
+          }
+        }
+      }
+    },
     "Studio export cancelled." : {
       "localizations" : {
         "es" : {
@@ -7290,6 +7750,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已取消 Studio 輸出。"
+          }
+        }
+      }
+    },
+    "Studio project settings" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ajustes del proyecto de Studio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "réglages du projet Studio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スタジオプロジェクトの設定"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Studio 项目设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Studio 專案設定"
           }
         }
       }
@@ -7698,6 +8192,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法開始錄製。"
+          }
+        }
+      }
+    },
+    "The saved marks couldn’t be opened." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se han podido abrir las anotaciones guardadas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d’ouvrir les annotations enregistrées."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存された注釈を開けませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开已保存的标注。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法打開已儲存的標註。"
           }
         }
       }
@@ -8454,6 +8982,148 @@
         }
       }
     },
+    "Writing the recording failed at %@ before any frames were saved." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error al escribir la grabación en %@ antes de guardar ningún fotograma."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’écriture de l’enregistrement a échoué à %@ avant qu’aucune image ne soit enregistrée."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フレームが保存される前の%@で収録の書き込みに失敗しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录制在 %@ 写入失败，尚未保存任何画面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錄製在 %@ 寫入失敗，尚未儲存任何畫面。"
+          }
+        }
+      }
+    },
+    "Writing the recording failed at %@, and the recording couldn’t be finished yet. OhMyShot kept the draft and will try again next time it starts." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error al escribir la grabación en %@ y aún no se ha podido finalizar. OhMyShot ha conservado el borrador y lo volverá a intentar la próxima vez que se abra."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’écriture de l’enregistrement a échoué à %@ et il n’a pas encore pu être finalisé. OhMyShot a conservé le brouillon et réessaiera à son prochain démarrage."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で収録の書き込みに失敗し、まだ完了できませんでした。OhMyShotは下書きを保持しており、次回起動時にもう一度試します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录制在 %@ 写入失败，且暂无法完成保存。OhMyShot 已保留草稿，将在下次启动时重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錄製在 %@ 寫入失敗，且暫時無法完成儲存。OhMyShot 已保留草稿，下次啟動時會再試一次。"
+          }
+        }
+      }
+    },
+    "Writing the recording failed at %@. The recording up to %@ was kept." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Writing the recording failed at %1$@. The recording up to %2$@ was kept."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error al escribir la grabación en %1$@. Se ha conservado la grabación hasta %2$@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’écriture de l’enregistrement a échoué à %1$@. L’enregistrement jusqu’à %2$@ a été conservé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@で収録の書き込みに失敗しました。%2$@までの収録は保存されました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "录制在 %1$@ 写入失败。已保留至 %2$@ 的内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錄製在 %1$@ 寫入失敗。已保留至 %2$@ 的內容。"
+          }
+        }
+      }
+    },
+    "You can edit a copy of the picture as it appears in History. Its existing marks can’t be changed. The original capture will be left alone." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Puedes editar una copia de la imagen tal como aparece en el historial. Las anotaciones existentes no se pueden modificar. La captura original se conservará intacta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vous pouvez modifier une copie de l’image telle qu’elle apparaît dans l’historique. Les annotations existantes ne sont pas modifiables. La capture d’origine restera intacte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "履歴に表示されている画像のコピーを編集できます。既存の注釈は変更できません。元のキャプチャはそのまま残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你可以编辑截图历史中所示图像的副本。已有标注无法单独修改，原始截图不会改变。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你可以編輯影像在記錄中顯示的副本。現有標註無法修改，原始截圖會保持不變。"
+          }
+        }
+      }
+    },
     "You copied something else while it was read." : {
       "localizations" : {
         "es" : {
@@ -8518,6 +9188,108 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "縮放"
+          }
+        }
+      }
+    },
+    "camera video" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vídeo de la cámara"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vidéo de la caméra"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カメラ映像"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "摄像头视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "攝影機影片"
+          }
+        }
+      }
+    },
+    "pointer and zoom data" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "datos del puntero y del zoom"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "données du pointeur et du zoom"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポインタとズームのデータ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "光标与缩放数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游標與縮放資料"
+          }
+        }
+      }
+    },
+    "screen recording" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "grabación de pantalla"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "enregistrement de l’écran"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面収録"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "屏幕录像"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "螢幕錄影"
           }
         }
       }

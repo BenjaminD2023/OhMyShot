@@ -83,6 +83,7 @@ final class CaptureCoordinator {
         guard !overlay.isActive else { return followUp.finish(nil) }
         cancelSelfTimer()
         previousArea = rect
+        lastArea = rect
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         Task { await captureArea(rect, appName: app, windowTitle: title, followUp: followUp) }
@@ -101,8 +102,13 @@ final class CaptureCoordinator {
         overlay.colorCopyGesture = copiesToClipboard ? settings.colorCopyGesture : .disabled
         overlay.captureLoupeSize = settings.captureLoupeSize
         overlay.captureLoupeMagnification = settings.captureLoupeMagnification
-        overlay.lastArea = previousArea ?? settings.allInOneArea?.area(in: displays.layout)
+        overlay.lastArea = lastArea ?? previousArea ?? settings.allInOneArea?.area(in: displays.layout)
     }
+
+    /// The area last taken since OhMyShot opened, in Capture Area (or by the URL API's `capture-area`) or in All-In-One
+    /// whatever it was for: what L brings back, ahead of an area Settings keep for All-In-One.
+    var onWillMeasure: ((Bool) -> Void)?
+    private var lastArea: CGRect?
 
     // MARK: All-In-One
 
@@ -130,11 +136,13 @@ final class CaptureCoordinator {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         overlay.freezesScreen = freezes ?? settings.freezeScreen
+        overlay.onWillMeasure = { [weak self] in self?.onWillMeasure?(copiesToClipboard) }
         let options = OverlayController.SessionOptions(allInOne: .init(offersUpload: canUpload?() ?? false, showsCopy: !settings.copyAfterCapture))
         let start = area ?? (settings.allInOneRemembersArea ? settings.allInOneArea?.area(in: displays.layout) : nil)
         configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: .area, options: options, choosing: start) { [weak self] outcome in
             guard let self else { return }
+            if let area = outcome.takenArea { lastArea = area }
             switch outcome {
             case .allInOne(let choice, let rect, let display, let frozen):
                 remember(rect, on: display)
@@ -142,10 +150,12 @@ final class CaptureCoordinator {
                 case .screenshot(let action):
                     previousArea = rect
                     let followUp = CaptureFollowUp(action: action)
+                    let window = overlay.window(framing: rect)
+                    let appName = window?.ownerName ?? app, windowTitle = window.map(\.title) ?? title
                     if let frozen {
-                        Task { await self.deliver(frozen, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                        Task { await self.deliver(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
                     } else {
-                        Task { await self.captureArea(rect, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                        Task { await self.captureArea(rect, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
                     }
                 case .text: allInOneText?(rect, frozen)
                 case .scroll: allInOneScroll?(rect)
@@ -156,8 +166,12 @@ final class CaptureCoordinator {
             case .windows(let targets, let modifiers):
                 Task { await self.captureWindows(targets, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
             case .record(let target, let display, let choices):
-                if case .area(let rect) = target { remember(rect, on: display) }
-                onRecord?(target, display, choices, app)
+                var appName = app
+                if case .area(let rect) = target {
+                    remember(rect, on: display)
+                    appName = overlay.window(framing: rect)?.ownerName ?? app
+                }
+                onRecord?(target, display, choices, appName)
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
             case .cancelled:
@@ -463,6 +477,7 @@ final class CaptureCoordinator {
         configureCaptureOverlay(copiesToClipboard: copiesToClipboard)
         overlay.begin(mode: mode, choosing: area) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
+            if let area = outcome.takenArea { lastArea = area }
             switch outcome {
             case .region(let rect, _, _, let frozen?):
                 // The screen was held still: the selection is kept as it was seen.
@@ -530,11 +545,12 @@ final class CaptureCoordinator {
         }
     }
 
-    /// What a window screenshot is put on: Settings' choice for windows, flipped by Shift as it was clicked. The
-    /// desktop picture is taken around the window as the display shows it now and kept with the pictures backgrounds
-    /// use, so the capture can be marked up and kept the same later.
+    /// What a window screenshot is put on: Settings' choice for windows, flipped by Shift as it was clicked. Rounded
+    /// Corners and Shadow is not put on a window, which keeps its own corners and shadow. The desktop picture is taken
+    /// around the window as the display shows it now and kept with the pictures backgrounds use, so the capture can be
+    /// marked up and kept the same later.
     private func windowBackground(for frame: CapturedFrame, shiftHeld: Bool) async -> CaptureBackground {
-        let resolved = settings.windowBackground.resolved(automaticPreset: BackdropPresets.shared.automatic != nil, shiftHeld: shiftHeld)
+        let resolved = settings.windowBackground.resolved(automaticPreset: BackdropPresets.shared.automaticForWindows != nil, shiftHeld: shiftHeld)
         switch resolved {
         case .none: return .none
         case .preset: return .automatic
@@ -554,7 +570,7 @@ final class CaptureCoordinator {
         let captured = CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: frame)
         guard let backdrop = await wallpaperBackdrop(around: captured) else { return nil }
         let scale = displays.layout.display(id: displayID)?.pixelsPerPoint ?? 2
-        guard let composed = await composed(image, scale: scale, marks: nil, background: .backdrop(backdrop)),
+        guard let composed = try? await composed(image, scale: scale, marks: nil, background: .backdrop(backdrop)),
               let document = try? JSONDecoder().decode(AnnotationDocument.self, from: composed.document) else { return nil }
         Log.capture.notice("debug window-on-wallpaper: background \(String(describing: document.backdrop?.fill), privacy: .public), \(composed.image.width, privacy: .public)x\(composed.image.height, privacy: .public)")
         // The piece of the wallpaper it stored is in no capture's marks: the next sweep takes it.
@@ -641,9 +657,8 @@ final class CaptureCoordinator {
             var shown = (image: frame.image, png: png)
             var document: Data?
             let scale = pixelsPerPoint ?? (frame.frame.width > 0 ? CGFloat(frame.image.width) / frame.frame.width : 1)
-            if let composed = await composed(frame.image, scale: scale, marks: marks, background: background),
-               let composedPNG = try? await ImageExporter.encode(composed.image, as: .png) {
-                shown = (composed.image, composedPNG)
+            if let composed = try await composed(frame.image, scale: scale, marks: marks, background: background) {
+                shown = (composed.image, try await ImageExporter.encode(composed.image, as: .png))
                 document = composed.document
             }
             let copies = switch copying {
@@ -737,17 +752,14 @@ final class CaptureCoordinator {
 
     /// The capture as it is kept: with marks drawn in place and the background chosen for every new
     /// screenshot set under them, and the document that recreates it; nil when it is kept as captured.
-    private func composed(_ image: CGImage, scale: CGFloat, marks: AnnotationDocument?, background: CaptureBackground = .automatic) async -> (image: CGImage, document: Data)? {
-        var document = marks ?? AnnotationDocument(pixelSize: CGSize(width: image.width, height: image.height), scale: scale)
-        if document.backdrop == nil {
-            switch background {
-            case .automatic: document.backdrop = BackdropPresets.shared.automatic?.backdrop
-            case .none: break
-            case .backdrop(let backdrop): document.backdrop = backdrop
-            }
+    private func composed(_ image: CGImage, scale: CGFloat, marks: AnnotationDocument?, background: CaptureBackground) async throws -> (image: CGImage, document: Data)? {
+        let document = marks ?? AnnotationDocument(pixelSize: CGSize(width: image.width, height: image.height), scale: scale)
+        let backdrop: Backdrop? = switch background {
+        case .automatic: BackdropPresets.shared.automatic?.backdrop
+        case .none: nil
+        case .backdrop(let backdrop): backdrop
         }
-        guard !document.isEmpty, let rendered = await AnnotationRenderer.render(document, base: image), let data = try? JSONEncoder().encode(document) else { return nil }
-        return (rendered, data)
+        return try await CaptureRendition.render(marks: document, adding: backdrop, to: image)
     }
 }
 

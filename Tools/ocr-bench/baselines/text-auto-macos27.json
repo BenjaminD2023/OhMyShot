@@ -7,21 +7,21 @@
     },
     "code-gutter" : {
       "cerContent" : 0.07664233576642336,
-      "cerRaw" : 0.1318051575931232,
+      "cerRaw" : 0.12893982808022922,
       "indentation" : 0.1111111111111111,
-      "lineOrder" : 0.5555555555555556
+      "lineOrder" : 0.375
     },
     "code-swift" : {
-      "cerContent" : 0.8391608391608392,
-      "cerRaw" : 0.8457300275482094,
-      "indentation" : 0.1,
-      "lineOrder" : 0.3
+      "cerContent" : 0.027972027972027972,
+      "cerRaw" : 0.12672176308539945,
+      "indentation" : 0.2,
+      "lineOrder" : 0.8
     },
     "code-swift-plain" : {
-      "cerContent" : 0.01824817518248175,
-      "cerRaw" : 0.12607449856733524,
+      "cerContent" : 0.014598540145985401,
+      "cerRaw" : 0.12034383954154727,
       "indentation" : 0.1111111111111111,
-      "lineOrder" : 0.6666666666666666
+      "lineOrder" : 0.7777777777777778
     },
     "code-yaml" : {
       "cerContent" : 0,
@@ -40,8 +40,8 @@
       "lineOrder" : 1
     },
     "en-zh-word" : {
-      "cerContent" : 0.07692307692307693,
-      "cerRaw" : 0.07792207792207792,
+      "cerContent" : 0.06153846153846154,
+      "cerRaw" : 0.05194805194805195,
       "lineOrder" : 1
     },
     "ja" : {
@@ -58,6 +58,36 @@
       "cerContent" : 0.13636363636363635,
       "cerRaw" : 0.152,
       "lineOrder" : 0.8
+    },
+    "rows-settings" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.06140350877192982,
+      "lineOrder" : 0.4166666666666667
+    },
+    "rows-terminal-ll" : {
+      "cerContent" : 0.05420054200542006,
+      "cerRaw" : 0.20816326530612245,
+      "lineOrder" : 0.022222222222222223
+    },
+    "rows-terminal-ls" : {
+      "cerContent" : 0,
+      "cerRaw" : 0.4189189189189189,
+      "lineOrder" : 0
+    },
+    "side-columns-en" : {
+      "cerContent" : 0.00202020202020202,
+      "cerRaw" : 0.0016474464579901153,
+      "lineOrder" : 1
+    },
+    "side-columns-zh" : {
+      "cerContent" : 0.02631578947368421,
+      "cerRaw" : 0.024875621890547265,
+      "lineOrder" : 1
+    },
+    "side-gallery" : {
+      "cerContent" : 0,
+      "cerRaw" : 0,
+      "lineOrder" : 1
     },
     "small-11px" : {
       "cerContent" : 0,
@@ -81,12 +111,12 @@
     },
     "small-24px" : {
       "cerContent" : 0,
-      "cerRaw" : 0.038461538461538464,
+      "cerRaw" : 0.019230769230769232,
       "lineOrder" : 1
     },
     "small-30px" : {
-      "cerContent" : 0,
-      "cerRaw" : 0.038461538461538464,
+      "cerContent" : 0.022727272727272728,
+      "cerRaw" : 0.057692307692307696,
       "lineOrder" : 1
     },
     "small-9px" : {
@@ -96,22 +126,23 @@
     },
     "table-en" : {
       "cerContent" : 0,
-      "cerRaw" : 0,
-      "lineOrder" : 1,
-      "tableCells" : 0,
-      "tableShape" : false
+      "cerRaw" : 0.13636363636363635,
+      "lineOrder" : 0
     },
     "table-zh" : {
-      "cerContent" : 0.041666666666666664,
-      "cerRaw" : 0.03225806451612903,
-      "lineOrder" : 0.9333333333333333,
-      "tableCells" : 0,
-      "tableShape" : false
+      "cerContent" : 0.08333333333333333,
+      "cerRaw" : 0.22580645161290322,
+      "lineOrder" : 0.07142857142857142
+    },
+    "tall-page" : {
+      "cerContent" : 0.9745229954781074,
+      "cerRaw" : 0.9760539940828402,
+      "lineOrder" : 0.02
     },
     "ui-icons" : {
-      "cerContent" : 0.24074074074074073,
-      "cerRaw" : 0.25,
-      "lineOrder" : 0.7272727272727273
+      "cerContent" : 0.3148148148148148,
+      "cerRaw" : 0.34375,
+      "lineOrder" : 0.5454545454545454
     },
     "vertical-zh" : {
       "cerContent" : 0,
@@ -119,13 +150,13 @@
       "lineOrder" : 1
     },
     "zh-doc" : {
-      "cerContent" : 0.034782608695652174,
-      "cerRaw" : 0.03305785123966942,
+      "cerContent" : 0.02608695652173913,
+      "cerRaw" : 0.024793388429752067,
       "lineOrder" : 1
     },
     "zh-en-chat" : {
       "cerContent" : 0.046511627906976744,
-      "cerRaw" : 0.07692307692307693,
+      "cerRaw" : 0.09615384615384616,
       "lineOrder" : 1
     },
     "zh-en-lines" : {
@@ -145,5 +176,5 @@
     }
   },
   "engine" : "text-auto",
-  "macOS" : "27.2.0"
+  "macOS" : "27.3.0"
 }

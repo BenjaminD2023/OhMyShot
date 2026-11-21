@@ -4,7 +4,7 @@ import Testing
 
 @MainActor
 struct UsageTelemetryTests {
-    @Test func optInDefaultsToOffAndResetDisablesIt() throws {
+    @Test func usageDataDefaultsToOffAndResetKeepsTheChoice() throws {
         let name = UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
@@ -14,10 +14,12 @@ struct UsageTelemetryTests {
 
         #expect(!settings.sendsUsageData)
         settings.sendsUsageData = true
-        #expect(SettingsStore(defaults: defaults).sendsUsageData)
+        settings.sendsUsageData = false
+        #expect(!SettingsStore(defaults: defaults).sendsUsageData)
         settings.resetToDefaults()
 
         #expect(changes == [true, false])
+        #expect(!settings.sendsUsageData)
         #expect(!SettingsStore(defaults: defaults).sendsUsageData)
     }
 

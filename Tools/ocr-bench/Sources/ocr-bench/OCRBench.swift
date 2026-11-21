@@ -23,6 +23,9 @@ import UniformTypeIdentifiers
 ///
 /// Engines run one request at a time: Vision can stall when several accurate requests overlap. (The
 /// `text-zh-en+en` probe runs two on purpose, to measure how Vision runs two models side by side.)
+///
+/// Every run first checks the scorer against the cases it is about to score (`SelfCheck`), and stops if
+/// the scorer fails.
 @main
 struct OCRBench {
     private static let zhHans = Locale.Language(identifier: "zh-Hans")
@@ -35,12 +38,21 @@ struct OCRBench {
         VisionTextEngine(name: "text-zh-en", configuration: .init(languages: [zhHans, en]), timeout: timeout),
         VisionTextEngine(name: "text-auto", configuration: .init(automaticallyDetectsLanguage: true), timeout: timeout),
         VisionDocumentEngine(name: "documents", timeout: timeout),
-        VisionPipeline(name: "l1", options: .init(
-            primaryLanguages: [zhHans, en],
-            fallbackLanguages: [[ko, en], [en]],
-            timeout: timeout
-        )),
+        l1,
+        PanelReading(pipeline: l1),
     ]
+
+    private static let l1 = VisionPipeline(name: "l1", options: .init(
+        primaryLanguages: [zhHans, en],
+        fallbackLanguages: [[ko, en], [en]],
+        timeout: timeout
+    ))
+
+    /// Whether an engine's results carry tables. L1's quick reading (`recognize`) never does, so it is not
+    /// scored on them: a zero there would read as a table lost, when the app shows tables only in the panel.
+    private static func readsTables(_ engine: any OCREngine) -> Bool {
+        engine is PanelReading || engine is VisionDocumentEngine
+    }
 
     /// Generous, so a model loading on first use reads as slow rather than as a hang.
     private static let timeout = Duration.seconds(30)
@@ -102,6 +114,12 @@ struct OCRBench {
             exit(1)
         }
 
+        let unsound = SelfCheck.failures(in: corpus)
+        guard unsound.isEmpty else {
+            FileHandle.standardError.write(Data(("The scorer fails its own check:\n" + unsound.joined(separator: "\n") + "\n").utf8))
+            exit(1)
+        }
+
         let environment = Environment.current
         let images = Dictionary(uniqueKeysWithValues: corpus.map { ($0.id, $0.render()) })
         if let directory = options.saveDirectory {
@@ -131,7 +149,7 @@ struct OCRBench {
                         let box = line.box.integral
                         return "\(line.direction.map { "\($0)" } ?? "-")\t\(Int(box.minX)),\(Int(box.minY)) \(Int(box.width))×\(Int(box.height))\t\(String(format: "%.2f", line.confidence))\t\(line.wrapsToNextLine.map { $0 ? "wraps" : "ends" } ?? "-")\t\(line.text)"
                     }
-                    run.score = Metrics.score(result, against: item.truth, category: item.category)
+                    run.score = Metrics.score(result, against: item.truth, category: item.category, readsTables: readsTables(engine))
                     run.milliseconds = result.duration.milliseconds
                     run.output = result.text
                     run.tables = result.tables.isEmpty ? nil : result.tables.map(\.rows)
@@ -146,7 +164,7 @@ struct OCRBench {
                 }
                 cases.append(run)
             }
-            runs.append(EngineRun(engine: engine.name, warmupMilliseconds: warmup.milliseconds, cases: cases))
+            runs.append(EngineRun(engine: engine.name, readsTables: readsTables(engine), warmupMilliseconds: warmup.milliseconds, cases: cases))
         }
 
         var regressions: [String] = []
@@ -243,6 +261,21 @@ extension Duration {
     var milliseconds: Double {
         let (seconds, attoseconds) = components
         return Double(seconds) * 1000 + Double(attoseconds) / 1e15
+    }
+}
+
+/// L1 as the OCR panel runs it (`VisionPipeline.analyze`): the same lines and text as "l1", and the tables the
+/// document request finds, their cells filled from those lines. The time is L1's alone.
+struct PanelReading: OCREngine {
+    let name = "panel"
+    let pipeline: VisionPipeline
+
+    @concurrent
+    func recognize(_ image: CGImage) async throws -> OCRResult {
+        let analysis = try await pipeline.analyze(image)
+        var result = analysis.result
+        result.tables = analysis.tables
+        return result
     }
 }
 

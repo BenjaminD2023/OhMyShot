@@ -11,8 +11,7 @@ import OSLog
 final class CaptureRetention {
     private let settings: SettingsStore
     private let history: HistoryStore
-    /// The captures with a Quick Access card.
-    private let cards: () -> Set<UUID>
+    private let cards: (HistoryRetention) -> Set<UUID>
     /// The captures open in the editor, which also keeps the wallpaper sweep off while any is: its Undo may bring a
     /// background back.
     private let editors: () -> Set<UUID>
@@ -21,16 +20,17 @@ final class CaptureRetention {
     /// The captures being uploaded.
     private let uploads: () -> Set<UUID>
     /// Captures were removed from the history: Capture History shows it.
-    private let historyChanged: () -> Void
+    private let historyChanged: ([UUID]) -> Void
     private var pictureSweep: Task<Void, Never>?
     private var expiry: Task<Void, Never>?
-    /// The recording whose file is on the clipboard, and the clipboard's change count when it went there.
-    private var clipboardRecording: (id: UUID, changeCount: Int)?
-    private var clipboardWatch: Task<Void, Never>?
+    private lazy var clipboard = RecordingClipboardHold(
+        changeCount: { NSPasteboard.general.changeCount },
+        released: { [weak self] in self?.releaseIfUnheld($0) }
+    )
 
     init(
-        settings: SettingsStore, history: HistoryStore, cards: @escaping () -> Set<UUID>, editors: @escaping () -> Set<UUID>,
-        recordingWindows: @escaping () -> Set<UUID>, uploads: @escaping () -> Set<UUID>, historyChanged: @escaping () -> Void
+        settings: SettingsStore, history: HistoryStore, cards: @escaping (HistoryRetention) -> Set<UUID>, editors: @escaping () -> Set<UUID>,
+        recordingWindows: @escaping () -> Set<UUID>, uploads: @escaping () -> Set<UUID>, historyChanged: @escaping ([UUID]) -> Void
     ) {
         self.settings = settings
         self.history = history
@@ -43,45 +43,26 @@ final class CaptureRetention {
 
     /// Captures something still needs the file of: a card, an open editor, an open recording window (a Studio one
     /// included), an upload on its way, the clipboard.
-    var heldCaptureIDs: Set<UUID> {
-        cards()
+    private func heldCaptureIDs(for retention: HistoryRetention) -> Set<UUID> {
+        cards(retention)
             .union(editors())
             .union(recordingWindows())
             .union(uploads())
-            .union(clipboardRecordingID.map { [$0] } ?? [])
+            .union(clipboard.heldID.map { [$0] } ?? [])
     }
 
     /// With history off, a capture lives as long as something holds it (`heldCaptureIDs`); deletes it once nothing does.
     func releaseIfUnheld(_ id: UUID) {
-        guard settings.historyRetention == .never, !heldCaptureIDs.contains(id), let entry = history.item(id: id) else { return }
+        guard settings.historyRetention == .never, !heldCaptureIDs(for: .never).contains(id), let entry = history.item(id: id) else { return }
         history.delete(entry)
-        historyChanged()
+        historyChanged([id])
         sweepWallpaperPictures()
     }
 
     /// A recording went to the clipboard as a reference to its file in the history, which is all the clipboard has of it.
     /// With history off, the file stays until the clipboard holds something else, or until the next launch.
     func recordingCopied(_ id: UUID) {
-        let former = clipboardRecording?.id
-        clipboardRecording = (id, NSPasteboard.general.changeCount)
-        clipboardWatch?.cancel()
-        clipboardWatch = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3))
-                guard let self, !Task.isCancelled else { return }
-                guard clipboardRecordingID == nil else { continue }
-                clipboardRecording = nil
-                releaseIfUnheld(id)
-                return
-            }
-        }
-        if let former, former != id { releaseIfUnheld(former) }
-    }
-
-    /// The recording whose file the clipboard still holds: nothing else has been copied since it was.
-    private var clipboardRecordingID: UUID? {
-        guard let held = clipboardRecording, held.changeCount == NSPasteboard.general.changeCount else { return nil }
-        return held.id
+        clipboard.copied(id, retention: settings.historyRetention)
     }
 
     /// Takes away the captures older than Settings keep them, but those something holds. The history is listed off the
@@ -89,26 +70,29 @@ final class CaptureRetention {
     /// takes over from one under way.
     func removeExpired() {
         expiry?.cancel()
-        let retention = settings.historyRetention, keeping = heldCaptureIDs, now = Date.now
+        let retention = settings.historyRetention, keeping = heldCaptureIDs(for: retention), now = Date.now
+        clipboard.updatePolling(for: retention)
         expiry = Task { [weak self, history] in
             let expired = await history.loadExpired(retention: retention, keeping: keeping, now: now)
-            guard let self, !Task.isCancelled else { return }
+            guard let self, !Task.isCancelled, settings.historyRetention == retention else { return }
             // Back on the main actor, and the listing took a while: a capture taken since is newer than `now`, and one
             // a card, an editor, or the clipboard took up since is held now; neither goes. With history off, that is
             // every capture but the ones still in use.
-            let removable = HistoryStore.removable(expired, held: heldCaptureIDs, checkedAt: now)
+            let removable = HistoryStore.removable(expired, held: heldCaptureIDs(for: retention), checkedAt: now).filter {
+                history.item(forFileAt: history.fileURL(for: $0))?.id == $0.id
+            }
             removable.forEach(history.delete)
             if !removable.isEmpty {
                 Log.capture.notice("Removed \(removable.count, privacy: .public) expired capture(s) from the history")
             }
-            historyChanged()
+            historyChanged(removable.map(\.id))
             sweepWallpaperPictures()
         }
     }
 
     /// How many captures a retention would delete now; captures still on screen as cards are kept.
     func expiredCount(for retention: HistoryRetention) -> Int {
-        history.expired(retention: retention, keeping: heldCaptureIDs).count
+        history.expired(retention: retention, keeping: heldCaptureIDs(for: retention)).count
     }
 
     /// Takes away the desktop pictures' pieces kept for window screenshots once nothing uses them: no capture's

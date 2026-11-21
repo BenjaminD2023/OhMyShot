@@ -37,6 +37,18 @@ public final class OverlayController {
         /// recording chosen there is set up in the same session, and ends it as `record`.
         case allInOne(AllInOneChoice, CGRect, display: DisplayInfo, frozen: CapturedFrame?)
         case cancelled
+
+        /// The area this outcome took, in global points, for L to bring back: a region, All-In-One's area whatever it
+        /// was for, a scrolling capture's, or what was recorded unless it was a window; nil for a window, a color, an
+        /// annotation, or nothing.
+        public var takenArea: CGRect? {
+            switch self {
+            case .region(let rect, _, _, _), .allInOne(_, let rect, _, _), .scroll(let rect, _, _): rect
+            case .record(.area(let rect), _, _): rect
+            case .record(.display, let display, _): display.frame
+            case .record(.window, _, _), .window, .windows, .annotated, .color, .cancelled: nil
+            }
+        }
     }
 
     /// What the capture is for: a screenshot, or text to copy. Text gets a lighter overlay: no All-In-One
@@ -130,6 +142,14 @@ public final class OverlayController {
         }
     }
 
+    /// A window All-In-One highlights under the pointer before anything is chosen: the window, and its part on the
+    /// display there, which a click frames as the area.
+    struct HoveredWindow: Equatable {
+        let window: WindowTarget
+        let area: CGRect
+        let display: DisplayInfo
+    }
+
     /// Hold the screen still while selecting, so hover states and menus can be captured.
     public var freezesScreen = false
     /// Whether screenshots show the pointer. A frozen screen is captured with it, where it was when the shortcut was
@@ -155,6 +175,9 @@ public final class OverlayController {
     /// A recording is about to be set up outside Record Screen (from All-In-One): whoever records sets
     /// `recordingChoices` and `onRecordingSetupChange` for it.
     public var onWillSetUpRecording: (() -> Void)?
+    /// All-In-One is about to turn into Measure (M), in its own session: whoever measures sets the ruler's unit,
+    /// tolerance, and snapping, and what hears them and copies the measurement, as Measure would.
+    public var onWillMeasure: (() -> Void)?
     /// Whether this session (or the one just ended) set up a recording, so whoever began it knows a cancel left a
     /// camera preview to put away.
     public private(set) var didSetUpRecording = false
@@ -215,6 +238,15 @@ public final class OverlayController {
     private var frameLeases: [ActiveResources.Lease] = []
     private var windowLease: ActiveResources.Lease?
     private var windows: [WindowTarget] = []
+    /// The windows All-In-One highlights under the pointer, front to back, OhMyShot's own left out: read off the main
+    /// thread once the overlay has input, so neither its panels nor its frozen frame wait for the window list.
+    private var hoverWindows: [WindowTarget] = []
+    /// The window highlighted under the pointer while All-In-One has nothing chosen and no button is down.
+    private var hovered: HoveredWindow?
+    /// The window under the press, which the release frames while the press stays a click.
+    private var pressedWindow: HoveredWindow?
+    /// The window a click framed, and the area it framed, in this session or the one just ended (`window(framing:)`).
+    private var framed: (window: WindowTarget, area: CGRect)?
     private var windowPicker: WindowPickerController?
     private var purpose: Purpose = .screenshot
     /// This app's windows are no window to scroll: a scrolling capture's stream never sees them, and Auto-scroll
@@ -314,6 +346,10 @@ public final class OverlayController {
         allInOneMode = nil
         didSetUpRecording = false
         chosenAhead = nil
+        hoverWindows = []
+        hovered = nil
+        pressedWindow = nil
+        framed = nil
         previousApp = NSWorkspace.shared.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
 
         prepare()
@@ -439,22 +475,9 @@ public final class OverlayController {
             entry.view.movePointer(to: pointer)
         }
         if let id = pointerDisplay?.id, let view = entries[id]?.view {
-            let announcement = switch purpose {
-            case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.", bundle: .module)
-            case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.", bundle: .module)
-            case .screenshot where isAllInOne: String(localized: "All-In-One. Drag over an area, then choose what to do with it.", bundle: .module)
-            case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.", bundle: .module)
-            case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.", bundle: .module)
-            case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.", bundle: .module)
-            case .record: String(localized: "Drag over an area to record it, click to record the whole screen, or press Space to choose a window.", bundle: .module)
-            case .scroll: String(localized: "Drag over the part that scrolls, or press Space to choose a window.", bundle: .module)
-            }
             VoiceOver.announce(announcement, from: view)
         }
-        if let id = pointerDisplay?.id, let entry = entries[id] {
-            entry.panel.makeKey()
-            entry.panel.makeFirstResponder(entry.view)
-        }
+        giveKeyboard(to: pointerDisplay)
         // A screenshot draws its own crosshair and magnifier, but over the bar the system's arrow shows; copying text
         // keeps the system crosshair, from the start rather than the first move. Only once the overlay has input, so an
         // early move never hides the pointer. A nonactivating key panel owns selection input while the
@@ -472,10 +495,66 @@ public final class OverlayController {
             guard let self, isActive, session == self.session else { return }
             Log.capture.notice("Overlay shown (\(self.holdsStill ? "frozen" : "live", privacy: .public)): app active \(NSApp.isActive, privacy: .public), keyboard \(NSApp.keyWindow is OverlayPanel, privacy: .public)")
         }
+        // All-In-One highlights the window under the pointer until something is chosen; an area given to `begin` is
+        // chosen now.
+        if isAllInOne, chosenAhead == nil { loadHoverWindows() }
         // An area given to `begin` is framed now: its bar takes the keyboard and the pointer from the overlay.
         if let chosen = chosenAhead {
             chosenAhead = nil
             select(chosen.area, startingOn: chosen.display, modifiers: [])
+        }
+    }
+
+    /// Gives the overlay on `display` the keyboard, so its view hears the keys: they act on what is under the crosshair
+    /// there.
+    private func giveKeyboard(to display: DisplayInfo?) {
+        guard let id = display?.id, let entry = entries[id] else { return }
+        if !entry.panel.isKeyWindow { entry.panel.makeKey() }
+        if entry.panel.firstResponder !== entry.view { entry.panel.makeFirstResponder(entry.view) }
+    }
+
+    /// Picking a pixel (Measure, Pick Color), the keyboard goes with the crosshair onto another display while no button
+    /// is down, so Return, Command-C, and C act on what is under it there rather than on the display it left, whose
+    /// ruler and crosshair are gone.
+    private func keyboardFollowsCrosshair(to point: CGPoint) {
+        guard purpose.picksPixels, hasInput, NSEvent.pressedMouseButtons == 0 else { return }
+        giveKeyboard(to: topology.layout.display(at: point))
+    }
+
+    /// The window a click in All-In-One framed `area` from, in this session or the one just ended; nil for any other
+    /// area, dragged out or changed after it was framed. What is taken in that area is named after this window, its app
+    /// and title, as a window capture is, rather than after the app in front.
+    public func window(framing area: CGRect) -> WindowTarget? {
+        guard let framed, framed.area == area else { return nil }
+        return framed.window
+    }
+
+    /// What VoiceOver says as the overlay takes input, or as All-In-One turns into Measure.
+    private var announcement: String {
+        switch purpose {
+        case .text: String(localized: "Drag over text to copy it, or press Space to choose a window.", bundle: .module)
+        case .annotate: String(localized: "Drag over an area to mark it up, or press Space to choose a window.", bundle: .module)
+        case .screenshot where isAllInOne: String(localized: "All-In-One. Click a window or drag over an area, then choose what to do with it.", bundle: .module)
+        case .screenshot: String(localized: "Drag to capture an area, or press Space to capture a window.", bundle: .module)
+        case .color: String(localized: "Click or press Return to copy the color under the crosshair. The arrow keys move it a pixel.", bundle: .module)
+        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement.", bundle: .module)
+        case .record: String(localized: "Drag over an area to record it, click to record the whole screen, or press Space to choose a window.", bundle: .module)
+        case .scroll: String(localized: "Drag over the part that scrolls, or press Space to choose a window.", bundle: .module)
+        }
+    }
+
+    /// Reads the windows All-In-One highlights, off the main thread, then highlights the one under the pointer.
+    private func loadHoverWindows() {
+        let session = self.session, layout = topology.layout
+        let probe = LatencyProbe("overlay.windows")
+        Task { [weak self] in
+            let windows = await Task.detached(priority: .userInitiated) {
+                WindowCatalog.snapshot(layout: layout, excludingPID: getpid())
+            }.value
+            probe.end()
+            guard let self, isActive, session == self.session else { return }
+            hoverWindows = windows
+            updateHover(at: pointer ?? NSEvent.mouseLocation)
         }
     }
 
@@ -900,6 +979,9 @@ public final class OverlayController {
         frameLeases.removeAll()
         windowLease = nil
         windows = []
+        hoverWindows = []
+        hovered = nil
+        pressedWindow = nil
         // Nonactivating panels return key focus themselves. Only yield activation if a child control
         // actually activated us; reactivating the old app unconditionally can switch Spaces again.
         if hasInput, NSApp.isActive, let previousApp, !previousApp.isActive {
@@ -983,6 +1065,55 @@ extension OverlayController {
         }
     }
 
+    /// The window All-In-One highlights at `point` on `display`: the frontmost of `windows` there, cut to the display;
+    /// nil where there is none, or too little of it is on the display to frame.
+    static func hoveredWindow(at point: CGPoint, in windows: [WindowTarget], on display: DisplayInfo) -> HoveredWindow? {
+        guard display.frame.contains(point), let window = WindowCatalog.target(at: point, in: windows),
+              let area = AreaFrame.fitted(window.frame, in: display.frame) else { return nil }
+        return HoveredWindow(window: window, area: area, display: display)
+    }
+
+    /// The window a press keeps to frame as it is released: kept while the selection it drags out is still a click (too
+    /// small to be a drag), and let go for good once it is a drag, so a drag brought back to where it began frames nothing.
+    static func pressedWindow(_ window: HoveredWindow?, after selection: SelectionModel) -> HoveredWindow? {
+        selection.isTooSmall ? window : nil
+    }
+
+    /// Whether All-In-One highlights a window at `point` now: nothing chosen, no button down, choosing an area, and the
+    /// pointer not over the bar.
+    private func highlightsWindows(at point: CGPoint) -> Bool {
+        isActive && isAllInOne && hasInput && drag == nil && windowPicker == nil && !isAnnotating
+            && entries.values.allSatisfy { $0.view.mode == .area } && !wantsSystemCursor(at: point)
+    }
+
+    /// Highlights the window under `point`, while All-In-One highlights windows, on the display under it.
+    private func updateHover(at point: CGPoint) {
+        hovered = highlightsWindows(at: point)
+            ? topology.layout.display(at: point).flatMap { Self.hoveredWindow(at: point, in: hoverWindows, on: $0) }
+            : nil
+        showHover()
+    }
+
+    /// Draws the window highlighted (during a press, the one pressed on while the press is a click) on its display alone.
+    private func showHover() {
+        let shown = drag == nil ? hovered : pressedWindow
+        for (id, entry) in entries {
+            entry.view.highlight(id == shown?.display.id ? shown : nil)
+        }
+    }
+
+    /// Frames the window a click in All-In-One was on, its part on the display clicked on, as a drag over it would have:
+    /// every way to take an area, and a mode chosen first, apply to it.
+    private func frameWindow(_ clicked: HoveredWindow, modifiers: NSEvent.ModifierFlags) {
+        hovered = nil
+        showHover()
+        place(clicked.area, startingOn: clicked.display)
+        guard let rect = selection.rect, !selection.isTooSmall else { return }
+        framed = (clicked.window, rect)
+        Log.capture.notice("All-In-One window \(clicked.window.id, privacy: .public) clicked: \(NSStringFromRect(rect), privacy: .public) on display \(clicked.display.id, privacy: .public)")
+        select(rect, startingOn: clicked.display, modifiers: modifiers)
+    }
+
     /// Ends the session with an area: handed to in-place annotation, or kept as it was frozen on screen,
     /// or captured once the overlay has gone. `display` is where the drag began; the outcome names the
     /// display holding most of the area.
@@ -1047,11 +1178,13 @@ extension OverlayController {
 extension OverlayController: OverlayViewDelegate {
     func overlayView(_ view: OverlayView, didPressAt point: CGPoint) {
         Log.capture.notice("Selection began at \(NSStringFromPoint(point), privacy: .public) on display \(view.display.id, privacy: .public)")
+        pressedWindow = highlightsWindows(at: point) ? Self.hoveredWindow(at: point, in: hoverWindows, on: view.display) : nil
         startSelection(on: view.display)
         selection.begin(at: point)
         drag = Drag(point: point, top: point.y)
         pointer = point
         nudged = false
+        showHover()
         showSelection()
         updateCursorVisibility(at: point)
     }
@@ -1067,6 +1200,11 @@ extension OverlayController: OverlayViewDelegate {
         drag.point = point
         drag.top = max(drag.top, point.y)
         self.drag = drag
+        // Once the press is a drag, the window under it is no longer what it takes.
+        if pressedWindow != nil {
+            pressedWindow = Self.pressedWindow(pressedWindow, after: selection)
+            showHover()
+        }
         showSelection()
         showCorner(pointer: point)
     }
@@ -1087,12 +1225,17 @@ extension OverlayController: OverlayViewDelegate {
     func overlayView(_ view: OverlayView, didReleaseWith modifiers: NSEvent.ModifierFlags) {
         guard let drag, let display = dragDisplay else { return }
         self.drag = nil
+        let clicked = Self.pressedWindow(pressedWindow, after: selection)
+        pressedWindow = nil
         guard let rect = selection.rect, !selection.isTooSmall else {
             selection.reset()
+            // A click on the window All-In-One highlights frames that window.
+            if let clicked { return frameWindow(clicked, modifiers: modifiers) }
             showSelection()
             updateCursorVisibility(at: drag.point)
             // A click, not a drag: recording takes the whole display.
             if purpose == .record { startRecordingSetup(on: display, target: .display) }
+            updateHover(at: drag.point)
             return
         }
         logSelection(rect, from: display, endingAt: drag.point, highest: drag.top)
@@ -1113,6 +1256,8 @@ extension OverlayController: OverlayViewDelegate {
             entry.view.movePointer(to: point)
         }
         updateCursorVisibility(at: point)
+        updateHover(at: point)
+        keyboardFollowsCrosshair(to: point)
     }
 
     func overlayView(_ view: OverlayView, copyColorAt point: CGPoint) -> Bool {
@@ -1165,6 +1310,8 @@ extension OverlayController: OverlayViewDelegate {
         for entry in entries.values {
             entry.view.movePointer(to: next)
         }
+        updateHover(at: next)
+        keyboardFollowsCrosshair(to: next)
         if let under = layout.display(at: next) { entries[under.id]?.view.announceValue() }
     }
 
@@ -1242,9 +1389,13 @@ extension OverlayController: OverlayViewDelegate {
     func overlayViewDidResetDrag(_ view: OverlayView) {
         guard drag != nil else { return }
         drag = nil
+        pressedWindow = nil
         selection.reset()
         showSelection()
-        if let pointer { updateCursorVisibility(at: pointer) }
+        if let pointer {
+            updateCursorVisibility(at: pointer)
+            updateHover(at: pointer)
+        }
     }
 
     /// The area the size control opens on, and the shape it keeps. A drag in hand is framed as it is, free; one dragged
@@ -1298,9 +1449,44 @@ extension OverlayController: OverlayViewDelegate {
         case .text?: String(localized: "Text. Drag over text to copy it.", bundle: .module)
         case .scroll?: String(localized: "Scrolling capture. Drag over the part that scrolls.", bundle: .module)
         case .record?: String(localized: "Record. Drag over an area to record it.", bundle: .module)
-        case .screenshot?, nil: String(localized: "Capture. Drag over an area, then choose what to do with it.", bundle: .module)
+        case .screenshot?, nil: String(localized: "Capture. Click a window or drag over an area, then choose what to do with it.", bundle: .module)
         }
         VoiceOver.announce(announcement, from: view)
+    }
+
+    func overlayViewDidRequestMeasure(_ view: OverlayView) {
+        guard isAllInOne, drag == nil else { return }
+        turnToMeasure()
+    }
+
+    /// All-In-One's Measure: the session measures from here on, in place, so no second session takes the keyboard back
+    /// and the screen stays as it was frozen (a live one holds still as the magnifier showed it, since the ruler reads
+    /// that frame). Whatever the next area was for is let go, with the bar, the highlighted window, and any text found
+    /// to snap to; Escape, Return, and C end the session as they end Measure's.
+    private func turnToMeasure() {
+        onWillMeasure?()
+        purpose = .measure
+        options.allInOne = nil
+        allInOneMode = nil
+        selection = SelectionModel(bounds: .zero, pixelsPerPoint: 1)
+        dragDisplay = nil
+        hoverWindows = []
+        hovered = nil
+        pressedWindow = nil
+        cancelTextDetections()
+        snapsToText = false
+        let point = pointer ?? NSEvent.mouseLocation
+        for entry in entries.values {
+            entry.view.turnToMeasure(
+                pointer: point, colorFormat: colorFormat, unit: measureUnit, tolerance: measureTolerance, snapsToContent: measureSnapsToContent
+            )
+        }
+        giveKeyboard(to: topology.layout.display(at: point))
+        updateCursorVisibility(at: point)
+        Log.capture.notice("All-In-One turned to Measure")
+        if let display = topology.layout.display(at: point), let view = entries[display.id]?.view {
+            VoiceOver.announce(announcement, from: view)
+        }
     }
 
     func overlayViewDidRequestWindowPicker(_ view: OverlayView) {
@@ -1420,6 +1606,7 @@ extension OverlayController: OverlayViewDelegate {
         for entry in entries.values {
             entry.view.switchMode(to: mode, windows: windows)
         }
+        updateHover(at: pointer ?? NSEvent.mouseLocation)
     }
 
     func overlayViewDidCancel(_ view: OverlayView) {

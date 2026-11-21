@@ -7,14 +7,17 @@ import Testing
 /// Selecting captures in Capture History, as in Finder, and what asks before captures leave it. Nothing is shown.
 @MainActor
 struct HistorySelectionTests {
-    private func model(count: Int, trashed: @escaping (HistoryItem) -> Void = { _ in }) throws -> (HistoryModel, [HistoryItem]) {
+    private func model(
+        count: Int, editing: Set<String> = [], trashed: @escaping (HistoryItem) throws -> Void = { _ in }
+    ) throws -> (HistoryModel, [HistoryItem]) {
         let suite = "OMSUITests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         let store = HistoryStore(directory: FileManager.default.temporaryDirectory.appending(path: "HistorySelectionTests-\(UUID().uuidString)"))
-        let actions = HistoryActions(
+        var actions = HistoryActions(
             restore: { _ in }, copy: { _ in }, save: { _ in }, open: { _ in }, annotate: { _ in }, reveal: { _ in },
             recognizeText: { _ in }, pin: { _ in }, moveToTrash: trashed
         )
+        actions.isBeingEdited = { editing.contains($0.fileName) }
         let model = HistoryModel(store: store, settings: SettingsStore(defaults: defaults), actions: actions, expiredCount: { _ in 0 })
         let items = (0..<count).map { HistoryItem(kind: .screenshot, pixelWidth: 10, pixelHeight: 10, appName: nil, fileName: "\($0).png") }
         model.items = items
@@ -68,6 +71,26 @@ struct HistorySelectionTests {
         model.trashShown()
         #expect(model.trashRequest?.isEverything == true)
         #expect(model.trashRequest?.items.count == items.count)
+    }
+
+    @Test func capturesThatCouldNotMoveToTheTrashStaySelected() throws {
+        let (model, items) = try model(count: 2) { item in
+            if item.fileName == "1.png" { throw CocoaError(.fileWriteNoPermission) }
+        }
+        model.selectAll()
+        model.moveToTrash(items)
+        #expect(model.trashFailure != nil)
+        #expect(model.selection == [items[1].id])
+    }
+
+    @Test func aCaptureOpenInTheEditorCannotBeTrashedFromHistory() throws {
+        var attempted = false
+        let (model, items) = try model(count: 1, editing: ["0.png"]) { _ in attempted = true }
+        model.selectAll()
+        model.moveToTrash(items)
+        #expect(!attempted)
+        #expect(model.selection == [items[0].id])
+        #expect(model.trashFailure != nil)
     }
 
     /// Combine into Collage and Export as PDF take the selection in the grid's order, whatever order it was clicked in;

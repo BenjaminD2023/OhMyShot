@@ -138,7 +138,7 @@ struct DebugOnboardingHooks {
             copy: { _ in false }, save: { _, _ in nil }, saveAs: { _ in nil }, open: { _ in }, annotate: { _ in },
             reveal: { _ in }, recognizeText: { _ in }, pin: { _ in false }, moveToTrash: { _ in },
             closed: { item in if let entry = history.item(id: item.id) { history.delete(entry) } }
-        ))
+        ), history: history)
         defer { overlay.cancel(); cards.dismissFirstCaptureHint(); cards.dismissAll() }
         let progress = OnboardingProgress(defaults: defaults)
         progress.move(to: .capture)

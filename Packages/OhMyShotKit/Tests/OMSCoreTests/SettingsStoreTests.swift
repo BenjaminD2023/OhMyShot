@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import OMSCore
@@ -170,6 +171,30 @@ struct SelectingSettingsTests {
         #expect(!settings.screenshotShowsCursor)
         settings.screenshotShowsCursor = true
         #expect(SettingsStore(defaults: defaults).screenshotShowsCursor)
+    }
+
+    /// All-In-One opens with nothing chosen unless asked to remember its area. An area kept while remembering was on by
+    /// default goes once it is off, so L doesn't bring it back long after it was taken; one kept by choice stays.
+    @Test func allInOneRemembersItsAreaOnlyWhenAskedTo() throws {
+        let suite = "OMSCoreTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        #expect(!SettingsStore(defaults: defaults).allInOneRemembersArea)
+        let display = DisplayInfo(
+            id: 1, name: "Test", frame: CGRect(x: 0, y: 0, width: 800, height: 600), pixelSize: CGSize(width: 1600, height: 1200),
+            backingScale: 2, maximumPotentialEDR: 1
+        )
+        let kept = RememberedArea(area: CGRect(x: 100, y: 100, width: 300, height: 200), on: display)
+        // Kept by a version that remembered by default, with remembering never chosen.
+        defaults.set(try JSONEncoder().encode(kept), forKey: "allInOneArea")
+        let upgraded = SettingsStore(defaults: defaults)
+        #expect(!upgraded.allInOneRemembersArea && upgraded.allInOneArea == nil)
+        #expect(defaults.data(forKey: "allInOneArea") == nil)
+
+        upgraded.allInOneRemembersArea = true
+        upgraded.allInOneArea = kept
+        let reopened = SettingsStore(defaults: defaults)
+        #expect(reopened.allInOneRemembersArea && reopened.allInOneArea == kept)
     }
 
     /// Shift keeps a square until Settings name another shape; a value that is no shape is a square too.

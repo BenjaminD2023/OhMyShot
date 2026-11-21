@@ -110,6 +110,12 @@ nonisolated public struct AnnotationProject: Sendable {
         try data(pictures: store).write(to: url, options: .atomic)
     }
 
+    public func keep(at url: URL, preview: Data, previewURL: URL, pictures store: PictureStore = .shared) throws -> URL {
+        try preview.write(to: previewURL, options: .atomic)
+        try write(to: url, pictures: store)
+        return previewURL
+    }
+
     /// Reads a project, putting the pictures it carries into `store` where they are missing.
     public static func read(from url: URL, pictures store: PictureStore = .shared) throws -> AnnotationProject {
         try read(Data(contentsOf: url), pictures: store)
