@@ -256,7 +256,12 @@ final class StyleCapsule: NSView {
 
         var sections: [[NSView]] = []
         if usesColor {
-            var ownChips = savedColors.colors.map(savedColorChip) + [customColorChip()] + saveColorChip()
+            // Numbered as 1 to 9 choose them: the inks, then the kept colors.
+            let inkChips = inks.enumerated().map { colorChip($1, key: $0 + 1) }
+            let keptChips = savedColors.colors.enumerated().map { index, color in
+                savedColorChip(color, key: inks.count + index < 9 ? inks.count + index + 1 : nil)
+            }
+            var ownChips = keptChips + [customColorChip()] + saveColorChip()
             if onPickCanvasColor != nil {
                 let label = String(localized: "Pick Color from Canvas (I)", bundle: .module)
                 let eyedropper = symbolChip("eyedropper", name: label, selected: isPickingCanvasColor) { [weak self] in
@@ -267,9 +272,9 @@ final class StyleCapsule: NSView {
             // The kept colors stand apart from the inks, behind a divider, so one kept near an ink (an off-white
             // beside White) never reads as the same ink twice.
             if savedColors.colors.isEmpty {
-                sections.append(inks.map(colorChip) + ownChips)
+                sections.append(inkChips + ownChips)
             } else {
-                sections.append(inks.map(colorChip))
+                sections.append(inkChips)
                 sections.append(ownChips)
             }
         }
@@ -308,7 +313,9 @@ final class StyleCapsule: NSView {
         }
     }
 
-    private var usesColor: Bool {
+    private var usesColor: Bool { Self.usesColor(kind, settings: settings) }
+
+    static func usesColor(_ kind: AnnotationTool, settings: ToolSettings) -> Bool {
         switch kind {
         case .spotlight, .magnifier, .crop, .select, .background: false
         case .redact: settings.redaction == .solid
@@ -356,19 +363,19 @@ final class StyleCapsule: NSView {
 
     // MARK: Chips
 
-    private func colorChip(_ color: RGBA) -> NSView {
+    private func colorChip(_ color: RGBA, key: Int?) -> NSView {
         let selected = settings.color.withAlpha(1) == color
         let chip = CapsuleChip(swatch: Self.dot(color, selected: selected)) { [weak self] in
             self?.change(String(localized: "Color", bundle: .module)) { $0.color = color }
         }
         chip.isSelected = selected
         chip.setAccessibilityLabel(Self.colorName(color))
-        chip.toolTip = Self.colorName(color)
+        chip.toolTip = Self.named(Self.colorName(color), key: key)
         return chip
     }
 
     /// A color the person kept, among the inks: chosen again in one click, removed from its menu.
-    private func savedColorChip(_ color: RGBA) -> NSView {
+    private func savedColorChip(_ color: RGBA, key: Int?) -> NSView {
         let selected = SavedColors.stored(settings.color) == color
         let name = String(localized: "Saved Color", bundle: .module)
         let chip = CapsuleChip(swatch: Self.dot(color, selected: selected)) { [weak self] in
@@ -376,7 +383,7 @@ final class StyleCapsule: NSView {
         }
         chip.isSelected = selected
         chip.setAccessibilityLabel(name)
-        chip.toolTip = name
+        chip.toolTip = Self.named(name, key: key)
         let remove = String(localized: "Remove Saved Color", bundle: .module)
         let menu = NSMenu()
         let item = NSMenuItem(title: remove, action: #selector(removeSavedColor(_:)), keyEquivalent: "")
@@ -398,8 +405,21 @@ final class StyleCapsule: NSView {
 
     /// The inks offered: the eight, led for the tools that start in it by the marker yellow, so it can be chosen again,
     /// in place of the other yellow, which a highlight needs no second of (and the capsule no wider).
-    private var inks: [RGBA] {
-        kind == .highlighter || kind == .highlightBox ? [.marker] + Self.palette.filter { $0 != .yellow } : Self.palette
+    private var inks: [RGBA] { Self.inks(for: kind) }
+
+    static func inks(for kind: AnnotationTool) -> [RGBA] {
+        kind == .highlighter || kind == .highlightBox ? [.marker] + palette.filter { $0 != .yellow } : palette
+    }
+
+    /// The colors 1 to 9 choose for `kind`: the inks and then the kept colors, as the capsule shows them, or none
+    /// where the kind takes no color.
+    static func keyedColors(for kind: AnnotationTool, settings: ToolSettings, saved: [RGBA]) -> [RGBA] {
+        usesColor(kind, settings: settings) ? Array((inks(for: kind) + saved).prefix(9)) : []
+    }
+
+    /// A chip's tooltip with the key that chooses it, as the tools' name theirs: "Red (1)".
+    private static func named(_ name: String, key: Int?) -> String {
+        key.map { "\(name) (\($0))" } ?? name
     }
 
     /// Whether the color in use is none of the inks nor a kept one: it has the Other Color chip, and can be kept.
@@ -467,11 +487,24 @@ final class StyleCapsule: NSView {
         change(String(localized: "Color", bundle: .module)) { $0.color = color.withAlpha(1) }
     }
 
+    /// The steps the size chips offer for `kind`, which [ and ] step through: type sizes for Text, widths for the
+    /// stroked marks, and none for the rest.
+    static func sizes(for kind: AnnotationTool) -> [CGFloat] {
+        switch kind {
+        case .text: [14, 20, 28, 40]
+        case .highlighter: [10, 18, 28]
+        case .counter: [2, 4, 7]
+        case .arrow, .line, .rectangle, .ellipse, .pen: [2, 4, 6, 10]
+        case .redact, .spotlight, .magnifier, .highlightBox, .crop, .select, .background: []
+        }
+    }
+
     private func sizeChips() -> [NSView] {
         guard sized else { return [] }
+        let keys = String(localized: "[ and ] go a size down or up.", bundle: .module)
         switch kind {
         case .text:
-            let sizes: [CGFloat] = [14, 20, 28, 40]
+            let sizes = Self.sizes(for: kind)
             // A size set some other way shows as the nearest step.
             let nearest = Self.nearest(settings.fontSize, in: sizes)
             return sizes.enumerated().map { index, size in
@@ -481,16 +514,13 @@ final class StyleCapsule: NSView {
                 }
                 chip.isSelected = selected
                 chip.setAccessibilityLabel(String(localized: "\(Int(size)) points", bundle: .module))
+                chip.toolTip = String(localized: "\(Int(size)) pt", bundle: .module) + "\n" + keys
                 return chip
             }
         case .redact, .spotlight, .magnifier, .highlightBox, .crop, .select, .background:
             return []
         case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .counter:
-            let widths: [CGFloat] = switch kind {
-            case .highlighter: [10, 18, 28]
-            case .counter: [2, 4, 7]
-            default: [2, 4, 6, 10]
-            }
+            let widths = Self.sizes(for: kind)
             let nearest = Self.nearest(settings.lineWidth, in: widths)
             return widths.enumerated().map { index, width in
                 let selected = width == nearest
@@ -500,10 +530,11 @@ final class StyleCapsule: NSView {
                 chip.isSelected = selected
                 chip.setAccessibilityLabel(String(localized: "\(Int(width)) points", bundle: .module))
                 // A highlight snapped to text is as tall as its letters: the size is for one drawn freely.
-                chip.toolTip = kind == .highlighter
+                let size = kind == .highlighter
                     ? String(localized: "\(Int(width)) pt, for strokes drawn freely (hold Command). Over text, a highlight is as tall as the letters.", bundle: .module)
                     : String(localized: "\(Int(width)) pt", bundle: .module)
-                if kind == .highlighter { chip.setAccessibilityHelp(chip.toolTip) }
+                if kind == .highlighter { chip.setAccessibilityHelp(size) }
+                chip.toolTip = size + "\n" + keys
                 return chip
             }
         }
@@ -841,7 +872,7 @@ final class StyleCapsule: NSView {
         return chip
     }
 
-    private static func nearest(_ value: CGFloat, in steps: [CGFloat]) -> CGFloat {
+    static func nearest(_ value: CGFloat, in steps: [CGFloat]) -> CGFloat {
         steps.min { abs($0 - value) < abs($1 - value) } ?? value
     }
 

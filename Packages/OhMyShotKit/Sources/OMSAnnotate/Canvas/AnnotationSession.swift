@@ -274,6 +274,15 @@ public final class AnnotationSession {
         isPuttingToolDown = false
     }
 
+    /// Puts down any tool in hand, Select taking over, for a mark picked up from the keyboard or by VoiceOver; as
+    /// with `putToolDown`, the tool is still the one the next editor opens with.
+    public func putToolDownToSelect() {
+        guard tool != .select, !tool.isPictureMode else { return }
+        isPuttingToolDown = true
+        tool = .select
+        isPuttingToolDown = false
+    }
+
     // MARK: Background
 
     /// Sets the background, or takes it away with nil, as one undoable step (or as part of the live
