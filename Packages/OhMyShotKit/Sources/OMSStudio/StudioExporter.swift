@@ -153,6 +153,24 @@ nonisolated public enum StudioExporter {
         }
     }
 
+    // MARK: A movie to read
+
+    /// Hands `use` a movie of the project to read: `current` when there is one (the movie in the history, made from the
+    /// project as it is now), else one exported from `composition()` into a temporary file the history never sees, removed
+    /// once `use` is done, has failed, or was cancelled. `progress` hears how far along it all is, from 0 to 1: an export
+    /// takes the first half, and `use` tells its own part through the closure it is given.
+    static func withMovie(
+        current: URL?, composition: () async throws -> StudioComposition, progress: @escaping @Sendable (Double) -> Void,
+        _ use: (URL, @escaping @Sendable (Double) -> Void) async throws -> Void
+    ) async throws {
+        if let current { return try await use(current, progress) }
+        let temporary = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        _ = try await export(try await composition(), to: temporary) { progress($0 / 2) }
+        try Task.checkCancellation()
+        try await use(temporary) { progress(0.5 + $0 / 2) }
+    }
+
     // MARK: Estimate
 
     /// About how many bytes the movie will be, from what is known before it is made. A recording's bytes go

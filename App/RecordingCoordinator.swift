@@ -1146,7 +1146,8 @@ final class RecordingCoordinator {
             finishing += 1
             window.close { [weak self] in self?.finished() }
         }
-        for window in studioWindows.values where window.hasUnexportedChanges || window.hasPendingProjectSave {
+        // A GIF being made in Studio is stopped as its window closes, and its files removed before the app quits.
+        for window in studioWindows.values where window.hasUnexportedChanges || window.hasPendingProjectSave || window.isMakingGIF {
             finishing += 1
             window.closeIfSaved { [weak self] saved in self?.finished(permitsQuit: saved) }
         }
@@ -1255,7 +1256,13 @@ final class RecordingCoordinator {
                 },
                 copy: { [weak self] url in self?.files.copy(fileAt: url) },
                 save: { [weak self] url in self?.files.saveRecording(fileAt: url) },
-                progress: { [weak self] fraction in self?.showStudioExport(fraction) }
+                progress: { [weak self] fraction in self?.showStudioExport(fraction) },
+                makeGIF: { [weak self] movie, progress in
+                    guard let self, let entry = history.item(id: id) else { throw CocoaError(.userCancelled) }
+                    // As large as things were on screen, as a GIF recorded is: the movie is filmed at the recording's pixels.
+                    let options = GIFMaker.Options(framesPerSecond: settings.recordingGIFFrameRate, scale: 1 / max(entry.pixelsPerPoint ?? 1, 1))
+                    try await keepGIF(of: movie, as: options, madeFrom: entry, displayID: studioDisplays[id], progress: progress)
+                }
             )
         )
         controller.onClose = { [weak self] in
@@ -1369,14 +1376,25 @@ final class RecordingCoordinator {
     /// recording of its own, with a card. The GIF is never larger than things were on screen.
     private func makeGIF(of id: UUID, edit: RecordingEdit) async throws {
         guard let entry = history.item(id: id) else { throw CocoaError(.fileNoSuchFile) }
-        let destination = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).gif")
         let onScreen = 1 / max(entry.pixelsPerPoint ?? 1, 1)
         let options = GIFMaker.Options(
             framesPerSecond: settings.recordingGIFFrameRate, scale: min(edit.scale, onScreen), timeRange: edit.timeRange
         )
+        try await keepGIF(of: history.fileURL(for: entry), as: options, madeFrom: entry)
+    }
+
+    /// Makes a GIF of `movie` with `options` and keeps it as a recording of its own beside `entry`, the recording it was
+    /// made from, with a card on `displayID` (the pointer's display when nil).
+    private func keepGIF(
+        of movie: URL, as options: GIFMaker.Options, madeFrom entry: HistoryItem, displayID: CGDirectDisplayID? = nil,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws {
+        let destination = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).gif")
         do {
-            let gif = try await GIFMaker.make(from: history.fileURL(for: entry), to: destination, options: options)
-            let displayID = displays.layout.pointerDisplay?.id ?? 0
+            let gif = try await GIFMaker.make(from: movie, to: destination, options: options, progress: progress)
+            // Cancelled as it was finished: nothing is kept.
+            try Task.checkCancellation()
+            let displayID = displayID ?? displays.layout.pointerDisplay?.id ?? 0
             let file = KeptFile(url: gif.url, pixelWidth: gif.pixelWidth, pixelHeight: gif.pixelHeight, duration: gif.duration, byteCount: gif.byteCount)
             let made = try await deliver(file, startedAt: entry.createdAt, appName: entry.appName, pixelsPerPoint: entry.pixelsPerPoint, displayID: displayID)
             Log.recording.notice("Made a GIF of a recording: \(gif.frameCount, privacy: .public) frames, \(gif.pixelWidth, privacy: .public)x\(gif.pixelHeight, privacy: .public), \(gif.byteCount, privacy: .public) bytes as \(made.fileName, privacy: .public)")

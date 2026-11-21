@@ -55,7 +55,8 @@ public enum GIFMaker {
     }
 
     /// Makes a GIF at `destination` (replacing anything there) from the movie at `source`. `progress` is told
-    /// how far along it is, from 0 to 1, now and then. Cancelling the task stops it and removes the file.
+    /// how far along it is, from 0 to 1, now and then. Cancelling the task stops it and removes the file, also once
+    /// every frame is read, as the last ones are written: a GIF cancelled is never handed back.
     @concurrent
     public static func make(
         from source: URL, to destination: URL, options: Options = Options(), progress: (@Sendable (Double) -> Void)? = nil
@@ -108,11 +109,13 @@ public enum GIFMaker {
                 }
             }
             guard reader.status != .failed else { throw GIFError.readingFailed(String(describing: reader.error)) }
+            try Task.checkCancellation()
             while let current = shown, tick < timeline.tickCount {
                 try assembler.show(current.pixels, number: current.number, at: tick)
                 tick += 1
             }
             try assembler.finish()
+            try Task.checkCancellation()
         } catch {
             reader.cancelReading()
             writer.abandon()

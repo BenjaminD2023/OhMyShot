@@ -180,6 +180,25 @@ struct GIFMakerTests {
         #expect(!FileManager.default.fileExists(atPath: url.path(percentEncoded: false)))
     }
 
+    @Test func cancellingOnceEveryFrameIsReadStillRemovesTheFile() async throws {
+        let movie = try await Self.movie(seconds: 2) { second in
+            second == 0 ? (0..<20).map { TestMedia.frame(at: Double($0) / 10, gray: UInt8(40 + $0 * 8)) } : []
+        }
+        let url = Self.temporaryGIF()
+        defer { [movie, url].forEach { try? FileManager.default.removeItem(at: $0) } }
+
+        // Cancelled as the last frame read is told, whichever it is (the writer may end the movie with the last frame
+        // again): every frame has been read, and the ticks after it are still to be written.
+        let last = try await Self.lastFrameTime(of: movie)
+        let task = Task {
+            try await GIFMaker.make(from: movie, to: url) { fraction in
+                if fraction >= last / 2 - 0.001, fraction < 1 { withUnsafeCurrentTask { $0?.cancel() } }
+            }
+        }
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(!FileManager.default.fileExists(atPath: url.path(percentEncoded: false)))
+    }
+
     // One at a time: each encodes a movie, and the recording tests beside them must keep up in real time.
     @Test(.serialized, arguments: [
         CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 240, ty: 0),
@@ -247,6 +266,22 @@ struct GIFMakerTests {
         }
         try await writer.finish(at: TestMedia.time(Double(seconds)))
         return url
+    }
+
+    /// When the movie's last frame shows, in seconds from its start.
+    private static func lastFrameTime(of url: URL) async throws -> Double {
+        let asset = AVURLAsset(url: url)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        reader.add(output)
+        reader.startReading()
+        var last = 0.0
+        // The reader also hands out markers without data, which are no frames.
+        while let sample = output.copyNextSampleBuffer() {
+            if CMSampleBufferGetDataBuffer(sample) != nil { last = max(last, sample.presentationTimeStamp.seconds) }
+        }
+        return last
     }
 
     private static func temporaryGIF() -> URL {

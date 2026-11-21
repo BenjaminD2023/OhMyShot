@@ -34,11 +34,13 @@ struct StudioView: View {
                 VStack(spacing: 10) {
                     ProgressView(value: progress)
                         .frame(width: 180)
-                    Text("Exporting…", bundle: .module)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    Group {
+                        model.makesGIF ? Text("Making the GIF…", bundle: .module) : Text("Exporting…", bundle: .module)
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                     Button(role: .cancel) {
-                        model.controller?.cancelExport()
+                        if model.makesGIF { model.controller?.cancelGIF() } else { model.controller?.cancelExport() }
                     } label: {
                         Text("Cancel", bundle: .module)
                     }
@@ -142,6 +144,17 @@ struct StudioView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        if model.controller?.canMakeGIF == true {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    model.controller?.makeGIF()
+                } label: {
+                    Label { Text("Make GIF", bundle: .module) } icon: { Image(systemName: "photo.stack") }
+                }
+                .help(Text("Make a GIF of the movie, without sound, as large as it was on screen", bundle: .module))
+                .disabled(model.progress != nil)
+            }
+        }
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button { model.controller?.saveMovieAs() } label: { Text("Save As…", bundle: .module) }
