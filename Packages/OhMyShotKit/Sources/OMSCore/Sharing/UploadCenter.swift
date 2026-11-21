@@ -149,7 +149,8 @@ public final class UploadCenter {
 
     public var isIdle: Bool { uploadingIDs.isEmpty }
 
-    /// The link of a capture's last finished upload, while the center remembers it.
+    /// The link of a capture's last finished upload, while the center remembers it. It is not told when a link
+    /// expires or its upload is deleted: Copy Link asks `UploadRecordStore.link(for:at:)`, which knows both.
     public func link(for captureID: UUID) -> URL? {
         if case .finished(let link)? = status(for: captureID) { return link }
         return nil

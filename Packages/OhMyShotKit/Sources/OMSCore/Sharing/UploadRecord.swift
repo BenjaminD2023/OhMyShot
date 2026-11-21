@@ -124,6 +124,19 @@ public final class UploadRecordStore {
         save()
     }
 
+    /// Forgets `record` once its file was deleted from the storage, with every other upload of that same file: one sent
+    /// again under the same name to the same storage replaced it there, so its link went too. The records forgotten.
+    @discardableResult
+    public func forgetDeleted(_ record: UploadRecord) -> [UploadRecord] {
+        let gone = records.filter {
+            $0.id == record.id || (record.remoteKey != nil && $0.destinationID == record.destinationID && $0.remoteKey == record.remoteKey)
+        }
+        guard !gone.isEmpty else { return [] }
+        records.removeAll { item in gone.contains { $0.id == item.id } }
+        save()
+        return gone
+    }
+
     public func forgetAll() {
         guard !records.isEmpty else { return }
         records = []
