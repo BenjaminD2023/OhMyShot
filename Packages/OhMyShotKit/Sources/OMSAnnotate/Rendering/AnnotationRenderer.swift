@@ -13,7 +13,7 @@ nonisolated public enum AnnotationRenderer {
     public static let spotlightDimming: CGFloat = 0.5
 
     /// Draws `item` into a context whose user space is the capture's pixels, y down. `redacted` is a
-    /// blur or pixelation's picture and where it goes, from `Redactor`; `ground` is what a highlight lies
+    /// blur, pixelation, or erasure's picture and where it goes, from `Redactor`; `ground` is what a highlight lies
     /// on, from `HighlightGround`; spots are drawn by `drawSpotlight` instead.
     /// `flippedBacking` says the context's pixels are shown upside down from Core Graphics' own y-up
     /// order, as a layer's are in a flipped view; shadows need to know which way is down.
@@ -107,7 +107,7 @@ nonisolated public enum AnnotationRenderer {
             case .solid:
                 context.setFillColor(color)
                 context.fill(redaction.rect.standardized)
-            case .blur, .pixelate:
+            case .blur, .pixelate, .erase:
                 switch coverage {
                 case let .filtered(image, rect):
                     context.clip(to: rect)
@@ -245,12 +245,14 @@ nonisolated public enum AnnotationRenderer {
         }
         let combined = readsPicture ? redactionSource(document, base: base, composite: composite) : nil
         let source = combined ?? Redactor.Source(base: base)
+        let covered = document.redactedRects
         for item in document.items where !item.isPicturePart {
             var coverage: Redactor.Coverage?
             var ground = HighlightGround.light
             if case .redaction(let redaction) = item.shape {
                 coverage = Redactor.coverage(
-                    for: redaction, id: item.id, source: source, scale: document.scale, filter: redactionFilter
+                    for: redaction, id: item.id, source: source, scale: document.scale, covered: covered, canvas: document.canvas,
+                    filter: redactionFilter
                 )
             } else if item.multiplies {
                 let picture = source.picture ?? (base, .zero)
@@ -358,6 +360,15 @@ nonisolated extension AnnotationDocument {
     public var spots: [Spot] {
         items.compactMap { item in
             if case .spotlight(let spot) = item.shape { return spot }
+            return nil
+        }
+    }
+
+    /// Where every redaction lies, whatever its method: an erasure reads none of it, so it never spreads
+    /// what another redaction hides.
+    var redactedRects: [CGRect] {
+        items.compactMap { item in
+            if case .redaction(let redaction) = item.shape { return redaction.rect }
             return nil
         }
     }

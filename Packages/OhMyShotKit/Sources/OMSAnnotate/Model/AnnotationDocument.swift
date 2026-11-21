@@ -278,6 +278,9 @@ nonisolated public struct Redaction: Codable, Sendable, Equatable {
         case blur
         /// Large blocks, each nudged by noise seeded from the mark.
         case pixelate
+        /// Filled from the picture just around the mark (one color, a gradient, or its sides blended in), so
+        /// it blends into the surface it lies on. Nothing under the mark is read.
+        case erase
     }
 
     public var rect: CGRect

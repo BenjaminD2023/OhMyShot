@@ -566,6 +566,7 @@ final class StyleCapsule: NSView {
                 case .solid: "rectangle.fill"
                 case .blur: "aqi.medium"
                 case .pixelate: "checkerboard.rectangle"
+                case .erase: "eraser"
                 }
                 return symbolChip(symbol, name: Self.name(of: method), selected: settings.redaction == method) { [weak self] in
                     self?.change(String(localized: "Redaction", bundle: .module)) { $0.redaction = method }
@@ -1084,6 +1085,7 @@ final class StyleCapsule: NSView {
         case .solid: String(localized: "Solid", bundle: .module)
         case .blur: String(localized: "Blur", bundle: .module)
         case .pixelate: String(localized: "Pixelate", bundle: .module)
+        case .erase: String(localized: "Erase", bundle: .module)
         }
     }
 }

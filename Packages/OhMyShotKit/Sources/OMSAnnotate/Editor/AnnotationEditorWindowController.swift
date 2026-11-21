@@ -105,8 +105,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     /// The smallest the window goes: room for the rail above the capsule's resting band (under the toolbar's
     /// 52 pt), and for the widest the style capsule is (the redaction's with a reading that failed and a
-    /// full row of kept colors, 838 pt, beside the rail with 8 pt to spare). A test measures them.
-    static let minimumSize = CGSize(width: 938, height: 640)
+    /// full row of kept colors, 884 pt, beside the rail with 8 pt to spare). A test measures them.
+    static let minimumSize = CGSize(width: 954, height: 640)
 
     /// The window shows the picture at the size it had on screen, with room for the rail and the capsule,
     /// within most of the screen.

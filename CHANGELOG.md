@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Added
+
+- Erase, a redaction method beside Solid, Blur, and Pixelate in the Redact tool's capsule (and for Redact All): it fills the area from the picture just around it, in one color, an even gradient, or each side's colors blended in, so it disappears into an interface's surface. It reads nothing under the area and nothing under another redaction, so what it covers can't be recovered from the flattened picture. Projects with an erasure open only in this version or later.
+
 ### Fixed
 
 - Capture Text, Capture Formula, and Translate Area read only the windows picked with Shift, also when Option opens them in the OCR panel. What lies between or around the windows is no longer read, copied, or sent to a cloud model.

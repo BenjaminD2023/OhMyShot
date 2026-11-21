@@ -124,6 +124,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var laidOut: Frames?
     /// The images blurs and pixelations were last made over.
     private var redactionImages: [Annotation] = []
+    /// Where the redactions lay when erasures were last made, which they read nothing of, and the canvas they
+    /// were kept inside.
+    private var erasedAround: (covered: [CGRect], canvas: CGRect) = ([], .null)
+    /// Erasures stretched over their boxes during a drag, to fill again once it ends.
+    private var staleErasures: Set<Annotation.ID> = []
     /// The picture the image layer shows, which a turn, a flip, or a resize replaces.
     private var shownPicture: CGImage?
     private var markLayers: [Annotation.ID: MarkLayer] = [:]
@@ -873,15 +878,35 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         refreshRedactionsIfNeeded()
     }
 
+    /// The layer that draws the mark `id`, as it stands.
+    func markLayer(for id: Annotation.ID) -> MarkLayer? {
+        markLayers[id]
+    }
+
     private func updateRedaction(_ layer: MarkLayer) {
         guard case .redaction(let redaction) = layer.mark.shape, redaction.method != .solid else {
             layer.coverage = nil
             return
         }
         let source = session.combinedRedactionSource ?? Redactor.Source(base: session.picture)
+        // Filling an erasure reads and writes every pixel under it, too slow to repeat at each step of a drag: until the
+        // drag ends, the last fill stretches over the box, covering it as it goes.
+        if redaction.method == .erase, session.isInLiveChange, case .filtered(let image, _)? = layer.coverage {
+            let rect = redaction.rect.standardized.integral.intersection(source.bounds).intersection(erasureCanvas.standardized.integral)
+            layer.coverage = rect.isNull || rect.width < 1 || rect.height < 1 ? nil : .filtered(image, rect)
+            staleErasures.insert(layer.mark.id)
+            return
+        }
         layer.coverage = Redactor.coverage(
-            for: redaction, id: layer.mark.id, source: source, scale: session.document.scale
+            for: redaction, id: layer.mark.id, source: source, scale: session.document.scale, covered: session.document.redactedRects,
+            canvas: erasureCanvas
         )
+    }
+
+    /// What erasures keep inside: the canvas, or while cropping the whole picture shown, so an erasure past the
+    /// canvas covers what a wider crop frame shows of it.
+    private var erasureCanvas: CGRect {
+        session.tool == .crop ? shownCanvas : session.document.canvas
     }
 
     /// What a highlight lies on, read from the picture blurs show, images included.
@@ -893,17 +918,35 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     /// Makes blurs and pixelations again over images that moved, once a drag has ended, and reads again
     /// what highlights lie on: remaking them at every step of a drag would be slow, and they show the
-    /// result on release.
+    /// result on release. Erasures are made again as well when a redaction around them came, went, or moved,
+    /// or the canvas they keep inside changed, and once the drag that stretched them ends.
     private func refreshRedactionsIfNeeded() {
+        guard !session.isInLiveChange else { return }
+        for id in staleErasures {
+            guard let layer = markLayers[id] else { continue }
+            updateRedaction(layer)
+            position(layer, frames: frames)
+        }
+        staleErasures = []
         let images = session.document.items.filter { if case .image = $0.shape { true } else { false } }
-        guard images != redactionImages, !session.isInLiveChange else { return }
-        redactionImages = images
-        for layer in markLayers.values {
-            if case .redaction = layer.mark.shape {
+        let around = (covered: session.document.redactedRects, canvas: erasureCanvas)
+        if images != redactionImages {
+            redactionImages = images
+            erasedAround = around
+            for layer in markLayers.values {
+                if case .redaction = layer.mark.shape {
+                    updateRedaction(layer)
+                    position(layer, frames: frames)
+                }
+                updateGround(layer)
+            }
+        } else if around != erasedAround {
+            erasedAround = around
+            for layer in markLayers.values {
+                guard case .redaction(let redaction) = layer.mark.shape, redaction.method == .erase else { continue }
                 updateRedaction(layer)
                 position(layer, frames: frames)
             }
-            updateGround(layer)
         }
     }
 
@@ -961,6 +1004,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             focus = nil
             updateViewport()
         }
+        // Cropping shows the whole picture, which erasures past the canvas cover too.
+        refreshRedactionsIfNeeded()
         window?.invalidateCursorRects(for: self)
         onViewportChange?()
     }
