@@ -1273,6 +1273,40 @@
         }
       }
     },
+    "Capture this whole screen (F)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturar toda esta pantalla (F)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capturer tout cet écran (F)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画面全体をキャプチャ（F）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截取整个屏幕（F）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "擷取整個螢幕（F）"
+          }
+        }
+      }
+    },
     "Capture Window" : {
       "localizations" : {
         "es" : {
@@ -1817,36 +1851,36 @@
         }
       }
     },
-    "Choose an app and preview its window" : {
+    "Choose an app and preview its window (W)" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elegir una app y previsualizar su ventana"
+            "value" : "Elegir una app y previsualizar su ventana (W)"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choisir une app et prévisualiser sa fenêtre"
+            "value" : "Choisir une app et prévisualiser sa fenêtre (W)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アプリを選んでウインドウをプレビュー"
+            "value" : "アプリを選んでウインドウをプレビュー（W）"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择应用并预览窗口"
+            "value" : "选择应用并预览窗口（W）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選擇 App 並預覽視窗"
+            "value" : "選擇 App 並預覽視窗（W）"
           }
         }
       }
@@ -1881,6 +1915,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "圓形"
+          }
+        }
+      }
+    },
+    "Click a window to capture it (W or Space)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en una ventana para capturarla (W o Espacio)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquer sur une fenêtre pour la capturer (W ou Espace)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウをクリックしてキャプチャ（W またはスペース）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点按一个窗口以截取（W 或空格键）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按一下視窗以擷取（W 或空白鍵）"
           }
         }
       }
@@ -2697,6 +2765,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拖移以擷取區域"
+          }
+        }
+      }
+    },
+    "Drag to capture an area (A)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra para capturar un área (A)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faites glisser pour capturer une zone (A)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ドラッグして範囲をキャプチャ（A）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖移以截取区域（A）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖移以擷取區域（A）"
           }
         }
       }

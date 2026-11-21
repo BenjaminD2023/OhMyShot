@@ -173,21 +173,41 @@ final class AllInOneBar: NSView {
     }
 
     /// Shows All-In-One's modes (text, scrolling, recording, and measuring) beside area, window, and screen; Capture
-    /// Area's bar has only those three.
+    /// Area's bar has only those three. A and F choose Area and Screen only in All-In-One, so only there do their
+    /// tooltips name them.
     func showModes(_ shows: Bool) {
         stack.rearrange(in: stack.frame) {
             for choice in [Choice.text, .scroll, .record, .measure] { buttons[choice]?.isHidden = !shows }
             modesDivider.isHidden = !shows
         }
+        setHelp(shows ? String(localized: "Drag to capture an area (A)", bundle: .module)
+            : String(localized: "Drag to capture an area", bundle: .module), for: .area)
+        setHelp(shows ? String(localized: "Capture this whole screen (F)", bundle: .module)
+            : String(localized: "Capture this whole screen", bundle: .module), for: .fullscreen)
         needsLayout = true
     }
 
-    /// Window means an app preview for independent captures, direct pointing for visible-region tools.
-    func usesWindowPreview(_ usesPreview: Bool) {
-        let help = usesPreview ? String(localized: "Choose an app and preview its window", bundle: .module)
-            : String(localized: "Click a window to capture it (Space)", bundle: .module)
-        buttons[.window]?.toolTip = help
-        buttons[.window]?.setAccessibilityHelp(help)
+    /// Window means an app preview for independent captures, direct pointing for visible-region tools. W chooses it
+    /// whenever `takesW`: All-In-One's Text and Scrolling point at a window with it as with Space.
+    func usesWindowPreview(_ usesPreview: Bool, takesW: Bool) {
+        let help = if usesPreview {
+            String(localized: "Choose an app and preview its window (W)", bundle: .module)
+        } else if takesW {
+            String(localized: "Click a window to capture it (W or Space)", bundle: .module)
+        } else {
+            String(localized: "Click a window to capture it (Space)", bundle: .module)
+        }
+        setHelp(help, for: .window)
+    }
+
+    private func setHelp(_ help: String, for choice: Choice) {
+        buttons[choice]?.toolTip = help
+        buttons[choice]?.setAccessibilityHelp(help)
+    }
+
+    /// A chip's tooltip, for tests.
+    func help(for choice: Choice) -> String? {
+        buttons[choice]?.toolTip
     }
 
     /// Marks how the next capture is chosen: an area or a window (the screen is taken at once, never held).
@@ -264,7 +284,7 @@ final class AllInOneBar: NSView {
         case .area:
             ("rectangle.dashed", String(localized: "Area", bundle: .module), String(localized: "Drag to capture an area", bundle: .module))
         case .window:
-            ("macwindow", String(localized: "Window", bundle: .module), String(localized: "Choose an app and preview its window", bundle: .module))
+            ("macwindow", String(localized: "Window", bundle: .module), String(localized: "Choose an app and preview its window (W)", bundle: .module))
         case .fullscreen:
             ("display", String(localized: "Screen", bundle: .module), String(localized: "Capture this whole screen", bundle: .module))
         case .text:

@@ -236,7 +236,8 @@ final class OverlayView: NSView {
         toolbar.isHidden = !showsToolbar
         toolbar.alphaValue = 1
         toolbar.showModes(isAllInOne)
-        toolbar.usesWindowPreview(purpose == .screenshot || purpose == .record)
+        let takesW = purpose == .screenshot || purpose == .record
+        toolbar.usesWindowPreview(takesW, takesW: takesW)
         toolbar.markPurpose(nil)
         toolbar.select(mode == .area ? .area : .window)
         layoutToolbar()
@@ -886,7 +887,8 @@ final class OverlayView: NSView {
     /// Marks what All-In-One's next area is for on the bar; nil for a plain capture.
     func markPurpose(_ choice: AllInOneBar.Choice?) {
         toolbar.markPurpose(choice)
-        toolbar.usesWindowPreview((purpose == .screenshot || purpose == .record) && choice != .text && choice != .scroll)
+        let takesW = purpose == .screenshot || purpose == .record
+        toolbar.usesWindowPreview(takesW && choice != .text && choice != .scroll, takesW: takesW)
         layoutToolbar()
     }
 

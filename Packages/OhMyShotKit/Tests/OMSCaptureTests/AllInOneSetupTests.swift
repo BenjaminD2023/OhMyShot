@@ -324,6 +324,25 @@ struct AllInOneBarTests {
         #expect(bar.shownChoices == [.area, .window, .fullscreen, .cancel])
     }
 
+    /// Area, Window, and Screen name their letters as the modes do; A and F only in All-In-One, where they choose them.
+    @Test func theTooltipsNameTheLetters() {
+        let bar = AllInOneBar()
+        bar.showModes(true)
+        bar.usesWindowPreview(true, takesW: true)
+        #expect(bar.help(for: .area) == "Drag to capture an area (A)")
+        #expect(bar.help(for: .window) == "Choose an app and preview its window (W)")
+        #expect(bar.help(for: .fullscreen) == "Capture this whole screen (F)")
+        #expect(bar.help(for: .text) == "Drag over text to copy it (O)")
+        // All-In-One's Text and Scrolling point at a window with W as with Space; the tools on their own take Space.
+        bar.usesWindowPreview(false, takesW: true)
+        #expect(bar.help(for: .window) == "Click a window to capture it (W or Space)")
+        bar.usesWindowPreview(false, takesW: false)
+        #expect(bar.help(for: .window) == "Click a window to capture it (Space)")
+        bar.showModes(false)
+        #expect(bar.help(for: .area) == "Drag to capture an area")
+        #expect(bar.help(for: .fullscreen) == "Capture this whole screen")
+    }
+
     @Test func aPurposeIsNeverHowAnAreaIsChosen() {
         let bar = AllInOneBar()
         bar.select(.area)

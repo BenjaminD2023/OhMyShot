@@ -722,7 +722,13 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     }
 
     override func scrollWheel(with event: NSEvent) {
-        applySwipePhase(event.phase, deltaX: event.scrollingDeltaX)
+        applySwipePhase(event.phase, deltaX: Self.fingerTravel(event.scrollingDeltaX, invertedFromDevice: event.isDirectionInvertedFromDevice))
+    }
+
+    /// How far the fingers moved right: a scroll's sign follows them only with Natural Scrolling on (AppKit reverses it
+    /// with the setting off), but a swipe follows the fingers either way.
+    static func fingerTravel(_ deltaX: CGFloat, invertedFromDevice: Bool) -> CGFloat {
+        invertedFromDevice ? deltaX : -deltaX
     }
 
     func applySwipePhase(_ phase: NSEvent.Phase, deltaX: CGFloat) {
@@ -737,7 +743,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
             let offset = towardEdge ? swipeDistance : swipeDistance * 0.35
             setSwipeOffset(offset, animated: false)
         case .ended:
-            let shouldClose = abs(swipeDistance) > 50
+            // Only a swipe toward the card's own edge closes it; one the other way springs back.
+            let shouldClose = slidesFromLeft ? swipeDistance < -50 : swipeDistance > 50
             swipeDistance = 0
             if shouldClose {
                 onCommand?(.close)
