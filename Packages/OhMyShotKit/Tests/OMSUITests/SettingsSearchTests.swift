@@ -36,7 +36,8 @@ struct SettingsSearchTests {
         let found = SettingsTab.found("text").map(\.tab)
         #expect(found.first == .text)
         #expect(found.contains(.capture))
-        #expect(SettingsTab.found("pins").map(\.tab) == [.tools])
+        // Tools has how pins look; Shortcuts has Hide or Show Pins.
+        #expect(SettingsTab.found("pins").map(\.tab) == [.tools, .shortcuts])
         #expect(SettingsTab.found("nothing like this").isEmpty)
     }
 

@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Testing
 @testable import OMSUI
 
@@ -8,10 +9,11 @@ struct CaptureLauncherTests {
         _ captures: [StatusItemController.Entry],
         tools: [StatusItemController.Entry] = [],
         images: [StatusItemController.Entry] = [],
+        pins: [StatusItemController.Entry] = [],
         history: [StatusItemController.Entry] = [],
         app: [StatusItemController.Entry] = []
     ) -> CaptureLauncherModel {
-        CaptureLauncherModel(captureEntries: captures, toolEntries: tools, imageEntries: images, historyEntries: history,
+        CaptureLauncherModel(captureEntries: captures, toolEntries: tools, imageEntries: images, historyEntries: history, pinEntries: pins,
                              priorityEntries: [], appEntries: app, debugEntries: [], openSettings: {},
                              editShortcut: { _ in }, quit: {})
     }
@@ -154,5 +156,65 @@ struct CaptureLauncherTests {
             "Join Discord",
         ]))
         #expect(!shown.contains("Cancel Studio Export") && !shown.contains("What’s New…"))
+    }
+
+    /// The status menu keeps Pin from Clipboard and Hide Pins in Images & Pins' menus; with shortcuts of their own they
+    /// are tiles too, after the tools, and Restore Recently Closed is one among the history's.
+    @Test func thePinCommandsAndRestoreRecentlyClosedAreTiles() {
+        let launcher = model(
+            [.init(title: "Capture Area", shortcut: .captureArea) {}],
+            tools: [.init(title: "Pick Color", shortcut: .pickColor) {}],
+            images: [.init(title: "From Clipboard") { [] }, .init(title: "Pins") { [] }],
+            pins: [
+                .init(title: "Pin from Clipboard", shortcut: .pinFromClipboard) {},
+                .init(title: "Hide Pins", shortcut: .togglePins) {},
+            ],
+            history: [
+                .init(title: "Capture History…", shortcut: .openHistory) {},
+                .init(title: "Restore Recently Closed", shortcut: .restoreRecentlyClosed) {},
+            ]
+        )
+        #expect(launcher.toolTiles.map(\.title) == ["Pick Color", "Pin from Clipboard", "Hide Pins", "Capture History…", "Restore Recently Closed"])
+        #expect(launcher.moreRows.isEmpty)
+        #expect(launcher.imageRows.map(\.title) == ["From Clipboard", "Pins"])
+        #expect(launcher.rows.map { $0.entries.map(\.title) }[1] == ["Pick Color", "Pin from Clipboard", "Hide Pins", "Capture History…"])
+    }
+
+    /// The launcher scrolling the arrow keys' command into view moves another under a pointer that stays still: that
+    /// one is not lit, and Return still presses the keys' command. A pointer that moves lights what it is over.
+    @Test func aCommandScrolledUnderAStillPointerLeavesTheKeysCommandLit() {
+        let highlight = LauncherHighlight()
+        let keys = CaptureLauncherModel.Cell(row: 5, column: 0)
+        let under = CaptureLauncherModel.Cell(row: 3, column: 1)
+        highlight.cell = keys
+        highlight.fromKeys = true
+        highlight.keysPointer = CGPoint(x: 600, y: 400)
+        highlight.hover(under, inside: true, pointer: CGPoint(x: 600, y: 400))
+        #expect(highlight.cell == keys && highlight.fromKeys)
+        highlight.hover(under, inside: true, pointer: CGPoint(x: 602, y: 400))
+        #expect(highlight.cell == under && !highlight.fromKeys)
+        highlight.hover(under, inside: false, pointer: CGPoint(x: 640, y: 400))
+        #expect(highlight.cell == nil)
+    }
+
+    @Test func theLauncherIsAsTallAsItsRowsUpToTheRoomItHasAndThenScrolls() {
+        func rows(_ count: Int) -> [StatusItemController.Entry] {
+            (1 ... count).map { StatusItemController.Entry(title: "Row \($0)", systemImage: "viewfinder") {} }
+        }
+        func launcher(_ count: Int) -> CaptureLauncherView {
+            CaptureLauncherView(model: model([], tools: rows(count)), perform: { _ in }, showMenu: { _, _ in }, maxHeight: 300)
+        }
+        // The popover takes the preferred size, which follows the rows as they change while it is open.
+        let host = NSHostingController(rootView: launcher(2))
+        host.sizingOptions = [.preferredContentSize]
+        host.view.layoutSubtreeIfNeeded()
+        let short = host.preferredContentSize
+        #expect(short.width == 420 && short.height > 0 && short.height < 300)
+        host.rootView = launcher(40)
+        host.view.layoutSubtreeIfNeeded()
+        #expect(host.preferredContentSize == CGSize(width: 420, height: 300))
+        host.rootView = launcher(2)
+        host.view.layoutSubtreeIfNeeded()
+        #expect(host.preferredContentSize == short)
     }
 }

@@ -5351,7 +5351,6 @@
       }
     },
     "Pin from Clipboard" : {
-      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {

@@ -79,6 +79,10 @@ public enum AutomationURLParser {
             return .openAnnotate(file: try p.file())
         case "open-from-clipboard":
             return .openFromClipboard
+        case "pin-from-clipboard":
+            return .pinFromClipboard
+        case "toggle-pins":
+            return .togglePins
         case "toggle-desktop-icons":
             return .toggleDesktopIcons
         case "hide-desktop-icons":

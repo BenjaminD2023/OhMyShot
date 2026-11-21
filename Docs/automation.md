@@ -10,8 +10,8 @@ Debug builds answer `ohmyshot-dev://` instead, and show up in Shortcuts as "OhMy
 
 The commands and parameters are CleanShot X's
 ([its documentation](https://cleanshot.com/docs-api)). A script written for CleanShot works after you change
-`cleanshot://` to `ohmyshot://`. Unknown parameters are ignored. One command is OhMyShot's own, with no CleanShot
-twin: `capture-formula`.
+`cleanshot://` to `ohmyshot://`. Unknown parameters are ignored. Three commands are OhMyShot's own, with no CleanShot
+twin: `capture-formula`, `pin-from-clipboard`, and `toggle-pins`.
 
 The first time an app or a script sends a command, OhMyShot asks whether it may. Apps are approved one by one, by
 bundle identifier. Tools that are not apps (`open`, `osascript`, shell scripts) exit before their command arrives,
@@ -59,6 +59,8 @@ should happen after a capture:
 | `capture-formula` | `filepath`, area | OhMyShot's own. Opens Capture Formula, which needs the Math Formulas pack (Settings › Text › Model packs); without it, OhMyShot beeps. With an area, reads that area at once. With `filepath`, reads the picture's formula without showing it. The formula's LaTeX is copied as it is, without `$` around it. |
 | `open-annotate` | `filepath` | Opens the picture or `.ohmyshot` project at `filepath` in the editor. Without one, asks for a file. Pictures are added to Capture History first. |
 | `open-from-clipboard` | | Opens the clipboard's picture in the editor. |
+| `pin-from-clipboard` | | OhMyShot's own. Pins what the clipboard holds: a picture, then a color (or text that is exactly a color's value), then any other text. Beeps when there is nothing to pin. |
+| `toggle-pins` | | OhMyShot's own. Hides every pin, or shows them again where they were. Does nothing while no pin is open. |
 | `toggle-desktop-icons`, `hide-desktop-icons`, `show-desktop-icons` | | Covers the desktop icons with a picture of the wallpaper, or removes the cover. See [Desktop icons](#desktop-icons). |
 | `add-quick-access-overlay` | `filepath` (required) | Adds a copy of a picture, an MP4 or MOV, or a GIF to Capture History and shows its Quick Access card, whatever Settings says about cards. The file itself is left where it is. |
 | `open-history` | | Opens Capture History. |

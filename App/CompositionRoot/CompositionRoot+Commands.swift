@@ -34,6 +34,15 @@ extension CompositionRoot {
         case .controlQuickAccess:
             quickAccess.focusLatest()
             return
+        case .pinFromClipboard:
+            pinClipboard()
+            return
+        case .togglePins:
+            pins.setHidden(!pins.areHidden)
+            return
+        case .restoreRecentlyClosed:
+            quickAccess.restoreRecentlyClosed()
+            return
         case .drawOnScreen:
             // Drawn over the screen, not taken from it: no Screen Recording needed.
             sketch.toggle()
@@ -179,6 +188,10 @@ extension CompositionRoot {
             if let file { open([file]) } else { chooseFilesToAnnotate() }
         case .openFromClipboard:
             annotateClipboard()
+        case .pinFromClipboard:
+            pinClipboard()
+        case .togglePins:
+            pins.setHidden(!pins.areHidden)
         case .toggleDesktopIcons:
             setDesktopIconsHidden(!settings.hidesDesktopIcons)
         case .hideDesktopIcons:

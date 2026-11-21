@@ -40,6 +40,10 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case measure
     /// Draw over the live screen, or stop drawing.
     case drawOnScreen
+    /// Pins what the clipboard holds: a picture, a color, or text.
+    case pinFromClipboard
+    /// Hides every pin, or shows them again where they were.
+    case togglePins
     /// Choose an area, a window, or a display, and record it; pressed again while recording, stops.
     case recordScreen
     /// Saves the last 15 seconds of each display the replay keeps (macOS 27).
@@ -54,6 +58,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     /// Gives the newest Quick Access card the keyboard, without bringing the app forward: Copy, Save, Annotate,
     /// Quick Look, and the rest are then a key away (Escape gives the keyboard back).
     case controlQuickAccess
+    /// Brings back the capture whose Quick Access card closed last.
+    case restoreRecentlyClosed
 
     public var name: KeyboardShortcuts.Name {
         KeyboardShortcuts.Name(rawValue)
@@ -99,6 +105,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .pickColor: String(localized: "Pick Color", bundle: .module)
         case .measure: String(localized: "Measure", bundle: .module)
         case .drawOnScreen: String(localized: "Draw on Screen", bundle: .module)
+        case .pinFromClipboard: String(localized: "Pin from Clipboard", bundle: .module)
+        case .togglePins: String(localized: "Hide or Show Pins", bundle: .module)
         case .recordScreen: String(localized: "Record Screen", bundle: .module)
         case .saveReplay: String(localized: "Save Last 15 Seconds", bundle: .module)
         case .openHistory: String(localized: "Open Capture History", bundle: .module)
@@ -106,6 +114,7 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .annotateLatestCapture: String(localized: "Annotate Latest Capture", bundle: .module)
         case .openFromClipboard: String(localized: "Open from Clipboard", bundle: .module)
         case .controlQuickAccess: String(localized: "Control Quick Access", bundle: .module)
+        case .restoreRecentlyClosed: String(localized: "Restore Recently Closed", bundle: .module)
         }
     }
 }
@@ -199,7 +208,7 @@ public final class HotkeyCenter {
         case .scrollingCapture: profile == .development ? KeyboardShortcuts.Shortcut(.equal, modifiers: modifiers) : nil
         case .captureWindow, .capturePreviousArea, .selfTimer, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload,
              .captureFullscreenAndUpload, .captureTextJoined, .captureFormula, .openHistory, .copyLatestCapture, .annotateLatestCapture,
-             .openFromClipboard, .controlQuickAccess, .drawOnScreen: nil
+             .openFromClipboard, .controlQuickAccess, .drawOnScreen, .pinFromClipboard, .togglePins, .restoreRecentlyClosed: nil
         }
     }
 }
