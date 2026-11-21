@@ -7,6 +7,8 @@ struct RetentionChangeRequest: Identifiable {
     let retention: HistoryRetention
     /// How many captures it would delete now.
     let count: Int
+    /// How many of them are favorites, which only turning History off deletes.
+    let favorites: Int
 
     var id: String { retention.rawValue }
 }
@@ -26,7 +28,9 @@ extension View {
                 Text("Delete ^[\(change.count) Capture](inflect: true)", bundle: .module)
             }
         } message: { change in
-            if change.retention == .never {
+            if change.retention == .never, change.favorites > 0 {
+                Text("From now on, a capture is deleted when its Quick Access card closes, unless you saved it. Your \(change.favorites) favorites are deleted too. This can’t be undone.", bundle: .module)
+            } else if change.retention == .never {
                 Text("From now on, a capture is deleted when its Quick Access card closes, unless you saved it. This can’t be undone.", bundle: .module)
             } else {
                 Text("Captures older than \(change.retention.duration) are deleted now. This can’t be undone.", bundle: .module)
@@ -48,6 +52,7 @@ extension View {
 func retentionSelection(
     settings: SettingsStore,
     expiredCount: @escaping (HistoryRetention) -> Int,
+    expiredFavoriteCount: @escaping (HistoryRetention) -> Int,
     request: Binding<RetentionChangeRequest?>
 ) -> Binding<HistoryRetention> {
     Binding {
@@ -56,7 +61,7 @@ func retentionSelection(
         guard retention != settings.historyRetention else { return }
         let count = expiredCount(retention)
         if count > 0 {
-            request.wrappedValue = RetentionChangeRequest(retention: retention, count: count)
+            request.wrappedValue = RetentionChangeRequest(retention: retention, count: count, favorites: expiredFavoriteCount(retention))
         } else {
             settings.historyRetention = retention
         }

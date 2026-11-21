@@ -689,6 +689,7 @@ final class CompositionRoot {
             openHistory: { [weak self] in self?.showHistory() },
             showOnboarding: { [weak self] in self?.replayOnboarding() },
             expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
+            expiredFavoriteCount: { [weak self] in self?.retention.expiredFavoriteCount(for: $0) ?? 0 },
             destinations: uploads.destinations,
             uploadRecords: uploads.records,
             recordActions: SettingsDependencies.UploadRecordActions(

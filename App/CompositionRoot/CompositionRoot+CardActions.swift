@@ -272,7 +272,8 @@ extension CompositionRoot {
         historyActions.sharing.deleteFromStorage = { [weak self] entry in self?.uploads.deleteFromStorage(captureID: entry.id) }
         let controller = HistoryWindowController(
             store: history, settings: settings, actions: historyActions, textReader: textReader,
-            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 }
+            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
+            expiredFavoriteCount: { [weak self] in self?.retention.expiredFavoriteCount(for: $0) ?? 0 }
         )
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in self?.historyWindow = nil }
         return controller

@@ -75,12 +75,11 @@ final class CaptureRetention {
         expiry = Task { [weak self, history] in
             let expired = await history.loadExpired(retention: retention, keeping: keeping, now: now)
             guard let self, !Task.isCancelled, settings.historyRetention == retention else { return }
-            // Back on the main actor, and the listing took a while: a capture taken since is newer than `now`, and one
-            // a card, an editor, or the clipboard took up since is held now; neither goes. With history off, that is
-            // every capture but the ones still in use.
-            let removable = HistoryStore.removable(expired, held: heldCaptureIDs(for: retention), checkedAt: now).filter {
-                history.item(forFileAt: history.fileURL(for: $0))?.id == $0.id
-            }
+            // Back on the main actor, and the listing took a while: a capture taken since is newer than `now`, one a
+            // card, an editor, or the clipboard took up since is held now, and one added to Favorites since is kept;
+            // none of them goes. With history off, that is every capture but the ones still in use.
+            let current = history.stillExpired(expired, retention: retention, now: now)
+            let removable = HistoryStore.removable(current, held: heldCaptureIDs(for: retention), checkedAt: now)
             removable.forEach(history.delete)
             if !removable.isEmpty {
                 Log.capture.notice("Removed \(removable.count, privacy: .public) expired capture(s) from the history")
@@ -93,6 +92,11 @@ final class CaptureRetention {
     /// How many captures a retention would delete now; captures still on screen as cards are kept.
     func expiredCount(for retention: HistoryRetention) -> Int {
         history.expired(retention: retention, keeping: heldCaptureIDs(for: retention)).count
+    }
+
+    /// How many of those are favorites, which only turning History off deletes.
+    func expiredFavoriteCount(for retention: HistoryRetention) -> Int {
+        history.expired(retention: retention, keeping: heldCaptureIDs(for: retention)).filter(\.isFavorite).count
     }
 
     /// Takes away the desktop pictures' pieces kept for window screenshots once nothing uses them: no capture's

@@ -89,12 +89,13 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
     /// - Parameters:
     ///   - expiredCount: how many captures a retention would delete now, so the window can ask before
     ///     shortening it.
+    ///   - expiredFavoriteCount: how many of those are favorites, so turning History off says they go too.
     ///   - textReader: what reads the captures' text, so the window can say while it does.
     public init(
         store: HistoryStore, settings: SettingsStore, actions: HistoryActions, textReader: HistoryTextReader?,
-        expiredCount: @escaping (HistoryRetention) -> Int
+        expiredCount: @escaping (HistoryRetention) -> Int, expiredFavoriteCount: @escaping (HistoryRetention) -> Int
     ) {
-        model = HistoryModel(store: store, settings: settings, actions: actions, expiredCount: expiredCount)
+        model = HistoryModel(store: store, settings: settings, actions: actions, expiredCount: expiredCount, expiredFavoriteCount: expiredFavoriteCount)
         self.textReader = textReader
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 920, height: 640),
@@ -173,7 +174,7 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
     /// Raises the confirmation that choosing `retention` would, or dismisses it with nil, without
     /// changing anything: for scripted checks of the dialog.
     public func previewRetentionChange(to retention: HistoryRetention?) {
-        model.retentionRequest = retention.map { RetentionChangeRequest(retention: $0, count: model.expiredCount($0)) }
+        model.retentionRequest = retention.map { RetentionChangeRequest(retention: $0, count: model.expiredCount($0), favorites: model.expiredFavoriteCount($0)) }
     }
 
     /// Searches for `query` as if it were typed into the search field.

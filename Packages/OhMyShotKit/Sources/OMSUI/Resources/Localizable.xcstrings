@@ -459,6 +459,40 @@
         }
       }
     },
+    "%@, Favorite" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, favorita"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, favori"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@、お気に入り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，个人收藏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，喜好項目"
+          }
+        }
+      }
+    },
     "%@…" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2039,6 +2073,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AAA"
+          }
+        }
+      }
+    },
+    "Add to Favorites" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Añadir a Favoritos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajouter aux favoris"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お気に入りに追加"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加到个人收藏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入喜好項目"
           }
         }
       }
@@ -10417,6 +10485,74 @@
         }
       }
     },
+    "Favorites" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favoritos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favoris"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お気に入り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个人收藏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "喜好項目"
+          }
+        }
+      }
+    },
+    "Favorites stay until you take them out, however long Keep captures is. Add one from a capture’s menu, or select it and press the period key." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los favoritos se quedan hasta que los quites, sea cual sea el ajuste de Conservar capturas. Añade uno desde el menú de una captura, o selecciónala y pulsa la tecla del punto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les favoris restent jusqu’à ce que vous les retiriez, quelle que soit la durée de Conserver les captures. Ajoutez-en un depuis le menu d’une capture, ou sélectionnez-la et appuyez sur la touche point."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お気に入りは、「キャプチャを保持」の設定にかかわらず、外すまで残ります。キャプチャのメニューから追加するか、選択してピリオドキーを押してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无论“保留截图”设为多久，个人收藏都会保留，直到你将其移除。可从截图的菜单中添加，或选中后按句号键。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無論「保留擷取內容」設為多久，喜好項目都會保留，直到你將其移除。可從擷取內容的選單中加入，或選取後按下句號鍵。"
+          }
+        }
+      }
+    },
     "File and picture" : {
       "localizations" : {
         "es" : {
@@ -11605,6 +11741,100 @@
         }
       }
     },
+    "From now on, a capture is deleted when its Quick Access card closes, unless you saved it. Your %lld favorites are deleted too. This can’t be undone." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "From now on, a capture is deleted when its Quick Access card closes, unless you saved it. Your %lld favorite is deleted too. This can’t be undone."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "From now on, a capture is deleted when its Quick Access card closes, unless you saved it. Your %lld favorites are deleted too. This can’t be undone."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "A partir de ahora, una captura se eliminará cuando se cierre su tarjeta de acceso rápido, salvo que la hayas guardado. También se eliminará %lld captura favorita. Esta acción no se puede deshacer."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "A partir de ahora, una captura se eliminará cuando se cierre su tarjeta de acceso rápido, salvo que la hayas guardado. También se eliminarán tus %lld capturas favoritas. Esta acción no se puede deshacer."
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Désormais, une capture est supprimée lorsque sa carte d’accès rapide se ferme, sauf si vous l’avez enregistrée. Votre %lld favori est aussi supprimé. Cette action est irréversible."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Désormais, une capture est supprimée lorsque sa carte d’accès rapide se ferme, sauf si vous l’avez enregistrée. Vos %lld favoris sont aussi supprimés. Cette action est irréversible."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "今後、キャプチャは保存しない限り、クイックアクセスのカードを閉じると削除されます。お気に入り%lld件も削除されます。この操作は取り消せません。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "从现在起，截图会在其快速访问卡片关闭时被删除，除非你已存储。你的 %lld 个个人收藏也会被删除。此操作无法撤销。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "從現在起，擷取內容會在其「快速取用」卡片關閉時刪除，除非你已儲存。你的 %lld 個喜好項目也會刪除。此動作無法還原。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Full Size (%@)" : {
       "localizations" : {
         "es" : {
@@ -12321,6 +12551,40 @@
         }
       }
     },
+    "History is off: captures can’t be kept as favorites." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El historial está desactivado: las capturas no se pueden guardar en Favoritos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’historique est désactivé : les captures ne peuvent pas être gardées en favoris."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "履歴はオフです：キャプチャをお気に入りとして保持できません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "历史记录已关闭：截图无法作为个人收藏保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記錄已關閉：擷取內容無法保留為喜好項目。"
+          }
+        }
+      }
+    },
     "History Off" : {
       "localizations" : {
         "es" : {
@@ -12559,36 +12823,36 @@
         }
       }
     },
-    "How long captures stay in the history" : {
+    "How long captures stay in the history. Favorites stay until you take them out, unless History is off." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuánto tiempo se quedan las capturas en el historial"
+            "value" : "Cuánto tiempo se quedan las capturas en el historial. Los favoritos se quedan hasta que los quites, salvo que el historial esté desactivado."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Durée de conservation des captures dans l’historique"
+            "value" : "Durée de conservation des captures dans l’historique. Les favoris restent jusqu’à ce que vous les retiriez, sauf si l’historique est désactivé."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キャプチャを履歴に保持する期間"
+            "value" : "キャプチャを履歴に保持する期間。履歴がオフの場合を除き、お気に入りは外すまで残ります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "截图在历史记录中保留的时长"
+            "value" : "截图在历史记录中保留的时长。除非历史记录已关闭，个人收藏会一直保留，直到你将其移除。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "擷取內容在記錄中保留的時間"
+            "value" : "擷取內容在記錄中保留的時間。除非記錄已關閉，喜好項目會一直保留，直到你將其移除。"
           }
         }
       }
@@ -16764,6 +17028,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚無擷取內容"
+          }
+        }
+      }
+    },
+    "No Favorites" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay favoritos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun favori"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お気に入りはありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有个人收藏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有喜好項目"
+          }
+        }
+      }
+    },
+    "No Favorites Found" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se han encontrado favoritos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun favori trouvé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お気に入りが見つかりません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到个人收藏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到喜好項目"
           }
         }
       }
@@ -21873,6 +22205,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "移除%@"
+          }
+        }
+      }
+    },
+    "Remove from Favorites" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quitar de Favoritos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retirer des favoris"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "お気に入りから外す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从个人收藏中移除"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從喜好項目中移除"
           }
         }
       }
@@ -30286,6 +30652,100 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "它們會連同標注和文字一起離開擷取記錄，從垃圾桶放回也不會回到這裡。儲存在其他位置的副本不受影響。"
+          }
+        }
+      }
+    },
+    "This includes %lld favorites." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "This includes %lld favorite."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "This includes %lld favorites."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Incluye %lld captura favorita."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Incluye %lld capturas favoritas."
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Cela comprend %lld favori."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Cela comprend %lld favoris."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "お気に入り%lld件を含みます。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "其中包括 %lld 个个人收藏。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "其中包括 %lld 個喜好項目。"
+                }
+              }
+            }
           }
         }
       }
