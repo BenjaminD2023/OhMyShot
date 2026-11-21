@@ -183,11 +183,11 @@ final class CompositionRoot {
     /// What the Shortcuts actions run.
     private(set) lazy var shortcuts = ShortcutActions(
         permissions: permissions, uploads: uploads, captures: captures, textCapture: textCapture, files: files, packs: readerPacks,
-        pins: pins, displays: displays,
+        pins: pins, displays: displays, holds: retention.shortcutHolds,
         showOnboarding: { [weak self] in self?.showOnboarding() },
-        run: { [weak self] command, done in
+        run: { [weak self] command, kept, done in
             guard let self else { done?(nil); return }
-            perform(command, done: done)
+            perform(command, kept: kept, done: done)
         },
         openInEditor: { [weak self] loaded, name in await self?.annotate(loaded, name: name) }
     )

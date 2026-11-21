@@ -279,7 +279,7 @@ final class CaptureCoordinator {
     /// clipboard: the pin is where it went.
     /// - Parameter freezes: whether the screen holds still while choosing; nil follows the setting.
     func pinArea(freezes: Bool? = nil, followUp: CaptureFollowUp = .none) {
-        begin(mode: .area, freezes: freezes, followUp: CaptureFollowUp(action: .pin, asksForName: followUp.asksForName, done: followUp.done))
+        begin(mode: .area, freezes: freezes, followUp: CaptureFollowUp(action: .pin, asksForName: followUp.asksForName, kept: followUp.kept, done: followUp.done))
     }
 
     // MARK: Self-Timer
@@ -706,6 +706,8 @@ final class CaptureCoordinator {
                     of: entry, with: shown.png, pixelWidth: shown.image.width, pixelHeight: shown.image.height, annotations: document
                 )
             }
+            // Before a card, or its absence, can let it go.
+            followUp.kept?(entry)
             if let pending = waiting {
                 waiting = nil
                 if await files.copy(pending.picture, png: pending.png, name: (entry.fileName as NSString).deletingPathExtension, scale: pending.scale, historyFile: history.fileURL(for: entry)) {
@@ -788,6 +790,9 @@ struct CaptureFollowUp {
     /// A request's own card delivery, before retention cleanup. The first-use practice shows one card even when
     /// the user's usual setting hides them; every other capture uses the coordinator's normal delivery.
     var deliverCard: ((QuickAccessItem, _ isCopied: Bool) -> Void)?
+    /// Told the capture's record as soon as it is kept, before a card or its absence can let it go: a shortcut holds it
+    /// with this until it has read the file.
+    var kept: ((HistoryItem) -> Void)?
     /// Told the capture's record once it is kept, or nil when none is: it was cancelled, or failed.
     var done: ((HistoryItem?) -> Void)?
     /// Whether saving the capture asks for the file's name first, when Settings say to. Someone at the keyboard is
@@ -796,10 +801,14 @@ struct CaptureFollowUp {
 
     static let none = CaptureFollowUp()
 
-    init(action: CaptureAction? = nil, asksForName: Bool = true, deliverCard: ((QuickAccessItem, Bool) -> Void)? = nil, done: ((HistoryItem?) -> Void)? = nil) {
+    init(
+        action: CaptureAction? = nil, asksForName: Bool = true, deliverCard: ((QuickAccessItem, Bool) -> Void)? = nil,
+        kept: ((HistoryItem) -> Void)? = nil, done: ((HistoryItem?) -> Void)? = nil
+    ) {
         self.action = action
         self.deliverCard = deliverCard
         self.asksForName = asksForName
+        self.kept = kept
         self.done = done
     }
 

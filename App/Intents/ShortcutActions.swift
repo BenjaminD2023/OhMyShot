@@ -18,18 +18,21 @@ final class ShortcutActions {
     private let packs: TextReaderPacks
     private let pins: PinController
     private let displays: DisplayTopology
+    /// The captures shortcuts hold until they have read their files.
+    private let holds: ShortcutCaptureHolds
     /// Shows how to turn Screen Recording on.
     private let showOnboarding: () -> Void
-    /// Runs a URL API command, which needs no caller's approval here: the user made the shortcut. `done` is told the
-    /// capture's record once a capture command's capture is kept, or nil when none is.
-    private let run: (AutomationCommand, ((HistoryItem?) -> Void)?) -> Void
+    /// Runs a URL API command, which needs no caller's approval here: the user made the shortcut. `kept` is told the
+    /// capture's record as soon as a capture command's capture is kept, before anything can let it go; `done` once it is
+    /// kept, or nil when none is.
+    private let run: (AutomationCommand, _ kept: ((HistoryItem) -> Void)?, _ done: ((HistoryItem?) -> Void)?) -> Void
     /// Opens a picture in the editor under a name, added to the history first.
     private let openInEditor: (ImageLoader.Loaded, String) async -> Void
 
     init(
         permissions: PermissionCenter, uploads: UploadCoordinator, captures: CaptureCoordinator, textCapture: TextCaptureCoordinator,
-        files: ScreenshotFiles, packs: TextReaderPacks, pins: PinController, displays: DisplayTopology,
-        showOnboarding: @escaping () -> Void, run: @escaping (AutomationCommand, ((HistoryItem?) -> Void)?) -> Void,
+        files: ScreenshotFiles, packs: TextReaderPacks, pins: PinController, displays: DisplayTopology, holds: ShortcutCaptureHolds,
+        showOnboarding: @escaping () -> Void, run: @escaping (AutomationCommand, ((HistoryItem) -> Void)?, ((HistoryItem?) -> Void)?) -> Void,
         openInEditor: @escaping (ImageLoader.Loaded, String) async -> Void
     ) {
         self.permissions = permissions
@@ -40,6 +43,7 @@ final class ShortcutActions {
         self.packs = packs
         self.pins = pins
         self.displays = displays
+        self.holds = holds
         self.showOnboarding = showOnboarding
         self.run = run
         self.openInEditor = openInEditor
@@ -54,19 +58,26 @@ final class ShortcutActions {
     }
 
     /// A shortcut's capture: one of the URL API's capture commands, run as its keyboard shortcut runs it with the command's
-    /// action after it. The capture's record once it is kept, or nil when it was cancelled or failed.
-    func capture(_ command: AutomationCommand) async throws(ShortcutFailure) -> HistoryItem? {
+    /// action after it. Its picture in the format Settings choose, or nil when it was cancelled or failed. The capture is
+    /// held from the moment it is kept until its picture is read, as with Keep Captures at Never and no card nothing else
+    /// holds it, and let go then, however reading it went.
+    func capture(_ command: AutomationCommand) async throws -> (data: Data, name: String, type: UTType)? {
         try requireScreenRecording()
-        if command.captureAction == .upload, !uploads.canUpload { throw .noUploadDestination }
-        return await withCheckedContinuation { continuation in
-            let answer = Answer(continuation)
-            run(command) { answer.give($0) }
+        if command.captureAction == .upload, !uploads.canUpload { throw ShortcutFailure.noUploadDestination }
+        // A pinned capture is left as Capture Area and Pin leaves it, for the pin's Save and drag.
+        return try await holds.holding(lettingGo: command.captureAction != .pin) { hold -> (data: Data, name: String, type: UTType)? in
+            guard let entry = await kept(command, holding: hold) else { return nil }
+            return try await files.shortcutFile(for: entry)
         }
     }
 
-    /// A kept capture's picture, to hand to a shortcut: in the format Settings choose.
-    func file(for entry: HistoryItem) async throws -> (data: Data, name: String, type: UTType) {
-        try await files.shortcutFile(for: entry)
+    /// Runs a capture command, calling `hold` with its capture's ID as soon as it is kept; the capture's record once it is
+    /// kept, or nil when it was cancelled or failed.
+    private func kept(_ command: AutomationCommand, holding hold: @escaping (UUID) -> Void) async -> HistoryItem? {
+        await withCheckedContinuation { continuation in
+            let answer = Answer(continuation)
+            run(command, { hold($0.id) }) { answer.give($0) }
+        }
     }
 
     /// A shortcut's Capture Text: the text copied, or nil when none was.
@@ -144,7 +155,7 @@ final class ShortcutActions {
     /// Runs a URL API command for a shortcut.
     func perform(_ command: AutomationCommand) throws(ShortcutFailure) {
         if command.readsScreen { try requireScreenRecording() }
-        run(command, nil)
+        run(command, nil, nil)
     }
 
     /// Hands a continuation its value once, however many times a follow-up says it is done.

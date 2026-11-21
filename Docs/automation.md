@@ -105,7 +105,7 @@ These actions appear in the Shortcuts app under OhMyShot:
 
 | Action | Input | Output |
 |---|---|---|
-| Capture Area, Capture Window, Capture Fullscreen, Capture Previous Area, Self-Timer | After Capture (optional): Copy, Save, Annotate, Upload, Pin | The screenshot, as a file in the format Settings › General chooses (PNG, JPEG, or HEIC, at 1×, in sRGB, with a border, as set; a save a shortcut asks for never asks for a name), or nothing when the capture was cancelled |
+| Capture Area, Capture Window, Capture Fullscreen, Capture Previous Area, Self-Timer | After Capture (optional): Copy, Save, Annotate, Upload, Pin | The screenshot, as a file in the format Settings › General chooses (PNG, JPEG, or HEIC, at 1×, in sRGB, with a border, as set; a save a shortcut asks for never asks for a name), or nothing when the capture was cancelled. It is handed on whatever Keep Captures and Quick Access say; with Keep Captures at Never and Quick Access off, the capture is deleted once the shortcut has read it, unless the editor it opened in or its upload still holds it, and a pinned capture is left as Capture Area and Pin leaves it |
 | Capture Text | Keep Line Breaks | The text copied, or nothing; formulas as LaTeX while the Math Formulas pack is installed, tables and charts a row a line while the Tables and Charts pack is |
 | Recognize Text in Image | An image, Keep Line Breaks | The image's text, formulas as LaTeX while the Math Formulas pack is installed, tables and charts a row a line while the Tables and Charts pack is. Nothing is copied or shown. |
 | Capture Formula | | The formula's LaTeX, copied as it is (without `$` around it), or nothing when no whole formula was read |

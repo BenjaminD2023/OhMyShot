@@ -6,7 +6,7 @@ import OSLog
 
 /// How long captures stay in the history. Settings' Keep Captures takes the old ones away; with history off a capture
 /// lives as long as something holds it (`heldCaptureIDs`: a card, an editor or a recording's window, an upload, the
-/// clipboard) and goes once nothing does. The desktop pictures' pieces kept for window screenshots go with the last
+/// clipboard, a shortcut) and goes once nothing does. The desktop pictures' pieces kept for window screenshots go with the last
 /// capture that used them.
 final class CaptureRetention {
     private let settings: SettingsStore
@@ -23,6 +23,8 @@ final class CaptureRetention {
     private let historyChanged: ([UUID]) -> Void
     private var pictureSweep: Task<Void, Never>?
     private var expiry: Task<Void, Never>?
+    /// The captures shortcuts hold until they have read their files.
+    private(set) lazy var shortcutHolds = ShortcutCaptureHolds(released: { [weak self] in self?.releaseIfUnheld($0) })
     private lazy var clipboard = RecordingClipboardHold(
         changeCount: { NSPasteboard.general.changeCount },
         released: { [weak self] in self?.releaseIfUnheld($0) }
@@ -42,13 +44,14 @@ final class CaptureRetention {
     }
 
     /// Captures something still needs the file of: a card, an open editor, an open recording window (a Studio one
-    /// included), an upload on its way, the clipboard.
+    /// included), an upload on its way, the clipboard, a shortcut that has yet to read it.
     private func heldCaptureIDs(for retention: HistoryRetention) -> Set<UUID> {
         cards(retention)
             .union(editors())
             .union(recordingWindows())
             .union(uploads())
             .union(clipboard.heldID.map { [$0] } ?? [])
+            .union(shortcutHolds.heldIDs)
     }
 
     /// With history off, a capture lives as long as something holds it (`heldCaptureIDs`); deletes it once nothing does.
