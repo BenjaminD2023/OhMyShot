@@ -46,7 +46,7 @@ final class AutomationController {
         case .success(let parsed):
             command = parsed
         case .failure(let error):
-            Log.automation.error("Rejected URL from \(caller?.identifier ?? "unknown", privacy: .public) (pid \(senderPID.map(String.init) ?? "none", privacy: .public)): \(String(describing: error), privacy: .public)")
+            Log.automation.error("Rejected URL from \(caller?.identifier ?? "unknown", privacy: .public) (pid \(senderPID.map(String.init) ?? "none", privacy: .public)): \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             return
         }
         let decision = AutomationGate.evaluate(

@@ -199,7 +199,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         let generation = studio.compositionGeneration
         itemStatus = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             guard item.status == .failed else { return }
-            Log.studio.error("The Studio preview couldn't play: \(String(describing: item.error), privacy: .public)")
+            Log.studio.error("The Studio preview couldn't play: \(item.error.map(Log.kind(of:)) ?? "no error", privacy: .public), \(String(describing: item.error), privacy: .private)")
             let message = item.error?.localizedDescription ?? String(localized: "The recording couldn’t be read", bundle: .module)
             Task { @MainActor [weak self] in
                 guard let self, self.studio.compositionGeneration == generation else { return }

@@ -734,7 +734,7 @@ final class CaptureCoordinator {
             probe.end()
             // A card can be dragged out from now on: the converted copy it hands over is made meanwhile.
             if carded { files.prepareHandOver(item.fileURL, scale: Double(scale)) }
-            Log.capture.notice("Captured \(frame.image.width, privacy: .public)x\(frame.image.height, privacy: .public) into history as \(entry.fileName, privacy: .public)\(marks.map { " with \($0.items.count) mark(s)" } ?? "", privacy: .public)")
+            Log.capture.notice("Captured \(frame.image.width, privacy: .public)x\(frame.image.height, privacy: .public) into history as \(entry.fileName, privacy: .private)\(marks.map { " with \($0.items.count) mark(s)" } ?? "", privacy: .public)")
             // Before the card, so a follow-up that holds the capture (an upload) is in place when the card
             // decides whether anything else still needs the file.
             if action == .upload || (settings.uploadAfterCapture && carded) { uploadKept?(entry) }
@@ -763,7 +763,7 @@ final class CaptureCoordinator {
             followUp.finish(entry)
             return entry
         } catch {
-            Log.capture.error("Keeping the capture failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Keeping the capture failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             // The picture is still copied, without a file.
             if let pending = waiting {
                 await files.copy(pending.picture, png: pending.png, name: "OhMyShot", scale: pending.scale, withFile: false)

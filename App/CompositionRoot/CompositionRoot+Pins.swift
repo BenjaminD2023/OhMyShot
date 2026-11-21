@@ -98,7 +98,7 @@ extension CompositionRoot {
     func pin(fileAt url: URL, origin: PinController.Origin? = nil, fallbackScale: CGFloat = 2) {
         Task {
             guard let loaded = await Self.loadImage(url, fallbackScale: fallbackScale) else {
-                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to pin it")
+                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to pin it")
                 return NSSound.beep()
             }
             pins.pin(loaded.image, scale: loaded.scale, origin: origin ?? .file(url))
@@ -110,7 +110,7 @@ extension CompositionRoot {
     func printPicture(fileAt url: URL, fallbackScale: CGFloat, from window: NSWindow? = nil) {
         Task {
             guard let loaded = await Self.loadImage(url, fallbackScale: fallbackScale) else {
-                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to print it")
+                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to print it")
                 return NSSound.beep()
             }
             ImagePrinter.print(loaded.image, pixelsPerPoint: loaded.scale, title: url.deletingPathExtension().lastPathComponent, from: window)

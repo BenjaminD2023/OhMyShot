@@ -280,7 +280,7 @@ extension CompositionRoot {
             }
             quickAccess.add(item)
         } catch {
-            Log.automation.error("Could not add \(url.lastPathComponent, privacy: .public) to Quick Access: \(error.localizedDescription, privacy: .public)")
+            Log.automation.error("Could not add \(url.lastPathComponent, privacy: .private) to Quick Access: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
         }
     }

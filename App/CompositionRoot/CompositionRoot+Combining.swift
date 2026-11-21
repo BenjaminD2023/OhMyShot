@@ -62,10 +62,10 @@ extension CompositionRoot {
             do {
                 let data = try await PDFExport.data(ofFiles: files, output: output, pageSize: pageSize, title: name)
                 try ImageExporter.write(data, to: url)
-                Log.capture.notice("Exported \(files.count, privacy: .public) screenshot(s) as \(url.lastPathComponent, privacy: .public)")
+                Log.capture.notice("Exported \(files.count, privacy: .public) screenshot(s) as \(url.lastPathComponent, privacy: .private)")
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             } catch {
-                Log.capture.error("Export as PDF failed: \(error.localizedDescription, privacy: .public)")
+                Log.capture.error("Export as PDF failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
                 NSSound.beep()
             }
         }

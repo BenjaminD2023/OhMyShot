@@ -254,7 +254,7 @@ public final class StudioDocument {
             compositionGeneration += 1
         } catch {
             guard mine == generation, !(error is CancellationError), !Task.isCancelled else { return }
-            Log.studio.error("Making the Studio composition failed: \(String(describing: error), privacy: .public)")
+            Log.studio.error("Making the Studio composition failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             previewState = .failed(error.localizedDescription)
         }
         if mine == generation { previewBuild = nil }
@@ -833,7 +833,7 @@ public final class StudioDocument {
                 // A failed superseded snapshot does not override the state of a newer save.
                 if revision != projectRevision || savedRevision >= revision { continue }
                 saveState = .failed(error.localizedDescription)
-                Log.studio.error("Saving the Studio project failed: \(String(describing: error), privacy: .public)")
+                Log.studio.error("Saving the Studio project failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
                 throw error
             }
         }

@@ -66,7 +66,7 @@ final class TextModelWarmup {
         do {
             try models.markCompiled()
         } catch {
-            Log.capture.error("Noting Vision's compiled text models failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Noting Vision's compiled text models failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
         }
         failures = 0
         Log.capture.notice("Warmed Vision's text models in \(String(describing: ContinuousClock.now - started), privacy: .public)")

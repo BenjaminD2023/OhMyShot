@@ -127,7 +127,7 @@ public final class ModelPackDownloader: Sendable {
             Log.modelPacks.notice("Model pack \(pack.id, privacy: .public) download stopped, \(meter.done, privacy: .public) bytes kept")
             throw CancellationError()
         } catch {
-            Log.modelPacks.error("Model pack \(pack.id, privacy: .public) download failed: \(String(describing: error), privacy: .public)")
+            Log.modelPacks.error("Model pack \(pack.id, privacy: .public) download failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             throw error
         }
     }

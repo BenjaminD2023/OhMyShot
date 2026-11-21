@@ -4,7 +4,10 @@ import OSLog
 /// Loggers and the signposter shared by every module.
 ///
 /// Lifecycle events and debug-hook results log at `notice`, which macOS persists, so scripts can read
-/// them back with `log show --predicate 'subsystem == "<bundle id>"'`.
+/// them back with `log show --predicate 'subsystem == "<bundle id>"'`. What the user named or set up stays
+/// private: a capture's or a file's name, a path, the server a cloud reading goes to, and an error's description,
+/// where Foundation names the file and its folder. Counts, sizes, durations, outcomes, and an error's `kind(of:)`
+/// can be public.
 public enum Log {
     public static let subsystem = AppIdentity.bundleIdentifier
 
@@ -26,4 +29,11 @@ public enum Log {
 
     /// Points of interest for latency measurement (`Scripts/latency.sh`).
     public static let signposter = OSSignposter(subsystem: subsystem, category: .pointsOfInterest)
+
+    /// What went wrong, fit for a public log line: the error's domain and code, leaving out its description, which
+    /// can name the capture or file it was about.
+    public static func kind(of error: any Error) -> String {
+        let error = error as NSError
+        return "\(error.domain) \(error.code)"
+    }
 }

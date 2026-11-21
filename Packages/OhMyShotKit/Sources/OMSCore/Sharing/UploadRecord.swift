@@ -149,7 +149,7 @@ public final class UploadRecordStore {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder.records.encode(records).write(to: fileURL, options: .atomic)
         } catch {
-            Log.upload.error("Saving the upload records failed: \(error.localizedDescription, privacy: .public)")
+            Log.upload.error("Saving the upload records failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
         }
     }
 }

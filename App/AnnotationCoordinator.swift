@@ -72,7 +72,7 @@ final class AnnotationCoordinator {
                 if editors[id] == nil { onEditing?(id, false) }
             }
             guard let loaded = await AnnotationCaptureSource.load(entry, from: history) else {
-                Log.capture.error("Could not read \(entry.fileName, privacy: .public) to annotate it")
+                Log.capture.error("Could not read \(entry.fileName, privacy: .private) to annotate it")
                 NSApp.activate()
                 NSAlert(error: CocoaError(.fileReadCorruptFile)).runModal()
                 return
@@ -180,7 +180,7 @@ final class AnnotationCoordinator {
             do {
                 opened = try await Self.loadProject(file)
             } catch {
-                Log.capture.error("Could not open the project \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                Log.capture.error("Could not open the project \(file.lastPathComponent, privacy: .private): \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
                 NSApp.activate()
                 NSAlert(error: error).runModal()
                 return
@@ -211,11 +211,11 @@ final class AnnotationCoordinator {
                         do {
                             let preview = try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG)
                                 .keep(at: file, preview: png, previewURL: picture)
-                            Log.capture.notice("Kept the marks in the project \(file.lastPathComponent, privacy: .public): \(document.items.count, privacy: .public) mark(s)")
+                            Log.capture.notice("Kept the marks in the project \(file.lastPathComponent, privacy: .private): \(document.items.count, privacy: .public) mark(s)")
                             projectScale = Double(document.scale)
                             return preview
                         } catch {
-                            Log.capture.error("Keeping the project failed: \(error.localizedDescription, privacy: .public)")
+                            Log.capture.error("Keeping the project failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
                             return nil
                         }
                     },
@@ -271,10 +271,10 @@ final class AnnotationCoordinator {
             let file = history.fileURL(for: updated)
             let data = (try? Data(contentsOf: file)) ?? png
             onChange?(updated, data)
-            Log.capture.notice("Kept the marks on \(entry.fileName, privacy: .public): \(document.items.count, privacy: .public) mark(s)")
+            Log.capture.notice("Kept the marks on \(entry.fileName, privacy: .private): \(document.items.count, privacy: .public) mark(s)")
             return file
         } catch {
-            Log.capture.error("Keeping the marks failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Keeping the marks failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             return nil
         }
     }

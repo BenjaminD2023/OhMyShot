@@ -23,7 +23,7 @@ public enum Relauncher {
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
             Task { @MainActor in
                 if let error {
-                    Log.app.error("Relaunch failed: \(error.localizedDescription, privacy: .public)")
+                    Log.app.error("Relaunch failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
                 }
                 completion(error == nil)
             }

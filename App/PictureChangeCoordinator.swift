@@ -65,7 +65,7 @@ final class PictureChangeCoordinator {
               let change = change.resolved(pixelsPerPoint: current.pixelsPerPoint)
         else { return NSSound.beep() }
         guard let picture = await Self.changedPicture(at: history.fileURL(for: entry), by: change) else {
-            Log.capture.error("Changing the picture of \(entry.fileName, privacy: .public) failed")
+            Log.capture.error("Changing the picture of \(entry.fileName, privacy: .private) failed")
             return NSSound.beep()
         }
         // Reading and writing the picture took a moment: the editor may have opened on the capture since.
@@ -74,10 +74,10 @@ final class PictureChangeCoordinator {
             // One pixel per point is the scale the capture then has, for pins and printing.
             let scale: Double? = if case .scaleToOneX = change { 1 } else { nil }
             let updated = try history.replacePicture(of: entry, with: picture.data, pixelWidth: picture.width, pixelHeight: picture.height, pixelsPerPoint: scale)
-            Log.capture.notice("Changed the picture of \(entry.fileName, privacy: .public): now \(picture.width, privacy: .public) × \(picture.height, privacy: .public)")
+            Log.capture.notice("Changed the picture of \(entry.fileName, privacy: .private): now \(picture.width, privacy: .public) × \(picture.height, privacy: .public)")
             changed(updated, picture.data)
         } catch {
-            Log.capture.error("Keeping the changed picture failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Keeping the changed picture failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
         }
     }

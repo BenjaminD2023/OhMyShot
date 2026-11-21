@@ -104,7 +104,7 @@ public final class CloudReader: Sendable {
 
         let started = ContinuousClock.now
         let bytes = pieces.reduce(0) { $0 + $1.data.count }
-        Log.cloud.notice("Cloud reading at \(host, privacy: .public) with \(model.model, privacy: .public) started: \(pieces.count, privacy: .public) pieces, \(bytes, privacy: .public) bytes, scale \(prepared.scale, privacy: .public)")
+        Log.cloud.notice("Cloud reading at \(host, privacy: .private) with \(model.model, privacy: .public) started: \(pieces.count, privacy: .public) pieces, \(bytes, privacy: .public) bytes, scale \(prepared.scale, privacy: .public)")
         do {
             let (stream, response) = try await session.bytes(for: request)
             guard let http = response as? HTTPURLResponse else { throw CloudReadingError.unexpectedAnswer }
@@ -126,15 +126,15 @@ public final class CloudReader: Sendable {
                 }
             }
             let reading = try answer.reading(pieces: pieces.count, scale: prepared.scale)
-            Log.cloud.notice("Cloud reading at \(host, privacy: .public) answered by \(reading.model, privacy: .public): \(reading.text.count, privacy: .public) characters, complete \(reading.isComplete, privacy: .public), tokens \(reading.inputTokens ?? -1, privacy: .public) in and \(reading.outputTokens ?? -1, privacy: .public) out, in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+            Log.cloud.notice("Cloud reading at \(host, privacy: .private) answered by \(reading.model, privacy: .public): \(reading.text.count, privacy: .public) characters, complete \(reading.isComplete, privacy: .public), tokens \(reading.inputTokens ?? -1, privacy: .public) in and \(reading.outputTokens ?? -1, privacy: .public) out, in \(String(describing: ContinuousClock.now - started), privacy: .public)")
             return reading
         } catch {
             let mapped = CloudReadingError.from(error, host: host)
             if mapped is CancellationError {
-                Log.cloud.notice("Cloud reading at \(host, privacy: .public) cancelled")
+                Log.cloud.notice("Cloud reading at \(host, privacy: .private) cancelled")
             } else {
                 let reason = (mapped as? CloudReadingError)?.logDescription ?? String(describing: type(of: mapped))
-                Log.cloud.error("Cloud reading at \(host, privacy: .public) failed: \(reason, privacy: .public)")
+                Log.cloud.error("Cloud reading at \(host, privacy: .private) failed: \(reason, privacy: .public)")
             }
             throw mapped
         }

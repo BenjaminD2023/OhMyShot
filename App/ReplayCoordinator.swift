@@ -203,7 +203,7 @@ final class ReplayCoordinator {
             let pixelsPerPoint = display.flatMap { $0.frame.width > 0 ? Double(finished.pixelWidth) / Double($0.frame.width) : nil }
             let entry = try await recordings.keepReplay(finished, savedAt: savedAt, displayID: displayID, pixelsPerPoint: pixelsPerPoint)
             probe.end()
-            Log.recording.notice("Saved the replay of a display: \(finished.duration, format: .fixed(precision: 2), privacy: .public) s, \(finished.pixelWidth, privacy: .public)x\(finished.pixelHeight, privacy: .public), sound \(self.settings.replaySound.rawValue, privacy: .public), as \(entry.fileName, privacy: .public)")
+            Log.recording.notice("Saved the replay of a display: \(finished.duration, format: .fixed(precision: 2), privacy: .public) s, \(finished.pixelWidth, privacy: .public)x\(finished.pixelHeight, privacy: .public), sound \(self.settings.replaySound.rawValue, privacy: .public), as \(entry.fileName, privacy: .private)")
             return .saved
         } catch ReplayBuffer.ReplayError.nothingChanged {
             try? FileManager.default.removeItem(at: movie)
@@ -211,7 +211,7 @@ final class ReplayCoordinator {
             return .nothingChanged(display?.name)
         } catch {
             try? FileManager.default.removeItem(at: movie)
-            Log.recording.error("Saving the replay failed: \(String(describing: error), privacy: .public)")
+            Log.recording.error("Saving the replay failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             return .failed
         }
     }

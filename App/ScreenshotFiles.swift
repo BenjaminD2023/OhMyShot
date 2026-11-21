@@ -48,7 +48,7 @@ final class ScreenshotFiles {
             do {
                 _ = try await ExportedFiles.fileOffMain(for: url, pixelsPerPoint: scale, output: output)
             } catch {
-                Log.capture.notice("Converting \(url.lastPathComponent, privacy: .public) ahead of a drag failed: \(error.localizedDescription, privacy: .public)")
+                Log.capture.notice("Converting \(url.lastPathComponent, privacy: .private) ahead of a drag failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             }
         }
     }
@@ -59,7 +59,7 @@ final class ScreenshotFiles {
         let output = output
         guard !output.isUnchanged else { return .success(captures.map(\.url)) }
         defer { sweepConvertedCopies() }
-        return Self.logged(await ExportedFiles.handOver(captures.map { ($0.url, $0.scale) }, output: output, in: ExportedFiles.standardFolder), "Converting captures")
+        return Self.logged(await ExportedFiles.handOver(captures.map { ($0.url, $0.scale) }, output: output, in: ExportedFiles.standardFolder), "Converting captures", captures.map(\.url.lastPathComponent).joined(separator: ", "))
     }
 
     /// A picture in memory, and the extended-range copy of it when the capture has one.
@@ -152,9 +152,10 @@ final class ScreenshotFiles {
     /// by the pointer.
     private static func logged(_ outcome: SaveOutcome, _ kind: String) -> SaveOutcome {
         switch outcome {
-        case .saved(let url): Log.capture.notice("\(kind, privacy: .public) saved \(url.lastPathComponent, privacy: .public)")
+        case .saved(let url): Log.capture.notice("\(kind, privacy: .public) saved \(url.lastPathComponent, privacy: .private)")
         case .cancelled: Log.capture.notice("\(kind, privacy: .public) cancelled")
-        case .failed(let failure): Log.capture.error("\(kind, privacy: .public) failed: \(failure.detail, privacy: .public)")
+        case .failed(let failure):
+            Log.capture.error("\(kind, privacy: .public) failed: \(String(describing: failure.cause), privacy: .public), \(failure.detail, privacy: .private)")
         }
         return outcome
     }
@@ -283,7 +284,7 @@ final class ScreenshotFiles {
         guard !output.isUnchanged, ExportedFiles.isPicture(url) else { return .success(url) }
         defer { sweepConvertedCopies() }
         let scale = scale ?? history.item(forFileAt: url)?.pixelsPerPoint
-        return Self.logged(ExportedFiles.handOver(url, pixelsPerPoint: scale, output: output), "Converting \(url.lastPathComponent)")
+        return Self.logged(ExportedFiles.handOver(url, pixelsPerPoint: scale, output: output), "Converting", url.lastPathComponent)
     }
 
     /// The same where nobody drags, for a capture whose bytes are in hand: an upload, which must not depend on the
@@ -291,12 +292,16 @@ final class ScreenshotFiles {
     /// the copy cannot be written.
     func exportedFile(forPictureData data: Data, named name: String, scale: Double?) async -> Result<URL, ExportFailure> {
         defer { sweepConvertedCopies() }
-        return Self.logged(await ExportedFiles.handOver(pictureData: data, named: name, pixelsPerPoint: scale, output: output), "Converting \(name)")
+        return Self.logged(await ExportedFiles.handOver(pictureData: data, named: name, pixelsPerPoint: scale, output: output), "Converting", name)
     }
 
-    /// Logs a copy that could not be made to hand over, and passes the result on.
-    private static func logged<Value>(_ result: Result<Value, ExportFailure>, _ what: String) -> Result<Value, ExportFailure> {
-        if case .failure(let failure) = result { Log.capture.error("\(what, privacy: .public) failed: \(failure.detail, privacy: .public)") }
+    /// Logs a copy of `name` that could not be made to hand over, and passes the result on.
+    private static func logged<Value>(_ result: Result<Value, ExportFailure>, _ what: String, _ name: String) -> Result<Value, ExportFailure> {
+        if case .failure(let failure) = result {
+            Log.capture.error(
+                "\(what, privacy: .public) \(name, privacy: .private) failed: \(String(describing: failure.cause), privacy: .public), \(failure.detail, privacy: .private)"
+            )
+        }
         return result
     }
 
@@ -339,7 +344,7 @@ final class ScreenshotFiles {
                 let source = CGImageSourceCreateWithData(data as CFData, nil),
                 let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
             else {
-                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to copy it")
+                Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to copy it")
                 return false
             }
             return PasteboardWriter.write(png: data, image: image)
@@ -351,7 +356,7 @@ final class ScreenshotFiles {
     func copyToClipboard(fileAt url: URL) async -> Bool {
         if let copied = copyImmediately(fileAt: url) { return copied }
         guard let loaded = await Self.load(url) else {
-            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to copy it")
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to copy it")
             return false
         }
         return await copy(Picture(loaded.image), png: loaded.data, name: url.deletingPathExtension().lastPathComponent, scale: history.item(forFileAt: url)?.pixelsPerPoint, historyFile: url)

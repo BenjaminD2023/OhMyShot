@@ -189,7 +189,7 @@ public actor StudioDraftCheckpointer {
             let elapsed = began.duration(to: ContinuousClock.now)
             nextWrite = now() + max(minimumInterval, elapsed * 50)
         } catch {
-            Log.studio.error("Writing Studio telemetry checkpoint failed: \(String(describing: error), privacy: .public)")
+            Log.studio.error("Writing Studio telemetry checkpoint failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
         }
     }
 

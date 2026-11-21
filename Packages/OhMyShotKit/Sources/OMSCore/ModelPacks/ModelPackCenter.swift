@@ -241,7 +241,7 @@ public final class ModelPackCenter {
         do {
             try work()
         } catch {
-            Log.modelPacks.error("Removing model pack files failed: \(error.localizedDescription, privacy: .public)")
+            Log.modelPacks.error("Removing model pack files failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
         }
     }
 

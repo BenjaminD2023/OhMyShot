@@ -274,7 +274,7 @@ final class TextCaptureCoordinator {
     /// - Parameter copiesToClipboard: false for a shortcut's action, which hands the text on instead.
     func recognize(fileAt url: URL, joinLines: Bool, copiesToClipboard: Bool = true, done: ((String?) -> Void)? = nil) async {
         guard let loaded = await Self.load(.file(url), fallbackScale: 1) else {
-            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to recognize its text")
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to recognize its text")
             highlight.finish(copied: nil, announces: true)
             done?(nil)
             return
@@ -680,7 +680,7 @@ final class TextCaptureCoordinator {
     /// pointer.
     func readFormula(fileAt url: URL, copiesToClipboard: Bool = true, done: ((String?) -> Void)? = nil) async {
         guard let loaded = await Self.load(.file(url), fallbackScale: 1) else {
-            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to read its formula")
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to read its formula")
             highlight.finish(copied: nil, announces: true, formula: true)
             done?(nil)
             return
@@ -999,7 +999,7 @@ final class TextCaptureCoordinator {
     /// Opens an image file. `fallbackScale` applies when the file does not record its resolution.
     func openPanel(forFileAt url: URL, fallbackScale: CGFloat = 1, source: String? = nil) async {
         guard let loaded = await Self.load(.file(url), fallbackScale: fallbackScale) else {
-            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to recognize its text")
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to recognize its text")
             showFailure(.unreadableFile, source: source ?? url.lastPathComponent)
             return
         }
