@@ -57,6 +57,10 @@ struct ToolsSettingsView: View {
 
             SettingsRow(String(localized: "Pins", bundle: .module), help: [
                 HelpTopic(String(localized: "Border", bundle: .module), Text("A hairline, so a white picture still reads against a white window.", bundle: .module)),
+                HelpTopic(
+                    String(localized: "Bring pins back after relaunch", bundle: .module),
+                    Text("Pins left open come back where they were when OhMyShot opens again, after quitting, an update, or a crash. Their pictures, text, and colors stay on this Mac until you close them. Off by default when Keep captures is Never, which keeps nothing.", bundle: .module)
+                ),
             ]) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
@@ -87,6 +91,9 @@ struct ToolsSettingsView: View {
                     }
                     Toggle(isOn: $settings.pinsAppearInCaptures) {
                         Text("Show in screenshots", bundle: .module)
+                    }
+                    Toggle(isOn: $settings.pinsComeBack) {
+                        Text("Bring pins back after relaunch", bundle: .module)
                     }
                 }
             }

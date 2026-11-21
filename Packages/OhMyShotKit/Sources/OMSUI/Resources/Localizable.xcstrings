@@ -4683,6 +4683,40 @@
         }
       }
     },
+    "Bring pins back after relaunch" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recuperar las imágenes fijadas al volver a abrir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rétablir les épingles à la réouverture"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再起動後にピンを戻す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新打开后恢复贴图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新開啟後恢復釘選圖片"
+          }
+        }
+      }
+    },
     "Bucket" : {
       "localizations" : {
         "es" : {
@@ -19935,6 +19969,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "釘選圖片"
+          }
+        }
+      }
+    },
+    "Pins left open come back where they were when OhMyShot opens again, after quitting, an update, or a crash. Their pictures, text, and colors stay on this Mac until you close them. Off by default when Keep captures is Never, which keeps nothing." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las imágenes fijadas que quedan abiertas vuelven a su sitio cuando OhMyShot se abre de nuevo, tras salir, actualizarse o cerrarse inesperadamente. Sus imágenes, textos y colores se guardan en este Mac hasta que las cierras. Desactivado de forma predeterminada si Conservar capturas está en Nunca, que no guarda nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les épingles restées ouvertes reviennent à leur place quand OhMyShot se rouvre, après avoir quitté, une mise à jour ou un plantage. Leurs images, textes et couleurs restent sur ce Mac jusqu’à ce que vous les fermiez. Désactivé par défaut quand Conserver les captures est sur Jamais, qui ne conserve rien."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開いたままのピンは、終了、アップデート、クラッシュのあとに OhMyShot を再び開くと元の場所に戻ります。ピンの画像、テキスト、カラーは閉じるまでこの Mac に保存されます。「キャプチャを保持」が「しない」のときは、何も保存しないため、デフォルトでオフです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出、更新或崩溃后再次打开 OhMyShot 时，未关闭的贴图会回到原来的位置。它们的图片、文本和颜色会保存在这台 Mac 上，直到你关闭它们。“保留截图”设为“永不”时不保存任何内容，因此默认关闭。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結束、更新或當機後再次開啟 OhMyShot 時，未關閉的釘選圖片會回到原來的位置。它們的圖片、文字和顏色會保存在這台 Mac 上，直到你關閉它們。「保留擷取內容」設為「永不」時不保存任何內容，因此預設關閉。"
           }
         }
       }

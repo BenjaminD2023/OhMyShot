@@ -11,6 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
+- Pins come back after OhMyShot quits, updates, or crashes: each where it was, at its zoom, opacity, and lock, stacked as they were, hidden if the pins were hidden, with its picture, text, or color. Turn it off in Settings › Tools › Pins (Bring pins back after relaunch), which is off by default when Keep captures is Never. Closing a pin removes what was kept of it.
 - Pin from Clipboard, Hide or Show Pins, and Restore Recently Closed can each have a global shortcut, set in Settings › Shortcuts (none has keys until chosen), and are tiles in the menu bar launcher, which on a display too short to hold every tile stops above the Dock and scrolls. The URL scheme adds `pin-from-clipboard` and `toggle-pins`.
 - Press F while measuring to take the screen as a screenshot with the measurement on it: each line as a double-headed arrow with its length, or the box as a rectangle with its size, in points or pixels as shown. The marks stay editable in the editor, and the screenshot goes to your Quick Access card, clipboard, or folder as your After screenshot settings say. Return and ⌘C still copy the reading.
 - Erase, a redaction method beside Solid, Blur, and Pixelate in the Redact tool's capsule (and for Redact All): it fills the area from the picture just around it, in one color, an even gradient, or each side's colors blended in, so it disappears into an interface's surface. It reads nothing under the area and nothing under another redaction, so what it covers can't be recovered from the flattened picture. Projects with an erasure open only in this version or later.
@@ -22,6 +23,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Fixed
 
+- A pin left on a display that was unplugged, or past the edge after the displays were rearranged, moves onto the nearest display.
 - Capture Text, Capture Formula, and Translate Area read only the windows picked with Shift, also when Option opens them in the OCR panel. What lies between or around the windows is no longer read, copied, or sent to a cloud model.
 - A screenshot of several windows on displays with different scales keeps each window at its size, instead of drawing the one from the lower-scale display too small.
 - Settings' search finds Find QR codes and barcodes and Add a watermark by their names.

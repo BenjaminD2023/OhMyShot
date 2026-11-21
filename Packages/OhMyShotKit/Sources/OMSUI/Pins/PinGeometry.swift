@@ -24,6 +24,39 @@ enum PinGeometry {
         return (CGRect(x: visible.midX - fitted.width / 2, y: visible.midY - fitted.height / 2, width: fitted.width, height: fitted.height), fit)
     }
 
+    /// The zoom a pin brought back after a relaunch opens at: the one it had, which is below `zoomRange` when a long
+    /// picture was scaled down to fit its display as it opened, up to the largest; 100 percent when it has none.
+    static func keptZoom(_ zoom: CGFloat) -> CGFloat {
+        zoom > 0 ? min(zoom, zoomRange.upperBound) : 1
+    }
+
+    /// The zooms a pin at `zoom` can go to: `zoomRange`, reaching down to its own zoom when it was fitted below it as it
+    /// opened, so zooming out never makes it larger.
+    static func zoomRange(from zoom: CGFloat) -> ClosedRange<CGFloat> {
+        min(zoomRange.lowerBound, zoom) ... zoomRange.upperBound
+    }
+
+    /// Where a pin at `frame` goes when the displays change, or when it comes back after a relaunch: nil while enough of
+    /// it to take hold of (`grip` points each way, or all of it when it is smaller) is on one of `screens` (frames and
+    /// visible frames, global points), in its visible frame: under the menu bar or the Dock it can't be taken. Else onto the screen nearest its center, inside that screen's visible frame, at the
+    /// same size: as near as it fits to where it was, and its top left corner first when it is larger.
+    static func recovered(_ frame: CGRect, on screens: [(frame: CGRect, visible: CGRect)], grip: CGFloat = 20) -> CGRect? {
+        let needed = CGSize(width: min(grip, frame.width), height: min(grip, frame.height))
+        let shown = screens.contains { screen in
+            let part = screen.visible.intersection(frame)
+            return !part.isNull && part.width >= needed.width && part.height >= needed.height
+        }
+        guard !shown else { return nil }
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        func distance(to rect: CGRect) -> CGFloat {
+            hypot(max(rect.minX - center.x, 0, center.x - rect.maxX), max(rect.minY - center.y, 0, center.y - rect.maxY))
+        }
+        guard let visible = screens.min(by: { distance(to: $0.frame) < distance(to: $1.frame) })?.visible else { return nil }
+        let x = frame.width > visible.width ? visible.minX : min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+        let y = frame.height > visible.height ? visible.maxY - frame.height : min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+        return CGRect(x: x, y: y, width: frame.width, height: frame.height)
+    }
+
     /// `frame` at `size`, keeping `anchor` (a point in the same space: the pointer, or the pin's center)
     /// where it is in it. The size comes from the pin's own size and zoom, never from `frame`: the window
     /// server rounds a window's frame to whole points, and sizes scaled from rounded frames drift apart step
@@ -37,7 +70,7 @@ enum PinGeometry {
     /// The zoom after scrolling up (positive) or down by `delta`: points from a trackpad, lines from a
     /// wheel, about 10 percent a line.
     static func zoom(_ zoom: CGFloat, scrolledBy delta: CGFloat, precise: Bool) -> CGFloat {
-        clamp(zoom * exp(delta * (precise ? 0.005 : 0.1)), to: zoomRange)
+        clamp(zoom * exp(delta * (precise ? 0.005 : 0.1)), to: zoomRange(from: zoom))
     }
 
     /// The opacity after scrolling up (more opaque) or down by `delta`: 5 percent a wheel line.
@@ -94,12 +127,15 @@ enum PinGeometry {
     }
 
     /// The new zoom and fixed anchor when `corner` of `frame` is dragged to `point` (in the same space),
-    /// keeping the pin's proportions (`baseSize`).
-    static func resizedZoom(dragging corner: Corner, of frame: CGRect, baseSize: CGSize, to point: CGPoint) -> (zoom: CGFloat, anchor: CGPoint) {
+    /// keeping the pin's proportions (`baseSize`), never below `zoomRange(from: zoom)` for the pin's `zoom` now (its own,
+    /// not its frame's: the window server rounds a frame to whole points).
+    static func resizedZoom(
+        dragging corner: Corner, of frame: CGRect, baseSize: CGSize, zoom: CGFloat = 1, to point: CGPoint
+    ) -> (zoom: CGFloat, anchor: CGPoint) {
         let anchor = oppositeCorner(of: corner, in: frame)
         let dx = abs(point.x - anchor.x)
         let dy = abs(point.y - anchor.y)
         let scale = max(dx / max(baseSize.width, 1), dy / max(baseSize.height, 1))
-        return (clamp(scale, to: zoomRange), anchor)
+        return (clamp(scale, to: zoomRange(from: zoom)), anchor)
     }
 }

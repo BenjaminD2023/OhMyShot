@@ -276,6 +276,18 @@ public final class SettingsStore {
         didSet { defaults.set(pinsAppearInCaptures, forKey: Key.pinsAppearInCaptures) }
     }
 
+    /// Whether the pins open when the app quits come back at the next launch, kept on this Mac until they close. Until
+    /// it is chosen it follows Keep captures: on while captures are kept, off with Never, which keeps nothing on disk.
+    public var pinsComeBack: Bool {
+        get { pinsComeBackChoice ?? (historyRetention != .never) }
+        set { pinsComeBackChoice = newValue }
+    }
+
+    /// Bring pins back after relaunch as chosen in Settings, nil until it is.
+    private var pinsComeBackChoice: Bool? {
+        didSet { defaults.set(pinsComeBackChoice, forKey: Key.pinsComeBack) }
+    }
+
     /// The notation a picked color goes to the clipboard in.
     public var colorFormat: ColorFormat {
         didSet { defaults.set(colorFormat.rawValue, forKey: Key.colorFormat) }
@@ -596,6 +608,7 @@ public final class SettingsStore {
         pinShadow = defaults.bool(forKey: Key.pinShadow)
         pinBorder = defaults.bool(forKey: Key.pinBorder)
         pinsAppearInCaptures = defaults.bool(forKey: Key.pinsAppearInCaptures)
+        pinsComeBackChoice = defaults.object(forKey: Key.pinsComeBack) as? Bool
         colorFormat = defaults.string(forKey: Key.colorFormat).flatMap(ColorFormat.init(rawValue:)) ?? Default.colorFormat
         measureUnit = defaults.string(forKey: Key.measureUnit).flatMap(MeasureUnit.init(rawValue:)) ?? Default.measureUnit
         measureTolerance = defaults.string(forKey: Key.measureTolerance).flatMap(MeasureTolerance.init(rawValue:)) ?? Default.measureTolerance
@@ -738,6 +751,7 @@ public final class SettingsStore {
         pinShadow = fresh.pinShadow
         pinBorder = fresh.pinBorder
         pinsAppearInCaptures = fresh.pinsAppearInCaptures
+        pinsComeBackChoice = fresh.pinsComeBackChoice
         colorFormat = fresh.colorFormat
         measureUnit = fresh.measureUnit
         measureTolerance = fresh.measureTolerance
@@ -841,6 +855,7 @@ public final class SettingsStore {
         case pinShadow
         case pinBorder
         case pinsAppearInCaptures
+        case pinsComeBack
         case colorFormat
         case measureUnit
         case measureTolerance

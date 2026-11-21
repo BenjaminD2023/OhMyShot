@@ -541,7 +541,7 @@ final class PinView: NSView, NSDraggingSource {
             return
         }
         let screenPoint = window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
-        let (newZoom, anchor) = PinGeometry.resizedZoom(dragging: corner, of: pin.frame, baseSize: pin.baseSize, to: screenPoint)
+        let (newZoom, anchor) = PinGeometry.resizedZoom(dragging: corner, of: pin.frame, baseSize: pin.baseSize, zoom: pin.zoom, to: screenPoint)
         pin.setZoom(newZoom, around: anchor)
     }
 

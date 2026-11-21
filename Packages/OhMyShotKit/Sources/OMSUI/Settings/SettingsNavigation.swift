@@ -206,6 +206,7 @@ extension SettingsTab {
                     String(localized: "Shadow", bundle: .module),
                     String(localized: "Border", bundle: .module),
                     String(localized: "Show in screenshots", bundle: .module),
+                    String(localized: "Bring pins back after relaunch", bundle: .module),
                 ], keywords: String(localized: "SEARCH_KEYWORDS_PINS", defaultValue: "float, always on top, sticky, pinned image", bundle: .module)),
             ]
         case .sharing:

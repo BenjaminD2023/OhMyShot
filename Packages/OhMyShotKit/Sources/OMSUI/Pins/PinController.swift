@@ -7,7 +7,9 @@ import OMSDesign
 /// zoom, Option-scrolled to fade, moved with the arrows, closed with Escape, its close button, or a
 /// middle click; its menu holds the rest. A locked pin lets every click through and is unlocked from the
 /// menu bar. A pin keeps its own copy of the picture, so it outlives the capture's place in the history.
-/// A picture's text can be selected in place with Live Text, as in Preview.
+/// A picture's text can be selected in place with Live Text, as in Preview. While Settings brings pins back after a
+/// relaunch, the pins open are kept on disk as they change (`PinArchive`) and open again at the next launch; a pin
+/// left on no display when the displays change, or when it comes back, moves onto the nearest one.
 public final class PinController {
     /// What is pinned and where it came from.
     public struct Pin {
@@ -23,7 +25,7 @@ public final class PinController {
         case color(PinColor)
     }
 
-    public enum Origin: Equatable {
+    public nonisolated enum Origin: Equatable, Codable, Sendable {
         /// A capture in the history.
         case capture(UUID)
         case file(URL)
@@ -63,14 +65,21 @@ public final class PinController {
 
     private let settings: SettingsStore
     private let actions: Actions
+    /// Back to front, as they are stacked: a pin opened or clicked goes last.
     private var windows: [PinWindow] = []
     private let textReader = PinTextReader()
     private var windowLease: ActiveResources.Lease?
     public private(set) var areHidden = false
+    private let archive = PinArchive()
+    /// Whether the pins are kept for the next launch, as Settings says; asked again when Settings changes.
+    private var isKeeping: Bool
+    /// The next write of what is kept, a moment after a change, so a whole drag or zoom writes once.
+    private var pendingSave: Task<Void, Never>?
 
     public init(settings: SettingsStore, actions: Actions) {
         self.settings = settings
         self.actions = actions
+        isKeeping = settings.pinsComeBack
     }
 
     public var isEmpty: Bool { windows.isEmpty }
@@ -120,19 +129,86 @@ public final class PinController {
             }
         }
         let pin = Pin(id: UUID(), content: content, origin: origin)
-        let window = PinWindow(pin: pin, frame: placed.frame, zoom: placed.zoom, appearance: appearance, actions: actions, textReader: textReader)
+        let window = add(pin, frame: placed.frame, zoom: placed.zoom)
+        window.show()
+        if isKeeping, case .image(let image, _) = content { archive.keepPicture(image, id: pin.id) }
+        VoiceOver.announce(String(localized: "Pinned.", bundle: .module), from: window, priority: .medium)
+        changed()
+        return pin.id
+    }
+
+    /// A pin's window, not yet shown, in front of the others once it is.
+    private func add(_ pin: Pin, frame: CGRect, zoom: CGFloat, opacity: CGFloat = 1) -> PinWindow {
+        let window = PinWindow(pin: pin, frame: frame, zoom: zoom, opacity: opacity, appearance: appearance, actions: actions, textReader: textReader)
         window.onClose = { [weak self] in self?.close($0) }
         window.onCloseAll = { [weak self] in self?.closeAll() }
-        window.onChange = { [weak self] in self?.onChange?() }
+        window.onChange = { [weak self] in self?.changed() }
+        window.onAdjust = { [weak self] in self?.scheduleSave() }
+        window.onRaise = { [weak self] in self?.raise($0) }
         windows.append(window)
-        window.orderFrontRegardless()
-        // The shadow follows the rounded picture once it has been drawn. It takes the keys only when
-        // clicked: a pin stays, and taking them now would leave the app in front unable to type.
-        window.invalidateShadow()
         windowLease = windowLease ?? ActiveResources.shared.acquire(.window)
-        VoiceOver.announce(String(localized: "Pinned.", bundle: .module), from: window, priority: .medium)
-        onChange?()
-        return pin.id
+        return window
+    }
+
+    /// Opens the pins that were open when the app last quit, where they were (on the nearest display when theirs is
+    /// gone) and hidden if they were. While Settings doesn't keep pins, removes what an earlier launch kept instead.
+    public func restore() {
+        guard isKeeping else { return archive.removeAll() }
+        archive.load { [weak self] manifest, pictures in self?.reopen(manifest, pictures: pictures) }
+    }
+
+    private func reopen(_ manifest: PinArchive.Manifest, pictures: [UUID: CGImage]) {
+        // A pin opened while these were read keeps the pins shown or hidden as they are now.
+        let hidden = windows.isEmpty ? manifest.hidden : areHidden
+        let screens = Self.screens
+        for record in manifest.pins where !windows.contains(where: { $0.pin.id == record.id }) {
+            guard let content = record.pinContent(picture: pictures[record.id]) else { continue }
+            let zoom = PinGeometry.keptZoom(record.zoom)
+            let base = PinWindow.baseSize(of: content)
+            // Its size from its own size and zoom, its top left corner where it was.
+            let kept = CGRect(x: record.frame.minX, y: record.frame.maxY - base.height * zoom, width: base.width * zoom, height: base.height * zoom)
+            let frame = PinGeometry.recovered(kept, on: screens) ?? kept
+            let window = add(Pin(id: record.id, content: content, origin: record.origin), frame: frame, zoom: zoom, opacity: record.opacity)
+            if record.locked { window.setLocked(true) }
+            if !hidden { window.show() }
+        }
+        guard !windows.isEmpty else { return }
+        areHidden = hidden
+        changed()
+    }
+
+    /// Settings turned keeping pins for the next launch on or off: what is open is written at once, or all that was
+    /// kept goes.
+    public func keepingChanged() {
+        guard settings.pinsComeBack != isKeeping else { return }
+        isKeeping = settings.pinsComeBack
+        guard isKeeping else {
+            pendingSave?.cancel()
+            pendingSave = nil
+            return archive.removeAll()
+        }
+        for window in windows {
+            if case .image(let image, _) = window.pin.content { archive.keepPicture(image, id: window.pin.id) }
+        }
+        saveNow()
+    }
+
+    /// The app is quitting: what changed and isn't written yet is, and every write asked for is finished first.
+    public func finishKeeping() {
+        if pendingSave != nil { saveNow(waits: true) } else { archive.finish() }
+    }
+
+    /// The displays changed: a pin no longer on any of them moves onto the nearest, inside its visible frame.
+    public func displaysChanged() {
+        let screens = Self.screens
+        for window in windows {
+            guard let moved = PinGeometry.recovered(window.frame, on: screens) else { continue }
+            window.move(by: CGVector(dx: moved.minX - window.frame.minX, dy: moved.minY - window.frame.minY))
+        }
+    }
+
+    private static var screens: [(frame: CGRect, visible: CGRect)] {
+        NSScreen.screens.map { (frame: $0.frame, visible: $0.visibleFrame) }
     }
 
     /// Hides every pin, or shows them again where they were.
@@ -140,9 +216,9 @@ public final class PinController {
         guard hidden != areHidden, !windows.isEmpty || !hidden else { return }
         areHidden = hidden
         for window in windows {
-            if hidden { window.orderOut(nil) } else { window.orderFrontRegardless() }
+            if hidden { window.orderOut(nil) } else { window.show() }
         }
-        onChange?()
+        changed()
     }
 
     public func unlockAll() {
@@ -162,9 +238,17 @@ public final class PinController {
         for window in windows { window.apply(appearance) }
     }
 
+    /// A pin clicked is in front of the others, and is kept so.
+    private func raise(_ window: PinWindow) {
+        guard windows.last !== window, let index = windows.firstIndex(where: { $0 === window }) else { return }
+        windows.append(windows.remove(at: index))
+        scheduleSave()
+    }
+
     private func close(_ window: PinWindow) {
         window.orderOut(nil)
         windows.removeAll { $0 === window }
+        if isKeeping { archive.forget(window.pin.id) }
         finishClosing()
     }
 
@@ -176,6 +260,36 @@ public final class PinController {
             MemoryRelief.returnFreedPages()
         }
         onChange?()
+        // With the last pin gone, what was kept goes at once.
+        if windows.isEmpty { saveNow() } else { scheduleSave() }
+    }
+
+    /// Pins opened, closed, hidden, shown, locked, or unlocked: captures and the menu bar follow, and what is kept.
+    private func changed() {
+        onChange?()
+        scheduleSave()
+    }
+
+    /// Writes what is kept a moment after a change, once for a whole drag or zoom.
+    private func scheduleSave() {
+        guard isKeeping, pendingSave == nil else { return }
+        pendingSave = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.saveNow()
+        }
+    }
+
+    /// Writes what is kept now, or with no pin open removes it; `waits` until that is on disk.
+    private func saveNow(waits: Bool = false) {
+        pendingSave?.cancel()
+        pendingSave = nil
+        guard isKeeping else { return }
+        var pictures: [UUID: CGImage] = [:]
+        for window in windows {
+            if case .image(let image, _) = window.pin.content { pictures[window.pin.id] = image }
+        }
+        archive.save(PinArchive.Manifest(hidden: areHidden, pins: windows.compactMap(\.record)), pictures: pictures, waits: waits)
     }
 
     #if DEBUG
