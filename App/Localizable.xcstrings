@@ -280,6 +280,40 @@
         }
       }
     },
+    "A window you chose was closed, so nothing was captured." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una ventana que elegiste se ha cerrado, así que no se ha capturado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fenêtre que vous avez choisie a été fermée, donc rien n’a été capturé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したウインドウが閉じられたため、何もキャプチャしませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选窗口已关闭，没有截取任何内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所選視窗已關閉，沒有擷取任何內容。"
+          }
+        }
+      }
+    },
     "About %@" : {
       "localizations" : {
         "es" : {

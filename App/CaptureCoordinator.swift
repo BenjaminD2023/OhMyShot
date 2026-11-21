@@ -4,6 +4,7 @@ import OMSAnnotate
 import OMSCapture
 import OMSCore
 import OMSDesign
+import OMSUI
 import OSLog
 import UniformTypeIdentifiers
 
@@ -40,6 +41,8 @@ final class CaptureCoordinator {
     var selfTimerKeys: (() -> String?)?
     /// Self-Timer's countdown, between choosing what to capture and capturing it.
     private let countdown = SelfTimerCountdown()
+    /// Says by where a window was that it closed before it could be captured.
+    private lazy var notice = CopiedHUD()
     /// What waits for the capture Self-Timer is counting down to, told nil when it is cancelled.
     private var timerFollowUp: CaptureFollowUp?
     #if DEBUG
@@ -281,13 +284,6 @@ final class CaptureCoordinator {
 
     // MARK: Self-Timer
 
-    /// What Self-Timer captures at zero.
-    private enum TimerTarget {
-        case area(CGRect)
-        /// With the keys held as it was clicked: Shift turns its background the other way round.
-        case window(WindowTarget, NSEvent.ModifierFlags)
-    }
-
     var isSelfTimerRunning: Bool {
         countdown.isRunning
     }
@@ -311,25 +307,11 @@ final class CaptureCoordinator {
         // What is captured is the screen once the time is up: the frozen one, pointer or not, is only for choosing on.
         overlay.begin(mode: .area, options: .init(recapturesLive: true)) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
-            let seconds = delay ?? settings.selfTimerDelay
-            switch outcome {
-            case .region(let rect, _, _, _):
-                // Whatever was frozen while choosing, what is captured is the screen once the time is up.
-                countDown(to: .area(rect), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
-            case .window(let target, let modifiers):
-                countDown(to: .window(target, modifiers), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
-            case .windows(let targets, _):
-                if let union = targets.combinedFrame {
-                    countDown(to: .area(union), seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
-                } else {
-                    followUp.finish(nil)
-                }
-            case .color(let color, let point, _, let modifiers, let keyboard):
-                onColor?(color, point, modifiers, keyboard)
-                followUp.finish(nil)
-            case .annotated, .record, .scroll, .allInOne, .cancelled:
-                followUp.finish(nil)
+            if let target = SelfTimerTarget(outcome) {
+                return countDown(to: target, seconds: delay ?? settings.selfTimerDelay, copiesToClipboard: copiesToClipboard, followUp: followUp)
             }
+            if case .color(let color, let point, _, let modifiers, let keyboard) = outcome { onColor?(color, point, modifiers, keyboard) }
+            followUp.finish(nil)
         }
     }
 
@@ -343,16 +325,12 @@ final class CaptureCoordinator {
         VoiceOver.announce(String(localized: "Self-Timer cancelled."))
     }
 
-    private func countDown(to target: TimerTarget, seconds: Int, copiesToClipboard: Bool, followUp: CaptureFollowUp) {
-        let area = switch target {
-        case .area(let rect): rect
-        case .window(let window, _): window.frame
-        }
+    private func countDown(to target: SelfTimerTarget, seconds: Int, copiesToClipboard: Bool, followUp: CaptureFollowUp) {
         let keys = selfTimerKeys?()
         VoiceOver.announce(keys.map { String(localized: "Capturing in \(seconds) seconds. Press \($0) again to cancel.") }
             ?? String(localized: "Capturing in \(seconds) seconds. Choose Cancel Self-Timer in the menu bar to cancel."))
         timerFollowUp = followUp
-        countdown.start(seconds: seconds, area: area, layout: displays.layout) { [weak self] in
+        countdown.start(seconds: seconds, area: target.outline, layout: displays.layout) { [weak self] in
             guard let self else { return followUp.finish(nil) }
             timerFollowUp = nil
             // Another capture is being chosen: not captured under its overlay.
@@ -374,6 +352,8 @@ final class CaptureCoordinator {
                 case .area(let rect): await self.captureArea(rect, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard, followUp: followUp)
                 case .window(let window, let modifiers):
                     await self.captureWindow(window, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers)
+                case .windows(let windows, let modifiers):
+                    await self.captureWindows(windows, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers)
                 }
             }
         }
@@ -526,6 +506,9 @@ final class CaptureCoordinator {
                 frame, appName: target.ownerName, windowTitle: target.title, copiesToClipboard: copiesToClipboard, background: background,
                 pixelsPerPoint: displays.layout.display(id: frame.displayID)?.pixelsPerPoint, followUp: followUp
             )
+        } catch CaptureError.windowNotFound {
+            tellWindowClosed(at: target.frame)
+            followUp.finish(nil)
         } catch {
             Log.capture.error("Window capture failed: \(error.localizedDescription, privacy: .public)")
             followUp.finish(nil)
@@ -549,10 +532,25 @@ final class CaptureCoordinator {
                 frame, appName: first.ownerName, windowTitle: first.title, copiesToClipboard: copiesToClipboard, background: background,
                 pixelsPerPoint: displays.layout.display(id: frame.displayID)?.pixelsPerPoint, followUp: followUp
             )
+        } catch CaptureError.windowNotFound {
+            tellWindowClosed(at: targets.combinedFrame ?? first.frame)
+            followUp.finish(nil)
         } catch {
             Log.capture.error("Multi-window capture failed: \(error.localizedDescription, privacy: .public)")
             followUp.finish(nil)
         }
+    }
+
+    /// A window chosen to be captured closed before it was, as one can while Self-Timer counts down: nothing is captured,
+    /// since the screen where it was is not what was chosen, and that is said by where it was, on the part of it a display
+    /// showed, or by the pointer when none did.
+    private func tellWindowClosed(at frame: CGRect) {
+        Log.capture.notice("Window capture skipped: a chosen window was closed")
+        NSSound.beep()
+        notice.show(
+            String(localized: "A window you chose was closed, so nothing was captured."),
+            near: displays.layout.visibleCenter(of: frame) ?? NSEvent.mouseLocation
+        )
     }
 
     /// What a window screenshot is put on: Settings' choice for windows, flipped by Shift as it was clicked. Rounded

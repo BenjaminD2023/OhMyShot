@@ -125,13 +125,8 @@ public final class ScreenCapturer {
         if targets.count == 1 {
             return try await captureWindow(first, shadow: shadow, layout: layout, showsCursor: showsCursor)
         }
-        // Preserve on-screen z-order (WindowCatalog lists front to back; draw back to front).
-        let catalogOrder = WindowCatalog.snapshot(layout: layout).map(\.id)
-        let sorted = targets.sorted { a, b in
-            let ia = catalogOrder.firstIndex(of: a.id) ?? Int.max
-            let ib = catalogOrder.firstIndex(of: b.id) ?? Int.max
-            return ia > ib
-        }
+        // Each window where it is now, which a Self-Timer's countdown may have moved it from, in on-screen z-order.
+        let sorted = Self.backToFront(targets, in: WindowCatalog.snapshot(layout: layout))
         var parts: [(image: CGImage, windowFrame: CGRect, pixelsPerPoint: CGFloat)] = []
         var displayID: CGDirectDisplayID = layout.display(at: CGPoint(x: first.frame.midX, y: first.frame.midY))?.id ?? layout.primary?.id ?? 0
         var scale: CGFloat = 0
@@ -149,6 +144,16 @@ public final class ScreenCapturer {
             throw CaptureError.emptyResult
         }
         return composited
+    }
+
+    /// `targets` in drawing order, back to front, each at its frame in `current` (the catalog, which lists the windows on
+    /// screen front to back); one not listed there, closed or off screen, keeps the frame it was chosen with and goes to
+    /// the back.
+    nonisolated static func backToFront(_ targets: [WindowTarget], in current: [WindowTarget]) -> [WindowTarget] {
+        let order = current.map(\.id)
+        return targets
+            .map { target in current.first { $0.id == target.id } ?? target }
+            .sorted { (order.firstIndex(of: $0.id) ?? Int.max) > (order.firstIndex(of: $1.id) ?? Int.max) }
     }
 
     /// Composites captured window images (in back-to-front order) onto a single transparent canvas at `scale` pixels per point.

@@ -41,6 +41,15 @@ struct DisplayLayoutTests {
         #expect(layout.flipped(layout.flipped(rect.origin)) == rect.origin)
     }
 
+    @Test func aWindowMostlyOffTheScreensIsCenteredOnTheShownPart() {
+        let layout = Self.layout(externalAt: CGPoint(x: 1728, y: 0))
+        // Its title bar on the built-in display, the rest below every display.
+        #expect(layout.visibleCenter(of: CGRect(x: 100, y: -500, width: 400, height: 600)) == CGPoint(x: 300, y: 50))
+        // Across both displays: the middle of the larger part, on the external display.
+        #expect(layout.visibleCenter(of: CGRect(x: 1628, y: 100, width: 400, height: 200)) == CGPoint(x: 1878, y: 200))
+        #expect(layout.visibleCenter(of: CGRect(x: -900, y: -900, width: 100, height: 100)) == nil)
+    }
+
     @Test func externalAbovePrimaryHasNegativeCoreGraphicsY() {
         let layout = Self.layout(externalAt: CGPoint(x: 0, y: 1117))
         #expect(layout.flipped(layout.displays[1].frame) == CGRect(x: 0, y: -1440, width: 3440, height: 1440))

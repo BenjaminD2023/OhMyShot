@@ -32,6 +32,19 @@ struct ScreenCapturerTests {
         #expect(AreaFrame.local(builtIn.frame, on: builtIn) == CGRect(x: 0, y: 0, width: 2056, height: 1329))
     }
 
+    @Test func windowsArePutTogetherWhereTheyAreNowBackToFront() {
+        let notes = WindowTarget(id: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100), ownerName: "Notes", title: nil)
+        let mail = WindowTarget(id: 2, frame: CGRect(x: 200, y: 0, width: 100, height: 100), ownerName: "Mail", title: nil)
+        let offScreen = WindowTarget(id: 3, frame: CGRect(x: 400, y: 0, width: 50, height: 50), ownerName: "Maps", title: nil)
+        // Since they were chosen, Notes was moved and made larger, Mail came to the front, and Maps left the screen
+        // (closed, minimized, or on another Space).
+        let notesNow = WindowTarget(id: 1, frame: CGRect(x: 50, y: 60, width: 300, height: 200), ownerName: "Notes", title: nil)
+        let other = WindowTarget(id: 9, frame: CGRect(x: 0, y: 0, width: 800, height: 600), ownerName: "Safari", title: nil)
+        let placed = ScreenCapturer.backToFront([notes, mail, offScreen], in: [mail, other, notesNow])
+        #expect(placed.map(\.id) == [3, 1, 2])
+        #expect(placed.map(\.frame) == [offScreen.frame, notesNow.frame, mail.frame])
+    }
+
     @Test func compositeWindowsCombinesMultipleWindowsInBoundingBox() throws {
         func solidWindow(width: Int, height: Int, color: CGColor) throws -> CGImage {
             let ctx = try #require(CGContext(
@@ -54,6 +67,29 @@ struct ScreenCapturerTests {
         ))
         #expect(composited.frame == CGRect(x: 100, y: 100, width: 130, height: 70))
         #expect(composited.image.width == 260 && composited.image.height == 140)
+    }
+
+    @Test func windowsFromA2xAndA1xDisplayKeepTheirSizeTogether() throws {
+        func solid(width: Int, height: Int) throws -> CGImage {
+            let ctx = try #require(CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            return try #require(ctx.makeImage())
+        }
+        // Two windows of 100 × 50 points, one taken on a 2× display, the other on a 1× display, put together at 1×.
+        let composited = try #require(ScreenCapturer.compositeWindows(
+            [
+                (image: try solid(width: 200, height: 100), windowFrame: CGRect(x: 0, y: 0, width: 100, height: 50), pixelsPerPoint: 2),
+                (image: try solid(width: 100, height: 50), windowFrame: CGRect(x: 200, y: 0, width: 100, height: 50), pixelsPerPoint: 1),
+            ],
+            scale: 1,
+            displayID: 9
+        ))
+        #expect(composited.frame == CGRect(x: 0, y: 0, width: 300, height: 50))
+        #expect(composited.image.width == 300 && composited.image.height == 50)
     }
 
     @Test func aWindowFromALowerScaleDisplayKeepsItsSizeInPoints() throws {

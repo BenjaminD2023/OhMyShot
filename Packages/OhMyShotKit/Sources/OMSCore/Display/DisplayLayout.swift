@@ -82,6 +82,13 @@ public struct DisplayLayout: Sendable, Equatable {
         displays.first { $0.id == id }
     }
 
+    /// The middle of the part of `rect` the displays show, on the display showing most of it; nil when none shows any.
+    public func visibleCenter(of rect: CGRect) -> CGPoint? {
+        let shown = displays.map { $0.frame.intersection(rect) }.filter { !$0.isEmpty }
+        guard let most = shown.max(by: { $0.width * $0.height < $1.width * $1.height }) else { return nil }
+        return CGPoint(x: most.midX, y: most.midY)
+    }
+
     /// Displays numbered the way CleanShot's URL API numbers them: 1 is the primary display.
     public func display(number: Int) -> DisplayInfo? {
         displays.indices.contains(number - 1) ? displays[number - 1] : nil
