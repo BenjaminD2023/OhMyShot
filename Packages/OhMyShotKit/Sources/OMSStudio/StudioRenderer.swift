@@ -51,6 +51,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     private let clickPictures: (primary: CIImage, secondary: CIImage)
     /// The camera's bubble, picture, or fill of the movie; nil without a camera, or with it hidden.
     let camera: CameraLook?
+    /// Where the person is in the camera's frames, for its Blur and Cutout backgrounds; nil for Original.
+    let cameraMatte: StudioCameraMatte?
     private let lock = NSLock()
     /// A bounded working set of caption pictures; evicted text is drawn again if the user seeks back.
     private var captionImages: [String: CIImage] = [:]
@@ -71,6 +73,9 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     /// stands this far from the recording, as a fraction of the recording's height.
     static let cameraPaneAspect = 3.0 / 4
     static let cameraPaneGap = 0.025
+    /// How far the camera's Blur background spreads the room behind the person, as a share of the frame's
+    /// shorter side.
+    static let cameraBlur = 0.03
 
     /// The circle of light under the cursor in the Highlight style: its diameter in points at the cursor's
     /// own size, and the color it is made of (a warm yellow at 0.40, holding to 60% of the radius and
@@ -142,9 +147,10 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     /// drawn from the telemetry's camera into the layout's room for it.
     init(
         telemetry: StudioTelemetry, project: StudioProject, duration: Double, recordingSize: CGSize, background: CGImage?,
-        layout: Layout, ringColor: RingColor, preparedTrack: StudioTrack?
+        layout: Layout, ringColor: RingColor, preparedTrack: StudioTrack?, cameraMatte: StudioCameraMatte? = nil
     ) {
         self.project = project
+        self.cameraMatte = project.camera.background == .original ? nil : cameraMatte
         self.recordingSize = recordingSize
         pixelsPerPoint = telemetry.width > 0 ? Double(recordingSize.width) / telemetry.width : telemetry.pixelsPerPoint
         track = preparedTrack ?? StudioTrack(telemetry: telemetry, project: project, duration: duration)
@@ -254,16 +260,22 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         // The camera, in its bubble, filling the frame, or neither, as the plan has it. From one to the other,
         // what belongs to the first fades out over the first half of the change and what belongs to the second
         // fades in over the second, as the bubble on screen fades out and in: the person is never shown twice.
-        let picture = camera.flatMap { look in cameraFrame.map { Self.oriented($0, mirrored: look.mirrored) } }
         let levels = camera?.plan.levels(at: time) ?? StudioCameraPlan.Levels(bubble: 0, fill: 0)
         // Beside the recording, the camera has a picture of its own: no bubble, and it never fills the frame.
         let beside = camera?.pane != nil
+        let showing = camera != nil && (beside || max(levels.bubble, levels.fill) > 0.001) ? cameraFrame : nil
+        // The person, found only while the camera shows; without them the frame shows as it was.
+        let matte = showing.flatMap { cameraMatte?.matte(for: $0, at: time) }
+        let cutout = matte != nil && project.camera.background == .cutout
+        let picture = camera.flatMap { look in
+            showing.map { Self.oriented(Self.treated($0, background: project.camera.background, matte: matte), mirrored: look.mirrored) }
+        }
         let bubbleOpacity = picture == nil || beside ? 0 : levels.bubble
         let fillOpacity = picture == nil || beside ? 0 : levels.fill
 
         var scene: CIImage
         if let picture, fillOpacity > 0.999 {
-            // Covered by the camera: nothing under it is drawn.
+            // Covered by the camera: nothing under it is drawn. Cut out, the person stands on the movie's background.
             scene = Self.filling(picture, into: frame)
         } else {
             // The recording as the camera shows it, exposed over the shutter while the camera moves.
@@ -305,8 +317,10 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
                 }
             }
             // The camera filling the frame goes over everything in it before the frame's shape is cut: cut apart,
-            // the recording showed through along the soft edges.
+            // the recording showed through along the soft edges. Cut out, the recording goes as the person comes,
+            // so they end up on the movie's background as when the camera fills the frame.
             if let picture, fillOpacity > 0.001 {
+                if cutout { scene = Self.faded(scene, opacity: 1 - fillOpacity) }
                 scene = Self.faded(Self.filling(picture, into: frame), opacity: fillOpacity).composited(over: scene)
             }
         }
@@ -315,15 +329,18 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
             .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputMaskImageKey: mask, kCIInputBackgroundImageKey: CIImage.empty()])
 
         var movie = project.background == .blur ? blurredBackground(source) : background
-        if let shadow { movie = shadow.composited(over: movie) }
-        if let pane = camera?.pane, let paneShadow = pane.shadow { movie = paneShadow.composited(over: movie) }
+        // Under a cut-out person filling the frame there is no frame to cast a shadow, nor beside it a picture.
+        if let shadow { movie = Self.faded(shadow, opacity: cutout ? 1 - fillOpacity : 1).composited(over: movie) }
+        if let pane = camera?.pane, let paneShadow = pane.shadow, !cutout { movie = paneShadow.composited(over: movie) }
         movie = scene.composited(over: movie)
         if let pane = camera?.pane, let picture {
             let inPane = Self.filling(picture, into: pane.rect)
                 .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputMaskImageKey: pane.mask, kCIInputBackgroundImageKey: CIImage.empty()])
             movie = inPane.composited(over: movie)
         }
-        if let look = camera, let picture, bubbleOpacity > 0.001 { movie = bubble(look, picture: picture, opacity: bubbleOpacity, over: movie) }
+        if let look = camera, let picture, bubbleOpacity > 0.001 {
+            movie = bubble(look, picture: picture, cutout: cutout, opacity: bubbleOpacity, over: movie)
+        }
         if let caption = caption(at: time) { movie = caption.composited(over: movie) }
         return movie.cropped(to: CGRect(origin: .zero, size: layout.canvas))
     }
@@ -509,13 +526,31 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
             .transformed(by: CGAffineTransform(translationX: frame.extent.minX + frame.extent.maxX, y: 0))
     }
 
-    /// The camera in its bubble over `movie`, at `opacity`: its shadow, the picture cut to its shape, its ring.
-    private func bubble(_ look: CameraLook, picture: CIImage, opacity: Double, over movie: CIImage) -> CIImage {
+    /// The camera in its bubble over `movie`, at `opacity`: its shadow, the picture cut to its shape, its ring;
+    /// or, cut out, the person alone in the bubble's place, with no shape to cut, cast a shadow, or ring.
+    private func bubble(_ look: CameraLook, picture: CIImage, cutout: Bool, opacity: Double, over movie: CIImage) -> CIImage {
+        guard !cutout else { return Self.faded(Self.filling(picture, into: look.bubble), opacity: opacity).composited(over: movie) }
         let inBubble = Self.filling(picture, into: look.bubble)
             .applyingFilter("CIBlendWithAlphaMask", parameters: [kCIInputMaskImageKey: look.mask, kCIInputBackgroundImageKey: CIImage.empty()])
         var movie = Self.faded(look.shadow, opacity: opacity).composited(over: movie)
         movie = Self.faded(inBubble, opacity: opacity).composited(over: movie)
         return Self.faded(look.ring, opacity: opacity).composited(over: movie)
+    }
+
+    /// The camera's `frame` with its `background`: as it was, the room blurred around the person, or the person
+    /// alone, by `matte`; as it was without one.
+    static func treated(_ frame: CIImage, background: StudioProject.Camera.Background, matte: CIImage?) -> CIImage {
+        guard let matte else { return frame }
+        let behind: CIImage
+        switch background {
+        case .original: return frame
+        case .blur:
+            behind = frame.clampedToExtent()
+                .applyingGaussianBlur(sigma: min(frame.extent.width, frame.extent.height) * cameraBlur)
+                .cropped(to: frame.extent)
+        case .cutout: behind = CIImage.empty()
+        }
+        return frame.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: behind, kCIInputMaskImageKey: matte])
     }
 
     /// `image` scaled to cover `rect`, centered, and cut to it. Its edge pixels reach past it first: scaled

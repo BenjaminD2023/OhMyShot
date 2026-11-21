@@ -229,6 +229,16 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             case right
         }
 
+        /// What the camera shows behind the person.
+        public enum Background: String, Codable, CaseIterable, Sendable {
+            /// The room as it was filmed.
+            case original
+            /// The room blurred, the person sharp.
+            case blur
+            /// No room: the person alone, on whatever is behind the camera's picture.
+            case cutout
+        }
+
         /// The layout of the movie where no stretch of the timeline says otherwise.
         public var layout: Layout
         public var shape: Shape
@@ -238,6 +248,7 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         /// As a mirror shows it, as people expect to see themselves.
         public var mirrored: Bool
         public var side: Side
+        public var background: Background
         /// The times the camera filled what was recorded are stretches of their own (`cameraSegments`), no
         /// longer read from the recording. False until Studio makes them so, as it opens a project.
         public var recordedFillsAreSegments: Bool
@@ -254,7 +265,7 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         /// - Parameter layout: how the camera is shown; nil takes the bubble, or screen only without `isShown`.
         public init(
             isShown: Bool = true, shape: Shape = .circle, size: Double = 180, corner: Corner = .bottomLeft, mirrored: Bool = true,
-            layout: Layout? = nil, side: Side = .right, recordedFillsAreSegments: Bool = false
+            layout: Layout? = nil, side: Side = .right, background: Background = .original, recordedFillsAreSegments: Bool = false
         ) {
             self.layout = layout ?? (isShown ? .pictureInPicture : .screenOnly)
             self.shape = shape
@@ -262,13 +273,14 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             self.corner = corner
             self.mirrored = mirrored
             self.side = side
+            self.background = background
             self.recordedFillsAreSegments = recordedFillsAreSegments
         }
 
         /// `isShown` stays in what is saved, so a version that knows no layouts still hides the camera when
         /// the layout is screen only.
         private enum CodingKeys: String, CodingKey {
-            case isShown, shape, size, corner, mirrored, layout, side, recordedFillsAreSegments
+            case isShown, shape, size, corner, mirrored, layout, side, background, recordedFillsAreSegments
         }
 
         /// A camera saved before a setting existed takes its default; one saved before layouts shows its
@@ -284,6 +296,8 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             corner = try container.decodeIfPresent(Corner.self, forKey: .corner) ?? defaults.corner
             mirrored = try container.decodeIfPresent(Bool.self, forKey: .mirrored) ?? defaults.mirrored
             side = (try? container.decodeIfPresent(Side.self, forKey: .side)) ?? defaults.side
+            // One from a newer version, unknown here, shows the room as it was.
+            background = (try? container.decodeIfPresent(Background.self, forKey: .background)) ?? defaults.background
             recordedFillsAreSegments = try container.decodeIfPresent(Bool.self, forKey: .recordedFillsAreSegments) ?? defaults.recordedFillsAreSegments
         }
 
@@ -296,6 +310,7 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             try container.encode(corner, forKey: .corner)
             try container.encode(mirrored, forKey: .mirrored)
             try container.encode(side, forKey: .side)
+            try container.encode(background, forKey: .background)
             try container.encode(recordedFillsAreSegments, forKey: .recordedFillsAreSegments)
         }
     }

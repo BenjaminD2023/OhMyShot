@@ -595,6 +595,8 @@ struct StudioInspector: View {
                             Text("Shape", bundle: .module)
                         }
                         .accessibilityLabel(Text("Camera shape", bundle: .module))
+                        // A cut-out person has no bubble to shape.
+                        .disabled(document.project.camera.background == .cutout)
                         // The recording bar's sizes.
                         Picker(selection: $document.project.camera.size) {
                             Text("Small", bundle: .module).tag(120.0)
@@ -623,6 +625,15 @@ struct StudioInspector: View {
                         .accessibilityLabel(Text("Camera side", bundle: .module))
                     }
                     if document.showsCamera {
+                        // Named apart from the movie's Background for VoiceOver.
+                        Picker(selection: $document.project.camera.background) {
+                            Text("Original", bundle: .module).tag(StudioProject.Camera.Background.original)
+                            Text("Blur", bundle: .module).tag(StudioProject.Camera.Background.blur)
+                            Text("Cutout", bundle: .module).tag(StudioProject.Camera.Background.cutout)
+                        } label: {
+                            Text("Background", bundle: .module)
+                        }
+                        .accessibilityLabel(Text("Camera background", bundle: .module))
                         Toggle(isOn: $document.project.camera.mirrored) { Text("Mirror", bundle: .module) }
                     }
                     // Other layouts for stretches of the movie: not side by side, which widens all of it.

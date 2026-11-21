@@ -119,6 +119,9 @@ public final class StudioDocument {
     @ObservationIgnored private var savedRevision = -1
     @ObservationIgnored private var previewBuild: Task<StudioComposition, Error>?
     @ObservationIgnored private var cachedMotion: (key: StudioMotionKey, track: StudioTrack)?
+    /// Where the person is in the camera's frames, for the preview's Blur and Cutout backgrounds: one for every
+    /// composition the preview makes, as it depends only on the camera's frames; made when first needed.
+    @ObservationIgnored private var previewMatte: StudioCameraMatte?
     /// The background pictures' tiles for the inspector, read once each, and the Blurred recording's.
     @ObservationIgnored private var pictureThumbnails: [String: CGImage] = [:]
     @ObservationIgnored private var blurredThumbnail: CGImage?
@@ -235,7 +238,9 @@ public final class StudioDocument {
         previewSide = side
         previewState = composition == nil ? .preparing : .updating
         let snapshot = project
-        let task = Task { try await composition(project: snapshot, largestSide: side) }
+        if snapshot.camera.background != .original, previewMatte == nil { previewMatte = StudioCameraMatte(quality: .preview) }
+        let matte = snapshot.camera.background == .original ? nil : previewMatte
+        let task = Task { try await composition(project: snapshot, largestSide: side, cameraMatte: matte) }
         previewBuild = task
         do {
             let made = try await withTaskCancellationHandler {
@@ -255,10 +260,13 @@ public final class StudioDocument {
         if mine == generation { previewBuild = nil }
     }
 
-    /// The composition the export writes: the project as it is now, at the movie's full size.
+    /// The composition the export writes: the project as it is now, at the movie's full size, the person in the
+    /// camera found with Vision's accurate matte.
     public func makeExportComposition(project snapshot: StudioProject? = nil) async throws -> StudioComposition {
         try Task.checkCancellation()
-        return try await composition(project: snapshot ?? project, largestSide: StudioRenderer.largestSide)
+        let exported = snapshot ?? project
+        let matte = exported.camera.background == .original ? nil : StudioCameraMatte(quality: .export)
+        return try await composition(project: exported, largestSide: StudioRenderer.largestSide, cameraMatte: matte)
     }
 
     func previewFailed(_ message: String) {
@@ -275,6 +283,7 @@ public final class StudioDocument {
         previewBuild = nil
         composition = nil
         cachedMotion = nil
+        previewMatte = nil
     }
 
     #if DEBUG
@@ -291,7 +300,7 @@ public final class StudioDocument {
         scheduleComposition()
     }
 
-    private func composition(project: StudioProject, largestSide: Double) async throws -> StudioComposition {
+    private func composition(project: StudioProject, largestSide: Double, cameraMatte: StudioCameraMatte?) async throws -> StudioComposition {
         try Task.checkCancellation()
         if let compositionLoader { return try await compositionLoader(project, largestSide) }
         let telemetry = drawnTelemetry
@@ -303,7 +312,7 @@ public final class StudioDocument {
         return try await Self.assemble(
             project: project, telemetry: telemetry, duration: duration, recordingSize: recordingSize,
             largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, folder: folder, soundFiles: soundFiles,
-            background: background, ringColor: ringColor
+            background: background, ringColor: ringColor, cameraMatte: cameraMatte
         )
     }
 
@@ -324,7 +333,7 @@ public final class StudioDocument {
     private static func assemble(
         project: StudioProject, telemetry: StudioTelemetry, duration: Double, recordingSize: CGSize,
         largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?, folder: URL, soundFiles: [(sound: StudioSound, url: URL)],
-        background: @Sendable (String, CGSize) -> CGImage?, ringColor: StudioRenderer.RingColor
+        background: @Sendable (String, CGSize) -> CGImage?, ringColor: StudioRenderer.RingColor, cameraMatte: StudioCameraMatte?
     ) async throws -> StudioComposition {
         try Task.checkCancellation()
         // Worked out once, for the background painted at the movie's size and for the renderer. `telemetry` is the
@@ -340,7 +349,7 @@ public final class StudioDocument {
         try Task.checkCancellation()
         let renderer = StudioRenderer(
             telemetry: telemetry, project: project, duration: duration, recordingSize: recordingSize, background: picture,
-            layout: layout, ringColor: ringColor, preparedTrack: track
+            layout: layout, ringColor: ringColor, preparedTrack: track, cameraMatte: cameraMatte
         )
         try Task.checkCancellation()
         let camera = cameraMovie.map { StudioComposition.CameraSource(asset: AVURLAsset(url: $0), start: telemetry.camera?.start ?? 0) }
