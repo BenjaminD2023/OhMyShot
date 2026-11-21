@@ -59,8 +59,8 @@ struct HistoryCard: View {
                 withAnimation(reduceMotion ? nil : .easeOut(duration: Theme.Motion.fade)) { hovering = inside }
             }
             // Dragged out as the file, as from a Quick Access card: copied wherever it lands, never moved out
-            // of the history.
-            .onDrag { fileToHandOver.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider() }
+            // of the history. A card in the selection takes the whole selection with it (the grid's drag container).
+            .draggable(containerItemID: item.id)
             .dragConfiguration(DragConfiguration(operationsOutsideApp: .init(allowCopy: true, allowMove: false, allowDelete: false)))
             // Opens the capture in the annotation editor, a recording in the recording window, as in CleanShot;
             // Return and the hover button restore it to Quick Access.
@@ -107,9 +107,9 @@ struct HistoryCard: View {
                 Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
                 Button { model.print(item) } label: { Text("Print", bundle: .module) }
             }
-            Button { if let file = fileToHandOver { Self.share(file) } } label: { Text("Share", bundle: .module) }
+            Button { share() } label: { Text("Share", bundle: .module) }
             if EmailSharing.canSendRecently(model.store.fileURL(for: item)) {
-                Button { if let file = fileToHandOver { EmailSharing.send(file) } } label: { Text("Send by Email", bundle: .module) }
+                Button { if let file = model.fileToHandOver(item) { EmailSharing.send(file) } } label: { Text("Send by Email", bundle: .module) }
             }
             ForEach(Array(sharingEntries.enumerated()), id: \.offset) { _, entry in
                 if case .uploadTo(let targets) = entry {
@@ -146,24 +146,23 @@ struct HistoryCard: View {
         }
     }
 
-    /// The capture's file for another app, shared or dragged out: a copy in the format Settings choose, made when it is
-    /// asked for, or the capture's own; nil when that copy could not be made, and then nothing goes.
-    private var fileToHandOver: URL? {
-        guard let fileToHandOver = model.actions.fileToHandOver else { return model.store.fileURL(for: item) }
-        return fileToHandOver(item)
-    }
-
-    /// The system share sheet over the window: where the pointer is when the menu's Share… was chosen, else (for
-    /// VoiceOver) the middle. Not a `ShareLink`, which needs its file before the menu opens, so every capture's copy
-    /// would be made then.
-    private static func share(_ file: URL, atPointer: Bool = false) {
+    /// The system share sheet over the window, with the whole selection when the capture is in it, as a drag takes, else
+    /// the capture alone; nothing when one of their copies could not be made. It opens where the pointer was when the
+    /// menu's Share… was chosen, else (for VoiceOver) in the middle, once the copies are made. Not a `ShareLink`, which
+    /// needs its files before the menu opens, so every capture's copy would be made then.
+    private func share(atPointer: Bool = false) {
         guard let window = NSApp.keyWindow ?? NSApp.mainWindow, let view = window.contentView else { return }
         var anchor = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
         if atPointer {
             let pointer = view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
             if view.bounds.contains(pointer) { anchor = pointer }
         }
-        NSSharingServicePicker(items: [file]).show(relativeTo: CGRect(x: anchor.x, y: anchor.y, width: 1, height: 1), of: view, preferredEdge: .minY)
+        let model = model, id = item.id
+        Task {
+            let files = await model.filesToShare(from: id)
+            guard !files.isEmpty, view.window != nil else { return }
+            NSSharingServicePicker(items: files).show(relativeTo: CGRect(x: anchor.x, y: anchor.y, width: 1, height: 1), of: view, preferredEdge: .minY)
+        }
     }
 
     private var excerpt: HistorySearch.Excerpt? {
@@ -328,9 +327,9 @@ struct HistoryCard: View {
         }
         Button { model.actions.reveal(item) } label: { Text("Show in Finder", bundle: .module) }
         Divider()
-        Button { if let file = fileToHandOver { Self.share(file, atPointer: true) } } label: { Text("Share…", bundle: .module) }
+        Button { share(atPointer: true) } label: { Text("Share…", bundle: .module) }
         if EmailSharing.canSendRecently(model.store.fileURL(for: item)) {
-            Button { if let file = fileToHandOver { EmailSharing.send(file) } } label: { Text("Send by Email", bundle: .module) }
+            Button { if let file = model.fileToHandOver(item) { EmailSharing.send(file) } } label: { Text("Send by Email", bundle: .module) }
         }
         ForEach(Array(sharingEntries.enumerated()), id: \.offset) { _, entry in
             if case .uploadTo(let targets) = entry {

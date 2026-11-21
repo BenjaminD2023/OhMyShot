@@ -103,6 +103,9 @@ struct HistoryView: View {
                                 .id(item.id)
                         }
                     }
+                    // A card dragged out takes every selected capture when it is one of them, as in Finder, else
+                    // itself alone; nothing when one of their copies can't be made.
+                    .dragContainer(for: HandedOverFile.self) { (dragged: UUID) in model.filesToHandOver(from: dragged) }
                     .padding(.horizontal, Self.inset)
                     .padding(.vertical, 20)
                     // Measured inside the scroll view, so a visible scroller is not counted as room.

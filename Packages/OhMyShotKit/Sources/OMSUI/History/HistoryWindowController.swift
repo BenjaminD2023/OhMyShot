@@ -34,6 +34,9 @@ public struct HistoryActions {
     /// Settings choose; nil when that copy could not be made, which the app says, and then nothing goes. Left out, the
     /// capture's own file goes.
     public var fileToHandOver: ((HistoryItem) -> URL?)?
+    /// Several captures' files to hand over at once, made off the main actor: each as `fileToHandOver` makes it, and none
+    /// when one of them could not be made, which the app says. Left out, they are made one by one by `fileToHandOver`.
+    public var filesToHandOver: (([HistoryItem]) async -> [URL]?)?
     /// Uploading, for a person who set up a destination. Left as it is, the window offers none of it.
     public var sharing = Sharing()
 

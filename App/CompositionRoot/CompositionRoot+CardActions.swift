@@ -306,6 +306,11 @@ extension CompositionRoot {
             guard let self else { return nil }
             return handedOverOrSaidWhy(files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint))
         }
+        historyActions.filesToHandOver = { [weak self] entries in
+            guard let self else { return nil }
+            let captures = entries.map { (url: history.fileURL(for: $0), scale: $0.pixelsPerPoint) }
+            return handedOverOrSaidWhy(await files.filesToHandOver(captures))
+        }
         // Each in the format Settings choose, as one dragged out would be; none when one of them cannot be.
         historyActions.copyFiles = { [weak self] entries in
             guard let self else { return }

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import CoreTransferable
 import Observation
 import OMSCore
 import SwiftUI
@@ -142,6 +143,34 @@ final class HistoryModel {
     func pdfItems(from item: HistoryItem?) -> [HistoryItem] {
         let items = itemsActedOn(from: item)
         return !items.isEmpty && items.allSatisfy({ $0.kind == .screenshot }) ? items : []
+    }
+
+    /// The files a drag from the card of the capture `id`, or its Share…, hands to another app: every selected capture's
+    /// when it is one of them, else its own alone, in the grid's order and each in the format Settings choose. None when
+    /// one of them could not be made: the app says why, once, and nothing goes.
+    func filesToHandOver(from id: UUID) -> [HandedOverFile] {
+        guard let item = items.first(where: { $0.id == id }) else { return [] }
+        var files: [HandedOverFile] = []
+        for item in itemsActedOn(from: item) {
+            guard let url = fileToHandOver(item) else { return [] }
+            files.append(HandedOverFile(id: item.id, url: url))
+        }
+        return files
+    }
+
+    /// What Share… on the card of the capture `id` hands the share sheet: the files a drag from it would take, made together
+    /// off the main actor, so a large selection does not stop the window. None when one of them could not be made.
+    func filesToShare(from id: UUID) async -> [URL] {
+        guard let filesToHandOver = actions.filesToHandOver else { return filesToHandOver(from: id).map(\.url) }
+        guard let item = items.first(where: { $0.id == id }) else { return [] }
+        return await filesToHandOver(itemsActedOn(from: item)) ?? []
+    }
+
+    /// The capture's file for another app: a copy in the format Settings choose, made when it is asked for, or the
+    /// capture's own; nil when that copy could not be made, and then nothing goes.
+    func fileToHandOver(_ item: HistoryItem) -> URL? {
+        guard let fileToHandOver = actions.fileToHandOver else { return store.fileURL(for: item) }
+        return fileToHandOver(item)
     }
 
     /// The selected capture the keys act on alone (Space, Print): the one clicked or reached last, else the first.
@@ -584,6 +613,18 @@ final class HistoryModel {
         let next = visible[min(max(current + offset, 0), visible.count - 1)].id
         focus = next
         selection = [next]
+    }
+}
+
+/// A capture's file as it is dragged out of the window, one of several when a selection is: dropped as the file itself,
+/// as Finder drops one.
+nonisolated struct HandedOverFile: Transferable, Identifiable, Sendable {
+    /// The capture's.
+    let id: UUID
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        ProxyRepresentation(exporting: \.url)
     }
 }
 
