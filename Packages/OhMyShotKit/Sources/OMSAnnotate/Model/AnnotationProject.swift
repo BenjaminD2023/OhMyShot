@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ImageIO
 import OMSCore
@@ -117,6 +118,13 @@ nonisolated public struct AnnotationProject: Sendable {
 
     public func write(to url: URL, pictures store: PictureStore = .shared) throws {
         try data(pictures: store).write(to: url, options: .atomic)
+    }
+
+    /// Where the picture of the project at `url` is kept in `folder` while it is open: under the project's name, which
+    /// dragging out and saving copies use, in a folder of its own, since projects in different folders may share a name.
+    public static func previewURL(for url: URL, in folder: URL) -> URL {
+        let place = SHA256.hash(data: Data(url.standardizedFileURL.path(percentEncoded: false).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+        return folder.appending(path: place, directoryHint: .isDirectory).appending(path: url.deletingPathExtension().lastPathComponent + ".png")
     }
 
     public func keep(at url: URL, preview: Data, previewURL: URL, pictures store: PictureStore = .shared) throws -> URL {

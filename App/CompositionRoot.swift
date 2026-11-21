@@ -36,7 +36,12 @@ final class CompositionRoot {
             Task { await self.restore(entry) }
         }
         uploads.ended = { [weak self] id, outcome in self?.uploadEnded(id, outcome) }
-        uploads.showsCard = { [weak self] id in self?.showsQuickAccess(forCaptureWith: id) ?? true }
+        // An upload of no capture in the history (a project's, from its editor) has no card to come back to: a failure is
+        // told by the pointer.
+        uploads.showsCard = { [weak self] id in
+            guard let self else { return true }
+            return history.item(id: id) != nil && showsQuickAccess(forCaptureWith: id)
+        }
         return uploads
     }()
     lazy var textCapture: TextCaptureCoordinator = {
@@ -408,6 +413,15 @@ final class CompositionRoot {
         annotations.copyPicture = { [weak self] image, png, name, scale in
             await self?.files.copy(.init(image), png: png, name: name, scale: scale) ?? false
         }
+        // As a card pins, uploads, and lists its destinations.
+        annotations.pinPicture = { [weak self] image, scale, entry in
+            _ = self?.pins.pin(image, scale: scale, origin: entry.map { .capture($0.id) } ?? .clipboard)
+        }
+        annotations.uploadMenu = { [weak self] in self?.uploads.destinations.menu ?? .hidden }
+        annotations.uploadFile = { [weak self] id, file, destination, scale in
+            self?.upload(captureID: id, fileURL: file, to: destination, scale: scale)
+        }
+        annotations.isUploading = { [weak self] id in self?.uploads.isUploading(id) ?? false }
 
         displays.onChange = { [weak self] _ in
             guard let self else { return }

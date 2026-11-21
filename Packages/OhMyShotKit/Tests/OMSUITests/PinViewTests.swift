@@ -1,4 +1,5 @@
 import AppKit
+import OMSCore
 import Testing
 @testable import OMSUI
 
@@ -84,6 +85,28 @@ extension PinViewTests {
         let view = try #require(window.contentView as? PinView)
         view.layout()
         return (view, try #require(view.textView))
+    }
+
+    /// A picture resized in the editor to fewer pixels than points pins at the size the editor shows it; a scale that is
+    /// none at all pins at one point a pixel.
+    @Test func aPictureKeepsAScaleBelowOne() throws {
+        let suite = "PinViewTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let actions = PinController.Actions(copy: { _ in }, save: { _ in }, saveAs: { _ in }, annotate: { _ in }, recognizeText: { _ in })
+        let pins = PinController(settings: SettingsStore(defaults: defaults), actions: actions)
+        defer { pins.closeAll() }
+        let image = try #require(Self.picture(size: CGSize(width: 200, height: 100)) {})
+
+        let resized = pins.pin(image, scale: 0.5, origin: .clipboard)
+        let unknown = pins.pin(image, scale: 0, origin: .clipboard)
+
+        // The picture has as many pixels as the screen it was drawn for gives it.
+        let pixels = CGSize(width: image.width, height: image.height)
+        let pinned = NSApplication.shared.windows.compactMap { $0 as? PinWindow }
+        let size = { (id: UUID) in pinned.first { $0.pin.id == id }.map { PinWindow.baseSize(of: $0.pin.content) } }
+        #expect(size(resized) == CGSize(width: pixels.width * 2, height: pixels.height * 2))
+        #expect(size(unknown) == pixels)
     }
 
     @Test func aCardsTextBreaksWhereItsSizeWasMeasured() throws {

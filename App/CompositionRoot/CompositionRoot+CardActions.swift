@@ -42,14 +42,14 @@ extension CompositionRoot {
 
     /// Uploads a capture's picture as Settings write it: the capture itself when they leave it as it is, else a copy in
     /// the chosen format. A capture to be converted is read now, since with History off its file may be gone by the time
-    /// the copy is made.
-    private func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil) {
+    /// the copy is made. `scale` is the picture's pixels per point where the history has no record of it (a project's).
+    func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil, scale: Double? = nil) {
         guard !files.output.isUnchanged, ExportedFiles.isPicture(fileURL), let data = try? Data(contentsOf: fileURL) else {
             uploads.upload(captureID: captureID, fileURL: fileURL, destinationID: destination)
             return
         }
         let name = fileURL.deletingPathExtension().lastPathComponent
-        let scale = history.item(id: captureID)?.pixelsPerPoint
+        let scale = history.item(id: captureID)?.pixelsPerPoint ?? scale
         Task {
             let file = await files.exportedFile(forPictureData: data, named: name, scale: scale) ?? fileURL
             uploads.upload(captureID: captureID, fileURL: file, destinationID: destination)

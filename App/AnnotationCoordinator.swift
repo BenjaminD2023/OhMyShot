@@ -31,6 +31,15 @@ final class AnnotationCoordinator {
     var fileToHandOver: ((URL, Double?) -> URL)?
     /// Puts an editor's picture on the clipboard and reports success: the picture, its PNG, its name, and its scale (nil when unknown).
     var copyPicture: ((CGImage, Data, String, Double?) async -> Bool)?
+    /// Pins an editor's picture as it looks now: the picture, its pixels per point, and the capture it is (nil for a project's).
+    var pinPicture: ((CGImage, CGFloat, HistoryItem?) -> Void)?
+    /// What an editor offers for uploading: the destinations as cards list them.
+    var uploadMenu: (() -> UploadMenu)?
+    /// Uploads an editor's picture file as a card's Upload does: the upload's identity (the capture's, or one of the
+    /// project's editor), the file, the destination (nil for the default), and its scale (nil when unknown).
+    var uploadFile: ((UUID, URL, UUID?, Double?) -> Void)?
+    /// Whether the upload of that identity is under way.
+    var isUploading: ((UUID) -> Bool)?
 
     init(history: HistoryStore) {
         self.history = history
@@ -97,7 +106,7 @@ final class AnnotationCoordinator {
                     return await self.saveCopy?(entry, file)
                 },
                 coordinator: self, name: (entry.fileName as NSString).deletingPathExtension, scale: { [weak self] in self?.history.item(id: id)?.pixelsPerPoint },
-                entry: { [weak self] in self?.history.item(id: id) }
+                entry: { [weak self] in self?.history.item(id: id) }, uploadID: id
             )
         )
         editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
@@ -109,21 +118,28 @@ final class AnnotationCoordinator {
         editor.show()
     }
 
-    /// The editor's actions: keeping and saving as given, and dragging out and copying as the file settings say.
+    /// The editor's actions: keeping and saving as given, and dragging out, copying, pinning, and uploading as a card
+    /// does them. `uploadID` names the editor's uploads: the capture's own, or one a project's editor keeps.
     private static func editorActions(
         keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) async -> URL?,
-        coordinator: AnnotationCoordinator, name: String, scale: @escaping () -> Double?, entry: @escaping () -> HistoryItem?
+        coordinator: AnnotationCoordinator, name: String, scale: @escaping () -> Double?, entry: @escaping () -> HistoryItem?, uploadID: UUID
     ) -> AnnotationEditorWindowController.Actions {
         var actions = AnnotationEditorWindowController.Actions(keep: keep, save: save)
         actions.saveAs = { [weak coordinator] file in await coordinator?.saveAs?(file, entry(), scale()) }
         actions.fileToHandOver = { [weak coordinator] file in coordinator?.fileToHandOver?(file, scale()) ?? file }
-        actions.copy = { [weak coordinator] image, png in
+        actions.copy = { [weak coordinator] image, png, pictureScale in
             if let copy = coordinator?.copyPicture {
-                return await copy(image, png, name, scale())
+                // The picture copied is rendered now, before it is kept: its own scale, not the last kept one, which
+                // differs after an undone resize. A capture whose scale is unknown stays unknown.
+                return await copy(image, png, name, scale().map { _ in Double(pictureScale) })
             } else {
                 return PasteboardWriter.write(png: png, image: image)
             }
         }
+        actions.pin = { [weak coordinator] image, pixelsPerPoint in coordinator?.pinPicture?(image, pixelsPerPoint, entry()) }
+        actions.uploadMenu = { [weak coordinator] in coordinator?.uploadMenu?() ?? .hidden }
+        actions.upload = { [weak coordinator] file, destination in coordinator?.uploadFile?(uploadID, file, destination, scale()) }
+        actions.isUploading = { [weak coordinator] in coordinator?.isUploading?(uploadID) ?? false }
         return actions
     }
 
@@ -167,7 +183,8 @@ final class AnnotationCoordinator {
             let capture = opened.project.capture
             let capturePNG = opened.project.capturePNG
             let picture = opened.picture
-            let projectScale = Double(opened.project.document.scale)
+            // Image Size changes the document's scale, so each keep records it for the outcomes that follow.
+            var projectScale = Double(opened.project.document.scale)
             let editor = AnnotationEditorWindowController(
                 image: capture,
                 scale: opened.project.document.scale,
@@ -180,6 +197,7 @@ final class AnnotationCoordinator {
                             let preview = try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG)
                                 .keep(at: file, preview: png, previewURL: picture)
                             Log.capture.notice("Kept the marks in the project \(file.lastPathComponent, privacy: .public): \(document.items.count, privacy: .public) mark(s)")
+                            projectScale = Double(document.scale)
                             return preview
                         } catch {
                             Log.capture.error("Keeping the project failed: \(error.localizedDescription, privacy: .public)")
@@ -187,7 +205,8 @@ final class AnnotationCoordinator {
                         }
                     },
                     save: { [weak self] picture in await self?.saveFile?(picture, projectScale) },
-                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }, entry: { nil }
+                    // A project is in no history, so its uploads go under an identity of their own.
+                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }, entry: { nil }, uploadID: UUID()
                 )
             )
             editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
@@ -205,9 +224,8 @@ final class AnnotationCoordinator {
     @concurrent
     private static func loadProject(_ file: URL) async throws -> (project: AnnotationProject, picture: URL) {
         let project = try AnnotationProject.read(from: file)
-        let folder = AppFolders.caches.appending(path: "Projects", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let picture = folder.appending(path: file.deletingPathExtension().lastPathComponent + ".png")
+        let picture = AnnotationProject.previewURL(for: file, in: AppFolders.caches.appending(path: "Projects", directoryHint: .isDirectory))
+        try FileManager.default.createDirectory(at: picture.deletingLastPathComponent(), withIntermediateDirectories: true)
         guard let image = await AnnotationRenderer.render(project.document, base: project.capture) else { throw CocoaError(.fileReadCorruptFile) }
         try await ImageExporter.encode(image, as: .png).write(to: picture, options: .atomic)
         return (project, picture)

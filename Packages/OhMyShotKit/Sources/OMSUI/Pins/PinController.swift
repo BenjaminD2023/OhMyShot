@@ -16,6 +16,8 @@ public final class PinController {
         public let id: UUID
         public let content: Content
         public let origin: Origin
+        /// When it was pinned: a capture whose file changed since holds a picture other than the pin's.
+        public let pinnedAt = Date.now
     }
 
     public enum Content {
@@ -98,10 +100,11 @@ public final class PinController {
     }
 
     /// Pins `image`: over `area` (global points) at its own size when it came from there, else centered
-    /// on the pointer's display.
+    /// on the pointer's display. A scale below 1 is kept, for a picture resized to fewer pixels than points; one that is
+    /// no scale at all is taken as 1.
     @discardableResult
     public func pin(_ image: CGImage, scale: CGFloat, origin: Origin, over area: CGRect? = nil) -> UUID {
-        open(.image(image, scale: max(scale, 1)), origin: origin, over: area)
+        open(.image(image, scale: scale.isFinite && scale > 0 ? scale : 1), origin: origin, over: area)
     }
 
     /// Pins text on a card, centered on the pointer's display.

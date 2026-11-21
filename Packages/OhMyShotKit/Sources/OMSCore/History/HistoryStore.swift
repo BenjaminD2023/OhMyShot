@@ -182,6 +182,9 @@ public final class HistoryStore: Sendable {
         let original = originalURL(for: item)
         let size = CGImageSourceCreateWithURL(original as CFURL, nil).flatMap(Self.pixelSize(of:))
         _ = try FileManager.default.replaceItemAt(fileURL(for: item), withItemAt: original)
+        // The original carries the date it was taken: dated now, the file reads as changed to what judges by its date (a
+        // converted copy made of the marked picture, a pin of it).
+        try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: fileURL(for: item).path(percentEncoded: false))
         try? FileManager.default.removeItem(at: annotationsURL(for: item))
         return try updated(
             item, pixelWidth: size?.width ?? item.pixelWidth, pixelHeight: size?.height ?? item.pixelHeight, duration: item.duration,
