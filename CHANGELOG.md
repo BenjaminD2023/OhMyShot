@@ -11,6 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
+- Option-clicking a Quick Access card's Copy, or pressing ⌥⌘C while the card has the keyboard, copies the capture, says "Copied", and keeps the card open. A plain Copy still closes it.
 - **Favorites in Capture History.** Add a capture to Favorites from its menu, with the period key, or with VoiceOver, and find it under Show › Favorites. A favorite stays in History until you take it out, however long Keep captures is.
 - Settings' search finds a row by the words people type for it as well as by what the pane shows, in every language: "OCR" finds Capture Text, "hotkey" the Shortcuts pane, "retention" Keep captures, "delay" Self-Timer and Countdown, "JPG" Format, "webcam" Camera, "S3" Destinations. The words themselves are never listed; the row they found is, by its title, after the rows that show what was typed.
 - Magnifier (Z), a mark in the editor and in Annotate Area: a round lens that shows part of the picture at 2×, 3×, or 4×, chosen in its capsule. Click to put it over a spot, or drag from the spot to where the lens should stand, and a thin line joins it to a ring around what it magnifies. It has the capture loupe's white ring and soft shadow, and it shows redactions as they are drawn, so it never reveals what one hides. Projects with a magnifier open only in this version or later.

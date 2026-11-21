@@ -67,6 +67,12 @@ struct CardKeysTests {
         #expect(CardKeys.binding(for: .picture(.scaleToOneX(pixelsPerPoint: 2))) == nil)
     }
 
+    /// ⌥⌘C copies and keeps the card, as Copy clicked with Option does; ⌘C stays the Copy the menu shows.
+    @Test func optionCommandCCopiesAndKeepsTheCard() {
+        #expect(CardKeys.command(for: .character("c"), modifiers: [.command, .option]) == .copyAndKeep)
+        #expect(CardKeys.binding(for: .copy)?.modifiers == .command)
+    }
+
     @Test func theTrashIsShownWithCommandDeleteAsHistoryHasIt() {
         #expect(CardKeys.binding(for: .moveToTrash)?.modifiers == .command)
         #expect(CardKeys.binding(for: .moveToTrash)?.key == .delete)

@@ -5,6 +5,8 @@ import Foundation
 /// have a table (`CardKeys`), and a command without a key is still one of these.
 public enum CardCommand: Equatable, Sendable {
     case copy
+    /// Copies, and the card stays: Copy clicked with Option, or ⌥⌘C.
+    case copyAndKeep
     /// Saves a copy, or shows the copy in Finder once there is one.
     case save
     case saveAs
@@ -75,6 +77,7 @@ public enum CardKeys {
     /// Every binding. A command with two keys is shown with the first.
     public static let bindings: [Binding] = [
         Binding(key: .character("c"), modifiers: .command, command: .copy),
+        Binding(key: .character("c"), modifiers: [.command, .option], command: .copyAndKeep),
         Binding(key: .character("s"), modifiers: .command, command: .save),
         Binding(key: .character("s"), modifiers: [.command, .shift], command: .saveAs),
         Binding(key: .character("s"), modifiers: [.command, .option], command: .saveAll),

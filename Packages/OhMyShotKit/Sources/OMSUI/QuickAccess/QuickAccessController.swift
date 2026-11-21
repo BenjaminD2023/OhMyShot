@@ -841,11 +841,14 @@ public final class QuickAccessController {
     /// Keep the source alive while an action consumes it. Failure or cancellation leaves the card available.
     private var completing: [UUID: UUID] = [:]
 
-    private func complete(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, action: @escaping () async -> Bool) {
-        Task { await finish(item, showsCopyConfirmation: showsCopyConfirmation, action: action) }
+    /// `keepsCard`: the card stays once the action succeeds, as it does after a copy made with Option.
+    private func complete(
+        _ item: QuickAccessItem, showsCopyConfirmation: Bool = false, keepsCard: Bool = false, action: @escaping () async -> Bool
+    ) {
+        Task { await finish(item, showsCopyConfirmation: showsCopyConfirmation, keepsCard: keepsCard, action: action) }
     }
 
-    private func finish(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, action: () async -> Bool) async {
+    private func finish(_ item: QuickAccessItem, showsCopyConfirmation: Bool = false, keepsCard: Bool = false, action: () async -> Bool) async {
         guard self.item(item.id) != nil, !isTrashing(item.id), completing[item.id] == nil else { return }
         let completion = UUID()
         completing[item.id] = completion
@@ -859,7 +862,7 @@ public final class QuickAccessController {
         }
         completing[item.id] = nil
         hold(.action, for: item.id, if: false)
-        if succeeded { dismiss(item.id) }
+        if succeeded, !keepsCard { dismiss(item.id) }
     }
 
     // MARK: Commands
@@ -879,6 +882,8 @@ public final class QuickAccessController {
         case .copy:
             if keyed { endKeyboard() }
             complete(item, showsCopyConfirmation: true) { [self] in await actions.copy(item) }
+        case .copyAndKeep:
+            complete(item, showsCopyConfirmation: true, keepsCard: true) { [self] in await actions.copy(item) }
         case .save:
             if keyed { endKeyboard() }
             complete(item) { [self] in
