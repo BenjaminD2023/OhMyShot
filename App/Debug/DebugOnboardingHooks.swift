@@ -102,7 +102,7 @@ struct DebugOnboardingHooks {
         }
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
         let cards = QuickAccessController(actions: .init(
-            copy: { _ in false }, save: { _, _ in nil }, saveAs: { _ in nil }, open: { _ in }, annotate: { _ in },
+            copy: { _ in false }, save: { _, _ in .cancelled }, saveAs: { _ in .cancelled }, open: { _ in }, annotate: { _ in },
             reveal: { _ in }, recognizeText: { _ in }, pin: { _ in false }, moveToTrash: { _ in }, closed: { _ in }
         ))
         let file = URL(filePath: "/tmp/ohmyshot-onboarding-preview.png")
@@ -135,7 +135,7 @@ struct DebugOnboardingHooks {
         let captures = CaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay,
                                           history: history, files: ScreenshotFiles(settings: settings, history: history))
         let cards = QuickAccessController(actions: .init(
-            copy: { _ in false }, save: { _, _ in nil }, saveAs: { _ in nil }, open: { _ in }, annotate: { _ in },
+            copy: { _ in false }, save: { _, _ in .cancelled }, saveAs: { _ in .cancelled }, open: { _ in }, annotate: { _ in },
             reveal: { _ in }, recognizeText: { _ in }, pin: { _ in false }, moveToTrash: { _ in },
             closed: { item in if let entry = history.item(id: item.id) { history.delete(entry) } }
         ), history: history)

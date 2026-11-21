@@ -251,6 +251,40 @@
         }
       }
     },
+    "All-In-One. Click a window or drag over an area, then choose what to do with it.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todo en uno. Haz clic en una ventana o arrastra sobre un área y elige qué hacer con ella."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout-en-un. Cliquez sur une fenêtre ou faites glisser le pointeur sur une zone, puis choisissez quoi en faire."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オールインワン。ウインドウをクリックするか範囲をドラッグして選択し、その範囲に対する操作を選んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多合一。点按一个窗口或拖移选择一个区域，然后选择要对它执行的操作。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多合一。按一下一個視窗或拖移選取一個區域，然後選擇要對它做什麼。"
+          }
+        }
+      }
+    },
     "All-In-One. Drag over an area, then choose what to do with it.": {
       "localizations": {
         "es": {
@@ -795,6 +829,41 @@
         }
       }
     },
+    "B fits the area to the edges of what’s inside it; press B again or Command-Z to put it back.": {
+      "comment": "VoiceOver help added to a framed capture area on a frozen screen: the B key shrinks the area to the visual bounds of its content.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "B ajusta el área a los bordes de lo que contiene; pulsa B otra vez o Comando-Z para devolverla a como estaba."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "B ajuste la zone aux bords de ce qu’elle contient ; appuyez à nouveau sur B ou sur Commande-Z pour la rétablir."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "B キーで範囲を中身の端に合わせます。もう一度 B キーを押すか command-Z で元に戻します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 B 键将区域贴合到其中内容的边缘；再按一次 B 键或按 Command-Z 可恢复原样。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 B 鍵將區域貼合到其中內容的邊緣；再按一次 B 鍵或按 Command-Z 可復原。"
+          }
+        }
+      }
+    },
     "Back": {
       "localizations": {
         "es": {
@@ -825,6 +894,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "返回"
+          }
+        }
+      }
+    },
+    "Back to the area as drawn: %@": {
+      "comment": "VoiceOver announcement when B again or Command-Z undoes the fit of a capture area. The argument is the size in pixels, such as 640 × 480.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De vuelta al área tal como se dibujó: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retour à la zone telle que tracée : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描いたときの範囲に戻しました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已恢复为绘制时的区域：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已恢復為繪製時的區域：%@"
           }
         }
       }
@@ -1645,6 +1749,74 @@
         }
       }
     },
+    "Capture this whole screen (F)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capturar toda esta pantalla (F)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capturer tout cet écran (F)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この画面全体をキャプチャ（F）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截取整个屏幕（F）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "擷取整個螢幕（F）"
+          }
+        }
+      }
+    },
+    "Capture. Click a window or drag over an area, then choose what to do with it.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capturar. Haz clic en una ventana o arrastra sobre un área y elige qué hacer con ella."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capture. Cliquez sur une fenêtre ou faites glisser le pointeur sur une zone, puis choisissez quoi en faire."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャプチャ。ウインドウをクリックするか範囲をドラッグして選択し、その範囲に対する操作を選んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截图。点按一个窗口或拖移选择一个区域，然后选择要对它执行的操作。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "擷取。按一下一個視窗或拖移選取一個區域，然後選擇要對它做什麼。"
+          }
+        }
+      }
+    },
     "Capture. Drag over an area, then choose what to do with it.": {
       "localizations": {
         "es": {
@@ -1781,6 +1953,40 @@
         }
       }
     },
+    "Choose an app and preview its window (W)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegir una app y previsualizar su ventana (W)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir une app et prévisualiser sa fenêtre (W)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリを選んでウインドウをプレビュー（W）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择应用并预览窗口（W）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇 App 並預覽視窗（W）"
+          }
+        }
+      }
+    },
     "Circle": {
       "localizations": {
         "es": {
@@ -1849,6 +2055,40 @@
         }
       }
     },
+    "Click a window or drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, R to record, or M to measure. Press Escape to cancel.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic en una ventana o arrastra sobre un área y elige qué hacer con ella. Pulsa W o Espacio para capturar una ventana, F para toda la pantalla, O para copiar texto, S para una captura con desplazamiento, R para grabar o M para medir. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquez sur une fenêtre ou faites glisser le pointeur sur une zone, puis choisissez quoi en faire. Appuyez sur W ou Espace pour capturer une fenêtre, F pour tout l’écran, O pour copier du texte, S pour une capture défilante, R pour enregistrer ou M pour mesurer. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウインドウをクリックするか範囲をドラッグして選択し、その範囲に対する操作を選んでください。Wキーまたはスペースバーでウインドウのキャプチャ、Fキーで画面全体、Oキーでテキストのコピー、Sキーでスクロールキャプチャ、Rキーで収録、Mキーで計測します。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按一个窗口或拖移选择一个区域，然后选择要对它执行的操作。按下 W 或空格键截取窗口，按 F 截取整个屏幕，按 O 拷贝文字，按 S 进行滚动截图，按 R 进行录制，按 M 进行测量。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按一下一個視窗或拖移選取一個區域，然後選擇要對它做什麼。按 W 或空白鍵擷取視窗、F 擷取整個螢幕、O 拷貝文字、S 進行捲動擷取、R 錄製，或 M 測量。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
     "Click a window to capture it (Space)": {
       "localizations": {
         "es": {
@@ -1879,6 +2119,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "按一下視窗以擷取（空白鍵）"
+          }
+        }
+      }
+    },
+    "Click a window to capture it (W or Space)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic en una ventana para capturarla (W o Espacio)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquer sur une fenêtre pour la capturer (W ou Espace)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウインドウをクリックしてキャプチャ（W またはスペース）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按一个窗口以截取（W 或空格键）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按一下視窗以擷取（W 或空白鍵）"
+          }
+        }
+      }
+    },
+    "Click a window to choose it, or press Tab to go through the windows and Return to choose one. Press Space to drag over an area instead. Press Escape to cancel.": {
+      "comment": "VoiceOver help, and the list ? shows, while choosing a window in the capture overlay (after Space, or for Capture Window).",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic en una ventana para elegirla, o pulsa Tabulador para recorrer las ventanas y Retorno para elegir una. Pulsa Espacio para arrastrar sobre un área. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquez sur une fenêtre pour la choisir, ou appuyez sur Tab pour parcourir les fenêtres et sur Retour pour en choisir une. Appuyez sur Espace pour faire plutôt glisser le pointeur sur une zone. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウインドウをクリックして選択するか、tabキーでウインドウを順に切り替えてreturnキーで選択します。スペースバーを押すと代わりに範囲をドラッグできます。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按一个窗口以选择它，或按下 Tab 键在窗口之间切换，再按下返回键选择。按下空格键改为拖移选择区域。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按一下一個視窗以選擇它，或按 Tab 鍵逐一切換視窗，再按 Return 鍵選擇。按空白鍵可改為拖移選取區域。按 Esc 鍵取消。"
           }
         }
       }
@@ -1947,6 +2256,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "按一下或按 Return 鍵以拷貝十字準線下的顏色。方向鍵可將其移動一個像素。"
+          }
+        }
+      }
+    },
+    "Click or press Return to copy the color under the crosshair; Option-Return shows it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic o pulsa Retorno para copiar el color bajo la cruz; Opción-Retorno lo muestra en todas las notaciones. Las flechas mueven la cruz un píxel, diez con Mayús. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquez ou appuyez sur Retour pour copier la couleur sous le réticule ; Option-Retour l’affiche dans toutes les notations. Les flèches déplacent le réticule d’un pixel, de dix avec Maj. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリックまたはReturnで十字線の下の色をコピーします。Option-Returnですべての表記を表示します。矢印キーで十字線を1ピクセル、Shiftと併用で10ピクセル動かします。Escapeでキャンセルします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击或按 Return 拷贝准星下的颜色；Option-Return 可查看所有格式。方向键移动准星一个像素，配合 Shift 移动十个像素。按 Escape 取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "點按或按 Return 拷貝準星下的顏色；Option-Return 可查看所有格式。方向鍵移動準星一個像素，搭配 Shift 移動十個像素。按 Escape 取消。"
           }
         }
       }
@@ -2117,6 +2460,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "拷貝區域中的文字（O）"
+          }
+        }
+      }
+    },
+    "Could not load windows. Try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron cargar las ventanas. Inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de charger les fenêtres. Réessayez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウインドウを読み込めませんでした。再試行してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载窗口，请重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法載入視窗，請再試一次。"
           }
         }
       }
@@ -2631,6 +3008,40 @@
         }
       }
     },
+    "Drag to capture an area (A)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrastra para capturar un área (A)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faites glisser pour capturer une zone (A)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドラッグして範囲をキャプチャ（A）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拖移以截取区域（A）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拖移以擷取區域（A）"
+          }
+        }
+      }
+    },
     "Drag to capture an area, or press Space to capture a window.": {
       "localizations": {
         "es": {
@@ -2733,6 +3144,16 @@
         }
       }
     },
+    "Drag to move toolbar": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拖动以移动工具栏"
+          }
+        }
+      }
+    },
     "Fill the Recording": {
       "localizations": {
         "es": {
@@ -2797,6 +3218,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "尋找 App 或視窗"
+          }
+        }
+      }
+    },
+    "Fitted to what’s inside: %@": {
+      "comment": "VoiceOver announcement after B fits a capture area to its content. The argument is the new size in pixels, such as 640 × 480.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajustada a lo que contiene: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajustée à son contenu : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中身に合わせました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已贴合内容：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已貼合內容：%@"
           }
         }
       }
@@ -2967,6 +3423,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "高度（像素）"
+          }
+        }
+      }
+    },
+    "Hide toolbar": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏工具栏"
+          }
+        }
+      }
+    },
+    "Hide toolbar (H to show)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏工具栏（按 H 显示）"
           }
         }
       }
@@ -3311,6 +3787,40 @@
         }
       }
     },
+    "Measure": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Medir"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mesurer"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "計測"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测量"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "測量"
+          }
+        }
+      }
+    },
     "Medium": {
       "localizations": {
         "es": {
@@ -3481,6 +3991,16 @@
         }
       }
     },
+    "Move toolbar": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移动工具栏"
+          }
+        }
+      }
+    },
     "No Camera": {
       "localizations": {
         "es": {
@@ -3579,6 +4099,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "找不到相機"
+          }
+        }
+      }
+    },
+    "No edges to fit to inside the area": {
+      "comment": "VoiceOver announcement, with a beep, when B finds nothing in a capture area to fit it to.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay bordes a los que ajustarse dentro del área"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun bord auquel s’ajuster dans la zone"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "範囲内に合わせられる端がありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "区域内没有可贴合的边缘"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "區域內沒有可貼合的邊緣"
           }
         }
       }
@@ -3923,6 +4478,108 @@
         }
       }
     },
+    "Point at something to measure it (M)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Señala algo para medirlo (M)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointer un élément pour le mesurer (M)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ポイントして計測（M）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指向某个对象进行测量（M）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將指標指向物件以測量（M）"
+          }
+        }
+      }
+    },
+    "Point at something to measure it, or drag a box around it. Click inside the selected box to take a screenshot. Command-C copies the measurement, Return copies it and closes, F captures the screen with the measurement on it, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Señala algo para medirlo o arrastra un recuadro a su alrededor. Haz clic dentro del recuadro seleccionado para tomar una captura de pantalla. Comando + C copia la medida, Retorno la copia y cierra, F captura la pantalla con la medida, y Tabulador alterna entre puntos y píxeles. T recorre la tolerancia de bordes; más y menos la ajustan. Las flechas mueven un píxel. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointez un élément pour le mesurer, ou tracez un cadre autour de lui. Cliquez dans le cadre sélectionné pour prendre une capture d’écran. Commande-C copie la mesure, Retour la copie et ferme, F capture l’écran avec la mesure, et Tab bascule entre points et pixels. T fait défiler la tolérance des bords ; plus et moins l’ajustent. Les touches fléchées déplacent d’un pixel. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "計測したいものをポイントするか、ドラッグして囲みます。選択した枠内をクリックするとスクリーンショットを撮影します。command + Cで計測値をコピー、returnキーでコピーして閉じ、Fキーで計測値を入れて画面をキャプチャし、tabキーでポイントとピクセルを切り替えます。Tキーでエッジの許容範囲を切り替え、プラスキーとマイナスキーで調整します。矢印キーで1ピクセルずつ移動します。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指向某个对象进行测量，或拖出一个框将其围住。点击选定框内即可截屏。Command-C 拷贝测量结果，返回键拷贝并关闭，F 键截取带有测量结果的屏幕，Tab 键在点和像素之间切换。T 键循环切换边缘容差，加号和减号键调整容差。方向键可移动一个像素。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將指標指向物件以測量，或拖移框住它。按一下所選框內即可擷取螢幕。Command-C 會拷貝測量結果，Return 鍵會拷貝並關閉，F 鍵會擷取帶有測量結果的螢幕，Tab 鍵可在點與像素之間切換。T 鍵可循環切換邊緣容差，加號與減號鍵可調整容差。方向鍵可移動一個像素。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
+    "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, F captures the screen with the measurement on it, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Señala algo para medirlo o arrastra un recuadro a su alrededor. Comando + C copia la medida, Retorno la copia y cierra, F captura la pantalla con la medida, y Tabulador alterna entre puntos y píxeles. T recorre la tolerancia de bordes; más y menos la ajustan. Las flechas mueven un píxel. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointez un élément pour le mesurer, ou tracez un cadre autour de lui. Commande-C copie la mesure, Retour la copie et ferme, F capture l’écran avec la mesure, et Tab bascule entre points et pixels. T fait défiler la tolérance des bords ; plus et moins l’ajustent. Les touches fléchées déplacent d’un pixel. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "計測したいものをポイントするか、ドラッグして囲みます。command + Cで計測値をコピー、returnキーでコピーして閉じ、Fキーで計測値を入れて画面をキャプチャし、tabキーでポイントとピクセルを切り替えます。Tキーでエッジの許容範囲を切り替え、プラスキーとマイナスキーで調整します。矢印キーで1ピクセルずつ移動します。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指向某个对象进行测量，或拖出一个框将其围住。Command-C 拷贝测量结果，返回键拷贝并关闭，F 键截取带有测量结果的屏幕，Tab 键在点和像素之间切换。T 键循环切换边缘容差，加号和减号键调整容差。方向键可移动一个像素。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將指標指向物件以測量，或拖移框住它。Command-C 會拷貝測量結果，Return 鍵會拷貝並關閉，F 鍵會擷取帶有測量結果的螢幕，Tab 鍵可在點與像素之間切換。T 鍵可循環切換邊緣容差，加號與減號鍵可調整容差。方向鍵可移動一個像素。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
     "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.": {
       "localizations": {
         "es": {
@@ -4056,6 +4713,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "位置"
+          }
+        }
+      }
+    },
+    "Press H to hide or show the toolbar.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 H 隐藏或显示工具栏。"
           }
         }
       }
@@ -5692,6 +6359,40 @@
         }
       }
     },
+    "The selection's edges snap to text; hold Command to place them freely.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los bordes de la selección se ajustan al texto; mantén pulsada la tecla Comando para colocarlos libremente."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les bords de la sélection s’alignent sur le texte ; maintenez Commande enfoncée pour les placer librement."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択範囲の端はテキストに吸着します。commandキーを押したままにすると自由に配置できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选区边缘会吸附到文字；按住 Command 键可自由放置。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選取範圍的邊緣會貼齊文字；按住 Command 可自由放置。"
+          }
+        }
+      }
+    },
     "The selection’s edges snap to text; hold Command to place them freely.": {
       "localizations": {
         "es": {
@@ -5858,6 +6559,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "容差：%@ · T / + / −"
+          }
+        }
+      }
+    },
+    "Toolbar hidden. Press H to show it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具栏已隐藏。按 H 显示。"
+          }
+        }
+      }
+    },
+    "Toolbar shown.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具栏已显示。"
           }
         }
       }
@@ -6130,348 +6851,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "視窗預覽"
-          }
-        }
-      }
-    },
-    "Could not load windows. Try again.": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No se pudieron cargar las ventanas. Inténtalo de nuevo."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Impossible de charger les fenêtres. Réessayez."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ウインドウを読み込めませんでした。再試行してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法加载窗口，请重试。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無法載入視窗，請再試一次。"
-          }
-        }
-      }
-    },
-    "Click or press Return to copy the color under the crosshair; Option-Return shows it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Haz clic o pulsa Retorno para copiar el color bajo la cruz; Opción-Retorno lo muestra en todas las notaciones. Las flechas mueven la cruz un píxel, diez con Mayús. Pulsa Escape para cancelar."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cliquez ou appuyez sur Retour pour copier la couleur sous le réticule ; Option-Retour l’affiche dans toutes les notations. Les flèches déplacent le réticule d’un pixel, de dix avec Maj. Appuyez sur Échap pour annuler."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "クリックまたはReturnで十字線の下の色をコピーします。Option-Returnですべての表記を表示します。矢印キーで十字線を1ピクセル、Shiftと併用で10ピクセル動かします。Escapeでキャンセルします。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "点击或按 Return 拷贝准星下的颜色；Option-Return 可查看所有格式。方向键移动准星一个像素，配合 Shift 移动十个像素。按 Escape 取消。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "點按或按 Return 拷貝準星下的顏色；Option-Return 可查看所有格式。方向鍵移動準星一個像素，搭配 Shift 移動十個像素。按 Escape 取消。"
-          }
-        }
-      }
-    },
-    "Drag to move toolbar": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "拖动以移动工具栏"
-          }
-        }
-      }
-    },
-    "Hide toolbar": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隐藏工具栏"
-          }
-        }
-      }
-    },
-    "Hide toolbar (H to show)": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "隐藏工具栏（按 H 显示）"
-          }
-        }
-      }
-    },
-    "Move toolbar": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "移动工具栏"
-          }
-        }
-      }
-    },
-    "Press H to hide or show the toolbar.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按 H 隐藏或显示工具栏。"
-          }
-        }
-      }
-    },
-    "The selection's edges snap to text; hold Command to place them freely.": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Los bordes de la selección se ajustan al texto; mantén pulsada la tecla Comando para colocarlos libremente."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Les bords de la sélection s’alignent sur le texte ; maintenez Commande enfoncée pour les placer librement."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選択範囲の端はテキストに吸着します。commandキーを押したままにすると自由に配置できます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选区边缘会吸附到文字；按住 Command 键可自由放置。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選取範圍的邊緣會貼齊文字；按住 Command 可自由放置。"
-          }
-        }
-      }
-    },
-    "Toolbar hidden. Press H to show it.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "工具栏已隐藏。按 H 显示。"
-          }
-        }
-      }
-    },
-    "Toolbar shown.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "工具栏已显示。"
-          }
-        }
-      }
-    },
-    "All-In-One. Click a window or drag over an area, then choose what to do with it.": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Todo en uno. Haz clic en una ventana o arrastra sobre un área y elige qué hacer con ella."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tout-en-un. Cliquez sur une fenêtre ou faites glisser le pointeur sur une zone, puis choisissez quoi en faire."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "オールインワン。ウインドウをクリックするか範囲をドラッグして選択し、その範囲に対する操作を選んでください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "多合一。点按一个窗口或拖移选择一个区域，然后选择要对它执行的操作。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "多合一。按一下一個視窗或拖移選取一個區域，然後選擇要對它做什麼。"
-          }
-        }
-      }
-    },
-    "Capture. Click a window or drag over an area, then choose what to do with it.": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Capturar. Haz clic en una ventana o arrastra sobre un área y elige qué hacer con ella."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Capture. Cliquez sur une fenêtre ou faites glisser le pointeur sur une zone, puis choisissez quoi en faire."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "キャプチャ。ウインドウをクリックするか範囲をドラッグして選択し、その範囲に対する操作を選んでください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "截图。点按一个窗口或拖移选择一个区域，然后选择要对它执行的操作。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "擷取。按一下一個視窗或拖移選取一個區域，然後選擇要對它做什麼。"
-          }
-        }
-      }
-    },
-    "Click a window or drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, R to record, or M to measure. Press Escape to cancel.": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Haz clic en una ventana o arrastra sobre un área y elige qué hacer con ella. Pulsa W o Espacio para capturar una ventana, F para toda la pantalla, O para copiar texto, S para una captura con desplazamiento, R para grabar o M para medir. Pulsa Escape para cancelar."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cliquez sur une fenêtre ou faites glisser le pointeur sur une zone, puis choisissez quoi en faire. Appuyez sur W ou Espace pour capturer une fenêtre, F pour tout l’écran, O pour copier du texte, S pour une capture défilante, R pour enregistrer ou M pour mesurer. Appuyez sur Échap pour annuler."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ウインドウをクリックするか範囲をドラッグして選択し、その範囲に対する操作を選んでください。Wキーまたはスペースバーでウインドウのキャプチャ、Fキーで画面全体、Oキーでテキストのコピー、Sキーでスクロールキャプチャ、Rキーで収録、Mキーで計測します。キャンセルするにはescキーを押します。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "点按一个窗口或拖移选择一个区域，然后选择要对它执行的操作。按下 W 或空格键截取窗口，按 F 截取整个屏幕，按 O 拷贝文字，按 S 进行滚动截图，按 R 进行录制，按 M 进行测量。按下 Esc 键取消。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按一下一個視窗或拖移選取一個區域，然後選擇要對它做什麼。按 W 或空白鍵擷取視窗、F 擷取整個螢幕、O 拷貝文字、S 進行捲動擷取、R 錄製，或 M 測量。按 Esc 鍵取消。"
-          }
-        }
-      }
-    },
-    "Measure": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Medir"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mesurer"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "計測"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "测量"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "測量"
-          }
-        }
-      }
-    },
-    "Point at something to measure it (M)": {
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Señala algo para medirlo (M)"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pointer un élément pour le mesurer (M)"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ポイントして計測（M）"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "指向某个对象进行测量（M）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "將指標指向物件以測量（M）"
           }
         }
       }

@@ -157,13 +157,15 @@ public struct RecordingDrafts: Sendable {
     }
 
     /// Records that this draft's movie is already in History as `historyID` (plus its file fingerprint when
-    /// provided) and removes the draft's screen movie only after that link is safely on disk. If writing the
+    /// provided) and removes the draft's screen movie only after that link is safely on disk, unless
+    /// `removingMovie` is false: a Studio recording's sounds are still to be read from it. If writing the
     /// link fails, the draft movie stays on disk so launch recovery does not strand the draft's Studio assets.
     @discardableResult
     public func markKeptInHistory(
         _ draft: Draft,
         historyID: UUID,
         keptMovie: Info.KeptMovie? = nil,
+        removingMovie: Bool = true,
         writeInfo: (Data, URL) throws -> Void = { data, url in
             try data.write(to: url, options: .atomic)
         }
@@ -174,7 +176,7 @@ public struct RecordingDrafts: Sendable {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try JSONEncoder.drafts.encode(info)
         try writeInfo(data, infoURL(for: draft.id))
-        try? FileManager.default.removeItem(at: draft.movieURL)
+        if removingMovie { try? FileManager.default.removeItem(at: draft.movieURL) }
         return Draft(id: draft.id, movieURL: draft.movieURL, info: info)
     }
 

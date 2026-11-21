@@ -54,6 +54,12 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
     /// Whether the file is named from the file name template, so a copy saved later is named from it too (with the
     /// next number, if it counts). Nil for pictures that came with names of their own.
     public let isTemplateNamed: Bool?
+    /// True for a capture added to Favorites in Capture History, which Keep captures doesn't take away (History off
+    /// keeps nothing). Nil for one that isn't, as for every record from before favorites.
+    public let favorite: Bool?
+
+    /// Whether the capture is in Favorites.
+    public var isFavorite: Bool { favorite == true }
 
     public init(
         id: UUID = UUID(),
@@ -66,7 +72,8 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
         duration: TimeInterval? = nil,
         pixelsPerPoint: Double? = nil,
         windowTitle: String? = nil,
-        isTemplateNamed: Bool? = nil
+        isTemplateNamed: Bool? = nil,
+        favorite: Bool? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -79,6 +86,16 @@ public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
         self.pixelsPerPoint = pixelsPerPoint
         self.windowTitle = windowTitle
         self.isTemplateNamed = isTemplateNamed
+        self.favorite = favorite
+    }
+
+    /// The record added to Favorites, or taken out of them.
+    public func favoriting(_ favorite: Bool) -> HistoryItem {
+        HistoryItem(
+            id: id, kind: kind, createdAt: createdAt, pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: appName, fileName: fileName,
+            duration: duration, pixelsPerPoint: pixelsPerPoint, windowTitle: windowTitle, isTemplateNamed: isTemplateNamed,
+            favorite: favorite ? true : nil
+        )
     }
 }
 
@@ -165,6 +182,9 @@ public final class HistoryStore: Sendable {
         let original = originalURL(for: item)
         let size = CGImageSourceCreateWithURL(original as CFURL, nil).flatMap(Self.pixelSize(of:))
         _ = try FileManager.default.replaceItemAt(fileURL(for: item), withItemAt: original)
+        // The original carries the date it was taken: dated now, the file reads as changed to what judges by its date (a
+        // converted copy made of the marked picture, a pin of it).
+        try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: fileURL(for: item).path(percentEncoded: false))
         try? FileManager.default.removeItem(at: annotationsURL(for: item))
         return try updated(
             item, pixelWidth: size?.width ?? item.pixelWidth, pixelHeight: size?.height ?? item.pixelHeight, duration: item.duration,
@@ -227,10 +247,15 @@ public final class HistoryStore: Sendable {
         // Read where it has its extension again: AVFoundation knows a movie by it.
         let asset = AVURLAsset(url: fileURL(for: item))
         let duration = try await asset.load(.duration).seconds
-        let size = try await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize)
+        // As it is shown: a movie from a phone held upright is encoded on its side.
+        var shown: CGRect?
+        if let track = try await asset.loadTracks(withMediaType: .video).first {
+            let (natural, transform) = try await track.load(.naturalSize, .preferredTransform)
+            shown = CGRect(origin: .zero, size: natural).applying(transform)
+        }
         return try updated(
-            item, pixelWidth: size.map { Int($0.width.rounded()) } ?? item.pixelWidth,
-            pixelHeight: size.map { Int($0.height.rounded()) } ?? item.pixelHeight, duration: duration
+            item, pixelWidth: shown.map { Int(abs($0.width).rounded()) } ?? item.pixelWidth,
+            pixelHeight: shown.map { Int(abs($0.height).rounded()) } ?? item.pixelHeight, duration: duration
         )
     }
 
@@ -240,12 +265,15 @@ public final class HistoryStore: Sendable {
         removeExtras(of: item)
     }
 
-    /// The record with the new size, length, and scale, written beside the file when any of them changed.
+    /// The record with the new size, length, and scale, written beside the file when any of them changed. Whether it is
+    /// a favorite is read from the record as it is now: `item` may be from before it was added or taken out, as an
+    /// editor's is.
     func updated(_ item: HistoryItem, pixelWidth: Int, pixelHeight: Int, duration: TimeInterval?, pixelsPerPoint: Double? = nil) throws -> HistoryItem {
         let updated = HistoryItem(
             id: item.id, kind: item.kind, createdAt: item.createdAt, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
             appName: item.appName, fileName: item.fileName, duration: duration, pixelsPerPoint: pixelsPerPoint ?? item.pixelsPerPoint,
-            windowTitle: item.windowTitle, isTemplateNamed: item.isTemplateNamed
+            windowTitle: item.windowTitle, isTemplateNamed: item.isTemplateNamed,
+            favorite: record(at: sidecarURL(forFileName: item.fileName)).map(\.favorite) ?? item.favorite
         )
         if updated != item { try writeRecord(updated) }
         return updated
@@ -280,8 +308,9 @@ public final class HistoryStore: Sendable {
 
     /// Copies a picture or a recording of the user's into the history under its own name, leaving the file where it
     /// is: the URL API's `add-quick-access-overlay`. A movie or a GIF is kept as a recording, with its size and
-    /// length; anything else must be a picture ImageIO reads.
-    public func add(copyOf source: URL, date: Date = .now) async throws -> HistoryItem {
+    /// length; anything else must be a picture ImageIO reads. Runs off the caller's actor: a movie on another drive takes
+    /// as long to copy as to read.
+    @concurrent public func add(copyOf source: URL, date: Date = .now) async throws -> HistoryItem {
         let kind: HistoryItem.Kind
         let size: (width: Int, height: Int)
         var duration: TimeInterval?
@@ -481,8 +510,19 @@ public final class HistoryStore: Sendable {
         items().forEach(delete)
     }
 
+    /// Adds the capture to Favorites, which Keep captures doesn't take away, or takes it out of them; returns its record
+    /// as written. The record is read as it is now, so nothing else in it goes back; a capture no longer in the history
+    /// throws.
+    @discardableResult
+    public func setFavorite(_ favorite: Bool, of item: HistoryItem) throws -> HistoryItem {
+        guard let current = record(at: sidecarURL(forFileName: item.fileName)) else { throw CocoaError(.fileNoSuchFile) }
+        let updated = current.favoriting(favorite)
+        if updated != current { try writeRecord(updated) }
+        return updated
+    }
+
     /// The items older than the retention allows, except those in `keeping` (captures still on screen as
-    /// Quick Access cards). With history off, that is everything else.
+    /// Quick Access cards) and favorites. With history off, that is everything else, favorites too.
     public func expired(retention: HistoryRetention, keeping: Set<UUID> = [], now: Date = .now) -> [HistoryItem] {
         Self.expired(items(), retention: retention, keeping: keeping, now: now)
     }
@@ -501,11 +541,18 @@ public final class HistoryStore: Sendable {
         expired.filter { !held.contains($0.id) && $0.createdAt <= checkedAt }
     }
 
+    /// Of the captures listed as expired at `now`, those still expired as their records are now: one deleted since, one
+    /// whose file another capture has taken, and one added to Favorites since stay.
+    public func stillExpired(_ listed: [HistoryItem], retention: HistoryRetention, now: Date) -> [HistoryItem] {
+        let current = listed.compactMap { listed in item(forFileAt: fileURL(for: listed)).flatMap { $0.id == listed.id ? $0 : nil } }
+        return Self.expired(current, retention: retention, keeping: [], now: now)
+    }
+
     private static func expired(_ items: [HistoryItem], retention: HistoryRetention, keeping: Set<UUID>, now: Date) -> [HistoryItem] {
         items.filter { item in
             guard !keeping.contains(item.id) else { return false }
             guard let interval = retention.interval else { return true }
-            return now.timeIntervalSince(item.createdAt) > interval
+            return !item.isFavorite && now.timeIntervalSince(item.createdAt) > interval
         }
     }
 

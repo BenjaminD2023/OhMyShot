@@ -30,15 +30,19 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         /// How far along an export is, from 0 to 1, or nil once it is done: shown in the menu bar while the
         /// window is gone.
         public var progress: (Double?) -> Void
+        /// Makes a GIF of a movie filmed from the project (a file it only reads) and keeps it as a capture of its own,
+        /// telling how far along it is, from 0 to 1; nil where no GIF can be made.
+        public var makeGIF: ((URL, @escaping @Sendable (Double) -> Void) async throws -> Void)?
 
         public init(
             keep: @escaping (StudioExporter.Movie, StudioProject) throws -> URL, copy: @escaping (URL) -> Void, save: @escaping (URL) -> URL?,
-            progress: @escaping (Double?) -> Void
+            progress: @escaping (Double?) -> Void, makeGIF: ((URL, @escaping @Sendable (Double) -> Void) async throws -> Void)? = nil
         ) {
             self.keep = keep
             self.copy = copy
             self.save = save
             self.progress = progress
+            self.makeGIF = makeGIF
         }
     }
 
@@ -65,15 +69,20 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     private var timeObserver: Any?
     private var itemStatus: NSKeyValueObservation?
     private var observation: Task<Void, Never>?
+    private var soundObservation: Task<Void, Never>?
     private var windowLease: ActiveResources.Lease?
     /// The newest exported movie in the history, while the project hasn't changed since.
     private var exported: URL?
     private var exporting: Task<URL?, Never>?
+    private var makingGIF: Task<Void, Never>?
     /// Set by Cancel: exporting stops, including the export after it that a change made meanwhile asks for.
     private var cancelled = false
     /// Runs once the window has closed and its movie is kept.
     private var closeCompletions: [(Bool) -> Void] = []
     private var preparingToClose: Task<Void, Never>?
+    /// A picture being kept for the background, which closing and quitting wait for so it is saved and exported.
+    private var choosingPicture: Task<Void, Never>?
+    private var picturesBeingKept = 0
     private var didClose = false
     private var finishedClosing = false
 
@@ -116,6 +125,13 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             guard let studio = self?.studio else { return }
             for await _ in Observations({ studio.compositionGeneration }) {
                 self?.reloadPlayer()
+            }
+        }
+        // How loud each sound plays is set on the player as it plays: the movie isn't made again for it.
+        soundObservation = Task { [weak self] in
+            guard let studio = self?.studio else { return }
+            for await audio in Observations({ studio.project.audio }) {
+                self?.player.currentItem?.audioMix = studio.composition?.audioMix(for: audio)
             }
         }
         Task { await studio.makeComposition() }
@@ -178,6 +194,8 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         guard let composition = studio.composition else { return }
         let item = AVPlayerItem(asset: composition.asset)
         item.videoComposition = composition.videoComposition
+        item.audioMix = composition.audioMix(for: studio.project.audio)
+        item.audioTimePitchAlgorithm = StudioComposition.timePitch
         let generation = studio.compositionGeneration
         itemStatus = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             guard item.status == .failed else { return }
@@ -256,7 +274,51 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         }
     }
 
+    /// Whether Make GIF can be offered.
+    var canMakeGIF: Bool { actions.makeGIF != nil }
+
+    /// Makes a GIF of the movie as the project is now: from the movie in the history when it was made from the project
+    /// as it is, else from one exported for the GIF alone, which the history never sees and which goes once the GIF is
+    /// made. The project and the movie in the history stay as they are. Closing the window stops it.
+    func makeGIF() {
+        guard makingGIF == nil, exporting == nil, let makeGIF = actions.makeGIF else { return }
+        let project = studio.project
+        let current = studio.hasUnexportedChanges ? nil : exported
+        makingGIF = Task {
+            model.makesGIF = true
+            model.progress = 0
+            defer {
+                model.progress = nil
+                model.makesGIF = false
+                makingGIF = nil
+            }
+            do {
+                try await StudioExporter.withMovie(
+                    current: current, composition: { try await self.studio.makeExportComposition(project: project) },
+                    progress: { fraction in Task { @MainActor in self.showGIFProgress(fraction) } },
+                    makeGIF
+                )
+                VoiceOver.announce(String(localized: "GIF made", bundle: .module), from: window)
+            } catch {
+                // Cancelled: nothing to say.
+                if !(error is CancellationError), !Task.isCancelled { fail(error, title: String(localized: "The GIF couldn’t be made", bundle: .module)) }
+            }
+        }
+    }
+
+    /// Stops the GIF being made: nothing of it is kept.
+    func cancelGIF() {
+        makingGIF?.cancel()
+    }
+
+    private func showGIFProgress(_ fraction: Double) {
+        guard makingGIF != nil, model.makesGIF else { return }
+        model.progress = fraction
+    }
+
     func copyMovie() {
+        // While a GIF is made, the busy card and its Cancel are the GIF's: ⌘C waits, as the toolbar's Copy does.
+        guard makingGIF == nil else { return NSSound.beep() }
         Task {
             guard let url = await exportIfNeeded() else { return }
             actions.copy(url)
@@ -265,6 +327,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     }
 
     func saveMovie() {
+        guard makingGIF == nil else { return NSSound.beep() }
         Task {
             guard let url = await exportIfNeeded() else { return }
             guard actions.save(url) != nil else { return NSSound.beep() }
@@ -273,6 +336,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     }
 
     func saveMovieAs() {
+        guard makingGIF == nil else { return NSSound.beep() }
         guard let window else { return }
         Task {
             guard let url = await exportIfNeeded() else { return }
@@ -289,6 +353,44 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         }
     }
 
+    // MARK: Background
+
+    /// Asks for a picture for the movie's background, in a sheet, and makes it the background: from the Desktop
+    /// Pictures folder until one has been chosen. A file that isn't a picture beeps, as in the editor.
+    func chooseBackgroundPicture() {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.prompt = String(localized: "Use Picture", bundle: .module)
+        panel.message = String(localized: "Choose a picture for the movie’s background.", bundle: .module)
+        if studio.lastPicture == nil {
+            let pictures = URL(filePath: "/System/Library/Desktop Pictures", directoryHint: .isDirectory)
+            if FileManager.default.fileExists(atPath: pictures.path(percentEncoded: false)) { panel.directoryURL = pictures }
+        }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            // Counted as the sheet goes, so a quit straight after waits for it.
+            MainActor.assumeIsolated {
+                guard let self, !self.didClose else { return }
+                // After any chosen before it, so the last one chosen is the one kept.
+                let before = self.choosingPicture
+                self.picturesBeingKept += 1
+                self.choosingPicture = Task {
+                    await before?.value
+                    do {
+                        try await self.studio.choosePicture(at: url)
+                    } catch {
+                        Log.studio.error("Choosing a Studio background picture failed: \(String(describing: error), privacy: .public)")
+                        NSSound.beep()
+                    }
+                    self.picturesBeingKept -= 1
+                }
+            }
+        }
+    }
+
     // MARK: Window
 
     /// Whether closing would export: the project changed since the movie in the history was made.
@@ -296,7 +398,11 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         studio.hasUnexportedChanges
     }
 
-    public var hasPendingProjectSave: Bool { studio.hasPendingSave }
+    /// Whether the project has changes not yet saved, or a picture chosen for its background not yet kept.
+    public var hasPendingProjectSave: Bool { studio.hasPendingSave || picturesBeingKept > 0 }
+
+    /// Whether a GIF is being made, which closing stops and waits for.
+    public var isMakingGIF: Bool { makingGIF != nil }
 
     /// Whether a movie is being exported after the window closed (the menu bar shows how far along).
     public var isExportingAfterClosing: Bool {
@@ -332,6 +438,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         guard preparingToClose == nil, !didClose else { return }
         preparingToClose = Task {
             defer { preparingToClose = nil }
+            await choosingPicture?.value
             do {
                 try await studio.flushSave()
                 window?.close()
@@ -344,15 +451,17 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
 
     public func windowWillClose(_ notification: Notification) {
         didClose = true
+        let gif = makingGIF
+        gif?.cancel()
         player.pause()
         studio.isPlaying = false
-        if studio.hasUnexportedChanges {
-            // Exported after the window has gone, as the editor keeps marks; the menu bar shows how far along.
-            Task {
-                _ = await self.exportIfNeeded()
-                self.finishClosing()
-            }
-        } else {
+        guard gif != nil || studio.hasUnexportedChanges else { return finishClosing() }
+        // A GIF being made stops and removes its files first, so closing (and quitting, which waits for it) leaves nothing
+        // of it behind and its end doesn't touch the export's progress. The movie is exported after the window has gone, as
+        // the editor keeps marks; the menu bar shows how far along.
+        Task {
+            await gif?.value
+            if studio.hasUnexportedChanges { _ = await exportIfNeeded() }
             finishClosing()
         }
     }
@@ -363,6 +472,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
         observation?.cancel()
+        soundObservation?.cancel()
         player.replaceCurrentItem(with: nil)
         itemStatus = nil
         studio.releasePreview()
@@ -377,11 +487,11 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         completions.forEach { $0(saved) }
     }
 
-    private func fail(_ error: any Error) {
+    private func fail(_ error: any Error, title: String = String(localized: "The movie couldn’t be exported", bundle: .module)) {
         NSSound.beep()
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = String(localized: "The movie couldn’t be exported", bundle: .module)
+        alert.messageText = title
         alert.informativeText = error.localizedDescription
         guard let window, window.isVisible else {
             NSApp.activate()
@@ -620,8 +730,10 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
 @Observable
 final class StudioWindowModel {
     weak var controller: StudioWindowController?
-    /// How far along an export is, from 0 to 1; nil while none runs.
+    /// How far along an export or a GIF is, from 0 to 1; nil while none runs.
     var progress: Double?
+    /// What runs is a GIF being made, rather than an export.
+    var makesGIF = false
     var copied = false
     var saved = false
     @ObservationIgnored private var copiedReset: Task<Void, Never>?

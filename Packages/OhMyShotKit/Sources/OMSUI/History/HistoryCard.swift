@@ -35,6 +35,9 @@ struct HistoryCard: View {
                         .fill(.black.opacity(0.28))
                     hoverActions
                 }
+                if item.isFavorite {
+                    favoriteBadge
+                }
             }
             .frame(height: 150)
             .frame(maxWidth: .infinity)
@@ -95,10 +98,12 @@ struct HistoryCard: View {
         .accessibilityAction(named: Text("Copy", bundle: .module)) { model.actions.copy(item) }
         .accessibilityAction(named: Text("Save", bundle: .module)) { model.actions.save(item) }
         .accessibilityAction(named: Text("Quick Look", bundle: .module)) { model.quickLook(item) }
+        .accessibilityAction(named: favoriteTitle) { model.toggleFavorite([item]) }
         .accessibilityActions {
             if item.kind == .screenshot {
                 Button { model.actions.annotate(item) } label: { Text("Annotate", bundle: .module) }
                 Button { model.actions.recognizeText(item) } label: { Text("Recognize Text", bundle: .module) }
+                Button { model.copyText(item) } label: { Text("Copy Text", bundle: .module) }
                 Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
                 Button { model.print(item) } label: { Text("Print", bundle: .module) }
             }
@@ -172,11 +177,33 @@ struct HistoryCard: View {
         return AttributedString((excerpt.continuesBefore ? "…" : "") + excerpt.before) + found + AttributedString(excerpt.after)
     }
 
-    /// When it was taken, and what the search found in it.
+    /// When it was taken, whether it is a favorite, and what the search found in it.
     private var accessibilityValue: Text {
-        let time = Text(item.createdAt, format: .relative(presentation: .named))
+        let taken = Text(item.createdAt, format: .relative(presentation: .named))
+        let time = item.isFavorite ? Text("\(taken), Favorite", bundle: .module) : taken
         guard let excerpt else { return time }
         return Text("\(time), \(excerpt.before + excerpt.found + excerpt.after)", bundle: .module)
+    }
+
+    /// Add to Favorites, or Remove from Favorites for a capture that is one, for its menu and VoiceOver alike.
+    private var favoriteTitle: Text {
+        item.isFavorite ? Text("Remove from Favorites", bundle: .module) : Text("Add to Favorites", bundle: .module)
+    }
+
+    /// A star in the top-right corner of a favorite, in the length badge's materials and ink.
+    private var favoriteBadge: some View {
+        Image(systemName: "star.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color(nsColor: dark ? NSColor(white: 1, alpha: 0.92) : NSColor(white: 0, alpha: 0.85)))
+            .frame(width: 22, height: 22)
+            .background(Circle().fill(Color(cgColor: Theme.Material.capsuleFill(dark: dark))))
+            .overlay {
+                Circle().strokeBorder(Color(cgColor: Theme.Material.edge(dark: dark, contrast: increasedContrast)), lineWidth: Theme.Material.edgeWidth(contrast: increasedContrast))
+            }
+            .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
+            .padding(8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .accessibilityHidden(true)
     }
 
     /// What it is, the app it was taken in, as the card's caption shows, and its size.
@@ -267,6 +294,16 @@ struct HistoryCard: View {
             .keyboardShortcut("c")
         Button { model.actions.save(item) } label: { Text("Save", bundle: .module) }
             .keyboardShortcut("s")
+        // Every capture selected when this is one of them; with History off, dimmed, and why under it.
+        let favorites = model.itemsActedOn(from: item)
+        Button { model.toggleFavorite(favorites) } label: {
+            favorites.allSatisfy(\.isFavorite) ? Text("Remove from Favorites", bundle: .module) : Text("Add to Favorites", bundle: .module)
+        }
+        .keyboardShortcut(".", modifiers: [])
+        .disabled(!model.canFavorite)
+        if !model.canFavorite {
+            Text(HistoryModel.favoritesNeedHistory)
+        }
         Divider()
         Button { model.quickLook(item) } label: { Text("Quick Look", bundle: .module) }
             .keyboardShortcut(.space, modifiers: [])
@@ -275,6 +312,7 @@ struct HistoryCard: View {
         Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
         if item.kind == .screenshot {
             Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }
+            Button { model.copyText(item) } label: { Text("Copy Text", bundle: .module) }
             Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
             Button { model.print(item) } label: { Text("Print…", bundle: .module) }
         }

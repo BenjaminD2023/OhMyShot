@@ -9,9 +9,10 @@ import SwiftUI
 /// Click anywhere to move the playhead, drag on the ruler to scrub, drag along the clip to choose a stretch for
 /// Cut. A zoom or a layout is chosen with a click; its ends drag to change when it starts and stops, its middle
 /// to move it (a layout stays between its neighbors). A cut is chosen with a click; Delete takes it back (or
-/// removes a chosen zoom or layout). With the timeline focused, ← and → move the playhead (⇧ by a second), I and
+/// removes a chosen zoom or layout). A stretch played faster or slower is a band along the clip's foot, chosen with
+/// a click; Delete plays it as recorded again. With the timeline focused, ← and → move the playhead (⇧ by a second), I and
 /// O choose a stretch from or to it, and Delete removes what is chosen or cuts the chosen stretch. Zooms,
-/// layouts, and cuts have their commands in a menu and for VoiceOver too.
+/// layouts, cuts, and speeds have their commands in a menu and for VoiceOver too.
 struct StudioTimeline: View {
     @Bindable var document: StudioDocument
     @Bindable var model: StudioWindowModel
@@ -23,6 +24,9 @@ struct StudioTimeline: View {
     private static let zoomHeight: CGFloat = 26
     private static let clipTop: CGFloat = 64
     private static let clipHeight: CGFloat = 40
+    /// A stretch played faster or slower, as a band along the clip's foot, never narrower than `speedWidth`.
+    private static let speedHeight: CGFloat = 16
+    private static let speedWidth: CGFloat = 6
     /// The camera's layouts, as chips under the clip, when it has any: 26 pt high, 6 pt below it.
     private static let layoutTop: CGFloat = 110
     private static let layoutHeight: CGFloat = 26
@@ -52,6 +56,7 @@ struct StudioTimeline: View {
         case layoutResize(UUID, start: Bool)
         case layoutMove(UUID)
         case cut(Double)
+        case speed(Double)
         case clipRange
     }
 
@@ -192,6 +197,7 @@ struct StudioTimeline: View {
         case .range(let range): range
         case .zoom(let id): document.project.zooms.first { $0.id == id }.map { $0.start...$0.end }
         case .cut(let start): document.project.cuts.first { $0.lowerBound == start }
+        case .speed(let start): document.project.speeds.first { $0.start == start }.map { $0.start...$0.end }
         case .cameraSegment(let id): document.project.cameraSegments.first { $0.id == id }.map { $0.start...$0.end }
         case .none: nil
         }
@@ -360,6 +366,49 @@ struct StudioTimeline: View {
                 .frame(width: clipWidth, height: Self.clipHeight)
                 .pointerStyle(.horizontalText)
                 .offset(x: left, y: Self.clipTop)
+            ForEach(document.project.speeds.filter { viewport.contains($0.start, $0.end) }, id: \.start) { speed in
+                let chosen = document.selectedSpeed == speed.start
+                let speedLeft = x(speed.start, width: width), speedRight = x(speed.end, width: width)
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor).opacity(0.85))
+                    .overlay(
+                        // How fast, where there is room to say.
+                        HStack(spacing: 3) {
+                            Image(systemName: speed.rate < 1 ? "tortoise.fill" : "hare.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                            if speedRight - speedLeft >= 40 {
+                                Text(verbatim: TransportBar.speed(speed.rate))
+                                    .font(.system(size: 10, weight: chosen ? .semibold : .regular).monospacedDigit())
+                                    .lineLimit(1)
+                            }
+                        }
+                        .foregroundStyle(chosen ? Color.accentColor : Color.primary)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(chosen ? Color.accentColor : lineColor, lineWidth: chosen ? 2 : lineWidth)
+                    )
+                    .frame(width: max(speedRight - speedLeft, Self.speedWidth), height: Self.speedHeight)
+                    .pointerStyle(.link)
+                    .contextMenu {
+                        ForEach(StudioProject.speedRates, id: \.self) { rate in
+                            Button {
+                                choose(speed: speed.start)
+                                document.setSpeed(rate)
+                            } label: {
+                                Text(verbatim: TransportBar.speed(rate))
+                            }
+                        }
+                        Divider()
+                        Button { document.removeSpeed(at: speed.start) } label: { Text("Remove Speed", bundle: .module) }
+                    }
+                    .offset(x: speedLeft, y: Self.clipTop + Self.clipHeight - Self.speedHeight)
+                    .accessibilityElement()
+                    .accessibilityLabel(Text("\(TransportBar.speed(speed.rate)) speed, \(TransportBar.format(speed.start)) to \(TransportBar.format(speed.end))", bundle: .module))
+                    .accessibilityAddTraits(chosen ? .isSelected : [])
+                    .accessibilityAction { choose(speed: speed.start) }
+                    .accessibilityAction(named: Text("Remove Speed", bundle: .module)) { document.removeSpeed(at: speed.start) }
+            }
             ForEach(document.project.cuts.filter { viewport.contains($0.lowerBound, $0.upperBound) }, id: \.lowerBound) { cut in
                 let chosen = document.selectedCut == cut.lowerBound
                 let cutLeft = x(cut.lowerBound, width: width), cutRight = x(cut.upperBound, width: width)
@@ -371,7 +420,7 @@ struct StudioTimeline: View {
                             Image(systemName: "scissors")
                                 .font(.system(size: 11, weight: .semibold))
                             if cutRight - cutLeft >= 64 {
-                                Text(verbatim: "−" + TransportBar.oneDecimal(cut.upperBound - cut.lowerBound) + " s")
+                                Text(verbatim: "−" + TransportBar.oneDecimal(document.project.playedLength(of: cut)) + " s")
                                     .font(.system(size: 11).monospacedDigit())
                                     .lineLimit(1)
                             }
@@ -487,7 +536,7 @@ struct StudioTimeline: View {
     static func laneHit(
         at point: CGPoint, width: CGFloat, viewport: StudioTimelineViewport,
         zooms: [StudioProject.Zoom], cuts: [ClosedRange<Double>],
-        cameraSegments: [StudioProject.CameraSegment] = []
+        cameraSegments: [StudioProject.CameraSegment] = [], speeds: [StudioProject.Speed] = []
     ) -> LaneHit {
         // Where the timeline draws a time, and the time it reads at a place, as `x(_:width:)` and `time(_:width:)` do.
         func x(_ t: Double) -> CGFloat { Self.inset + viewport.position(of: t, width: width - Self.inset * 2) }
@@ -508,6 +557,11 @@ struct StudioTimeline: View {
         if point.y >= Self.clipTop, point.y <= Self.clipTop + Self.clipHeight {
             if let cut = cuts.first(where: { $0.contains(at) }) {
                 return .cut(cut.lowerBound)
+            }
+            // Where the band is drawn, at least `speedWidth` wide; of two drawn over each other, the later, on top.
+            if point.y >= Self.clipTop + Self.clipHeight - Self.speedHeight,
+               let speed = speeds.last(where: { point.x >= x($0.start) && point.x < max(x($0.end), x($0.start) + Self.speedWidth) }) {
+                return .speed(speed.start)
             }
             return .clipRange
         }
@@ -549,6 +603,10 @@ struct StudioTimeline: View {
         document.selection = .cut(start)
     }
 
+    private func choose(speed start: Double) {
+        document.selection = .speed(start)
+    }
+
     private func choose(layout id: UUID) {
         document.selection = .cameraSegment(id)
     }
@@ -557,7 +615,7 @@ struct StudioTimeline: View {
     private func chooseAdjacent(forward: Bool) {
         let items = StudioTimelineNavigation.items(
             zooms: document.project.zooms, cuts: document.project.cuts,
-            layouts: document.canChangeLayoutAlongTheTimeline ? document.project.cameraSegments : []
+            layouts: document.canChangeLayoutAlongTheTimeline ? document.project.cameraSegments : [], speeds: document.project.speeds
         )
         guard let chosen = StudioTimelineNavigation.adjacent(
             in: items, selection: document.selection, time: document.time, forward: forward
@@ -595,6 +653,10 @@ struct StudioTimeline: View {
         for cut in document.project.cuts {
             points.append(cut.lowerBound)
             points.append(cut.upperBound)
+        }
+        for speed in document.project.speeds {
+            points.append(speed.start)
+            points.append(speed.end)
         }
         for zoom in document.project.zooms where zoom.id != zoomID {
             points.append(zoom.start)
@@ -705,6 +767,8 @@ struct StudioTimeline: View {
                 choose(layout: id)
             case .cut(let start):
                 choose(cut: start)
+            case .speed(let start):
+                choose(speed: start)
             case .clipRange, .ruler:
                 document.selection = .none
             }
@@ -740,7 +804,7 @@ struct StudioTimeline: View {
             choose(layout: id)
             document.beginContinuousChange()
             return .moveLayout(id, grabbedAt: at, start: layout.start, end: layout.end)
-        case .cut, .clipRange:
+        case .cut, .speed, .clipRange:
             document.selection = .none
             return .select(from: at)
         }
@@ -751,7 +815,7 @@ struct StudioTimeline: View {
     private func hit(at point: CGPoint, width: CGFloat) -> LaneHit {
         Self.laneHit(
             at: point, width: width, viewport: viewport, zooms: document.project.zooms, cuts: document.project.cuts,
-            cameraSegments: document.canChangeLayoutAlongTheTimeline ? document.project.cameraSegments : []
+            cameraSegments: document.canChangeLayoutAlongTheTimeline ? document.project.cameraSegments : [], speeds: document.project.speeds
         )
     }
 

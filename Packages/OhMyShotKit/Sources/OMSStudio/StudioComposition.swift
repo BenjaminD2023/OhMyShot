@@ -16,12 +16,54 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
     public let duration: Double
     /// The color space its frames are drawn and tagged in.
     public let colors: Colors
+    /// Its audio tracks, with the sound each plays.
+    var audioTracks: [AudioTrack] = []
 
-    /// The parts of the recording kept, where each starts in the movie.
+    struct AudioTrack: Equatable {
+        let sound: StudioSound
+        let trackID: CMPersistentTrackID
+    }
+
+    /// One of the recording's sounds kept apart, in a file of its own on the recording's timeline.
+    public struct SoundSource: @unchecked Sendable {
+        public let sound: StudioSound
+        public let asset: AVAsset
+
+        public init(sound: StudioSound, asset: AVAsset) {
+            self.sound = sound
+            self.asset = asset
+        }
+    }
+
+    /// The sounds the movie can play, in order: those kept apart, or the recording's own as one.
+    public var sounds: [StudioSound] {
+        StudioSound.allCases.filter { sound in audioTracks.contains { $0.sound == sound } }
+    }
+
+    /// Plays each sound as `audio` sets it; nil while every one plays as recorded, which needs no mix.
+    public func audioMix(for audio: StudioProject.Audio) -> AVAudioMix? {
+        guard audioTracks.contains(where: { audio[$0.sound].gain < 1 }) else { return nil }
+        let mix = AVMutableAudioMix()
+        mix.inputParameters = audioTracks.map { track in
+            let parameters = AVMutableAudioMixInputParameters()
+            parameters.trackID = track.trackID
+            parameters.setVolume(Float(audio[track.sound].gain), at: .zero)
+            return parameters
+        }
+        return mix
+    }
+
+    /// The parts of the recording kept, where each starts in the movie, how long it lasts there, and how much faster
+    /// than recorded it plays.
     struct Segment: Equatable {
         let movieStart: Double
         let sourceStart: Double
+        /// In the movie.
         let duration: Double
+        var speed: Double = 1
+
+        /// How much of the recording it holds.
+        var sourceDuration: Double { duration * speed }
     }
 
     /// The camera's movie, recorded beside the recording.
@@ -36,39 +78,62 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         }
     }
 
-    /// Puts `source` (the recording's movie) together with `renderer`, leaving out `cuts`; the camera's movie
-    /// goes in beside it when there is one, kept in step and cut alike.
+    /// Puts `source` (the recording's movie) together with `renderer`, leaving out `cuts` and playing `speeds`
+    /// faster or slower; the camera's movie goes in beside it when there is one, kept in step, cut and sped alike, and
+    /// so do `sounds`, the recording's sounds kept apart, in place of its own sound as one.
     @concurrent public static func make(
-        source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], camera: CameraSource? = nil
+        source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], speeds: [StudioProject.Speed] = [], camera: CameraSource? = nil,
+        sounds: [SoundSource] = []
     ) async throws -> StudioComposition {
-        try await make(source: source, renderer: renderer, cuts: cuts, camera: camera, reusesFrames: true)
+        try await make(source: source, renderer: renderer, cuts: cuts, speeds: speeds, camera: camera, sounds: sounds, reusesFrames: true)
     }
 
     /// The same; `reusesFrames` false draws every frame, even where the one before could be handed back.
     @concurrent static func make(
-        source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], camera: CameraSource? = nil, reusesFrames: Bool
+        source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], speeds: [StudioProject.Speed] = [], camera: CameraSource? = nil,
+        sounds: [SoundSource] = [], reusesFrames: Bool
     ) async throws -> StudioComposition {
         try Task.checkCancellation()
         let sourceDuration = try await source.load(.duration).seconds
-        let segments = keptSegments(duration: sourceDuration, cuts: cuts)
+        let segments = keptSegments(duration: sourceDuration, cuts: cuts, speeds: speeds)
         let composition = AVMutableComposition()
         let sourceVideo = try await source.loadTracks(withMediaType: .video).first
-        let sourceAudio = try await source.loadTracks(withMediaType: .audio)
         guard let sourceVideo, let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             throw StudioError.noVideo
+        }
+        // Each sound kept apart, or the recording's own; a sound's track is cut to what it holds, so a part past
+        // its end is silence rather than a failure.
+        var sourceAudio: [(sound: StudioSound, track: AVAssetTrack, range: CMTimeRange?)] = []
+        for sound in sounds {
+            guard let track = try await sound.asset.loadTracks(withMediaType: .audio).first else { continue }
+            sourceAudio.append((sound.sound, track, try await track.load(.timeRange)))
+        }
+        if sourceAudio.isEmpty {
+            for track in try await source.loadTracks(withMediaType: .audio) {
+                sourceAudio.append((.recorded, track, nil))
+            }
         }
         let audio = sourceAudio.compactMap { _ in composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) }
         // Each part goes in where the one before ended, as long as its ends in the movie's time make it: times
         // are rounded at the ends, never per length, so no gap or overlap of a 6000th of a second opens.
+        // A part played faster or slower goes in as recorded and is then stretched to its length in the movie; the
+        // sounds keep their pitch as they are played (`timePitch`).
         var cursor = CMTime.zero
         for segment in segments {
             try Task.checkCancellation()
             let until = time(segment.movieStart + segment.duration)
             guard until > cursor else { continue }
-            let range = CMTimeRange(start: time(segment.sourceStart), duration: until - cursor)
-            try video.insertTimeRange(range, of: sourceVideo, at: cursor)
+            let length = until - cursor
+            let range = segment.speed == 1
+                ? CMTimeRange(start: time(segment.sourceStart), duration: length)
+                : CMTimeRange(start: time(segment.sourceStart), end: time(segment.sourceStart + segment.sourceDuration))
+            try place(range, of: sourceVideo, in: video, at: cursor, lasting: length)
             for (track, sourceTrack) in zip(audio, sourceAudio) {
-                try track.insertTimeRange(range, of: sourceTrack, at: cursor)
+                let held = sourceTrack.range.map(range.intersection) ?? range
+                guard held.duration > .zero else { continue }
+                let at = cursor + stretched(held.start - range.start, by: segment.speed)
+                if !track.segments.isEmpty, track.timeRange.end < at { track.insertEmptyTimeRange(CMTimeRange(start: track.timeRange.end, end: at)) }
+                try place(held, of: sourceTrack.track, in: track, at: at, lasting: held == range ? length : stretched(held.duration, by: segment.speed))
             }
             cursor = until
         }
@@ -96,17 +161,28 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
                 let at = time(range.movieStart), from = time(range.cameraStart)
                 try hold(from, until: at)
                 // Never past the camera's own end, nor the movie's.
-                let until = min(time(range.movieStart + range.duration), movieEnd)
-                let start = from + (cursor - at)
-                let length = min(until - cursor, cameraEnd - start)
+                let until = min(time(range.movieStart + range.duration / range.speed), movieEnd)
+                let start = from + (range.speed == 1 ? cursor - at : CMTimeMultiplyByFloat64(cursor - at, multiplier: range.speed))
+                guard start < cameraEnd else { continue }
+                let length = min(until - cursor, stretched(cameraEnd - start, by: range.speed))
                 guard length > .zero else { continue }
-                try track.insertTimeRange(CMTimeRange(start: start, duration: length), of: cameraVideo, at: cursor)
+                let held = range.speed == 1 ? length : min(CMTimeMultiplyByFloat64(length, multiplier: range.speed), cameraEnd - start)
+                try place(CMTimeRange(start: start, duration: held), of: cameraVideo, in: track, at: cursor, lasting: length)
                 cursor = cursor + length
             }
             if let last = ranges.last {
                 try hold(time(last.cameraStart + last.duration) - frame, until: movieEnd)
             }
             if !track.segments.isEmpty { cameraTrackID = track.trackID }
+        }
+        // A sound with nothing in what the movie keeps has no track.
+        var audioTracks: [AudioTrack] = []
+        for (track, sourceTrack) in zip(audio, sourceAudio) {
+            if track.segments.isEmpty {
+                composition.removeTrack(track)
+            } else {
+                audioTracks.append(AudioTrack(sound: sourceTrack.sound, trackID: track.trackID))
+            }
         }
         // One instruction over the whole movie, to the tracks' own end.
         let instruction = StudioInstruction(
@@ -127,7 +203,8 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         try Task.checkCancellation()
         return StudioComposition(
             asset: composition.copy() as? AVComposition ?? composition, videoComposition: AVVideoComposition(configuration: configuration),
-            renderer: renderer, duration: duration, colors: colors
+            renderer: renderer, duration: duration, colors: colors,
+            audioTracks: audioTracks
         )
     }
 
@@ -151,22 +228,51 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         }
     }
 
-    /// The recording's parts between the cuts, laid end to end. The cuts are taken as a project opened keeps them
-    /// (`StudioProject.normalizedCuts`), whatever they are given as.
-    static func keptSegments(duration: Double, cuts: [ClosedRange<Double>]) -> [Segment] {
+    /// Inserts `range` of `source` into `track` at `at`, stretched to `length` where that is not its own.
+    private static func place(
+        _ range: CMTimeRange, of source: AVAssetTrack, in track: AVMutableCompositionTrack, at: CMTime, lasting length: CMTime
+    ) throws {
+        try track.insertTimeRange(range, of: source, at: at)
+        if range.duration != length { track.scaleTimeRange(CMTimeRange(start: at, duration: range.duration), toDuration: length) }
+    }
+
+    /// How long `duration` of the recording lasts in the movie at `speed`.
+    private static func stretched(_ duration: CMTime, by speed: Double) -> CMTime {
+        speed == 1 ? duration : CMTimeMultiplyByFloat64(duration, multiplier: 1 / speed)
+    }
+
+    /// The pitch kept as the sounds play faster or slower: the movie's player and its export both take it.
+    static let timePitch = AVAudioTimePitchAlgorithm.spectral
+
+    /// The recording's parts between the cuts, laid end to end, each part played at a speed of its own where
+    /// `speeds` say so. The cuts and the speeds are taken as a project opened keeps them
+    /// (`StudioProject.normalizedCuts`, `StudioProject.normalizedSpeeds`), whatever they are given as.
+    static func keptSegments(duration: Double, cuts: [ClosedRange<Double>], speeds: [StudioProject.Speed] = []) -> [Segment] {
+        let speeds = StudioProject.normalizedSpeeds(speeds, duration: duration)
         var segments: [Segment] = []
-        var cursor = 0.0
         var movie = 0.0
-        for cut in StudioProject.normalizedCuts(cuts, duration: duration) {
-            if cut.lowerBound > cursor {
-                segments.append(Segment(movieStart: movie, sourceStart: cursor, duration: cut.lowerBound - cursor))
-                movie += cut.lowerBound - cursor
+        func add(from start: Double, to end: Double, speed: Double) {
+            let length = (end - start) / speed
+            segments.append(Segment(movieStart: movie, sourceStart: start, duration: length, speed: speed))
+            movie += length
+        }
+        // A part between cuts, split where its speed changes.
+        func keep(from start: Double, to end: Double) {
+            var cursor = start
+            for speed in speeds where speed.end > start && speed.start < end {
+                let from = max(speed.start, start), to = min(speed.end, end)
+                if from > cursor { add(from: cursor, to: from, speed: 1) }
+                add(from: from, to: to, speed: speed.rate)
+                cursor = to
             }
+            if end > cursor { add(from: cursor, to: end, speed: 1) }
+        }
+        var cursor = 0.0
+        for cut in StudioProject.normalizedCuts(cuts, duration: duration) {
+            if cut.lowerBound > cursor { keep(from: cursor, to: cut.lowerBound) }
             cursor = cut.upperBound
         }
-        if duration > cursor {
-            segments.append(Segment(movieStart: movie, sourceStart: cursor, duration: duration - cursor))
-        }
+        if duration > cursor { keep(from: cursor, to: duration) }
         return segments
     }
 
@@ -182,7 +288,7 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
             if segments[middle].movieStart <= time { low = middle + 1 } else { high = middle }
         }
         let segment = segments[max(0, low - 1)]
-        return segment.sourceStart + min(max(time - segment.movieStart, 0), segment.duration)
+        return segment.sourceStart + min(max(time - segment.movieStart, 0), segment.duration) * segment.speed
     }
 
     /// The movie's time at the recording's `time`, the other way: a time inside a cut is where the cut was left
@@ -198,19 +304,21 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         }
         guard low > 0 else { return first.movieStart }
         let segment = segments[low - 1]
-        return segment.movieStart + min(time - segment.sourceStart, segment.duration)
+        return segment.movieStart + min(time - segment.sourceStart, segment.sourceDuration) / segment.speed
     }
 
     /// The camera's parts beside each kept part of the recording: where each starts in the camera's movie
-    /// and in the movie made, and how long it is. Only what the camera's movie holds: nothing before it
-    /// began or after it ended.
-    static func cameraRanges(segments: [Segment], cameraStart: Double, cameraDuration: Double) -> [(cameraStart: Double, movieStart: Double, duration: Double)] {
+    /// and in the movie made, how much of the camera's movie it holds, and how much faster than recorded it plays,
+    /// as the part does. Only what the camera's movie holds: nothing before it began or after it ended.
+    static func cameraRanges(
+        segments: [Segment], cameraStart: Double, cameraDuration: Double
+    ) -> [(cameraStart: Double, movieStart: Double, duration: Double, speed: Double)] {
         segments.compactMap { segment in
             // The camera's time at the segment's start is the recording's less where the camera began.
             let from = max(segment.sourceStart - cameraStart, 0)
-            let to = min(segment.sourceStart + segment.duration - cameraStart, cameraDuration)
+            let to = min(segment.sourceStart + segment.sourceDuration - cameraStart, cameraDuration)
             guard to - from > 0.001 else { return nil }
-            return (from, segment.movieStart + from - (segment.sourceStart - cameraStart), to - from)
+            return (from, segment.movieStart + (from - (segment.sourceStart - cameraStart)) / segment.speed, to - from, segment.speed)
         }
     }
 

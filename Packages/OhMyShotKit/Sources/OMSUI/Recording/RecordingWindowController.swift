@@ -328,9 +328,12 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         playerView.player?.replaceCurrentItem(with: AVPlayerItem(url: url))
         let asset = AVURLAsset(url: url)
         Task { [weak self] in
-            if let size = try? await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize) {
-                self?.model.pixelWidth = Int(size.width.rounded())
-                self?.model.pixelHeight = Int(size.height.rounded())
+            // As it is shown: a movie from a phone held upright is encoded on its side.
+            if let track = try? await asset.loadTracks(withMediaType: .video).first,
+               let loaded = try? await track.load(.naturalSize, .preferredTransform) {
+                let shown = CGRect(origin: .zero, size: loaded.0).applying(loaded.1)
+                self?.model.pixelWidth = Int(abs(shown.width).rounded())
+                self?.model.pixelHeight = Int(abs(shown.height).rounded())
             }
         }
         loadAudio()
@@ -404,10 +407,18 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         }
     }
 
-    func openInDefaultApp() {
+    /// Opens the recording in the app the Save menu names, QuickTime Player, or Preview for a GIF: asked for by name, as
+    /// OhMyShot may be the app that opens movies and pictures, and would only take it in again.
+    func openInViewer() {
         Task {
             guard let url = await keepEdits() else { return }
-            NSWorkspace.shared.open(url)
+            let identifier = model.isGIF ? "com.apple.Preview" : "com.apple.QuickTimePlayerX"
+            guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) else { return NSSound.beep() }
+            do {
+                _ = try await NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+            } catch {
+                fail(error)
+            }
         }
     }
 
@@ -676,7 +687,7 @@ struct RecordingWindowView: View {
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button { model.controller?.saveAs() } label: { Text("Save As…", bundle: .module) }
-                Button { model.controller?.openInDefaultApp() } label: {
+                Button { model.controller?.openInViewer() } label: {
                     model.isGIF ? Text("Open in Preview", bundle: .module) : Text("Open in QuickTime Player", bundle: .module)
                 }
                 if !model.isGIF {

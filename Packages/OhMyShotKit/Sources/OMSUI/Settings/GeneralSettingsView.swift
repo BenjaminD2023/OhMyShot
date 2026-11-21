@@ -9,6 +9,7 @@ struct GeneralSettingsView: View {
     let openHistory: () -> Void
     var showOnboarding: () -> Void = {}
     let expiredCount: (HistoryRetention) -> Int
+    var expiredFavoriteCount: (HistoryRetention) -> Int = { _ in 0 }
     var updates: SettingsDependencies.Updates? = nil
     @State private var launchAtLogin = false
     @State private var loadedLaunchAtLogin = false
@@ -120,7 +121,9 @@ struct GeneralSettingsView: View {
 
             SettingsRow(String(localized: "Keep captures", bundle: .module)) {
                 HStack(spacing: 8) {
-                    Picker(selection: retentionSelection(settings: settings, expiredCount: expiredCount, request: $retentionRequest)) {
+                    Picker(selection: retentionSelection(
+                        settings: settings, expiredCount: expiredCount, expiredFavoriteCount: expiredFavoriteCount, request: $retentionRequest
+                    )) {
                         ForEach(HistoryRetention.allCases, id: \.self) { retention in
                             Text(retention.title).tag(retention)
                         }

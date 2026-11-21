@@ -9,6 +9,9 @@ struct ShortcutsSettingsView: View {
     /// Whether the formula pack is installed, read as the pane opens.
     let hasFormulaPack: () -> Bool
 
+    /// Docs/keyboard.md: the keys of every surface, the capture overlay's by purpose to the editor's and History's.
+    static let keyboardReference = URL(string: "https://github.com/MMFoundation/ohmyshot/blob/main/Docs/keyboard.md")!
+
     /// The shortcuts in the order of `CaptureShortcut`, split into the pane's groups. Those that upload are left
     /// out until a destination is set up, as every upload entry is left out of the capture interface, and Capture
     /// Formula until the formula pack is installed, unless a key was chosen for one: it stays listed to be changed or
@@ -55,6 +58,10 @@ struct ShortcutsSettingsView: View {
                     Text("Open Keyboard Settings", bundle: .module)
                 }
                 .buttonStyle(.link)
+                // Every key OhMyShot answers once something of it is open, which this pane's shortcuts open.
+                Link(destination: Self.keyboardReference) {
+                    Text("Keyboard Reference", bundle: .module)
+                }
             }
             .font(.callout)
             .gridCellUnsizedAxes(.horizontal)
@@ -69,8 +76,8 @@ extension CaptureShortcut {
         case .captureArea, .annotateArea, .pinArea, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload, .captureFullscreen,
              .captureFullscreenAndUpload, .captureWindow, .capturePreviousArea, .allInOne, .selfTimer, .scrollingCapture, .recordScreen, .saveReplay: 0
         case .captureText, .captureTextJoined, .captureFormula, .translateArea: 1
-        case .pickColor, .measure, .drawOnScreen: 2
-        case .openHistory, .copyLatestCapture, .annotateLatestCapture, .openFromClipboard, .controlQuickAccess: 3
+        case .pickColor, .measure, .drawOnScreen, .pinFromClipboard, .togglePins: 2
+        case .openHistory, .copyLatestCapture, .annotateLatestCapture, .openFromClipboard, .controlQuickAccess, .restoreRecentlyClosed: 3
         }
     }
 }

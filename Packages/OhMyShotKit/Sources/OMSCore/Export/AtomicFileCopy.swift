@@ -11,6 +11,30 @@ public enum AtomicFileCopy {
         })
     }
 
+    /// Saves a copy of `source` at `destination`, chosen in a Save panel, and says how it went: a file already there stays
+    /// as it was until the copy is whole. Choosing `source` itself leaves it as it is and saves nothing.
+    public static func save(_ source: URL, as destination: URL) async -> SaveOutcome {
+        await SaveOutcome.saving(into: destination.deletingLastPathComponent()) {
+            try refuseSaving(over: source, at: destination)
+            try await copy(from: source, to: destination)
+            return destination
+        }
+    }
+
+    /// Throws when `destination` is `source`'s own file, however the folders on its way are written; a link to it is a
+    /// file of its own, which the copy replaces, leaving `source` as it is. A capture's file in Capture
+    /// History is no copy of it: taken for one, its card would close as saved, and with History off the capture would
+    /// then go, taking the only file with it.
+    public static func refuseSaving(over source: URL?, at destination: URL) throws {
+        guard let source, let ownFile = identifier(of: source), let chosen = identifier(of: destination), ownFile.isEqual(chosen) else { return }
+        throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: destination.path])
+    }
+
+    private static func identifier(of url: URL) -> (any NSObjectProtocol)? {
+        let file = url.deletingLastPathComponent().resolvingSymlinksInPath().appending(path: url.lastPathComponent)
+        return try? file.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+    }
+
     /// The copy boundary is injectable for partial-write and cancellation tests; the commit always uses
     /// the filesystem's atomic rename, including when a destination already exists.
     static func perform(

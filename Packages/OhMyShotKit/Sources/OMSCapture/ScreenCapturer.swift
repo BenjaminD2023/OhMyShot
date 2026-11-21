@@ -125,25 +125,20 @@ public final class ScreenCapturer {
         if targets.count == 1 {
             return try await captureWindow(first, shadow: shadow, layout: layout, showsCursor: showsCursor)
         }
-        // Preserve on-screen z-order (WindowCatalog lists front to back; draw back to front).
-        let catalogOrder = WindowCatalog.snapshot(layout: layout).map(\.id)
-        let sorted = targets.sorted { a, b in
-            let ia = catalogOrder.firstIndex(of: a.id) ?? Int.max
-            let ib = catalogOrder.firstIndex(of: b.id) ?? Int.max
-            return ia > ib
-        }
+        // Each window where it is now, which a Self-Timer's countdown may have moved it from, in on-screen z-order.
+        let sorted = Self.backToFront(targets, in: WindowCatalog.snapshot(layout: layout))
         var parts: [(image: CGImage, windowFrame: CGRect, pixelsPerPoint: CGFloat)] = []
         var displayID: CGDirectDisplayID = layout.display(at: CGPoint(x: first.frame.midX, y: first.frame.midY))?.id ?? layout.primary?.id ?? 0
-        var scale: CGFloat = 1
+        var scale: CGFloat = 0
         for target in sorted {
             let captured = try await captureWindow(target, shadow: shadow, layout: layout, showsCursor: showsCursor)
-            let sourceScale = layout.display(id: captured.displayID)?.pixelsPerPoint ?? layout.primary?.pixelsPerPoint ?? 2
-            // Callers derive the capture’s scale from its display; keep that metadata at the output scale.
-            if parts.isEmpty || sourceScale > scale {
-                scale = sourceScale
+            let pixelsPerPoint = layout.display(id: captured.displayID)?.pixelsPerPoint ?? layout.primary?.pixelsPerPoint ?? 2
+            parts.append((captured.image, target.frame, pixelsPerPoint))
+            // The canvas takes the sharpest window's scale, and its display.
+            if pixelsPerPoint >= scale {
+                scale = pixelsPerPoint
                 displayID = captured.displayID
             }
-            parts.append((captured.image, target.frame, sourceScale))
         }
         guard let composited = Self.compositeWindows(parts, scale: scale, displayID: displayID) else {
             throw CaptureError.emptyResult
@@ -151,7 +146,19 @@ public final class ScreenCapturer {
         return composited
     }
 
+    /// `targets` in drawing order, back to front, each at its frame in `current` (the catalog, which lists the windows on
+    /// screen front to back); one not listed there, closed or off screen, keeps the frame it was chosen with and goes to
+    /// the back.
+    nonisolated static func backToFront(_ targets: [WindowTarget], in current: [WindowTarget]) -> [WindowTarget] {
+        let order = current.map(\.id)
+        return targets
+            .map { target in current.first { $0.id == target.id } ?? target }
+            .sorted { (order.firstIndex(of: $0.id) ?? Int.max) > (order.firstIndex(of: $1.id) ?? Int.max) }
+    }
+
     /// Composites captured window images (in back-to-front order) onto a single transparent canvas at `scale` pixels per point.
+    /// Each image is at its own display's `pixelsPerPoint` and is drawn at its size in points, so windows from displays of
+    /// different scales keep their places and sizes.
     public static func compositeWindows(
         _ parts: [(image: CGImage, windowFrame: CGRect, pixelsPerPoint: CGFloat)], scale: CGFloat, displayID: CGDirectDisplayID
     ) -> CapturedFrame? {
@@ -170,6 +177,7 @@ public final class ScreenCapturer {
             space: space, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else { return nil }
         context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        context.interpolationQuality = .high
         for item in placed {
             let drawRect = CGRect(
                 x: (item.pictureRect.minX - totalPicture.minX) * scale,

@@ -72,6 +72,42 @@ struct AtomicFileCopyTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == ["existing-folder", "source.mp4"])
     }
 
+    @Test func savingAsOverAMovieWhoseRecordingIsGoneKeepsTheMovieAndSaysWhy() async throws {
+        let directory = try folder()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let target = directory.appending(path: "movie.mp4")
+        let old = Data("the movie that was there".utf8)
+        try old.write(to: target)
+        let outcome = await AtomicFileCopy.save(directory.appending(path: "gone.mp4"), as: target)
+        #expect(outcome.failure?.cause == .sourceMissing)
+        #expect(try Data(contentsOf: target) == old)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["movie.mp4"])
+    }
+
+    @Test func savingARecordingAsItselfKeepsIt() async throws {
+        let directory = try folder()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appending(path: "recording.mp4")
+        let bytes = Data((0..<4096).map { UInt8($0 % 251) })
+        try bytes.write(to: source)
+        // Not saved: taken for a copy, the card would close as saved, and with History off the recording would go.
+        let itself = await AtomicFileCopy.save(source, as: source)
+        #expect(itself.url == nil && itself.failure != nil)
+        // However its path is written.
+        let alias = directory.appending(path: "alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: directory)
+        #expect(await AtomicFileCopy.save(source, as: alias.appending(path: "recording.mp4")).url == nil)
+        #expect(try Data(contentsOf: source) == bytes)
+        // A link to it is a file of its own: replaced by a copy, the recording left as it is.
+        let link = directory.appending(path: "link.mp4")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: source)
+        #expect(await AtomicFileCopy.save(source, as: link) == .saved(link))
+        #expect(try link.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == false)
+        #expect(try Data(contentsOf: link) == bytes)
+        #expect(try Data(contentsOf: source) == bytes)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == ["alias", "link.mp4", "recording.mp4"])
+    }
+
     @Test func savingOntoTheSourceAndReplacingASymlinkAreSafe() async throws {
         let directory = try folder()
         defer { try? FileManager.default.removeItem(at: directory) }

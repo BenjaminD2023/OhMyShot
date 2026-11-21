@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Observation
 import OMSCore
+import SwiftUI
 
 @MainActor
 @Observable
@@ -12,7 +13,7 @@ final class HistoryModel {
     typealias ThumbnailLoader = @MainActor @Sendable (URL) async -> CGImage?
 
     enum Filter: String, CaseIterable, Identifiable {
-        case all, screenshots, recordings
+        case all, screenshots, recordings, favorites
         var id: String { rawValue }
     }
 
@@ -43,6 +44,7 @@ final class HistoryModel {
     var reading = 0
     /// The captures' text, ready for searching, as it has been read.
     @ObservationIgnored private var indexedIDs: Set<UUID> = []
+    @ObservationIgnored private let copiedReading = CopiedHUD()
     @ObservationIgnored private let searchIndex = HistorySearchIndex()
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var searchRevision: UInt64 = 0
@@ -76,18 +78,20 @@ final class HistoryModel {
     @ObservationIgnored let settings: SettingsStore
     @ObservationIgnored let actions: HistoryActions
     @ObservationIgnored let expiredCount: (HistoryRetention) -> Int
+    @ObservationIgnored let expiredFavoriteCount: (HistoryRetention) -> Int
     /// The history window, for the print panel to come down from.
     @ObservationIgnored weak var window: NSWindow?
 
     init(
         store: HistoryStore, settings: SettingsStore, actions: HistoryActions, expiredCount: @escaping (HistoryRetention) -> Int,
-        textLoader: TextLoader? = nil, itemsLoader: ItemsLoader? = nil, searcher: Searcher? = nil,
+        expiredFavoriteCount: @escaping (HistoryRetention) -> Int = { _ in 0 }, textLoader: TextLoader? = nil, itemsLoader: ItemsLoader? = nil, searcher: Searcher? = nil,
         searchDelay: Duration = .milliseconds(100), thumbnailLoader: ThumbnailLoader? = nil
     ) {
         self.store = store
         self.settings = settings
         self.actions = actions
         self.expiredCount = expiredCount
+        self.expiredFavoriteCount = expiredFavoriteCount
         self.textLoader = textLoader ?? { items, store in await Self.entries(of: items, in: store) }
         self.itemsLoader = itemsLoader ?? { store in await store.loadItems() }
         self.searcher = searcher ?? { query, generations, index in try await index.search(query, generations: generations) }
@@ -100,6 +104,7 @@ final class HistoryModel {
         case .all: items
         case .screenshots: items.filter { $0.kind == .screenshot }
         case .recordings: items.filter { $0.kind == .recording }
+        case .favorites: items.filter(\.isFavorite)
         }
         guard let matches else { return shown }
         return shown.filter { matches[$0.id] != nil }
@@ -211,7 +216,8 @@ final class HistoryModel {
     private func reconcileItems(from old: [HistoryItem]) {
         let ids = Set(items.map(\.id))
         let previous = Dictionary(uniqueKeysWithValues: old.map { ($0.id, $0) })
-        let changed = Set(items.filter { item in previous[item.id].map { $0 != item } ?? false }.map(\.id))
+        // Added to Favorites or taken out, a capture's picture and text are as they were.
+        let changed = Set(items.filter { item in previous[item.id].map { $0.favoriting(item.isFavorite) != item } ?? false }.map(\.id))
         let removed = Set(old.map(\.id)).subtracting(ids)
         thumbnails = thumbnails.filter { ids.contains($0.key) }
         pendingText.formIntersection(ids)
@@ -466,6 +472,33 @@ final class HistoryModel {
         moveToTrash([item])
     }
 
+    /// Whether captures can be added to Favorites: History keeps a favorite however long Keep captures is, and with
+    /// History off it keeps nothing.
+    var canFavorite: Bool { settings.historyRetention != .never }
+
+    /// Why captures can't be added to Favorites while History is off.
+    static var favoritesNeedHistory: String {
+        String(localized: "History is off: captures can’t be kept as favorites.", bundle: .module)
+    }
+
+    /// Adds the captures to Favorites, or takes them out when every one is in already, as Photos does. With History
+    /// off it beeps and says why.
+    func toggleFavorite(_ chosen: [HistoryItem]) {
+        guard !chosen.isEmpty else { return }
+        guard canFavorite else {
+            NSSound.beep()
+            AccessibilityNotification.Announcement(Self.favoritesNeedHistory).post()
+            return
+        }
+        let favorite = !chosen.allSatisfy(\.isFavorite)
+        var written: [UUID: HistoryItem] = [:]
+        for item in chosen {
+            // One that left the history meanwhile goes from the window with the next reload.
+            if let updated = try? store.setFavorite(favorite, of: item) { written[item.id] = updated }
+        }
+        items = items.map { written[$0.id] ?? $0 }
+    }
+
     /// Moves captures to the Trash, one at a time through the actions, so cards showing them close too. When the
     /// selection goes with them it moves on to the capture after them, as in Finder.
     func moveToTrash(_ gone: [HistoryItem]) {
@@ -521,6 +554,16 @@ final class HistoryModel {
 
     func quickLook(_ item: HistoryItem) {
         previewURL = store.fileURL(for: item)
+    }
+
+    /// Copy Text: the screenshot's text goes to the clipboard, and the Copied reading by the pointer says how much, or
+    /// that it held none; a reading overtaken by a newer copy says nothing.
+    func copyText(_ item: HistoryItem) {
+        guard item.kind == .screenshot else { return }
+        Task {
+            guard let message = await actions.copyText(item).message else { return }
+            copiedReading.show(message, near: NSEvent.mouseLocation)
+        }
     }
 
     /// Prints a screenshot; a recording has nothing to print.

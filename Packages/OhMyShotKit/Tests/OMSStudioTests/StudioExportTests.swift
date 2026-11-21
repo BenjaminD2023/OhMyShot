@@ -526,6 +526,88 @@ struct StudioExportTests {
         #expect(StudioComposition.movieTime(forSource: 0.5, in: late) == 0 && StudioComposition.sourceTime(0, in: late) == 1)
     }
 
+    @Test func aGIFOfAChangedProjectReadsAMovieMadeForItAloneThatGoesAfterwards() async throws {
+        let source = try await Self.movie(seconds: 2)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let renderer = StudioRenderer(
+            telemetry: Self.telemetry(), project: StudioProject(cuts: [1...1.5]), duration: 2,
+            recordingSize: CGSize(width: 320, height: 200), background: nil
+        )
+        let composition = try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: [1...1.5])
+        let heard = ProgressLog()
+        var read: URL?
+        try await StudioExporter.withMovie(current: nil, composition: { composition }, progress: { heard.add($0) }) { movie, progress in
+            read = movie
+            // The movie as the export makes it, cuts left out, there to read while the GIF is made.
+            let length = try await AVURLAsset(url: movie).load(.duration).seconds
+            #expect(abs(length - 1.5) < 0.05)
+            progress(0.5)
+            progress(1)
+        }
+        let movie = try #require(read)
+        #expect(movie != source && !FileManager.default.fileExists(atPath: movie.path(percentEncoded: false)))
+        let values = heard.values
+        #expect(values.last == 1 && values.contains(0.75))
+        // The export says its part in the first half, the GIF in the second.
+        #expect(values.prefix { $0 <= 0.5 }.count >= 1 && values.allSatisfy { (0...1).contains($0) })
+    }
+
+    @Test func aGIFOfAnExportedProjectReadsTheMovieInTheHistoryAndLeavesIt() async throws {
+        let current = try await Self.movie(seconds: 1)
+        defer { try? FileManager.default.removeItem(at: current) }
+        var exported = false
+        var read: URL?
+        try await StudioExporter.withMovie(current: current, composition: {
+            exported = true
+            throw StudioError.noVideo
+        }, progress: { _ in }) { movie, _ in read = movie }
+        #expect(read == current && !exported)
+        #expect(FileManager.default.fileExists(atPath: current.path(percentEncoded: false)))
+    }
+
+    @Test func aGIFThatFailsLeavesNoMovieBehind() async throws {
+        let source = try await Self.movie(seconds: 1)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let renderer = StudioRenderer(
+            telemetry: Self.telemetry(), project: StudioProject(), duration: 1, recordingSize: CGSize(width: 320, height: 200), background: nil
+        )
+        let composition = try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: [])
+        var read: URL?
+        await #expect(throws: CancellationError.self) {
+            try await StudioExporter.withMovie(current: nil, composition: { composition }, progress: { _ in }) { movie, _ in
+                read = movie
+                throw CancellationError()
+            }
+        }
+        let movie = try #require(read)
+        #expect(!FileManager.default.fileExists(atPath: movie.path(percentEncoded: false)))
+    }
+
+    @Test func aGIFCancelledWhileItIsMadeLeavesNoMovieBehind() async throws {
+        let source = try await Self.movie(seconds: 1)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let renderer = StudioRenderer(
+            telemetry: Self.telemetry(), project: StudioProject(), duration: 1, recordingSize: CGSize(width: 320, height: 200), background: nil
+        )
+        let composition = try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: [])
+        let boundary = StudioExportBoundary()
+        let read = MovieRead()
+        // Cancelled as a running task is, by closing the window, while the GIF is being made of the exported movie.
+        let task = Task {
+            try await StudioExporter.withMovie(current: nil, composition: { composition }, progress: { _ in }) { movie, _ in
+                read.url = movie
+                await boundary.arrive()
+                try await Task.sleep(for: .seconds(30))
+            }
+        }
+        await boundary.waitUntilArrived()
+        task.cancel()
+        await boundary.release()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        let movie = try #require(read.url)
+        #expect(!FileManager.default.fileExists(atPath: movie.path(percentEncoded: false)))
+    }
+
     @Test func cancellingAfterPackagingRemovesTheMovieAndAllowsRetry() async throws {
         let source = try await Self.movie(seconds: 1)
         let output = FileManager.default.temporaryDirectory.appending(path: "OMSStudioCancel-\(UUID()).mp4")
@@ -564,6 +646,18 @@ struct StudioExportTests {
         cancellation.set(export)
         await #expect(throws: CancellationError.self) { try await export.value }
         #expect(!FileManager.default.fileExists(atPath: output.path))
+    }
+
+    /// What a progress closure heard, in order, from whichever thread told it.
+    nonisolated private final class ProgressLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var heard: [Double] = []
+
+        var values: [Double] { lock.withLock { heard } }
+
+        func add(_ value: Double) {
+            lock.withLock { heard.append(value) }
+        }
     }
 
     /// The pixel's red, green, and blue in sRGB.
@@ -607,6 +701,17 @@ private actor StudioExportBoundary {
     }
 
     func release() { resume?.resume(); resume = nil }
+}
+
+/// The movie a GIF was made from, told from the task making it.
+nonisolated private final class MovieRead: @unchecked Sendable {
+    private let lock = NSLock()
+    private var read: URL?
+
+    var url: URL? {
+        get { lock.withLock { read } }
+        set { lock.withLock { read = newValue } }
+    }
 }
 
 nonisolated private final class StudioExportCancellation: @unchecked Sendable {

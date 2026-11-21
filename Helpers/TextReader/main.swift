@@ -325,8 +325,9 @@ for try await line in FileHandle.standardInput.bytes.lines {
         case .text:
             let file = try picture(of: job)
             var result = try await reading(with: job.pack).recognize(fileAt: file)
+            // Formulas and tables only add to the text: when finding them fails, the text goes as Vision read it.
             if job.formulas != nil || job.vlm != nil,
-               let found = try await elements(
+               let found = try? await elements(
                    inPictureAt: file, formulas: job.formulas, vlm: job.vlm, seconds: job.seconds, pressure: pressure(for: job), found: { _, _ in }
                ) {
                 if !found.formulas.isEmpty { result.lines = await pipeline.lines(result.lines, with: found.formulas, in: found.image) }

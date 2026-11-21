@@ -39,6 +39,7 @@ struct ShortcutListTests {
 
     private static let newShortcuts: [CaptureShortcut] = [
         .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .annotateLatestCapture, .openFromClipboard, .captureFormula,
+        .pinFromClipboard, .togglePins, .restoreRecentlyClosed,
     ]
 
     @Test func theNewShortcutsHaveNoKeysUntilChosen() throws {
@@ -107,6 +108,14 @@ struct ShortcutListTests {
         // Beside Capture Text, in the text group.
         let textGroup = ShortcutsSettingsView.groups(hasDestination: true, hasFormulaPack: true, hasKey: Self.noKey).first { $0.contains(.captureText) }
         #expect(textGroup == [.captureText, .captureTextJoined, .captureFormula, .translateArea])
+    }
+
+    @Test func thePinShortcutsSitWithTheToolsAndRestoreWithTheHistory() throws {
+        let groups = ShortcutsSettingsView.groups(hasDestination: true, hasKey: Self.noKey)
+        let tools = try #require(groups.first { $0.contains(.pickColor) })
+        #expect(tools == [.pickColor, .measure, .drawOnScreen, .pinFromClipboard, .togglePins])
+        let history = try #require(groups.first { $0.contains(.openHistory) })
+        #expect(history.last == .restoreRecentlyClosed)
     }
 
     @Test func theAreaShortcutsAreListedTogetherAndInOrder() throws {

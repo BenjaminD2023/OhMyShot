@@ -225,6 +225,7 @@ and clears the local report file. Debug builds leave the reporting service inact
 
 | Document | What it covers |
 | --- | --- |
+| [Docs/keyboard.md](Docs/keyboard.md) | Every key, from the capture overlay to the editor, pins, and History |
 | [Docs/automation.md](Docs/automation.md) | URL commands, Shortcuts, Spotlight, and the Raycast extension |
 | [Docs/ocr.md](Docs/ocr.md) | How text recognition is layered, and its benchmark |
 | [Docs/capture-picker.md](Docs/capture-picker.md) | The magnifier at the pointer while you choose an area |

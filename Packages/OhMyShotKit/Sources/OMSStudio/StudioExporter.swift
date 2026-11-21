@@ -4,7 +4,7 @@ import VideoToolbox
 
 /// Writes a Studio composition out as an MP4: the frames its compositor films, encoded as fast as the
 /// hardware goes (H.264 while the movie fits it, HEVC beyond 4096 pixels) at the project's quality, and the
-/// sound mixed into one AAC track.
+/// sounds mixed into one AAC track, each as loud as the project sets it; with every sound silent, no sound at all.
 ///
 /// A frame the compositor handed back again unchanged is not encoded again: the one before it shows on until
 /// the next that differs, as the recording held its own frames, and the encoder, which sets how fast an export
@@ -39,7 +39,10 @@ nonisolated public enum StudioExporter {
         let asset = composition.asset
         let canvas = composition.renderer.layout.canvas
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
-        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        let audio = composition.renderer.project.audio
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio).filter { track in
+            composition.audioTracks.contains { $0.trackID == track.trackID && audio[$0.sound].gain > 0 }
+        }
         guard !videoTracks.isEmpty else { throw StudioError.noVideo }
 
         let reader = try AVAssetReader(asset: asset)
@@ -56,6 +59,8 @@ nonisolated public enum StudioExporter {
                 AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2, AVLinearPCMBitDepthKey: 32,
                 AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
             ])
+            output.audioMix = composition.audioMix(for: audio)
+            output.audioTimePitchAlgorithm = StudioComposition.timePitch
             reader.add(output)
             audioOutput = output
         }
@@ -153,6 +158,24 @@ nonisolated public enum StudioExporter {
         }
     }
 
+    // MARK: A movie to read
+
+    /// Hands `use` a movie of the project to read: `current` when there is one (the movie in the history, made from the
+    /// project as it is now), else one exported from `composition()` into a temporary file the history never sees, removed
+    /// once `use` is done, has failed, or was cancelled. `progress` hears how far along it all is, from 0 to 1: an export
+    /// takes the first half, and `use` tells its own part through the closure it is given.
+    static func withMovie(
+        current: URL?, composition: () async throws -> StudioComposition, progress: @escaping @Sendable (Double) -> Void,
+        _ use: (URL, @escaping @Sendable (Double) -> Void) async throws -> Void
+    ) async throws {
+        if let current { return try await use(current, progress) }
+        let temporary = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        _ = try await export(try await composition(), to: temporary) { progress($0 / 2) }
+        try Task.checkCancellation()
+        try await use(temporary) { progress(0.5 + $0 / 2) }
+    }
+
     // MARK: Estimate
 
     /// About how many bytes the movie will be, from what is known before it is made. A recording's bytes go
@@ -205,7 +228,7 @@ nonisolated private final class ReaderStopper: @unchecked Sendable {
 }
 
 /// Copies one track's samples from a reader to a writer input whenever the input can take more.
-nonisolated private final class Pump: @unchecked Sendable {
+nonisolated final class Pump: @unchecked Sendable {
     private let output: AVAssetReaderOutput
     private let input: AVAssetWriterInput
     private let queue: DispatchQueue

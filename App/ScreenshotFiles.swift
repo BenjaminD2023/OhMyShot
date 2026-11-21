@@ -130,33 +130,41 @@ final class ScreenshotFiles {
 
     /// Saves a copy of a capture to the export folder: a screenshot as `saveScreenshot` saves it, asking for the name
     /// first when Settings say so and `asks` is true (a save nobody waits at, as a card's closing by itself or Save All
-    /// is, passes false); a recording as `saveRecording` does. Nil when it was cancelled or failed.
-    func saveCapture(fileAt url: URL, asks: Bool = true) async -> URL? {
+    /// is, passes false); a recording as `saveRecording` does.
+    func saveCapture(fileAt url: URL, asks: Bool = true) async -> SaveOutcome {
         guard ExportedFiles.isPicture(url) else { return saveRecording(fileAt: url) }
         return await saveScreenshot(fileAt: url, asks: asks)
     }
 
     /// Saves a copy of a recording's file, or any file that is no screenshot, to the export folder, under the file's
     /// name and kind.
-    func saveRecording(fileAt url: URL) -> URL? {
+    func saveRecording(fileAt url: URL) -> SaveOutcome {
+        let directory = settings.exportDirectory
         do {
-            let directory = settings.exportDirectory
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let name = url.deletingPathExtension().lastPathComponent
             let destination = ImageExporter.availableURL(in: directory, name: name, fileExtension: url.pathExtension)
             try FileManager.default.copyItem(at: url, to: destination)
-            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
-            return destination
+            return Self.logged(.saved(destination), "Saving")
         } catch {
-            Log.capture.error("Saving failed: \(error.localizedDescription, privacy: .public)")
-            NSSound.beep()
-            return nil
+            return Self.logged(.failed(.saving(error, into: directory)), "Saving")
         }
+    }
+
+    /// Logs how a save ended, and passes it on. A failure is not beeped for: whoever asked shows why, on the card or
+    /// by the pointer.
+    private static func logged(_ outcome: SaveOutcome, _ kind: String) -> SaveOutcome {
+        switch outcome {
+        case .saved(let url): Log.capture.notice("\(kind, privacy: .public) saved \(url.lastPathComponent, privacy: .public)")
+        case .cancelled: Log.capture.notice("\(kind, privacy: .public) cancelled")
+        case .failed(let failure): Log.capture.error("\(kind, privacy: .public) failed: \(failure.detail, privacy: .public)")
+        }
+        return outcome
     }
 
     /// Asks where to save a copy of a capture. A screenshot is saved in the format of the name typed, else the one
     /// Settings choose; a recording as the kind of file it is.
-    func saveCaptureAs(fileAt url: URL) async -> URL? {
+    func saveCaptureAs(fileAt url: URL) async -> SaveOutcome {
         guard ExportedFiles.isPicture(url) else { return await saveRecordingAs(url) }
         return await saveScreenshotAs(fileAt: url)
     }
@@ -167,18 +175,18 @@ final class ScreenshotFiles {
     ///   - picture: the capture in memory, when it is at hand: an HDR copy of it makes a HEIC with a gain map.
     ///   - asks: asks for the name first, when Settings say to; a save nobody is waiting at (the URL API's, a
     ///     shortcut's) passes false.
-    /// - Returns: where it went; nil when it was cancelled or failed (which beeps).
-    func saveScreenshot(fileAt url: URL, entry: HistoryItem? = nil, scale: Double? = nil, picture: Picture? = nil, asks: Bool) async -> URL? {
+    /// - Returns: where it went, that it was cancelled, or why it failed, which the caller shows.
+    func saveScreenshot(fileAt url: URL, entry: HistoryItem? = nil, scale: Double? = nil, picture: Picture? = nil, asks: Bool) async -> SaveOutcome {
         let entry = entry ?? history.item(forFileAt: url)
         return await save(.file(url, picture), entry: entry, scale: scale ?? entry?.pixelsPerPoint, asks: asks)
     }
 
     /// The same for a picture that has no file of its own.
-    func saveScreenshot(_ picture: Picture, scale: Double?, asks: Bool) async -> URL? {
+    func saveScreenshot(_ picture: Picture, scale: Double?, asks: Bool) async -> SaveOutcome {
         await save(.picture(picture), entry: nil, scale: scale, asks: asks)
     }
 
-    private func save(_ source: Source, entry: HistoryItem?, scale: Double?, asks: Bool) async -> URL? {
+    private func save(_ source: Source, entry: HistoryItem?, scale: Double?, asks: Bool) async -> SaveOutcome {
         let output = output
         // A capture left as it is, a PNG, is copied: what the history holds is what is saved.
         let copied: URL? = if case .file(let url, _) = source, output.isUnchanged { url } else { nil }
@@ -189,13 +197,12 @@ final class ScreenshotFiles {
         if asks && settings.asksForFileName {
             guard let typed = await FileNamePrompt.ask(offering: name, fileExtension: fileExtension, folder: Self.folderName(directory)) else {
                 gaveUp(offered)
-                Log.capture.notice("Saving cancelled")
-                return nil
+                return Self.logged(.cancelled, "Saving")
             }
             name = typed
         }
         didName(name, offered: offered)
-        do {
+        return Self.logged(await SaveOutcome.saving(into: directory) {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let destination = ImageExporter.availableURL(in: directory, name: name, fileExtension: fileExtension)
             if let copied {
@@ -203,13 +210,8 @@ final class ScreenshotFiles {
             } else {
                 try ImageExporter.write(try await Self.encoded(source, scale: scale, output: output).data, to: destination)
             }
-            Log.capture.notice("Saved \(destination.lastPathComponent, privacy: .public)")
             return destination
-        } catch {
-            Log.capture.error("Saving failed: \(error.localizedDescription, privacy: .public)")
-            NSSound.beep()
-            return nil
-        }
+        }, "Saving")
     }
 
     private static func encoded(_ source: Source, scale: Double?, output: ScreenshotOutput) async throws -> PictureExport.Encoded {
@@ -223,8 +225,8 @@ final class ScreenshotFiles {
 
     /// Asks where to save a screenshot and how, and saves it there. The panel opens in the export folder with the
     /// format and picture options Settings choose, which the person may change for this file; a name typed with
-    /// another format's extension saves in that format. Returns where it went; nil when cancelled or failed.
-    func saveScreenshotAs(fileAt url: URL, entry: HistoryItem? = nil, scale: Double? = nil) async -> URL? {
+    /// another format's extension saves in that format. Says where it went, that it was cancelled, or why it failed.
+    func saveScreenshotAs(fileAt url: URL, entry: HistoryItem? = nil, scale: Double? = nil) async -> SaveOutcome {
         let entry = entry ?? history.item(forFileAt: url)
         let sourceFormat = ImageExporter.Format(fileExtension: url.pathExtension)
         var offeredOutput = output
@@ -234,48 +236,44 @@ final class ScreenshotFiles {
     }
 
     /// Save As for a picture that has no file of its own (a pin from the clipboard).
-    func saveScreenshotAs(_ picture: Picture, scale: Double?) async -> URL? {
+    func saveScreenshotAs(_ picture: Picture, scale: Double?) async -> SaveOutcome {
         await saveAs(.picture(picture), entry: nil, scale: scale, offering: output, sourceFormat: nil)
     }
 
-    private func saveAs(_ source: Source, entry: HistoryItem?, scale: Double?, offering: ScreenshotOutput, sourceFormat: ImageExporter.Format?) async -> URL? {
+    private func saveAs(_ source: Source, entry: HistoryItem?, scale: Double?, offering: ScreenshotOutput, sourceFormat: ImageExporter.Format?) async -> SaveOutcome {
         let offered = offeredName(for: entry, fileURL: source.fileURL)
         guard let (chosen, output) = await SavePanel.askForPicture(name: offered.text, output: offering, directory: settings.exportDirectory) else {
             gaveUp(offered)
-            return nil
+            return Self.logged(.cancelled, "Save As")
+        }
+        // The capture's own file in History is no place for its copy: nothing is saved, so the number the offered name
+        // took goes back.
+        do {
+            try AtomicFileCopy.refuseSaving(over: source.fileURL, at: chosen)
+        } catch {
+            gaveUp(offered)
+            return Self.logged(.failed(.saving(error, into: chosen.deletingLastPathComponent())), "Save As")
         }
         didName(chosen.deletingPathExtension().lastPathComponent, offered: offered)
-        do {
+        return Self.logged(await SaveOutcome.saving(into: chosen.deletingLastPathComponent()) {
             // Written atomically over a file the person agreed to replace: if reading or encoding fails, it stays as it was.
             if case .file(let url, _) = source, output.isUnchanged, output.format == sourceFormat {
                 try ImageExporter.write(try Data(contentsOf: url), to: chosen)
             } else {
                 try ImageExporter.write(try await Self.encoded(source, scale: scale, output: output).data, to: chosen)
             }
-            Log.capture.notice("Saved \(chosen.lastPathComponent, privacy: .public) with Save As")
             return chosen
-        } catch {
-            Log.capture.error("Save As failed: \(error.localizedDescription, privacy: .public)")
-            NSSound.beep()
-            return nil
-        }
+        }, "Save As")
     }
 
-    /// Asks where to save a copy of a recording, as the kind of file it is. Returns where it went; nil when cancelled or failed.
-    func saveRecordingAs(_ file: URL) async -> URL? {
+    /// Asks where to save a copy of a recording, as the kind of file it is. A file the person agreed to replace stays as
+    /// it was until the copy is whole, and choosing the recording's own file leaves it as it is.
+    func saveRecordingAs(_ file: URL) async -> SaveOutcome {
         let types = [UTType(filenameExtension: file.pathExtension) ?? .data]
-        guard let url = await SavePanel.ask(name: file.deletingPathExtension().lastPathComponent, types: types, directory: settings.exportDirectory) else { return nil }
-        do {
-            if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
-                try FileManager.default.removeItem(at: url)
-            }
-            try FileManager.default.copyItem(at: file, to: url)
-            return url
-        } catch {
-            Log.capture.error("Save As failed: \(error.localizedDescription, privacy: .public)")
-            NSSound.beep()
-            return nil
+        guard let url = await SavePanel.ask(name: file.deletingPathExtension().lastPathComponent, types: types, directory: settings.exportDirectory) else {
+            return Self.logged(.cancelled, "Save As")
         }
+        return Self.logged(await AtomicFileCopy.save(file, as: url), "Save As")
     }
 
     // MARK: Handing over

@@ -124,6 +124,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var laidOut: Frames?
     /// The images blurs and pixelations were last made over.
     private var redactionImages: [Annotation] = []
+    /// Where the redactions lay when erasures were last made, which they read nothing of, and the canvas they
+    /// were kept inside.
+    private var erasedAround: (covered: [CGRect], canvas: CGRect) = ([], .null)
+    /// Erasures stretched over their boxes during a drag, to fill again once it ends.
+    private var staleErasures: Set<Annotation.ID> = []
     /// The picture the image layer shows, which a turn, a flip, or a resize replaces.
     private var shownPicture: CGImage?
     private var markLayers: [Annotation.ID: MarkLayer] = [:]
@@ -133,6 +138,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private let watermarkLayer = WatermarkLayer()
     /// The redaction tool's suggestions, outlined over the picture, each covered by a click.
     private lazy var suggestions = SuggestionOverlay(on: self)
+    /// Each mark's element for VoiceOver, kept while the mark is, so VoiceOver keeps its place on it.
+    private var markElements: [Annotation.ID: MarkElement] = [:]
 
     private var displayOptions: NSObjectProtocol?
     private var userZoom: CGFloat?
@@ -213,6 +220,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
         session.observe { [weak self] event in self?.sessionChanged(event) }
         syncMarks()
+        // Magnifiers in a document opened with them show what is under them from the start.
+        updateLenses()
         // An editor that opens with the redaction tool in hand reads the capture for its suggestions now,
         // and one that opens with the highlighter for its lines of text.
         if session.tool == .redact { session.findRedactionsIfNeeded() }
@@ -466,10 +475,76 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         return suggestion.label + "\n" + String(localized: "Click to redact", bundle: .module)
     }
 
+    /// The marks, in drawing order, then the open suggestions.
     public override func accessibilityChildren() -> [Any]? {
-        let children = super.accessibilityChildren() ?? []
-        let buttons = suggestions.accessibilityElements
-        return buttons.isEmpty ? children : children + buttons
+        (super.accessibilityChildren() ?? []) + currentMarkElements() + suggestions.accessibilityElements
+    }
+
+    public override func accessibilitySelectedChildren() -> [Any]? {
+        currentMarkElements().filter { session.selection.contains($0.id) }
+    }
+
+    /// Picks the marks up as a click would, any tool in hand put down.
+    public override func setAccessibilitySelectedChildren(_ children: [Any]?) {
+        let ids = (children ?? []).compactMap { ($0 as? MarkElement)?.id }
+        guard !session.tool.isPictureMode else { return }
+        if !ids.isEmpty { session.putToolDownToSelect() }
+        session.select(ids)
+    }
+
+    /// The mark Tab or a click picked up, while it is the only one and the canvas has the keyboard: VoiceOver's
+    /// cursor follows the keyboard onto it.
+    public nonisolated override var accessibilityFocusedUIElement: Any? {
+        MainActor.assumeIsolated { focusedMarkElement } ?? super.accessibilityFocusedUIElement
+    }
+
+    private var focusedMarkElement: MarkElement? {
+        guard window?.firstResponder === self, editing == nil, session.selection.count == 1, let id = session.selection.first,
+              session.document.item(id) != nil else { return nil }
+        return currentMarkElements().first { $0.id == id }
+    }
+
+    /// Each mark's element in drawing order: made the first time it is asked for, let go with its mark.
+    private func currentMarkElements() -> [MarkElement] {
+        let items = session.document.items
+        let ids = Set(items.map(\.id))
+        markElements = markElements.filter { ids.contains($0.key) }
+        return items.map { item in
+            if let element = markElements[item.id] { return element }
+            let element = MarkElement(id: item.id, canvas: self)
+            markElements[item.id] = element
+            return element
+        }
+    }
+
+    /// What VoiceOver calls a mark: its kind and color, a text's words, a counter's number.
+    func accessibilityName(ofMark id: Annotation.ID) -> String? {
+        session.document.item(id).map(MarkElement.name(of:))
+    }
+
+    /// Where a mark is drawn, in screen coordinates.
+    func accessibilityFrame(ofMark id: Annotation.ID) -> CGRect {
+        guard let item = session.document.item(id), let window else { return .zero }
+        return window.convertToScreen(convert(viewRect(item.bounds(scale: session.document.scale)), to: nil))
+    }
+
+    /// Picks a mark up for VoiceOver, as a click would, or lets it go.
+    func setMark(_ id: Annotation.ID, selected: Bool) {
+        if selected {
+            guard !session.tool.isPictureMode, session.document.item(id) != nil else { return }
+            session.putToolDownToSelect()
+            session.select([id])
+        } else {
+            session.select(session.selection.filter { $0 != id })
+        }
+    }
+
+    /// Deletes a mark for VoiceOver's Delete action.
+    func deleteMark(_ id: Annotation.ID) -> Bool {
+        guard !session.tool.isPictureMode, session.document.item(id) != nil else { return false }
+        session.select([id])
+        session.deleteSelection()
+        return true
     }
 
     private var baseColorSpace: CGColorSpace {
@@ -750,6 +825,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 }
                 if session.tool == .crop { cropRect = session.document.canvas }
             }
+            updateLenses()
             if frames != laidOut || picture {
                 // What is shown changed (a crop, a background): laid out again at the zoom the person
                 // chose, so a slider never makes a zoomed-in picture jump; a fitted picture fits again.
@@ -765,11 +841,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case .selection:
             updateSelectionOutlines()
             onViewportChange?()
+            if let focusedMarkElement { NSAccessibility.post(element: focusedMarkElement, notification: .focusedUIElementChanged) }
         case .tool:
             toolChanged()
         case .history:
-            // A drag that moved an image has ended: blurs show what is now under them.
+            // A drag that moved an image has ended: blurs show what is now under them, and magnifiers show the blurs.
             refreshRedactionsIfNeeded()
+            updateLenses()
         case .settings:
             break
         case .suggestions:
@@ -873,15 +951,57 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         refreshRedactionsIfNeeded()
     }
 
+    /// The layer that draws the mark `id`, as it stands.
+    func markLayer(for id: Annotation.ID) -> MarkLayer? {
+        markLayers[id]
+    }
+
+    /// Shows in each magnifier the picture under it with every redaction on it as the canvas draws them, so a
+    /// lens never shows what a redaction hides; made again whenever the document changes, as it is small, but
+    /// not at every step of a drag that moves an image, whose combined picture is made again once it ends.
+    private func updateLenses() {
+        let magnifiers = markLayers.values.compactMap { layer -> (MarkLayer, Magnifier)? in
+            if case .magnifier(let magnifier) = layer.mark.shape { return (layer, magnifier) }
+            return nil
+        }
+        let images = session.document.items.filter { if case .image = $0.shape { true } else { false } }
+        guard !magnifiers.isEmpty, !session.isInLiveChange || images == redactionImages else { return }
+        let redactions = session.document.items.compactMap { item -> (item: Annotation, coverage: Redactor.Coverage?)? in
+            guard case .redaction = item.shape else { return nil }
+            return (item, markLayers[item.id]?.coverage)
+        }
+        let picture = session.redactionSource ?? (session.picture, .zero)
+        for (layer, magnifier) in magnifiers {
+            layer.lens = MagnifierPainter.lensPicture(
+                for: magnifier, picture: picture, canvas: session.document.canvas, redactions: redactions, scale: session.document.scale
+            )
+        }
+    }
+
     private func updateRedaction(_ layer: MarkLayer) {
         guard case .redaction(let redaction) = layer.mark.shape, redaction.method != .solid else {
             layer.coverage = nil
             return
         }
         let source = session.combinedRedactionSource ?? Redactor.Source(base: session.picture)
+        // Filling an erasure reads and writes every pixel under it, too slow to repeat at each step of a drag: until the
+        // drag ends, the last fill stretches over the box, covering it as it goes.
+        if redaction.method == .erase, session.isInLiveChange, case .filtered(let image, _)? = layer.coverage {
+            let rect = redaction.rect.standardized.integral.intersection(source.bounds).intersection(erasureCanvas.standardized.integral)
+            layer.coverage = rect.isNull || rect.width < 1 || rect.height < 1 ? nil : .filtered(image, rect)
+            staleErasures.insert(layer.mark.id)
+            return
+        }
         layer.coverage = Redactor.coverage(
-            for: redaction, id: layer.mark.id, source: source, scale: session.document.scale
+            for: redaction, id: layer.mark.id, source: source, scale: session.document.scale, covered: session.document.redactedRects,
+            canvas: erasureCanvas
         )
+    }
+
+    /// What erasures keep inside: the canvas, or while cropping the whole picture shown, so an erasure past the
+    /// canvas covers what a wider crop frame shows of it.
+    private var erasureCanvas: CGRect {
+        session.tool == .crop ? shownCanvas : session.document.canvas
     }
 
     /// What a highlight lies on, read from the picture blurs show, images included.
@@ -893,17 +1013,35 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     /// Makes blurs and pixelations again over images that moved, once a drag has ended, and reads again
     /// what highlights lie on: remaking them at every step of a drag would be slow, and they show the
-    /// result on release.
+    /// result on release. Erasures are made again as well when a redaction around them came, went, or moved,
+    /// or the canvas they keep inside changed, and once the drag that stretched them ends.
     private func refreshRedactionsIfNeeded() {
+        guard !session.isInLiveChange else { return }
+        for id in staleErasures {
+            guard let layer = markLayers[id] else { continue }
+            updateRedaction(layer)
+            position(layer, frames: frames)
+        }
+        staleErasures = []
         let images = session.document.items.filter { if case .image = $0.shape { true } else { false } }
-        guard images != redactionImages, !session.isInLiveChange else { return }
-        redactionImages = images
-        for layer in markLayers.values {
-            if case .redaction = layer.mark.shape {
+        let around = (covered: session.document.redactedRects, canvas: erasureCanvas)
+        if images != redactionImages {
+            redactionImages = images
+            erasedAround = around
+            for layer in markLayers.values {
+                if case .redaction = layer.mark.shape {
+                    updateRedaction(layer)
+                    position(layer, frames: frames)
+                }
+                updateGround(layer)
+            }
+        } else if around != erasedAround {
+            erasedAround = around
+            for layer in markLayers.values {
+                guard case .redaction(let redaction) = layer.mark.shape, redaction.method == .erase else { continue }
                 updateRedaction(layer)
                 position(layer, frames: frames)
             }
-            updateGround(layer)
         }
     }
 
@@ -961,6 +1099,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             focus = nil
             updateViewport()
         }
+        // Cropping shows the whole picture, which erasures past the canvas cover too.
+        refreshRedactionsIfNeeded()
         window?.invalidateCursorRects(for: self)
         onViewportChange?()
     }
@@ -1369,7 +1509,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 self.drag = .creating(id: id, tool: tool, start: start, beyondClick: true)
                 if tool == .redact { updateSuggestions() }
             }
-            guard let mark = tool.mark(from: start, to: point, constrained: shift, settings: session.settings(for: tool), id: id) else { return }
+            guard let mark = tool.mark(
+                from: start, to: point, constrained: shift, settings: session.settings(for: tool), id: id, scale: document.scale, room: lensRoom
+            ) else { return }
             if let index = document.index(of: id) { document.items[index] = mark } else { document.items.append(mark) }
             session.updateLive(document, selecting: [])
         case .drawing(let id):
@@ -1399,9 +1541,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             } else {
                 selectionLayer.alignmentGuides = []
             }
+            // A magnifier dragged on its own moves its lens alone; moved with other marks, it moves whole.
             for original in originals {
                 guard let index = document.index(of: original.id) else { continue }
-                document.items[index] = original.translated(by: delta)
+                document.items[index] = originals.count == 1 ? original.dragged(by: delta) : original.translated(by: delta)
             }
             session.updateLive(document)
         case .reshaping(let handle, let original):
@@ -1469,6 +1612,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    /// Where a new lens fits, handles and all: on a canvas that cannot grow, such as Annotate Area's selection, the
+    /// canvas less its handles' reach, so a lens is not cut off and can be resized. Nil where the canvas grows.
+    private var lensRoom: CGRect? {
+        guard !session.growsCanvas else { return nil }
+        let reach = (SelectionLayer.handleSize / 2 + 4) / zoom
+        return session.document.canvas.insetBy(dx: reach, dy: reach)
+    }
+
     public override func mouseUp(with event: NSEvent) {
         guard let drag else { return }
         self.drag = nil
@@ -1483,7 +1634,16 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         switch drag {
         case .creating(let id, let tool, let start, _):
             let startView = viewPoint(start)
-            guard hypot(location.x - startView.x, location.y - startView.y) >= 4, session.document.item(id) != nil else {
+            let clicked = hypot(location.x - startView.x, location.y - startView.y) < 4
+            if clicked, tool == .magnifier,
+               let mark = tool.mark(
+                   from: start, to: start, constrained: false, settings: session.settings(for: tool), id: id, scale: session.document.scale, room: lensRoom
+               ) {
+                // A click puts the lens over what was clicked.
+                var document = session.document
+                if let index = document.index(of: id) { document.items[index] = mark } else { document.items.append(mark) }
+                session.updateLive(document, selecting: [])
+            } else if clicked || session.document.item(id) == nil {
                 session.cancelLiveChange()
                 // A click with the redaction tool on a suggestion covers it.
                 if tool == .redact { session.acceptRedactionSuggestion(at: start) }
@@ -1519,9 +1679,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.endLiveChange(actionName: String(localized: "Rotate", bundle: .module))
         case .reshaping(let handle, let original):
             session.fitCanvas(holding: [original.id])
-            let name = switch handle {
-            case .bend: String(localized: "Bend Arrow", bundle: .module)
-            case .tail: String(localized: "Move Tail", bundle: .module)
+            let name = switch (handle, original.shape) {
+            case (.bend, _): String(localized: "Bend Arrow", bundle: .module)
+            case (.tail, _): String(localized: "Move Tail", bundle: .module)
+            case (.start, .magnifier): String(localized: "Move Magnified Spot", bundle: .module)
             default: String(localized: "Resize", bundle: .module)
             }
             session.endLiveChange(actionName: name)
@@ -1788,7 +1949,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 !NSEvent.modifierFlags.contains(.command) && TextSnapping.line(at: documentPoint(location), in: session.textLines) != nil
                     ? .iBeam : .crosshair
             // The crop and the background have theirs above.
-            case .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .counter, .redact, .spotlight, .crop, .background: .crosshair
+            case .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .counter, .redact, .spotlight, .magnifier, .crop, .background: .crosshair
             }
         }
         cursor.set()
@@ -1857,6 +2018,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case 126:
             session.nudgeSelection(by: CGSize(width: 0, height: -step))
             return true
+        case 48 where editing == nil && drag == nil && !session.isInLiveChange && flags.subtracting([.shift, .capsLock]).isEmpty:
+            return selectAdjacentMark(backward: flags.contains(.shift))
         case 53:
             if isPickingColor {
                 cancelColorPicker()
@@ -1871,8 +2034,20 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 selectionLayer.alignmentGuides = []
                 session.cancelLiveChange()
             } else if session.tool == .crop {
-                session.setCropRatio(.free)
-                cropRect = session.document.canvas
+                // A drag under way ends here too, so the next move of the pointer can't bring its frame back, and
+                // the controls it hid come back once the frame is settled, as at a drag's end.
+                let endsDrag = drag != nil
+                defer { if endsDrag { onViewportChange?() } }
+                drag = nil
+                cropLayer.showsThirds = false
+                // A frame and shape left as they began have nothing to put back: Escape leaves Crop, cropping
+                // nothing, as it leaves Background. Otherwise it puts them back first.
+                if cropRect == session.document.canvas, session.cropRatio == .free {
+                    session.leavePictureMode()
+                } else {
+                    session.setCropRatio(.free)
+                    cropRect = session.document.canvas
+                }
             } else if session.tool == .background {
                 session.leavePictureMode()
             } else if !session.selection.isEmpty {
@@ -1902,6 +2077,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
             return false
         default:
+            // Digits from the keypad too, and brackets as typed, Option and all, for layouts that need Option for them.
+            if editing == nil, flags.subtracting([.shift, .capsLock, .numericPad]).isEmpty,
+               let digit = event.charactersIgnoringModifiers?.first?.wholeNumberValue, (1...9).contains(digit) {
+                return chooseColor(at: digit - 1)
+            }
+            if editing == nil, flags.subtracting([.shift, .capsLock, .option]).isEmpty, let typed = event.characters, typed == "[" || typed == "]" {
+                return stepSize(by: typed == "]" ? 1 : -1)
+            }
             guard
                 flags.subtracting([.shift, .capsLock]).isEmpty,
                 let character = event.charactersIgnoringModifiers?.lowercased().first
@@ -1918,6 +2101,81 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.tool = tool
             return true
         }
+    }
+
+    /// Tab and Shift-Tab: the next or previous mark in drawing order, picked up as a click picks it up (the tool put
+    /// down first) and brought into view. Past the last, or before the first, nothing is left selected and false is
+    /// returned, so the key goes on to the window and the keyboard moves on from the canvas rather than being held.
+    func selectAdjacentMark(backward: Bool) -> Bool {
+        let items = session.document.items
+        guard !items.isEmpty, !session.tool.isPictureMode else { return false }
+        let current = session.selection.last.flatMap { session.document.index(of: $0) }
+        let next: Int? = switch current {
+        case nil: backward ? items.count - 1 : 0
+        case let index?: backward ? (index > 0 ? index - 1 : nil) : (index + 1 < items.count ? index + 1 : nil)
+        }
+        guard let next else {
+            session.select([])
+            return false
+        }
+        cancelColorPicker()
+        session.putToolDownToSelect()
+        session.select([items[next].id])
+        reveal(items[next])
+        return true
+    }
+
+    /// Brings a mark zoomed out of view back into it, centered as far as the picture's edges allow. A fitted
+    /// picture, and the picture in place, show every mark already.
+    private func reveal(_ item: Annotation) {
+        let bounds = item.bounds(scale: session.document.scale)
+        guard userZoom != nil, !freeArea.contains(viewRect(bounds)) else { return }
+        focus = CGPoint(x: bounds.midX, y: bounds.midY)
+        updateViewport()
+        // Clamped by the edges: keep the focus where the picture actually is.
+        focus = documentPoint(CGPoint(x: freeArea.midX, y: freeArea.midY))
+        onViewportChange?()
+    }
+
+    /// The colors 1 to 9 choose for the selected marks or the tool in hand, as the style capsule numbers them;
+    /// none with neither, or for a kind that takes no color.
+    var keyedColors: [RGBA] {
+        guard !session.selection.isEmpty || session.tool != .select else { return [] }
+        return StyleCapsule.keyedColors(for: session.currentKind, settings: session.currentSettings, saved: SavedColors.shared.colors)
+    }
+
+    /// 1 to 9: the capsule's color of that number, as its chip would choose it. False when there is none.
+    func chooseColor(at index: Int) -> Bool {
+        let colors = keyedColors
+        guard colors.indices.contains(index) else { return false }
+        let color = colors[index]
+        session.changeSettings(String(localized: "Color", bundle: .module)) { $0.color = color }
+        refreshEditingStyle()
+        return true
+    }
+
+    /// [ and ]: the capsule's next size down or up for the selected marks or the tool in hand, a width or for text
+    /// a type size, stepping from the chip the capsule shows chosen; at either end nothing changes. False where no
+    /// size applies.
+    func stepSize(by step: Int) -> Bool {
+        guard !session.selection.isEmpty || session.tool != .select, session.sizeApplies else { return false }
+        let kind = session.currentKind
+        let sizes = StyleCapsule.sizes(for: kind)
+        guard !sizes.isEmpty else { return false }
+        let isText = kind == .text
+        let current = isText ? session.currentSettings.fontSize : session.currentSettings.lineWidth
+        let index = sizes.firstIndex(of: StyleCapsule.nearest(current, in: sizes)) ?? 0
+        let next = min(max(index + step, 0), sizes.count - 1)
+        // At either end the size stays as it is, even one between the capsule's steps.
+        guard next != index else { return true }
+        let size = sizes[next]
+        if isText {
+            session.changeSettings(String(localized: "Text Size", bundle: .module)) { $0.fontSize = size }
+        } else {
+            session.changeSettings(String(localized: "Size", bundle: .module)) { $0.lineWidth = size }
+        }
+        refreshEditingStyle()
+        return true
     }
 
     public override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -1946,6 +2204,28 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     // MARK: Menu actions
+
+    /// The keys for marks and their style, chosen from the rail's menu, where the menu lists them.
+    @objc func selectNextMark(_ sender: Any?) {
+        _ = selectAdjacentMark(backward: false)
+    }
+
+    @objc func selectPreviousMark(_ sender: Any?) {
+        _ = selectAdjacentMark(backward: true)
+    }
+
+    /// The color numbered by the item's tag, from 0.
+    @objc func chooseKeyedColor(_ sender: NSMenuItem) {
+        _ = chooseColor(at: sender.tag)
+    }
+
+    @objc func makeSmaller(_ sender: Any?) {
+        _ = stepSize(by: -1)
+    }
+
+    @objc func makeLarger(_ sender: Any?) {
+        _ = stepSize(by: 1)
+    }
 
     /// ⌘Z. Answered here, ahead of the window: the window's own undo manager belongs to the SwiftUI
     /// hosting it, not to the marks. While text is typed, Undo undoes typing.
@@ -2123,6 +2403,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case #selector(toggleCanvasLock(_:)):
             menuItem.state = session.locksCanvas ? .on : .off
             return !isInPlace
+        case #selector(selectNextMark(_:)), #selector(selectPreviousMark(_:)):
+            return editing == nil && !session.document.items.isEmpty && !session.tool.isPictureMode
+        case #selector(chooseKeyedColor(_:)):
+            return editing == nil && keyedColors.indices.contains(menuItem.tag)
+        case #selector(makeSmaller(_:)), #selector(makeLarger(_:)):
+            return editing == nil && (!session.selection.isEmpty || session.tool != .select) && session.sizeApplies
+                && !StyleCapsule.sizes(for: session.currentKind).isEmpty
         default:
             return true
         }

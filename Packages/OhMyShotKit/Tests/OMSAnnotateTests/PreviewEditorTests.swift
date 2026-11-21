@@ -130,7 +130,7 @@ struct PreviewEditorTests {
             keptPNG = png
             return URL.temporaryDirectory.appending(path: "synthetic-kept.png")
         }, save: { _ in nil })
-        actions.copy = { image, png in
+        actions.copy = { image, png, _ in
             copiedImage = image
             copiedPNG = png
             guard let session = preview?.session else { return false }
@@ -182,7 +182,7 @@ struct PreviewEditorTests {
             keptDocument = document
             return URL.temporaryDirectory.appending(path: "preview-copy.png")
         }, save: { _ in nil })
-        actions.copy = { image, png in
+        actions.copy = { image, png, _ in
             #expect(!closed)
             await Task.yield()
             let succeeded = PasteboardWriter.write(png: png, image: image, to: pasteboard)
@@ -230,7 +230,7 @@ struct PreviewEditorTests {
             keptDocument = document
             return URL.temporaryDirectory.appending(path: "preview-text.png")
         }, save: { _ in nil })
-        actions.copy = { _, png in copiedPNG = png; return true }
+        actions.copy = { _, png, _ in copiedPNG = png; return true }
         let controller = makePreview(actions: actions)
         defer { controller.window?.delegate = nil; controller.close() }
         controller.onClose = { closed = true }

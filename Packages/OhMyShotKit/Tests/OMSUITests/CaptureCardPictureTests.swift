@@ -110,4 +110,39 @@ struct CaptureCardPictureTests {
         card.applySwipePhase(.ended, deltaX: 0)
         #expect(closed == 1)
     }
+
+    /// A swipe closes a card only toward its own edge of the screen; one as long the other way springs back.
+    @MainActor
+    @Test func swipeClosesOnlyTowardTheCardsEdge() {
+        let thumb = picture(width: 400, height: 120, splitsAcross: true)
+        let item = QuickAccessItem(
+            id: UUID(), kind: .screenshot, fileURL: URL(filePath: "/tmp/test.png"),
+            thumbnail: thumb, pixelWidth: 400, pixelHeight: 120, displayID: 1
+        )
+        let card = CaptureCardView(item: item, size: .medium)
+        card.frame = CGRect(x: 0, y: 0, width: 220, height: 100)
+        var closed = 0
+        card.onCommand = { if $0 == .close { closed += 1 } }
+        func swipe(_ distance: CGFloat) {
+            card.applySwipePhase(.began, deltaX: 0)
+            card.applySwipePhase(.changed, deltaX: distance)
+            card.applySwipePhase(.ended, deltaX: 0)
+        }
+        card.slidesFromLeft = true
+        swipe(80)
+        #expect(closed == 0 && card.swipeTranslation == 0)
+        swipe(-80)
+        #expect(closed == 1)
+        card.slidesFromLeft = false
+        swipe(-80)
+        #expect(closed == 1 && card.swipeTranslation == 0)
+        swipe(80)
+        #expect(closed == 2)
+    }
+
+    /// A swipe goes by the fingers whatever Natural Scrolling says: AppKit reverses a scroll's sign with it off.
+    @Test func aSwipeFollowsTheFingersEitherWay() {
+        #expect(CaptureCardView.fingerTravel(-80, invertedFromDevice: true) == -80)
+        #expect(CaptureCardView.fingerTravel(80, invertedFromDevice: false) == -80)
+    }
 }

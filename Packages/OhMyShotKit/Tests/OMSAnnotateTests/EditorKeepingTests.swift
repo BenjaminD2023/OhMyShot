@@ -34,7 +34,7 @@ struct EditorKeepingTests {
             keptDocument = document
             return URL.temporaryDirectory.appending(path: "kept.png")
         }, save: { _ in nil })
-        actions.copy = { image, png in
+        actions.copy = { image, png, _ in
             #expect(!closed)
             return PasteboardWriter.write(png: png, image: image, to: pasteboard)
         }
@@ -62,7 +62,7 @@ struct EditorKeepingTests {
             kept = true
             return URL.temporaryDirectory.appending(path: "kept.png")
         }, save: { _ in nil })
-        actions.copy = { _, _ in false }
+        actions.copy = { _, _, _ in false }
         let controller = makeEditor(actions: actions)
         defer { controller.window?.delegate = nil; controller.close() }
         controller.onClose = { closed = true }
@@ -92,7 +92,7 @@ struct EditorKeepingTests {
             keptPNG = png
             return URL.temporaryDirectory.appending(path: "kept.png")
         }, save: { _ in nil })
-        actions.copy = { image, png in
+        actions.copy = { image, png, _ in
             copiedImage = image
             copiedPNG = png
             guard let session = editor?.session else { return false }

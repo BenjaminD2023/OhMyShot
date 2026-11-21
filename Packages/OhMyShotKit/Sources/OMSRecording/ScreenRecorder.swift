@@ -90,6 +90,9 @@ public final class ScreenRecorder {
     private var stream: SCStream?
     private var leases: [ActiveResources.Lease] = []
     private var activity: (any NSObjectProtocol)?
+    /// What a recording keeps from happening until it ends: App Nap, idle sleep, and the display going dark when
+    /// nothing is touched, which would leave a long walkthrough or a build recorded against a black screen.
+    static let activityOptions: ProcessInfo.ActivityOptions = [.userInitiated, .idleDisplaySleepDisabled]
     private var startedAt: ContinuousClock.Instant?
     private var pausedFor: Duration = .zero
     private var pausedSince: ContinuousClock.Instant?
@@ -182,8 +185,7 @@ public final class ScreenRecorder {
         startedAt = .now
         output.watchAudio(microphone: target.audio.microphone != nil, systemAudio: target.audio.system, from: Self.hostTime().seconds)
         leases = [ActiveResources.shared.acquire(.captureStream), ActiveResources.shared.acquire(.activity)]
-        // Kept from App Nap and idle sleep while recording; the display may still sleep.
-        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated], reason: "Recording the screen")
+        activity = ProcessInfo.processInfo.beginActivity(options: Self.activityOptions, reason: "Recording the screen")
         Log.recording.notice("Recording \(self.target.format.width, privacy: .public)x\(self.target.format.height, privacy: .public) \(self.target.format.codec.rawValue, privacy: .public) at \(self.target.format.framesPerSecond, privacy: .public) fps")
     }
 

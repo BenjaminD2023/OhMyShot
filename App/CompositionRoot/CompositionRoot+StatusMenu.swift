@@ -15,6 +15,16 @@ import UniformTypeIdentifiers
 extension CompositionRoot {
     /// The menu bar icon and its menu: the captures, the tools, the pictures to open or pin, the history, and the app.
     func makeStatusItem() -> StatusItemController {
+        // In the Pins menu, and a tile in the launcher.
+        let togglePins = StatusItemController.Entry(
+            title: String(localized: "Hide Pins"),
+            systemImage: "pin.slash",
+            shortcut: .togglePins,
+            isEnabled: { [weak self] in !(self?.pins.isEmpty ?? true) },
+            currentTitle: { [weak self] in self?.pins.areHidden == true ? String(localized: "Show Pins") : String(localized: "Hide Pins") }
+        ) { [weak self] in
+            self?.handle(.togglePins)
+        }
         let statusItem = StatusItemController(
             captureEntries: [
                 .init(title: String(localized: "All-In-One"), systemImage: "camera.viewfinder", shortcut: .allInOne) { [weak self] in self?.handle(.allInOne) },
@@ -134,7 +144,9 @@ extension CompositionRoot {
                         ) { [weak self] in
                             self?.handle(.openFromClipboard)
                         },
-                        .init(title: String(localized: "Pin"), isEnabled: { Self.clipboardMayHoldPin() }) { [weak self] in self?.pinClipboard() },
+                        .init(title: String(localized: "Pin"), shortcut: .pinFromClipboard, isEnabled: { Self.clipboardMayHoldPin() }) { [weak self] in
+                            self?.handle(.pinFromClipboard)
+                        },
                         .init(
                             title: String(localized: "Recognize Text"),
                             isEnabled: { PasteboardImage.mayHoldImage(.general) }
@@ -145,14 +157,7 @@ extension CompositionRoot {
                 },
                 .init(title: String(localized: "Pins"), systemImage: "pin.circle") { [weak self] in
                     [
-                        .init(
-                            title: String(localized: "Hide Pins"),
-                            isEnabled: { [weak self] in !(self?.pins.isEmpty ?? true) },
-                            currentTitle: { [weak self] in self?.pins.areHidden == true ? String(localized: "Show Pins") : String(localized: "Hide Pins") }
-                        ) { [weak self] in
-                            guard let self else { return }
-                            pins.setHidden(!pins.areHidden)
-                        },
+                        togglePins,
                         .init(
                             title: String(localized: "Unlock Pins"),
                             isEnabled: { [weak self] in self?.pins.hasLockedPins ?? false }
@@ -168,15 +173,28 @@ extension CompositionRoot {
                     ]
                 },
             ],
+            // The pin commands that take a shortcut, as tiles in the launcher; the menus above have them too.
+            pinEntries: [
+                .init(
+                    title: String(localized: "Pin from Clipboard"),
+                    systemImage: "doc.on.clipboard",
+                    shortcut: .pinFromClipboard,
+                    isEnabled: { Self.clipboardMayHoldPin() }
+                ) { [weak self] in
+                    self?.handle(.pinFromClipboard)
+                },
+                togglePins,
+            ],
             historyEntries: [
                 .init(title: String(localized: "Annotate Latest Capture"), systemImage: "pencil.tip.crop.circle", shortcut: .annotateLatestCapture) { [weak self] in self?.handle(.annotateLatestCapture) },
                 .init(title: String(localized: "Capture History…"), systemImage: "clock.arrow.circlepath", shortcut: .openHistory) { [weak self] in self?.showHistory() },
                 .init(
                     title: String(localized: "Restore Recently Closed"),
                     systemImage: "arrow.uturn.backward.circle",
+                    shortcut: .restoreRecentlyClosed,
                     isEnabled: { [weak self] in self?.quickAccess.canRestoreRecentlyClosed ?? false }
                 ) { [weak self] in
-                    self?.quickAccess.restoreRecentlyClosed()
+                    self?.handle(.restoreRecentlyClosed)
                 },
             ],
             appEntries: [

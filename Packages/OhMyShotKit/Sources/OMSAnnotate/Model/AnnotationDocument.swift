@@ -106,6 +106,8 @@ nonisolated public enum Shape: Codable, Sendable, Equatable {
     /// Another picture combined into the capture. Images are part of the picture: they lie under the
     /// spotlight and every other mark.
     case image(PlacedImage)
+    /// A round lens showing part of the picture larger.
+    case magnifier(Magnifier)
 }
 
 nonisolated public struct Arrow: Codable, Sendable, Equatable {
@@ -278,6 +280,9 @@ nonisolated public struct Redaction: Codable, Sendable, Equatable {
         case blur
         /// Large blocks, each nudged by noise seeded from the mark.
         case pixelate
+        /// Filled from the picture just around the mark (one color, a gradient, or its sides blended in), so
+        /// it blends into the surface it lies on. Nothing under the mark is read.
+        case erase
     }
 
     public var rect: CGRect
@@ -302,6 +307,55 @@ nonisolated public struct PlacedImage: Codable, Sendable, Equatable {
         self.rect = rect
         self.name = name
         self.orientation = orientation
+    }
+}
+
+/// A round lens showing the picture around `source` at `zoom` times its size, with every redaction on it, so
+/// it never shows what one hides. It stands over what it magnifies until it is moved away; then a thin line
+/// joins it to a ring around that spot.
+nonisolated public struct Magnifier: Codable, Sendable, Equatable {
+    public enum Zoom: Int, Codable, Sendable, CaseIterable {
+        case two = 2
+        case three = 3
+        case four = 4
+    }
+
+    /// The middle of what is magnified, in pixels.
+    public var source: CGPoint
+    /// The middle of the lens, in pixels: `source` while it stands over what it magnifies.
+    public var center: CGPoint
+    /// The lens's radius, in pixels.
+    public var radius: CGFloat
+    public var zoom: Zoom
+
+    public init(source: CGPoint, center: CGPoint? = nil, radius: CGFloat, zoom: Zoom = .two) {
+        self.source = source
+        self.center = center ?? source
+        self.radius = radius
+        self.zoom = zoom
+    }
+
+    /// A new lens's radius, in points: 120 pt across, as the capture overlay's loupe is.
+    public static let lensRadius: CGFloat = 60
+    /// The smallest a lens is sized to, in points.
+    static let smallestRadius: CGFloat = 12
+
+    /// The radius of what the lens shows, in pixels.
+    public var sourceRadius: CGFloat { radius / CGFloat(zoom.rawValue) }
+
+    /// Whether the lens stands clear of what it magnifies, so a line joins the two.
+    public var isDetached: Bool {
+        hypot(center.x - source.x, center.y - source.y) > radius + sourceRadius
+    }
+
+    /// What the lens shows, in pixels.
+    public var sourceRect: CGRect {
+        CGRect(x: source.x - sourceRadius, y: source.y - sourceRadius, width: sourceRadius * 2, height: sourceRadius * 2)
+    }
+
+    /// The lens, in pixels.
+    public var lensRect: CGRect {
+        CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
     }
 }
 

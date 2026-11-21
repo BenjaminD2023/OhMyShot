@@ -19,7 +19,7 @@ public struct CapturedFrame: Sendable {
     }
 
     /// Image pixels per point of screen.
-    public var pixelsPerPoint: CGFloat {
+    nonisolated public var pixelsPerPoint: CGFloat {
         frame.width > 0 ? CGFloat(image.width) / frame.width : 1
     }
 
@@ -78,6 +78,33 @@ public struct CapturedFrame: Sendable {
             x: frame.minX + pixels.minX / scale, y: frame.maxY - pixels.maxY / scale,
             width: pixels.width / scale, height: pixels.height / scale
         ))
+    }
+
+    /// The edges of what `rect` (AppKit's global space) holds in this capture, in the same space and on its pixels:
+    /// Measure's area detection, run on that part of the picture alone with a margin around it wide enough that an edge
+    /// at the area's side is judged as it would be on the whole capture, so a large capture is never copied whole. Nil
+    /// when nothing in it has edges to fit to. Off the main actor: an area across a 6K display takes a while.
+    nonisolated public func contentBounds(in rect: CGRect, tolerance: MeasureTolerance = .medium) -> CGRect? {
+        let scale = pixelsPerPoint
+        let area = rect.standardized.intersection(frame)
+        guard !area.isNull, area.width > 0, area.height > 0 else { return nil }
+        let whole = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        // Global space is y up; the image is y down from the capture's top-left corner.
+        let minX = ((area.minX - frame.minX) * scale).rounded()
+        let maxX = ((area.maxX - frame.minX) * scale).rounded()
+        let minY = ((frame.maxY - area.maxY) * scale).rounded()
+        let maxY = ((frame.maxY - area.minY) * scale).rounded()
+        let box = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).intersection(whole)
+        // The detector looks up to ten pixels past an edge; what lies further out cannot change what it finds.
+        let read = box.insetBy(dx: -16, dy: -16).intersection(whole)
+        guard !box.isNull, box.width >= 1, box.height >= 1, let part = image.cropping(to: read),
+              let grid = PixelGrid(part, pixelsPerPoint: scale),
+              let found = grid.contentBounds(in: box.offsetBy(dx: -read.minX, dy: -read.minY), tolerance: tolerance) else { return nil }
+        let pixels = found.offsetBy(dx: read.minX, dy: read.minY)
+        return CGRect(
+            x: frame.minX + pixels.minX / scale, y: frame.maxY - pixels.maxY / scale,
+            width: pixels.width / scale, height: pixels.height / scale
+        )
     }
 
     /// The captures of an area's parts on several displays, put together as one capture of `area`: at

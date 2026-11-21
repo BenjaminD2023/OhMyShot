@@ -10,6 +10,11 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         case gradient(String)
         /// A plain color, sRGB from 0 to 1.
         case color(red: Double, green: Double, blue: Double)
+        /// A picture the person chose, kept in the project's folder under this name (`StudioBackgroundPicture`), so
+        /// it goes wherever the project goes.
+        case picture(String)
+        /// The recording itself as it plays, blurred until only its colors are left.
+        case blur
     }
 
     /// The movie's shape: the recording's own with the background around it, or a fixed one.
@@ -40,8 +45,25 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         case best
     }
 
-    /// A stretch of the movie drawn larger, following the pointer.
+    /// A stretch of the movie drawn larger, following the pointer or held on a spot of the recording.
     public struct Zoom: Codable, Equatable, Identifiable, Sendable {
+        /// A place in the recording, as fractions of its width and its height from its top-left corner: the same
+        /// place whatever the movie's size, shape, padding, or layout.
+        public struct Spot: Codable, Equatable, Sendable {
+            public var x: Double
+            public var y: Double
+
+            public init(x: Double, y: Double) {
+                self.x = x
+                self.y = y
+            }
+
+            /// The spot kept inside the recording.
+            public var clamped: Spot {
+                Spot(x: min(max(x, 0), 1), y: min(max(y, 0), 1))
+            }
+        }
+
         public var id: UUID
         /// Seconds into the recording; the zoom eases in from `start` and out until `end`.
         public var start: Double
@@ -50,13 +72,33 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         public var scale: Double
         /// Placed from clicks and typing, rather than by hand.
         public var isAutomatic: Bool
+        /// Where the camera holds while zoomed, whatever the pointer does; nil follows the pointer, as every zoom
+        /// did before one could be aimed.
+        public var target: Spot?
 
-        public init(id: UUID = UUID(), start: Double, end: Double, scale: Double, isAutomatic: Bool) {
+        public init(id: UUID = UUID(), start: Double, end: Double, scale: Double, isAutomatic: Bool, target: Spot? = nil) {
             self.id = id
             self.start = start
             self.end = end
             self.scale = scale
             self.isAutomatic = isAutomatic
+            self.target = target
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case id, start, end, scale, isAutomatic, target
+        }
+
+        /// A zoom saved before it could be aimed follows the pointer, and so does one whose spot this version
+        /// can't read, rather than losing the project.
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(UUID.self, forKey: .id)
+            start = try container.decode(Double.self, forKey: .start)
+            end = try container.decode(Double.self, forKey: .end)
+            scale = try container.decode(Double.self, forKey: .scale)
+            isAutomatic = try container.decode(Bool.self, forKey: .isAutomatic)
+            target = (try? container.decodeIfPresent(Spot.self, forKey: .target)) ?? nil
         }
     }
 
@@ -187,6 +229,16 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             case right
         }
 
+        /// What the camera shows behind the person.
+        public enum Background: String, Codable, CaseIterable, Sendable {
+            /// The room as it was filmed.
+            case original
+            /// The room blurred, the person sharp.
+            case blur
+            /// No room: the person alone, on whatever is behind the camera's picture.
+            case cutout
+        }
+
         /// The layout of the movie where no stretch of the timeline says otherwise.
         public var layout: Layout
         public var shape: Shape
@@ -196,6 +248,7 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         /// As a mirror shows it, as people expect to see themselves.
         public var mirrored: Bool
         public var side: Side
+        public var background: Background
         /// The times the camera filled what was recorded are stretches of their own (`cameraSegments`), no
         /// longer read from the recording. False until Studio makes them so, as it opens a project.
         public var recordedFillsAreSegments: Bool
@@ -212,7 +265,7 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         /// - Parameter layout: how the camera is shown; nil takes the bubble, or screen only without `isShown`.
         public init(
             isShown: Bool = true, shape: Shape = .circle, size: Double = 180, corner: Corner = .bottomLeft, mirrored: Bool = true,
-            layout: Layout? = nil, side: Side = .right, recordedFillsAreSegments: Bool = false
+            layout: Layout? = nil, side: Side = .right, background: Background = .original, recordedFillsAreSegments: Bool = false
         ) {
             self.layout = layout ?? (isShown ? .pictureInPicture : .screenOnly)
             self.shape = shape
@@ -220,13 +273,14 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             self.corner = corner
             self.mirrored = mirrored
             self.side = side
+            self.background = background
             self.recordedFillsAreSegments = recordedFillsAreSegments
         }
 
         /// `isShown` stays in what is saved, so a version that knows no layouts still hides the camera when
         /// the layout is screen only.
         private enum CodingKeys: String, CodingKey {
-            case isShown, shape, size, corner, mirrored, layout, side, recordedFillsAreSegments
+            case isShown, shape, size, corner, mirrored, layout, side, background, recordedFillsAreSegments
         }
 
         /// A camera saved before a setting existed takes its default; one saved before layouts shows its
@@ -242,6 +296,8 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             corner = try container.decodeIfPresent(Corner.self, forKey: .corner) ?? defaults.corner
             mirrored = try container.decodeIfPresent(Bool.self, forKey: .mirrored) ?? defaults.mirrored
             side = (try? container.decodeIfPresent(Side.self, forKey: .side)) ?? defaults.side
+            // One from a newer version, unknown here, shows the room as it was.
+            background = (try? container.decodeIfPresent(Background.self, forKey: .background)) ?? defaults.background
             recordedFillsAreSegments = try container.decodeIfPresent(Bool.self, forKey: .recordedFillsAreSegments) ?? defaults.recordedFillsAreSegments
         }
 
@@ -254,6 +310,7 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             try container.encode(corner, forKey: .corner)
             try container.encode(mirrored, forKey: .mirrored)
             try container.encode(side, forKey: .side)
+            try container.encode(background, forKey: .background)
             try container.encode(recordedFillsAreSegments, forKey: .recordedFillsAreSegments)
         }
     }
@@ -301,6 +358,94 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         }
     }
 
+    /// How loud the recording's sounds play in the movie, each set on its own: the system's sound and the
+    /// microphone, kept apart while recording, or the recording's sound as one where they weren't.
+    public struct Audio: Codable, Equatable, Sendable {
+        /// How loud one sound plays.
+        public struct Level: Codable, Equatable, Sendable {
+            public var isMuted: Bool
+            /// Against the sound as recorded, from 0 to 1.
+            public var volume: Double
+
+            public init(isMuted: Bool = false, volume: Double = 1) {
+                self.isMuted = isMuted
+                self.volume = volume
+            }
+
+            /// What the movie plays it at, from 0 (silent) to 1 (as recorded).
+            public var gain: Double {
+                isMuted ? 0 : min(max(volume, 0), 1)
+            }
+
+            private enum CodingKeys: String, CodingKey {
+                case isMuted, volume
+            }
+
+            public init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+                volume = try container.decodeIfPresent(Double.self, forKey: .volume) ?? 1
+            }
+        }
+
+        public var system: Level
+        public var microphone: Level
+        public var recorded: Level
+
+        public init(system: Level = Level(), microphone: Level = Level(), recorded: Level = Level()) {
+            self.system = system
+            self.microphone = microphone
+            self.recorded = recorded
+        }
+
+        public subscript(sound: StudioSound) -> Level {
+            get {
+                switch sound {
+                case .system: system
+                case .microphone: microphone
+                case .recorded: recorded
+                }
+            }
+            set {
+                switch sound {
+                case .system: system = newValue
+                case .microphone: microphone = newValue
+                case .recorded: recorded = newValue
+                }
+            }
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case system, microphone, recorded
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            system = try container.decodeIfPresent(Level.self, forKey: .system) ?? Level()
+            microphone = try container.decodeIfPresent(Level.self, forKey: .microphone) ?? Level()
+            recorded = try container.decodeIfPresent(Level.self, forKey: .recorded) ?? Level()
+        }
+    }
+
+    /// A stretch of the recording played faster or slower than it was recorded, everything in it alike: the
+    /// picture, the sounds (at their own pitch), the pointer, the clicks, the keys, the zooms, and the camera.
+    public struct Speed: Codable, Equatable, Sendable {
+        /// Seconds into the recording.
+        public var start: Double
+        public var end: Double
+        /// Against the recording: 2 plays the stretch in half the time.
+        public var rate: Double
+
+        public init(start: Double, end: Double, rate: Double) {
+            self.start = start
+            self.end = end
+            self.rate = rate
+        }
+    }
+
+    /// The speeds a stretch can be played at, besides as recorded.
+    public static let speedRates: [Double] = [0.5, 1.5, 2, 3, 4]
+
     public var background: Background
     /// The room around the recording, as a fraction of its shorter side.
     public var padding: Double
@@ -328,13 +473,18 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
     public var motionBlur: Bool
     /// How closely the exported movie is encoded.
     public var quality: Quality
+    /// How loud each of the recording's sounds plays.
+    public var audio: Audio
+    /// Stretches of the recording played faster or slower, in its seconds: in order and apart once the project is
+    /// opened (`normalizedSpeeds`). The cuts leave out what they cover of them.
+    public var speeds: [Speed]
 
     /// The defaults are the annotation editor's background card's: the same padding, corners, and shadow.
     public init(
         background: Background = .gradient("sky"), padding: Double = 0.08, cornerRadius: Double = 12, shadow: Double = 0.5,
         aspect: Aspect = .auto, cursor: Cursor = Cursor(), zooms: [Zoom] = [], cuts: [ClosedRange<Double>] = [], showsKeys: Bool = true,
         keystrokeMode: KeystrokeMode = .all, automaticZooms: Bool = true, camera: Camera = Camera(), motionBlur: Bool = true,
-        quality: Quality = .standard, cameraSegments: [CameraSegment] = []
+        quality: Quality = .standard, cameraSegments: [CameraSegment] = [], audio: Audio = Audio(), speeds: [Speed] = []
     ) {
         self.background = background
         self.padding = padding
@@ -351,17 +501,21 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         self.cameraSegments = cameraSegments
         self.motionBlur = motionBlur
         self.quality = quality
+        self.audio = audio
+        self.speeds = speeds
     }
 
     private enum CodingKeys: String, CodingKey {
-        case background, padding, cornerRadius, shadow, aspect, cursor, zooms, cuts, showsKeys, keystrokeMode, automaticZooms, camera, cameraSegments, motionBlur, quality
+        case background, padding, cornerRadius, shadow, aspect, cursor, zooms, cuts, showsKeys, keystrokeMode, automaticZooms, camera, cameraSegments, motionBlur, quality,
+            audio, speeds
     }
 
     /// A project saved before a setting existed takes its default.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = StudioProject()
-        background = try container.decodeIfPresent(Background.self, forKey: .background) ?? defaults.background
+        // A background from a newer version, unknown here, takes the default rather than losing the project.
+        background = (try? container.decodeIfPresent(Background.self, forKey: .background)) ?? defaults.background
         padding = try container.decodeIfPresent(Double.self, forKey: .padding) ?? defaults.padding
         cornerRadius = try container.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? defaults.cornerRadius
         shadow = try container.decodeIfPresent(Double.self, forKey: .shadow) ?? defaults.shadow
@@ -376,6 +530,8 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         cameraSegments = try container.decodeIfPresent([CameraSegment].self, forKey: .cameraSegments) ?? []
         motionBlur = try container.decodeIfPresent(Bool.self, forKey: .motionBlur) ?? defaults.motionBlur
         quality = try container.decodeIfPresent(Quality.self, forKey: .quality) ?? defaults.quality
+        audio = try container.decodeIfPresent(Audio.self, forKey: .audio) ?? defaults.audio
+        speeds = try container.decodeIfPresent([Speed].self, forKey: .speeds) ?? []
     }
 
     /// Makes the times the camera filled what was recorded (`fills`, in the recording's seconds) stretches of
@@ -400,6 +556,7 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
     public func opened(for telemetry: StudioTelemetry, duration: Double) -> StudioProject {
         var project = self
         project.cuts = Self.normalizedCuts(cuts, duration: duration)
+        project.speeds = Self.normalizedSpeeds(speeds, duration: duration)
         if let camera = telemetry.camera { project.adoptRecordedFills(camera.fills, duration: duration) }
         return project
     }
@@ -424,6 +581,30 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             }
         }
         return kept
+    }
+
+    /// `speeds` as Studio keeps them: inside the recording's `duration`, none empty or as recorded, each between the
+    /// slowest and fastest offered, in order, and apart: where two overlap, the one that starts first keeps the
+    /// overlap. Set Speed leaves them so; made so where a project is opened, and where a movie is put together.
+    static func normalizedSpeeds(_ speeds: [Speed], duration: Double) -> [Speed] {
+        var kept: [Speed] = []
+        for speed in speeds.sorted(by: { $0.start < $1.start }) {
+            guard speed.rate.isFinite, speed.start.isFinite, speed.end.isFinite else { continue }
+            let rate = min(max(speed.rate, speedRates.min() ?? 1), speedRates.max() ?? 1)
+            let start = max(0, speed.start, kept.last?.end ?? 0), end = min(duration, speed.end)
+            guard end - start > 0.001, rate != 1 else { continue }
+            kept.append(Speed(start: start, end: end, rate: rate))
+        }
+        return kept
+    }
+
+    /// How long `range` of the recording plays in the movie, at the speeds set across it: a cut there makes the movie
+    /// this much shorter.
+    func playedLength(of range: ClosedRange<Double>) -> Double {
+        speeds.reduce(range.upperBound - range.lowerBound) { length, speed in
+            let overlap = max(0, min(range.upperBound, speed.end) - max(range.lowerBound, speed.start))
+            return length - overlap + overlap / speed.rate
+        }
     }
 
     /// The shortest stretch of the timeline for the camera's layout, in seconds.

@@ -6,7 +6,7 @@ import OSLog
 
 /// How long captures stay in the history. Settings' Keep Captures takes the old ones away; with history off a capture
 /// lives as long as something holds it (`heldCaptureIDs`: a card, an editor or a recording's window, an upload, the
-/// clipboard) and goes once nothing does. The desktop pictures' pieces kept for window screenshots go with the last
+/// clipboard, a shortcut) and goes once nothing does. The desktop pictures' pieces kept for window screenshots go with the last
 /// capture that used them.
 final class CaptureRetention {
     private let settings: SettingsStore
@@ -23,6 +23,8 @@ final class CaptureRetention {
     private let historyChanged: ([UUID]) -> Void
     private var pictureSweep: Task<Void, Never>?
     private var expiry: Task<Void, Never>?
+    /// The captures shortcuts hold until they have read their files.
+    private(set) lazy var shortcutHolds = ShortcutCaptureHolds(released: { [weak self] in self?.releaseIfUnheld($0) })
     private lazy var clipboard = RecordingClipboardHold(
         changeCount: { NSPasteboard.general.changeCount },
         released: { [weak self] in self?.releaseIfUnheld($0) }
@@ -42,13 +44,14 @@ final class CaptureRetention {
     }
 
     /// Captures something still needs the file of: a card, an open editor, an open recording window (a Studio one
-    /// included), an upload on its way, the clipboard.
+    /// included), an upload on its way, the clipboard, a shortcut that has yet to read it.
     private func heldCaptureIDs(for retention: HistoryRetention) -> Set<UUID> {
         cards(retention)
             .union(editors())
             .union(recordingWindows())
             .union(uploads())
             .union(clipboard.heldID.map { [$0] } ?? [])
+            .union(shortcutHolds.heldIDs)
     }
 
     /// With history off, a capture lives as long as something holds it (`heldCaptureIDs`); deletes it once nothing does.
@@ -75,12 +78,11 @@ final class CaptureRetention {
         expiry = Task { [weak self, history] in
             let expired = await history.loadExpired(retention: retention, keeping: keeping, now: now)
             guard let self, !Task.isCancelled, settings.historyRetention == retention else { return }
-            // Back on the main actor, and the listing took a while: a capture taken since is newer than `now`, and one
-            // a card, an editor, or the clipboard took up since is held now; neither goes. With history off, that is
-            // every capture but the ones still in use.
-            let removable = HistoryStore.removable(expired, held: heldCaptureIDs(for: retention), checkedAt: now).filter {
-                history.item(forFileAt: history.fileURL(for: $0))?.id == $0.id
-            }
+            // Back on the main actor, and the listing took a while: a capture taken since is newer than `now`, one a
+            // card, an editor, or the clipboard took up since is held now, and one added to Favorites since is kept;
+            // none of them goes. With history off, that is every capture but the ones still in use.
+            let current = history.stillExpired(expired, retention: retention, now: now)
+            let removable = HistoryStore.removable(current, held: heldCaptureIDs(for: retention), checkedAt: now)
             removable.forEach(history.delete)
             if !removable.isEmpty {
                 Log.capture.notice("Removed \(removable.count, privacy: .public) expired capture(s) from the history")
@@ -93,6 +95,11 @@ final class CaptureRetention {
     /// How many captures a retention would delete now; captures still on screen as cards are kept.
     func expiredCount(for retention: HistoryRetention) -> Int {
         history.expired(retention: retention, keeping: heldCaptureIDs(for: retention)).count
+    }
+
+    /// How many of those are favorites, which only turning History off deletes.
+    func expiredFavoriteCount(for retention: HistoryRetention) -> Int {
+        history.expired(retention: retention, keeping: heldCaptureIDs(for: retention)).filter(\.isFavorite).count
     }
 
     /// Takes away the desktop pictures' pieces kept for window screenshots once nothing uses them: no capture's

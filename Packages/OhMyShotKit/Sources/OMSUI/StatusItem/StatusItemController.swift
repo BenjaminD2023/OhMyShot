@@ -124,6 +124,8 @@ public final class StatusItemController {
     private let toolEntries: [Entry]
     /// Pictures already on disk or on the clipboard, and the pins.
     private let imageEntries: [Entry]
+    /// The pin commands that take a shortcut, tiles in the launcher; the status menu has them in `imageEntries`' menus.
+    private let pinEntries: [Entry]
     private let historyEntries: [Entry]
     /// The app's own entries above Settings…, such as Check for Updates….
     private let priorityEntries: [Entry]
@@ -140,6 +142,7 @@ public final class StatusItemController {
         captureEntries: [Entry],
         toolEntries: [Entry] = [],
         imageEntries: [Entry] = [],
+        pinEntries: [Entry] = [],
         historyEntries: [Entry] = [],
         priorityEntries: [Entry] = [],
         appEntries: [Entry] = [],
@@ -152,6 +155,7 @@ public final class StatusItemController {
         self.captureEntries = captureEntries
         self.toolEntries = toolEntries
         self.imageEntries = imageEntries
+        self.pinEntries = pinEntries
         self.historyEntries = historyEntries
         self.priorityEntries = priorityEntries
         self.appEntries = appEntries
@@ -389,7 +393,7 @@ public final class StatusItemController {
     /// Share the exact launcher command wiring with regression checks.
     var launcherModel: CaptureLauncherModel {
         CaptureLauncherModel(captureEntries: captureEntries, toolEntries: toolEntries,
-                                         imageEntries: imageEntries, historyEntries: historyEntries,
+                                         imageEntries: imageEntries, historyEntries: historyEntries, pinEntries: pinEntries,
                                          priorityEntries: priorityEntries, appEntries: appEntries + updateEntries,
                                          debugEntries: debugEntries, openSettings: openSettings,
                                          editShortcut: editShortcut, quit: quit)
@@ -421,8 +425,12 @@ public final class StatusItemController {
             self?.showLauncherMenu(entry, below: anchor)
         }
         let host = NSHostingController(rootView: view)
-        // The popover takes the launcher's own height, so nothing in it scrolls.
+        // The popover takes the launcher's own height, so nothing in it scrolls, unless the display is too short to hold
+        // it under the menu bar and above the Dock, with room for the popover's arrow: then it stops there and scrolls.
         host.sizingOptions = [.preferredContentSize]
+        if let window = button.window, let screen = window.screen {
+            host.rootView.maxHeight = window.frame.minY - screen.visibleFrame.minY - 24
+        }
         launcher.contentViewController = host
         launcher.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         button.highlight(true)
@@ -470,6 +478,7 @@ public final class StatusItemController {
             rows[cell.row].entries[cell.column].isEnabled?() != false
         }
         launcherHighlight.fromKeys = true
+        launcherHighlight.keysPointer = NSEvent.mouseLocation
         return true
     }
 

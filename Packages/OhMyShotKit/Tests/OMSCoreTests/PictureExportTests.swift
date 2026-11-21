@@ -76,6 +76,17 @@ struct PictureExportTests {
         }
     }
 
+    /// A capture whose file is gone says so, so a copy that can't be made says the file is missing, not only that it failed.
+    @Test func aMissingFileSaysItIsMissing() {
+        let gone = FileManager.default.temporaryDirectory.appending(path: "PictureExportTests-\(UUID().uuidString).png")
+        do {
+            _ = try PictureExport.encode(fileAt: gone, pixelsPerPoint: nil, output: ScreenshotOutput(format: .jpeg))
+            Issue.record("A file that is not there was encoded")
+        } catch {
+            #expect(ExportFailure.saving(error, into: nil).cause == .sourceMissing)
+        }
+    }
+
     @Test func aLowerQualityMakesASmallerFile() throws {
         // Noise, which a lossy format has to work at.
         var generator = SystemRandomNumberGenerator()

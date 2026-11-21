@@ -9,6 +9,10 @@ import OMSDesign
 /// shows through. With Reduce Transparency it is a solid capsule.
 final class ToolRail: NSView {
     var onSelect: ((AnnotationTool) -> Void)?
+    /// The colors 1 to 9 choose now, for the menu to list beside their keys.
+    var keyedColors: (() -> [RGBA])?
+    /// The canvas the menu's mark and style items go to, which is no responder of the rail's own when a chip has the keys.
+    weak var markTarget: AnyObject?
 
     static let width: CGFloat = 42
     private static let inset: CGFloat = 6
@@ -19,7 +23,7 @@ final class ToolRail: NSView {
         [.select],
         [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox],
         [.text, .counter],
-        [.redact, .spotlight],
+        [.redact, .spotlight, .magnifier],
         [.crop, .background],
     ]
     /// The quick preview keeps the everyday marks at hand; Edit reveals the rest in the same session.
@@ -227,6 +231,7 @@ final class ToolRail: NSView {
     }
 
     /// Every tool with its key, which the rail's chips show only in their hover tags: there is no menu bar to list them.
+    /// After them, the keys for marks and their style, sent to the canvas, which says when each applies.
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         for (index, group) in Self.groups.enumerated() {
@@ -241,6 +246,29 @@ final class ToolRail: NSView {
                 menu.addItem(item)
             }
         }
+        menu.addItem(.separator())
+        func key(_ title: String, _ action: Selector, _ key: String, _ modifiers: NSEvent.ModifierFlags = []) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            item.target = markTarget
+            return item
+        }
+        menu.addItem(key(String(localized: "Select Next Mark", bundle: .module), #selector(AnnotationCanvasView.selectNextMark(_:)), "\t"))
+        menu.addItem(key(String(localized: "Select Previous Mark", bundle: .module), #selector(AnnotationCanvasView.selectPreviousMark(_:)), "\t", .shift))
+        let colors = keyedColors?() ?? []
+        if !colors.isEmpty {
+            let submenu = NSMenu()
+            for (index, color) in colors.enumerated() {
+                let item = key(StyleCapsule.colorName(color), #selector(AnnotationCanvasView.chooseKeyedColor(_:)), String(index + 1))
+                item.tag = index
+                submenu.addItem(item)
+            }
+            let item = NSMenuItem(title: String(localized: "Color", bundle: .module), action: nil, keyEquivalent: "")
+            item.submenu = submenu
+            menu.addItem(item)
+        }
+        menu.addItem(key(String(localized: "Smaller", bundle: .module), #selector(AnnotationCanvasView.makeSmaller(_:)), "["))
+        menu.addItem(key(String(localized: "Larger", bundle: .module), #selector(AnnotationCanvasView.makeLarger(_:)), "]"))
         return menu
     }
 

@@ -167,4 +167,27 @@ struct AreaFrameTests {
         let edge = AreaFrame.framed(CGRect(x: 1000, y: 600, width: 400, height: 300), on: display, keeping: nil)
         #expect(display.frame.contains(edge))
     }
+
+    @Test func theAreaHoldingContentIsTheContentItself() {
+        let content = CGRect(x: 120, y: 80, width: 200, height: 60)
+        #expect(AreaFrame.holding(content, in: bounds) == content)
+    }
+
+    @Test func theAreaHoldingTinyContentIsTheSmallestCenteredOnIt() {
+        let dot = CGRect(x: 100, y: 100, width: 4, height: 30)
+        #expect(AreaFrame.holding(dot, in: bounds) == CGRect(x: 102 - 8, y: 100, width: 16, height: 30))
+    }
+
+    /// A shape kept: the side across from the content's longer one grows, both ways from the middle; at the bounds' edge
+    /// the area is moved inside, still holding the content.
+    @Test func theAreaHoldingContentKeepsAShapeAndStaysInside() {
+        let wide = AreaFrame.holding(CGRect(x: 300, y: 300, width: 160, height: 40), keeping: 2, in: bounds)
+        #expect(wide == CGRect(x: 300, y: 280, width: 160, height: 80))
+        let tall = AreaFrame.holding(CGRect(x: 300, y: 300, width: 40, height: 160), keeping: 1, in: bounds)
+        #expect(tall == CGRect(x: 240, y: 300, width: 160, height: 160))
+        let content = CGRect(x: 10, y: 0, width: 40, height: 100)
+        let atEdge = AreaFrame.holding(content, keeping: 16.0 / 9, in: bounds)
+        #expect(atEdge.minX == 0 && atEdge.minY == 0)
+        #expect(atEdge.contains(content) && abs(atEdge.width / atEdge.height - 16.0 / 9) < 0.001)
+    }
 }

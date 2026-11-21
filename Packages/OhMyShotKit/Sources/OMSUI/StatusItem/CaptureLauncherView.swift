@@ -13,6 +13,8 @@ struct CaptureLauncherModel {
     let toolEntries: [Entry]
     let imageEntries: [Entry]
     let historyEntries: [Entry]
+    /// Pin from Clipboard and Hide Pins, tiles after the tools; the status menu keeps them in Images & Pins' menus.
+    var pinEntries: [Entry] = []
     let priorityEntries: [Entry]
     let appEntries: [Entry]
     let debugEntries: [Entry]
@@ -28,7 +30,7 @@ struct CaptureLauncherModel {
         .recordScreen, .allInOne, .selfTimer, .pinArea,
     ]
 
-    private var commands: [Entry] { visible(captureEntries + toolEntries + historyEntries) }
+    private var commands: [Entry] { visible(captureEntries + toolEntries + pinEntries + historyEntries) }
 
     var captureTiles: [Entry] {
         Self.captureShortcuts.compactMap { shortcut in commands.first { $0.shortcut == shortcut } }
@@ -44,7 +46,7 @@ struct CaptureLauncherModel {
         visible(priorityEntries) + commands.filter(Self.isStatus)
     }
 
-    /// Commands without a shortcut: menus of their own, switches, and Restore Recently Closed.
+    /// Commands without a shortcut: menus of their own and switches.
     var moreRows: [Entry] {
         commands.filter { $0.shortcut == nil && !Self.isStatus($0) }
     }
@@ -151,6 +153,21 @@ final class LauncherHighlight {
     var fromKeys = false
     /// Counts Return and Space on the highlighted command; the command's own button answers each.
     var presses = 0
+    /// Where the pointer was when the arrow keys last moved the highlight.
+    var keysPointer: CGPoint?
+
+    /// The pointer at `pointer` going over `cell` lights it, and leaving lets go of it, unless the arrow keys have moved
+    /// on. Going over it with the pointer still where it was when the keys moved is the launcher scrolling the keys'
+    /// command into view under it, which leaves that command lit.
+    func hover(_ cell: CaptureLauncherModel.Cell, inside: Bool, pointer: CGPoint) {
+        if inside {
+            guard !fromKeys || pointer != keysPointer else { return }
+            self.cell = cell
+            fromKeys = false
+        } else if self.cell == cell, !fromKeys {
+            self.cell = nil
+        }
+    }
 }
 
 struct CaptureLauncherView: View {
@@ -164,6 +181,9 @@ struct CaptureLauncherView: View {
     let perform: (Entry) -> Void
     /// Opens a row's submenu under the row, whose frame is given in `space`.
     let showMenu: (Entry, CGRect) -> Void
+    /// How tall the launcher may be on its display: taller, as on a short display or when a row appears while it is
+    /// open, it scrolls.
+    var maxHeight: CGFloat = .infinity
 
     var body: some View {
         // Only alive while the popover is open. Re-read countdowns, cancellations, and menu availability.
@@ -175,7 +195,7 @@ struct CaptureLauncherView: View {
             let moreRow = toolRow + tools.chunked(CaptureLauncherModel.tileColumns).count
             let imageRow = moreRow + more.chunked(CaptureLauncherModel.rowColumns).count
             let appRow = imageRow + images.chunked(CaptureLauncherModel.rowColumns).count
-            VStack(alignment: .leading, spacing: 0) {
+            let content = VStack(alignment: .leading, spacing: 0) {
                 header
                 if !active.isEmpty {
                     VStack(spacing: 4) {
@@ -197,24 +217,29 @@ struct CaptureLauncherView: View {
             .padding(8)
             .frame(width: 420)
             .fixedSize(horizontal: false, vertical: true)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) { content }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(width: 420)
+                    .frame(maxHeight: maxHeight)
+                    .onChange(of: highlight.cell) { _, cell in
+                        if highlight.fromKeys, let cell { proxy.scrollTo(cell) }
+                    }
+            }
             .coordinateSpace(.named(Self.space))
         }
     }
 
     /// The pointer lights the command it is over and lets go of it on leaving, unless the arrow keys have moved on.
     private func hover(_ cell: Cell, _ inside: Bool) {
-        if inside {
-            highlight.cell = cell
-            highlight.fromKeys = false
-        } else if highlight.cell == cell, !highlight.fromKeys {
-            highlight.cell = nil
-        }
+        highlight.hover(cell, inside: inside, pointer: NSEvent.mouseLocation)
     }
 
     private func row(_ entry: Entry, at cell: Cell, emphasized: Bool = false) -> some View {
         LauncherRow(entry: entry, emphasized: emphasized, isHighlighted: highlight.cell == cell,
                     isRinged: highlight.cell == cell && highlight.fromKeys, presses: highlight.presses,
                     hover: { hover(cell, $0) }, perform: perform, showMenu: showMenu)
+            .id(cell)
     }
 
     private var header: some View {
@@ -252,6 +277,7 @@ struct CaptureLauncherView: View {
                                 model.editShortcut(shortcut)
                             })
                         }
+                        .id(cell)
                     }
                     // A short row keeps four columns, so its tiles are as wide as the rest.
                     ForEach(row.count ..< columns, id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, maxHeight: 0) }

@@ -42,14 +42,14 @@ extension CompositionRoot {
 
     /// Uploads a capture's picture as Settings write it: the capture itself when they leave it as it is, else a copy in
     /// the chosen format. A capture to be converted is read now, since with History off its file may be gone by the time
-    /// the copy is made.
-    private func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil) {
+    /// the copy is made. `scale` is the picture's pixels per point where the history has no record of it (a project's).
+    func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil, scale: Double? = nil) {
         guard !files.output.isUnchanged, ExportedFiles.isPicture(fileURL), let data = try? Data(contentsOf: fileURL) else {
             uploads.upload(captureID: captureID, fileURL: fileURL, destinationID: destination)
             return
         }
         let name = fileURL.deletingPathExtension().lastPathComponent
-        let scale = history.item(id: captureID)?.pixelsPerPoint
+        let scale = history.item(id: captureID)?.pixelsPerPoint ?? scale
         Task {
             let file = await files.exportedFile(forPictureData: data, named: name, scale: scale) ?? fileURL
             uploads.upload(captureID: captureID, fileURL: file, destinationID: destination)
@@ -62,6 +62,20 @@ extension CompositionRoot {
     func uploadEnded(_ id: UUID, _ outcome: UploadCoordinator.Outcome) {
         if outcome == .failed, showsQuickAccess(forCaptureWith: id) { return }
         retention.releaseIfUnheld(id)
+    }
+
+    /// Says why a copy could not be saved: on the capture's card when `captureID` has one on screen, which holds it
+    /// from closing by itself, else in the reading by the pointer (a save from the editor, a pin, History, or after a
+    /// capture with Quick Access off). Either way VoiceOver hears it.
+    func showSaveFailure(_ failure: ExportFailure, onCardOf captureID: UUID?) {
+        if let captureID, quickAccess.showFailure(failure, for: captureID) { return }
+        failureNotice.show(failure.summary, near: NSEvent.mouseLocation)
+    }
+
+    /// Where a copy saved from a window went, nil when it was not saved; a failure is said by the pointer first.
+    func savedOrSaidWhy(_ outcome: SaveOutcome) -> URL? {
+        if let failure = outcome.failure { showSaveFailure(failure, onCardOf: nil) }
+        return outcome.url
     }
 
     /// Whether Settings give the capture a card: the choice for screenshots, or for recordings.
@@ -109,8 +123,8 @@ extension CompositionRoot {
     func makeQuickAccessActions() -> QuickAccessController.Actions {
         var actions = QuickAccessController.Actions(
             copy: { [weak self] item in await self?.files.copyToClipboard(fileAt: item.fileURL) ?? false },
-            save: { [weak self] item, asks in await self?.files.saveCapture(fileAt: item.fileURL, asks: asks) },
-            saveAs: { [weak self] item in await self?.files.saveCaptureAs(fileAt: item.fileURL) },
+            save: { [weak self] item, asks in await self?.files.saveCapture(fileAt: item.fileURL, asks: asks) ?? .cancelled },
+            saveAs: { [weak self] item in await self?.files.saveCaptureAs(fileAt: item.fileURL) ?? .cancelled },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
             annotate: { [weak self] item in
                 guard let self, let entry = history.item(id: item.id) else { return }
@@ -165,6 +179,10 @@ extension CompositionRoot {
                 loaded.image, pixelsPerPoint: loaded.scale, title: item.fileURL.deletingPathExtension().lastPathComponent
             )
         }
+        actions.copyText = { [weak self] item in
+            guard let self, item.kind == .screenshot else { return .noText }
+            return await textCopier.copyText(ofPictureAt: item.fileURL)
+        }
         actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? item.fileURL }
         actions.codes = { [weak self] item in
             guard let self, settings.showsCodesInSelection, item.kind == .screenshot,
@@ -213,7 +231,10 @@ extension CompositionRoot {
                 guard let self else { return }
                 Task {
                     guard let item = await self.quickAccessItem(for: entry) else { return }
-                    if let url = await self.files.saveCapture(fileAt: item.fileURL) {
+                    if let url = self.savedOrSaidWhy(await self.files.saveCapture(fileAt: item.fileURL)) {
+                        // A copy is saved after all: the capture's card no longer says one couldn't be. It is not the
+                        // card's own copy, which the card's Move to Trash takes with the capture.
+                        self.quickAccess.clearFailure(for: entry.id)
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
                 }
@@ -249,6 +270,10 @@ extension CompositionRoot {
             }
         )
         historyActions.isBeingEdited = { [weak self] entry in self?.annotations.openCaptureIDs.contains(entry.id) ?? false }
+        historyActions.copyText = { [weak self] entry in
+            guard let self, entry.kind == .screenshot else { return .noText }
+            return await textCopier.copyText(ofPictureAt: history.fileURL(for: entry))
+        }
         historyActions.print = { [weak self] entry, window in
             guard let self, entry.kind == .screenshot else { return }
             printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale(of: entry, orElse: 2), from: window)
@@ -278,7 +303,8 @@ extension CompositionRoot {
         historyActions.sharing.deleteFromStorage = { [weak self] entry in self?.uploads.deleteFromStorage(captureID: entry.id) }
         let controller = HistoryWindowController(
             store: history, settings: settings, actions: historyActions, textReader: textReader,
-            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 }
+            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
+            expiredFavoriteCount: { [weak self] in self?.retention.expiredFavoriteCount(for: $0) ?? 0 }
         )
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in self?.historyWindow = nil }
         return controller

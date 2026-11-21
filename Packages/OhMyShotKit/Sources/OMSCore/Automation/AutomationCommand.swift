@@ -24,7 +24,8 @@ public struct AutomationRegion: Equatable, Sendable {
 }
 
 /// Every command of CleanShot X's URL API, with the same names and parameters, so scripts and
-/// launchers switch over by changing only the scheme; and one of OhMyShot's own, `capture-formula`.
+/// launchers switch over by changing only the scheme; and OhMyShot's own: `capture-formula`, `pin-from-clipboard`, and
+/// `toggle-pins`.
 public enum AutomationCommand: Equatable, Sendable {
     case allInOne(AutomationRegion)
     case captureArea(AutomationRegion, action: CaptureAction?)
@@ -40,6 +41,10 @@ public enum AutomationCommand: Equatable, Sendable {
     case captureFormula(file: URL?, region: AutomationRegion)
     case openAnnotate(file: URL?)
     case openFromClipboard
+    /// OhMyShot's own: pins what the clipboard holds, as the menu's Pin from Clipboard does.
+    case pinFromClipboard
+    /// OhMyShot's own: hides every pin, or shows them again where they were.
+    case togglePins
     case toggleDesktopIcons
     case hideDesktopIcons
     case showDesktopIcons
@@ -55,8 +60,8 @@ public enum AutomationCommand: Equatable, Sendable {
             true
         case .captureText(let file, _, _), .captureFormula(let file, _):
             file == nil
-        case .pin, .openAnnotate, .openFromClipboard, .toggleDesktopIcons, .hideDesktopIcons, .showDesktopIcons, .addQuickAccessOverlay,
-             .openHistory, .restoreRecentlyClosed, .openSettings:
+        case .pin, .openAnnotate, .openFromClipboard, .pinFromClipboard, .togglePins, .toggleDesktopIcons, .hideDesktopIcons,
+             .showDesktopIcons, .addQuickAccessOverlay, .openHistory, .restoreRecentlyClosed, .openSettings:
             false
         }
     }

@@ -76,6 +76,9 @@ public final class ReplayBuffer {
     private let queue = DispatchSerialQueue(label: "OhMyShot.replay", qos: .utility)
     private var leases: [ActiveResources.Lease] = []
     private var activity: (any NSObjectProtocol)?
+    /// Kept from App Nap, so the frames the buffer needs keep coming; never from idle sleep, nor the display from its
+    /// own: the buffer runs while the Mac is left alone, unlike a recording.
+    static let activityOptions: ProcessInfo.ActivityOptions = [.userInitiatedAllowingIdleSystemSleep]
 
     public init(_ request: Request) {
         self.request = request
@@ -139,8 +142,7 @@ public final class ReplayBuffer {
         self.stream = stream
         isRunning = true
         leases = [ActiveResources.shared.acquire(.captureStream)]
-        // Kept from App Nap, so the frames the buffer needs keep coming; never from idle sleep.
-        activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Keeping the last seconds of the screen")
+        activity = ProcessInfo.processInfo.beginActivity(options: Self.activityOptions, reason: "Keeping the last seconds of the screen")
         Log.recording.notice("Replay buffering \(self.request.width, privacy: .public)x\(self.request.height, privacy: .public) at \(self.request.framesPerSecond, privacy: .public) fps, microphone \(self.request.microphone != nil, privacy: .public)")
     }
 

@@ -238,6 +238,7 @@ public final class AnnotationSession {
         case .counter: .counter
         case .redaction: .redact
         case .spotlight: .spotlight
+        case .magnifier: .magnifier
         // No tool draws images: they are dropped or pasted in, and selected like anything else.
         case .image: .select
         }
@@ -268,6 +269,15 @@ public final class AnnotationSession {
     /// opens with.
     public func putToolDown() {
         guard tool.isPutDownAfterMark else { return }
+        isPuttingToolDown = true
+        tool = .select
+        isPuttingToolDown = false
+    }
+
+    /// Puts down any tool in hand, Select taking over, for a mark picked up from the keyboard or by VoiceOver; as
+    /// with `putToolDown`, the tool is still the one the next editor opens with.
+    public func putToolDownToSelect() {
+        guard tool != .select, !tool.isPictureMode else { return }
         isPuttingToolDown = true
         tool = .select
         isPuttingToolDown = false
@@ -583,7 +593,7 @@ public final class AnnotationSession {
         switch tool {
         case .redact: redactionReading.status
         case .highlighter: textLineReading.status
-        case .select, .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .text, .counter, .spotlight, .crop, .background: .resting
+        case .select, .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .text, .counter, .spotlight, .magnifier, .crop, .background: .resting
         }
     }
 
@@ -598,7 +608,7 @@ public final class AnnotationSession {
         switch tool {
         case .redact: findRedactionsIfNeeded()
         case .highlighter: findTextLinesIfNeeded()
-        case .select, .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .text, .counter, .spotlight, .crop, .background: break
+        case .select, .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .text, .counter, .spotlight, .magnifier, .crop, .background: break
         }
     }
 

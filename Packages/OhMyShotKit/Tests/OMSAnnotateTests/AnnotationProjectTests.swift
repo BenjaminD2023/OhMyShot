@@ -17,6 +17,19 @@ struct AnnotationProjectTests {
         return context.makeImage()!
     }
 
+    /// Two projects of one name in different folders keep their pictures apart, each under the project's name; a project
+    /// opened again finds its own.
+    @Test func sameNamedProjectsKeepTheirPicturesApart() {
+        let caches = URL(filePath: "/caches/Projects", directoryHint: .isDirectory)
+        let work = AnnotationProject.previewURL(for: URL(filePath: "/Work/Review.ohmyshot"), in: caches)
+        let personal = AnnotationProject.previewURL(for: URL(filePath: "/Personal/Review.ohmyshot"), in: caches)
+
+        #expect(work != personal)
+        #expect(work.lastPathComponent == "Review.png" && personal.lastPathComponent == "Review.png")
+        #expect(work.deletingLastPathComponent().deletingLastPathComponent() == caches)
+        #expect(AnnotationProject.previewURL(for: URL(filePath: "/Work/./Review.ohmyshot"), in: caches) == work)
+    }
+
     @Test func aFailedPreviewWriteLeavesTheProjectUnchangedUntilRetry() throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }

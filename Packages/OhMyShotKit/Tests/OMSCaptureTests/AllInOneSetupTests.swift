@@ -432,6 +432,25 @@ struct AllInOneBarTests {
         #expect(bar.shownChoices == [.area, .window, .fullscreen, .cancel])
     }
 
+    /// Area, Window, and Screen name their letters as the modes do; A and F only in All-In-One, where they choose them.
+    @Test func theTooltipsNameTheLetters() {
+        let bar = AllInOneBar()
+        bar.showModes(true)
+        bar.usesWindowPreview(true, takesW: true)
+        #expect(bar.help(for: .area) == "Drag to capture an area (A)")
+        #expect(bar.help(for: .window) == "Choose an app and preview its window (W)")
+        #expect(bar.help(for: .fullscreen) == "Capture this whole screen (F)")
+        #expect(bar.help(for: .text) == "Drag over text to copy it (O)")
+        // All-In-One's Text and Scrolling point at a window with W as with Space; the tools on their own take Space.
+        bar.usesWindowPreview(false, takesW: true)
+        #expect(bar.help(for: .window) == "Click a window to capture it (W or Space)")
+        bar.usesWindowPreview(false, takesW: false)
+        #expect(bar.help(for: .window) == "Click a window to capture it (Space)")
+        bar.showModes(false)
+        #expect(bar.help(for: .area) == "Drag to capture an area")
+        #expect(bar.help(for: .fullscreen) == "Capture this whole screen")
+    }
+
     @Test func aPurposeIsNeverHowAnAreaIsChosen() {
         let bar = AllInOneBar()
         bar.select(.area)
@@ -484,6 +503,35 @@ struct AllInOneBarTests {
             }
         }
         #expect(await asked.sizes.count >= 1)
+    }
+
+    /// ? in the framed area shows the frame's own keys on the overlay; Escape puts them away without cancelling, and an
+    /// arrow puts them away and still moves the area.
+    @Test func questionMarkShowsTheFramesKeys() {
+        let display = DisplayInfo(
+            id: 1, name: "Test", frame: CGRect(x: 0, y: 0, width: 800, height: 600), pixelSize: CGSize(width: 1600, height: 1200),
+            backingScale: 2, maximumPotentialEDR: 1
+        )
+        let area = CGRect(x: 100, y: 200, width: 300, height: 150)
+        let overlay = OverlayView(display: display)
+        defer { overlay.clear() }
+        let view = AllInOneSetupView(display: display, area: area, offersUpload: false)
+        var cancelled = false
+        view.onCancel = { cancelled = true }
+        overlay.addSubview(view)
+        _ = view.debugAct("?")
+        #expect(overlay.showsKeys)
+        #expect(overlay.debugKeys == Sentences.split(view.accessibilityHelp() ?? "").joined(separator: "\n"))
+        _ = view.debugAct("escape")
+        #expect(!overlay.showsKeys && !cancelled)
+        _ = view.debugAct("?")
+        _ = view.debugAct("right")
+        #expect(!overlay.showsKeys)
+        #expect(view.area == area.offsetBy(dx: 1, dy: 0))
+        // Gone with the frame.
+        _ = view.debugAct("?")
+        view.removeFromSuperview()
+        #expect(!overlay.showsKeys)
     }
 }
 

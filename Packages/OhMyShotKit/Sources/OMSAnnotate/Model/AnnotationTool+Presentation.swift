@@ -20,6 +20,7 @@ nonisolated extension AnnotationTool {
         case .counter: "n"
         case .redact: "b"
         case .spotlight: "s"
+        case .magnifier: "z"
         case .crop: "c"
         case .background: "g"
         }
@@ -40,6 +41,7 @@ nonisolated extension AnnotationTool {
         case .counter: "1.circle"
         case .redact: "checkerboard.rectangle"
         case .spotlight: "circle.dashed.inset.filled"
+        case .magnifier: "plus.magnifyingglass"
         case .crop: "crop"
         case .background: "photo.artframe"
         }
@@ -59,6 +61,7 @@ nonisolated extension AnnotationTool {
         case .counter: String(localized: "Counter", bundle: .module)
         case .redact: String(localized: "Redact", bundle: .module)
         case .spotlight: String(localized: "Spotlight", bundle: .module)
+        case .magnifier: String(localized: "Magnifier", bundle: .module)
         case .crop: String(localized: "Crop", bundle: .module)
         case .background: String(localized: "Background", bundle: .module)
         }
@@ -81,6 +84,7 @@ nonisolated extension AnnotationTool {
         case .highlightBox: String(localized: "Add Highlight Box", bundle: .module)
         case .redact: String(localized: "Add Redaction", bundle: .module)
         case .spotlight: String(localized: "Add Spotlight", bundle: .module)
+        case .magnifier: String(localized: "Add Magnifier", bundle: .module)
         // Named by their own undo steps (Draw, Highlight, Add Text, Add Counter), or drawing nothing.
         case .select, .pen, .highlighter, .text, .counter, .crop, .background: String(localized: "Add Mark", bundle: .module)
         }

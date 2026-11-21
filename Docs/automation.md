@@ -10,8 +10,8 @@ Debug builds answer `ohmyshot-dev://` instead, and show up in Shortcuts as "OhMy
 
 The commands and parameters are CleanShot X's
 ([its documentation](https://cleanshot.com/docs-api)). A script written for CleanShot works after you change
-`cleanshot://` to `ohmyshot://`. Unknown parameters are ignored. One command is OhMyShot's own, with no CleanShot
-twin: `capture-formula`.
+`cleanshot://` to `ohmyshot://`. Unknown parameters are ignored. Three commands are OhMyShot's own, with no CleanShot
+twin: `capture-formula`, `pin-from-clipboard`, and `toggle-pins`.
 
 The first time an app or a script sends a command, OhMyShot asks whether it may. Apps are approved one by one, by
 bundle identifier. Tools that are not apps (`open`, `osascript`, shell scripts) exit before their command arrives,
@@ -57,8 +57,10 @@ should happen after a capture:
 | `record-screen` | area | Opens Record Screen. With an area, the recording bar comes up around it. While recording, stops. |
 | `capture-text` | `filepath`, area, `linebreaks` | Opens Capture Text. With an area, reads that area at once. With `filepath`, reads the picture's text without showing it. The text is copied, each formula in it as LaTeX (`$…$`, or `$$…$$` on a line of its own) while the Math Formulas pack is installed, and each table and chart a row a line, cells apart by tabs, while the Tables and Charts pack is. `linebreaks=false` joins wrapped lines; `true` keeps detected line breaks. Omitted, it follows Settings → Tools → Image line breaks. |
 | `capture-formula` | `filepath`, area | OhMyShot's own. Opens Capture Formula, which needs the Math Formulas pack (Settings › Text › Model packs); without it, OhMyShot beeps. With an area, reads that area at once. With `filepath`, reads the picture's formula without showing it. The formula's LaTeX is copied as it is, without `$` around it. |
-| `open-annotate` | `filepath` | Opens the picture or `.ohmyshot` project at `filepath` in the editor. Without one, asks for a file. Pictures are added to Capture History first. |
+| `open-annotate` | `filepath` | Opens the picture or `.ohmyshot` project at `filepath` in the editor, or the MP4 or MOV in the recording window. Without one, asks for a file. Pictures and movies are added to Capture History first. |
 | `open-from-clipboard` | | Opens the clipboard's picture in the editor. |
+| `pin-from-clipboard` | | OhMyShot's own. Pins what the clipboard holds: a picture, then a color (or text that is exactly a color's value), then any other text. Beeps when there is nothing to pin. |
+| `toggle-pins` | | OhMyShot's own. Hides every pin, or shows them again where they were. Does nothing while no pin is open. |
 | `toggle-desktop-icons`, `hide-desktop-icons`, `show-desktop-icons` | | Covers the desktop icons with a picture of the wallpaper, or removes the cover. See [Desktop icons](#desktop-icons). |
 | `add-quick-access-overlay` | `filepath` (required) | Adds a copy of a picture, an MP4 or MOV, or a GIF to Capture History and shows its Quick Access card, whatever Settings says about cards. The file itself is left where it is. |
 | `open-history` | | Opens Capture History. |
@@ -103,7 +105,7 @@ These actions appear in the Shortcuts app under OhMyShot:
 
 | Action | Input | Output |
 |---|---|---|
-| Capture Area, Capture Window, Capture Fullscreen, Capture Previous Area, Self-Timer | After Capture (optional): Copy, Save, Annotate, Upload, Pin | The screenshot, as a file in the format Settings › General chooses (PNG, JPEG, or HEIC, at 1×, in sRGB, with a border, as set; a save a shortcut asks for never asks for a name), or nothing when the capture was cancelled |
+| Capture Area, Capture Window, Capture Fullscreen, Capture Previous Area, Self-Timer | After Capture (optional): Copy, Save, Annotate, Upload, Pin | The screenshot, as a file in the format Settings › General chooses (PNG, JPEG, or HEIC, at 1×, in sRGB, with a border, as set; a save a shortcut asks for never asks for a name), or nothing when the capture was cancelled. It is handed on whatever Keep Captures and Quick Access say; with Keep Captures at Never and Quick Access off, the capture is deleted once the shortcut has read it, unless the editor it opened in or its upload still holds it, and a pinned capture is left as Capture Area and Pin leaves it |
 | Capture Text | Keep Line Breaks | The text copied, or nothing; formulas as LaTeX while the Math Formulas pack is installed, tables and charts a row a line while the Tables and Charts pack is |
 | Recognize Text in Image | An image, Keep Line Breaks | The image's text, formulas as LaTeX while the Math Formulas pack is installed, tables and charts a row a line while the Tables and Charts pack is. Nothing is copied or shown. |
 | Capture Formula | | The formula's LaTeX, copied as it is (without `$` around it), or nothing when no whole formula was read |

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import CoreGraphics
+import CoreImage
 import Foundation
 import Observation
 import OMSCore
@@ -31,6 +32,9 @@ public final class StudioDocument {
     public let folder: URL
     /// The camera's movie, recorded beside the recording; nil when none was.
     public let cameraMovie: URL?
+    /// The recording's sounds kept apart, each in a file of its own; empty when they weren't, and the recording's own
+    /// sound plays as one.
+    let soundFiles: [(sound: StudioSound, url: URL)]
 
     public var project: StudioProject {
         didSet {
@@ -70,6 +74,10 @@ public final class StudioDocument {
     public var selectedRange: ClosedRange<Double>? {
         if case .range(let range) = selection { range } else { nil }
     }
+    /// The stretch played faster or slower chosen on the timeline, by its start.
+    public var selectedSpeed: Double? {
+        if case .speed(let start) = selection { start } else { nil }
+    }
     /// The movie the preview plays now; nil until it is first made.
     public private(set) var composition: StudioComposition?
     /// The newest composition couldn't be made (the recording couldn't be read).
@@ -86,6 +94,9 @@ public final class StudioDocument {
     public var isPlaying = false
     /// Whether the project changed since it was last exported.
     public private(set) var hasUnexportedChanges = true
+    /// The picture last chosen for the background, while the project is open: offered again after another
+    /// background was chosen.
+    public private(set) var lastPicture: String?
 
     @ObservationIgnored private let background: @Sendable (String, CGSize) -> CGImage?
     @ObservationIgnored private var rebuild: Task<Void, Never>?
@@ -108,6 +119,12 @@ public final class StudioDocument {
     @ObservationIgnored private var savedRevision = -1
     @ObservationIgnored private var previewBuild: Task<StudioComposition, Error>?
     @ObservationIgnored private var cachedMotion: (key: StudioMotionKey, track: StudioTrack)?
+    /// Where the person is in the camera's frames, for the preview's Blur and Cutout backgrounds: one for every
+    /// composition the preview makes, as it depends only on the camera's frames; made when first needed.
+    @ObservationIgnored private var previewMatte: StudioCameraMatte?
+    /// The background pictures' tiles for the inspector, read once each, and the Blurred recording's.
+    @ObservationIgnored private var pictureThumbnails: [String: CGImage] = [:]
+    @ObservationIgnored private var blurredThumbnail: CGImage?
     @ObservationIgnored private(set) var motionBuildCount = 0
     /// Tests can control completion order without requiring a media decoder or wall-clock delays.
     @ObservationIgnored var compositionLoader: (@Sendable (StudioProject, Double) async throws -> StudioComposition)?
@@ -120,7 +137,16 @@ public final class StudioDocument {
         self.source = source
         self.telemetry = telemetry
         // The times the camera filled what was recorded become stretches on the timeline; the movie is the same.
-        self.project = project.opened(for: telemetry, duration: duration)
+        var opened = project.opened(for: telemetry, duration: duration)
+        // A background picture gone from the folder gives way to the default gradient in the project itself, so the
+        // movie made with the picture is made again, and choosing the picture again is a change.
+        var pictureGone = false
+        if case .picture(let name) = opened.background,
+           !FileManager.default.fileExists(atPath: StudioBackgroundPicture.url(named: name, in: folder).path(percentEncoded: false)) {
+            opened.background = .gradient(Self.missingPictureGradient)
+            pictureGone = true
+        }
+        self.project = opened
         self.duration = duration
         self.recordingSize = recordingSize
         sourceByteCount = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
@@ -128,7 +154,17 @@ public final class StudioDocument {
         self.background = background
         let camera = folder.appending(path: StudioFiles.camera)
         cameraMovie = telemetry.camera != nil && FileManager.default.fileExists(atPath: camera.path(percentEncoded: false)) ? camera : nil
-        hasUnexportedChanges = !hasBeenExported
+        soundFiles = StudioSound.files(in: folder)
+        hasUnexportedChanges = !hasBeenExported || pictureGone
+        // Pictures chosen for the background the last time it was open and since put aside can't be taken back
+        // with Undo any more: only the one in use stays, with any the project as saved names, in a form this
+        // version may not read. Opened on defaults because the project couldn't be read, every picture stays.
+        if case .picture(let name) = self.project.background { lastPicture = name }
+        if let saved = try? Data(contentsOf: folder.appending(path: StudioFiles.project)) {
+            let text = String(decoding: saved, as: UTF8.self)
+            let kept = lastPicture
+            StudioBackgroundPicture.removeUnused(in: folder) { $0 == kept || text.contains($0) }
+        }
         if self.project == project, FileManager.default.fileExists(atPath: folder.appending(path: StudioFiles.project).path) {
             savedRevision = 0
         } else {
@@ -167,6 +203,19 @@ public final class StudioDocument {
         !hasCamera && (telemetry.cameraFailed == true || telemetry.camera != nil)
     }
 
+    /// The sounds the movie can play, each set on its own; empty for a recording without sound, or before the
+    /// preview is first made.
+    public var sounds: [StudioSound] {
+        composition?.sounds ?? []
+    }
+
+    /// Mutes `sound`, or plays it again, as one step that Undo names.
+    public func setMuted(_ muted: Bool, _ sound: StudioSound) {
+        change(named: muted ? String(localized: "Mute", bundle: .module) : String(localized: "Unmute", bundle: .module)) {
+            project.audio[sound].isMuted = muted
+        }
+    }
+
     /// Whether keys were written down while recording, so they can be shown.
     public var hasKeys: Bool {
         !telemetry.keys.isEmpty
@@ -189,7 +238,9 @@ public final class StudioDocument {
         previewSide = side
         previewState = composition == nil ? .preparing : .updating
         let snapshot = project
-        let task = Task { try await composition(project: snapshot, largestSide: side) }
+        if snapshot.camera.background != .original, previewMatte == nil { previewMatte = StudioCameraMatte(quality: .preview) }
+        let matte = snapshot.camera.background == .original ? nil : previewMatte
+        let task = Task { try await composition(project: snapshot, largestSide: side, cameraMatte: matte) }
         previewBuild = task
         do {
             let made = try await withTaskCancellationHandler {
@@ -209,10 +260,13 @@ public final class StudioDocument {
         if mine == generation { previewBuild = nil }
     }
 
-    /// The composition the export writes: the project as it is now, at the movie's full size.
+    /// The composition the export writes: the project as it is now, at the movie's full size, the person in the
+    /// camera found with Vision's accurate matte.
     public func makeExportComposition(project snapshot: StudioProject? = nil) async throws -> StudioComposition {
         try Task.checkCancellation()
-        return try await composition(project: snapshot ?? project, largestSide: StudioRenderer.largestSide)
+        let exported = snapshot ?? project
+        let matte = exported.camera.background == .original ? nil : StudioCameraMatte(quality: .export)
+        return try await composition(project: exported, largestSide: StudioRenderer.largestSide, cameraMatte: matte)
     }
 
     func previewFailed(_ message: String) {
@@ -229,6 +283,7 @@ public final class StudioDocument {
         previewBuild = nil
         composition = nil
         cachedMotion = nil
+        previewMatte = nil
     }
 
     #if DEBUG
@@ -245,7 +300,7 @@ public final class StudioDocument {
         scheduleComposition()
     }
 
-    private func composition(project: StudioProject, largestSide: Double) async throws -> StudioComposition {
+    private func composition(project: StudioProject, largestSide: Double, cameraMatte: StudioCameraMatte?) async throws -> StudioComposition {
         try Task.checkCancellation()
         if let compositionLoader { return try await compositionLoader(project, largestSide) }
         let telemetry = drawnTelemetry
@@ -256,7 +311,8 @@ public final class StudioDocument {
         let ringColor = accent.map { StudioRenderer.RingColor(red: $0.redComponent, green: $0.greenComponent, blue: $0.blueComponent) } ?? .systemBlue
         return try await Self.assemble(
             project: project, telemetry: telemetry, duration: duration, recordingSize: recordingSize,
-            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, background: background, ringColor: ringColor
+            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, folder: folder, soundFiles: soundFiles,
+            background: background, ringColor: ringColor, cameraMatte: cameraMatte
         )
     }
 
@@ -276,24 +332,35 @@ public final class StudioDocument {
     @concurrent
     private static func assemble(
         project: StudioProject, telemetry: StudioTelemetry, duration: Double, recordingSize: CGSize,
-        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?,
-        background: @Sendable (String, CGSize) -> CGImage?, ringColor: StudioRenderer.RingColor
+        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?, folder: URL, soundFiles: [(sound: StudioSound, url: URL)],
+        background: @Sendable (String, CGSize) -> CGImage?, ringColor: StudioRenderer.RingColor, cameraMatte: StudioCameraMatte?
     ) async throws -> StudioComposition {
         try Task.checkCancellation()
         // Worked out once, for the background painted at the movie's size and for the renderer. `telemetry` is the
         // drawn one, with a camera exactly where there is a camera's movie, as the layout has to agree.
         let layout = StudioRenderer.layout(recordingSize: recordingSize, project: project, hasCamera: cameraMovie != nil, largestSide: largestSide)
-        let picture: CGImage?
-        if case .gradient(let name) = project.background { picture = background(name, layout.canvas) } else { picture = nil }
+        let picture: CGImage? = switch project.background {
+        case .gradient(let name): background(name, layout.canvas)
+        // Read no larger than the movie shows it; gone from the folder, the default gradient stands in.
+        case .picture(let name):
+            StudioBackgroundPicture.image(named: name, in: folder, covering: layout.canvas) ?? background(Self.missingPictureGradient, layout.canvas)
+        case .color, .blur: nil
+        }
         try Task.checkCancellation()
         let renderer = StudioRenderer(
             telemetry: telemetry, project: project, duration: duration, recordingSize: recordingSize, background: picture,
-            layout: layout, ringColor: ringColor, preparedTrack: track
+            layout: layout, ringColor: ringColor, preparedTrack: track, cameraMatte: cameraMatte
         )
         try Task.checkCancellation()
         let camera = cameraMovie.map { StudioComposition.CameraSource(asset: AVURLAsset(url: $0), start: telemetry.camera?.start ?? 0) }
-        return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, camera: camera)
+        let sounds = soundFiles.map { StudioComposition.SoundSource(sound: $0.sound, asset: AVURLAsset(url: $0.url)) }
+        return try await StudioComposition.make(
+            source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, speeds: project.speeds, camera: camera, sounds: sounds
+        )
     }
+
+    /// The gradient a background picture that has gone from the project's folder gives way to: the default one.
+    nonisolated static let missingPictureGradient = "sky"
 
     /// The longest side the preview needs: the movie fitted in the preview's pixels, in steps of 128 so a
     /// small change of the window's size films nothing again, between 640 and the export's.
@@ -325,6 +392,53 @@ public final class StudioDocument {
             project = changed
         }
     }
+
+    /// Makes the picture at `url` the background, kept in the project's folder (read and, when it is larger than
+    /// a background needs, made smaller off the main actor). Throws when it isn't a picture that can be read.
+    public func choosePicture(at url: URL) async throws {
+        let folder = folder
+        let name = try await Self.keepPicture(url, in: folder)
+        lastPicture = name
+        project.background = .picture(name)
+    }
+
+    @concurrent
+    private static func keepPicture(_ url: URL, in folder: URL) async throws -> String {
+        try StudioBackgroundPicture.keep(url, in: folder)
+    }
+
+    /// The tile of the background picture named `name`, for the inspector; nil when it can't be read.
+    public func pictureThumbnail(_ name: String) -> CGImage? {
+        if let cached = pictureThumbnails[name] { return cached }
+        let made = StudioBackgroundPicture.thumbnail(named: name, in: folder, longest: Self.tileSide)
+        if let made { pictureThumbnails[name] = made }
+        return made
+    }
+
+    /// A frame from the middle of the recording, blurred as the Blurred recording background blurs it, for its
+    /// tile in the inspector, read once; nil when the recording can't be read.
+    public func blurredRecordingThumbnail() async -> CGImage? {
+        if let blurredThumbnail { return blurredThumbnail }
+        blurredThumbnail = await Self.blurredFrame(of: source, at: duration / 2)
+        return blurredThumbnail
+    }
+
+    @concurrent
+    private static func blurredFrame(of source: URL, at time: Double) async -> CGImage? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: source))
+        generator.maximumSize = CGSize(width: tileSide, height: tileSide)
+        generator.appliesPreferredTrackTransform = true
+        guard let frame = try? await generator.image(at: CMTime(seconds: time, preferredTimescale: 600)).image else { return nil }
+        let image = CIImage(cgImage: frame)
+        let side = max(image.extent.width, image.extent.height)
+        let blurred = image.clampedToExtent()
+            .applyingGaussianBlur(sigma: side * StudioRenderer.blurStrength)
+            .cropped(to: image.extent)
+        return CIContext(options: [.useSoftwareRenderer: false]).createCGImage(blurred, from: image.extent)
+    }
+
+    /// The longer side of a background tile's picture, in pixels: the 44 pt tile at two pixels a point.
+    nonisolated static let tileSide = 88
 
     /// Sets how closely the movie is encoded, as one step that Undo names.
     public func setQuality(_ quality: StudioProject.Quality) {
@@ -410,15 +524,95 @@ public final class StudioDocument {
         return project.zooms.first { $0.id == id }.map { $0.start...$0.end }
     }
 
+    /// Holds a zoom on `target`, kept inside the recording, or has it follow the pointer again (nil). Aimed by hand,
+    /// an automatic zoom is no longer placed again with the others, as with any other change to it.
+    public func setZoomTarget(_ id: UUID, _ target: StudioProject.Zoom.Spot?) {
+        updateZoom(id) { $0.target = target?.clamped }
+    }
+
+    /// Where a zoom looks as the movie is now: its spot, or, following the pointer, where the camera looks in the
+    /// frame the preview shows while the zoom is fully in there, else halfway through it, which is fully in; the
+    /// middle of the recording until a movie is made.
+    public func aim(of id: UUID) -> StudioProject.Zoom.Spot {
+        guard let zoom = project.zooms.first(where: { $0.id == id }) else { return .init(x: 0.5, y: 0.5) }
+        if let target = zoom.target { return target }
+        guard let track = composition?.renderer.track, track.width > 0, track.height > 0 else { return .init(x: 0.5, y: 0.5) }
+        let frame = track.frame(at: isFullyIn(zoom) ? shownTime : (zoom.start + zoom.end) / 2)
+        return StudioProject.Zoom.Spot(x: frame.centerX / track.width, y: frame.centerY / track.height).clamped
+    }
+
+    /// The recording's time of the frame the preview shows: the playhead's, or, inside a cut, the cut's end.
+    public var shownTime: Double {
+        recordingTime(movieTime(time))
+    }
+
+    /// Whether `zoom` is fully in in the frame the preview shows: there, done coming in, and not under a stronger one.
+    func isFullyIn(_ zoom: StudioProject.Zoom) -> Bool {
+        guard let track = composition?.renderer.track else { return false }
+        let time = shownTime
+        return time >= zoom.start && time <= zoom.end && abs(track.frame(at: time).zoom - zoom.scale) < 0.01
+    }
+
     /// Removes the chosen zoom or camera layout, takes back the chosen cut, or cuts the chosen stretch.
     public func deleteSelection() {
         switch selection {
         case .zoom(let id): removeZoom(id)
         case .cameraSegment(let id): removeCameraSegment(id)
         case .cut(let start): restoreCut(at: start)
+        case .speed(let start): removeSpeed(at: start)
         case .range(let range): cut(range)
         case .none: break
         }
+    }
+
+    // MARK: Speed
+
+    /// Whether Speed has a stretch to set: one chosen on the clip, or a speed chosen on the timeline.
+    public var canSetSpeed: Bool {
+        selectedRange != nil || selectedSpeed != nil
+    }
+
+    /// The speed the chosen stretch plays at: the chosen speed's, or 1 for a stretch chosen on the clip.
+    public var chosenRate: Double? {
+        if let start = selectedSpeed { return project.speeds.first { $0.start == start }?.rate }
+        return selectedRange == nil ? nil : 1
+    }
+
+    /// Plays what is chosen, a stretch of the clip or a speed on the timeline, at `rate` (1 as recorded), as one
+    /// step that Undo names. A stretch takes the speeds it overlaps out of where it is; the speed it becomes is chosen.
+    public func setSpeed(_ rate: Double) {
+        let range: ClosedRange<Double>
+        if let start = selectedSpeed, let speed = project.speeds.first(where: { $0.start == start }) {
+            range = speed.start...speed.end
+        } else if let chosen = selectedRange {
+            range = chosen
+        } else {
+            return
+        }
+        let lower = max(0, range.lowerBound), upper = min(duration, range.upperBound)
+        // A new stretch is at least a twentieth of a second; a speed already set changes, or goes, however short it was left.
+        guard upper > lower, selectedSpeed != nil || upper - lower >= 0.05 else { return }
+        // What the others keep outside the stretch, then the stretch itself.
+        var speeds = project.speeds.flatMap { speed -> [StudioProject.Speed] in
+            guard speed.end > lower, speed.start < upper else { return [speed] }
+            return [
+                StudioProject.Speed(start: speed.start, end: lower, rate: speed.rate),
+                StudioProject.Speed(start: upper, end: speed.end, rate: speed.rate),
+            ]
+        }
+        speeds.append(StudioProject.Speed(start: lower, end: upper, rate: rate))
+        change(named: rate == 1 ? String(localized: "Remove Speed", bundle: .module) : String(localized: "Change Speed", bundle: .module)) {
+            project.speeds = StudioProject.normalizedSpeeds(speeds, duration: duration)
+        }
+        selection = rate == 1 ? .none : .speed(lower)
+    }
+
+    /// Plays the stretch that starts at `start` as recorded again.
+    public func removeSpeed(at start: Double) {
+        change(named: String(localized: "Remove Speed", bundle: .module)) {
+            project.speeds.removeAll { $0.start == start }
+        }
+        if selection == .speed(start) { selection = .none }
     }
 
     // MARK: Camera layout
@@ -595,7 +789,7 @@ public final class StudioDocument {
     /// time and the movie's are read through the same parts the compositor draws each frame from, so the
     /// playhead is never anywhere but on the frame shown.
     private var keptSegments: [StudioComposition.Segment] {
-        StudioComposition.keptSegments(duration: duration, cuts: project.cuts)
+        StudioComposition.keptSegments(duration: duration, cuts: project.cuts, speeds: project.speeds)
     }
 
     /// The movie's time for the recording's `time`: the end of a cut for a time inside one.
@@ -676,13 +870,16 @@ public final class StudioDocument {
         let gone = switch selection {
         case .zoom(let id): !project.zooms.contains { $0.id == id }
         case .cut(let start): !project.cuts.contains { $0.lowerBound == start }
+        case .speed(let start): !project.speeds.contains { $0.start == start }
         case .cameraSegment(let id): !canChangeLayoutAlongTheTimeline || !project.cameraSegments.contains { $0.id == id }
         case .range, .none: false
         }
         if gone { selection = .none }
-        // The preview isn't encoded, so the movie's quality is no reason to film it again.
+        // The preview isn't encoded, so the movie's quality is no reason to film it again, and the player sets how
+        // loud each sound plays as it plays.
         var seen = project
         seen.quality = old.quality
+        seen.audio = old.audio
         if seen != old { scheduleComposition() }
     }
 
@@ -708,4 +905,7 @@ nonisolated public enum StudioFiles {
     public static let project = "project.json"
     /// The camera, recorded in a movie of its own while the screen was.
     public static let camera = "camera.mov"
+    /// The system's sound and the microphone, each as recorded, in a file of its own (`StudioSound`).
+    public static let systemAudio = "system audio.m4a"
+    public static let microphone = "microphone.m4a"
 }

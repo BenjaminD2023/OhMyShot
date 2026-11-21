@@ -23,10 +23,10 @@ extension CompositionRoot {
             },
             save: { [weak self] pin in
                 guard let self, case .image(let image, let scale) = pin.content else { return }
-                if case .capture(let id) = pin.origin, let entry = history.item(id: id) {
-                    Task { _ = await self.files.saveScreenshot(fileAt: self.history.fileURL(for: entry), entry: entry, asks: true) }
+                if let entry = unchangedCapture(of: pin) {
+                    Task { _ = self.savedOrSaidWhy(await self.files.saveScreenshot(fileAt: self.history.fileURL(for: entry), entry: entry, asks: true)) }
                 } else {
-                    Task { _ = await self.files.saveScreenshot(.init(image), scale: Double(scale), asks: true) }
+                    Task { _ = self.savedOrSaidWhy(await self.files.saveScreenshot(.init(image), scale: Double(scale), asks: true)) }
                 }
             },
             saveAs: { [weak self] pin in self?.savePinAs(pin) },
@@ -45,8 +45,8 @@ extension CompositionRoot {
             fileForDrag: { [weak self] pin in
                 guard let self, case .image = pin.content else { return nil }
                 switch pin.origin {
-                case .capture(let id):
-                    if let entry = history.item(id: id) {
+                case .capture:
+                    if let entry = unchangedCapture(of: pin) {
                         return files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
                     }
                 case .file(let url):
@@ -140,8 +140,17 @@ extension CompositionRoot {
         chooser.orderFrontRegardless()
     }
 
+    /// The capture a picture pin came from while its file still holds the pin's picture. Once the editor keeps later edits
+    /// in it, Save and a drag take the pin's own picture, as for a pin from the clipboard.
+    private func unchangedCapture(of pin: PinController.Pin) -> HistoryItem? {
+        guard case .capture(let id) = pin.origin, let entry = history.item(id: id) else { return nil }
+        let file = history.fileURL(for: entry).path(percentEncoded: false)
+        guard let changed = (try? FileManager.default.attributesOfItem(atPath: file))?[.modificationDate] as? Date else { return nil }
+        return changed <= pin.pinnedAt ? entry : nil
+    }
+
     private func savePinAs(_ pin: PinController.Pin) {
         guard case .image(let image, let scale) = pin.content else { return }
-        Task { _ = await files.saveScreenshotAs(.init(image), scale: Double(scale)) }
+        Task { _ = savedOrSaidWhy(await files.saveScreenshotAs(.init(image), scale: Double(scale))) }
     }
 }

@@ -57,6 +57,8 @@ final class RecordingCoordinator {
     var onRecordingCompleted: (() -> Void)?
     /// A recording was kept and Settings says to upload it.
     var uploadKept: ((HistoryItem) -> Void)?
+    /// Saving a copy of a recording failed: why, and the recording, to say it on its card when it has one.
+    var saveFailed: ((ExportFailure, UUID?) -> Void)?
     /// A recording's file was just put on the clipboard, which refers to the file in the history and holds nothing else.
     var copiedToClipboard: ((UUID) -> Void)?
     /// The composition root shows it in the menu bar.
@@ -818,7 +820,8 @@ final class RecordingCoordinator {
                 let keptMovie = RecordingDrafts.Info.KeptMovie.measure(at: history.fileURL(for: entry))
                 var keptDraft = draft
                 do {
-                    keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id, keptMovie: keptMovie)
+                    // The draft's movie stays until its sounds are kept apart: it is the only copy with them in tracks of their own.
+                    keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id, keptMovie: keptMovie, removingMovie: false)
                 } catch {
                     Log.recording.error("Recording kept history id on draft \(draft.id.uuidString, privacy: .public) failed: \(String(describing: error), privacy: .public)")
                 }
@@ -827,6 +830,9 @@ final class RecordingCoordinator {
                 project.showsKeys = plan?.choices.showsKeystrokes ?? recoveredDraftTelemetry?.showsKeystrokes ?? true
                 project.keystrokeMode = resolvedTelemetry.keystrokeMode ?? .all
                 project.camera = resolvedTelemetry.camera?.bubble ?? StudioProject.Camera()
+                await keepStudioSounds(from: keptDraft.movieURL, for: entry)
+                // Linked to the history, the draft needs its movie no longer; unlinked, recovery keeps it again from the movie.
+                if keptDraft.info?.keptHistoryID != nil { try? FileManager.default.removeItem(at: keptDraft.movieURL) }
                 let saveResult = saveStudioProject(resolvedTelemetry, project: project, camera: keptDraft.cameraURL, for: entry)
                 if saveResult.isComplete {
                     drafts.remove(keptDraft)
@@ -907,6 +913,18 @@ final class RecordingCoordinator {
             Log.recording.error("Keeping the Studio project failed: \(result.errorDescription ?? "unknown error", privacy: .public)")
         }
         return result
+    }
+
+    /// Keeps the system's sound and the microphone of a Studio recording, from `movie` (its draft, where they are
+    /// tracks of their own), each in a file of its own in its project folder, so Studio sets how loud each plays. The
+    /// history's movie has them mixed into one, which every player plays; without these files Studio plays that.
+    private func keepStudioSounds(from movie: URL, for entry: HistoryItem) async {
+        do {
+            let kept = try await StudioSound.keep(from: movie, in: history.studioURL(for: entry))
+            Log.recording.notice("Kept \(kept.count, privacy: .public) Studio sound(s) apart")
+        } catch {
+            Log.recording.error("Keeping a Studio recording's sounds apart failed; Studio plays them as one: \(String(describing: error), privacy: .public)")
+        }
     }
 
     // MARK: Disk space and interruption alerts
@@ -1056,9 +1074,18 @@ final class RecordingCoordinator {
         }
         let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels) ?? Self.blankThumbnail
         var item = QuickAccessItem(entry, fileURL: url, thumbnail: thumbnail, displayID: displayID)
-        if after.saves { item.savedURL = files.saveRecording(fileAt: url) }
+        let saved = after.saves ? files.saveRecording(fileAt: url) : nil
+        item.savedURL = saved?.url
         if after.uploads { uploadKept?(entry) }
         onRecorded?(item)
+        if let failure = saved?.failure { saveFailed?(failure, entry.id) }
+    }
+
+    /// Saves a copy of a recording from its window or Studio, which beep when it is not saved; why is said by the pointer.
+    private func saveCopy(of url: URL) -> URL? {
+        let saved = files.saveRecording(fileAt: url)
+        if let failure = saved.failure { saveFailed?(failure, nil) }
+        return saved.url
     }
 
     private func makeFile(of draft: RecordingDrafts.Draft, as output: RecordingOutput, at destination: URL) async throws -> KeptFile {
@@ -1120,6 +1147,9 @@ final class RecordingCoordinator {
         )
         switch outcome {
         case .completed:
+            if let entry = history.item(id: historyID), !StudioSound.areKept(in: history.studioURL(for: entry)) {
+                await keepStudioSounds(from: draft.movieURL, for: entry)
+            }
             drafts.remove(draft)
             Log.recording.notice("Finished recovering Studio assets for history \(historyID.uuidString, privacy: .public)")
         case .incomplete(let result):
@@ -1146,7 +1176,8 @@ final class RecordingCoordinator {
             finishing += 1
             window.close { [weak self] in self?.finished() }
         }
-        for window in studioWindows.values where window.hasUnexportedChanges || window.hasPendingProjectSave {
+        // A GIF being made in Studio is stopped as its window closes, and its files removed before the app quits.
+        for window in studioWindows.values where window.hasUnexportedChanges || window.hasPendingProjectSave || window.isMakingGIF {
             finishing += 1
             window.closeIfSaved { [weak self] saved in self?.finished(permitsQuit: saved) }
         }
@@ -1254,8 +1285,14 @@ final class RecordingCoordinator {
                     return try keepStudioMovie(movie, madeWith: project, of: id)
                 },
                 copy: { [weak self] url in self?.files.copy(fileAt: url) },
-                save: { [weak self] url in self?.files.saveRecording(fileAt: url) },
-                progress: { [weak self] fraction in self?.showStudioExport(fraction) }
+                save: { [weak self] url in self?.saveCopy(of: url) },
+                progress: { [weak self] fraction in self?.showStudioExport(fraction) },
+                makeGIF: { [weak self] movie, progress in
+                    guard let self, let entry = history.item(id: id) else { throw CocoaError(.userCancelled) }
+                    // As large as things were on screen, as a GIF recorded is: the movie is filmed at the recording's pixels.
+                    let options = GIFMaker.Options(framesPerSecond: settings.recordingGIFFrameRate, scale: 1 / max(entry.pixelsPerPoint ?? 1, 1))
+                    try await keepGIF(of: movie, as: options, madeFrom: entry, displayID: studioDisplays[id], progress: progress)
+                }
             )
         )
         controller.onClose = { [weak self] in
@@ -1331,7 +1368,7 @@ final class RecordingCoordinator {
                     guard let self else { throw CocoaError(.userCancelled) }
                     try await makeGIF(of: id, edit: edit)
                 },
-                save: { [weak self] url in self?.files.saveRecording(fileAt: url) },
+                save: { [weak self] url in self?.saveCopy(of: url) },
                 copy: { [weak self] url in self?.files.copy(fileAt: url) }
             )
         )
@@ -1347,7 +1384,8 @@ final class RecordingCoordinator {
     private func keepEdit(_ edit: RecordingEdit, of id: UUID) async throws -> URL {
         guard let entry = history.item(id: id) else { throw CocoaError(.fileNoSuchFile) }
         let probe = LatencyProbe("recording.edit")
-        let edited = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).mp4")
+        // Written in the recording's own container: a MOV opened from Finder stays a QuickTime movie.
+        let edited = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).\((entry.fileName as NSString).pathExtension)")
         do {
             let movie = try await RecordingFinisher.export(history.fileURL(for: entry), to: edited, edits: Self.edits(edit))
             let updated = try history.replaceRecording(
@@ -1368,14 +1406,25 @@ final class RecordingCoordinator {
     /// recording of its own, with a card. The GIF is never larger than things were on screen.
     private func makeGIF(of id: UUID, edit: RecordingEdit) async throws {
         guard let entry = history.item(id: id) else { throw CocoaError(.fileNoSuchFile) }
-        let destination = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).gif")
         let onScreen = 1 / max(entry.pixelsPerPoint ?? 1, 1)
         let options = GIFMaker.Options(
             framesPerSecond: settings.recordingGIFFrameRate, scale: min(edit.scale, onScreen), timeRange: edit.timeRange
         )
+        try await keepGIF(of: history.fileURL(for: entry), as: options, madeFrom: entry)
+    }
+
+    /// Makes a GIF of `movie` with `options` and keeps it as a recording of its own beside `entry`, the recording it was
+    /// made from, with a card on `displayID` (the pointer's display when nil).
+    private func keepGIF(
+        of movie: URL, as options: GIFMaker.Options, madeFrom entry: HistoryItem, displayID: CGDirectDisplayID? = nil,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws {
+        let destination = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).gif")
         do {
-            let gif = try await GIFMaker.make(from: history.fileURL(for: entry), to: destination, options: options)
-            let displayID = displays.layout.pointerDisplay?.id ?? 0
+            let gif = try await GIFMaker.make(from: movie, to: destination, options: options, progress: progress)
+            // Cancelled as it was finished: nothing is kept.
+            try Task.checkCancellation()
+            let displayID = displayID ?? displays.layout.pointerDisplay?.id ?? 0
             let file = KeptFile(url: gif.url, pixelWidth: gif.pixelWidth, pixelHeight: gif.pixelHeight, duration: gif.duration, byteCount: gif.byteCount)
             let made = try await deliver(file, startedAt: entry.createdAt, appName: entry.appName, pixelsPerPoint: entry.pixelsPerPoint, displayID: displayID)
             Log.recording.notice("Made a GIF of a recording: \(gif.frameCount, privacy: .public) frames, \(gif.pixelWidth, privacy: .public)x\(gif.pixelHeight, privacy: .public), \(gif.byteCount, privacy: .public) bytes as \(made.fileName, privacy: .public)")

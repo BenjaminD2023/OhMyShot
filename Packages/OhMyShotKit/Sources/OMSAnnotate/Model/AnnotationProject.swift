@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ImageIO
 import OMSCore
@@ -13,31 +14,40 @@ nonisolated public struct AnnotationProject: Sendable {
     public static let fileExtension = "ohmyshot"
     /// The newest format this version reads and writes. Format 2 adds what an earlier version would read
     /// wrongly or not at all: a capture turned, flipped, or resized, combined images turned with it, and
-    /// highlight boxes. Format 3 adds speech bubbles, counters with a pointer, and watermarks.
-    static let version = 3
+    /// highlight boxes. Format 3 adds speech bubbles, counters with a pointer, and watermarks. Format 4 adds
+    /// erasing redactions and magnifiers.
+    static let version = 4
 
     /// The oldest format that holds `document`, so a project nothing new is in is still read by an earlier
     /// version, and one it would misread is refused there rather than opened wrong and written over. Every
     /// kind of mark is named here, so a new one is placed in a format when it is added.
     static func version(for document: AnnotationDocument) -> Int {
-        let usesNewest = document.watermark != nil || document.items.contains { item in
+        let usesFourth = document.items.contains { item in
+            switch item.shape {
+            case .redaction(let redaction): redaction.method == .erase
+            case .magnifier: true
+            case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight, .text, .counter, .spotlight, .image: false
+            }
+        }
+        if usesFourth { return 4 }
+        let usesThird = document.watermark != nil || document.items.contains { item in
             // A turned mark would be shown upright by a version that does not know turning.
             if item.isTurned { return true }
             return switch item.shape {
             case .text(let block): block.look == .bubble || block.tail != nil
             case .counter(let counter): counter.tail != nil
-            case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight, .redaction, .spotlight, .image: false
+            case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight, .redaction, .spotlight, .image, .magnifier: false
             }
         }
-        if usesNewest { return 3 }
-        let usesNewer = document.transform != nil || document.items.contains { item in
+        if usesThird { return 3 }
+        let usesSecond = document.transform != nil || document.items.contains { item in
             switch item.shape {
             case .highlightBox: true
             case .image(let image): image.orientation != nil
-            case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .textHighlight, .text, .counter, .redaction, .spotlight: false
+            case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .textHighlight, .text, .counter, .redaction, .spotlight, .magnifier: false
             }
         }
-        return usesNewer ? 2 : 1
+        return usesSecond ? 2 : 1
     }
 
     /// The project file type: the one the app declares, or one made from the extension.
@@ -108,6 +118,13 @@ nonisolated public struct AnnotationProject: Sendable {
 
     public func write(to url: URL, pictures store: PictureStore = .shared) throws {
         try data(pictures: store).write(to: url, options: .atomic)
+    }
+
+    /// Where the picture of the project at `url` is kept in `folder` while it is open: under the project's name, which
+    /// dragging out and saving copies use, in a folder of its own, since projects in different folders may share a name.
+    public static func previewURL(for url: URL, in folder: URL) -> URL {
+        let place = SHA256.hash(data: Data(url.standardizedFileURL.path(percentEncoded: false).utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+        return folder.appending(path: place, directoryHint: .isDirectory).appending(path: url.deletingPathExtension().lastPathComponent + ".png")
     }
 
     public func keep(at url: URL, preview: Data, previewURL: URL, pictures store: PictureStore = .shared) throws -> URL {

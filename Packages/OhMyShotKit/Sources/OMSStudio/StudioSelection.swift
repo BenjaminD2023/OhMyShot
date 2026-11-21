@@ -8,4 +8,6 @@ nonisolated public enum StudioSelection: Equatable, Sendable {
     case zoom(UUID)
     case cut(Double)
     case cameraSegment(UUID)
+    /// A stretch played faster or slower, by its start.
+    case speed(Double)
 }

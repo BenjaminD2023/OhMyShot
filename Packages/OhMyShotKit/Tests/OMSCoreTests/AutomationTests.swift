@@ -54,6 +54,15 @@ struct AutomationURLParserTests {
         #expect((try? area.get())?.readsScreen == true)
     }
 
+    @Test func pinFromClipboardAndTogglePinsAreOhMyShotsOwn() {
+        #expect(parse("ohmyshot://pin-from-clipboard") == .success(.pinFromClipboard))
+        #expect(parse("ohmyshot://Toggle-Pins?unknown=1") == .success(.togglePins))
+        for command in [AutomationCommand.pinFromClipboard, .togglePins] {
+            #expect(!command.readsScreen)
+            #expect(command.fileURLs.isEmpty)
+        }
+    }
+
     /// As the Raycast extension writes them: every reserved character percent-encoded, a plus as %2B.
     @Test func encodedPathsKeepTheirSpacesAndPlusSigns() {
         let result = parse("ohmyshot://pin?filepath=%2FUsers%2Fme%2FDesktop%2Fa%2Bb%20shot.png")

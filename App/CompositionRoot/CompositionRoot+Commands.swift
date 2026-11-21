@@ -34,6 +34,15 @@ extension CompositionRoot {
         case .controlQuickAccess:
             quickAccess.focusLatest()
             return
+        case .pinFromClipboard:
+            pinClipboard()
+            return
+        case .togglePins:
+            pins.setHidden(!pins.areHidden)
+            return
+        case .restoreRecentlyClosed:
+            quickAccess.restoreRecentlyClosed()
+            return
         case .drawOnScreen:
             // Drawn over the screen, not taken from it: no Screen Recording needed.
             sketch.toggle()
@@ -109,13 +118,14 @@ extension CompositionRoot {
     /// Runs a URL API command from an approved caller, as CleanShot X runs it under the same name and parameters, and a
     /// shortcut's. `done` is told the record of a capture command's capture once it is kept, or nil when none is: it was
     /// cancelled or failed, or never began (no Screen Recording, an area on no display, an upload with nowhere to go). Any
-    /// other command keeps no capture, and tells it nil at once.
-    func perform(_ command: AutomationCommand, done: ((HistoryItem?) -> Void)? = nil) {
+    /// other command keeps no capture, and tells it nil at once. `kept` is told the record as soon as the capture is
+    /// kept, before anything can let it go.
+    func perform(_ command: AutomationCommand, kept: ((HistoryItem) -> Void)? = nil, done: ((HistoryItem?) -> Void)? = nil) {
         // Told once: by the capture's follow-up when one takes it on, else as this returns.
         var followUpTakesDone = false
         defer { if !followUpTakesDone { done?(nil) } }
         func followUp(doing action: CaptureAction?) -> CaptureFollowUp? {
-            guard let followUp = self.followUp(for: action, done: done) else { return nil }
+            guard let followUp = self.followUp(for: action, kept: kept, done: done) else { return nil }
             followUpTakesDone = true
             return followUp
         }
@@ -179,6 +189,10 @@ extension CompositionRoot {
             if let file { open([file]) } else { chooseFilesToAnnotate() }
         case .openFromClipboard:
             annotateClipboard()
+        case .pinFromClipboard:
+            pinClipboard()
+        case .togglePins:
+            pins.setHidden(!pins.areHidden)
         case .toggleDesktopIcons:
             setDesktopIconsHidden(!settings.hidesDesktopIcons)
         case .hideDesktopIcons:
@@ -211,12 +225,14 @@ extension CompositionRoot {
     /// The URL API's `action` (or an upload shortcut's) as a capture's follow-up, telling `done` the capture's record; nil
     /// when it cannot be done: an upload with no destination, which is said by the pointer. A URL command never asks for
     /// a file name, being nobody's to answer; an upload shortcut, pressed at the keyboard, does.
-    private func followUp(for action: CaptureAction?, asksForName: Bool = false, done: ((HistoryItem?) -> Void)? = nil) -> CaptureFollowUp? {
+    private func followUp(
+        for action: CaptureAction?, asksForName: Bool = false, kept: ((HistoryItem) -> Void)? = nil, done: ((HistoryItem?) -> Void)? = nil
+    ) -> CaptureFollowUp? {
         if action == .upload, !uploads.canUpload {
             uploads.tellNoDestination()
             return nil
         }
-        return CaptureFollowUp(action: action, asksForName: asksForName, done: done)
+        return CaptureFollowUp(action: action, asksForName: asksForName, kept: kept, done: done)
     }
 
     func setDesktopIconsHidden(_ hidden: Bool) {

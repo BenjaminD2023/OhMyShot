@@ -296,6 +296,23 @@ struct HistoryStoreTests {
         #expect(!FileManager.default.fileExists(atPath: store.annotationsURL(for: item).path(percentEncoded: false)))
     }
 
+    /// The original comes back with the date it was taken; the file is dated now, so a converted copy of the marked
+    /// picture, or a pin of it, reads as older than the capture.
+    @Test func restoringTheOriginalDatesTheFileNow() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 10, pixelHeight: 20, appName: nil)
+        let file = store.fileURL(for: item).path(percentEncoded: false)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -3600)], ofItemAtPath: file)
+        let marked = try store.replaceImage(of: item, with: Data([2]), pixelWidth: 10, pixelHeight: 20, annotations: Data([9]))
+        let markedAt = try #require(FileManager.default.attributesOfItem(atPath: file)[.modificationDate] as? Date)
+
+        try store.restoreOriginal(of: marked)
+
+        let restoredAt = try #require(FileManager.default.attributesOfItem(atPath: file)[.modificationDate] as? Date)
+        #expect(restoredAt >= markedAt)
+    }
+
     @Test func anEditedRecordingKeepsTheRecordingAsItWasMade() throws {
         let store = makeStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }

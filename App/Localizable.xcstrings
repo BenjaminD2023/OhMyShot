@@ -280,6 +280,40 @@
         }
       }
     },
+    "A window you chose was closed, so nothing was captured." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una ventana que elegiste se ha cerrado, así que no se ha capturado nada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une fenêtre que vous avez choisie a été fermée, donc rien n’a été capturé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したウインドウが閉じられたため、何もキャプチャしませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选窗口已关闭，没有截取任何内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所選視窗已關閉，沒有擷取任何內容。"
+          }
+        }
+      }
+    },
     "About %@" : {
       "localizations" : {
         "es" : {
@@ -1953,36 +1987,36 @@
         }
       }
     },
-    "Choose a picture to mark up, or a project to go on with." : {
+    "Choose a picture to mark up, a project to go on with, or a movie to edit." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elige una imagen para marcar o un proyecto para continuar."
+            "value" : "Elige una imagen para marcar, un proyecto para continuar o una película para editar."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choisissez une image à annoter, ou un projet à poursuivre."
+            "value" : "Choisissez une image à annoter, un projet à poursuivre ou un film à modifier."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "注釈を付ける画像、または続きを編集するプロジェクトを選択してください。"
+            "value" : "注釈を付ける画像、続きを編集するプロジェクト、または編集するムービーを選択してください。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择要标注的图片，或要继续编辑的项目。"
+            "value" : "选择要标注的图片、要继续编辑的项目，或要编辑的影片。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選擇要標註的圖片，或要繼續編輯的專案。"
+            "value" : "選擇要標註的圖片、要繼續編輯的專案，或要編輯的影片。"
           }
         }
       }
@@ -4837,6 +4871,134 @@
         }
       }
     },
+    "OhMyShot can’t open %lld of these files." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "OhMyShot can’t open %lld of these files."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "OhMyShot can’t open %lld of these files."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "OhMyShot no puede abrir %lld de estos archivos."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "OhMyShot no puede abrir %lld de estos archivos."
+                }
+              }
+            }
+          }
+        },
+        "fr" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "OhMyShot ne peut pas ouvrir %lld de ces fichiers."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "OhMyShot ne peut pas ouvrir %lld de ces fichiers."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "OhMyShot でこれらのファイルのうち %lld 個を開けません。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "OhMyShot 无法打开其中 %lld 个文件。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "OhMyShot 無法打開其中 %lld 個檔案。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "OhMyShot can’t open “%@”." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot no puede abrir “%@”."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot ne peut pas ouvrir « %@ »."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot で“%@”を開けません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 无法打开“%@”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 無法打開「%@」。"
+          }
+        }
+      }
+    },
     "OhMyShot checks at launch and about every six hours through its website, with GitHub as a backup. It asks before downloading. Update reminders stay until you install the new version." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4902,6 +5064,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "OhMyShot 需要「螢幕錄製」權限。請在「系統設定」›「隱私權與安全性」中開啟，然後再試一次。"
+          }
+        }
+      }
+    },
+    "Open" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvrir"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打開"
           }
         }
       }
@@ -5453,7 +5649,6 @@
       }
     },
     "Pin from Clipboard" : {
-      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -5483,6 +5678,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從剪貼簿釘選"
+          }
+        }
+      }
+    },
+    "Pin to Screen" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fijar en pantalla"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Épingler à l’écran"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面にピン留め"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "贴到屏幕上"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "釘選到螢幕"
           }
         }
       }
@@ -7375,6 +7604,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定…"
+          }
+        }
+      }
+    },
+    "Share…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compartir…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partager…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共有…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共享…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享…"
           }
         }
       }

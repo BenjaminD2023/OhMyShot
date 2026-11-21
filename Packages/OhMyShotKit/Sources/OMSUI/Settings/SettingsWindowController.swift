@@ -56,6 +56,8 @@ public struct SettingsDependencies {
     public let showOnboarding: () -> Void
     /// How many captures a retention would delete now, so Settings can ask before shortening it.
     public let expiredCount: (HistoryRetention) -> Int
+    /// How many of those are favorites, so turning History off says they go too.
+    public let expiredFavoriteCount: (HistoryRetention) -> Int
     public let backgrounds: Backgrounds
     /// The places captures can be uploaded to, which only the Sharing tab shows.
     public let destinations: UploadDestinationStore
@@ -164,6 +166,7 @@ public struct SettingsDependencies {
         openHistory: @escaping () -> Void,
         showOnboarding: @escaping () -> Void = {},
         expiredCount: @escaping (HistoryRetention) -> Int,
+        expiredFavoriteCount: @escaping (HistoryRetention) -> Int = { _ in 0 },
         destinations: UploadDestinationStore,
         uploadRecords: UploadRecordStore,
         recordActions: UploadRecordActions = .none,
@@ -180,6 +183,7 @@ public struct SettingsDependencies {
         self.openHistory = openHistory
         self.showOnboarding = showOnboarding
         self.expiredCount = expiredCount
+        self.expiredFavoriteCount = expiredFavoriteCount
         self.backgrounds = backgrounds
         self.destinations = destinations
         self.uploadRecords = uploadRecords
@@ -202,6 +206,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
 
     public init(dependencies: SettingsDependencies) {
         let navigator = SettingsNavigator()
+        // Sharing draws Recent uploads only once an upload has finished.
+        navigator.hiddenRows = { [records = dependencies.uploadRecords] in
+            records.records.isEmpty ? [String(localized: "Recent uploads", bundle: .module)] : []
+        }
         var panes: [SettingsTab: NSViewController] = [:]
         let root = SettingsRootView(navigator: navigator) { tab in
             if let pane = panes[tab] { return pane }
@@ -321,6 +329,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
                 openHistory: dependencies.openHistory,
                 showOnboarding: dependencies.showOnboarding,
                 expiredCount: dependencies.expiredCount,
+                expiredFavoriteCount: dependencies.expiredFavoriteCount,
                 updates: dependencies.updates
             ))
         case .capture:

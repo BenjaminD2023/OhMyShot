@@ -18,6 +18,8 @@ struct OverlayKeyTests {
         var acceptsColorCopy = true
         var pickModifiers: NSEvent.ModifierFlags?
         var dragModifiers: NSEvent.ModifierFlags?
+        /// What F last handed on.
+        var captured: (measurement: RulerMeasurement, frame: CapturedFrame)?
 
         func overlayView(_ view: OverlayView, didPressAt point: CGPoint) { heard.append("press") }
         func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) {
@@ -59,6 +61,10 @@ struct OverlayKeyTests {
         func overlayViewDidRequestLastArea(_ view: OverlayView) { heard.append("lastArea") }
         func overlayViewDidResetDrag(_ view: OverlayView) { heard.append("resetDrag") }
         func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) { heard.append("copy") }
+        func overlayView(_ view: OverlayView, didCaptureMeasurement measurement: RulerMeasurement, of frame: CapturedFrame) {
+            heard.append("capture")
+            captured = (measurement, frame)
+        }
         func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) { heard.append("unit") }
         func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance) { heard.append("tolerance \(tolerance.rawValue)") }
         func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice) { heard.append("mode \(choice)") }
@@ -236,6 +242,50 @@ struct OverlayKeyTests {
             #expect(!result.heard.contains("pick") && !result.passedOn, "key \(key): \(result.heard)")
         }
         #expect(try press(48, in: .measure).heard == ["unit"])
+    }
+
+    /// F keeps the display with what is measured on it: only while measuring, without Command, Control, or Option, and
+    /// only once something is measured.
+    @Test func measuringFCapturesTheDisplayWithTheMeasurement() throws {
+        let empty = try press(3, characters: "f", in: .measure)
+        #expect(empty.heard.isEmpty && !empty.passedOn)
+        for purpose in [OverlayController.Purpose.screenshot, .annotate, .color, .text, .record, .scroll] {
+            #expect(try !press(3, characters: "f", in: purpose).heard.contains("capture"))
+        }
+
+        let view = OverlayView(display: Self.display)
+        defer { view.clear() }
+        let recorder = Recorder()
+        let passedOn = PassedOn()
+        view.delegate = recorder
+        view.nextResponder = passedOn
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .measure)
+        let context = try #require(CGContext(
+            data: nil, width: 1600, height: 1200, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 1600, height: 1200))
+        let frame = CapturedFrame(image: try #require(context.makeImage()), hdrImage: nil, displayID: Self.display.id, frame: Self.display.frame)
+        view.show(frame, frozen: true)
+        view.debugMeasureBox(CGRect(x: 100, y: 100, width: 100, height: 50))
+        func f(_ modifiers: NSEvent.ModifierFlags = []) throws {
+            view.keyDown(with: try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil, characters: "f",
+                charactersIgnoringModifiers: "f", isARepeat: false, keyCode: 3
+            )))
+        }
+        for modifier: NSEvent.ModifierFlags in [.command, .control, .option] {
+            try f(modifier)
+        }
+        #expect(!recorder.heard.contains("capture"))
+        try f()
+        #expect(recorder.heard.last == "capture")
+        #expect(recorder.captured?.frame.image === frame.image)
+        // The box in the frame's pixels from its top left: 100 pt up from the bottom of a 600 pt display, at 2×.
+        #expect(recorder.captured?.measurement == RulerMeasurement(
+            shape: .box(CGRect(x: 200, y: 900, width: 200, height: 100)), unit: .points, pixelsPerPoint: 2
+        ))
     }
 
     @Test func toleranceKeysBelongOnlyToMeasureWithoutCommandModifiers() throws {
@@ -486,5 +536,100 @@ struct OverlayKeyTests {
         view.show(selection: SelectionModel(bounds: Self.display.frame, pixelsPerPoint: 2), showsReading: false, isDragging: false)
         view.rightMouseDown(with: rightClick)
         #expect(recorder.heard.last == "cancel")
+    }
+
+    private func key(_ keyCode: UInt16, _ characters: String, modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {
+        try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+        ))
+    }
+
+    /// ? shows the purpose's keys a sentence a line, as its VoiceOver help says them; Escape puts them away and does
+    /// nothing more, any other key puts them away and does what it does, and ? again puts them away.
+    @Test func questionMarkShowsThePurposesKeysUntilAnotherKey() throws {
+        for purpose: OverlayController.Purpose in [.screenshot, .annotate, .text, .color, .measure, .record, .scroll] {
+            let view = OverlayView(display: Self.display)
+            let recorder = Recorder()
+            view.delegate = recorder
+            view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: purpose)
+            view.keyDown(with: try key(44, "?", modifiers: .shift))
+            #expect(view.showsKeys, "\(purpose)")
+            #expect(view.debugKeys == Sentences.split(view.keyHelp).joined(separator: "\n"), "\(purpose)")
+            #expect(view.debugKeys.split(separator: "\n").count > 1, "\(purpose)")
+            view.keyDown(with: try key(53, "\u{1b}"))
+            #expect(!view.showsKeys && recorder.heard.isEmpty, "\(purpose)")
+            view.keyDown(with: try key(44, "?", modifiers: .shift))
+            view.keyDown(with: try key(44, "?", modifiers: .shift))
+            #expect(!view.showsKeys && recorder.heard.isEmpty, "\(purpose)")
+        }
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot)
+        view.keyDown(with: try key(44, "?", modifiers: .shift))
+        view.keyDown(with: try key(49, " "))
+        #expect(!view.showsKeys)
+        #expect(recorder.heard == ["space"])
+        // A new session starts without them.
+        view.keyDown(with: try key(44, "?", modifiers: .shift))
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot)
+        #expect(!view.showsKeys)
+    }
+
+    /// The keys sit centered across the display, 40 pt from the edge the pointer is further from, over the bar when it
+    /// shows, and inside the display.
+    /// Choosing a window has keys of its own, and Space takes the help each way with it.
+    @Test func choosingAWindowShowsItsOwnKeys() throws {
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot)
+        let area = view.keyHelp
+        #expect(area.contains("Tab to type a size"))
+        view.switchMode(to: .window, windows: [])
+        #expect(view.keyHelp.hasPrefix("Click a window to choose it"))
+        view.keyDown(with: try key(44, "?", modifiers: .shift))
+        #expect(view.debugKeys == Sentences.split(view.keyHelp).joined(separator: "\n"))
+        view.switchMode(to: .area, windows: [])
+        #expect(view.keyHelp == area)
+        // Capture Window starts on windows.
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .window, windows: [], showsToolbar: false, purpose: .screenshot)
+        #expect(view.keyHelp.hasPrefix("Click a window to choose it"))
+    }
+
+    /// A ⌘ key goes to the overlay's key equivalents before its keys: it puts the keys away all the same.
+    @Test func aCommandKeyPutsTheKeysAway() throws {
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .measure)
+        view.keyDown(with: try key(44, "?", modifiers: .shift))
+        #expect(view.showsKeys)
+        _ = view.performKeyEquivalent(with: try key(8, "c", modifiers: .command))
+        #expect(!view.showsKeys)
+    }
+
+    /// In-place annotation takes the display over with its own keys: the selection's go.
+    @Test func annotationTakingOverPutsTheKeysAway() throws {
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .annotate)
+        view.keyDown(with: try key(44, "?", modifiers: .shift))
+        #expect(view.showsKeys)
+        view.enterAnnotation()
+        #expect(!view.showsKeys)
+    }
+
+    @Test func theKeysSitByTheEdgeAwayFromThePointer() {
+        let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let size = CGSize(width: 300, height: 120)
+        // y up: a pointer in the upper half sends them to the bottom, one in the lower half to the top.
+        #expect(OverlayView.keysFrame(size: size, pointer: CGPoint(x: 100, y: 500), in: bounds, avoiding: nil) == CGRect(x: 250, y: 40, width: 300, height: 120))
+        #expect(OverlayView.keysFrame(size: size, pointer: CGPoint(x: 100, y: 100), in: bounds, avoiding: nil) == CGRect(x: 250, y: 440, width: 300, height: 120))
+        #expect(OverlayView.keysFrame(size: size, pointer: nil, in: bounds, avoiding: CGRect(x: 200, y: 40, width: 400, height: 42)).minY == 94)
+        let high = OverlayView.keysFrame(size: size, pointer: nil, in: bounds, avoiding: CGRect(x: 0, y: 500, width: 10, height: 80))
+        #expect(high.maxY == 594)
     }
 }

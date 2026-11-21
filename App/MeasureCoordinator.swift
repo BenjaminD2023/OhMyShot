@@ -1,11 +1,13 @@
 import AppKit
+import OMSAnnotate
 import OMSCapture
 import OMSCore
 import OMSUI
 
-/// Measure: the frozen screen with the ruler. ⌘C copies the measurement and Return copies it and closes;
-/// Tab switches between points and pixels, T cycles edge tolerance; both are remembered.
-/// C takes the color under the crosshair. Clicking a selected box captures its frozen pixels.
+/// Measure: the frozen screen with the ruler, on its own or turned to from All-In-One (M). ⌘C copies the measurement
+/// and Return copies it and closes; F keeps the display as a capture with the measurement on it as marks to edit; Tab
+/// switches units, T cycles edge tolerance; both are remembered. C takes the color under the crosshair.
+/// Clicking a selected box captures its frozen pixels.
 final class MeasureCoordinator {
     private let settings: SettingsStore
     private let overlay: OverlayController
@@ -31,11 +33,13 @@ final class MeasureCoordinator {
             WindowCatalog.frontWindowTitle(ofProcess: source.processIdentifier)
         } else { nil }
         configureOverlay(copiesToClipboard: copiesToClipboard)
+        if !allowsCapture { overlay.onCaptureMeasurement = nil }
         overlay.begin(mode: .area, purpose: .measure) { [weak self] outcome in
             guard let self else { return }
             overlay.onMeasureUnitChange = nil
             overlay.onMeasureToleranceChange = nil
             overlay.onCopyMeasurement = nil
+            overlay.onCaptureMeasurement = nil
             if case .region(_, _, _, let frozen?) = outcome, allowsCapture {
                 captures.deliverMeasuredCapture(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard)
             }
@@ -56,6 +60,14 @@ final class MeasureCoordinator {
         overlay.onMeasureToleranceChange = { [weak self] tolerance in self?.settings.measureTolerance = tolerance }
         overlay.onCopyMeasurement = { [weak self] text, point, closing in
             self?.copy(text, toClipboard: copiesToClipboard, closingAt: closing ? point : nil)
+        }
+        // What a kept capture is named from, read while the app measured over is still in front.
+        let app = NSWorkspace.shared.frontmostApplication?.localizedName
+        let title = captures.frontWindowTitle()
+        overlay.onCaptureMeasurement = { [weak self] frame, measurement in
+            guard let self else { return }
+            let marks = AnnotationDocument(pixelSize: CGSize(width: frame.image.width, height: frame.image.height), measurement: measurement)
+            Task { await self.captures.deliverMeasured(frame, marks: marks, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard) }
         }
     }
 

@@ -2,8 +2,9 @@ import Foundation
 
 /// When one Quick Access card closes by itself. It counts down from the card's appearance, and stops while
 /// anything holds the card: the pointer over it, its menu open, a drag out of it, Quick Look showing it,
-/// the keyboard on it, an upload going, or the editor having its capture open. When the last hold ends the card gets at least `grace` more
-/// seconds, so a card the pointer just left, or an upload that just finished, never vanishes under the eye.
+/// the keyboard on it, an upload going, the editor having its capture open, or a copy of it that could not be saved.
+/// When the last hold ends the card gets at least `grace` more seconds, so a card the pointer just left, or an upload
+/// that just finished, never vanishes under the eye.
 ///
 /// Pure: every call says what time it is, so the timing is tested without waiting.
 public struct CardCountdown: Equatable, Sendable {
@@ -14,6 +15,8 @@ public struct CardCountdown: Equatable, Sendable {
         case drag
         /// A copy, save, or pin is still consuming the capture.
         case action
+        /// Copy Text is reading the capture's text.
+        case reading
         case preview
         case keyboard
         /// An upload is going, or failed and waits for Retry.
@@ -22,6 +25,8 @@ public struct CardCountdown: Equatable, Sendable {
         case editor
         /// The first-use hint is teaching the controls on this card.
         case onboarding
+        /// A copy of the capture could not be saved, and the card says why until one is.
+        case failure
     }
 
     /// The least a held card has left when its last hold ends, in seconds (or its whole time, when that is shorter).

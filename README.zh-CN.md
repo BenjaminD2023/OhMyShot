@@ -234,6 +234,7 @@ Debug 版不会启用报告服务。
 
 | 文档 | 内容 |
 | --- | --- |
+| [Docs/keyboard.md](Docs/keyboard.md) | 全部按键，从选取区域到编辑器、贴图和截图历史 |
 | [Docs/automation.md](Docs/automation.md) | URL 命令、快捷指令、聚焦搜索和 Raycast 扩展 |
 | [Docs/ocr.md](Docs/ocr.md) | 文字识别的分层设计与基准测试 |
 | [Docs/capture-picker.md](Docs/capture-picker.md) | 选择区域时光标处的放大镜 |

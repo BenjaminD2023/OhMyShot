@@ -13,7 +13,7 @@ nonisolated public enum AnnotationRenderer {
     public static let spotlightDimming: CGFloat = 0.5
 
     /// Draws `item` into a context whose user space is the capture's pixels, y down. `redacted` is a
-    /// blur or pixelation's picture and where it goes, from `Redactor`; `ground` is what a highlight lies
+    /// blur, pixelation, or erasure's picture and where it goes, from `Redactor`; `ground` is what a highlight lies
     /// on, from `HighlightGround`; spots are drawn by `drawSpotlight` instead.
     /// `flippedBacking` says the context's pixels are shown upside down from Core Graphics' own y-up
     /// order, as a layer's are in a flipped view; shadows need to know which way is down.
@@ -24,9 +24,10 @@ nonisolated public enum AnnotationRenderer {
         draw(item, in: context, scale: scale, coverage: redacted.map { .filtered($0.image, $0.rect) }, ground: ground, flippedBacking: flippedBacking)
     }
 
+    /// `lens` is what a magnifier shows, from `MagnifierPainter.lensPicture`.
     static func draw(
         _ item: Annotation, in context: CGContext, scale: CGFloat, coverage: Redactor.Coverage?,
-        ground: HighlightGround, flippedBacking: Bool = false, underlay: BackdropPainter.Underlay? = nil
+        ground: HighlightGround, flippedBacking: Bool = false, underlay: BackdropPainter.Underlay? = nil, lens: CGImage? = nil
     ) {
         let color = item.style.color.cgColor
         context.saveGState()
@@ -107,7 +108,7 @@ nonisolated public enum AnnotationRenderer {
             case .solid:
                 context.setFillColor(color)
                 context.fill(redaction.rect.standardized)
-            case .blur, .pixelate:
+            case .blur, .pixelate, .erase:
                 switch coverage {
                 case let .filtered(image, rect):
                     context.clip(to: rect)
@@ -129,6 +130,8 @@ nonisolated public enum AnnotationRenderer {
             }
         case .spotlight:
             return
+        case .magnifier(let magnifier):
+            MagnifierPainter.draw(magnifier, lens: lens, in: context, scale: scale, flippedBacking: flippedBacking)
         case .image(let placed):
             let rect = placed.rect.standardized
             guard rect.width >= 1, rect.height >= 1 else { return }
@@ -238,25 +241,45 @@ nonisolated public enum AnnotationRenderer {
         }
         drawSpotlight(document.spots, canvas: layout?.card ?? canvas, in: context)
         context.restoreGState()
-        // Blurs and pixelations show what lies under them, and highlights take to it, images included.
+        // Blurs and pixelations show what lies under them, highlights take to it, and magnifiers show it larger,
+        // images included.
         let readsPicture = document.items.contains { item in
-            if case .redaction(let redaction) = item.shape { return redaction.method != .solid }
-            return item.multiplies
+            switch item.shape {
+            case .redaction(let redaction): redaction.method != .solid
+            case .magnifier: true
+            default: item.multiplies
+            }
         }
         let combined = readsPicture ? redactionSource(document, base: base, composite: composite) : nil
         let source = combined ?? Redactor.Source(base: base)
+        let picture = source.picture ?? (base, .zero)
+        let covered = document.redactedRects
+        // Every redaction's cover, made before any mark is drawn: a magnifier shows them all, above it or below.
+        let redactions = document.items.compactMap { item -> (item: Annotation, coverage: Redactor.Coverage?)? in
+            guard case .redaction(let redaction) = item.shape else { return nil }
+            return (item, Redactor.coverage(
+                for: redaction, id: item.id, source: source, scale: document.scale, covered: covered, canvas: document.canvas,
+                filter: redactionFilter
+            ))
+        }
         for item in document.items where !item.isPicturePart {
             var coverage: Redactor.Coverage?
             var ground = HighlightGround.light
-            if case .redaction(let redaction) = item.shape {
-                coverage = Redactor.coverage(
-                    for: redaction, id: item.id, source: source, scale: document.scale, filter: redactionFilter
-                )
-            } else if item.multiplies {
-                let picture = source.picture ?? (base, .zero)
-                ground = HighlightGround.under(item, in: picture.image, origin: picture.origin, scale: document.scale)
+            var lens: CGImage?
+            switch item.shape {
+            case .redaction:
+                coverage = redactions.first { $0.item.id == item.id }?.coverage
+            case .magnifier(let magnifier):
+                lens = MagnifierPainter.lensPicture(for: magnifier, picture: picture, canvas: document.canvas, redactions: redactions, scale: document.scale)
+            default:
+                if item.multiplies {
+                    ground = HighlightGround.under(item, in: picture.image, origin: picture.origin, scale: document.scale)
+                }
             }
-            draw(item, in: context, scale: document.scale, coverage: coverage, ground: ground, underlay: surface == nil && matte == nil ? nil : underlay)
+            draw(
+                item, in: context, scale: document.scale, coverage: coverage, ground: ground,
+                underlay: surface == nil && matte == nil ? nil : underlay, lens: lens
+            )
         }
         // Over every mark, across the canvas, inside the card's corners on a background.
         if let watermark = document.watermark {
@@ -358,6 +381,15 @@ nonisolated extension AnnotationDocument {
     public var spots: [Spot] {
         items.compactMap { item in
             if case .spotlight(let spot) = item.shape { return spot }
+            return nil
+        }
+    }
+
+    /// Where every redaction lies, whatever its method: an erasure reads none of it, so it never spreads
+    /// what another redaction hides.
+    var redactedRects: [CGRect] {
+        items.compactMap { item in
+            if case .redaction(let redaction) = item.shape { return redaction.rect }
             return nil
         }
     }

@@ -34,6 +34,13 @@ enum MainMenu {
         let saveAs = file.addItem(withTitle: String(localized: "Save As…"), action: Selector(("saveScreenshotAs:")), keyEquivalent: "s")
         saveAs.keyEquivalentModifierMask = [.command, .option, .shift]
         file.addItem(.separator())
+        // Answered by the editor, with a card's keys: its picture, edits kept, pinned, shared, or uploaded.
+        let pin = file.addItem(withTitle: String(localized: "Pin to Screen"), action: Selector(("pinToScreen:")), keyEquivalent: "p")
+        pin.keyEquivalentModifierMask = [.command, .shift]
+        file.addItem(withTitle: String(localized: "Share…"), action: Selector(("shareCapture:")), keyEquivalent: "")
+        let upload = file.addItem(withTitle: String(localized: "Upload"), action: Selector(("uploadCapture:")), keyEquivalent: "u")
+        upload.keyEquivalentModifierMask = [.command, .shift]
+        file.addItem(.separator())
         // Answered by the editor and Capture History, which print the capture in front of them.
         file.addItem(withTitle: String(localized: "Print…"), action: Selector(("printCapture:")), keyEquivalent: "p")
         // Answered by Capture History, on the screenshots selected there.

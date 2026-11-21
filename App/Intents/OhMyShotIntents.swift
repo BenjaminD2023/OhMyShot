@@ -90,10 +90,7 @@ nonisolated enum ShortcutFailure: Error, CustomLocalizedStringResourceConvertibl
 /// Runs a capture command and hands its picture on; nothing when it was cancelled.
 @MainActor
 private func capture(_ command: AutomationCommand) async throws -> some IntentResult & ReturnsValue<IntentFile?> {
-    let actions = await ShortcutsBridge.current()
-    guard let entry = try await actions.capture(command) else { return .result(value: nil) }
-    // Read now: with Keep Captures at Never, the file goes once its card does.
-    let file = try await actions.file(for: entry)
+    guard let file = try await ShortcutsBridge.current().capture(command) else { return .result(value: nil) }
     return .result(value: IntentFile(data: file.data, filename: file.name, type: file.type))
 }
 

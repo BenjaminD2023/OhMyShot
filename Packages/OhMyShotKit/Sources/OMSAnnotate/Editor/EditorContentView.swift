@@ -40,6 +40,8 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         rail.showPreviewTools(presentation == .preview)
         rail.select(session.tool)
         rail.onSelect = { [weak self] tool in self?.choose(tool) }
+        rail.keyedColors = { [weak self] in self?.canvas.keyedColors ?? [] }
+        rail.markTarget = canvas
         capsule.bind(to: session, canvas: canvas) { [weak self] in self?.refreshCapsule() }
         capsule.onCropReset = { [weak self] in self?.canvas.resetCrop() }
         capsule.onCropRatio = { [weak self] ratio in self?.canvas.chooseCropRatio(ratio) }

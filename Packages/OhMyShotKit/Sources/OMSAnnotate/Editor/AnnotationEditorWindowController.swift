@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 /// toolbar with Undo and Redo, zoom, a handle to drag the capture out, Save, and Copy.
 ///
 /// Edits are kept in the capture itself (its file shows the marks, and the marks stay editable) when the
-/// window closes and whenever the capture leaves it: copied, saved, or dragged out.
+/// window closes and whenever the capture leaves it: copied, saved, dragged out, pinned, uploaded, or shared.
 public final class AnnotationEditorWindowController: NSWindowController, NSWindowDelegate {
     public enum Presentation: Equatable, Sendable {
         case editor
@@ -21,7 +21,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// recreates it. Returns the file that now holds the capture.
         public var keep: (_ document: AnnotationDocument, _ png: Data, _ image: CGImage) -> URL?
         /// Saves a copy of the capture's file to the export location; returns where it went, or nil when it was not saved
-        /// (cancelled, or failed, which it has beeped for).
+        /// (cancelled, or failed, which it has said why for).
         public var save: (_ file: URL) async -> URL?
         /// Asks where and how to save a copy of the capture's file, in the Save panel; returns where it went, or nil when
         /// it was not saved. Nil when the editor offers no Save As.
@@ -29,8 +29,18 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// The file to hand to another app when the capture is dragged out of the window: the capture's file itself, or a
         /// copy of it in the format Settings choose.
         public var fileToHandOver: (_ file: URL) -> URL = { $0 }
-        /// Puts the rendered picture on the clipboard and returns whether it succeeded. Without a callback, the PNG goes as it is.
-        public var copy: ((_ image: CGImage, _ png: Data) async -> Bool)?
+        /// Puts the rendered picture on the clipboard, with its pixels per point, and returns whether it succeeded. Without a
+        /// callback, the PNG goes as it is.
+        public var copy: ((_ image: CGImage, _ png: Data, _ scale: CGFloat) async -> Bool)?
+        /// Pins the picture as it looks now over the screen, at its pixels per point. Nil when the editor offers no Pin to Screen.
+        public var pin: ((_ image: CGImage, _ scale: CGFloat) -> Void)?
+        /// What the editor offers for uploading, asked each time the window comes forward: nothing without a destination.
+        public var uploadMenu: () -> UploadMenu = { .hidden }
+        /// Uploads the capture's file, its edits kept, to the default destination (nil) or the one chosen. Nil when the
+        /// editor offers no Upload.
+        public var upload: ((_ file: URL, _ destination: UUID?) -> Void)?
+        /// Whether the capture is uploading now. A capture uploads once at a time, so Upload waits for that one to end.
+        public var isUploading: () -> Bool = { false }
 
         public init(keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) async -> URL?) {
             self.keep = keep
@@ -120,10 +130,10 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         fatalError("init(coder:) is not supported")
     }
 
-    /// The smallest the window goes: room for the rail above the capsule's resting band (under the toolbar's
-    /// 52 pt), and for the widest the style capsule is (the redaction's with a reading that failed and a
-    /// full row of kept colors, 838 pt, beside the rail with 8 pt to spare). A test measures them.
-    static let minimumSize = CGSize(width: 938, height: 640)
+    /// The smallest the window goes: room for the rail (534 pt) above the capsule's resting band (under the
+    /// toolbar's 52 pt), and for the widest the style capsule is (the redaction's with a reading that failed
+    /// and a full row of kept colors, 884 pt, beside the rail with 8 pt to spare). A test measures them.
+    static let minimumSize = CGSize(width: 954, height: 668)
     /// The shorter preview rail and its bottom style band need less vertical space than the editor.
     static let previewMinimumSize = CGSize(width: 880, height: 480)
 
@@ -140,7 +150,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         let height = if presentation == .preview {
             min(max(picture.height + 120, 520), max(previewMinimumSize.height, min(620, visible.height * 0.75)))
         } else {
-            min(max(picture.height + 24 + 62 + 52, 660), visible.height * 0.9)
+            min(max(picture.height + 24 + 62 + 52, minimumSize.height), visible.height * 0.9)
         }
         return CGSize(width: width.rounded(), height: height.rounded())
     }
@@ -170,6 +180,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         if windowLease == nil {
             windowLease = ActiveResources.shared.acquire(.window)
         }
+        model.uploadMenu = actions.uploadMenu()
         showWindow(nil)
         AppActivation.bringForward(window)
         window?.makeFirstResponder(content.canvas)
@@ -387,6 +398,11 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         return task
     }
 
+    /// Destinations are set up in Settings, so coming back from there brings the Upload entries up to date.
+    public func windowDidBecomeKey(_ notification: Notification) {
+        model.uploadMenu = actions.uploadMenu()
+    }
+
     public func windowWillClose(_ notification: Notification) {
         didClose = true
         content.releaseColorPanel()
@@ -422,7 +438,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
             }
             let copied: Bool
             if let copy = actions.copy {
-                copied = await copy(rendered.image, rendered.png)
+                copied = await copy(rendered.image, rendered.png, rendered.document.scale)
             } else {
                 copied = PasteboardWriter.write(png: rendered.png, image: rendered.image)
             }
@@ -446,14 +462,60 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                 NSSound.beep()
                 return
             }
-            // A save that failed has beeped already, and one that was cancelled (Escape in the name alert) did not mean to
-            // save: neither is said again here.
+            // A save that failed has said why already, and one that was cancelled (Escape in the name alert) did not mean
+            // to save: neither is said again here.
             guard await actions.save(file) != nil else { return }
             model.flashSaved()
         }
     }
 
     var offersSaveAs: Bool { actions.saveAs != nil }
+
+    var offersPin: Bool { actions.pin != nil }
+
+    /// Pins the picture as it looks now, its edits kept in the capture first, as Copy keeps them. The window stays open.
+    @discardableResult
+    func pin() -> Task<Void, Never> {
+        content.canvas.endEditing()
+        return Task {
+            guard let pin = actions.pin else { return }
+            guard let rendered = await render() else { return NSSound.beep() }
+            // Pins retain this capture's identity for saving and dragging later, so the file must hold these edits.
+            guard keep(rendered) != nil else { return NSSound.beep() }
+            pin(rendered.image, rendered.document.scale)
+        }
+    }
+
+    /// Uploads the capture with its edits kept in it, to the default destination (nil) or the one chosen, as a card's
+    /// Upload does. Edits that can't be kept upload nothing, since the file would not show them.
+    @discardableResult
+    func upload(to destination: UUID? = nil) -> Task<Void, Never> {
+        content.canvas.endEditing()
+        return Task {
+            guard let upload = actions.upload else { return }
+            guard !actions.isUploading(), let file = await exportAndKeep() else { return NSSound.beep() }
+            upload(file, destination)
+        }
+    }
+
+    /// Offers the capture to the system's share menu, its edits kept, in the format Settings choose, as a card's
+    /// Share… does. It comes down where the pointer is in the window, or from the middle.
+    func share() {
+        Task {
+            guard let file = await fileForSharing() else { return NSSound.beep() }
+            guard let window, let view = window.contentView else { return }
+            let pointer = view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+            let anchor = view.bounds.contains(pointer) ? pointer : CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+            NSSharingServicePicker(items: [file]).show(relativeTo: CGRect(origin: anchor, size: CGSize(width: 1, height: 1)), of: view, preferredEdge: .minY)
+        }
+    }
+
+    /// The file to share, with the edits kept in it first; nil when they could not be kept.
+    func fileForSharing() async -> URL? {
+        content.canvas.endEditing()
+        guard let file = await exportAndKeep() else { return nil }
+        return actions.fileToHandOver(file)
+    }
 
     /// Asks where to save a copy of the picture as it looks now, and in what format and how, then saves it there. The
     /// marks are kept first, as Save keeps them.
@@ -603,6 +665,34 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         if session.document == rendered.document { session.markKept() }
         return url
     }
+
+    // MARK: File menu
+
+    /// ⇧⌘P, as on a card.
+    @objc public func pinToScreen(_ sender: Any?) {
+        pin()
+    }
+
+    /// ⇧⌘U, as on a card: to the default destination.
+    @objc public func uploadCapture(_ sender: Any?) {
+        upload()
+    }
+
+    @objc public func shareCapture(_ sender: Any?) {
+        share()
+    }
+}
+
+extension AnnotationEditorWindowController: NSMenuItemValidation {
+    /// Pin to Screen while the editor offers it, and Upload once a destination is set up, as cards offer it, except while
+    /// the capture is uploading.
+    public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(pinToScreen(_:)): offersPin
+        case #selector(uploadCapture(_:)): actions.upload != nil && !actions.uploadMenu().isHidden && !actions.isUploading()
+        default: true
+        }
+    }
 }
 
 @MainActor
@@ -616,6 +706,8 @@ final class EditorModel {
     var saved = false
     /// Whether the canvas is locked, for the Picture menu's check.
     var locksCanvas = false
+    /// What Save Options offers for uploading.
+    var uploadMenu: UploadMenu = .hidden
     /// The picture the drag-out handle shows.
     var thumbnail: CGImage?
     @ObservationIgnored weak var controller: AnnotationEditorWindowController?
@@ -742,6 +834,45 @@ struct EditorView: View {
                         model.controller?.saveProject()
                     } label: {
                         Text("Save a Copy as Project…", bundle: .module)
+                    }
+                    Divider()
+                    if model.controller?.offersPin == true {
+                        Button {
+                            model.controller?.pin()
+                        } label: {
+                            Text("Pin to Screen", bundle: .module)
+                        }
+                    }
+                    Button {
+                        model.controller?.share()
+                    } label: {
+                        Text("Share…", bundle: .module)
+                    }
+                    // Upload, and Upload To with several destinations, as on a card; nothing before one is set up.
+                    switch model.uploadMenu {
+                    case .hidden:
+                        EmptyView()
+                    case .upload:
+                        Button {
+                            model.controller?.upload()
+                        } label: {
+                            Text("Upload", bundle: .module)
+                        }
+                    case .uploadWithChoice(let targets):
+                        Button {
+                            model.controller?.upload()
+                        } label: {
+                            Text("Upload to \(model.uploadMenu.defaultTarget?.name ?? "")", bundle: .module)
+                        }
+                        Menu {
+                            ForEach(targets) { target in
+                                Button { model.controller?.upload(to: target.id) } label: {
+                                    if target.isDefault { Label(target.name, systemImage: "checkmark") } else { Text(verbatim: target.name) }
+                                }
+                            }
+                        } label: {
+                            Text("Upload To", bundle: .module)
+                        }
                     }
                 } label: {
                     Label {
