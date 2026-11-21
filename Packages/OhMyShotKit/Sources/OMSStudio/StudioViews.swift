@@ -15,6 +15,8 @@ struct StudioView: View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
                 PlayerArea(view: player)
+                    // The chosen zoom is aimed over the movie itself.
+                    .overlay { StudioZoomAim(document: document) }
                     .padding(20)
                     .overlay { previewState }
                     .background(Color(nsColor: .underPageBackgroundColor))
@@ -344,6 +346,21 @@ struct StudioInspector: View {
                         value: Binding(get: { zoom.scale }, set: { scale in document.updateZoom(id) { $0.scale = scale } }),
                         range: 1.2...4, reading: { TransportBar.scale($0) }, document: document
                     )
+                    Picker(selection: Binding(
+                        get: { zoom.target == nil ? ZoomTarget.pointer : .spot },
+                        set: { document.setZoomTarget(id, $0 == .pointer ? nil : document.aim(of: id)) }
+                    )) {
+                        Text("Follow pointer", bundle: .module).tag(ZoomTarget.pointer)
+                        Text("Fixed spot", bundle: .module).tag(ZoomTarget.spot)
+                    } label: {
+                        Text("Target", bundle: .module)
+                    }
+                    .accessibilityLabel(Text("Zoom target", bundle: .module))
+                    if zoom.target != nil {
+                        Text("Click or drag on the preview to aim the zoom. With the preview focused, the arrow keys move it.", bundle: .module)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
                     Button(role: .destructive) {
                         document.removeZoom(id)
                     } label: {
@@ -657,6 +674,13 @@ struct StudioInspector: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Where the chosen zoom looks, as the picker has it: following the pointer, or held on a spot of its own,
+    /// which choosing it puts where the zoom looks now.
+    private enum ZoomTarget: Hashable {
+        case pointer
+        case spot
     }
 
     /// How clicks show, as the picker has it: none, or an effect. Clicks off are `showsClicks`; the effect is

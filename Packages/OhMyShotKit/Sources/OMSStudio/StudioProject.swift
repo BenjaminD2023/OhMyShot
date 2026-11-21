@@ -40,8 +40,25 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         case best
     }
 
-    /// A stretch of the movie drawn larger, following the pointer.
+    /// A stretch of the movie drawn larger, following the pointer or held on a spot of the recording.
     public struct Zoom: Codable, Equatable, Identifiable, Sendable {
+        /// A place in the recording, as fractions of its width and its height from its top-left corner: the same
+        /// place whatever the movie's size, shape, padding, or layout.
+        public struct Spot: Codable, Equatable, Sendable {
+            public var x: Double
+            public var y: Double
+
+            public init(x: Double, y: Double) {
+                self.x = x
+                self.y = y
+            }
+
+            /// The spot kept inside the recording.
+            public var clamped: Spot {
+                Spot(x: min(max(x, 0), 1), y: min(max(y, 0), 1))
+            }
+        }
+
         public var id: UUID
         /// Seconds into the recording; the zoom eases in from `start` and out until `end`.
         public var start: Double
@@ -50,13 +67,33 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         public var scale: Double
         /// Placed from clicks and typing, rather than by hand.
         public var isAutomatic: Bool
+        /// Where the camera holds while zoomed, whatever the pointer does; nil follows the pointer, as every zoom
+        /// did before one could be aimed.
+        public var target: Spot?
 
-        public init(id: UUID = UUID(), start: Double, end: Double, scale: Double, isAutomatic: Bool) {
+        public init(id: UUID = UUID(), start: Double, end: Double, scale: Double, isAutomatic: Bool, target: Spot? = nil) {
             self.id = id
             self.start = start
             self.end = end
             self.scale = scale
             self.isAutomatic = isAutomatic
+            self.target = target
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case id, start, end, scale, isAutomatic, target
+        }
+
+        /// A zoom saved before it could be aimed follows the pointer, and so does one whose spot this version
+        /// can't read, rather than losing the project.
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(UUID.self, forKey: .id)
+            start = try container.decode(Double.self, forKey: .start)
+            end = try container.decode(Double.self, forKey: .end)
+            scale = try container.decode(Double.self, forKey: .scale)
+            isAutomatic = try container.decode(Bool.self, forKey: .isAutomatic)
+            target = (try? container.decodeIfPresent(Spot.self, forKey: .target)) ?? nil
         }
     }
 

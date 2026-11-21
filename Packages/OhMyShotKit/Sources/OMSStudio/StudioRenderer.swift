@@ -376,6 +376,47 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         )
     }
 
+    /// What the camera shows at `time` (the recording's seconds).
+    func view(at time: Double) -> View {
+        view(track.frame(at: time))
+    }
+
+    /// Whether the recording shows at `point` (the movie's pixels, y up) at `time`: inside its frame, and the camera
+    /// not filling it (no more than half faded in, on its way in or out).
+    func showsRecording(atMovie point: CGPoint, at time: Double) -> Bool {
+        guard layout.frame.contains(point) else { return false }
+        guard let camera, camera.pane == nil else { return true }
+        return camera.plan.levels(at: time).fill < 0.5
+    }
+
+    /// The spot of the recording drawn at `point` (the movie's pixels, y up) while the camera shows `view`; a point
+    /// outside the recording's frame gives a spot outside the recording.
+    func spot(atMovie point: CGPoint, in view: View) -> StudioProject.Zoom.Spot {
+        let width = Double(recordingSize.width), height = Double(recordingSize.height)
+        guard width > 0, height > 0, view.scale > 0 else { return .init(x: 0.5, y: 0.5) }
+        let x = view.x + (point.x - layout.frame.minX) / view.scale
+        let y = view.y + (point.y - layout.frame.minY) / view.scale
+        return .init(x: x / width, y: 1 - y / height)
+    }
+
+    /// Where `spot` is drawn on the movie (its pixels, y up) while the camera shows `view`: `spot(atMovie:in:)`
+    /// the other way.
+    func moviePoint(of spot: StudioProject.Zoom.Spot, in view: View) -> CGPoint {
+        let width = Double(recordingSize.width), height = Double(recordingSize.height)
+        return CGPoint(
+            x: layout.frame.minX + (spot.x * width - view.x) * view.scale,
+            y: layout.frame.minY + ((1 - spot.y) * height - view.y) * view.scale
+        )
+    }
+
+    /// The part of the recording a zoom at `scale` held on `spot` shows once it is fully in, kept inside the
+    /// recording as the framing keeps it, as spots: its top-left and bottom-right corners.
+    func shown(around spot: StudioProject.Zoom.Spot, scale: Double) -> (topLeft: StudioProject.Zoom.Spot, bottomRight: StudioProject.Zoom.Spot) {
+        let half = 0.5 / max(scale, 1)
+        let x = min(max(spot.x, half), 1 - half), y = min(max(spot.y, half), 1 - half)
+        return (.init(x: x - half, y: y - half), .init(x: x + half, y: y + half))
+    }
+
     /// The recording drawn as the camera shows it in `view`, cut to `rect` (the frame unless given), its edge
     /// pixels reaching past it so the frame's edge stays solid.
     private func screen(_ source: CIImage, _ view: View, cutTo rect: CGRect? = nil) -> CIImage {
