@@ -10,6 +10,11 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         case gradient(String)
         /// A plain color, sRGB from 0 to 1.
         case color(red: Double, green: Double, blue: Double)
+        /// A picture the person chose, kept in the project's folder under this name (`StudioBackgroundPicture`), so
+        /// it goes wherever the project goes.
+        case picture(String)
+        /// The recording itself as it plays, blurred until only its colors are left.
+        case blur
     }
 
     /// The movie's shape: the recording's own with the background around it, or a fixed one.
@@ -494,7 +499,8 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = StudioProject()
-        background = try container.decodeIfPresent(Background.self, forKey: .background) ?? defaults.background
+        // A background from a newer version, unknown here, takes the default rather than losing the project.
+        background = (try? container.decodeIfPresent(Background.self, forKey: .background)) ?? defaults.background
         padding = try container.decodeIfPresent(Double.self, forKey: .padding) ?? defaults.padding
         cornerRadius = try container.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? defaults.cornerRadius
         shadow = try container.decodeIfPresent(Double.self, forKey: .shadow) ?? defaults.shadow

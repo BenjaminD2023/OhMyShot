@@ -80,6 +80,9 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     /// Runs once the window has closed and its movie is kept.
     private var closeCompletions: [(Bool) -> Void] = []
     private var preparingToClose: Task<Void, Never>?
+    /// A picture being kept for the background, which closing and quitting wait for so it is saved and exported.
+    private var choosingPicture: Task<Void, Never>?
+    private var picturesBeingKept = 0
     private var didClose = false
     private var finishedClosing = false
 
@@ -350,6 +353,44 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         }
     }
 
+    // MARK: Background
+
+    /// Asks for a picture for the movie's background, in a sheet, and makes it the background: from the Desktop
+    /// Pictures folder until one has been chosen. A file that isn't a picture beeps, as in the editor.
+    func chooseBackgroundPicture() {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.prompt = String(localized: "Use Picture", bundle: .module)
+        panel.message = String(localized: "Choose a picture for the movie’s background.", bundle: .module)
+        if studio.lastPicture == nil {
+            let pictures = URL(filePath: "/System/Library/Desktop Pictures", directoryHint: .isDirectory)
+            if FileManager.default.fileExists(atPath: pictures.path(percentEncoded: false)) { panel.directoryURL = pictures }
+        }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            // Counted as the sheet goes, so a quit straight after waits for it.
+            MainActor.assumeIsolated {
+                guard let self, !self.didClose else { return }
+                // After any chosen before it, so the last one chosen is the one kept.
+                let before = self.choosingPicture
+                self.picturesBeingKept += 1
+                self.choosingPicture = Task {
+                    await before?.value
+                    do {
+                        try await self.studio.choosePicture(at: url)
+                    } catch {
+                        Log.studio.error("Choosing a Studio background picture failed: \(String(describing: error), privacy: .public)")
+                        NSSound.beep()
+                    }
+                    self.picturesBeingKept -= 1
+                }
+            }
+        }
+    }
+
     // MARK: Window
 
     /// Whether closing would export: the project changed since the movie in the history was made.
@@ -357,7 +398,8 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         studio.hasUnexportedChanges
     }
 
-    public var hasPendingProjectSave: Bool { studio.hasPendingSave }
+    /// Whether the project has changes not yet saved, or a picture chosen for its background not yet kept.
+    public var hasPendingProjectSave: Bool { studio.hasPendingSave || picturesBeingKept > 0 }
 
     /// Whether a GIF is being made, which closing stops and waits for.
     public var isMakingGIF: Bool { makingGIF != nil }
@@ -396,6 +438,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         guard preparingToClose == nil, !didClose else { return }
         preparingToClose = Task {
             defer { preparingToClose = nil }
+            await choosingPicture?.value
             do {
                 try await studio.flushSave()
                 window?.close()

@@ -28,7 +28,7 @@ struct StudioView: View {
                     .frame(height: document.canChangeLayoutAlongTheTimeline ? StudioTimeline.heightWithLayouts : StudioTimeline.height)
             }
             Divider()
-            StudioInspector(document: document, swatches: swatches)
+            StudioInspector(document: document, swatches: swatches) { model.controller?.chooseBackgroundPicture() }
                 .frame(width: 290)
         }
         .overlay {
@@ -325,7 +325,11 @@ struct TransportBar: View {
 struct StudioInspector: View {
     @Bindable var document: StudioDocument
     let swatches: [StudioWindowController.Swatch]
+    /// Asks for a picture for the background, in a sheet over the window.
+    let choosePicture: () -> Void
     @Environment(\.colorSchemeContrast) private var contrast
+    /// The Blurred recording tile's picture: a frame of the recording, blurred, once it is read.
+    @State private var blurredFrame: CGImage?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -459,6 +463,49 @@ struct StudioInspector: View {
                 } label: {
                     Text("Plain color", bundle: .module)
                 }
+                // A picture of one's own: the one in use, or the last one chosen while the project is open, beside
+                // Choose Image…, which asks for another.
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        Button(action: choosePicture) { Text("Choose Image…", bundle: .module) }
+                            .controlSize(.small)
+                        if let name = shownPicture, let thumbnail = document.pictureThumbnail(name) {
+                            Button {
+                                document.project.background = .picture(name)
+                            } label: {
+                                backgroundTile(chosen: document.project.background == .picture(name)) {
+                                    Image(decorative: thumbnail, scale: 2).resizable().scaledToFill()
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .help(Text("Use this picture", bundle: .module))
+                            .accessibilityLabel(Text("Picture", bundle: .module))
+                            .accessibilityAddTraits(document.project.background == .picture(name) ? .isSelected : [])
+                        }
+                    }
+                } label: {
+                    Text("Picture", bundle: .module)
+                }
+                LabeledContent {
+                    Button {
+                        document.project.background = .blur
+                    } label: {
+                        backgroundTile(chosen: document.project.background == .blur) {
+                            if let blurredFrame {
+                                Image(decorative: blurredFrame, scale: 2).resizable().scaledToFill()
+                            } else {
+                                Color(nsColor: .quaternaryLabelColor)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help(Text("The recording itself, blurred until only its colors are left", bundle: .module))
+                    .accessibilityLabel(Text("Blurred recording", bundle: .module))
+                    .accessibilityAddTraits(document.project.background == .blur ? .isSelected : [])
+                } label: {
+                    Text("Blurred recording", bundle: .module)
+                }
+                .task { blurredFrame = await document.blurredRecordingThumbnail() }
             } header: {
                 Text("Background", bundle: .module)
             }
@@ -793,6 +840,27 @@ struct StudioInspector: View {
     private var isPlainColor: Bool {
         if case .color = document.project.background { return true }
         return false
+    }
+
+    /// The picture the Picture row offers: the background's, or the last one chosen.
+    private var shownPicture: String? {
+        if case .picture(let name) = document.project.background { return name }
+        return document.lastPicture
+    }
+
+    /// A background's tile, as the gradients' are: 44 × 30 pt, 6 pt continuous corners, edged with the Capsule
+    /// Swatch Edge and ringed by a 2 pt accent line while it is the background.
+    private func backgroundTile(chosen: Bool, @ViewBuilder content: () -> some View) -> some View {
+        content()
+            .frame(width: 44, height: 30)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(
+                        chosen ? Color.accentColor : contrast == .increased ? Self.swatchEdgeStrong : Self.swatchEdge,
+                        lineWidth: chosen ? 2 : 1
+                    )
+            )
     }
 
     static func percent(_ value: Double) -> String {

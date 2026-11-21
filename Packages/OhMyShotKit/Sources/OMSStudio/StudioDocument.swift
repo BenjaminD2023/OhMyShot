@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import CoreGraphics
+import CoreImage
 import Foundation
 import Observation
 import OMSCore
@@ -93,6 +94,9 @@ public final class StudioDocument {
     public var isPlaying = false
     /// Whether the project changed since it was last exported.
     public private(set) var hasUnexportedChanges = true
+    /// The picture last chosen for the background, while the project is open: offered again after another
+    /// background was chosen.
+    public private(set) var lastPicture: String?
 
     @ObservationIgnored private let background: @Sendable (String, CGSize) -> CGImage?
     @ObservationIgnored private var rebuild: Task<Void, Never>?
@@ -115,6 +119,9 @@ public final class StudioDocument {
     @ObservationIgnored private var savedRevision = -1
     @ObservationIgnored private var previewBuild: Task<StudioComposition, Error>?
     @ObservationIgnored private var cachedMotion: (key: StudioMotionKey, track: StudioTrack)?
+    /// The background pictures' tiles for the inspector, read once each, and the Blurred recording's.
+    @ObservationIgnored private var pictureThumbnails: [String: CGImage] = [:]
+    @ObservationIgnored private var blurredThumbnail: CGImage?
     @ObservationIgnored private(set) var motionBuildCount = 0
     /// Tests can control completion order without requiring a media decoder or wall-clock delays.
     @ObservationIgnored var compositionLoader: (@Sendable (StudioProject, Double) async throws -> StudioComposition)?
@@ -127,7 +134,16 @@ public final class StudioDocument {
         self.source = source
         self.telemetry = telemetry
         // The times the camera filled what was recorded become stretches on the timeline; the movie is the same.
-        self.project = project.opened(for: telemetry, duration: duration)
+        var opened = project.opened(for: telemetry, duration: duration)
+        // A background picture gone from the folder gives way to the default gradient in the project itself, so the
+        // movie made with the picture is made again, and choosing the picture again is a change.
+        var pictureGone = false
+        if case .picture(let name) = opened.background,
+           !FileManager.default.fileExists(atPath: StudioBackgroundPicture.url(named: name, in: folder).path(percentEncoded: false)) {
+            opened.background = .gradient(Self.missingPictureGradient)
+            pictureGone = true
+        }
+        self.project = opened
         self.duration = duration
         self.recordingSize = recordingSize
         sourceByteCount = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
@@ -136,7 +152,16 @@ public final class StudioDocument {
         let camera = folder.appending(path: StudioFiles.camera)
         cameraMovie = telemetry.camera != nil && FileManager.default.fileExists(atPath: camera.path(percentEncoded: false)) ? camera : nil
         soundFiles = StudioSound.files(in: folder)
-        hasUnexportedChanges = !hasBeenExported
+        hasUnexportedChanges = !hasBeenExported || pictureGone
+        // Pictures chosen for the background the last time it was open and since put aside can't be taken back
+        // with Undo any more: only the one in use stays, with any the project as saved names, in a form this
+        // version may not read. Opened on defaults because the project couldn't be read, every picture stays.
+        if case .picture(let name) = self.project.background { lastPicture = name }
+        if let saved = try? Data(contentsOf: folder.appending(path: StudioFiles.project)) {
+            let text = String(decoding: saved, as: UTF8.self)
+            let kept = lastPicture
+            StudioBackgroundPicture.removeUnused(in: folder) { $0 == kept || text.contains($0) }
+        }
         if self.project == project, FileManager.default.fileExists(atPath: folder.appending(path: StudioFiles.project).path) {
             savedRevision = 0
         } else {
@@ -277,8 +302,8 @@ public final class StudioDocument {
         let ringColor = accent.map { StudioRenderer.RingColor(red: $0.redComponent, green: $0.greenComponent, blue: $0.blueComponent) } ?? .systemBlue
         return try await Self.assemble(
             project: project, telemetry: telemetry, duration: duration, recordingSize: recordingSize,
-            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, soundFiles: soundFiles, background: background,
-            ringColor: ringColor
+            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, folder: folder, soundFiles: soundFiles,
+            background: background, ringColor: ringColor
         )
     }
 
@@ -298,15 +323,20 @@ public final class StudioDocument {
     @concurrent
     private static func assemble(
         project: StudioProject, telemetry: StudioTelemetry, duration: Double, recordingSize: CGSize,
-        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?, soundFiles: [(sound: StudioSound, url: URL)],
+        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?, folder: URL, soundFiles: [(sound: StudioSound, url: URL)],
         background: @Sendable (String, CGSize) -> CGImage?, ringColor: StudioRenderer.RingColor
     ) async throws -> StudioComposition {
         try Task.checkCancellation()
         // Worked out once, for the background painted at the movie's size and for the renderer. `telemetry` is the
         // drawn one, with a camera exactly where there is a camera's movie, as the layout has to agree.
         let layout = StudioRenderer.layout(recordingSize: recordingSize, project: project, hasCamera: cameraMovie != nil, largestSide: largestSide)
-        let picture: CGImage?
-        if case .gradient(let name) = project.background { picture = background(name, layout.canvas) } else { picture = nil }
+        let picture: CGImage? = switch project.background {
+        case .gradient(let name): background(name, layout.canvas)
+        // Read no larger than the movie shows it; gone from the folder, the default gradient stands in.
+        case .picture(let name):
+            StudioBackgroundPicture.image(named: name, in: folder, covering: layout.canvas) ?? background(Self.missingPictureGradient, layout.canvas)
+        case .color, .blur: nil
+        }
         try Task.checkCancellation()
         let renderer = StudioRenderer(
             telemetry: telemetry, project: project, duration: duration, recordingSize: recordingSize, background: picture,
@@ -319,6 +349,9 @@ public final class StudioDocument {
             source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, speeds: project.speeds, camera: camera, sounds: sounds
         )
     }
+
+    /// The gradient a background picture that has gone from the project's folder gives way to: the default one.
+    nonisolated static let missingPictureGradient = "sky"
 
     /// The longest side the preview needs: the movie fitted in the preview's pixels, in steps of 128 so a
     /// small change of the window's size films nothing again, between 640 and the export's.
@@ -350,6 +383,53 @@ public final class StudioDocument {
             project = changed
         }
     }
+
+    /// Makes the picture at `url` the background, kept in the project's folder (read and, when it is larger than
+    /// a background needs, made smaller off the main actor). Throws when it isn't a picture that can be read.
+    public func choosePicture(at url: URL) async throws {
+        let folder = folder
+        let name = try await Self.keepPicture(url, in: folder)
+        lastPicture = name
+        project.background = .picture(name)
+    }
+
+    @concurrent
+    private static func keepPicture(_ url: URL, in folder: URL) async throws -> String {
+        try StudioBackgroundPicture.keep(url, in: folder)
+    }
+
+    /// The tile of the background picture named `name`, for the inspector; nil when it can't be read.
+    public func pictureThumbnail(_ name: String) -> CGImage? {
+        if let cached = pictureThumbnails[name] { return cached }
+        let made = StudioBackgroundPicture.thumbnail(named: name, in: folder, longest: Self.tileSide)
+        if let made { pictureThumbnails[name] = made }
+        return made
+    }
+
+    /// A frame from the middle of the recording, blurred as the Blurred recording background blurs it, for its
+    /// tile in the inspector, read once; nil when the recording can't be read.
+    public func blurredRecordingThumbnail() async -> CGImage? {
+        if let blurredThumbnail { return blurredThumbnail }
+        blurredThumbnail = await Self.blurredFrame(of: source, at: duration / 2)
+        return blurredThumbnail
+    }
+
+    @concurrent
+    private static func blurredFrame(of source: URL, at time: Double) async -> CGImage? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: source))
+        generator.maximumSize = CGSize(width: tileSide, height: tileSide)
+        generator.appliesPreferredTrackTransform = true
+        guard let frame = try? await generator.image(at: CMTime(seconds: time, preferredTimescale: 600)).image else { return nil }
+        let image = CIImage(cgImage: frame)
+        let side = max(image.extent.width, image.extent.height)
+        let blurred = image.clampedToExtent()
+            .applyingGaussianBlur(sigma: side * StudioRenderer.blurStrength)
+            .cropped(to: image.extent)
+        return CIContext(options: [.useSoftwareRenderer: false]).createCGImage(blurred, from: image.extent)
+    }
+
+    /// The longer side of a background tile's picture, in pixels: the 44 pt tile at two pixels a point.
+    nonisolated static let tileSide = 88
 
     /// Sets how closely the movie is encoded, as one step that Undo names.
     public func setQuality(_ quality: StudioProject.Quality) {
