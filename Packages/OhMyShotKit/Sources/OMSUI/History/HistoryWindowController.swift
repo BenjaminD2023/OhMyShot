@@ -17,6 +17,8 @@ public struct HistoryActions {
     public var reveal: (HistoryItem) -> Void
     /// Opens the capture in the OCR panel.
     public var recognizeText: (HistoryItem) -> Void
+    /// Reads the text in a screenshot and copies it (`TextCopier`).
+    public var copyText: (HistoryItem) async -> TextCopy = { _ in .noText }
     /// Keeps the capture on screen as a pin.
     public var pin: (HistoryItem) -> Void
     /// Prints a screenshot through the print panel, as a sheet on the window.

@@ -14,6 +14,8 @@ public struct CardCountdown: Equatable, Sendable {
         case drag
         /// A copy, save, or pin is still consuming the capture.
         case action
+        /// Copy Text is reading the capture's text.
+        case reading
         case preview
         case keyboard
         /// An upload is going, or failed and waits for Retry.

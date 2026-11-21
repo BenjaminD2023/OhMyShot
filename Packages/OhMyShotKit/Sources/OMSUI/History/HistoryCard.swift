@@ -103,6 +103,7 @@ struct HistoryCard: View {
             if item.kind == .screenshot {
                 Button { model.actions.annotate(item) } label: { Text("Annotate", bundle: .module) }
                 Button { model.actions.recognizeText(item) } label: { Text("Recognize Text", bundle: .module) }
+                Button { model.copyText(item) } label: { Text("Copy Text", bundle: .module) }
                 Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
                 Button { model.print(item) } label: { Text("Print", bundle: .module) }
             }
@@ -311,6 +312,7 @@ struct HistoryCard: View {
         Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
         if item.kind == .screenshot {
             Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }
+            Button { model.copyText(item) } label: { Text("Copy Text", bundle: .module) }
             Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
             Button { model.print(item) } label: { Text("Print…", bundle: .module) }
         }

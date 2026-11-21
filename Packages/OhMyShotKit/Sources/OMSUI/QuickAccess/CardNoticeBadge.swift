@@ -38,6 +38,9 @@ final class CardNoticeBadge: NSView {
     /// Nothing under it takes a click from it: it only says what happened.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+    /// What the badge says.
+    var text: String { label.stringValue }
+
     /// The most the badge may span; the card sets it.
     var widest: CGFloat = 152 {
         didSet {

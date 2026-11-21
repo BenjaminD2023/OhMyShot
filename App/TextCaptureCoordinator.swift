@@ -300,6 +300,28 @@ final class TextCaptureCoordinator {
         }
     }
 
+    /// A picture file's text as Capture Text puts it together, or nil when it has none; nothing is copied or shown. It is
+    /// read on this Mac, never by the cloud model: in the text reader, with the formula and VLM packs installed, so the
+    /// app is no larger after it (Docs/perf.md, M5 — power gate), or here while the reader isn't in the app. For a
+    /// shortcut's Recognize Text in Image, and Copy Text on a Quick Access card or in Capture History.
+    func text(ofPictureAt url: URL, joinLines: Bool) async throws -> String? {
+        guard let reader = readers?() else {
+            guard let loaded = await Self.load(.file(url), fallbackScale: 1) else { return nil }
+            return await text(in: loaded.image, joinLines: joinLines)
+        }
+        do {
+            let text = try await TextReaderTool.text(
+                ofPictureAt: url, joinsWrappedLines: joinLines, formulas: reader.formula, vlm: reader.vlm, seconds: Self.panelTableWait,
+                helper: reader.helper
+            )
+            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+        } catch let failure as TextReaderTool.Failure {
+            // As Capture Text's own reading does: no text, rather than an error.
+            Log.capture.error("Recognizing a picture's text failed: \(String(describing: failure), privacy: .public)")
+            return nil
+        }
+    }
+
     /// With the formula pack installed, the formulas in the picture are found and read in the text reader beside Vision's
     /// reading, and the text copied holds each as LaTeX (Docs/ocr.md › Formulas among text); with the VLM pack, its tables
     /// and charts, a row a line, where they bear themselves out (Docs/ocr.md › The VLM pack); the highlight stays on until
@@ -1038,7 +1060,7 @@ final class TextCaptureCoordinator {
     }
 
     /// Decodes off the main thread: a large photo takes a while.
-    @concurrent private nonisolated static func load(_ content: PasteboardImage.Content, fallbackScale: CGFloat) async -> ImageLoader.Loaded? {
+    @concurrent nonisolated static func load(_ content: PasteboardImage.Content, fallbackScale: CGFloat) async -> ImageLoader.Loaded? {
         switch content {
         case .file(let url): ImageLoader.load(contentsOf: url, fallbackScale: fallbackScale)
         case .data(let data): ImageLoader.load(data: data, fallbackScale: fallbackScale)

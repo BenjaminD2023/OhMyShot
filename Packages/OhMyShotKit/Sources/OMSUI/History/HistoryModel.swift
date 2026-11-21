@@ -44,6 +44,7 @@ final class HistoryModel {
     var reading = 0
     /// The captures' text, ready for searching, as it has been read.
     @ObservationIgnored private var indexedIDs: Set<UUID> = []
+    @ObservationIgnored private let copiedReading = CopiedHUD()
     @ObservationIgnored private let searchIndex = HistorySearchIndex()
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var searchRevision: UInt64 = 0
@@ -553,6 +554,16 @@ final class HistoryModel {
 
     func quickLook(_ item: HistoryItem) {
         previewURL = store.fileURL(for: item)
+    }
+
+    /// Copy Text: the screenshot's text goes to the clipboard, and the Copied reading by the pointer says how much, or
+    /// that it held none; a reading overtaken by a newer copy says nothing.
+    func copyText(_ item: HistoryItem) {
+        guard item.kind == .screenshot else { return }
+        Task {
+            guard let message = await actions.copyText(item).message else { return }
+            copiedReading.show(message, near: NSEvent.mouseLocation)
+        }
     }
 
     /// Prints a screenshot; a recording has nothing to print.

@@ -165,6 +165,10 @@ extension CompositionRoot {
                 loaded.image, pixelsPerPoint: loaded.scale, title: item.fileURL.deletingPathExtension().lastPathComponent
             )
         }
+        actions.copyText = { [weak self] item in
+            guard let self, item.kind == .screenshot else { return .noText }
+            return await textCopier.copyText(ofPictureAt: item.fileURL)
+        }
         actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? item.fileURL }
         actions.codes = { [weak self] item in
             guard let self, settings.showsCodesInSelection, item.kind == .screenshot,
@@ -243,6 +247,10 @@ extension CompositionRoot {
             }
         )
         historyActions.isBeingEdited = { [weak self] entry in self?.annotations.openCaptureIDs.contains(entry.id) ?? false }
+        historyActions.copyText = { [weak self] entry in
+            guard let self, entry.kind == .screenshot else { return .noText }
+            return await textCopier.copyText(ofPictureAt: history.fileURL(for: entry))
+        }
         historyActions.print = { [weak self] entry, window in
             guard let self, entry.kind == .screenshot else { return }
             printPicture(fileAt: history.fileURL(for: entry), fallbackScale: scale(of: entry, orElse: 2), from: window)

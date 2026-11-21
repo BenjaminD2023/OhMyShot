@@ -16,6 +16,8 @@ public enum CardCommand: Equatable, Sendable {
     case reveal
     case quickLook
     case recognizeText
+    /// Reads the text in a screenshot and copies it, and the card stays.
+    case copyText
     case pin
     case print
     /// To the default destination.
@@ -85,6 +87,7 @@ public enum CardKeys {
         Binding(key: .character("o"), modifiers: .command, command: .open),
         Binding(key: .space, modifiers: [], command: .quickLook),
         Binding(key: .character("t"), modifiers: [.command, .shift], command: .recognizeText),
+        Binding(key: .character("c"), modifiers: [.command, .shift], command: .copyText),
         Binding(key: .character("p"), modifiers: [.command, .shift], command: .pin),
         Binding(key: .character("p"), modifiers: .command, command: .print),
         Binding(key: .character("u"), modifiers: [.command, .shift], command: .upload),

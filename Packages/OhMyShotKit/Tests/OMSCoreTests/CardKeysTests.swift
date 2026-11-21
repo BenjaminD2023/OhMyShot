@@ -67,6 +67,13 @@ struct CardKeysTests {
         #expect(CardKeys.binding(for: .picture(.scaleToOneX(pixelsPerPoint: 2))) == nil)
     }
 
+    /// Copy Text is ⇧⌘C, beside Copy's ⌘C, and the menu shows it.
+    @Test func copyTextIsShiftCommandC() {
+        #expect(CardKeys.command(for: .character("c"), modifiers: [.command, .shift]) == .copyText)
+        #expect(CardKeys.binding(for: .copyText)?.key == .character("c"))
+        #expect(CardKeys.binding(for: .copyText)?.modifiers == [.command, .shift])
+    }
+
     /// ⌥⌘C copies and keeps the card, as Copy clicked with Option does; ⌘C stays the Copy the menu shows.
     @Test func optionCommandCCopiesAndKeepsTheCard() {
         #expect(CardKeys.command(for: .character("c"), modifiers: [.command, .option]) == .copyAndKeep)

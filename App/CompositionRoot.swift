@@ -168,6 +168,11 @@ final class CompositionRoot {
             historyWindow?.reload()
         }
     )
+    /// Copy Text on a Quick Access card or in Capture History: the picture read on this Mac, with Settings' line breaks.
+    lazy var textCopier = TextCopier { [weak self] url in
+        guard let self else { return nil }
+        return try? await textCapture.text(ofPictureAt: url, joinLines: !settings.textRecognitionKeepsLineBreaks)
+    }
     /// What the Shortcuts actions run.
     private(set) lazy var shortcuts = ShortcutActions(
         permissions: permissions, uploads: uploads, captures: captures, textCapture: textCapture, files: files, packs: readerPacks,

@@ -123,6 +123,10 @@ final class CardStackView: NSView {
         cards[id]?.showCopied()
     }
 
+    func showTextCopy(_ copy: TextCopy, on id: UUID) {
+        cards[id]?.showTextCopy(copy)
+    }
+
     func previewHover(_ id: UUID) {
         cards[id]?.setHovering(true)
     }

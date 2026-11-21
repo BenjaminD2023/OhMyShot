@@ -483,6 +483,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         actions.append(action(String(localized: "Quick Look", bundle: .module)) { [weak self] in self?.onCommand?(.quickLook) })
         if isPicture {
             actions.append(action(String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onCommand?(.recognizeText) })
+            actions.append(action(String(localized: "Copy Text", bundle: .module)) { [weak self] in self?.onCommand?(.copyText) })
             actions.append(action(String(localized: "Pin to Screen", bundle: .module)) { [weak self] in self?.onCommand?(.pin) })
             let offer = pictureOffer()
             if offer.availability == .available {
@@ -567,6 +568,40 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
             copyButton.symbolName = "doc.on.doc"
         }
     }
+
+    /// Copy Text came to `copy`: "Copied 42 characters", or "No text found", in the notice over the card, which stays, and
+    /// said aloud. Under the pointer the notice stands where the Copy and Save capsules are, which make way for it.
+    func showTextCopy(_ copy: TextCopy) {
+        guard let message = copy.message, !isTrashing else { return }
+        if case .copied = copy {
+            noticeBadge.show(message, symbol: "checkmark.circle.fill", colors: [.white, .systemGreen])
+        } else {
+            noticeBadge.show(message, symbol: "text.magnifyingglass")
+        }
+        VoiceOver.announce(message, from: self)
+        if isHovering { actions.isHidden = true }
+        noticeReset?.cancel()
+        noticeReset = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            guard !Task.isCancelled, let self, !isTrashing else { return }
+            noticeBadge.hide()
+            bringBackCapsules()
+        }
+    }
+
+    /// The Copy and Save capsules come back where the notice was, while the pointer is still over the card.
+    private func bringBackCapsules() {
+        guard isHovering, actions.isHidden else { return }
+        actions.alphaValue = 0
+        actions.isHidden = false
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Theme.Motion.fade
+            actions.animator().alphaValue = 1
+        }
+    }
+
+    /// What the notice over the card says while it shows.
+    var notice: String? { noticeBadge.isHidden ? nil : noticeBadge.text }
 
     func showSaved() {
         saveButton.title = String(localized: "Saved", bundle: .module)
@@ -807,6 +842,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
         if item.kind == .screenshot {
             add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked), .recognizeText)
+            add(String(localized: "Copy Text", bundle: .module), "doc.plaintext", #selector(copyTextClicked), .copyText)
             addCodeItems(to: menu)
             add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked), .pin)
             add(String(localized: "Print…", bundle: .module), "printer", #selector(printClicked), .print)
@@ -1045,6 +1081,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     @objc private func annotateClicked() { onCommand?(.annotate) }
     @objc private func revealClicked() { onCommand?(.reveal) }
     @objc private func recognizeTextClicked() { onCommand?(.recognizeText) }
+    @objc private func copyTextClicked() { onCommand?(.copyText) }
     @objc private func pinClicked() { onCommand?(.pin) }
     @objc private func printClicked() { onCommand?(.print) }
     @objc private func trashClicked() { onCommand?(.moveToTrash) }
