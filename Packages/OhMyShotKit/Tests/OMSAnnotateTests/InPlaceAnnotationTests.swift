@@ -82,7 +82,7 @@ struct InPlaceAnnotationTests {
         #expect(!AnnotationCanvasView.inPlaceTools.contains(.crop) && !AnnotationCanvasView.inPlaceTools.contains(.background))
         // The toolbar offers the same tools, grouped as the rail groups them.
         #expect(InPlaceToolbar.toolGroups == [
-            [.select], [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox], [.text, .counter], [.redact, .spotlight],
+            [.select], [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox], [.text, .counter], [.redact, .spotlight, .magnifier],
         ])
         #expect(Array(InPlaceToolbar.toolGroups.joined()) == AnnotationCanvasView.inPlaceTools)
         let event = try #require(NSEvent.keyEvent(

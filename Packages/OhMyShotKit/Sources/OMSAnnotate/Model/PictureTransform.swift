@@ -297,6 +297,12 @@ nonisolated extension Annotation {
             let orientation = (image.orientation ?? .identity).applying(mapping.operation)
             image.orientation = orientation.isIdentity ? nil : orientation
             copy.shape = .image(image)
+        case .magnifier(var magnifier):
+            // A circle still, over the same part of the picture.
+            magnifier.source = mapping.point(magnifier.source)
+            magnifier.center = mapping.point(magnifier.center)
+            magnifier.radius *= mapping.lengthFactor
+            copy.shape = .magnifier(magnifier)
         }
         return copy
     }

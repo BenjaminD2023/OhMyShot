@@ -16,6 +16,8 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
     case counter
     case redact
     case spotlight
+    /// A lens showing part of the picture larger.
+    case magnifier
     case crop
     /// Sets the capture on a background for sharing.
     case background
@@ -33,10 +35,11 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
         !isPictureMode
     }
 
-    /// Tools that draw a mark by dragging from one corner or end to the other.
+    /// Tools that draw a mark by dragging from one corner or end to the other (the magnifier from what it
+    /// magnifies to where its lens stands).
     public var dragsShape: Bool {
         switch self {
-        case .arrow, .line, .rectangle, .ellipse, .highlightBox, .redact, .spotlight: true
+        case .arrow, .line, .rectangle, .ellipse, .highlightBox, .redact, .spotlight, .magnifier: true
         case .select, .pen, .highlighter, .text, .counter, .crop, .background: false
         }
     }
@@ -66,11 +69,18 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
     /// In points.
     public var fontSize: CGFloat
     public var oval: Bool
+    /// The magnifier's zoom. Kept optional so settings kept before there were magnifiers still read.
+    private var magnifierZoom: Magnifier.Zoom?
+    public var zoom: Magnifier.Zoom {
+        get { magnifierZoom ?? .two }
+        set { magnifierZoom = newValue }
+    }
 
     public init(
         color: RGBA = .red, lineWidth: CGFloat = 4, shadow: Bool = true, arrowHead: Arrow.Head = .classic,
         dashed: Bool = false, filled: Bool = false, cornerRadius: CGFloat = 4, redaction: Redaction.Method = .solid,
-        numbering: Counter.Numbering = .numbers, textLook: TextBlock.Look = .plain, fontSize: CGFloat = 20, oval: Bool = false
+        numbering: Counter.Numbering = .numbers, textLook: TextBlock.Look = .plain, fontSize: CGFloat = 20, oval: Bool = false,
+        zoom: Magnifier.Zoom = .two
     ) {
         self.color = color
         self.lineWidth = lineWidth
@@ -84,6 +94,7 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         self.textLook = textLook
         self.fontSize = fontSize
         self.oval = oval
+        magnifierZoom = zoom
     }
 
     /// A tool's settings before the user changes them.
@@ -92,7 +103,7 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         case .highlighter: ToolSettings(color: .marker, lineWidth: 18, shadow: false)
         case .highlightBox: ToolSettings(color: .marker, shadow: false, cornerRadius: 2)
         case .redact: ToolSettings(color: .black, shadow: false)
-        case .spotlight: ToolSettings(shadow: false)
+        case .spotlight, .magnifier: ToolSettings(shadow: false)
         case .pen: ToolSettings(lineWidth: 3)
         case .select, .arrow, .line, .rectangle, .ellipse, .text, .counter, .crop, .background: ToolSettings()
         }
@@ -121,6 +132,7 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         case .counter(let counter): numbering = counter.numbering
         case .redaction(let redaction): self.redaction = redaction.method
         case .spotlight(let spot): oval = spot.oval
+        case .magnifier(let magnifier): zoom = magnifier.zoom
         case .pen, .highlighter, .textHighlight, .image: break
         }
     }
@@ -159,6 +171,9 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         case .spotlight(var spot):
             spot.oval = oval
             item.shape = .spotlight(spot)
+        case .magnifier(var magnifier):
+            magnifier.zoom = zoom
+            item.shape = .magnifier(magnifier)
         case .pen, .highlighter, .textHighlight, .image:
             break
         }
@@ -168,8 +183,15 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
 
 nonisolated extension AnnotationTool {
     /// The mark this tool draws when dragged from `start` to `end` (pixels), or nil for tools that do not
-    /// draw by dragging. `constrained` (Shift) makes squares and circles and snaps lines to 45°.
-    public func mark(from start: CGPoint, to end: CGPoint, constrained: Bool, settings: ToolSettings, id: UUID = UUID()) -> Annotation? {
+    /// draw by dragging. `constrained` (Shift) makes squares and circles and snaps lines to 45°. A magnifier
+    /// magnifies `start` with its lens at `end`, over `start` until the drag leaves what it shows; it is
+    /// `Magnifier.lensRadius` points across at `scale` pixels per point, or smaller to lie inside `room` (pixels)
+    /// where it stands, though never below `Magnifier.smallestRadius`. A drag past `room` leaves the lens at its edge, a
+    /// constrained one where its line leaves it.
+    public func mark(
+        from start: CGPoint, to end: CGPoint, constrained: Bool, settings: ToolSettings, id: UUID = UUID(), scale: CGFloat = 1,
+        room: CGRect? = nil
+    ) -> Annotation? {
         let style = settings.style
         let shape: Shape
         switch self {
@@ -187,6 +209,30 @@ nonisolated extension AnnotationTool {
             shape = .redaction(Redaction(rect: Geometry.rect(from: start, to: end, square: constrained), method: settings.redaction))
         case .spotlight:
             shape = .spotlight(Spot(rect: Geometry.rect(from: start, to: end, square: constrained), oval: settings.oval))
+        case .magnifier:
+            func radius(at center: CGPoint) -> CGFloat {
+                let largest = Magnifier.lensRadius * scale
+                guard let room else { return largest }
+                let space = min(center.x - room.minX, room.maxX - center.x, center.y - room.minY, room.maxY - center.y)
+                return min(largest, max(Magnifier.smallestRadius * scale, space))
+            }
+            var magnifier = Magnifier(source: start, radius: radius(at: start), zoom: settings.zoom)
+            var lens = constrained ? Geometry.snapped(end, from: start) : end
+            if hypot(lens.x - start.x, lens.y - start.y) > magnifier.sourceRadius, let room, !room.isNull, !room.contains(lens) {
+                if constrained, room.contains(start) {
+                    let dx = lens.x - start.x, dy = lens.y - start.y
+                    let across = dx == 0 ? 1 : ((dx > 0 ? room.maxX : room.minX) - start.x) / dx
+                    let down = dy == 0 ? 1 : ((dy > 0 ? room.maxY : room.minY) - start.y) / dy
+                    lens = CGPoint(x: start.x + dx * min(across, down), y: start.y + dy * min(across, down))
+                } else {
+                    lens = CGPoint(x: min(max(lens.x, room.minX), room.maxX), y: min(max(lens.y, room.minY), room.maxY))
+                }
+            }
+            if hypot(lens.x - start.x, lens.y - start.y) > magnifier.sourceRadius {
+                magnifier.center = lens
+                magnifier.radius = radius(at: lens)
+            }
+            shape = .magnifier(magnifier)
         case .select, .pen, .highlighter, .text, .counter, .crop, .background:
             return nil
         }

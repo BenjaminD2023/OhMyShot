@@ -38,6 +38,8 @@ nonisolated extension Annotation {
             return spot.rect.standardized
         case .image(let image):
             return image.rect.standardized
+        case .magnifier(let magnifier):
+            return magnifier.lensRect
         case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight:
             return MarkPaths.outline(of: self, scale: scale)?.boundingBoxOfPath ?? .null
         }
@@ -50,6 +52,8 @@ nonisolated extension Annotation {
             let upright = upright(scale: scale)
             return Self.box(around: upright.drawingBounds(scale: scale), turnedBy: angle, about: upright.bounds(scale: scale).middle)
         }
+        // The lens's shadow, and the ring and line at what it magnifies.
+        if case .magnifier(let magnifier) = shape { return MagnifierPainter.drawingBounds(of: magnifier, scale: scale) }
         var bounds = bounds(scale: scale)
         guard !bounds.isNull else { return bounds }
         if let tip = tip(scale: scale) { bounds = bounds.union(CGRect(origin: tip, size: .zero)) }
@@ -100,10 +104,11 @@ nonisolated extension Annotation {
         }
     }
 
-    /// Marks that would hide what they cover if the shadow fell on it never cast one.
+    /// Marks that would hide what they cover if the shadow fell on it never cast one. A magnifier's lens has a
+    /// shadow of its own, the loupe's, rather than the mark shadow.
     public var castsShadow: Bool {
         switch shape {
-        case .highlighter, .textHighlight, .highlightBox, .redaction, .spotlight: false
+        case .highlighter, .textHighlight, .highlightBox, .redaction, .spotlight, .magnifier: false
         default: true
         }
     }
@@ -140,6 +145,9 @@ nonisolated extension Annotation {
             if !edgeOnly { return true }
             let inner = rect.insetBy(dx: tolerance, dy: tolerance)
             return inner.isNull || !inner.contains(point)
+        case .magnifier(let magnifier):
+            // The lens: what it magnifies is reached by its handle once it is selected.
+            return hypot(point.x - magnifier.center.x, point.y - magnifier.center.y) <= magnifier.radius + tolerance
         case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight:
             guard let path = MarkPaths.outline(of: self, scale: scale) else { return false }
             guard path.boundingBoxOfPath.insetBy(dx: -tolerance, dy: -tolerance).contains(point) else { return false }
@@ -179,6 +187,10 @@ nonisolated extension Annotation {
             // Pulled out of the disc's edge, a pointer; pushed back in, gone.
             let diameter = CounterLayout(counter, lineWidth: style.lineWidth, scale: scale).diameter
             return [(.tail, counter.tail ?? CalloutPaths.restingTip(center: counter.center, diameter: diameter))]
+        case .magnifier(let magnifier):
+            // Corners that size the lens about its middle; once it stands apart, what it magnifies moves by its own.
+            let corners = Self.handles(of: magnifier.lensRect).filter { [.topLeft, .topRight, .bottomRight, .bottomLeft].contains($0.handle) }
+            return magnifier.isDetached ? corners + [(.start, magnifier.source)] : corners
         // A highlight snapped to text is drawn again rather than reshaped: its ends belong to words.
         case .pen, .highlighter, .textHighlight:
             return []
@@ -274,6 +286,15 @@ nonisolated extension Annotation {
             // Back on the disc, the pointer goes.
             counter.tail = hypot(tip.x - counter.center.x, tip.y - counter.center.y) <= diameter / 2 * 1.1 ? nil : tip
             copy.shape = .counter(counter)
+        case .magnifier(var magnifier):
+            if handle == .start {
+                magnifier.source = constrained ? Geometry.snapped(point, from: magnifier.center) : point
+            } else {
+                // A circle sized about its middle, never smaller than a thumb's width.
+                let reach = max(abs(point.x - magnifier.center.x), abs(point.y - magnifier.center.y))
+                magnifier.radius = max(reach, Magnifier.smallestRadius * scale)
+            }
+            copy.shape = .magnifier(magnifier)
         case .pen, .highlighter, .textHighlight:
             break
         }
@@ -329,7 +350,23 @@ nonisolated extension Annotation {
         case .image(var image):
             image.rect = move(image.rect)
             copy.shape = .image(image)
+        case .magnifier(var magnifier):
+            magnifier.source = move(magnifier.source)
+            magnifier.center = move(magnifier.center)
+            copy.shape = .magnifier(magnifier)
         }
+        return copy
+    }
+
+    /// The mark as a drag on it alone moves it by `delta` pixels: a magnifier's lens alone, what it magnifies
+    /// staying where it is (back over it, the lens settles there); any other mark whole.
+    public func dragged(by delta: CGSize) -> Annotation {
+        guard case .magnifier(var magnifier) = shape else { return translated(by: delta) }
+        let center = CGPoint(x: magnifier.center.x + delta.width, y: magnifier.center.y + delta.height)
+        let settles = hypot(center.x - magnifier.source.x, center.y - magnifier.source.y) <= magnifier.sourceRadius
+        magnifier.center = settles ? magnifier.source : center
+        var copy = self
+        copy.shape = .magnifier(magnifier)
         return copy
     }
 }

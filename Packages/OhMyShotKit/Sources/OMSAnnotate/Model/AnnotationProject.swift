@@ -14,7 +14,7 @@ nonisolated public struct AnnotationProject: Sendable {
     /// The newest format this version reads and writes. Format 2 adds what an earlier version would read
     /// wrongly or not at all: a capture turned, flipped, or resized, combined images turned with it, and
     /// highlight boxes. Format 3 adds speech bubbles, counters with a pointer, and watermarks. Format 4 adds
-    /// erasing redactions.
+    /// erasing redactions and magnifiers.
     static let version = 4
 
     /// The oldest format that holds `document`, so a project nothing new is in is still read by an earlier
@@ -24,6 +24,7 @@ nonisolated public struct AnnotationProject: Sendable {
         let usesFourth = document.items.contains { item in
             switch item.shape {
             case .redaction(let redaction): redaction.method == .erase
+            case .magnifier: true
             case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight, .text, .counter, .spotlight, .image: false
             }
         }
@@ -34,7 +35,7 @@ nonisolated public struct AnnotationProject: Sendable {
             return switch item.shape {
             case .text(let block): block.look == .bubble || block.tail != nil
             case .counter(let counter): counter.tail != nil
-            case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight, .redaction, .spotlight, .image: false
+            case .arrow, .line, .rectangle, .ellipse, .highlightBox, .pen, .highlighter, .textHighlight, .redaction, .spotlight, .image, .magnifier: false
             }
         }
         if usesThird { return 3 }
@@ -42,7 +43,7 @@ nonisolated public struct AnnotationProject: Sendable {
             switch item.shape {
             case .highlightBox: true
             case .image(let image): image.orientation != nil
-            case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .textHighlight, .text, .counter, .redaction, .spotlight: false
+            case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .textHighlight, .text, .counter, .redaction, .spotlight, .magnifier: false
             }
         }
         return usesSecond ? 2 : 1

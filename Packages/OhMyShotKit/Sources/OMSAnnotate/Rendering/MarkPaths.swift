@@ -46,7 +46,7 @@ nonisolated enum MarkPaths {
                 path.addRoundedRect(in: rect, cornerWidth: radius, cornerHeight: radius)
             }
             return path.isEmpty ? nil : path
-        case .text, .counter, .redaction, .spotlight, .image:
+        case .text, .counter, .redaction, .spotlight, .image, .magnifier:
             return nil
         }
     }

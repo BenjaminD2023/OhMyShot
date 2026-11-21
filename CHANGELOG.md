@@ -11,6 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
+- Magnifier (Z), a mark in the editor and in Annotate Area: a round lens that shows part of the picture at 2×, 3×, or 4×, chosen in its capsule. Click to put it over a spot, or drag from the spot to where the lens should stand, and a thin line joins it to a ring around what it magnifies. It has the capture loupe's white ring and soft shadow, and it shows redactions as they are drawn, so it never reveals what one hides. Projects with a magnifier open only in this version or later.
 - Erase, a redaction method beside Solid, Blur, and Pixelate in the Redact tool's capsule (and for Redact All): it fills the area from the picture just around it, in one color, an even gradient, or each side's colors blended in, so it disappears into an interface's surface. It reads nothing under the area and nothing under another redaction, so what it covers can't be recovered from the flattened picture. Projects with an erasure open only in this version or later.
 
 ### Fixed

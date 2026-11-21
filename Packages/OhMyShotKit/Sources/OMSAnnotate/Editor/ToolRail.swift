@@ -19,7 +19,7 @@ final class ToolRail: NSView {
         [.select],
         [.arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox],
         [.text, .counter],
-        [.redact, .spotlight],
+        [.redact, .spotlight, .magnifier],
         [.crop, .background],
     ]
 

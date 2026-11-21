@@ -58,6 +58,10 @@ nonisolated final class MarkLayer: StillLayer {
     var underlay: BackdropPainter.Underlay? {
         didSet { if underlay != oldValue { setNeedsDisplay() } }
     }
+    /// What a magnifier shows, from `MagnifierPainter.lensPicture`.
+    var lens: CGImage? {
+        didSet { if lens !== oldValue { setNeedsDisplay() } }
+    }
     /// What a highlight lies on: light ground takes it multiplied, dark ground screened.
     var ground = HighlightGround.light {
         didSet {
@@ -81,6 +85,7 @@ nonisolated final class MarkLayer: StillLayer {
         mapping = other.mapping
         coverage = other.coverage
         underlay = other.underlay
+        lens = other.lens
         ground = other.ground
         super.init(layer: layer)
     }
@@ -106,7 +111,9 @@ nonisolated final class MarkLayer: StillLayer {
 
     override func draw(in context: CGContext) {
         let flipped = prepareDocumentSpace(context, mapping: mapping)
-        AnnotationRenderer.draw(mark, in: context, scale: scale, coverage: coverage, ground: ground, flippedBacking: flipped, underlay: underlay)
+        AnnotationRenderer.draw(
+            mark, in: context, scale: scale, coverage: coverage, ground: ground, flippedBacking: flipped, underlay: underlay, lens: lens
+        )
     }
 }
 

@@ -218,6 +218,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
         session.observe { [weak self] event in self?.sessionChanged(event) }
         syncMarks()
+        // Magnifiers in a document opened with them show what is under them from the start.
+        updateLenses()
         // An editor that opens with the redaction tool in hand reads the capture for its suggestions now,
         // and one that opens with the highlighter for its lines of text.
         if session.tool == .redact { session.findRedactionsIfNeeded() }
@@ -755,6 +757,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 }
                 if session.tool == .crop { cropRect = session.document.canvas }
             }
+            updateLenses()
             if frames != laidOut || picture {
                 // What is shown changed (a crop, a background): laid out again at the zoom the person
                 // chose, so a slider never makes a zoomed-in picture jump; a fitted picture fits again.
@@ -773,8 +776,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case .tool:
             toolChanged()
         case .history:
-            // A drag that moved an image has ended: blurs show what is now under them.
+            // A drag that moved an image has ended: blurs show what is now under them, and magnifiers show the blurs.
             refreshRedactionsIfNeeded()
+            updateLenses()
         case .settings:
             break
         case .suggestions:
@@ -881,6 +885,28 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// The layer that draws the mark `id`, as it stands.
     func markLayer(for id: Annotation.ID) -> MarkLayer? {
         markLayers[id]
+    }
+
+    /// Shows in each magnifier the picture under it with every redaction on it as the canvas draws them, so a
+    /// lens never shows what a redaction hides; made again whenever the document changes, as it is small, but
+    /// not at every step of a drag that moves an image, whose combined picture is made again once it ends.
+    private func updateLenses() {
+        let magnifiers = markLayers.values.compactMap { layer -> (MarkLayer, Magnifier)? in
+            if case .magnifier(let magnifier) = layer.mark.shape { return (layer, magnifier) }
+            return nil
+        }
+        let images = session.document.items.filter { if case .image = $0.shape { true } else { false } }
+        guard !magnifiers.isEmpty, !session.isInLiveChange || images == redactionImages else { return }
+        let redactions = session.document.items.compactMap { item -> (item: Annotation, coverage: Redactor.Coverage?)? in
+            guard case .redaction = item.shape else { return nil }
+            return (item, markLayers[item.id]?.coverage)
+        }
+        let picture = session.redactionSource ?? (session.picture, .zero)
+        for (layer, magnifier) in magnifiers {
+            layer.lens = MagnifierPainter.lensPicture(
+                for: magnifier, picture: picture, canvas: session.document.canvas, redactions: redactions, scale: session.document.scale
+            )
+        }
     }
 
     private func updateRedaction(_ layer: MarkLayer) {
@@ -1414,7 +1440,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 self.drag = .creating(id: id, tool: tool, start: start, beyondClick: true)
                 if tool == .redact { updateSuggestions() }
             }
-            guard let mark = tool.mark(from: start, to: point, constrained: shift, settings: session.settings(for: tool), id: id) else { return }
+            guard let mark = tool.mark(
+                from: start, to: point, constrained: shift, settings: session.settings(for: tool), id: id, scale: document.scale, room: lensRoom
+            ) else { return }
             if let index = document.index(of: id) { document.items[index] = mark } else { document.items.append(mark) }
             session.updateLive(document, selecting: [])
         case .drawing(let id):
@@ -1444,9 +1472,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             } else {
                 selectionLayer.alignmentGuides = []
             }
+            // A magnifier dragged on its own moves its lens alone; moved with other marks, it moves whole.
             for original in originals {
                 guard let index = document.index(of: original.id) else { continue }
-                document.items[index] = original.translated(by: delta)
+                document.items[index] = originals.count == 1 ? original.dragged(by: delta) : original.translated(by: delta)
             }
             session.updateLive(document)
         case .reshaping(let handle, let original):
@@ -1514,6 +1543,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    /// Where a new lens fits, handles and all: on a canvas that cannot grow, such as Annotate Area's selection, the
+    /// canvas less its handles' reach, so a lens is not cut off and can be resized. Nil where the canvas grows.
+    private var lensRoom: CGRect? {
+        guard !session.growsCanvas else { return nil }
+        let reach = (SelectionLayer.handleSize / 2 + 4) / zoom
+        return session.document.canvas.insetBy(dx: reach, dy: reach)
+    }
+
     public override func mouseUp(with event: NSEvent) {
         guard let drag else { return }
         self.drag = nil
@@ -1528,7 +1565,16 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         switch drag {
         case .creating(let id, let tool, let start, _):
             let startView = viewPoint(start)
-            guard hypot(location.x - startView.x, location.y - startView.y) >= 4, session.document.item(id) != nil else {
+            let clicked = hypot(location.x - startView.x, location.y - startView.y) < 4
+            if clicked, tool == .magnifier,
+               let mark = tool.mark(
+                   from: start, to: start, constrained: false, settings: session.settings(for: tool), id: id, scale: session.document.scale, room: lensRoom
+               ) {
+                // A click puts the lens over what was clicked.
+                var document = session.document
+                if let index = document.index(of: id) { document.items[index] = mark } else { document.items.append(mark) }
+                session.updateLive(document, selecting: [])
+            } else if clicked || session.document.item(id) == nil {
                 session.cancelLiveChange()
                 // A click with the redaction tool on a suggestion covers it.
                 if tool == .redact { session.acceptRedactionSuggestion(at: start) }
@@ -1564,9 +1610,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             session.endLiveChange(actionName: String(localized: "Rotate", bundle: .module))
         case .reshaping(let handle, let original):
             session.fitCanvas(holding: [original.id])
-            let name = switch handle {
-            case .bend: String(localized: "Bend Arrow", bundle: .module)
-            case .tail: String(localized: "Move Tail", bundle: .module)
+            let name = switch (handle, original.shape) {
+            case (.bend, _): String(localized: "Bend Arrow", bundle: .module)
+            case (.tail, _): String(localized: "Move Tail", bundle: .module)
+            case (.start, .magnifier): String(localized: "Move Magnified Spot", bundle: .module)
             default: String(localized: "Resize", bundle: .module)
             }
             session.endLiveChange(actionName: name)
@@ -1833,7 +1880,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 !NSEvent.modifierFlags.contains(.command) && TextSnapping.line(at: documentPoint(location), in: session.textLines) != nil
                     ? .iBeam : .crosshair
             // The crop and the background have theirs above.
-            case .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .counter, .redact, .spotlight, .crop, .background: .crosshair
+            case .arrow, .line, .rectangle, .ellipse, .pen, .highlightBox, .counter, .redact, .spotlight, .magnifier, .crop, .background: .crosshair
             }
         }
         cursor.set()

@@ -103,10 +103,10 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         fatalError("init(coder:) is not supported")
     }
 
-    /// The smallest the window goes: room for the rail above the capsule's resting band (under the toolbar's
-    /// 52 pt), and for the widest the style capsule is (the redaction's with a reading that failed and a
-    /// full row of kept colors, 884 pt, beside the rail with 8 pt to spare). A test measures them.
-    static let minimumSize = CGSize(width: 954, height: 640)
+    /// The smallest the window goes: room for the rail (534 pt) above the capsule's resting band (under the
+    /// toolbar's 52 pt), and for the widest the style capsule is (the redaction's with a reading that failed
+    /// and a full row of kept colors, 884 pt, beside the rail with 8 pt to spare). A test measures them.
+    static let minimumSize = CGSize(width: 954, height: 668)
 
     /// The window shows the picture at the size it had on screen, with room for the rail and the capsule,
     /// within most of the screen.
@@ -114,7 +114,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         let picture = CGSize(width: pixels.width / scale, height: pixels.height / scale)
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
         let width = min(max(picture.width + 72 + 28, 920), visible.width * 0.9)
-        let height = min(max(picture.height + 24 + 62 + 52, 660), visible.height * 0.9)
+        let height = min(max(picture.height + 24 + 62 + 52, minimumSize.height), visible.height * 0.9)
         return CGSize(width: width.rounded(), height: height.rounded())
     }
 
