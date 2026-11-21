@@ -18,6 +18,25 @@ public final class PinController {
         public let origin: Origin
         /// When it was pinned: a capture whose file changed since holds a picture other than the pin's.
         public let pinnedAt = Date.now
+
+        /// A picture pin's own picture as a file to drag out: the file it was opened from while that is there, else a
+        /// PNG of it in the temporary folder. Nil for a text or color pin, or when the PNG cannot be written.
+        public func ownFile() -> URL? {
+            guard case .image(let image, _) = content else { return nil }
+            if case .file(let url) = origin, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+                return url
+            }
+            let tempURL = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Pin \(id.uuidString).png")
+            if FileManager.default.fileExists(atPath: tempURL.path(percentEncoded: false)) {
+                return tempURL
+            }
+            do {
+                try ImageExporter.write(ImageExporter.encoded(image, as: .png), to: tempURL)
+                return tempURL
+            } catch {
+                return nil
+            }
+        }
     }
 
     public enum Content {
@@ -42,6 +61,8 @@ public final class PinController {
         public var saveAs: (Pin) -> Void
         public var annotate: (Pin) -> Void
         public var recognizeText: (Pin) -> Void
+        /// The file a picture pin hands over when Option-dragged into another app; nil when it could not be made, which
+        /// the app says, and then nothing goes. Left out, the pin's own picture goes (`Pin.ownFile()`).
         public var fileForDrag: ((Pin) -> URL?)?
 
         public init(

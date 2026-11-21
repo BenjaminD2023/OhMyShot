@@ -42,17 +42,29 @@ extension CompositionRoot {
 
     /// Uploads a capture's picture as Settings write it: the capture itself when they leave it as it is, else a copy in
     /// the chosen format. A capture to be converted is read now, since with History off its file may be gone by the time
-    /// the copy is made. `scale` is the picture's pixels per point where the history has no record of it (a project's).
+    /// the copy is made. When that copy cannot be made nothing is sent, and the card, or the reading by the pointer, says
+    /// why: the capture itself would leave without the watermark, format, or border Settings promise. `scale` is the picture's
+    /// pixels per point where the history has no record of it (a project's).
     func upload(captureID: UUID, fileURL: URL, to destination: UUID? = nil, scale: Double? = nil) {
-        guard !files.output.isUnchanged, ExportedFiles.isPicture(fileURL), let data = try? Data(contentsOf: fileURL) else {
+        guard !files.output.isUnchanged, ExportedFiles.isPicture(fileURL) else {
             uploads.upload(captureID: captureID, fileURL: fileURL, destinationID: destination)
             return
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            return showSaveFailure(.converting(error), onCardOf: captureID)
         }
         let name = fileURL.deletingPathExtension().lastPathComponent
         let scale = history.item(id: captureID)?.pixelsPerPoint ?? scale
         Task {
-            let file = await files.exportedFile(forPictureData: data, named: name, scale: scale) ?? fileURL
-            uploads.upload(captureID: captureID, fileURL: file, destinationID: destination)
+            switch await files.exportedFile(forPictureData: data, named: name, scale: scale) {
+            case .success(let file):
+                quickAccess.clearHandOverFailure(for: captureID)
+                uploads.upload(captureID: captureID, fileURL: file, destinationID: destination)
+            case .failure(let failure): showSaveFailure(failure, onCardOf: captureID)
+            }
         }
     }
 
@@ -64,9 +76,9 @@ extension CompositionRoot {
         retention.releaseIfUnheld(id)
     }
 
-    /// Says why a copy could not be saved: on the capture's card when `captureID` has one on screen, which holds it
-    /// from closing by itself, else in the reading by the pointer (a save from the editor, a pin, History, or after a
-    /// capture with Quick Access off). Either way VoiceOver hears it.
+    /// Says why a copy could not be saved, or made to be dragged out, shared, or uploaded: on the capture's card when
+    /// `captureID` has one on screen, which holds it from closing by itself, else in the reading by the pointer (from the
+    /// editor, a pin, History, or after a capture with Quick Access off). Either way VoiceOver hears it.
     func showSaveFailure(_ failure: ExportFailure, onCardOf captureID: UUID?) {
         if let captureID, quickAccess.showFailure(failure, for: captureID) { return }
         failureNotice.show(failure.summary, near: NSEvent.mouseLocation)
@@ -76,6 +88,17 @@ extension CompositionRoot {
     func savedOrSaidWhy(_ outcome: SaveOutcome) -> URL? {
         if let failure = outcome.failure { showSaveFailure(failure, onCardOf: nil) }
         return outcome.url
+    }
+
+    /// What is to be handed over from a window or a pin, nil when it could not be made; then why is said by the pointer
+    /// first, and nothing goes.
+    func handedOverOrSaidWhy<Value>(_ result: Result<Value, ExportFailure>) -> Value? {
+        switch result {
+        case .success(let value): return value
+        case .failure(let failure):
+            showSaveFailure(failure, onCardOf: nil)
+            return nil
+        }
     }
 
     /// Whether Settings give the capture a card: the choice for screenshots, or for recordings.
@@ -183,7 +206,7 @@ extension CompositionRoot {
             guard let self, item.kind == .screenshot else { return .noText }
             return await textCopier.copyText(ofPictureAt: item.fileURL)
         }
-        actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? item.fileURL }
+        actions.fileToHandOver = { [weak self] item in self?.files.fileToHandOver(item.fileURL) ?? .success(item.fileURL) }
         actions.codes = { [weak self] item in
             guard let self, settings.showsCodesInSelection, item.kind == .screenshot,
                   let loaded = await Self.loadImage(item.fileURL) else { return [] }
@@ -281,13 +304,17 @@ extension CompositionRoot {
         }
         historyActions.fileToHandOver = { [weak self] entry in
             guard let self else { return nil }
-            return files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
+            return handedOverOrSaidWhy(files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint))
         }
-        // Each in the format Settings choose, as one dragged out would be.
+        // Each in the format Settings choose, as one dragged out would be; none when one of them cannot be.
         historyActions.copyFiles = { [weak self] entries in
             guard let self else { return }
             let captures = entries.map { (url: history.fileURL(for: $0), scale: $0.pixelsPerPoint) }
-            Task { PasteboardWriter.write(fileURLs: await self.files.filesToHandOver(captures)) }
+            Task {
+                if let urls = self.handedOverOrSaidWhy(await self.files.filesToHandOver(captures)) {
+                    PasteboardWriter.write(fileURLs: urls)
+                }
+            }
         }
         historyActions.sharing.isUploading = { [weak self] entry in self?.uploads.isUploading(entry.id) ?? false }
         historyActions.sharing.cancel = { [weak self] entry in self?.uploads.cancel(captureID: entry.id) }

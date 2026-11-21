@@ -14,8 +14,9 @@ final class CardStackView: NSView {
     /// What a card's buttons, menu, or VoiceOver asked of its capture. The keys arrive apart (`onKey`): the card that
     /// has the keyboard is the owner's to know, and a command from a key gives the keyboard back where a click does not.
     var onCommand: ((CardCommand, QuickAccessItem) -> Void)?
-    /// The file to hand to another app for a capture, dragged out or shared.
-    var fileToHandOver: ((QuickAccessItem) -> URL)?
+    /// The file to hand to another app for a capture, dragged out or shared; nil when the copy Settings ask for could not
+    /// be made, and then nothing goes.
+    var fileToHandOver: ((QuickAccessItem) -> URL?)?
     /// The codes in a screenshot, looked for as its card is made, for its menu.
     var findCodes: ((QuickAccessItem) async -> [FoundCode])?
     /// What the menu offers for uploading, read each time a menu opens (see `UploadMenu`).
@@ -260,7 +261,11 @@ final class CardStackView: NSView {
         card.onHold = { [weak self, weak card] hold, on in card.map { self?.onHold?($0.item.id, hold, on) } }
         card.onFocus = { [weak self, weak card] in card.map { self?.onFocus?($0.item.id) } }
         card.onPointerHover = { [weak self, weak card] hovering in card.map { self?.onPointerHover?($0.item.id, hovering) } }
-        card.fileToHandOver = { [weak self, weak card] in card.map { self?.fileToHandOver?($0.item) ?? $0.item.fileURL } }
+        card.fileToHandOver = { [weak self, weak card] in
+            guard let card else { return nil }
+            guard let fileToHandOver = self?.fileToHandOver else { return card.item.fileURL }
+            return fileToHandOver(card.item)
+        }
         card.uploadMenu = { [weak self] in self?.uploadMenu() ?? .hidden }
         card.hasLink = { [weak self, weak card] in card.flatMap { self?.hasLink?($0.item) } ?? false }
         card.canDeleteFromStorage = { [weak self, weak card] in card.flatMap { self?.canDeleteFromStorage?($0.item) } ?? false }

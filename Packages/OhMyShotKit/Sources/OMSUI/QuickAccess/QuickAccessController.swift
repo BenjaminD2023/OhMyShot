@@ -31,8 +31,9 @@ public final class QuickAccessController {
         /// Neither the visible stack nor Recently Closed holds this capture any longer.
         public var closed: (QuickAccessItem) -> Void
         /// The file to hand to another app for a capture, when it is dragged out of its card or shared: the capture
-        /// itself, or a copy in the format Settings choose.
-        public var fileToHandOver: (QuickAccessItem) -> URL = { $0.fileURL }
+        /// itself, or a copy in the format Settings choose; or why that copy could not be made, which the card then
+        /// shows, and nothing goes.
+        public var fileToHandOver: (QuickAccessItem) -> Result<URL, ExportFailure> = { .success($0.fileURL) }
         /// The QR codes and barcodes in a screenshot, looked for once its card shows, which its menu then offers to
         /// open or copy; none when Settings say not to look.
         public var codes: (QuickAccessItem) async -> [FoundCode] = { _ in [] }
@@ -107,6 +108,9 @@ public final class QuickAccessController {
         let notice = CopiedHUD()
         return { notice.show($0, near: NSEvent.mouseLocation) }
     }()
+    /// Says by the pointer why a copy to hand over from a card could not be made, while the card itself says why a copy
+    /// could not be saved.
+    lazy var showHandOverFailure: (String) -> Void = { [unowned self] in showTrashFailure($0) }
     private var panel: QuickAccessPanel?
     private var firstCaptureHint: FirstCaptureHintController?
 
@@ -336,12 +340,15 @@ public final class QuickAccessController {
         return task
     }
 
-    /// Shows on capture `id`'s card why a copy of it could not be saved, says it to VoiceOver, and holds the card from
-    /// closing by itself until a copy is saved or the card is closed, as a failed upload holds it. False when the
-    /// capture has no card on screen to say it, so the caller can say it elsewhere.
+    /// Shows on capture `id`'s card why a copy of it could not be saved, or made to be dragged out, shared, or uploaded,
+    /// says it to VoiceOver, and holds the card from closing by itself until a copy is saved (or, for one to hand over,
+    /// made) or the card is closed, as a failed upload holds it. False when the capture has no card on screen to say it,
+    /// so the caller can say it elsewhere; so too for a copy to hand over while the card says a copy could not be saved,
+    /// which stays said and held, since making one to hand over saves nothing.
     @discardableResult
     public func showFailure(_ failure: ExportFailure, for id: UUID) -> Bool {
         guard item(id) != nil, !isTrashing(id) else { return false }
+        guard failure.step == .saving || failures[id]?.step != .saving else { return false }
         failures[id] = failure
         stack?.setFailure(failure, for: id)
         hold(.failure, for: id, if: true)
@@ -353,11 +360,17 @@ public final class QuickAccessController {
         failures[id]
     }
 
-    /// Capture `id`'s card no longer has a failure to show: a copy was saved after all.
+    /// Capture `id`'s card no longer has a failure to show: a copy was saved, or made to hand over, after all.
     public func clearFailure(for id: UUID) {
         guard failures.removeValue(forKey: id) != nil else { return }
         stack?.setFailure(nil, for: id)
         hold(.failure, for: id, if: false)
+    }
+
+    /// A copy of capture `id` to hand over (dragged out, shared, or uploaded) was made after all: its card no longer says
+    /// one couldn't be. A copy that could not be saved is still said and held.
+    public func clearHandOverFailure(for id: UUID) {
+        if failures[id]?.step == .converting { clearFailure(for: id) }
     }
 
     /// Marks a capture saved elsewhere (from the editor) as saved on its card.
@@ -617,7 +630,17 @@ public final class QuickAccessController {
     private func makeStack() -> CardStackView {
         let stack = CardStackView()
         stack.onCommand = { [weak self] command, item in self?.perform(command, on: item, keyed: false) }
-        stack.fileToHandOver = { [weak self] item in self?.actions.fileToHandOver(item) ?? item.fileURL }
+        stack.fileToHandOver = { [weak self] item in
+            guard let self else { return nil }
+            switch actions.fileToHandOver(item) {
+            case .success(let file):
+                clearHandOverFailure(for: item.id)
+                return file
+            case .failure(let failure):
+                if !showFailure(failure, for: item.id) { showHandOverFailure(failure.summary) }
+                return nil
+            }
+        }
         stack.findCodes = actions.codes
         let sharing = actions.sharing
         stack.uploadMenu = sharing.menu

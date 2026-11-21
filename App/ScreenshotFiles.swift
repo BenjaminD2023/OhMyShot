@@ -53,16 +53,13 @@ final class ScreenshotFiles {
         }
     }
 
-    /// `fileToHandOver` for several captures at once (History's Copy), converted off the main actor.
-    func filesToHandOver(_ captures: [(url: URL, scale: Double?)]) async -> [URL] {
+    /// `fileToHandOver` for several captures at once (History's Copy), converted off the main actor: every file, or why
+    /// one of them could not be made, and then none.
+    func filesToHandOver(_ captures: [(url: URL, scale: Double?)]) async -> Result<[URL], ExportFailure> {
         let output = output
-        guard !output.isUnchanged else { return captures.map(\.url) }
+        guard !output.isUnchanged else { return .success(captures.map(\.url)) }
         defer { sweepConvertedCopies() }
-        var files: [URL] = []
-        for (url, scale) in captures {
-            files.append((try? await ExportedFiles.fileOffMain(for: url, pixelsPerPoint: scale, output: output)) ?? url)
-        }
-        return files
+        return Self.logged(await ExportedFiles.handOver(captures.map { ($0.url, $0.scale) }, output: output, in: ExportedFiles.standardFolder), "Converting captures")
     }
 
     /// A picture in memory, and the extended-range copy of it when the capture has one.
@@ -278,33 +275,29 @@ final class ScreenshotFiles {
 
     // MARK: Handing over
 
-    /// The file to hand to another app when a capture is dragged out of a card, History, or the editor: the capture's own
-    /// when Settings leave it as it is, else a copy in the chosen format, made now (and kept, so a second drag
-    /// is quick). A recording is its own file.
-    func fileToHandOver(_ url: URL, scale: Double? = nil) -> URL {
+    /// The file to hand to another app when a capture is dragged out of a card, History, the editor, or a pin, or shared:
+    /// the capture's own when Settings leave it as it is, else a copy in the chosen format, made now (and kept, so a
+    /// second drag is quick), or why that copy could not be made, and then nothing goes. A recording is its own file.
+    func fileToHandOver(_ url: URL, scale: Double? = nil) -> Result<URL, ExportFailure> {
         let output = output
-        guard !output.isUnchanged, ExportedFiles.isPicture(url) else { return url }
-        do {
-            defer { sweepConvertedCopies() }
-            return try ExportedFiles.file(for: url, pixelsPerPoint: scale ?? history.item(forFileAt: url)?.pixelsPerPoint, output: output)
-        } catch {
-            Log.capture.error("Converting \(url.lastPathComponent, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-            return url
-        }
+        guard !output.isUnchanged, ExportedFiles.isPicture(url) else { return .success(url) }
+        defer { sweepConvertedCopies() }
+        let scale = scale ?? history.item(forFileAt: url)?.pixelsPerPoint
+        return Self.logged(ExportedFiles.handOver(url, pixelsPerPoint: scale, output: output), "Converting \(url.lastPathComponent)")
     }
 
     /// The same where nobody drags, for a capture whose bytes are in hand: an upload, which must not depend on the
-    /// capture's file staying. Converted off the main actor. Nil when the bytes are no picture or cannot be converted.
-    func exportedFile(forPictureData data: Data, named name: String, scale: Double?) async -> URL? {
-        let output = output
-        guard let loaded = await Self.decode(data) else { return nil }
-        do {
-            defer { sweepConvertedCopies() }
-            return try await ExportedFiles.fileOffMain(forPicture: loaded, named: name, pixelsPerPoint: scale, output: output)
-        } catch {
-            Log.capture.error("Converting \(name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-            return nil
-        }
+    /// capture's file staying. Converted off the main actor; why it could not be, when the bytes are no picture or
+    /// the copy cannot be written.
+    func exportedFile(forPictureData data: Data, named name: String, scale: Double?) async -> Result<URL, ExportFailure> {
+        defer { sweepConvertedCopies() }
+        return Self.logged(await ExportedFiles.handOver(pictureData: data, named: name, pixelsPerPoint: scale, output: output), "Converting \(name)")
+    }
+
+    /// Logs a copy that could not be made to hand over, and passes the result on.
+    private static func logged<Value>(_ result: Result<Value, ExportFailure>, _ what: String) -> Result<Value, ExportFailure> {
+        if case .failure(let failure) = result { Log.capture.error("\(what, privacy: .public) failed: \(failure.detail, privacy: .public)") }
+        return result
     }
 
     /// What a shortcut is handed for a capture: the picture as Settings write it, read now.
@@ -398,10 +391,6 @@ final class ScreenshotFiles {
             }
         }
         return PasteboardWriter.write(png: data, image: shown, fileURL: file)
-    }
-
-    @concurrent private static func decode(_ data: Data) async -> CGImage? {
-        CGImageSourceCreateWithData(data as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
     }
 
     /// Reads a picture file with its bytes, off the main actor.

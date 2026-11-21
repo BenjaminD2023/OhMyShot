@@ -40,6 +40,19 @@ struct ExportFailureTests {
         #expect(!ExportFailure.isOnMissingVolume(URL(filePath: "/Volumes", directoryHint: .isDirectory)))
     }
 
+    @Test func aCopyToHandOverSaysItCouldNotBePrepared() {
+        let full = ExportFailure.converting(CocoaError(.fileWriteOutOfSpace))
+        #expect(full.step == .converting)
+        #expect(full.cause == .diskFull)
+        let missing = ExportFailure.converting(CocoaError(.fileReadNoSuchFile))
+        #expect(missing.cause == .sourceMissing)
+        let other = ExportFailure.converting(ImageExporter.ExportError.cannotEncode)
+        #expect(other.cause == .other)
+        #expect(Set([full.summary, missing.summary, other.summary]).count == 3)
+        #expect(ExportFailure.saving(CocoaError(.fileWriteOutOfSpace), into: folder).summary != full.summary)
+        #expect(ExportFailure.saving(CocoaError(.fileWriteOutOfSpace), into: folder).step == .saving)
+    }
+
     @Test func aSaveTellsCancellingApartFromFailing() async throws {
         let saved = URL(filePath: "/tmp/saved.png")
         #expect(await SaveOutcome.saving(into: folder) { saved } == .saved(saved))

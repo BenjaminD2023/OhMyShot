@@ -416,7 +416,8 @@ final class CompositionRoot {
             return savedOrSaidWhy(await files.saveScreenshot(fileAt: file, scale: scale, asks: true))
         }
         annotations.fileToHandOver = { [weak self] file, scale in
-            self?.files.fileToHandOver(file, scale: scale) ?? file
+            guard let self else { return nil }
+            return handedOverOrSaidWhy(files.fileToHandOver(file, scale: scale))
         }
         annotations.copyPicture = { [weak self] image, png, name, scale in
             await self?.files.copy(.init(image), png: png, name: name, scale: scale) ?? false

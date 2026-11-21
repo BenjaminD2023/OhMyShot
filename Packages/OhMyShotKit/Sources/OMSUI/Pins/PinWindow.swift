@@ -174,23 +174,10 @@ final class PinWindow: NSPanel, NSWindowDelegate {
         }
     }
 
-    /// Returns a file URL suitable for dragging this picture pin into another app.
+    /// Returns a file URL suitable for dragging this picture pin into another app, or nil when nothing is to go.
     func fileForDrag() -> URL? {
-        if let url = actions.fileForDrag?(pin) { return url }
-        guard case .image(let image, _) = pin.content else { return nil }
-        if case .file(let url) = pin.origin, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
-            return url
-        }
-        let tempURL = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Pin \(pin.id.uuidString).png")
-        if FileManager.default.fileExists(atPath: tempURL.path(percentEncoded: false)) {
-            return tempURL
-        }
-        do {
-            try ImageExporter.write(ImageExporter.encoded(image, as: .png), to: tempURL)
-            return tempURL
-        } catch {
-            return nil
-        }
+        guard let fileForDrag = actions.fileForDrag else { return pin.ownFile() }
+        return fileForDrag(pin)
     }
 
     /// Fades the picture only: its readings, buttons, and ring stay solid, so the reading that says how

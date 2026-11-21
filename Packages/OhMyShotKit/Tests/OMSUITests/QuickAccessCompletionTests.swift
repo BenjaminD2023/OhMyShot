@@ -237,6 +237,95 @@ struct QuickAccessCompletionTests {
         #expect(controller.isEmpty)
     }
 
+    private static let cannotPrepare = ExportFailure(
+        step: .converting, cause: .diskFull, summary: "Couldn’t prepare the picture: the disk is full", detail: "The disk is full."
+    )
+
+    @Test func aCopyToHandOverThatCannotBeMadeLeavesNothingAndSaysWhy() throws {
+        var actions = actions(succeeds: true)
+        var handOver = Result<URL, ExportFailure>.failure(Self.cannotPrepare)
+        actions.fileToHandOver = { _ in handOver }
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        let card = try card(in: controller)
+        let fileToHandOver = try #require(card.fileToHandOver)
+        // Not the capture's own file in its place: nothing at all.
+        #expect(fileToHandOver() == nil)
+        #expect(card.failure == Self.cannotPrepare)
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.item(capture.id) != nil)
+        // Made after all: the card no longer says it, and closes in its time.
+        let converted = URL(filePath: "/tmp/converted.jpg")
+        handOver = .success(converted)
+        #expect(fileToHandOver() == converted)
+        #expect(card.failure == nil)
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.isEmpty)
+    }
+
+    @Test func aCopyHandedOverLeavesAFailedSaveSaid() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        controller.showFailure(Self.diskFull, for: capture.id)
+        let card = try card(in: controller)
+        #expect(card.fileToHandOver?() == capture.fileURL)
+        #expect(card.failure == Self.diskFull)
+    }
+
+    /// A copy to hand over that can't be made while the card says a copy couldn't be saved is said by the pointer, and the
+    /// save's failure stays on the card and holds it, through a later hand-over that works (which saves nothing).
+    @Test func aFailedHandOverNeverTakesTheCardFromAFailedSave() throws {
+        var actions = actions(succeeds: true)
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        #expect(controller.showFailure(Self.diskFull, for: capture.id))
+        #expect(!controller.showFailure(Self.cannotPrepare, for: capture.id))
+        let card = try card(in: controller)
+        #expect(card.failure == Self.diskFull)
+        #expect(card.fileToHandOver?() == capture.fileURL)
+        controller.clearHandOverFailure(for: capture.id)
+        #expect(card.failure == Self.diskFull)
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        #expect(controller.item(capture.id) != nil)
+    }
+
+    /// A drag, Share…, or Send by Email whose copy can't be made while the card says a save failed says why by the pointer,
+    /// rather than nothing at all.
+    @Test func aFailedHandOverUnderAFailedSaveIsSaidByThePointer() throws {
+        var actions = actions(succeeds: true)
+        actions.fileToHandOver = { _ in .failure(Self.cannotPrepare) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        var said: [String] = []
+        controller.showHandOverFailure = { said.append($0) }
+        let capture = try item()
+        controller.add(capture)
+        #expect(controller.showFailure(Self.diskFull, for: capture.id))
+        let card = try card(in: controller)
+        #expect(card.fileToHandOver?() == nil)
+        #expect(said == [Self.cannotPrepare.summary])
+        #expect(card.failure == Self.diskFull)
+    }
+
+    /// An upload whose copy is made after all clears the card's earlier failure to make one.
+    @Test func aCopyMadeForAnUploadClearsAFailureToMakeOne() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        #expect(controller.showFailure(Self.cannotPrepare, for: capture.id))
+        controller.clearHandOverFailure(for: capture.id)
+        #expect(try card(in: controller).failure == nil)
+    }
+
     @Test func aFailureIsShownOnlyOnACardOnScreen() throws {
         let controller = QuickAccessController(actions: actions(succeeds: true))
         defer { controller.dismissAll() }

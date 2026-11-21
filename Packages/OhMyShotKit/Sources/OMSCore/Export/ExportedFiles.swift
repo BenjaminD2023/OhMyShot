@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 
 /// The files screenshots are handed over as where nothing is saved: dragged out of a card or History, uploaded,
 /// returned to a Shortcut. A capture in the history is a PNG as it was taken; when Settings ask for another
@@ -47,6 +48,46 @@ public enum ExportedFiles {
         try file(for: source, pixelsPerPoint: pixelsPerPoint, output: output, name: name, in: folder)
     }
 
+    // MARK: Handing over
+
+    /// The file to hand over for the capture at `source`, as `file(for:…)` makes it, or why the copy Settings ask for
+    /// could not be made. The capture itself goes only when nothing is asked of it, never in place of a copy that failed:
+    /// one asked for with a watermark, in another format, at 1×, in sRGB, or with a border must not leave without them.
+    public static func handOver(
+        _ source: URL, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder
+    ) -> Result<URL, ExportFailure> {
+        Result { try file(for: source, pixelsPerPoint: pixelsPerPoint, output: output, in: folder) }.mapError { .converting($0) }
+    }
+
+    /// Several captures' files at once (Capture History's Copy of a selection), each as `handOver` makes it, or the
+    /// first failure: none of them goes when one could not be made.
+    @concurrent
+    public static func handOver(
+        _ captures: [(url: URL, pixelsPerPoint: Double?)], output: ScreenshotOutput, in folder: URL = standardFolder
+    ) async -> Result<[URL], ExportFailure> {
+        var files: [URL] = []
+        for capture in captures {
+            switch handOver(capture.url, pixelsPerPoint: capture.pixelsPerPoint, output: output, in: folder) {
+            case .success(let file): files.append(file)
+            case .failure(let failure): return .failure(failure)
+            }
+        }
+        return .success(files)
+    }
+
+    /// The file an upload sends for a capture whose bytes were read when it was asked for (see `file(forPicture:…)`), or
+    /// why it could not be made: bytes that are no picture, or a copy that could not be written.
+    @concurrent
+    public static func handOver(
+        pictureData data: Data, named name: String, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder
+    ) async -> Result<URL, ExportFailure> {
+        guard let image = CGImageSourceCreateWithData(data as CFData, nil).flatMap({ CGImageSourceCreateImageAtIndex($0, 0, nil) }) else {
+            return .failure(.converting(ImageExporter.ExportError.cannotRead))
+        }
+        return Result { try file(forPicture: image, named: name, pixelsPerPoint: pixelsPerPoint, output: output, in: folder) }
+            .mapError { .converting($0) }
+    }
+
     /// A picture in memory made into a file named `name`, for an upload, which may be retried long after the capture's
     /// own file is gone: it is in a folder of its own, since a later picture of the same name must not replace it.
     public static func file(
@@ -60,13 +101,6 @@ public enum ExportedFiles {
         let destination = directory.appending(path: "\(name).\(encoded.fileExtension)")
         try encoded.data.write(to: destination, options: .atomic)
         return destination
-    }
-
-    @concurrent
-    public static func fileOffMain(
-        forPicture image: CGImage, hdr: CGImage? = nil, named name: String, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder
-    ) async throws -> URL {
-        try file(forPicture: image, hdr: hdr, named: name, pixelsPerPoint: pixelsPerPoint, output: output, in: folder)
     }
 
     /// How many of the clipboard's files are kept: the last few copies, which an app slow to paste, or a clipboard

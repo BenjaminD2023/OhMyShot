@@ -103,6 +103,7 @@ public enum PDFExport {
                   let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
             else { throw ExportError.cannotRead(file.url) }
             let prepared = PictureExport.prepare(image, pixelsPerPoint: file.pixelsPerPoint ?? ImageLoader.pixelsPerPoint(of: source), output: output)
+            guard prepared.isComplete else { throw ExportError.cannotWrite }
             pages.append(Page(image: prepared.image, pixelsPerPoint: prepared.pixelsPerPoint))
         }
         return try data(pages, pageSize: pageSize, title: title)

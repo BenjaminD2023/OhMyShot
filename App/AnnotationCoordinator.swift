@@ -27,8 +27,8 @@ final class AnnotationCoordinator {
     /// its scale (nil when unknown). Returns where it went.
     var saveAs: ((URL, HistoryItem?, Double?) async -> URL?)?
     /// The file to hand to another app when an editor's picture is dragged out, from the picture's file and its scale
-    /// (nil when unknown).
-    var fileToHandOver: ((URL, Double?) -> URL)?
+    /// (nil when unknown); nil when it could not be made, and then nothing goes.
+    var fileToHandOver: ((URL, Double?) -> URL?)?
     /// Puts an editor's picture on the clipboard and reports success: the picture, its PNG, its name, and its scale (nil when unknown).
     var copyPicture: ((CGImage, Data, String, Double?) async -> Bool)?
     /// Pins an editor's picture as it looks now: the picture, its pixels per point, and the capture it is (nil for a project's).
@@ -126,7 +126,10 @@ final class AnnotationCoordinator {
     ) -> AnnotationEditorWindowController.Actions {
         var actions = AnnotationEditorWindowController.Actions(keep: keep, save: save)
         actions.saveAs = { [weak coordinator] file in await coordinator?.saveAs?(file, entry(), scale()) }
-        actions.fileToHandOver = { [weak coordinator] file in coordinator?.fileToHandOver?(file, scale()) ?? file }
+        actions.fileToHandOver = { [weak coordinator] file in
+            guard let fileToHandOver = coordinator?.fileToHandOver else { return file }
+            return fileToHandOver(file, scale())
+        }
         actions.copy = { [weak coordinator] image, png, pictureScale in
             if let copy = coordinator?.copyPicture {
                 // The picture copied is rendered now, before it is kept: its own scale, not the last kept one, which
