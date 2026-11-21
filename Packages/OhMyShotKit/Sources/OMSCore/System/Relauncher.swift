@@ -30,6 +30,15 @@ public enum Relauncher {
         }
     }
 
+    /// Whether another copy of this app is running: one still quitting, or one a relaunch went ahead without after waiting
+    /// `afterOtherInstancesExit`'s time (an editor's sheet can hold it open).
+    public static var otherInstancesAreRunning: Bool {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        return NSRunningApplication
+            .runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            .contains { $0.processIdentifier != ownPID && !$0.isTerminated }
+    }
+
     /// Runs `body` once no other copy of this app is running, immediately if there is none.
     /// Gives up waiting after `timeout`, so a copy that hangs while quitting cannot block launch.
     public static func afterOtherInstancesExit(timeout: Duration = .seconds(5), _ body: @escaping () -> Void) {
@@ -65,10 +74,7 @@ private final class InstanceWaiter {
     }
 
     var othersAreRunning: Bool {
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-        return NSRunningApplication
-            .runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
-            .contains { $0.processIdentifier != ownPID && !$0.isTerminated }
+        Relauncher.otherInstancesAreRunning
     }
 
     /// Runs the body once; later calls do nothing.
