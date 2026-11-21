@@ -162,11 +162,15 @@ public enum PictureExport {
         try encode(prepare(image, pixelsPerPoint: pixelsPerPoint, hdr: hdr, output: output), output: output)
     }
 
-    /// A capture's file, read and encoded; its scale is `pixelsPerPoint`, else the resolution the file states.
+    /// A capture's file, read and encoded; its scale is `pixelsPerPoint`, else the resolution the file states. A file
+    /// that is not there says so, so a failure can say the capture's file is missing.
     public static func encode(fileAt url: URL, pixelsPerPoint: Double?, output: ScreenshotOutput) throws -> Encoded {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
-        else { throw ImageExporter.ExportError.cannotRead }
+        else {
+            guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: url.path]) }
+            throw ImageExporter.ExportError.cannotRead
+        }
         return try encode(image, pixelsPerPoint: pixelsPerPoint ?? ImageLoader.pixelsPerPoint(of: source), output: output)
     }
 

@@ -74,7 +74,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
                 noticeReset?.cancel()
                 noticeBadge.show(String(localized: "Moved to Trash", bundle: .module), symbol: "trash")
             } else {
-                noticeBadge.hide()
+                showRestingNotice()
             }
             undoButton.isHidden = !isTrashing
             for badge in [savedBadge, durationBadge, uploadBadge] as [NSView] { badge.alphaValue = isTrashing ? 0 : 1 }
@@ -84,6 +84,20 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
             CATransaction.commit()
             updateAccessibility()
             needsLayout = true
+        }
+    }
+
+    /// Why a copy of the capture could not be saved, while that stands: said in the notice badge (unless the pointer is
+    /// over the card or it waits to go to the Trash), with the system's account of it as the Save button's tooltip, in
+    /// the card's VoiceOver value, and out loud when it comes.
+    var failure: ExportFailure? {
+        didSet {
+            guard failure != oldValue else { return }
+            noticeReset?.cancel()
+            showRestingNotice()
+            if item.savedURL == nil { saveButton.toolTip = failure?.detail }
+            updateAccessibility()
+            if let failure, window != nil { VoiceOver.announce(failure.summary, from: self) }
         }
     }
 
@@ -117,7 +131,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     private let uploadButton = CardButton(style: .round, title: String(localized: "Upload", bundle: .module), symbolName: "icloud.and.arrow.up")
     private let recognizeButton = CardButton(style: .round, title: String(localized: "Recognize Text", bundle: .module), symbolName: "text.viewfinder")
     private let trashButton = CardButton(style: .round, title: String(localized: "Move to Trash", bundle: .module), symbolName: "trash")
-    /// "Copied" over a card copied while the pointer is elsewhere, or "Moved to Trash" over one waiting to go.
+    /// "Copied" over a card copied while the pointer is elsewhere, "Moved to Trash" over one waiting to go, or why a
+    /// copy of it could not be saved.
     private let noticeBadge = CardNoticeBadge()
     /// Brings back a card moved to the Trash, while it waits to go.
     private let undoButton = CardButton(style: .pill, title: String(localized: "Undo", bundle: .module), symbolName: "arrow.uturn.backward")
@@ -461,7 +476,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         case .failed(let message)?: String(localized: "Upload failed. \(message)", bundle: .module)
         case nil: nil
         }
-        let value = [item.savedURL == nil ? nil : String(localized: "Saved", bundle: .module), state].compactMap(\.self)
+        let value = [item.savedURL == nil ? nil : String(localized: "Saved", bundle: .module), failure?.summary, state].compactMap(\.self)
         setAccessibilityValue(value.isEmpty ? nil : value.joined(separator: ", "))
     }
 
@@ -556,7 +571,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
             noticeReset = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(1.2))
                 guard !Task.isCancelled, let self, !isTrashing else { return }
-                noticeBadge.hide()
+                showRestingNotice()
             }
         }
         VoiceOver.announce(String(localized: "Copied", bundle: .module), from: self)
@@ -567,6 +582,14 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
             copyButton.title = String(localized: "Copy", bundle: .module)
             copyButton.symbolName = "doc.on.doc"
         }
+    }
+
+    /// What the notice badge says when nothing passing is shown in it: why a copy of the capture could not be saved,
+    /// while that stands, in the upload badge's orange warning; else nothing. A card under the pointer shows its
+    /// controls instead, and one waiting to go to the Trash says so.
+    private func showRestingNotice() {
+        guard !isHovering, !isTrashing, let failure else { return noticeBadge.hide() }
+        noticeBadge.show(failure.summary, symbol: "exclamationmark.triangle.fill", colors: [.systemOrange])
     }
 
     /// Copy Text came to `copy`: "Copied 42 characters", or "No text found", in the notice over the card, which stays, and
@@ -584,7 +607,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         noticeReset = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.6))
             guard !Task.isCancelled, let self, !isTrashing else { return }
-            noticeBadge.hide()
+            showRestingNotice()
             bringBackCapsules()
         }
     }
@@ -615,7 +638,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     func showUnsaved() {
         saveButton.title = String(localized: "Save", bundle: .module)
         saveButton.symbolName = "square.and.arrow.down"
-        saveButton.toolTip = nil
+        saveButton.toolTip = failure?.detail
         savedBadge.isHidden = true
         updateAccessibility()
     }
@@ -671,6 +694,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
             allHoverControls.forEach { $0.animator().alphaValue = hovering ? 1 : 0 }
         }
         guard !hovering else { return }
+        showRestingNotice()
         // Hidden once faded, so invisible buttons never take clicks.
         Task { [weak self] in
             if duration > 0 { try? await Task.sleep(for: .seconds(duration)) }

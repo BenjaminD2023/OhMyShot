@@ -20,7 +20,7 @@ struct QuickAccessRetentionTests {
         let thumbnail = try #require(context.makeImage())
         let history = HistoryStore(directory: folder)
         var actions = QuickAccessController.Actions(
-            copy: { _ in false }, save: { _, _ in nil }, saveAs: { _ in nil },
+            copy: { _ in false }, save: { _, _ in .cancelled }, saveAs: { _ in .cancelled },
             open: { _ in }, annotate: { _ in }, reveal: { _ in }, recognizeText: { _ in },
             pin: { _ in false }, moveToTrash: { _ in }, closed: { item in
                 #expect(throws: Never.self) { try FileManager.default.removeItem(at: item.fileURL) }

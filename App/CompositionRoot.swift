@@ -26,6 +26,8 @@ final class CompositionRoot {
     lazy var overlay = OverlayController(topology: displays, capturer: capturer)
     /// Saves, copies, and hands over captures in the format Settings choose.
     lazy var files = ScreenshotFiles(settings: settings, history: history)
+    /// Says by the pointer why a copy could not be saved, where no card can say it.
+    let failureNotice = CopiedHUD()
     lazy var captures = CaptureCoordinator(settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, files: files)
     lazy var quickAccess = QuickAccessController(actions: makeQuickAccessActions(), history: history)
     /// Uploads to the user's own storage; idle unless one is in flight.
@@ -320,6 +322,8 @@ final class CompositionRoot {
         }
         captures.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
         recordings.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
+        captures.saveFailed = { [weak self] failure, id in self?.showSaveFailure(failure, onCardOf: id) }
+        recordings.saveFailed = { [weak self] failure, id in self?.showSaveFailure(failure, onCardOf: id) }
         recordings.onStatus = { [weak self] status in
             guard let self else { return }
             switch status {
@@ -396,18 +400,20 @@ final class CompositionRoot {
         }
         // A card is not closed by itself under the editor that has its capture open.
         annotations.onEditing = { [weak self] id, editing in self?.quickAccess.setEditing(editing, for: id) }
+        // The editor's window has no card to say why a copy could not be saved: the reading by the pointer does.
         annotations.saveCopy = { [weak self] entry, file in
-            guard let self, let saved = await files.saveScreenshot(fileAt: file, entry: entry, asks: true) else { return nil }
+            guard let self, let saved = savedOrSaidWhy(await files.saveScreenshot(fileAt: file, entry: entry, asks: true)) else { return nil }
             quickAccess.markSaved(entry.id, at: saved)
             return saved
         }
         annotations.saveAs = { [weak self] file, entry, scale in
-            guard let self, let saved = await files.saveScreenshotAs(fileAt: file, entry: entry, scale: scale) else { return nil }
+            guard let self, let saved = savedOrSaidWhy(await files.saveScreenshotAs(fileAt: file, entry: entry, scale: scale)) else { return nil }
             if let entry { quickAccess.markSaved(entry.id, at: saved) }
             return saved
         }
         annotations.saveFile = { [weak self] file, scale in
-            await self?.files.saveScreenshot(fileAt: file, scale: scale, asks: true)
+            guard let self else { return nil }
+            return savedOrSaidWhy(await files.saveScreenshot(fileAt: file, scale: scale, asks: true))
         }
         annotations.fileToHandOver = { [weak self] file, scale in
             self?.files.fileToHandOver(file, scale: scale) ?? file

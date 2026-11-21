@@ -64,6 +64,20 @@ extension CompositionRoot {
         retention.releaseIfUnheld(id)
     }
 
+    /// Says why a copy could not be saved: on the capture's card when `captureID` has one on screen, which holds it
+    /// from closing by itself, else in the reading by the pointer (a save from the editor, a pin, History, or after a
+    /// capture with Quick Access off). Either way VoiceOver hears it.
+    func showSaveFailure(_ failure: ExportFailure, onCardOf captureID: UUID?) {
+        if let captureID, quickAccess.showFailure(failure, for: captureID) { return }
+        failureNotice.show(failure.summary, near: NSEvent.mouseLocation)
+    }
+
+    /// Where a copy saved from a window went, nil when it was not saved; a failure is said by the pointer first.
+    func savedOrSaidWhy(_ outcome: SaveOutcome) -> URL? {
+        if let failure = outcome.failure { showSaveFailure(failure, onCardOf: nil) }
+        return outcome.url
+    }
+
     /// Whether Settings give the capture a card: the choice for screenshots, or for recordings.
     func showsQuickAccess(forCaptureWith id: UUID) -> Bool {
         settings.afterCapture(for: history.item(id: id)?.kind ?? .screenshot).showsQuickAccess
@@ -109,8 +123,8 @@ extension CompositionRoot {
     func makeQuickAccessActions() -> QuickAccessController.Actions {
         var actions = QuickAccessController.Actions(
             copy: { [weak self] item in await self?.files.copyToClipboard(fileAt: item.fileURL) ?? false },
-            save: { [weak self] item, asks in await self?.files.saveCapture(fileAt: item.fileURL, asks: asks) },
-            saveAs: { [weak self] item in await self?.files.saveCaptureAs(fileAt: item.fileURL) },
+            save: { [weak self] item, asks in await self?.files.saveCapture(fileAt: item.fileURL, asks: asks) ?? .cancelled },
+            saveAs: { [weak self] item in await self?.files.saveCaptureAs(fileAt: item.fileURL) ?? .cancelled },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
             annotate: { [weak self] item in
                 guard let self, let entry = history.item(id: item.id) else { return }
@@ -211,7 +225,10 @@ extension CompositionRoot {
                 guard let self else { return }
                 Task {
                     guard let item = await self.quickAccessItem(for: entry) else { return }
-                    if let url = await self.files.saveCapture(fileAt: item.fileURL) {
+                    if let url = self.savedOrSaidWhy(await self.files.saveCapture(fileAt: item.fileURL)) {
+                        // A copy is saved after all: the capture's card no longer says one couldn't be. It is not the
+                        // card's own copy, which the card's Move to Trash takes with the capture.
+                        self.quickAccess.clearFailure(for: entry.id)
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
                 }

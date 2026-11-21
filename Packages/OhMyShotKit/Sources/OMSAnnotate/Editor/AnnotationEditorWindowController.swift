@@ -16,7 +16,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// recreates it. Returns the file that now holds the capture.
         public var keep: (_ document: AnnotationDocument, _ png: Data, _ image: CGImage) -> URL?
         /// Saves a copy of the capture's file to the export location; returns where it went, or nil when it was not saved
-        /// (cancelled, or failed, which it has beeped for).
+        /// (cancelled, or failed, which it has said why for).
         public var save: (_ file: URL) async -> URL?
         /// Asks where and how to save a copy of the capture's file, in the Save panel; returns where it went, or nil when
         /// it was not saved. Nil when the editor offers no Save As.
@@ -411,8 +411,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                 NSSound.beep()
                 return
             }
-            // A save that failed has beeped already, and one that was cancelled (Escape in the name alert) did not mean to
-            // save: neither is said again here.
+            // A save that failed has said why already, and one that was cancelled (Escape in the name alert) did not mean
+            // to save: neither is said again here.
             guard await actions.save(file) != nil else { return }
             model.flashSaved()
         }

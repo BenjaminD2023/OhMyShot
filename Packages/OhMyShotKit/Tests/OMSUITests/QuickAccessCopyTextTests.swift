@@ -20,7 +20,7 @@ struct QuickAccessCopyTextTests {
 
     private func actions() -> QuickAccessController.Actions {
         QuickAccessController.Actions(
-            copy: { _ in true }, save: { _, _ in nil }, saveAs: { _ in nil },
+            copy: { _ in true }, save: { _, _ in .cancelled }, saveAs: { _ in .cancelled },
             open: { _ in }, annotate: { _ in }, reveal: { _ in }, recognizeText: { _ in },
             pin: { _ in false }, moveToTrash: { _ in }, closed: { _ in }
         )

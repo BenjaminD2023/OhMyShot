@@ -24,9 +24,9 @@ extension CompositionRoot {
             save: { [weak self] pin in
                 guard let self, case .image(let image, let scale) = pin.content else { return }
                 if let entry = unchangedCapture(of: pin) {
-                    Task { _ = await self.files.saveScreenshot(fileAt: self.history.fileURL(for: entry), entry: entry, asks: true) }
+                    Task { _ = self.savedOrSaidWhy(await self.files.saveScreenshot(fileAt: self.history.fileURL(for: entry), entry: entry, asks: true)) }
                 } else {
-                    Task { _ = await self.files.saveScreenshot(.init(image), scale: Double(scale), asks: true) }
+                    Task { _ = self.savedOrSaidWhy(await self.files.saveScreenshot(.init(image), scale: Double(scale), asks: true)) }
                 }
             },
             saveAs: { [weak self] pin in self?.savePinAs(pin) },
@@ -151,6 +151,6 @@ extension CompositionRoot {
 
     private func savePinAs(_ pin: PinController.Pin) {
         guard case .image(let image, let scale) = pin.content else { return }
-        Task { _ = await files.saveScreenshotAs(.init(image), scale: Double(scale)) }
+        Task { _ = savedOrSaidWhy(await files.saveScreenshotAs(.init(image), scale: Double(scale))) }
     }
 }

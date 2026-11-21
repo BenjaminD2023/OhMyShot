@@ -31,6 +31,8 @@ final class CaptureCoordinator {
     var uploadKept: ((HistoryItem) -> Void)?
     /// Opens a capture in the annotation editor: its record and its pixels per point.
     var openInEditor: ((HistoryItem, CGFloat) -> Void)?
+    /// Saving after a capture failed: why, and the capture, to say it on its card when it has one; called once a card is up.
+    var saveFailed: ((ExportFailure, UUID?) -> Void)?
     /// A color taken with C over the magnifier while capturing: where it was, and the keys held then.
     var onColor: ((ScreenColor, CGPoint, NSEvent.ModifierFlags, Bool) -> Void)?
     /// Receives a capture to pin where it was taken, with its record in the history. Set by the
@@ -719,12 +721,15 @@ final class CaptureCoordinator {
                 thumbnail: await HistoryStore.cardThumbnail(of: shown.image, maxPixels: QuickAccessItem.thumbnailPixels) ?? shown.image,
                 displayID: frame.displayID
             )
+            var saveFailure: ExportFailure?
             if settings.saveAfterCapture || saving {
                 // Asking for the name is for someone at the keyboard: All-In-One's Save is asked, a save the URL API or a
                 // shortcut asked for is not.
-                item.savedURL = await files.saveScreenshot(
+                let saved = await files.saveScreenshot(
                     fileAt: item.fileURL, entry: entry, scale: Double(scale), picture: picture, asks: followUp.asksForName
                 )
+                item.savedURL = saved.url
+                saveFailure = saved.failure
             }
             probe.end()
             // A card can be dragged out from now on: the converted copy it hands over is made meanwhile.
@@ -753,6 +758,7 @@ final class CaptureCoordinator {
                     deliverCard(item, copiedAt == NSPasteboard.general.changeCount)
                 } else { onCaptured?(item) }
             }
+            if let saveFailure { saveFailed?(saveFailure, entry.id) }
             onKept?(entry)
             followUp.finish(entry)
             return entry

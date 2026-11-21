@@ -57,6 +57,8 @@ final class RecordingCoordinator {
     var onRecordingCompleted: (() -> Void)?
     /// A recording was kept and Settings says to upload it.
     var uploadKept: ((HistoryItem) -> Void)?
+    /// Saving a copy of a recording failed: why, and the recording, to say it on its card when it has one.
+    var saveFailed: ((ExportFailure, UUID?) -> Void)?
     /// A recording's file was just put on the clipboard, which refers to the file in the history and holds nothing else.
     var copiedToClipboard: ((UUID) -> Void)?
     /// The composition root shows it in the menu bar.
@@ -1072,9 +1074,18 @@ final class RecordingCoordinator {
         }
         let thumbnail = await HistoryStore.thumbnail(of: url, maxPixels: QuickAccessItem.thumbnailPixels) ?? Self.blankThumbnail
         var item = QuickAccessItem(entry, fileURL: url, thumbnail: thumbnail, displayID: displayID)
-        if after.saves { item.savedURL = files.saveRecording(fileAt: url) }
+        let saved = after.saves ? files.saveRecording(fileAt: url) : nil
+        item.savedURL = saved?.url
         if after.uploads { uploadKept?(entry) }
         onRecorded?(item)
+        if let failure = saved?.failure { saveFailed?(failure, entry.id) }
+    }
+
+    /// Saves a copy of a recording from its window or Studio, which beep when it is not saved; why is said by the pointer.
+    private func saveCopy(of url: URL) -> URL? {
+        let saved = files.saveRecording(fileAt: url)
+        if let failure = saved.failure { saveFailed?(failure, nil) }
+        return saved.url
     }
 
     private func makeFile(of draft: RecordingDrafts.Draft, as output: RecordingOutput, at destination: URL) async throws -> KeptFile {
@@ -1274,7 +1285,7 @@ final class RecordingCoordinator {
                     return try keepStudioMovie(movie, madeWith: project, of: id)
                 },
                 copy: { [weak self] url in self?.files.copy(fileAt: url) },
-                save: { [weak self] url in self?.files.saveRecording(fileAt: url) },
+                save: { [weak self] url in self?.saveCopy(of: url) },
                 progress: { [weak self] fraction in self?.showStudioExport(fraction) },
                 makeGIF: { [weak self] movie, progress in
                     guard let self, let entry = history.item(id: id) else { throw CocoaError(.userCancelled) }
@@ -1357,7 +1368,7 @@ final class RecordingCoordinator {
                     guard let self else { throw CocoaError(.userCancelled) }
                     try await makeGIF(of: id, edit: edit)
                 },
-                save: { [weak self] url in self?.files.saveRecording(fileAt: url) },
+                save: { [weak self] url in self?.saveCopy(of: url) },
                 copy: { [weak self] url in self?.files.copy(fileAt: url) }
             )
         )

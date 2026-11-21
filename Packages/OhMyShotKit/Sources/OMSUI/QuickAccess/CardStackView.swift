@@ -24,6 +24,8 @@ final class CardStackView: NSView {
     var canDeleteFromStorage: ((QuickAccessItem) -> Bool)?
     /// The upload a capture has now, for a card made after it began (restored from Recently Closed).
     var currentUpload: ((QuickAccessItem) -> CardUpload?)?
+    /// Why a copy of a capture could not be saved, for a card made after it failed.
+    var currentFailure: ((QuickAccessItem) -> ExportFailure?)?
     /// What can be done to a capture's picture now, read when a menu opens.
     var pictureOffer: (QuickAccessItem) -> PictureChangeOffer = { _ in .unsupported }
     /// How many cards the stack has.
@@ -161,6 +163,11 @@ final class CardStackView: NSView {
         cards[id]?.upload = upload
     }
 
+    /// Has a card say why a copy of its capture could not be saved, or stop saying it.
+    func setFailure(_ failure: ExportFailure?, for id: UUID) {
+        cards[id]?.failure = failure
+    }
+
     func setCountdown(_ state: (remaining: TimeInterval, interval: TimeInterval)?, for id: UUID) {
         cards[id]?.setCountdown(state)
     }
@@ -258,6 +265,7 @@ final class CardStackView: NSView {
         card.hasLink = { [weak self, weak card] in card.flatMap { self?.hasLink?($0.item) } ?? false }
         card.canDeleteFromStorage = { [weak self, weak card] in card.flatMap { self?.canDeleteFromStorage?($0.item) } ?? false }
         card.upload = currentUpload?(item)
+        card.failure = currentFailure?(item)
         if item.kind == .screenshot, let findCodes { card.lookForCodes { await findCodes(item) } }
         addSubview(card)
         cards[item.id] = card
