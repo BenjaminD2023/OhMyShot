@@ -432,10 +432,10 @@ final class CompositionRoot {
         }
         annotations.isUploading = { [weak self] id in self?.uploads.isUploading(id) ?? false }
 
-        displays.onChange = { [weak self] _ in
+        displays.onChange = { [weak self] layout in
             guard let self else { return }
             shareableContent.refresh()
-            overlay.cancel()
+            captures.displaysChanged(to: layout)
             captures.cancelSelfTimer()
             overlay.prepare()
             quickAccess.displaysChanged()

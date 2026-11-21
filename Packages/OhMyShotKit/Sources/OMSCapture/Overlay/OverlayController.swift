@@ -249,6 +249,8 @@ public final class OverlayController {
     private var windowsExcluded: pid_t? { purpose == .scroll ? getpid() : nil }
     /// An area chosen for annotation before its display's frame arrived.
     private var pendingAnnotation: (display: CGDirectDisplayID, area: CGRect)?
+    /// The display in-place annotation was handed, once it was: a frame set up there with its bar is not annotation.
+    private var annotatedDisplay: CGDirectDisplayID?
     /// The frame with its bar hosted over a display (`host`), while its view holds it.
     private weak var setup: NSView?
     /// The selection being dragged out: one for every display, since a drag may carry it onto another.
@@ -565,6 +567,22 @@ public final class OverlayController {
     /// Whether in-place annotation is showing, for scripted checks.
     public var isAnnotating: Bool {
         isActive && entries.values.contains { $0.view.isAnnotating }
+    }
+
+    /// The display in-place annotation is showing on, while it is; nil while a frame is set up with its bar (All-In-One,
+    /// recording, scrolling, a typed size), which is not marked on.
+    public var annotationDisplay: DisplayInfo? {
+        guard isActive, let annotatedDisplay else { return nil }
+        return entries[annotatedDisplay]?.view.display
+    }
+
+    /// Whether in-place annotation on `display` can go on once the displays are `layout`: only while that display is there
+    /// as it was (where it was, as large, at the same scale), as the marks are drawn on its frozen frame. Displays
+    /// plugged in, taken away, or moved around it leave it be, and so does its name changing, as macOS numbers it once
+    /// a second display of its model is plugged in.
+    public static func keepsAnnotating(on display: DisplayInfo, in layout: DisplayLayout) -> Bool {
+        guard let now = layout.display(id: display.id) else { return false }
+        return now.frame == display.frame && now.pixelSize == display.pixelSize && now.backingScale == display.backingScale
     }
 
     /// The recording bar's view while a choice is framed, for scripted checks.
@@ -914,6 +932,7 @@ public final class OverlayController {
             return
         }
         keepOnly(entry)
+        annotatedDisplay = displayID
         onAnnotate(AnnotationRequest(
             host: entry.view, display: entry.view.display, area: area, frame: frame,
             showEdgeLoupe: { [weak view = entry.view] point in view?.showEdgeLoupe(at: point) },
@@ -930,6 +949,7 @@ public final class OverlayController {
         allInOneMode = nil
         chosenAhead = nil
         pendingAnnotation = nil
+        annotatedDisplay = nil
         drag = nil
         pointer = nil
         nudged = false

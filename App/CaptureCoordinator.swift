@@ -47,9 +47,9 @@ final class CaptureCoordinator {
     private lazy var notice = CopiedHUD()
     /// What waits for the capture Self-Timer is counting down to, told nil when it is cancelled.
     private var timerFollowUp: CaptureFollowUp?
-    #if DEBUG
-    /// The in-place annotation on screen, for scripted checks.
+    /// The in-place annotation on screen: a display change hands its marks to the editor, and scripted checks drive it.
     private(set) weak var inPlaceView: InPlaceAnnotationView?
+    #if DEBUG
     /// Stands in for Self-Timer's capture at zero, for scripted checks that must not read the screen.
     var selfTimerCapture: ((CGRect) -> CapturedFrame?)?
     #endif
@@ -269,9 +269,18 @@ final class CaptureCoordinator {
         }
         host.addSubview(view)
         view.begin()
-        #if DEBUG
         inPlaceView = view
-        #endif
+    }
+
+    /// The displays changed: what is being chosen is cancelled, as the screen it was chosen on is not the one showing
+    /// now, but in-place annotation goes on while its display is there as it was. Once it is not, marks drawn there are
+    /// not thrown away unasked, as Escape and Cancel never do: they go on in the editor, as Open in Editor takes them.
+    func displaysChanged(to layout: DisplayLayout) {
+        if let display = overlay.annotationDisplay {
+            if OverlayController.keepsAnnotating(on: display, in: layout) { return }
+            inPlaceView?.openInEditorIfMarked()
+        }
+        overlay.cancel()
     }
 
     // MARK: Capture Area and Pin
