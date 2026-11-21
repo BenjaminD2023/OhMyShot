@@ -9,6 +9,11 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- Capture Text, Capture Formula, and Translate Area read only the windows picked with Shift, also when Option opens them in the OCR panel. What lies between or around the windows is no longer read, copied, or sent to a cloud model.
+- A screenshot of several windows on displays with different scales keeps each window at its size, instead of drawing the one from the lower-scale display too small.
+
 ## [0.3.0] - 2026-11-21
 
 ### Choose a window, or measure, in All-In-One

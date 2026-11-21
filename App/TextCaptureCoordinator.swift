@@ -159,22 +159,20 @@ final class TextCaptureCoordinator {
                 Task { await self.openPanel(region: rect, frozen: frozen) }
             case .window(let target, let modifiers) where modifiers.contains(.option):
                 done?(nil)
-                Task { await self.openPanel(window: target) }
+                Task { await self.openPanel(windows: [target]) }
             case .windows(let targets, let modifiers) where modifiers.contains(.option):
                 done?(nil)
-                if let union = targets.combinedFrame {
-                    Task { await self.openPanel(region: union) }
-                }
+                Task { await self.openPanel(windows: targets) }
             case .region(let rect, _, _, let frozen):
                 highlight.show(rect)
                 Task { await self.recognize(region: rect, frozen: frozen, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
             case .window(let target, _):
                 highlight.show(target.frame)
-                Task { await self.recognize(window: target, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
+                Task { await self.recognize(windows: [target], joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
             case .windows(let targets, _):
                 if let union = targets.combinedFrame {
                     highlight.show(union)
-                    Task { await self.recognize(region: union, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
+                    Task { await self.recognize(windows: targets, joinLines: joinLines, allowsCloud: allowsCloud, done: done) }
                 } else {
                     done?(nil)
                 }
@@ -216,21 +214,23 @@ final class TextCaptureCoordinator {
         }
     }
 
-    private func recognize(window target: WindowTarget, joinLines: Bool, allowsCloud: Bool, done: ((String?) -> Void)? = nil) async {
-        guard !Task.isCancelled else { done?(nil); return }
+    /// Reads the windows picked, each captured on its own: with several, nothing between or around them is read, or
+    /// sent to a cloud model.
+    private func recognize(windows targets: [WindowTarget], joinLines: Bool, allowsCloud: Bool, done: ((String?) -> Void)? = nil) async {
+        guard !Task.isCancelled, let area = targets.combinedFrame else { done?(nil); return }
         await selection.run { [self] in
             guard !Task.isCancelled else { done?(nil); return }
-            highlight.show(target.frame)
+            highlight.show(area)
             do {
-                let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
+                let frame = try await capturer.captureWindows(targets, shadow: false, layout: displays.layout)
                 try Task.checkCancellation()
                 await recognize(
-                    frame.image, selection: target.frame, place: Self.place(of: frame, window: target), joinLines: joinLines, copiesToClipboard: true,
+                    frame.image, selection: area, place: Self.place(of: frame, windows: targets), joinLines: joinLines, copiesToClipboard: true,
                     allowsCloud: allowsCloud, done: done
                 )
             } catch {
                 guard !Task.isCancelled else { done?(nil); return }
-                Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
+                Log.capture.error("Capture Text failed to capture the windows: \(error.localizedDescription, privacy: .public)")
                 highlight.finish(copied: nil, announces: !settings.showTextResult)
                 done?(nil)
             }
@@ -475,6 +475,15 @@ final class TextCaptureCoordinator {
         return AppTextPlace(frame: frame.frame, scale: scale(of: frame), pid: owner)
     }
 
+    /// Picked windows' place: their app's, when they all belong to one. Windows of several apps ask no app for its text,
+    /// since the app in front at a line could be one whose window wasn't picked.
+    private static func place(of frame: CapturedFrame, windows targets: [WindowTarget]) -> AppTextPlace? {
+        guard let first = targets.first else { return nil }
+        let owner = WindowCatalog.owner(of: first.id)
+        guard targets.dropFirst().allSatisfy({ WindowCatalog.owner(of: $0.id) == owner }) else { return nil }
+        return place(of: frame, window: first)
+    }
+
     /// The apps' text at the lines' places (L0), being read for `budget` at most; nil while Settings leaves it off (no
     /// `place`), while Accessibility is off for OhMyShot, or with no lines to ask about.
     private nonisolated static func appText(
@@ -584,21 +593,21 @@ final class TextCaptureCoordinator {
                 Task { await self.openPanel(region: rect, frozen: frozen) }
             case .window(let target, let modifiers) where modifiers.contains(.option):
                 done?(nil)
-                Task { await self.openPanel(window: target) }
+                Task { await self.openPanel(windows: [target]) }
             case .region(let rect, _, _, let frozen):
                 highlight.show(rect)
                 Task { await self.readFormula(region: rect, frozen: frozen, copiesToClipboard: copiesToClipboard, done: done) }
             case .window(let target, _):
                 highlight.show(target.frame)
-                Task { await self.readFormula(window: target, done: done) }
+                Task { await self.readFormula(windows: [target], copiesToClipboard: true, done: done) }
             case .windows(let targets, let modifiers):
                 if let union = targets.combinedFrame {
                     if modifiers.contains(.option) {
                         done?(nil)
-                        Task { await self.openPanel(region: union) }
+                        Task { await self.openPanel(windows: targets) }
                     } else {
                         highlight.show(union)
-                        Task { await self.readFormula(region: union, copiesToClipboard: copiesToClipboard, done: done) }
+                        Task { await self.readFormula(windows: targets, copiesToClipboard: copiesToClipboard, done: done) }
                     }
                 } else {
                     done?(nil)
@@ -628,16 +637,17 @@ final class TextCaptureCoordinator {
         }
     }
 
-    private func readFormula(window target: WindowTarget, done: ((String?) -> Void)?) async {
+    private func readFormula(windows targets: [WindowTarget], copiesToClipboard: Bool, done: ((String?) -> Void)?) async {
+        guard let area = targets.combinedFrame else { done?(nil); return }
         await selection.run { [self] in
-            highlight.show(target.frame)
+            highlight.show(area)
             do {
-                let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
+                let frame = try await capturer.captureWindows(targets, shadow: false, layout: displays.layout)
                 try Task.checkCancellation()
-                await readFormula(frame.image, selection: target.frame, copiesToClipboard: true, done: done)
+                await readFormula(frame.image, selection: area, copiesToClipboard: copiesToClipboard, done: done)
             } catch {
                 guard !Task.isCancelled else { done?(nil); return }
-                Log.capture.error("Capture Formula failed to capture the window: \(error.localizedDescription, privacy: .public)")
+                Log.capture.error("Capture Formula failed to capture the windows: \(error.localizedDescription, privacy: .public)")
                 highlight.finish(copied: nil, announces: !settings.showTextResult, formula: true)
                 done?(nil)
             }
@@ -712,11 +722,11 @@ final class TextCaptureCoordinator {
                 Task { await self?.translate(region: rect, frozen: frozen, inPanel: modifiers.contains(.option)) }
             case .window(let target, let modifiers):
                 self?.highlight.show(target.frame)
-                Task { await self?.translate(window: target, inPanel: modifiers.contains(.option)) }
+                Task { await self?.translate(windows: [target], inPanel: modifiers.contains(.option)) }
             case .windows(let targets, let modifiers):
                 if let union = targets.combinedFrame {
                     self?.highlight.show(union)
-                    Task { await self?.translate(region: union, frozen: nil, inPanel: modifiers.contains(.option)) }
+                    Task { await self?.translate(windows: targets, inPanel: modifiers.contains(.option)) }
                 }
             case .annotated, .color, .record, .scroll, .allInOne, .cancelled:
                 break
@@ -738,15 +748,16 @@ final class TextCaptureCoordinator {
         }
     }
 
-    private func translate(window target: WindowTarget, inPanel: Bool) async {
+    private func translate(windows targets: [WindowTarget], inPanel: Bool) async {
+        guard let area = targets.combinedFrame else { return }
         await selection.run { [self] in
             do {
-                let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
+                let frame = try await capturer.captureWindows(targets, shadow: false, layout: displays.layout)
                 try Task.checkCancellation()
-                await translate(frame.image, scale: Self.scale(of: frame), over: target.frame, source: target.ownerName, inPanel: inPanel)
+                await translate(frame.image, scale: Self.scale(of: frame), over: area, source: targets.ownerNames, inPanel: inPanel)
             } catch {
                 guard !Task.isCancelled else { return }
-                Log.capture.error("Translate Area failed to capture the window: \(error.localizedDescription, privacy: .public)")
+                Log.capture.error("Translate Area failed to capture the windows: \(error.localizedDescription, privacy: .public)")
                 highlight.finish(copied: nil, announces: true)
             }
         }
@@ -936,16 +947,18 @@ final class TextCaptureCoordinator {
         }
     }
 
-    private func openPanel(window target: WindowTarget) async {
+    /// Opens the OCR panel on the windows picked, each captured on its own, so a cloud model chosen there never gets
+    /// what lies between them.
+    private func openPanel(windows targets: [WindowTarget]) async {
         do {
-            let frame = try await capturer.captureWindow(target, shadow: false, layout: displays.layout)
-            let title = target.title.flatMap { $0.isEmpty ? nil : $0 }
+            let frame = try await capturer.captureWindows(targets, shadow: false, layout: displays.layout)
+            let title = targets.count == 1 ? targets[0].title.flatMap { $0.isEmpty ? nil : $0 } : nil
             openPanel(
-                image: frame.image, scale: Self.scale(of: frame), source: title.map { "\(target.ownerName) – \($0)" } ?? target.ownerName,
-                place: Self.place(of: frame, window: target)
+                image: frame.image, scale: Self.scale(of: frame), source: title.map { "\(targets.ownerNames) – \($0)" } ?? targets.ownerNames,
+                place: Self.place(of: frame, windows: targets)
             )
         } catch {
-            Log.capture.error("Capture Text failed to capture the window: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Capture Text failed to capture the windows: \(error.localizedDescription, privacy: .public)")
             NSSound.beep()
         }
     }
@@ -1091,4 +1104,12 @@ final class TextCaptureCoordinator {
         showFailure(failure, source: "Demo")
     }
     #endif
+}
+
+private extension [WindowTarget] {
+    /// The windows' apps, each named once, as a list in the reader's language ("Safari and Notes").
+    var ownerNames: String {
+        var named = Set<String>()
+        return ListFormatter.localizedString(byJoining: map(\.ownerName).filter { named.insert($0).inserted })
+    }
 }

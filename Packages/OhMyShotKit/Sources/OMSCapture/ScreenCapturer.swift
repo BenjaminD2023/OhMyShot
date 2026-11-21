@@ -132,14 +132,19 @@ public final class ScreenCapturer {
             let ib = catalogOrder.firstIndex(of: b.id) ?? Int.max
             return ia > ib
         }
-        var parts: [(image: CGImage, windowFrame: CGRect)] = []
+        var parts: [(image: CGImage, windowFrame: CGRect, pixelsPerPoint: CGFloat)] = []
         var displayID: CGDirectDisplayID = layout.display(at: CGPoint(x: first.frame.midX, y: first.frame.midY))?.id ?? layout.primary?.id ?? 0
+        var scale: CGFloat = 0
         for target in sorted {
             let captured = try await captureWindow(target, shadow: shadow, layout: layout, showsCursor: showsCursor)
-            parts.append((captured.image, target.frame))
-            displayID = captured.displayID
+            let pixelsPerPoint = layout.display(id: captured.displayID)?.pixelsPerPoint ?? layout.primary?.pixelsPerPoint ?? 2
+            parts.append((captured.image, target.frame, pixelsPerPoint))
+            // The canvas takes the sharpest window's scale, and its display.
+            if pixelsPerPoint >= scale {
+                scale = pixelsPerPoint
+                displayID = captured.displayID
+            }
         }
-        let scale = layout.display(id: displayID)?.pixelsPerPoint ?? layout.primary?.pixelsPerPoint ?? 2
         guard let composited = Self.compositeWindows(parts, scale: scale, displayID: displayID) else {
             throw CaptureError.emptyResult
         }
@@ -147,12 +152,14 @@ public final class ScreenCapturer {
     }
 
     /// Composites captured window images (in back-to-front order) onto a single transparent canvas at `scale` pixels per point.
+    /// Each image is at its own display's `pixelsPerPoint` and is drawn at its size in points, so windows from displays of
+    /// different scales keep their places and sizes.
     public static func compositeWindows(
-        _ parts: [(image: CGImage, windowFrame: CGRect)], scale: CGFloat, displayID: CGDirectDisplayID
+        _ parts: [(image: CGImage, windowFrame: CGRect, pixelsPerPoint: CGFloat)], scale: CGFloat, displayID: CGDirectDisplayID
     ) -> CapturedFrame? {
         guard let first = parts.first else { return nil }
         let placed = parts.map { part -> (image: CGImage, windowFrame: CGRect, pictureRect: CGRect) in
-            let rect = WallpaperCrop.pictureFrame(of: part.image, window: part.windowFrame, pixelsPerPoint: max(scale, 1))
+            let rect = WallpaperCrop.pictureFrame(of: part.image, window: part.windowFrame, pixelsPerPoint: max(part.pixelsPerPoint, 1))
             return (part.image, part.windowFrame, rect)
         }
         let totalPicture = placed.dropFirst().reduce(placed[0].pictureRect) { $0.union($1.pictureRect) }
@@ -165,12 +172,13 @@ public final class ScreenCapturer {
             space: space, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
         ) else { return nil }
         context.clear(CGRect(x: 0, y: 0, width: width, height: height))
+        context.interpolationQuality = .high
         for item in placed {
             let drawRect = CGRect(
                 x: (item.pictureRect.minX - totalPicture.minX) * scale,
                 y: (item.pictureRect.minY - totalPicture.minY) * scale,
-                width: CGFloat(item.image.width),
-                height: CGFloat(item.image.height)
+                width: item.pictureRect.width * scale,
+                height: item.pictureRect.height * scale
             )
             context.draw(item.image, in: drawRect)
         }
