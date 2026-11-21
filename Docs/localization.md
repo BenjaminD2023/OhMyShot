@@ -60,6 +60,10 @@ around. Open a pull request with the changed `.xcstrings` files.
   "正在载入截图…". Where it matters that both kinds are meant, it is "截图或录制", as in "还没有截图或录制". The verb
   stays 截取 ("OhMyShot 截取的一切").
 - **VoiceOver text** (labels and announcements) is read aloud, so write it as natural speech.
+- **Search words.** The strings whose key starts with `SEARCH_KEYWORDS_` are words a Settings search finds a row by
+  and never shows: what people type for it in your language (`OCR` finds Capture Text). Keep them a list apart by
+  commas, write the words people actually type rather than a word-for-word translation, keep terms such as OCR, JPG,
+  or S3 that are typed as they are, and add or leave out words as your language needs.
 - Keep "…" where the English has it, and use your language's own punctuation and quotation marks.
 - **Check that it fits.** Most of the app grows with its text, but some places are only so wide. If a Settings
   pane cuts off a row, raise `SETTINGS_PANE_WIDTH` in `OMSUI`'s catalog. It's a number of points, not words: 520 in

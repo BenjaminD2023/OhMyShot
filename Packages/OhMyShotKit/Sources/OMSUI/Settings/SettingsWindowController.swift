@@ -174,6 +174,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
 
     public init(dependencies: SettingsDependencies) {
         let navigator = SettingsNavigator()
+        // Sharing draws Recent uploads only once an upload has finished.
+        navigator.hiddenRows = { [records = dependencies.uploadRecords] in
+            records.records.isEmpty ? [String(localized: "Recent uploads", bundle: .module)] : []
+        }
         var panes: [SettingsTab: NSViewController] = [:]
         let root = SettingsRootView(navigator: navigator) { tab in
             if let pane = panes[tab] { return pane }
