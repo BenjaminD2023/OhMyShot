@@ -40,6 +40,8 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayViewDidResetDrag(_ view: OverlayView)
     /// The ruler's measurement, to copy; `ending` closes the overlay after it (Return).
     func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool)
+    /// F: the display's frozen frame, to keep as a capture with the ruler's measurement on it as marks.
+    func overlayView(_ view: OverlayView, didCaptureMeasurement measurement: RulerMeasurement, of frame: CapturedFrame)
     func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit)
     func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance)
     /// All-In-One's bar or keys chose what the next area is for: its text, a scrolling capture, or a recording.
@@ -245,7 +247,7 @@ final class OverlayView: NSView {
         case .screenshot where isAllInOne: String(localized: "Click a window or drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, R to record, or M to measure. Press Escape to cancel.", bundle: .module)
         case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.", bundle: .module)
         case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
-        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
+        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, F captures the screen with the measurement on it, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
         case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
         }
@@ -841,6 +843,10 @@ final class OverlayView: NSView {
                 cycleWindow(backward: character == "[")
             } else if character == "u", purpose == .measure, let measure {
                 delegate?.overlayView(self, didChangeUnit: measure.unit.toggled)
+            } else if character == "f", purpose == .measure, event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+                // The whole display, as F takes it while choosing an area, with what is measured on it. With nothing
+                // measured yet there is nothing to show, as for Return.
+                if let imprint = measure?.imprint { delegate?.overlayView(self, didCaptureMeasurement: imprint.measurement, of: imprint.frame) }
             } else if isAllInOne, !event.modifierFlags.contains(.command), let choice = character.flatMap(AllInOneBar.Choice.init(key:)) {
                 // All-In-One's letters, before an area is chosen: A, W, and F, O, S, R, and M, as the bar has them.
                 toolbarChose(choice)

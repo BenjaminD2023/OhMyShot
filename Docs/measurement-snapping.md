@@ -15,6 +15,11 @@ The tolerance presets are Zero, Low, Medium (default), and High. Lower tolerance
 higher tolerance ignores small color changes. **T** cycles presets and **+/−** adjusts them while
 measuring. The setting persists and applies across displays. **Tab** switches pixels and points.
 
+**F** keeps the display as a screenshot with the measurement on it as marks you can edit: each line a
+double-headed arrow with its length, or the box as a rectangle with its size, in the unit shown. It is
+delivered as any screenshot is, so it goes to History, the clipboard, a Quick Access card, or a saved
+file as Settings → Screenshots → After screenshot says. **Return** and **⌘C** still copy the reading.
+
 ## Detection and responsiveness
 
 Strong RGB transitions keep precise pixel endpoints. Faint edges need local contrast above the

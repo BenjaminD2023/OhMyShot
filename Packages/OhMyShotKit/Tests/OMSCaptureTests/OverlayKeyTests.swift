@@ -12,6 +12,8 @@ struct OverlayKeyTests {
         var heard: [String] = []
         /// The last nudge, in pixels, down positive.
         var nudge: CGVector?
+        /// What F last handed on.
+        var captured: (measurement: RulerMeasurement, frame: CapturedFrame)?
 
         func overlayView(_ view: OverlayView, didPressAt point: CGPoint) { heard.append("press") }
         func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) { heard.append("drag") }
@@ -37,6 +39,10 @@ struct OverlayKeyTests {
         func overlayViewDidRequestLastArea(_ view: OverlayView) { heard.append("lastArea") }
         func overlayViewDidResetDrag(_ view: OverlayView) { heard.append("resetDrag") }
         func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) { heard.append("copy") }
+        func overlayView(_ view: OverlayView, didCaptureMeasurement measurement: RulerMeasurement, of frame: CapturedFrame) {
+            heard.append("capture")
+            captured = (measurement, frame)
+        }
         func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) { heard.append("unit") }
         func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance) { heard.append("tolerance \(tolerance.rawValue)") }
         func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice) { heard.append("mode \(choice)") }
@@ -214,6 +220,50 @@ struct OverlayKeyTests {
             #expect(!result.heard.contains("pick") && !result.passedOn, "key \(key): \(result.heard)")
         }
         #expect(try press(48, in: .measure).heard == ["unit"])
+    }
+
+    /// F keeps the display with what is measured on it: only while measuring, without Command, Control, or Option, and
+    /// only once something is measured.
+    @Test func measuringFCapturesTheDisplayWithTheMeasurement() throws {
+        let empty = try press(3, characters: "f", in: .measure)
+        #expect(empty.heard.isEmpty && !empty.passedOn)
+        for purpose in [OverlayController.Purpose.screenshot, .annotate, .color, .text, .record, .scroll] {
+            #expect(try !press(3, characters: "f", in: purpose).heard.contains("capture"))
+        }
+
+        let view = OverlayView(display: Self.display)
+        defer { view.clear() }
+        let recorder = Recorder()
+        let passedOn = PassedOn()
+        view.delegate = recorder
+        view.nextResponder = passedOn
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .measure)
+        let context = try #require(CGContext(
+            data: nil, width: 1600, height: 1200, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 1600, height: 1200))
+        let frame = CapturedFrame(image: try #require(context.makeImage()), hdrImage: nil, displayID: Self.display.id, frame: Self.display.frame)
+        view.show(frame, frozen: true)
+        view.debugMeasureBox(CGRect(x: 100, y: 100, width: 100, height: 50))
+        func f(_ modifiers: NSEvent.ModifierFlags = []) throws {
+            view.keyDown(with: try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil, characters: "f",
+                charactersIgnoringModifiers: "f", isARepeat: false, keyCode: 3
+            )))
+        }
+        for modifier: NSEvent.ModifierFlags in [.command, .control, .option] {
+            try f(modifier)
+        }
+        #expect(!recorder.heard.contains("capture"))
+        try f()
+        #expect(recorder.heard.last == "capture")
+        #expect(recorder.captured?.frame.image === frame.image)
+        // The box in the frame's pixels from its top left: 100 pt up from the bottom of a 600 pt display, at 2×.
+        #expect(recorder.captured?.measurement == RulerMeasurement(
+            shape: .box(CGRect(x: 200, y: 900, width: 200, height: 100)), unit: .points, pixelsPerPoint: 2
+        ))
     }
 
     @Test func toleranceKeysBelongOnlyToMeasureWithoutCommandModifiers() throws {

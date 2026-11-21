@@ -64,8 +64,8 @@ final class MeasureOverlay {
     private var originalBox: CGRect?
     /// The box's size in pixels, as read.
     private var boxPixels: (width: Int, height: Int)?
-    /// The two lines' lengths in pixels, for copying.
-    private var cross: (width: Int, height: Int)?
+    /// The two lines through the pointer's pixel, in pixels from the top left: what is copied and captured.
+    private var crossing: (x: Int, y: Int, across: ClosedRange<Int>, down: ClosedRange<Int>)?
     /// While set, the reading says "Copied", as a pin's reading does.
     private var copiedFeedback: Task<Void, Never>?
 
@@ -148,7 +148,7 @@ final class MeasureOverlay {
         box = nil
         originalBox = nil
         boxPixels = nil
-        cross = nil
+        crossing = nil
         withoutAnimation { hideAll() }
     }
 
@@ -300,8 +300,20 @@ final class MeasureOverlay {
         if let boxPixels {
             return unit.reading(width: boxPixels.width, height: boxPixels.height, pixelsPerPoint: scale)
         }
-        guard let cross else { return nil }
-        return unit.reading(width: cross.width, height: cross.height, pixelsPerPoint: scale)
+        guard let crossing else { return nil }
+        return unit.reading(width: crossing.across.count, height: crossing.down.count, pixelsPerPoint: scale)
+    }
+
+    /// What is on screen, to draw on a capture of the frame it was measured on: the box, or else the two lines; nil
+    /// with nothing measured.
+    var imprint: (frame: CapturedFrame, measurement: RulerMeasurement)? {
+        guard let frame else { return nil }
+        if let box, boxPixels != nil {
+            return (frame, RulerMeasurement(shape: .box(pixelRect(box)), unit: unit, pixelsPerPoint: scale))
+        }
+        guard let crossing else { return nil }
+        let shape = RulerMeasurement.Shape.lines(x: crossing.x, y: crossing.y, across: crossing.across, down: crossing.down)
+        return (frame, RulerMeasurement(shape: shape, unit: unit, pixelsPerPoint: scale))
     }
 
     /// What VoiceOver reads for the measurement on screen.
@@ -338,7 +350,7 @@ final class MeasureOverlay {
     /// click outside clears it, rather than lines running out from its corner.
     private func drawLines() {
         guard boxStart == nil, box == nil, let pointer, let grid, CGRect(origin: .zero, size: size).contains(pointer) else {
-            cross = nil
+            crossing = nil
             for layer in [linesHalo, lines, widthReading.layer, heightReading.layer] { layer.isHidden = true }
             return
         }
@@ -346,7 +358,7 @@ final class MeasureOverlay {
         let pixelY = min(max(Int(((size.height - pointer.y) * scale).rounded(.down)), 0), grid.height - 1)
         let across = grid.span(throughX: pixelX, y: pixelY, horizontal: true, tolerance: tolerance)
         let down = grid.span(throughX: pixelX, y: pixelY, horizontal: false, tolerance: tolerance)
-        cross = (across.count, down.count)
+        crossing = (pixelX, pixelY, across, down)
 
         // Lines through the middle of the pointer's pixel, on whole device pixels so they stay sharp.
         let row = deviceAligned(size.height - (CGFloat(pixelY) + 0.5) / scale)
@@ -439,9 +451,16 @@ final class MeasureOverlay {
         CGRect(x: pixels.minX / scale, y: size.height - pixels.maxY / scale, width: pixels.width / scale, height: pixels.height / scale)
     }
 
-    /// A rectangle in pixels from the top left, from points.
+    /// A rectangle in pixels from the top left, from points: the pixels it touches. An edge that lies on a pixel's
+    /// edge but for conversion noise, as a box from pixels does at a fractional scale, is taken to that edge first, so
+    /// the noise never widens it by a pixel.
     private func pixelRect(_ points: CGRect) -> CGRect {
-        CGRect(x: points.minX * scale, y: (size.height - points.maxY) * scale, width: points.width * scale, height: points.height * scale).integral
+        func settled(_ value: CGFloat) -> CGFloat {
+            abs(value - value.rounded()) < 0.001 ? value.rounded() : value
+        }
+        let left = settled(points.minX * scale), right = settled(points.maxX * scale)
+        let top = settled((size.height - points.maxY) * scale), bottom = settled((size.height - points.minY) * scale)
+        return CGRect(x: left, y: top, width: right - left, height: bottom - top).integral
     }
 
     private func pixelAligned(_ points: CGRect) -> CGRect {
