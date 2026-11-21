@@ -1347,7 +1347,8 @@ final class RecordingCoordinator {
     private func keepEdit(_ edit: RecordingEdit, of id: UUID) async throws -> URL {
         guard let entry = history.item(id: id) else { throw CocoaError(.fileNoSuchFile) }
         let probe = LatencyProbe("recording.edit")
-        let edited = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).mp4")
+        // Written in the recording's own container: a MOV opened from Finder stays a QuickTime movie.
+        let edited = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).\((entry.fileName as NSString).pathExtension)")
         do {
             let movie = try await RecordingFinisher.export(history.fileURL(for: entry), to: edited, edits: Self.edits(edit))
             let updated = try history.replaceRecording(

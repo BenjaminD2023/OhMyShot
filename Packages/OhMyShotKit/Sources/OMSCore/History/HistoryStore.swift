@@ -247,10 +247,15 @@ public final class HistoryStore: Sendable {
         // Read where it has its extension again: AVFoundation knows a movie by it.
         let asset = AVURLAsset(url: fileURL(for: item))
         let duration = try await asset.load(.duration).seconds
-        let size = try await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize)
+        // As it is shown: a movie from a phone held upright is encoded on its side.
+        var shown: CGRect?
+        if let track = try await asset.loadTracks(withMediaType: .video).first {
+            let (natural, transform) = try await track.load(.naturalSize, .preferredTransform)
+            shown = CGRect(origin: .zero, size: natural).applying(transform)
+        }
         return try updated(
-            item, pixelWidth: size.map { Int($0.width.rounded()) } ?? item.pixelWidth,
-            pixelHeight: size.map { Int($0.height.rounded()) } ?? item.pixelHeight, duration: duration
+            item, pixelWidth: shown.map { Int(abs($0.width).rounded()) } ?? item.pixelWidth,
+            pixelHeight: shown.map { Int(abs($0.height).rounded()) } ?? item.pixelHeight, duration: duration
         )
     }
 
@@ -303,8 +308,9 @@ public final class HistoryStore: Sendable {
 
     /// Copies a picture or a recording of the user's into the history under its own name, leaving the file where it
     /// is: the URL API's `add-quick-access-overlay`. A movie or a GIF is kept as a recording, with its size and
-    /// length; anything else must be a picture ImageIO reads.
-    public func add(copyOf source: URL, date: Date = .now) async throws -> HistoryItem {
+    /// length; anything else must be a picture ImageIO reads. Runs off the caller's actor: a movie on another drive takes
+    /// as long to copy as to read.
+    @concurrent public func add(copyOf source: URL, date: Date = .now) async throws -> HistoryItem {
         let kind: HistoryItem.Kind
         let size: (width: Int, height: Int)
         var duration: TimeInterval?

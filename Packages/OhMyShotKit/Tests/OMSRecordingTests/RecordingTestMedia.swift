@@ -83,6 +83,33 @@ enum TestMedia {
         FileManager.default.temporaryDirectory.appending(path: "OMSRecordingTests-\(UUID().uuidString).mov")
     }
 
+    /// A QuickTime movie of a second of `frame` (320 by 240), encoded with `codec` as it is and shown through
+    /// `transform`, as a phone's movie held upright is.
+    static func movie(
+        of frame: CMSampleBuffer, codec: AVVideoCodecType = .h264, shownThrough transform: CGAffineTransform = .identity
+    ) async throws -> URL {
+        let url = temporaryMovie()
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: codec, AVVideoWidthKey: 320, AVVideoHeightKey: 240])
+        input.expectsMediaDataInRealTime = false
+        input.transform = transform
+        writer.add(input)
+        try #require(writer.startWriting(), "\(String(describing: writer.error))")
+        writer.startSession(atSourceTime: time(0))
+        // The encoder takes the frame once it has started, unless the writer has failed.
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !input.isReadyForMoreMediaData {
+            try #require(writer.status == .writing && ContinuousClock.now < deadline, "\(String(describing: writer.error))")
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        try #require(input.append(frame), "\(String(describing: writer.error))")
+        input.markAsFinished()
+        writer.endSession(atSourceTime: time(1))
+        await writer.finishWriting()
+        try #require(writer.status == .completed, "\(String(describing: writer.error))")
+        return url
+    }
+
     static func writer(url: URL, audio: RecordingAudio = .none, framesPerSecond: Int = 30) throws -> RecordingWriter {
         let format = RecordingFormat.choose(width: 320, height: 240, framesPerSecond: framesPerSecond)
         return try RecordingWriter(url: url, format: format, audio: audio, queue: DispatchSerialQueue(label: "test.recording"))

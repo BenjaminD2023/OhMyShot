@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import CoreMedia
 import Foundation
@@ -177,6 +178,42 @@ struct GIFMakerTests {
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
         #expect(!FileManager.default.fileExists(atPath: url.path(percentEncoded: false)))
+    }
+
+    // One at a time: each encodes a movie, and the recording tests beside them must keep up in real time.
+    @Test(.serialized, arguments: [
+        CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 240, ty: 0),
+        CGAffineTransform(a: -1, b: 0, c: 0, d: -1, tx: 320, ty: 240),
+        CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: 320),
+        CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: 320, ty: 0),
+        CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: 240),
+        CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: 0, ty: 0),
+    ])
+    func aTurnedOrMirroredMovieIsMadeAsItIsShown(transform: CGAffineTransform) async throws {
+        // A light corner at the top left of the frame as it is encoded, and a dark one at the top right.
+        let frame = TestMedia.frame(at: 0, gray: 128, squares: [(x: 0, y: 0, size: 40, gray: 235), (x: 280, y: 0, size: 40, gray: 20)])
+        let movie = try await TestMedia.movie(of: frame, shownThrough: transform)
+        let url = Self.temporaryGIF()
+        defer { [movie, url].forEach { try? FileManager.default.removeItem(at: $0) } }
+
+        let gif = try await GIFMaker.make(from: movie, to: url, options: .init(framesPerSecond: 10))
+        let shown = CGRect(x: 0, y: 0, width: 320, height: 240).applying(transform)
+        #expect((gif.pixelWidth, gif.pixelHeight) == (Int(shown.width), Int(shown.height)))
+        let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let picture = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        func gray(at point: CGPoint) throws -> Double {
+            let place = point.applying(transform)
+            return try Self.gray(of: picture, x: Int(place.x - shown.minX), y: Int(place.y - shown.minY))
+        }
+        #expect(try gray(at: CGPoint(x: 20, y: 20)) > 200)
+        #expect(try gray(at: CGPoint(x: 300, y: 20)) < 60)
+        #expect(abs(try gray(at: CGPoint(x: 160, y: 200)) - 130) < 12)
+    }
+
+    @Test func aRecordingIsReadAsItIsEncoded() {
+        #expect(Orientation(.identity) == .upright)
+        #expect(Orientation(CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 1080, ty: 0)) == Orientation(quarterTurns: 1, isMirrored: false))
+        #expect(Orientation(CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: 0, ty: 0)) == Orientation(quarterTurns: 3, isMirrored: true))
     }
 
     @Test func sizeFitsTheLongestSide() {

@@ -14,6 +14,7 @@ public enum RecordingFinisher {
     public struct Movie: Equatable, Sendable {
         public let url: URL
         public let duration: TimeInterval
+        /// The size it is shown at: a movie from a phone held upright is encoded on its side and turned as it plays.
         public let pixelWidth: Int
         public let pixelHeight: Int
         public let byteCount: Int
@@ -57,9 +58,9 @@ public enum RecordingFinisher {
         return mix
     }
 
-    /// Writes the movie at `source` as an MP4 at `destination` (replacing anything there), its index first so
-    /// it starts playing before it has all loaded, with the audio tracks `audio` keeps, at `volume` against
-    /// their own. `source` is left as it is.
+    /// Writes the movie at `source` as an MP4 at `destination` (replacing anything there), or as a QuickTime movie
+    /// when `destination` ends in .mov, its index first so it starts playing before it has all loaded, with the audio
+    /// tracks `audio` keeps, at `volume` against their own. `source` is left as it is.
     ///
     /// Sound at full volume is copied as it was encoded when it is one track; at a lower volume, or mixed from
     /// more tracks, it is decoded and encoded again.
@@ -97,17 +98,17 @@ public enum RecordingFinisher {
         if let audioOutput { reader.add(audioOutput) }
 
         try? FileManager.default.removeItem(at: destination)
-        let writer = try AVAssetWriter(outputURL: destination, fileType: .mp4)
+        let writer = try AVAssetWriter(outputURL: destination, fileType: fileType(for: destination))
         writer.shouldOptimizeForNetworkUse = true
         let videoInput = AVAssetWriterInput(
             mediaType: .video, outputSettings: nil, sourceFormatHint: try await videoTrack.load(.formatDescriptions).first
         )
         videoInput.transform = try await videoTrack.load(.preferredTransform)
-        writer.add(videoInput)
+        try add(videoInput, to: writer)
         let audioInput = audioOutput.map { _ in
             AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings, sourceFormatHint: audioHint)
         }
-        if let audioInput { writer.add(audioInput) }
+        if let audioInput { try add(audioInput, to: writer) }
 
         guard reader.startReading() else { throw FinishError.readingFailed(String(describing: reader.error)) }
         guard writer.startWriting() else { throw FinishError.writingFailed(String(describing: writer.error)) }
@@ -118,6 +119,20 @@ public enum RecordingFinisher {
             video: videoPump, audio: audioPump, from: reader, with: writer, endingAt: duration, to: destination,
             pixelWidth: Int(size.width.rounded()), pixelHeight: Int(size.height.rounded())
         )
+    }
+
+    /// The container a movie written at `destination` takes: a QuickTime movie for .mov, which holds whatever a movie
+    /// opened from Finder was encoded with, such as ProRes; an MP4 for anything else.
+    static func fileType(for destination: URL) -> AVFileType {
+        destination.pathExtension.lowercased() == "mov" ? .mov : .mp4
+    }
+
+    /// Adds `input` to `writer`, or throws when its container can't hold the track, as an MP4 can't hold ProRes.
+    static func add(_ input: AVAssetWriterInput, to writer: AVAssetWriter) throws {
+        guard writer.canAdd(input) else {
+            throw FinishError.writingFailed("An \(writer.outputFileType.rawValue) file can't hold this \(input.mediaType.rawValue) track")
+        }
+        writer.add(input)
     }
 
     /// A reader output mixing `tracks` into one, played with `mix`: stereo 32-bit float PCM at the recorder's sample
@@ -156,8 +171,11 @@ public enum RecordingFinisher {
             throw FinishError.writingFailed(String(describing: writer.error))
         }
         let bytes = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        let turn = writer.inputs.first { $0.mediaType == .video }?.transform ?? .identity
+        let shown = CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight).applying(turn)
         return Movie(
-            url: destination, duration: end.seconds, pixelWidth: pixelWidth, pixelHeight: pixelHeight, byteCount: bytes, hasAudio: audio != nil
+            url: destination, duration: end.seconds, pixelWidth: Int(abs(shown.width).rounded()), pixelHeight: Int(abs(shown.height).rounded()),
+            byteCount: bytes, hasAudio: audio != nil
         )
     }
 }

@@ -40,7 +40,8 @@ extension RecordingFinisher {
         }
     }
 
-    /// Writes the movie at `source` with `edits` as an MP4 at `destination` (replacing anything there).
+    /// Writes the movie at `source` with `edits` as an MP4 at `destination` (replacing anything there), or as a
+    /// QuickTime movie when `destination` ends in .mov.
     ///
     /// The video is encoded again only when the movie is trimmed or made smaller, since a trim falls between
     /// key frames; leaving out the sound alone copies the video as it is. Encoding again keeps the codec (H.264
@@ -83,16 +84,16 @@ extension RecordingFinisher {
         }
 
         try? FileManager.default.removeItem(at: destination)
-        let writer = try AVAssetWriter(outputURL: destination, fileType: .mp4)
+        let writer = try AVAssetWriter(outputURL: destination, fileType: fileType(for: destination))
         writer.shouldOptimizeForNetworkUse = true
         var videoSettings = format.videoSettings(realTime: false)
         // Frames come at the recording's size and are scaled to the new one as they are encoded.
         videoSettings[AVVideoScalingModeKey] = AVVideoScalingModeResize
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         videoInput.transform = try await videoTrack.load(.preferredTransform)
-        writer.add(videoInput)
+        try add(videoInput, to: writer)
         let audioInput = audioOutput.map { _ in AVAssetWriterInput(mediaType: .audio, outputSettings: RecordingAudio.settings(channels: 2)) }
-        if let audioInput { writer.add(audioInput) }
+        if let audioInput { try add(audioInput, to: writer) }
 
         guard reader.startReading() else { throw FinishError.readingFailed(String(describing: reader.error)) }
         guard writer.startWriting() else { throw FinishError.writingFailed(String(describing: writer.error)) }

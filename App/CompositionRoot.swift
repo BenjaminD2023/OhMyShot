@@ -105,6 +105,8 @@ final class CompositionRoot {
         return reader
     }()
     lazy var pins = PinController(settings: settings, actions: makePinActions())
+    /// Says by the pointer that a file opened with the app couldn't be.
+    lazy var openingNotice = CopiedHUD()
     /// Draw on Screen: its canvases are in captures and recordings, as pins are.
     lazy var sketch: ScreenSketchController = {
         let sketch = ScreenSketchController()

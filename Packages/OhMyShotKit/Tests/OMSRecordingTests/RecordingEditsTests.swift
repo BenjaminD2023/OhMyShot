@@ -71,7 +71,50 @@ struct RecordingEditsTests {
         #expect(abs(try await AVURLAsset(url: store.fileURL(for: restored)).load(.duration).seconds - 4) < 0.03)
     }
 
+    @Test func aTurnedMovieKeepsTheSizeItIsShownAt() async throws {
+        let store = HistoryStore(directory: FileManager.default.temporaryDirectory.appending(path: "RecordingEditsTests-\(UUID().uuidString)"))
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        // Encoded 320 by 240 and turned a quarter, as a phone's movie held upright is.
+        let turn = CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 240, ty: 0)
+        nonisolated(unsafe) let frame = TestMedia.frame(at: 0)
+        let movie = try await TestMedia.movie(of: frame, shownThrough: turn)
+        let entry = try store.add(movingFileAt: movie, name: "Phone", kind: .recording, pixelWidth: 240, pixelHeight: 320, appName: nil, duration: 1)
+        let edited = Self.temporaryMP4()
+        let range = CMTimeRange(start: .zero, end: CMTime(seconds: 0.5, preferredTimescale: 600))
+        let result = try await RecordingFinisher.export(store.fileURL(for: entry), to: edited, edits: .init(timeRange: range, scale: 0.5))
+        #expect((result.pixelWidth, result.pixelHeight) == (120, 160))
+        let trimmed = try store.replaceRecording(of: entry, withFileAt: result.url, pixelWidth: result.pixelWidth, pixelHeight: result.pixelHeight, duration: result.duration)
+
+        let restored = try await store.restoreRecording(of: trimmed)
+        #expect((restored.pixelWidth, restored.pixelHeight) == (240, 320))
+    }
+
+    @Test func aQuickTimeMovieIsKeptAsOneWhateverItWasEncodedWith() async throws {
+        nonisolated(unsafe) let frame = TestMedia.frame(at: 0)
+        let movie = try await TestMedia.movie(of: frame, codec: .proRes422)
+        let silenced = TestMedia.temporaryMovie(), trimmed = TestMedia.temporaryMovie()
+        defer { [movie, silenced, trimmed].forEach { try? FileManager.default.removeItem(at: $0) } }
+
+        // The picture alone is copied, as it was encoded.
+        _ = try await RecordingFinisher.export(movie, to: silenced, edits: .init(keepsAudio: false))
+        #expect(try Self.brand(of: silenced) == "qt  ")
+        let track = try #require(try await AVURLAsset(url: silenced).loadTracks(withMediaType: .video).first)
+        let description = try #require(try await track.load(.formatDescriptions).first)
+        #expect(CMFormatDescriptionGetMediaSubType(description) == kCMVideoCodecType_AppleProRes422)
+
+        // Encoded again, it stays a QuickTime movie under its .mov name.
+        let range = CMTimeRange(start: .zero, end: CMTime(seconds: 0.5, preferredTimescale: 600))
+        _ = try await RecordingFinisher.export(movie, to: trimmed, edits: .init(timeRange: range))
+        #expect(try Self.brand(of: trimmed) == "qt  ")
+    }
+
     // MARK: Helpers
+
+    /// The file's major brand, which says what container it is: "qt  " for a QuickTime movie.
+    private static func brand(of url: URL) throws -> String {
+        let bytes = try Data(contentsOf: url).prefix(12)
+        return String(decoding: bytes.dropFirst(8), as: UTF8.self)
+    }
 
     /// The gray of the frame shown at `seconds` in the test recording.
     private static func gray(at seconds: Double) -> Double {
