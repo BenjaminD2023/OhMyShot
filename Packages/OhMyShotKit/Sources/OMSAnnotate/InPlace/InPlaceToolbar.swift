@@ -13,6 +13,8 @@ final class InPlaceToolbar: NSView {
         case redo
         case openInEditor
         case save
+        case pin
+        case upload
         case cancel
         case copy
     }
@@ -37,6 +39,10 @@ final class InPlaceToolbar: NSView {
     private var displayOptions: NSObjectProtocol?
 
     var hasSelectChip: Bool { toolChips[.select] != nil }
+    /// The actions on the bar, in their order, for tests.
+    var shownActions: [Action] {
+        stack.arrangedSubviews.compactMap { view in actionChips.first { $0.value === view }?.key }
+    }
     var selectedTool: AnnotationTool? { selected }
 
     var canUndo = false {
@@ -46,7 +52,10 @@ final class InPlaceToolbar: NSView {
         didSet { if canRedo != oldValue { applyAppearance() } }
     }
 
-    init() {
+    /// - Parameters:
+    ///   - offersPin: whether Pin stands after Save.
+    ///   - offersUpload: whether Upload stands after it, which it does only while a destination is set up.
+    init(offersPin: Bool = false, offersUpload: Bool = false) {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false
@@ -67,7 +76,10 @@ final class InPlaceToolbar: NSView {
         addDivider()
         for action in [Action.undo, .redo] { stack.addArrangedSubview(makeActionChip(action)) }
         addDivider()
-        for action in [Action.openInEditor, .save, .cancel, .copy] { stack.addArrangedSubview(makeActionChip(action)) }
+        var finishing: [Action] = [.openInEditor, .save]
+        if offersPin { finishing.append(.pin) }
+        if offersUpload { finishing.append(.upload) }
+        for action in finishing + [.cancel, .copy] { stack.addArrangedSubview(makeActionChip(action)) }
         backing.wantsLayer = true
         installContainer()
         setAccessibilityElement(true)
@@ -214,6 +226,8 @@ final class InPlaceToolbar: NSView {
         case .redo: ("arrow.uturn.forward", String(localized: "Redo", bundle: .module), String(localized: "Redo (⇧⌘Z)", bundle: .module))
         case .openInEditor: ("arrow.up.forward.square", String(localized: "Open in Editor", bundle: .module), String(localized: "Open in the editor, to zoom, crop, or set a background", bundle: .module))
         case .save: ("square.and.arrow.down", String(localized: "Save", bundle: .module), String(localized: "Save to the export folder (⌘S)", bundle: .module))
+        case .pin: ("pin", String(localized: "Pin to Screen", bundle: .module), String(localized: "Pin over the selection (⇧⌘P)", bundle: .module))
+        case .upload: ("icloud.and.arrow.up", String(localized: "Upload", bundle: .module), String(localized: "Upload to the default destination (⇧⌘U)", bundle: .module))
         case .cancel: ("xmark", String(localized: "Cancel", bundle: .module), String(localized: "Cancel (Esc)", bundle: .module))
         case .copy: ("checkmark", String(localized: "Copy", bundle: .module), String(localized: "Copy and finish (Return)", bundle: .module))
         }

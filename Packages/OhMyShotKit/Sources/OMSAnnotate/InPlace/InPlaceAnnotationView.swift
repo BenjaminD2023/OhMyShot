@@ -26,6 +26,10 @@ public final class InPlaceAnnotationView: NSView {
         public var save: (Result) -> Void
         public var openInEditor: (Result) -> Void
         public var cancel: () -> Void
+        /// Keeps the marked selection and pins it over the area; nil leaves Pin off the toolbar.
+        public var pin: ((Result) -> Void)?
+        /// Keeps the marked selection and uploads it; nil, as without a destination, leaves Upload off the toolbar.
+        public var upload: ((Result) -> Void)?
 
         public init(copy: @escaping (Result) -> Void, save: @escaping (Result) -> Void, openInEditor: @escaping (Result) -> Void, cancel: @escaping () -> Void) {
             self.copy = copy
@@ -47,7 +51,7 @@ public final class InPlaceAnnotationView: NSView {
     private var codeScan: Task<Void, Never>?
     /// The canvas (pixels) the chips were last looked for in, so only a change of selection looks again.
     private var scannedCanvas: CGRect?
-    let toolbar = InPlaceToolbar()
+    let toolbar: InPlaceToolbar
     private let capsule = StyleCapsule()
     private let actions: Actions
     private var adjustment: Adjustment?
@@ -87,6 +91,7 @@ public final class InPlaceAnnotationView: NSView {
         document.canvas = Self.pixels(selection, scale: scale, within: document.imageBounds)
         session = AnnotationSession(image: image, scale: scale, document: document, tool: .select)
         canvas = AnnotationCanvasView(session: session)
+        toolbar = InPlaceToolbar(offersPin: actions.pin != nil, offersUpload: actions.upload != nil)
         self.actions = actions
         super.init(frame: CGRect(origin: .zero, size: size))
         canvas.configureInPlace()
@@ -374,11 +379,15 @@ public final class InPlaceAnnotationView: NSView {
                 }
             }
         case .copy:
-            finish(with: \.copy)
+            finish(with: actions.copy)
         case .save:
-            finish(with: \.save)
+            finish(with: actions.save)
         case .openInEditor:
-            finish(with: \.openInEditor)
+            finish(with: actions.openInEditor)
+        case .pin:
+            if let pin = actions.pin { finish(with: pin) }
+        case .upload:
+            if let upload = actions.upload { finish(with: upload) }
         }
     }
 
@@ -391,12 +400,12 @@ public final class InPlaceAnnotationView: NSView {
         chrome.reading = "\(Int(pixels.width)) × \(Int(pixels.height))"
     }
 
-    private func finish(with action: KeyPath<Actions, (Result) -> Void>) {
+    private func finish(with action: (Result) -> Void) {
         guard let result = result() else {
             NSSound.beep()
             return
         }
-        finish { $0[keyPath: action](result) }
+        finish { (_: Actions) in action(result) }
     }
 
     private func finish(_ body: (Actions) -> Void) {
@@ -630,6 +639,20 @@ public final class InPlaceAnnotationView: NSView {
         } else if session.document.items.isEmpty {
             perform(.cancel)
         }
+    }
+
+    /// ⇧⌘P pins and ⇧⌘U uploads, as on a card, Caps Lock on or off; the tools keep their plain letters (P is the Pen).
+    public override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command, .shift] else { return super.performKeyEquivalent(with: event) }
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "p" where actions.pin != nil:
+            perform(.pin)
+        case "u" where actions.upload != nil:
+            perform(.upload)
+        default:
+            return super.performKeyEquivalent(with: event)
+        }
+        return true
     }
 
     public override func keyDown(with event: NSEvent) {

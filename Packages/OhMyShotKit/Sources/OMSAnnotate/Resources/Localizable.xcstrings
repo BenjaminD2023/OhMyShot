@@ -5744,6 +5744,40 @@
         }
       }
     },
+    "Pin over the selection (⇧⌘P)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fijar sobre la selección (⇧⌘P)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Épingler sur la sélection (⇧⌘P)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択範囲の上にピン留め（⇧⌘P）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "贴在所选区域上（⇧⌘P）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "釘選在所選範圍上（⇧⌘P）"
+          }
+        }
+      }
+    },
     "Pin to Screen" : {
       "localizations" : {
         "es" : {
@@ -8808,6 +8842,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上傳到 %@"
+          }
+        }
+      }
+    },
+    "Upload to the default destination (⇧⌘U)" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subir al destino predeterminado (⇧⌘U)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléverser vers la destination par défaut (⇧⌘U)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルトのアップロード先にアップロード（⇧⌘U）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上传到默认上传目标（⇧⌘U）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上傳到預設目的地（⇧⌘U）"
           }
         }
       }

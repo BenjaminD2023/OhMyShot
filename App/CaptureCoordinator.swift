@@ -220,30 +220,40 @@ final class CaptureCoordinator {
                 width: result.area.width, height: result.area.height
             ))
         }
-        let view = InPlaceAnnotationView(
-            frame: request.frame.image, scale: scale, size: host.bounds.size, selection: area,
-            actions: .init(
-                copy: { [weak self] result in
-                    // The overlay goes first, so the screen comes back at once; the result renders after.
-                    self?.overlay.finishAnnotation()
-                    Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, copy: .always) }
-                },
-                save: { [weak self] result in
-                    self?.overlay.finishAnnotation()
-                    Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, savesCopy: true) }
-                },
-                openInEditor: { [weak self] result in
-                    self?.overlay.finishAnnotation()
-                    Task { [weak self] in
-                        guard let self, let entry = await self.deliver(
-                            frame(result), appName: appName, windowTitle: windowTitle, marks: result.document, copy: .never, showsCard: false, playsSound: false
-                        ) else { return }
-                        self.openInEditor?(entry, scale)
-                    }
-                },
-                cancel: { [weak self] in self?.overlay.cancel() }
-            )
+        var actions = InPlaceAnnotationView.Actions(
+            copy: { [weak self] result in
+                // The overlay goes first, so the screen comes back at once; the result renders after.
+                self?.overlay.finishAnnotation()
+                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, copy: .always) }
+            },
+            save: { [weak self] result in
+                self?.overlay.finishAnnotation()
+                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, savesCopy: true) }
+            },
+            openInEditor: { [weak self] result in
+                self?.overlay.finishAnnotation()
+                Task { [weak self] in
+                    guard let self, let entry = await self.deliver(
+                        frame(result), appName: appName, windowTitle: windowTitle, marks: result.document, copy: .never, showsCard: false, playsSound: false
+                    ) else { return }
+                    self.openInEditor?(entry, scale)
+                }
+            },
+            cancel: { [weak self] in self?.overlay.cancel() }
         )
+        // Pin as Capture Area and Pin does (kept with the marks, no card, nothing copied), and Upload as the URL API's
+        // upload does, offered only while there is somewhere to upload to.
+        actions.pin = { [weak self] result in
+            self?.overlay.finishAnnotation()
+            Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, marks: result.document, followUp: CaptureFollowUp(action: .pin)) }
+        }
+        if canUpload?() == true {
+            actions.upload = { [weak self] result in
+                self?.overlay.finishAnnotation()
+                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, followUp: CaptureFollowUp(action: .upload)) }
+            }
+        }
+        let view = InPlaceAnnotationView(frame: request.frame.image, scale: scale, size: host.bounds.size, selection: area, actions: actions)
         view.frame = host.bounds
         view.codeFinder = request.codes
         // Only the lens closure, not the request: that holds the whole frozen frame.
@@ -725,7 +735,17 @@ final class CaptureCoordinator {
             if action == .upload || (settings.uploadAfterCapture && carded) { uploadKept?(entry) }
             switch action {
             case .annotate: openInEditor?(entry, scale)
-            case .pin: onPin?(frame, entry)
+            case .pin:
+                // Marks drawn in place are on the pin too, or a redaction made there would show the original.
+                if let marks, !marks.items.isEmpty {
+                    if let pinned = await CaptureRendition.pinned(marks, on: frame.image) {
+                        onPin?(CapturedFrame(image: pinned, hdrImage: nil, displayID: frame.displayID, frame: frame.frame), entry)
+                    } else {
+                        NSSound.beep()
+                    }
+                } else {
+                    onPin?(frame, entry)
+                }
             case .copy, .save, .upload, nil: break
             }
             if carded {
