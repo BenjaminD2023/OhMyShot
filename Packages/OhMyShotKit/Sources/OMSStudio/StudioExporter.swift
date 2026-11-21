@@ -4,7 +4,7 @@ import VideoToolbox
 
 /// Writes a Studio composition out as an MP4: the frames its compositor films, encoded as fast as the
 /// hardware goes (H.264 while the movie fits it, HEVC beyond 4096 pixels) at the project's quality, and the
-/// sound mixed into one AAC track.
+/// sounds mixed into one AAC track, each as loud as the project sets it; with every sound silent, no sound at all.
 ///
 /// A frame the compositor handed back again unchanged is not encoded again: the one before it shows on until
 /// the next that differs, as the recording held its own frames, and the encoder, which sets how fast an export
@@ -39,7 +39,10 @@ nonisolated public enum StudioExporter {
         let asset = composition.asset
         let canvas = composition.renderer.layout.canvas
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
-        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        let audio = composition.renderer.project.audio
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio).filter { track in
+            composition.audioTracks.contains { $0.trackID == track.trackID && audio[$0.sound].gain > 0 }
+        }
         guard !videoTracks.isEmpty else { throw StudioError.noVideo }
 
         let reader = try AVAssetReader(asset: asset)
@@ -56,6 +59,7 @@ nonisolated public enum StudioExporter {
                 AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVNumberOfChannelsKey: 2, AVLinearPCMBitDepthKey: 32,
                 AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
             ])
+            output.audioMix = composition.audioMix(for: audio)
             reader.add(output)
             audioOutput = output
         }
@@ -223,7 +227,7 @@ nonisolated private final class ReaderStopper: @unchecked Sendable {
 }
 
 /// Copies one track's samples from a reader to a writer input whenever the input can take more.
-nonisolated private final class Pump: @unchecked Sendable {
+nonisolated final class Pump: @unchecked Sendable {
     private let output: AVAssetReaderOutput
     private let input: AVAssetWriterInput
     private let queue: DispatchQueue

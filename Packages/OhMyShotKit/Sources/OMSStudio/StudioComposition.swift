@@ -16,6 +16,42 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
     public let duration: Double
     /// The color space its frames are drawn and tagged in.
     public let colors: Colors
+    /// Its audio tracks, with the sound each plays.
+    var audioTracks: [AudioTrack] = []
+
+    struct AudioTrack: Equatable {
+        let sound: StudioSound
+        let trackID: CMPersistentTrackID
+    }
+
+    /// One of the recording's sounds kept apart, in a file of its own on the recording's timeline.
+    public struct SoundSource: @unchecked Sendable {
+        public let sound: StudioSound
+        public let asset: AVAsset
+
+        public init(sound: StudioSound, asset: AVAsset) {
+            self.sound = sound
+            self.asset = asset
+        }
+    }
+
+    /// The sounds the movie can play, in order: those kept apart, or the recording's own as one.
+    public var sounds: [StudioSound] {
+        StudioSound.allCases.filter { sound in audioTracks.contains { $0.sound == sound } }
+    }
+
+    /// Plays each sound as `audio` sets it; nil while every one plays as recorded, which needs no mix.
+    public func audioMix(for audio: StudioProject.Audio) -> AVAudioMix? {
+        guard audioTracks.contains(where: { audio[$0.sound].gain < 1 }) else { return nil }
+        let mix = AVMutableAudioMix()
+        mix.inputParameters = audioTracks.map { track in
+            let parameters = AVMutableAudioMixInputParameters()
+            parameters.trackID = track.trackID
+            parameters.setVolume(Float(audio[track.sound].gain), at: .zero)
+            return parameters
+        }
+        return mix
+    }
 
     /// The parts of the recording kept, where each starts in the movie.
     struct Segment: Equatable {
@@ -37,25 +73,38 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
     }
 
     /// Puts `source` (the recording's movie) together with `renderer`, leaving out `cuts`; the camera's movie
-    /// goes in beside it when there is one, kept in step and cut alike.
+    /// goes in beside it when there is one, kept in step and cut alike, and so do `sounds`, the recording's sounds
+    /// kept apart, in place of its own sound as one.
     @concurrent public static func make(
-        source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], camera: CameraSource? = nil
+        source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], camera: CameraSource? = nil, sounds: [SoundSource] = []
     ) async throws -> StudioComposition {
-        try await make(source: source, renderer: renderer, cuts: cuts, camera: camera, reusesFrames: true)
+        try await make(source: source, renderer: renderer, cuts: cuts, camera: camera, sounds: sounds, reusesFrames: true)
     }
 
     /// The same; `reusesFrames` false draws every frame, even where the one before could be handed back.
     @concurrent static func make(
-        source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], camera: CameraSource? = nil, reusesFrames: Bool
+        source: AVAsset, renderer: StudioRenderer, cuts: [ClosedRange<Double>], camera: CameraSource? = nil, sounds: [SoundSource] = [],
+        reusesFrames: Bool
     ) async throws -> StudioComposition {
         try Task.checkCancellation()
         let sourceDuration = try await source.load(.duration).seconds
         let segments = keptSegments(duration: sourceDuration, cuts: cuts)
         let composition = AVMutableComposition()
         let sourceVideo = try await source.loadTracks(withMediaType: .video).first
-        let sourceAudio = try await source.loadTracks(withMediaType: .audio)
         guard let sourceVideo, let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             throw StudioError.noVideo
+        }
+        // Each sound kept apart, or the recording's own; a sound's track is cut to what it holds, so a part past
+        // its end is silence rather than a failure.
+        var sourceAudio: [(sound: StudioSound, track: AVAssetTrack, range: CMTimeRange?)] = []
+        for sound in sounds {
+            guard let track = try await sound.asset.loadTracks(withMediaType: .audio).first else { continue }
+            sourceAudio.append((sound.sound, track, try await track.load(.timeRange)))
+        }
+        if sourceAudio.isEmpty {
+            for track in try await source.loadTracks(withMediaType: .audio) {
+                sourceAudio.append((.recorded, track, nil))
+            }
         }
         let audio = sourceAudio.compactMap { _ in composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) }
         // Each part goes in where the one before ended, as long as its ends in the movie's time make it: times
@@ -68,7 +117,11 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
             let range = CMTimeRange(start: time(segment.sourceStart), duration: until - cursor)
             try video.insertTimeRange(range, of: sourceVideo, at: cursor)
             for (track, sourceTrack) in zip(audio, sourceAudio) {
-                try track.insertTimeRange(range, of: sourceTrack, at: cursor)
+                let held = sourceTrack.range.map(range.intersection) ?? range
+                guard held.duration > .zero else { continue }
+                let at = cursor + (held.start - range.start)
+                if !track.segments.isEmpty, track.timeRange.end < at { track.insertEmptyTimeRange(CMTimeRange(start: track.timeRange.end, end: at)) }
+                try track.insertTimeRange(held, of: sourceTrack.track, at: at)
             }
             cursor = until
         }
@@ -108,6 +161,15 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
             }
             if !track.segments.isEmpty { cameraTrackID = track.trackID }
         }
+        // A sound with nothing in what the movie keeps has no track.
+        var audioTracks: [AudioTrack] = []
+        for (track, sourceTrack) in zip(audio, sourceAudio) {
+            if track.segments.isEmpty {
+                composition.removeTrack(track)
+            } else {
+                audioTracks.append(AudioTrack(sound: sourceTrack.sound, trackID: track.trackID))
+            }
+        }
         // One instruction over the whole movie, to the tracks' own end.
         let instruction = StudioInstruction(
             timeRange: CMTimeRange(start: .zero, end: composition.duration), trackID: video.trackID, cameraTrackID: cameraTrackID,
@@ -127,7 +189,8 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         try Task.checkCancellation()
         return StudioComposition(
             asset: composition.copy() as? AVComposition ?? composition, videoComposition: AVVideoComposition(configuration: configuration),
-            renderer: renderer, duration: duration, colors: colors
+            renderer: renderer, duration: duration, colors: colors,
+            audioTracks: audioTracks
         )
     }
 

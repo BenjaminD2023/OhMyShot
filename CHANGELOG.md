@@ -11,6 +11,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Added
 
+- Studio's inspector has an Audio section. A recording's system sound and microphone each have their own Mute and volume, heard as you set them and exported that way. Recordings made before this get one Sound row; one that recorded only the system sound or only the microphone gets a row for that one. The recording in Capture History still has both sounds mixed into one track, so it plays everywhere.
 - Make GIF in Studio makes a GIF of the movie as you've edited it, with its zooms, cursor, clicks, keys, camera, cuts, and background, at the GIF frame rate set in Settings › Recording. It is kept as a capture of its own with a card; the project and the recording stay as they are.
 - Annotate Area pins and uploads in place: Pin (⇧⌘P) and, once a destination is set up, Upload (⇧⌘U) stand between Save and Cancel. Pin lays the marked selection over the area it came from, a redaction drawn there included; Upload keeps and copies it as Copy does and sends it to the default destination.
 - On a frozen screen, B fits a framed area to the edges of what it holds, as Measure fits a box, so a rough drag around a card, a button, or a picture lands on it. It works in All-In-One's framed area and in Capture Area's size control (Tab), and it keeps the shape the area keeps. Press B again, or Command-Z, to put the area back.

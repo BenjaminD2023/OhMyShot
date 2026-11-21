@@ -626,6 +626,18 @@ struct StudioInspector: View {
                 }
             }
 
+            // Each of the recording's sounds, set on its own: the system's and the microphone's where they were kept
+            // apart, else the recording's sound as one.
+            if !document.sounds.isEmpty {
+                Section {
+                    ForEach(document.sounds, id: \.self) { sound in
+                        SoundLevelRow(sound: sound, document: document)
+                    }
+                } header: {
+                    Text("Audio", bundle: .module)
+                }
+            }
+
             Section {
                 Picker(selection: Binding(get: { document.project.quality }, set: { document.setQuality($0) })) {
                     Text("Smaller file", bundle: .module).tag(StudioProject.Quality.smaller)
@@ -823,6 +835,67 @@ struct LabeledSlider: View {
             title
         }
         .accessibilityValue(Text(verbatim: reading(value)))
+    }
+}
+
+/// One of the recording's sounds: Mute, a toggle, and how loud it plays, with the reading in secondary ink with
+/// monospaced digits. A drag is taken back by Undo as one change.
+struct SoundLevelRow: View {
+    let sound: StudioSound
+    @Bindable var document: StudioDocument
+
+    var body: some View {
+        let level = document.project.audio[sound]
+        LabeledContent {
+            HStack(spacing: 8) {
+                Toggle(isOn: Binding(get: { level.isMuted }, set: { document.setMuted($0, sound) })) {
+                    Image(systemName: level.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .frame(width: 18)
+                }
+                .toggleStyle(.button)
+                .buttonStyle(.borderless)
+                .help(muteLabel)
+                .accessibilityLabel(muteLabel)
+                Slider(value: $document.project.audio[sound].volume, in: 0...1) { editing in
+                    if editing { document.beginContinuousChange() } else { document.endContinuousChange() }
+                }
+                .labelsHidden()
+                .disabled(level.isMuted)
+                .accessibilityLabel(volumeLabel)
+                .accessibilityValue(Text(verbatim: StudioInspector.percent(level.volume)))
+                Text(verbatim: StudioInspector.percent(level.volume))
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .trailing)
+                    .accessibilityHidden(true)
+            }
+        } label: {
+            title
+        }
+    }
+
+    private var title: Text {
+        switch sound {
+        case .system: Text("System sound", bundle: .module)
+        case .microphone: Text("Microphone", bundle: .module)
+        case .recorded: Text("Sound", bundle: .module)
+        }
+    }
+
+    private var muteLabel: Text {
+        switch sound {
+        case .system: Text("Mute system sound", bundle: .module)
+        case .microphone: Text("Mute microphone", bundle: .module)
+        case .recorded: Text("Mute sound", bundle: .module)
+        }
+    }
+
+    private var volumeLabel: Text {
+        switch sound {
+        case .system: Text("System sound volume", bundle: .module)
+        case .microphone: Text("Microphone volume", bundle: .module)
+        case .recorded: Text("Sound volume", bundle: .module)
+        }
     }
 }
 

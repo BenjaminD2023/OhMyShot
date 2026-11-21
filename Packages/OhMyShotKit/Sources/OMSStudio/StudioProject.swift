@@ -301,6 +301,75 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         }
     }
 
+    /// How loud the recording's sounds play in the movie, each set on its own: the system's sound and the
+    /// microphone, kept apart while recording, or the recording's sound as one where they weren't.
+    public struct Audio: Codable, Equatable, Sendable {
+        /// How loud one sound plays.
+        public struct Level: Codable, Equatable, Sendable {
+            public var isMuted: Bool
+            /// Against the sound as recorded, from 0 to 1.
+            public var volume: Double
+
+            public init(isMuted: Bool = false, volume: Double = 1) {
+                self.isMuted = isMuted
+                self.volume = volume
+            }
+
+            /// What the movie plays it at, from 0 (silent) to 1 (as recorded).
+            public var gain: Double {
+                isMuted ? 0 : min(max(volume, 0), 1)
+            }
+
+            private enum CodingKeys: String, CodingKey {
+                case isMuted, volume
+            }
+
+            public init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+                volume = try container.decodeIfPresent(Double.self, forKey: .volume) ?? 1
+            }
+        }
+
+        public var system: Level
+        public var microphone: Level
+        public var recorded: Level
+
+        public init(system: Level = Level(), microphone: Level = Level(), recorded: Level = Level()) {
+            self.system = system
+            self.microphone = microphone
+            self.recorded = recorded
+        }
+
+        public subscript(sound: StudioSound) -> Level {
+            get {
+                switch sound {
+                case .system: system
+                case .microphone: microphone
+                case .recorded: recorded
+                }
+            }
+            set {
+                switch sound {
+                case .system: system = newValue
+                case .microphone: microphone = newValue
+                case .recorded: recorded = newValue
+                }
+            }
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case system, microphone, recorded
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            system = try container.decodeIfPresent(Level.self, forKey: .system) ?? Level()
+            microphone = try container.decodeIfPresent(Level.self, forKey: .microphone) ?? Level()
+            recorded = try container.decodeIfPresent(Level.self, forKey: .recorded) ?? Level()
+        }
+    }
+
     public var background: Background
     /// The room around the recording, as a fraction of its shorter side.
     public var padding: Double
@@ -328,13 +397,15 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
     public var motionBlur: Bool
     /// How closely the exported movie is encoded.
     public var quality: Quality
+    /// How loud each of the recording's sounds plays.
+    public var audio: Audio
 
     /// The defaults are the annotation editor's background card's: the same padding, corners, and shadow.
     public init(
         background: Background = .gradient("sky"), padding: Double = 0.08, cornerRadius: Double = 12, shadow: Double = 0.5,
         aspect: Aspect = .auto, cursor: Cursor = Cursor(), zooms: [Zoom] = [], cuts: [ClosedRange<Double>] = [], showsKeys: Bool = true,
         keystrokeMode: KeystrokeMode = .all, automaticZooms: Bool = true, camera: Camera = Camera(), motionBlur: Bool = true,
-        quality: Quality = .standard, cameraSegments: [CameraSegment] = []
+        quality: Quality = .standard, cameraSegments: [CameraSegment] = [], audio: Audio = Audio()
     ) {
         self.background = background
         self.padding = padding
@@ -351,10 +422,12 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         self.cameraSegments = cameraSegments
         self.motionBlur = motionBlur
         self.quality = quality
+        self.audio = audio
     }
 
     private enum CodingKeys: String, CodingKey {
-        case background, padding, cornerRadius, shadow, aspect, cursor, zooms, cuts, showsKeys, keystrokeMode, automaticZooms, camera, cameraSegments, motionBlur, quality
+        case background, padding, cornerRadius, shadow, aspect, cursor, zooms, cuts, showsKeys, keystrokeMode, automaticZooms, camera, cameraSegments, motionBlur, quality,
+            audio
     }
 
     /// A project saved before a setting existed takes its default.
@@ -376,6 +449,7 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         cameraSegments = try container.decodeIfPresent([CameraSegment].self, forKey: .cameraSegments) ?? []
         motionBlur = try container.decodeIfPresent(Bool.self, forKey: .motionBlur) ?? defaults.motionBlur
         quality = try container.decodeIfPresent(Quality.self, forKey: .quality) ?? defaults.quality
+        audio = try container.decodeIfPresent(Audio.self, forKey: .audio) ?? defaults.audio
     }
 
     /// Makes the times the camera filled what was recorded (`fills`, in the recording's seconds) stretches of

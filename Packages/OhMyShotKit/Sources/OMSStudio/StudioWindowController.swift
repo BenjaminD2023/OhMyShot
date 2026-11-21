@@ -69,6 +69,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     private var timeObserver: Any?
     private var itemStatus: NSKeyValueObservation?
     private var observation: Task<Void, Never>?
+    private var soundObservation: Task<Void, Never>?
     private var windowLease: ActiveResources.Lease?
     /// The newest exported movie in the history, while the project hasn't changed since.
     private var exported: URL?
@@ -121,6 +122,13 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             guard let studio = self?.studio else { return }
             for await _ in Observations({ studio.compositionGeneration }) {
                 self?.reloadPlayer()
+            }
+        }
+        // How loud each sound plays is set on the player as it plays: the movie isn't made again for it.
+        soundObservation = Task { [weak self] in
+            guard let studio = self?.studio else { return }
+            for await audio in Observations({ studio.project.audio }) {
+                self?.player.currentItem?.audioMix = studio.composition?.audioMix(for: audio)
             }
         }
         Task { await studio.makeComposition() }
@@ -183,6 +191,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         guard let composition = studio.composition else { return }
         let item = AVPlayerItem(asset: composition.asset)
         item.videoComposition = composition.videoComposition
+        item.audioMix = composition.audioMix(for: studio.project.audio)
         let generation = studio.compositionGeneration
         itemStatus = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             guard item.status == .failed else { return }
@@ -419,6 +428,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
         observation?.cancel()
+        soundObservation?.cancel()
         player.replaceCurrentItem(with: nil)
         itemStatus = nil
         studio.releasePreview()

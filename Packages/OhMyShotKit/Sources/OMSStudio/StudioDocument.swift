@@ -31,6 +31,9 @@ public final class StudioDocument {
     public let folder: URL
     /// The camera's movie, recorded beside the recording; nil when none was.
     public let cameraMovie: URL?
+    /// The recording's sounds kept apart, each in a file of its own; empty when they weren't, and the recording's own
+    /// sound plays as one.
+    let soundFiles: [(sound: StudioSound, url: URL)]
 
     public var project: StudioProject {
         didSet {
@@ -128,6 +131,7 @@ public final class StudioDocument {
         self.background = background
         let camera = folder.appending(path: StudioFiles.camera)
         cameraMovie = telemetry.camera != nil && FileManager.default.fileExists(atPath: camera.path(percentEncoded: false)) ? camera : nil
+        soundFiles = StudioSound.files(in: folder)
         hasUnexportedChanges = !hasBeenExported
         if self.project == project, FileManager.default.fileExists(atPath: folder.appending(path: StudioFiles.project).path) {
             savedRevision = 0
@@ -165,6 +169,19 @@ public final class StudioDocument {
     /// Whether the camera showed while recording but couldn't be recorded, or its movie is gone since.
     public var cameraFailed: Bool {
         !hasCamera && (telemetry.cameraFailed == true || telemetry.camera != nil)
+    }
+
+    /// The sounds the movie can play, each set on its own; empty for a recording without sound, or before the
+    /// preview is first made.
+    public var sounds: [StudioSound] {
+        composition?.sounds ?? []
+    }
+
+    /// Mutes `sound`, or plays it again, as one step that Undo names.
+    public func setMuted(_ muted: Bool, _ sound: StudioSound) {
+        change(named: muted ? String(localized: "Mute", bundle: .module) : String(localized: "Unmute", bundle: .module)) {
+            project.audio[sound].isMuted = muted
+        }
     }
 
     /// Whether keys were written down while recording, so they can be shown.
@@ -256,7 +273,8 @@ public final class StudioDocument {
         let ringColor = accent.map { StudioRenderer.RingColor(red: $0.redComponent, green: $0.greenComponent, blue: $0.blueComponent) } ?? .systemBlue
         return try await Self.assemble(
             project: project, telemetry: telemetry, duration: duration, recordingSize: recordingSize,
-            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, background: background, ringColor: ringColor
+            largestSide: largestSide, track: track, source: source, cameraMovie: cameraMovie, soundFiles: soundFiles, background: background,
+            ringColor: ringColor
         )
     }
 
@@ -276,7 +294,7 @@ public final class StudioDocument {
     @concurrent
     private static func assemble(
         project: StudioProject, telemetry: StudioTelemetry, duration: Double, recordingSize: CGSize,
-        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?,
+        largestSide: Double, track: StudioTrack, source: URL, cameraMovie: URL?, soundFiles: [(sound: StudioSound, url: URL)],
         background: @Sendable (String, CGSize) -> CGImage?, ringColor: StudioRenderer.RingColor
     ) async throws -> StudioComposition {
         try Task.checkCancellation()
@@ -292,7 +310,8 @@ public final class StudioDocument {
         )
         try Task.checkCancellation()
         let camera = cameraMovie.map { StudioComposition.CameraSource(asset: AVURLAsset(url: $0), start: telemetry.camera?.start ?? 0) }
-        return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, camera: camera)
+        let sounds = soundFiles.map { StudioComposition.SoundSource(sound: $0.sound, asset: AVURLAsset(url: $0.url)) }
+        return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, camera: camera, sounds: sounds)
     }
 
     /// The longest side the preview needs: the movie fitted in the preview's pixels, in steps of 128 so a
@@ -680,9 +699,11 @@ public final class StudioDocument {
         case .range, .none: false
         }
         if gone { selection = .none }
-        // The preview isn't encoded, so the movie's quality is no reason to film it again.
+        // The preview isn't encoded, so the movie's quality is no reason to film it again, and the player sets how
+        // loud each sound plays as it plays.
         var seen = project
         seen.quality = old.quality
+        seen.audio = old.audio
         if seen != old { scheduleComposition() }
     }
 
@@ -708,4 +729,7 @@ nonisolated public enum StudioFiles {
     public static let project = "project.json"
     /// The camera, recorded in a movie of its own while the screen was.
     public static let camera = "camera.mov"
+    /// The system's sound and the microphone, each as recorded, in a file of its own (`StudioSound`).
+    public static let systemAudio = "system audio.m4a"
+    public static let microphone = "microphone.m4a"
 }

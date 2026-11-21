@@ -190,6 +190,21 @@ struct RecordingRecoveryTests {
         #expect(!FileManager.default.fileExists(atPath: corruptOld.movieURL.path(percentEncoded: false)))
     }
 
+    @Test func aStudioDraftKeepsItsMovieForItsSoundsOnceLinked() throws {
+        let drafts = RecordingDrafts(directory: FileManager.default.temporaryDirectory.appending(path: "RecordingDrafts-\(UUID().uuidString)"))
+        defer { try? FileManager.default.removeItem(at: drafts.directory) }
+        let draft = try drafts.create(.init(startedAt: .now, appName: "Xcode", output: .studio))
+        try Data("movie".utf8).write(to: draft.movieURL)
+
+        let historyID = UUID()
+        let kept = try drafts.markKeptInHistory(draft, historyID: historyID, removingMovie: false)
+
+        // Linked, with the movie still there to read the sounds from, and found so by launch recovery.
+        #expect(kept.info?.keptHistoryID == historyID)
+        #expect(FileManager.default.fileExists(atPath: kept.movieURL.path(percentEncoded: false)))
+        #expect(drafts.leftovers().first?.info?.keptHistoryID == historyID)
+    }
+
     @Test func markKeptInHistoryKeepsDraftMovieWhenLinkWriteFails() throws {
         let drafts = RecordingDrafts(directory: FileManager.default.temporaryDirectory.appending(path: "RecordingDrafts-\(UUID().uuidString)"))
         defer { try? FileManager.default.removeItem(at: drafts.directory) }

@@ -818,7 +818,8 @@ final class RecordingCoordinator {
                 let keptMovie = RecordingDrafts.Info.KeptMovie.measure(at: history.fileURL(for: entry))
                 var keptDraft = draft
                 do {
-                    keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id, keptMovie: keptMovie)
+                    // The draft's movie stays until its sounds are kept apart: it is the only copy with them in tracks of their own.
+                    keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id, keptMovie: keptMovie, removingMovie: false)
                 } catch {
                     Log.recording.error("Recording kept history id on draft \(draft.id.uuidString, privacy: .public) failed: \(String(describing: error), privacy: .public)")
                 }
@@ -827,6 +828,9 @@ final class RecordingCoordinator {
                 project.showsKeys = plan?.choices.showsKeystrokes ?? recoveredDraftTelemetry?.showsKeystrokes ?? true
                 project.keystrokeMode = resolvedTelemetry.keystrokeMode ?? .all
                 project.camera = resolvedTelemetry.camera?.bubble ?? StudioProject.Camera()
+                await keepStudioSounds(from: keptDraft.movieURL, for: entry)
+                // Linked to the history, the draft needs its movie no longer; unlinked, recovery keeps it again from the movie.
+                if keptDraft.info?.keptHistoryID != nil { try? FileManager.default.removeItem(at: keptDraft.movieURL) }
                 let saveResult = saveStudioProject(resolvedTelemetry, project: project, camera: keptDraft.cameraURL, for: entry)
                 if saveResult.isComplete {
                     drafts.remove(keptDraft)
@@ -907,6 +911,18 @@ final class RecordingCoordinator {
             Log.recording.error("Keeping the Studio project failed: \(result.errorDescription ?? "unknown error", privacy: .public)")
         }
         return result
+    }
+
+    /// Keeps the system's sound and the microphone of a Studio recording, from `movie` (its draft, where they are
+    /// tracks of their own), each in a file of its own in its project folder, so Studio sets how loud each plays. The
+    /// history's movie has them mixed into one, which every player plays; without these files Studio plays that.
+    private func keepStudioSounds(from movie: URL, for entry: HistoryItem) async {
+        do {
+            let kept = try await StudioSound.keep(from: movie, in: history.studioURL(for: entry))
+            Log.recording.notice("Kept \(kept.count, privacy: .public) Studio sound(s) apart")
+        } catch {
+            Log.recording.error("Keeping a Studio recording's sounds apart failed; Studio plays them as one: \(String(describing: error), privacy: .public)")
+        }
     }
 
     // MARK: Disk space and interruption alerts
@@ -1120,6 +1136,9 @@ final class RecordingCoordinator {
         )
         switch outcome {
         case .completed:
+            if let entry = history.item(id: historyID), !StudioSound.areKept(in: history.studioURL(for: entry)) {
+                await keepStudioSounds(from: draft.movieURL, for: entry)
+            }
             drafts.remove(draft)
             Log.recording.notice("Finished recovering Studio assets for history \(historyID.uuidString, privacy: .public)")
         case .incomplete(let result):
